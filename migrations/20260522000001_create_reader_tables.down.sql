@@ -1,0 +1,12 @@
+DROP TABLE IF EXISTS import_runs;
+DROP TABLE IF EXISTS source_releases;
+DROP TABLE IF EXISTS bookmarks;
+DROP TABLE IF EXISTS reading_progress;
+DROP TABLE IF EXISTS section_audio;
+DROP TABLE IF EXISTS section_translations;
+DROP TABLE IF EXISTS book_heading_ranges;
+DROP TABLE IF EXISTS book_headings;
+DROP TABLE IF EXISTS book_pages;
+DROP TABLE IF EXISTS books;
+DROP TABLE IF EXISTS authors;
+DROP TABLE IF EXISTS categories;

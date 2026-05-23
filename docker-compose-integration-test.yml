@@ -1,0 +1,22 @@
+services:
+  integration-test:
+    container_name: integration-test
+    platform: linux/amd64
+    pid: "host"
+    build:
+      context: .
+      dockerfile: integration-test/Dockerfile
+    environment:
+      RUN_INTEGRATION_TESTS: "1"
+      INTEGRATION_HTTP_URL: "http://app:8080"
+    depends_on:
+      - app
+    networks:
+      app_network:
+        aliases:
+          - test.lvh.me
+
+
+networks:
+  app_network:
+    external: false
