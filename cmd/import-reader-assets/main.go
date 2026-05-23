@@ -22,5 +22,13 @@ func main() {
 		log.Fatalf("asset import failed: %v", err)
 	}
 
-	fmt.Printf("translations=%d audio=%d skipped=%d\n", stats.Translations, stats.Audio, stats.Skipped)
+	fmt.Printf(
+		"translations=%d audio=%d book_metadata=%d authors=%d categories=%d skipped=%d\n",
+		stats.Translations,
+		stats.Audio,
+		stats.BookMetadataTranslations,
+		stats.AuthorTranslations,
+		stats.CategoryTranslations,
+		stats.Skipped,
+	)
 }

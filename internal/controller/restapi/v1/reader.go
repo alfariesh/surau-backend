@@ -11,7 +11,7 @@ import (
 )
 
 func (r *V1) listCategories(ctx *fiber.Ctx) error {
-	categories, err := r.reader.Categories(ctx.UserContext())
+	categories, err := r.reader.Categories(ctx.UserContext(), ctx.Query("lang"))
 	if err != nil {
 		r.l.Error(err, "restapi - v1 - listCategories")
 
@@ -27,6 +27,7 @@ func (r *V1) listAuthors(ctx *fiber.Ctx) error {
 		ctx.Query("q"),
 		queryInt(ctx, "limit", 50),
 		queryInt(ctx, "offset", 0),
+		ctx.Query("lang"),
 	)
 	if err != nil {
 		r.l.Error(err, "restapi - v1 - listAuthors")
@@ -61,6 +62,7 @@ func (r *V1) listBooks(ctx *fiber.Ctx) error {
 		hasContent,
 		queryInt(ctx, "limit", 50),
 		queryInt(ctx, "offset", 0),
+		ctx.Query("lang"),
 	)
 	if err != nil {
 		r.l.Error(err, "restapi - v1 - listBooks")
@@ -77,7 +79,7 @@ func (r *V1) getBook(ctx *fiber.Ctx) error {
 		return errorResponse(ctx, http.StatusBadRequest, "invalid book_id")
 	}
 
-	book, err := r.reader.Book(ctx.UserContext(), bookID)
+	book, err := r.reader.Book(ctx.UserContext(), bookID, ctx.Query("lang"))
 	if err != nil {
 		r.l.Error(err, "restapi - v1 - getBook")
 
@@ -268,8 +270,11 @@ func (r *V1) getBookTOCPlaylist(ctx *fiber.Ctx) error {
 
 func pathInt(ctx *fiber.Ctx, key string) (int, error) {
 	value, err := strconv.Atoi(ctx.Params(key))
-	if err != nil || value <= 0 {
+	if err != nil {
 		return 0, err
+	}
+	if value <= 0 {
+		return 0, errors.New("path parameter must be positive")
 	}
 
 	return value, nil
@@ -298,6 +303,9 @@ func optionalQueryInt(ctx *fiber.Ctx, key string) (*int, error) {
 	parsed, err := strconv.Atoi(value)
 	if err != nil {
 		return nil, err
+	}
+	if parsed <= 0 {
+		return nil, errors.New("query parameter must be positive")
 	}
 
 	return &parsed, nil

@@ -14,6 +14,18 @@ sections. The script fetches Arabic content from the local backend, sends one
 TOC section to DeepSeek, and writes one JSONL row per `(book_id, heading_id,
 lang)`.
 
+The same importer command also accepts catalog rows:
+`book_metadata_translation`, `author_translation`, and
+`category_translation`. Those are for book titles, bibliographies, hints,
+author biographies, and category names; they are separate from TOC section
+translation rows.
+
+Generated scripts write `translation_status=generated`. After a human review,
+the same JSONL row can be re-imported with `translation_status=reviewed` and
+`translation_reviewed_by="Reviewer Name"`. This status is only a public
+transparency label; publication is still controlled by editorial book
+publication status.
+
 ### Environment
 
 Create `/Users/macmini/Downloads/surau-backend/.env.local`:
@@ -126,3 +138,141 @@ Reasons:
 For production batches, start with a small curated collection, translate only
 published or review-target books, and store generated files under a dated run
 directory outside git, for example `/tmp/surau-translation-runs/2026-05-23/`.
+
+## `qa_reader_assets.py`
+
+Validates generated reader asset JSONL before import. Use this as the normal
+gate between translation generation and `cmd/import-reader-assets`.
+
+### Workflow
+
+1. Generate translation JSONL with `translate_reader_assets.py`.
+2. Run QA and inspect warnings/failures.
+3. Import only if QA exits successfully.
+
+```sh
+python3 scripts/qa_reader_assets.py \
+  --file /tmp/surau-book-21818-id-full.jsonl \
+  --base-url http://127.0.0.1:8080 \
+  --book-id 21818 \
+  --lang id \
+  --all-toc \
+  --report /tmp/surau-book-21818-id-full.qa.json
+```
+
+The script prints a compact `PASS`, `WARN`, or `FAIL` summary. It exits with
+code `1` only when a fatal issue is found. Warnings do not block import unless
+`--strict` is used.
+
+Common fatal checks:
+
+- invalid JSONL rows
+- duplicate `(book_id, heading_id, lang)` translation rows
+- mismatched `book_id` or `lang`
+- missing TOC translations when `--all-toc` is used
+- dry-run placeholders
+- invalid `translation_status`
+- `translation_status=reviewed` without `translation_reviewed_by`
+- `metadata.truncated_source=true`
+- raw translated-source brackets such as `[Mereka berkata: ...]`
+
+Common warnings:
+
+- short content
+- many Markdown footnotes
+- possible Qur'an/hadith references without blockquotes
+- minor Markdown shape issues
+
+### QA Tests
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/test_qa_reader_assets.py
+```
+
+## `translate_catalog_assets.py`
+
+Generates catalog translation JSONL rows for book metadata, authors, and
+categories. These rows are imported with the same `cmd/import-reader-assets`
+command and served through catalog endpoints with `?lang=id` or `?lang=en`.
+
+Dry-run one published book:
+
+```sh
+python3 scripts/translate_catalog_assets.py \
+  --base-url http://127.0.0.1:8080 \
+  --kind books \
+  --book-id 21818 \
+  --target-lang id \
+  --out /tmp/surau-catalog-21818-id.jsonl \
+  --dry-run
+```
+
+Live batch for published catalog metadata:
+
+```sh
+python3 scripts/translate_catalog_assets.py \
+  --base-url http://127.0.0.1:8080 \
+  --kind all \
+  --target-lang id \
+  --concurrency 6 \
+  --resume \
+  --out /tmp/surau-catalog-id.jsonl
+```
+
+Import:
+
+```sh
+PG_URL='postgres://user:myAwEsOm3pa55%40w0rd@localhost:5432/db?sslmode=disable' \
+go run ./cmd/import-reader-assets --file=/tmp/surau-catalog-id.jsonl
+```
+
+The script uses public catalog endpoints, so book translation is limited to
+published books. Categories and authors are public catalog-wide.
+
+## `qa_catalog_assets.py`
+
+Validates catalog translation JSONL before import. Use this for generated
+`book_metadata_translation`, `author_translation`, and `category_translation`
+rows.
+
+```sh
+python3 scripts/qa_catalog_assets.py \
+  --file /tmp/surau-catalog-id.jsonl \
+  --lang id \
+  --report /tmp/surau-catalog-id.qa.json
+```
+
+Optional public ID check:
+
+```sh
+python3 scripts/qa_catalog_assets.py \
+  --file /tmp/surau-catalog-id.jsonl \
+  --lang id \
+  --base-url http://127.0.0.1:8080 \
+  --check-public-ids
+```
+
+The public ID check is intentionally a warning for missing IDs, because book
+metadata translation may be prepared before a book is public. Warnings do not
+block import unless `--strict` is used.
+
+Common fatal checks:
+
+- invalid JSONL rows
+- duplicate `(kind, object_id, lang)` catalog rows
+- missing required translated text, such as `display_title` or `name`
+- dry-run or placeholder text
+- invalid `translation_status`
+- `translation_status=reviewed` without `translation_reviewed_by`
+- invalid `translation_reviewed_at` format
+
+Common warnings:
+
+- translated catalog text still looks mostly Arabic
+- public ID not found when `--check-public-ids` is enabled
+
+### Catalog QA Tests
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/test_qa_catalog_assets.py
+```

@@ -34,8 +34,19 @@ func TestNormalizeContent(t *testing.T) {
 
 	html, text := readerutil.NormalizeContent("舄<span data-type='title' id=toc-1>باب العلم</span>\r\nنص&nbsp;الكتاب")
 
-	assert.Equal(t, "<span data-type='title' id=toc-1>باب العلم</span>\nنص&nbsp;الكتاب", html)
+	assert.Equal(t, "<span data-type=\"title\" id=\"toc-1\">باب العلم</span>\nنص\u00a0الكتاب", html)
 	assert.Equal(t, "باب العلم\nنص الكتاب", text)
+}
+
+func TestNormalizeContentSanitizesUnsafeHTML(t *testing.T) {
+	t.Parallel()
+
+	html, text := readerutil.NormalizeContent(
+		`<span id="toc-1" onclick="alert(1)">باب</span><script>alert(1)</script><a href="javascript:alert(1)">رابط</a>`,
+	)
+
+	assert.Equal(t, `<span id="toc-1">باب</span><a>رابط</a>`, html)
+	assert.Equal(t, "باب رابط", text)
 }
 
 func TestDecorateHeadingsAndRanges(t *testing.T) {

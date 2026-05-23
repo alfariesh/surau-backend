@@ -2,18 +2,45 @@ package readerutil
 
 import (
 	"fmt"
-	"html"
+	stdhtml "html"
+	"net/url"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+
+	xhtml "golang.org/x/net/html"
 )
 
 var (
 	_tagRE       = regexp.MustCompile(`<[^>]+>`)
 	_spaceRE     = regexp.MustCompile(`[ \t\x{00a0}]+`)
 	_lineBreakRE = regexp.MustCompile(`\r\n?`)
+)
+
+var (
+	_allowedHTMLTags = map[string]struct{}{
+		"a": {}, "b": {}, "blockquote": {}, "br": {}, "cite": {}, "code": {}, "dd": {}, "div": {},
+		"dl": {}, "dt": {}, "em": {}, "h1": {}, "h2": {}, "h3": {}, "h4": {}, "h5": {}, "h6": {},
+		"hr": {}, "i": {}, "li": {}, "ol": {}, "p": {}, "pre": {}, "small": {}, "span": {},
+		"strong": {}, "sub": {}, "sup": {}, "table": {}, "tbody": {}, "td": {}, "tfoot": {},
+		"th": {}, "thead": {}, "tr": {}, "u": {}, "ul": {},
+	}
+	_voidHTMLTags = map[string]struct{}{
+		"br": {}, "hr": {},
+	}
+	_dropHTMLContentTags = map[string]struct{}{
+		"embed": {}, "iframe": {}, "math": {}, "noscript": {}, "object": {}, "script": {},
+		"style": {}, "svg": {}, "template": {},
+	}
+	_allowedGlobalHTMLAttrs = map[string]struct{}{
+		"class": {}, "data-type": {}, "dir": {}, "id": {}, "lang": {}, "title": {},
+	}
+	_allowedHTMLAttrsByTag = map[string]map[string]struct{}{
+		"a": {"href": {}, "name": {}},
+	}
+	_safeHTMLIDRE = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_:.-]*$`)
 )
 
 // ResolveBookDBPath returns the raw SQLite path for a book id.
@@ -24,20 +51,85 @@ func ResolveBookDBPath(sourceDir string, bookID int) string {
 	return filepath.Join(sourceDir, "book", bucketName, fmt.Sprintf("%d.db", bookID))
 }
 
-// NormalizeContent removes known raw markers and returns safe-ish HTML plus plain text.
+// NormalizeContent removes known raw markers and returns sanitized HTML plus plain text.
 func NormalizeContent(content string) (string, string) {
 	normalized := strings.TrimPrefix(content, "\ufeff")
 	normalized = strings.TrimPrefix(normalized, "舄")
 	normalized = _lineBreakRE.ReplaceAllString(normalized, "\n")
 	normalized = strings.TrimSpace(normalized)
+	normalized = SanitizeHTML(normalized)
 
 	return normalized, PlainText(normalized)
+}
+
+// SanitizeHTML keeps reader-safe markup while stripping scripts, event handlers, and unsafe links.
+func SanitizeHTML(content string) string {
+	tokenizer := xhtml.NewTokenizer(strings.NewReader(content))
+	var out strings.Builder
+	skipTag := ""
+	skipDepth := 0
+
+	for {
+		tokenType := tokenizer.Next()
+		if tokenType == xhtml.ErrorToken {
+			break
+		}
+
+		token := tokenizer.Token()
+		tag := strings.ToLower(token.Data)
+
+		if skipDepth > 0 {
+			if tag == skipTag {
+				switch tokenType {
+				case xhtml.StartTagToken:
+					skipDepth++
+				case xhtml.EndTagToken:
+					skipDepth--
+					if skipDepth == 0 {
+						skipTag = ""
+					}
+				}
+			}
+			continue
+		}
+
+		switch tokenType {
+		case xhtml.TextToken:
+			out.WriteString(stdhtml.EscapeString(token.Data))
+		case xhtml.StartTagToken, xhtml.SelfClosingTagToken:
+			if _, drop := _dropHTMLContentTags[tag]; drop {
+				if tokenType == xhtml.StartTagToken {
+					skipTag = tag
+					skipDepth = 1
+				}
+				continue
+			}
+			if _, ok := _allowedHTMLTags[tag]; !ok {
+				continue
+			}
+
+			writeHTMLStartTag(&out, tag, sanitizeHTMLAttrs(tag, token.Attr))
+			if tokenType == xhtml.SelfClosingTagToken {
+				if _, void := _voidHTMLTags[tag]; !void {
+					writeHTMLEndTag(&out, tag)
+				}
+			}
+		case xhtml.EndTagToken:
+			if _, ok := _allowedHTMLTags[tag]; ok {
+				if _, void := _voidHTMLTags[tag]; !void {
+					writeHTMLEndTag(&out, tag)
+				}
+			}
+		}
+	}
+
+	return strings.TrimSpace(out.String())
 }
 
 // PlainText strips simple HTML markup and normalizes whitespace for search/preview.
 func PlainText(content string) string {
 	text := _tagRE.ReplaceAllString(content, " ")
-	text = html.UnescapeString(text)
+	text = stdhtml.UnescapeString(text)
 	text = _lineBreakRE.ReplaceAllString(text, "\n")
 
 	lines := strings.Split(text, "\n")
@@ -46,6 +138,85 @@ func PlainText(content string) string {
 	}
 
 	return strings.TrimSpace(strings.Join(lines, "\n"))
+}
+
+func writeHTMLStartTag(out *strings.Builder, tag string, attrs []xhtml.Attribute) {
+	out.WriteByte('<')
+	out.WriteString(tag)
+	for _, attr := range attrs {
+		out.WriteByte(' ')
+		out.WriteString(attr.Key)
+		out.WriteString(`="`)
+		out.WriteString(stdhtml.EscapeString(attr.Val))
+		out.WriteByte('"')
+	}
+	out.WriteByte('>')
+}
+
+func writeHTMLEndTag(out *strings.Builder, tag string) {
+	out.WriteString("</")
+	out.WriteString(tag)
+	out.WriteByte('>')
+}
+
+func sanitizeHTMLAttrs(tag string, attrs []xhtml.Attribute) []xhtml.Attribute {
+	safeAttrs := make([]xhtml.Attribute, 0, len(attrs))
+	for _, attr := range attrs {
+		key := strings.ToLower(strings.TrimSpace(attr.Key))
+		value := strings.TrimSpace(attr.Val)
+		if key == "" || strings.HasPrefix(key, "on") || key == "style" {
+			continue
+		}
+		if !isAllowedHTMLAttr(tag, key) {
+			continue
+		}
+		if key == "id" && !_safeHTMLIDRE.MatchString(value) {
+			continue
+		}
+		if key == "href" && !isSafeHTMLHref(value) {
+			continue
+		}
+		if key == "dir" && value != "rtl" && value != "ltr" && value != "auto" {
+			continue
+		}
+
+		safeAttrs = append(safeAttrs, xhtml.Attribute{Key: key, Val: value})
+	}
+
+	return safeAttrs
+}
+
+func isAllowedHTMLAttr(tag, key string) bool {
+	if _, ok := _allowedGlobalHTMLAttrs[key]; ok {
+		return true
+	}
+	if attrs, ok := _allowedHTMLAttrsByTag[tag]; ok {
+		_, allowed := attrs[key]
+		return allowed
+	}
+
+	return false
+}
+
+func isSafeHTMLHref(value string) bool {
+	if value == "" {
+		return false
+	}
+	if strings.HasPrefix(value, "#") || strings.HasPrefix(value, "/") {
+		return true
+	}
+
+	parsed, err := url.Parse(value)
+	if err != nil {
+		return false
+	}
+
+	switch strings.ToLower(parsed.Scheme) {
+	case "http", "https", "mailto":
+		return true
+	default:
+		return false
+	}
 }
 
 // SourceHeading is the minimum raw title shape needed to build heading ranges.

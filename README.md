@@ -4,7 +4,7 @@ REST + auth backend for an Islamic classical book reader. The service imports ra
 
 ## Runtime
 
-- Go 1.26
+- Go 1.26.3+ for builds. The Dockerfile pins `golang:1.26.3-alpine3.23`.
 - Fiber REST API
 - PostgreSQL via pgx
 - JWT auth for profile, progress, and bookmarks
@@ -17,6 +17,7 @@ The runtime app no longer starts RabbitMQ, NATS, or gRPC. Legacy packages may st
 Public reader:
 
 - `GET /healthz`
+- `GET /readyz`
 - `GET /v1/categories`
 - `GET /v1/authors?q=&limit=&offset=`
 - `GET /v1/books?q=&category_id=&author_id=&has_content=&limit=&offset=`
@@ -90,7 +91,7 @@ Full import has a disk preflight and defaults to requiring 30GiB free. Use `--li
 Translation:
 
 ```json
-{"kind":"translation","book_id":797,"heading_id":10,"lang":"id","title":"Mukadimah","content":"...","source":"manual"}
+{"kind":"translation","book_id":797,"heading_id":10,"lang":"id","title":"Mukadimah","content":"...","source":"manual","translation_status":"generated"}
 ```
 
 Audio:
@@ -99,7 +100,15 @@ Audio:
 {"kind":"audio","book_id":797,"heading_id":10,"lang":"id","url":"https://cdn.example/audio.mp3","mime_type":"audio/mpeg","duration_seconds":120}
 ```
 
-Audio and translations are keyed by TOC heading, not by page. See `examples/reader-assets.sample.jsonl` for a ready-to-edit template with Indonesian translation and Arabic/Indonesian audio rows.
+Catalog metadata translation:
+
+```json
+{"kind":"book_metadata_translation","book_id":797,"lang":"id","display_title":"Judul Kitab","bibliography":"...","hint":"...","description":"...","source":"manual","translation_status":"generated"}
+{"kind":"author_translation","author_id":177,"lang":"id","name":"Nama Penulis","biography":"...","death_text":"...","source":"manual","translation_status":"reviewed","translation_reviewed_by":"Editor A"}
+{"kind":"category_translation","category_id":10,"lang":"id","name":"Ilmu Hadis","source":"manual","translation_status":"reviewed","translation_reviewed_by":"Editor B"}
+```
+
+Audio and section translations are keyed by TOC heading, not by page. Catalog translations are keyed by book, author, or category plus language. Translation status is informational only: `generated` means LLM/import generated content, while `reviewed` requires `translation_reviewed_by` and is shown publicly as a reader label. It does not decide whether a book is published. See `examples/reader-assets.sample.jsonl` for a ready-to-edit template with section, audio, and catalog rows.
 
 Run:
 
@@ -129,6 +138,22 @@ go run ./cmd/import-reader-assets --file=tmp/book-1-id.jsonl
 Use `--target-lang en` for English, repeat `--heading-id` for multiple sections, or use `--all-toc --limit=5` for a small batch. The generated translation content is Markdown with a professional scholarly style, including blockquotes for Qur'an, hadith, or clearly quoted source speech.
 
 See [scripts/README.md](/Users/macmini/Downloads/surau-backend/scripts/README.md) for script-specific usage and the recommended translation batching strategy.
+
+Catalog endpoints support an optional `lang` query parameter:
+
+- `GET /v1/categories?lang=id`
+- `GET /v1/authors?lang=id`
+- `GET /v1/books?lang=id`
+- `GET /v1/books/{book_id}?lang=id`
+
+If a requested catalog translation does not exist, the API falls back to the raw Arabic metadata. When a translation exists, public responses include `translation_status`, `translation_reviewed_by`, and `translation_reviewed_at` where available. Section reader and TOC responses expose the same label fields for generated or reviewed translations.
+
+Run QA before import:
+
+```sh
+python3 scripts/qa_reader_assets.py --file tmp/book-1-id.jsonl --book-id 1 --lang id
+python3 scripts/qa_catalog_assets.py --file tmp/catalog-id.jsonl --lang id
+```
 
 ## Tests
 

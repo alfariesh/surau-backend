@@ -46,6 +46,10 @@ func (r *PersonalRepo) GetProgress(ctx context.Context, userID string, bookID in
 
 // SaveProgress upserts a user's progress for a book.
 func (r *PersonalRepo) SaveProgress(ctx context.Context, progress entity.ReadingProgress) (entity.ReadingProgress, error) {
+	if err := r.validateReaderLocation(ctx, progress.BookID, progress.PageID, progress.HeadingID, false); err != nil {
+		return entity.ReadingProgress{}, err
+	}
+
 	sqlText := `
 INSERT INTO reading_progress (user_id, book_id, page_id, heading_id, progress_percent, updated_at)
 VALUES ($1, $2, $3, $4, $5, now())
@@ -121,6 +125,10 @@ func (r *PersonalRepo) ListBookmarks(ctx context.Context, userID string, filter 
 
 // CreateBookmark inserts a bookmark.
 func (r *PersonalRepo) CreateBookmark(ctx context.Context, bookmark entity.Bookmark) (entity.Bookmark, error) {
+	if err := r.validateReaderLocation(ctx, bookmark.BookID, bookmark.PageID, bookmark.HeadingID, true); err != nil {
+		return entity.Bookmark{}, err
+	}
+
 	sqlText := `
 INSERT INTO bookmarks (id, user_id, book_id, page_id, heading_id, label, note, created_at, updated_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7, now(), now())
@@ -161,6 +169,73 @@ func (r *PersonalRepo) DeleteBookmark(ctx context.Context, userID, bookmarkID st
 
 	if result.RowsAffected() == 0 {
 		return entity.ErrBookmarkNotFound
+	}
+
+	return nil
+}
+
+func (r *PersonalRepo) validateReaderLocation(ctx context.Context, bookID int, pageID, headingID *int, requireLocation bool) error {
+	if bookID <= 0 {
+		return entity.ErrBookNotFound
+	}
+	if requireLocation && pageID == nil && headingID == nil {
+		return entity.ErrInvalidReaderLocation
+	}
+	if pageID != nil && *pageID <= 0 {
+		return entity.ErrInvalidReaderLocation
+	}
+	if headingID != nil && *headingID <= 0 {
+		return entity.ErrInvalidReaderLocation
+	}
+
+	var exists bool
+	if err := r.Pool.QueryRow(ctx, `
+SELECT EXISTS (
+    SELECT 1
+    FROM books b
+    JOIN book_publications p ON p.book_id = b.id AND p.status = 'published'
+    WHERE b.id = $1 AND b.is_deleted = false
+)`,
+		bookID,
+	).Scan(&exists); err != nil {
+		return fmt.Errorf("PersonalRepo - validateReaderLocation - book: %w", err)
+	}
+	if !exists {
+		return entity.ErrBookNotFound
+	}
+
+	if pageID != nil {
+		if err := r.Pool.QueryRow(ctx, `
+SELECT EXISTS (
+    SELECT 1
+    FROM book_pages
+    WHERE book_id = $1 AND page_id = $2 AND is_deleted = false
+)`,
+			bookID,
+			*pageID,
+		).Scan(&exists); err != nil {
+			return fmt.Errorf("PersonalRepo - validateReaderLocation - page: %w", err)
+		}
+		if !exists {
+			return entity.ErrPageNotFound
+		}
+	}
+
+	if headingID != nil {
+		if err := r.Pool.QueryRow(ctx, `
+SELECT EXISTS (
+    SELECT 1
+    FROM book_headings
+    WHERE book_id = $1 AND heading_id = $2 AND is_deleted = false
+)`,
+			bookID,
+			*headingID,
+		).Scan(&exists); err != nil {
+			return fmt.Errorf("PersonalRepo - validateReaderLocation - heading: %w", err)
+		}
+		if !exists {
+			return entity.ErrHeadingNotFound
+		}
 	}
 
 	return nil

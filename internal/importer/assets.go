@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -22,49 +23,92 @@ type AssetOptions struct {
 
 // AssetStats describes imported JSONL assets.
 type AssetStats struct {
-	Translations int
-	Audio        int
-	Skipped      int
+	Translations             int
+	Audio                    int
+	BookMetadataTranslations int
+	AuthorTranslations       int
+	CategoryTranslations     int
+	Skipped                  int
 }
 
 // ReaderAsset is one JSONL record for future translation/audio pipelines.
 type ReaderAsset struct {
 	Kind            string          `json:"kind"`
 	BookID          int             `json:"book_id"`
+	AuthorID        int             `json:"author_id,omitempty"`
+	CategoryID      int             `json:"category_id,omitempty"`
 	HeadingID       int             `json:"heading_id"`
 	Lang            string          `json:"lang"`
 	Title           *string         `json:"title,omitempty"`
+	DisplayTitle    *string         `json:"display_title,omitempty"`
+	Name            *string         `json:"name,omitempty"`
+	Biography       *string         `json:"biography,omitempty"`
+	DeathText       *string         `json:"death_text,omitempty"`
+	Bibliography    *string         `json:"bibliography,omitempty"`
+	Hint            *string         `json:"hint,omitempty"`
+	Description     *string         `json:"description,omitempty"`
 	Content         string          `json:"content,omitempty"`
 	Source          *string         `json:"source,omitempty"`
 	URL             string          `json:"url,omitempty"`
 	Narrator        *string         `json:"narrator,omitempty"`
 	DurationSeconds *int            `json:"duration_seconds,omitempty"`
 	MIMEType        *string         `json:"mime_type,omitempty"`
+	Status          string          `json:"translation_status,omitempty"`
+	ReviewedBy      *string         `json:"translation_reviewed_by,omitempty"`
+	ReviewedAt      *time.Time      `json:"translation_reviewed_at,omitempty"`
 	Metadata        json.RawMessage `json:"metadata,omitempty"`
 }
 
 // Validate checks the minimum shape of one asset record.
 func (a ReaderAsset) Validate() error {
-	if a.BookID <= 0 {
-		return errors.New("book_id is required")
-	}
-
-	if a.HeadingID <= 0 {
-		return errors.New("heading_id is required")
-	}
-
 	if strings.TrimSpace(a.Lang) == "" {
 		return errors.New("lang is required")
+	}
+	if err := validateTranslationStatus(a.Status, a.ReviewedBy); err != nil {
+		return err
 	}
 
 	switch a.Kind {
 	case "translation":
+		if a.BookID <= 0 {
+			return errors.New("book_id is required")
+		}
+		if a.HeadingID <= 0 {
+			return errors.New("heading_id is required")
+		}
 		if strings.TrimSpace(a.Content) == "" {
 			return errors.New("content is required for translation")
 		}
 	case "audio":
+		if a.BookID <= 0 {
+			return errors.New("book_id is required")
+		}
+		if a.HeadingID <= 0 {
+			return errors.New("heading_id is required")
+		}
 		if strings.TrimSpace(a.URL) == "" {
 			return errors.New("url is required for audio")
+		}
+	case "book_metadata_translation":
+		if a.BookID <= 0 {
+			return errors.New("book_id is required")
+		}
+		if stringPtrBlank(a.DisplayTitle) && stringPtrBlank(a.Title) && stringPtrBlank(a.Name) {
+			return errors.New("display_title is required for book metadata translation")
+		}
+	case "author_translation":
+		if a.AuthorID <= 0 {
+			return errors.New("author_id is required")
+		}
+		if stringPtrBlank(a.Name) {
+			return errors.New("name is required for author translation")
+		}
+	case "category_translation":
+		if a.CategoryID <= 0 {
+			return errors.New("category_id is required")
+		}
+		if stringPtrBlank(a.Name) {
+			return errors.New("name is required for category translation")
 		}
 	default:
 		return fmt.Errorf("unsupported kind %q", a.Kind)
@@ -135,13 +179,21 @@ func importAssets(ctx context.Context, pool *pgxpool.Pool, reader io.Reader) (As
 		switch asset.Kind {
 		case "translation":
 			stats.Translations++
+			status := normalizeTranslationStatus(asset.Status)
+			reviewedAt := reviewedAtOrNow(status, asset.ReviewedAt)
 			batch.Queue(`
-INSERT INTO section_translations (book_id, heading_id, lang, title, content, source, metadata, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, nullif($7, '')::jsonb, now())
+INSERT INTO section_translations (
+    book_id, heading_id, lang, title, content, source, translation_status,
+    reviewed_by, reviewed_at, metadata, updated_at
+)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, nullif($10, '')::jsonb, now())
 ON CONFLICT (book_id, heading_id, lang) DO UPDATE SET
     title = EXCLUDED.title,
     content = EXCLUDED.content,
     source = EXCLUDED.source,
+    translation_status = EXCLUDED.translation_status,
+    reviewed_by = EXCLUDED.reviewed_by,
+    reviewed_at = EXCLUDED.reviewed_at,
     metadata = EXCLUDED.metadata,
     updated_at = now()`,
 				asset.BookID,
@@ -150,6 +202,9 @@ ON CONFLICT (book_id, heading_id, lang) DO UPDATE SET
 				asset.Title,
 				asset.Content,
 				asset.Source,
+				status,
+				asset.ReviewedBy,
+				reviewedAt,
 				metadata,
 			)
 		case "audio":
@@ -173,6 +228,98 @@ ON CONFLICT (book_id, heading_id, lang) DO UPDATE SET
 				asset.MIMEType,
 				metadata,
 			)
+		case "book_metadata_translation":
+			stats.BookMetadataTranslations++
+			displayTitle := firstNonBlankPtr(asset.DisplayTitle, asset.Title, asset.Name)
+			status := normalizeTranslationStatus(asset.Status)
+			reviewedAt := reviewedAtOrNow(status, asset.ReviewedAt)
+			batch.Queue(`
+INSERT INTO book_metadata_translations (
+    book_id, lang, display_title, bibliography, hint, description, source,
+    translation_status, reviewed_by, reviewed_at, metadata, updated_at
+)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, nullif($11, '')::jsonb, now())
+ON CONFLICT (book_id, lang) DO UPDATE SET
+    display_title = EXCLUDED.display_title,
+    bibliography = EXCLUDED.bibliography,
+    hint = EXCLUDED.hint,
+    description = EXCLUDED.description,
+    source = EXCLUDED.source,
+    translation_status = EXCLUDED.translation_status,
+    reviewed_by = EXCLUDED.reviewed_by,
+    reviewed_at = EXCLUDED.reviewed_at,
+    metadata = EXCLUDED.metadata,
+    updated_at = now()`,
+				asset.BookID,
+				asset.Lang,
+				displayTitle,
+				asset.Bibliography,
+				asset.Hint,
+				asset.Description,
+				asset.Source,
+				status,
+				asset.ReviewedBy,
+				reviewedAt,
+				metadata,
+			)
+		case "author_translation":
+			stats.AuthorTranslations++
+			status := normalizeTranslationStatus(asset.Status)
+			reviewedAt := reviewedAtOrNow(status, asset.ReviewedAt)
+			batch.Queue(`
+INSERT INTO author_translations (
+    author_id, lang, name, biography, death_text, source, translation_status,
+    reviewed_by, reviewed_at, metadata, updated_at
+)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, nullif($10, '')::jsonb, now())
+ON CONFLICT (author_id, lang) DO UPDATE SET
+    name = EXCLUDED.name,
+    biography = EXCLUDED.biography,
+    death_text = EXCLUDED.death_text,
+    source = EXCLUDED.source,
+    translation_status = EXCLUDED.translation_status,
+    reviewed_by = EXCLUDED.reviewed_by,
+    reviewed_at = EXCLUDED.reviewed_at,
+    metadata = EXCLUDED.metadata,
+    updated_at = now()`,
+				asset.AuthorID,
+				asset.Lang,
+				asset.Name,
+				asset.Biography,
+				asset.DeathText,
+				asset.Source,
+				status,
+				asset.ReviewedBy,
+				reviewedAt,
+				metadata,
+			)
+		case "category_translation":
+			stats.CategoryTranslations++
+			status := normalizeTranslationStatus(asset.Status)
+			reviewedAt := reviewedAtOrNow(status, asset.ReviewedAt)
+			batch.Queue(`
+INSERT INTO category_translations (
+    category_id, lang, name, source, translation_status, reviewed_by,
+    reviewed_at, metadata, updated_at
+)
+VALUES ($1, $2, $3, $4, $5, $6, $7, nullif($8, '')::jsonb, now())
+ON CONFLICT (category_id, lang) DO UPDATE SET
+    name = EXCLUDED.name,
+    source = EXCLUDED.source,
+    translation_status = EXCLUDED.translation_status,
+    reviewed_by = EXCLUDED.reviewed_by,
+    reviewed_at = EXCLUDED.reviewed_at,
+    metadata = EXCLUDED.metadata,
+    updated_at = now()`,
+				asset.CategoryID,
+				asset.Lang,
+				asset.Name,
+				asset.Source,
+				status,
+				asset.ReviewedBy,
+				reviewedAt,
+				metadata,
+			)
 		}
 	}
 
@@ -185,4 +332,53 @@ ON CONFLICT (book_id, heading_id, lang) DO UPDATE SET
 	}
 
 	return stats, nil
+}
+
+func validateTranslationStatus(status string, reviewedBy *string) error {
+	status = normalizeTranslationStatus(status)
+	switch status {
+	case "generated":
+		return nil
+	case "reviewed":
+		if stringPtrBlank(reviewedBy) {
+			return errors.New("translation_reviewed_by is required when translation_status is reviewed")
+		}
+		return nil
+	default:
+		return fmt.Errorf("unsupported translation_status %q", status)
+	}
+}
+
+func normalizeTranslationStatus(status string) string {
+	status = strings.ToLower(strings.TrimSpace(status))
+	if status == "" {
+		return "generated"
+	}
+
+	return status
+}
+
+func reviewedAtOrNow(status string, reviewedAt *time.Time) *time.Time {
+	if status != "reviewed" || reviewedAt != nil {
+		return reviewedAt
+	}
+
+	now := time.Now().UTC()
+
+	return &now
+}
+
+func stringPtrBlank(value *string) bool {
+	return value == nil || strings.TrimSpace(*value) == ""
+}
+
+func firstNonBlankPtr(values ...*string) *string {
+	for _, value := range values {
+		if !stringPtrBlank(value) {
+			trimmed := strings.TrimSpace(*value)
+			return &trimmed
+		}
+	}
+
+	return nil
 }

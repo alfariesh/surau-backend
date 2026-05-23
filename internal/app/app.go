@@ -45,10 +45,10 @@ func initUseCases(pg *postgres.Postgres, jwtManager *jwt.Manager) useCases {
 	}
 }
 
-func initServers(cfg *config.Config, uc useCases, jwtManager *jwt.Manager, l logger.Interface) servers {
+func initServers(cfg *config.Config, pg *postgres.Postgres, uc useCases, jwtManager *jwt.Manager, l logger.Interface) servers {
 	// HTTP Server
 	httpServer := httpserver.New(l, httpserver.Port(cfg.HTTP.Port), httpserver.Prefork(cfg.HTTP.UsePreforkMode))
-	restapi.NewRouter(httpServer.App, cfg, uc.reader, uc.user, uc.personal, uc.editorial, jwtManager, l)
+	restapi.NewRouter(httpServer.App, cfg, pg, uc.reader, uc.user, uc.personal, uc.editorial, jwtManager, l)
 
 	return servers{
 		http: httpServer,
@@ -96,7 +96,7 @@ func Run(cfg *config.Config) {
 	jwtManager := jwt.New(cfg.JWT.Secret, cfg.JWT.TokenExpiry)
 
 	uc := initUseCases(pg, jwtManager)
-	s := initServers(cfg, uc, jwtManager, l)
+	s := initServers(cfg, pg, uc, jwtManager, l)
 	s.startServers()
 	s.waitForShutdown(l)
 }

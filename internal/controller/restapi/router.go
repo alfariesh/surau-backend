@@ -1,7 +1,9 @@
 package restapi
 
 import (
+	"context"
 	"net/http"
+	"time"
 
 	"github.com/ansrivas/fiberprometheus/v2"
 	"github.com/evrone/go-clean-template/config"
@@ -14,6 +16,10 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/swagger"
 )
+
+type databasePinger interface {
+	Ping(context.Context) error
+}
 
 // NewRouter -.
 // Swagger spec:
@@ -29,6 +35,7 @@ import (
 func NewRouter(
 	app *fiber.App,
 	cfg *config.Config,
+	db databasePinger,
 	r usecase.Reader,
 	u usecase.User,
 	p usecase.Personal,
@@ -52,8 +59,22 @@ func NewRouter(
 		app.Get("/swagger/*", swagger.HandlerDefault)
 	}
 
-	// K8s probe
+	// K8s probes
 	app.Get("/healthz", func(ctx *fiber.Ctx) error { return ctx.SendStatus(http.StatusOK) })
+	app.Get("/readyz", func(ctx *fiber.Ctx) error {
+		if db == nil {
+			return ctx.SendStatus(http.StatusServiceUnavailable)
+		}
+
+		pingCtx, cancel := context.WithTimeout(ctx.UserContext(), 2*time.Second)
+		defer cancel()
+
+		if err := db.Ping(pingCtx); err != nil {
+			return ctx.SendStatus(http.StatusServiceUnavailable)
+		}
+
+		return ctx.SendStatus(http.StatusOK)
+	})
 
 	// Routers
 	apiV1Group := app.Group("/v1")

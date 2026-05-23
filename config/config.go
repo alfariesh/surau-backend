@@ -65,6 +65,9 @@ func NewConfig() (*Config, error) {
 	if err := env.Parse(cfg); err != nil {
 		return nil, fmt.Errorf("config error: %w", err)
 	}
+	if cfg.PG.PoolMax < 1 || cfg.PG.PoolMax > 100 {
+		return nil, fmt.Errorf("config error: PG_POOL_MAX must be between 1 and 100")
+	}
 
 	return cfg, nil
 }

@@ -315,18 +315,18 @@ func (m *MockReaderRepo) EXPECT() *MockReaderRepoMockRecorder {
 }
 
 // GetBook mocks base method.
-func (m *MockReaderRepo) GetBook(ctx context.Context, bookID int) (entity.Book, error) {
+func (m *MockReaderRepo) GetBook(ctx context.Context, bookID int, lang string) (entity.Book, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetBook", ctx, bookID)
+	ret := m.ctrl.Call(m, "GetBook", ctx, bookID, lang)
 	ret0, _ := ret[0].(entity.Book)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // GetBook indicates an expected call of GetBook.
-func (mr *MockReaderRepoMockRecorder) GetBook(ctx, bookID any) *gomock.Call {
+func (mr *MockReaderRepoMockRecorder) GetBook(ctx, bookID, lang any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetBook", reflect.TypeOf((*MockReaderRepo)(nil).GetBook), ctx, bookID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetBook", reflect.TypeOf((*MockReaderRepo)(nil).GetBook), ctx, bookID, lang)
 }
 
 // GetBookPage mocks base method.
@@ -423,18 +423,18 @@ func (mr *MockReaderRepoMockRecorder) ListBooks(ctx, filter any) *gomock.Call {
 }
 
 // ListCategories mocks base method.
-func (m *MockReaderRepo) ListCategories(ctx context.Context) ([]entity.Category, error) {
+func (m *MockReaderRepo) ListCategories(ctx context.Context, lang string) ([]entity.Category, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ListCategories", ctx)
+	ret := m.ctrl.Call(m, "ListCategories", ctx, lang)
 	ret0, _ := ret[0].([]entity.Category)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // ListCategories indicates an expected call of ListCategories.
-func (mr *MockReaderRepoMockRecorder) ListCategories(ctx any) *gomock.Call {
+func (mr *MockReaderRepoMockRecorder) ListCategories(ctx, lang any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListCategories", reflect.TypeOf((*MockReaderRepo)(nil).ListCategories), ctx)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListCategories", reflect.TypeOf((*MockReaderRepo)(nil).ListCategories), ctx, lang)
 }
 
 // ListTOCEntries mocks base method.

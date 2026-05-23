@@ -297,6 +297,7 @@ def translate_heading_asset(
         "title": translated["title"],
         "content": translated["content"],
         "source": args.model,
+        "translation_status": "generated",
         "metadata": {
             "provider": "deepseek",
             "model": args.model,

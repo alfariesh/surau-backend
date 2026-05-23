@@ -40,10 +40,10 @@ type (
 
 	// ReaderRepo -.
 	ReaderRepo interface {
-		ListCategories(ctx context.Context) ([]entity.Category, error)
+		ListCategories(ctx context.Context, lang string) ([]entity.Category, error)
 		ListAuthors(ctx context.Context, filter AuthorFilter) ([]entity.Author, int, error)
 		ListBooks(ctx context.Context, filter BookFilter) ([]entity.Book, int, error)
-		GetBook(ctx context.Context, bookID int) (entity.Book, error)
+		GetBook(ctx context.Context, bookID int, lang string) (entity.Book, error)
 		ListBookPages(ctx context.Context, bookID int, filter PageFilter) ([]entity.BookPage, int, error)
 		GetBookPage(ctx context.Context, bookID, pageID int) (entity.BookPage, error)
 		ListBookHeadings(ctx context.Context, bookID int, query string) ([]entity.BookHeading, error)
@@ -84,6 +84,7 @@ type (
 	// BookFilter -.
 	BookFilter struct {
 		Query      string
+		Lang       string
 		CategoryID *int
 		AuthorID   *int
 		HasContent *bool
@@ -94,6 +95,7 @@ type (
 	// AuthorFilter -.
 	AuthorFilter struct {
 		Query  string
+		Lang   string
 		Limit  uint64
 		Offset uint64
 	}

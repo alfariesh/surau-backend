@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"math"
 	"time"
 
 	"github.com/Masterminds/squirrel"
@@ -40,6 +39,12 @@ func New(url string, opts ...Option) (*Postgres, error) {
 	for _, opt := range opts {
 		opt(pg)
 	}
+	if pg.connAttempts <= 0 {
+		return nil, fmt.Errorf("postgres - NewPostgres - connAttempts must be positive")
+	}
+	if pg.connTimeout <= 0 {
+		return nil, fmt.Errorf("postgres - NewPostgres - connTimeout must be positive")
+	}
 
 	pg.Builder = squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar)
 
@@ -50,12 +55,23 @@ func New(url string, opts ...Option) (*Postgres, error) {
 
 	poolConfig.MaxConns = safeIntToInt32(pg.maxPoolSize)
 
+	var lastErr error
 	for pg.connAttempts > 0 {
 		pg.Pool, err = pgxpool.NewWithConfig(context.Background(), poolConfig)
+		if err == nil {
+			pingCtx, cancel := context.WithTimeout(context.Background(), pg.connTimeout)
+			err = pg.Pool.Ping(pingCtx)
+			cancel()
+		}
 		if err == nil {
 			break
 		}
 
+		lastErr = err
+		if pg.Pool != nil {
+			pg.Pool.Close()
+			pg.Pool = nil
+		}
 		log.Printf("Postgres is trying to connect, attempts left: %d", pg.connAttempts)
 
 		time.Sleep(pg.connTimeout)
@@ -64,10 +80,19 @@ func New(url string, opts ...Option) (*Postgres, error) {
 	}
 
 	if err != nil {
-		return nil, fmt.Errorf("postgres - NewPostgres - connAttempts == 0: %w", err)
+		return nil, fmt.Errorf("postgres - NewPostgres - connAttempts == 0: %w", lastErr)
 	}
 
 	return pg, nil
+}
+
+// Ping verifies that the configured pool can reach PostgreSQL.
+func (p *Postgres) Ping(ctx context.Context) error {
+	if p.Pool == nil {
+		return fmt.Errorf("postgres - Ping - pool is not initialized")
+	}
+
+	return p.Pool.Ping(ctx)
 }
 
 // Close -.
@@ -78,7 +103,14 @@ func (p *Postgres) Close() {
 }
 
 func safeIntToInt32(v int) int32 {
-	clamped := v & math.MaxInt32
+	if v <= 0 {
+		return _defaultMaxPoolSize
+	}
 
-	return int32(clamped)
+	const maxInt32 = int(^uint32(0) >> 1)
+	if v > maxInt32 {
+		return int32(maxInt32)
+	}
+
+	return int32(v)
 }

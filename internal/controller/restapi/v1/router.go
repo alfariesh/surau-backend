@@ -1,12 +1,15 @@
 package v1
 
 import (
+	"time"
+
 	"github.com/evrone/go-clean-template/internal/controller/restapi/middleware"
 	"github.com/evrone/go-clean-template/internal/usecase"
 	"github.com/evrone/go-clean-template/pkg/jwt"
 	"github.com/evrone/go-clean-template/pkg/logger"
 	"github.com/go-playground/validator/v10"
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/limiter"
 )
 
 // NewRoutes -.
@@ -29,7 +32,10 @@ func NewRoutes(
 	}
 
 	// Public routes
-	authGroup := apiV1Group.Group("/auth")
+	authGroup := apiV1Group.Group("/auth", limiter.New(limiter.Config{
+		Max:        10,
+		Expiration: time.Minute,
+	}))
 	{
 		authGroup.Post("/register", r.register)
 		authGroup.Post("/login", r.login)

@@ -294,9 +294,9 @@ func (m *MockReader) EXPECT() *MockReaderMockRecorder {
 }
 
 // Authors mocks base method.
-func (m *MockReader) Authors(ctx context.Context, query string, limit, offset int) ([]entity.Author, int, error) {
+func (m *MockReader) Authors(ctx context.Context, query string, limit, offset int, lang string) ([]entity.Author, int, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Authors", ctx, query, limit, offset)
+	ret := m.ctrl.Call(m, "Authors", ctx, query, limit, offset, lang)
 	ret0, _ := ret[0].([]entity.Author)
 	ret1, _ := ret[1].(int)
 	ret2, _ := ret[2].(error)
@@ -304,30 +304,30 @@ func (m *MockReader) Authors(ctx context.Context, query string, limit, offset in
 }
 
 // Authors indicates an expected call of Authors.
-func (mr *MockReaderMockRecorder) Authors(ctx, query, limit, offset any) *gomock.Call {
+func (mr *MockReaderMockRecorder) Authors(ctx, query, limit, offset, lang any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Authors", reflect.TypeOf((*MockReader)(nil).Authors), ctx, query, limit, offset)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Authors", reflect.TypeOf((*MockReader)(nil).Authors), ctx, query, limit, offset, lang)
 }
 
 // Book mocks base method.
-func (m *MockReader) Book(ctx context.Context, bookID int) (entity.Book, error) {
+func (m *MockReader) Book(ctx context.Context, bookID int, lang string) (entity.Book, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Book", ctx, bookID)
+	ret := m.ctrl.Call(m, "Book", ctx, bookID, lang)
 	ret0, _ := ret[0].(entity.Book)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // Book indicates an expected call of Book.
-func (mr *MockReaderMockRecorder) Book(ctx, bookID any) *gomock.Call {
+func (mr *MockReaderMockRecorder) Book(ctx, bookID, lang any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Book", reflect.TypeOf((*MockReader)(nil).Book), ctx, bookID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Book", reflect.TypeOf((*MockReader)(nil).Book), ctx, bookID, lang)
 }
 
 // Books mocks base method.
-func (m *MockReader) Books(ctx context.Context, query string, categoryID, authorID *int, hasContent *bool, limit, offset int) ([]entity.Book, int, error) {
+func (m *MockReader) Books(ctx context.Context, query string, categoryID, authorID *int, hasContent *bool, limit, offset int, lang string) ([]entity.Book, int, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Books", ctx, query, categoryID, authorID, hasContent, limit, offset)
+	ret := m.ctrl.Call(m, "Books", ctx, query, categoryID, authorID, hasContent, limit, offset, lang)
 	ret0, _ := ret[0].([]entity.Book)
 	ret1, _ := ret[1].(int)
 	ret2, _ := ret[2].(error)
@@ -335,24 +335,24 @@ func (m *MockReader) Books(ctx context.Context, query string, categoryID, author
 }
 
 // Books indicates an expected call of Books.
-func (mr *MockReaderMockRecorder) Books(ctx, query, categoryID, authorID, hasContent, limit, offset any) *gomock.Call {
+func (mr *MockReaderMockRecorder) Books(ctx, query, categoryID, authorID, hasContent, limit, offset, lang any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Books", reflect.TypeOf((*MockReader)(nil).Books), ctx, query, categoryID, authorID, hasContent, limit, offset)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Books", reflect.TypeOf((*MockReader)(nil).Books), ctx, query, categoryID, authorID, hasContent, limit, offset, lang)
 }
 
 // Categories mocks base method.
-func (m *MockReader) Categories(ctx context.Context) ([]entity.Category, error) {
+func (m *MockReader) Categories(ctx context.Context, lang string) ([]entity.Category, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Categories", ctx)
+	ret := m.ctrl.Call(m, "Categories", ctx, lang)
 	ret0, _ := ret[0].([]entity.Category)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // Categories indicates an expected call of Categories.
-func (mr *MockReaderMockRecorder) Categories(ctx any) *gomock.Call {
+func (mr *MockReaderMockRecorder) Categories(ctx, lang any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Categories", reflect.TypeOf((*MockReader)(nil).Categories), ctx)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Categories", reflect.TypeOf((*MockReader)(nil).Categories), ctx, lang)
 }
 
 // Headings mocks base method.

@@ -36,10 +36,10 @@ type (
 
 	// Reader -.
 	Reader interface {
-		Categories(ctx context.Context) ([]entity.Category, error)
-		Authors(ctx context.Context, query string, limit, offset int) ([]entity.Author, int, error)
-		Books(ctx context.Context, query string, categoryID, authorID *int, hasContent *bool, limit, offset int) ([]entity.Book, int, error)
-		Book(ctx context.Context, bookID int) (entity.Book, error)
+		Categories(ctx context.Context, lang string) ([]entity.Category, error)
+		Authors(ctx context.Context, query string, limit, offset int, lang string) ([]entity.Author, int, error)
+		Books(ctx context.Context, query string, categoryID, authorID *int, hasContent *bool, limit, offset int, lang string) ([]entity.Book, int, error)
+		Book(ctx context.Context, bookID int, lang string) (entity.Book, error)
 		Pages(ctx context.Context, bookID int, limit, offset int) ([]entity.BookPage, int, error)
 		Page(ctx context.Context, bookID, pageID int) (entity.BookPage, error)
 		Headings(ctx context.Context, bookID int, query string) ([]entity.BookHeading, error)
