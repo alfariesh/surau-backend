@@ -34,6 +34,7 @@ BACKEND_URL=http://127.0.0.1:8080 PORT=8090 node web-reader/server.mjs
 - Arabic original dari `original_html`.
 - Translation Markdown sederhana dari `translation.content`.
 - Label `Generated` / `Reviewed by ...`.
+- Feedback translation sederhana: `Like`, `Dislike`, reason, dan note.
 
 Ini prototype untuk menilai rasa baca. Belum ada auth, progress, bookmark,
 admin edit, atau audio player lengkap. Mode halaman sengaja hanya menampilkan

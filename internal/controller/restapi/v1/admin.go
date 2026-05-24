@@ -44,6 +44,65 @@ func (r *V1) adminListBooks(ctx *fiber.Ctx) error {
 	return ctx.Status(http.StatusOK).JSON(response.BookList{Books: books, Total: total})
 }
 
+func (r *V1) adminListTranslationFeedbacks(ctx *fiber.Ctx) error {
+	bookID, err := optionalQueryInt(ctx, "book_id")
+	if err != nil {
+		return errorResponse(ctx, http.StatusBadRequest, "invalid book_id")
+	}
+
+	headingID, err := optionalQueryInt(ctx, "heading_id")
+	if err != nil {
+		return errorResponse(ctx, http.StatusBadRequest, "invalid heading_id")
+	}
+
+	feedbacks, total, err := r.editorial.TranslationFeedbacks(
+		ctx.UserContext(),
+		bookID,
+		headingID,
+		ctx.Query("lang"),
+		ctx.Query("vote"),
+		ctx.Query("status"),
+		queryInt(ctx, "limit", 50),
+		queryInt(ctx, "offset", 0),
+	)
+	if err != nil {
+		r.l.Error(err, "restapi - v1 - adminListTranslationFeedbacks")
+
+		return r.editorialError(ctx, err)
+	}
+
+	return ctx.Status(http.StatusOK).JSON(response.TranslationFeedbackList{Feedbacks: feedbacks, Total: total})
+}
+
+func (r *V1) adminTranslationFeedbackSummary(ctx *fiber.Ctx) error {
+	bookID, err := optionalQueryInt(ctx, "book_id")
+	if err != nil {
+		return errorResponse(ctx, http.StatusBadRequest, "invalid book_id")
+	}
+
+	headingID, err := optionalQueryInt(ctx, "heading_id")
+	if err != nil {
+		return errorResponse(ctx, http.StatusBadRequest, "invalid heading_id")
+	}
+
+	summary, err := r.editorial.TranslationFeedbackSummary(
+		ctx.UserContext(),
+		bookID,
+		headingID,
+		ctx.Query("lang"),
+		ctx.Query("vote"),
+		ctx.Query("status"),
+		queryInt(ctx, "limit", 20),
+	)
+	if err != nil {
+		r.l.Error(err, "restapi - v1 - adminTranslationFeedbackSummary")
+
+		return r.editorialError(ctx, err)
+	}
+
+	return ctx.Status(http.StatusOK).JSON(summary)
+}
+
 func (r *V1) adminUpdatePublication(ctx *fiber.Ctx) error {
 	actorID, ok := ctx.Locals("userID").(string)
 	if !ok {
@@ -295,14 +354,71 @@ func (r *V1) adminAddCollectionItem(ctx *fiber.Ctx) error {
 	return ctx.Status(http.StatusOK).JSON(item)
 }
 
+func (r *V1) adminResolveTranslationFeedback(ctx *fiber.Ctx) error {
+	actorID, ok := ctx.Locals("userID").(string)
+	if !ok {
+		return errorResponse(ctx, http.StatusUnauthorized, "unauthorized")
+	}
+
+	feedbackID := ctx.Params("id")
+	if feedbackID == "" {
+		return errorResponse(ctx, http.StatusBadRequest, "invalid feedback id")
+	}
+
+	var body request.ResolveTranslationFeedback
+	if len(ctx.Body()) > 0 {
+		if err := ctx.BodyParser(&body); err != nil {
+			return errorResponse(ctx, http.StatusBadRequest, "invalid request body")
+		}
+	}
+
+	if err := r.v.Struct(body); err != nil {
+		return errorResponse(ctx, http.StatusBadRequest, "invalid request body")
+	}
+
+	feedback, err := r.editorial.ResolveTranslationFeedback(ctx.UserContext(), actorID, feedbackID, body.Note)
+	if err != nil {
+		r.l.Error(err, "restapi - v1 - adminResolveTranslationFeedback")
+
+		return r.editorialError(ctx, err)
+	}
+
+	return ctx.Status(http.StatusOK).JSON(feedback)
+}
+
+func (r *V1) adminReopenTranslationFeedback(ctx *fiber.Ctx) error {
+	actorID, ok := ctx.Locals("userID").(string)
+	if !ok {
+		return errorResponse(ctx, http.StatusUnauthorized, "unauthorized")
+	}
+
+	feedbackID := ctx.Params("id")
+	if feedbackID == "" {
+		return errorResponse(ctx, http.StatusBadRequest, "invalid feedback id")
+	}
+
+	feedback, err := r.editorial.ReopenTranslationFeedback(ctx.UserContext(), actorID, feedbackID)
+	if err != nil {
+		r.l.Error(err, "restapi - v1 - adminReopenTranslationFeedback")
+
+		return r.editorialError(ctx, err)
+	}
+
+	return ctx.Status(http.StatusOK).JSON(feedback)
+}
+
 func (r *V1) editorialError(ctx *fiber.Ctx, err error) error {
 	switch {
 	case errors.Is(err, entity.ErrInvalidStatus):
 		return errorResponse(ctx, http.StatusBadRequest, "invalid status")
+	case errors.Is(err, entity.ErrInvalidFeedback):
+		return errorResponse(ctx, http.StatusBadRequest, "invalid feedback")
 	case errors.Is(err, entity.ErrInvalidRole):
 		return errorResponse(ctx, http.StatusBadRequest, "invalid role")
 	case errors.Is(err, entity.ErrDraftNotFound):
 		return errorResponse(ctx, http.StatusNotFound, "draft not found")
+	case errors.Is(err, entity.ErrFeedbackNotFound):
+		return errorResponse(ctx, http.StatusNotFound, "feedback not found")
 	case errors.Is(err, entity.ErrBookNotFound):
 		return errorResponse(ctx, http.StatusNotFound, "book not found")
 	case errors.Is(err, entity.ErrPageNotFound):

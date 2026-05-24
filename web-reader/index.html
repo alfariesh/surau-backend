@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Surau Reader</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="./styles.css?v=page-reader" />
+    <link rel="stylesheet" href="./styles.css?v=feedback-reader" />
   </head>
   <body>
     <div class="app-shell">
@@ -84,6 +84,28 @@
           <section id="translationPane" class="translation-pane">
             <div class="section-label">Translation</div>
             <div id="translationContent" class="translation-content"></div>
+            <div id="feedbackPanel" class="feedback-panel is-hidden">
+              <div class="feedback-actions">
+                <span class="section-label">Translation Feedback</span>
+                <button id="feedbackLike" class="text-button" type="button">Like</button>
+                <button id="feedbackDislike" class="text-button" type="button">Dislike</button>
+              </div>
+              <div id="feedbackForm" class="feedback-form is-hidden">
+                <select id="feedbackReason" aria-label="Feedback reason">
+                  <option value="style">Style</option>
+                  <option value="inaccurate">Inaccurate</option>
+                  <option value="unclear">Unclear</option>
+                  <option value="typo">Typo</option>
+                  <option value="formatting">Formatting</option>
+                  <option value="other">Other</option>
+                </select>
+                <textarea id="feedbackNote" rows="3" maxlength="2000" placeholder="Catatan singkat"></textarea>
+                <div class="feedback-submit-row">
+                  <button id="feedbackSubmit" class="text-button" type="button">Submit</button>
+                  <button id="feedbackCancel" class="text-button" type="button">Cancel</button>
+                </div>
+              </div>
+            </div>
           </section>
 
           <section id="arabicPane" class="arabic-pane">
@@ -100,6 +122,6 @@
     </div>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
-    <script src="./app.js?v=page-reader" type="module"></script>
+    <script src="./app.js?v=feedback-reader" type="module"></script>
   </body>
 </html>

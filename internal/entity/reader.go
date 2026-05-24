@@ -170,6 +170,23 @@ type SectionTranslation struct {
 	UpdatedAt  time.Time  `json:"updated_at" example:"2026-01-01T00:00:00Z"`
 } // @name entity.SectionTranslation
 
+// TranslationFeedback stores a reader signal for generated/reviewed translation quality.
+type TranslationFeedback struct {
+	ID        string    `json:"id"         example:"550e8400-e29b-41d4-a716-446655440000"`
+	BookID    int       `json:"book_id"    example:"797"`
+	HeadingID int       `json:"heading_id" example:"10"`
+	Lang      string    `json:"lang"       example:"id"`
+	UserID    *string   `json:"user_id,omitempty"`
+	ClientID  *string   `json:"client_id,omitempty"`
+	Vote      string    `json:"vote"       example:"dislike"`
+	Reason    *string   `json:"reason,omitempty" example:"style"`
+	Note      *string   `json:"note,omitempty"`
+	UserAgent *string   `json:"user_agent,omitempty"`
+	ClientIP  *string   `json:"client_ip,omitempty"`
+	CreatedAt time.Time `json:"created_at" example:"2026-01-01T00:00:00Z"`
+	UpdatedAt time.Time `json:"updated_at" example:"2026-01-01T00:00:00Z"`
+} // @name entity.TranslationFeedback
+
 // SectionAudio is optional audiobook metadata for a heading section.
 type SectionAudio struct {
 	BookID          int       `json:"book_id"          example:"797"`

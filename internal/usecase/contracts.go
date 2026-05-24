@@ -47,6 +47,18 @@ type (
 		TOC(ctx context.Context, bookID int, lang string, includeAudio bool) ([]entity.BookTOCNode, error)
 		TOCRead(ctx context.Context, bookID, headingID int, lang string) (entity.BookTOCRead, error)
 		TOCPlaylist(ctx context.Context, bookID, headingID int, lang string) (entity.BookTOCPlaylist, error)
+		CreateTranslationFeedback(
+			ctx context.Context,
+			bookID int,
+			headingID int,
+			lang string,
+			vote string,
+			reason *string,
+			note *string,
+			clientID *string,
+			userAgent *string,
+			clientIP *string,
+		) (entity.TranslationFeedback, error)
 	}
 
 	// Personal -.
@@ -70,5 +82,9 @@ type (
 		SaveHeadingDraft(ctx context.Context, actorID string, edit entity.BookHeadingEdit) (entity.BookHeadingEdit, error)
 		PublishHeadingDraft(ctx context.Context, actorID string, bookID, headingID int) (entity.BookHeadingEdit, error)
 		AddCollectionItem(ctx context.Context, actorID, slug string, bookID int, sortOrder *int) (entity.BookCollectionItem, error)
+		TranslationFeedbacks(ctx context.Context, bookID, headingID *int, lang, vote, status string, limit, offset int) ([]entity.AdminTranslationFeedback, int, error)
+		TranslationFeedbackSummary(ctx context.Context, bookID, headingID *int, lang, vote, status string, limit int) (entity.AdminTranslationFeedbackSummary, error)
+		ResolveTranslationFeedback(ctx context.Context, actorID, feedbackID string, note *string) (entity.AdminTranslationFeedback, error)
+		ReopenTranslationFeedback(ctx context.Context, actorID, feedbackID string) (entity.AdminTranslationFeedback, error)
 	}
 )

@@ -490,6 +490,89 @@ WHERE h.book_id = $1 AND h.heading_id = $2 AND h.is_deleted = false`
 	return section, nil
 }
 
+// CreateTranslationFeedback stores or updates a reader signal for one translated section.
+func (r *ReaderRepo) CreateTranslationFeedback(
+	ctx context.Context,
+	feedback entity.TranslationFeedback,
+) (entity.TranslationFeedback, error) {
+	if err := r.ensurePublishedBook(ctx, feedback.BookID); err != nil {
+		return entity.TranslationFeedback{}, err
+	}
+	if err := r.ensurePublishedHeading(ctx, feedback.BookID, feedback.HeadingID); err != nil {
+		return entity.TranslationFeedback{}, err
+	}
+	if err := r.ensureSectionTranslation(ctx, feedback.BookID, feedback.HeadingID, feedback.Lang); err != nil {
+		return entity.TranslationFeedback{}, err
+	}
+
+	sqlText := `
+INSERT INTO translation_feedbacks (
+    id, book_id, heading_id, lang, user_id, client_id, vote, reason, note, user_agent, client_ip, created_at, updated_at
+)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, now(), now())
+RETURNING id, book_id, heading_id, lang, user_id, client_id, vote, reason, note, user_agent, client_ip, created_at, updated_at`
+	if feedback.UserID != nil {
+		sqlText = `
+INSERT INTO translation_feedbacks (
+    id, book_id, heading_id, lang, user_id, client_id, vote, reason, note, user_agent, client_ip, created_at, updated_at
+)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, now(), now())
+ON CONFLICT (book_id, heading_id, lang, user_id) WHERE user_id IS NOT NULL
+DO UPDATE SET
+    vote = EXCLUDED.vote,
+    reason = EXCLUDED.reason,
+    note = EXCLUDED.note,
+    user_agent = EXCLUDED.user_agent,
+    client_ip = EXCLUDED.client_ip,
+    status = 'open',
+    resolved_by = NULL,
+    resolved_at = NULL,
+    resolution_note = NULL,
+    updated_at = now()
+RETURNING id, book_id, heading_id, lang, user_id, client_id, vote, reason, note, user_agent, client_ip, created_at, updated_at`
+	} else if feedback.ClientID != nil {
+		sqlText = `
+INSERT INTO translation_feedbacks (
+    id, book_id, heading_id, lang, user_id, client_id, vote, reason, note, user_agent, client_ip, created_at, updated_at
+)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, now(), now())
+ON CONFLICT (book_id, heading_id, lang, client_id) WHERE user_id IS NULL AND client_id IS NOT NULL
+DO UPDATE SET
+    vote = EXCLUDED.vote,
+    reason = EXCLUDED.reason,
+    note = EXCLUDED.note,
+    user_agent = EXCLUDED.user_agent,
+    client_ip = EXCLUDED.client_ip,
+    status = 'open',
+    resolved_by = NULL,
+    resolved_at = NULL,
+    resolution_note = NULL,
+    updated_at = now()
+RETURNING id, book_id, heading_id, lang, user_id, client_id, vote, reason, note, user_agent, client_ip, created_at, updated_at`
+	}
+
+	created, err := scanTranslationFeedback(r.Pool.QueryRow(
+		ctx,
+		sqlText,
+		feedback.ID,
+		feedback.BookID,
+		feedback.HeadingID,
+		feedback.Lang,
+		feedback.UserID,
+		feedback.ClientID,
+		feedback.Vote,
+		feedback.Reason,
+		feedback.Note,
+		feedback.UserAgent,
+		feedback.ClientIP,
+	))
+	if err != nil {
+		return entity.TranslationFeedback{}, fmt.Errorf("ReaderRepo - CreateTranslationFeedback - scanTranslationFeedback: %w", err)
+	}
+
+	return created, nil
+}
+
 func (r *ReaderRepo) count(ctx context.Context, builder sq.SelectBuilder) (int, error) {
 	sqlText, args, err := builder.ToSql()
 	if err != nil {
@@ -519,6 +602,47 @@ WHERE b.id = $1 AND b.is_deleted = false`,
 		}
 
 		return fmt.Errorf("ReaderRepo - ensurePublishedBook - QueryRow: %w", err)
+	}
+
+	return nil
+}
+
+func (r *ReaderRepo) ensurePublishedHeading(ctx context.Context, bookID, headingID int) error {
+	var exists bool
+	if err := r.Pool.QueryRow(ctx, `
+SELECT EXISTS (
+    SELECT 1
+    FROM book_headings
+    WHERE book_id = $1 AND heading_id = $2 AND is_deleted = false
+)`,
+		bookID,
+		headingID,
+	).Scan(&exists); err != nil {
+		return fmt.Errorf("ReaderRepo - ensurePublishedHeading - QueryRow: %w", err)
+	}
+	if !exists {
+		return entity.ErrHeadingNotFound
+	}
+
+	return nil
+}
+
+func (r *ReaderRepo) ensureSectionTranslation(ctx context.Context, bookID, headingID int, lang string) error {
+	var exists bool
+	if err := r.Pool.QueryRow(ctx, `
+SELECT EXISTS (
+    SELECT 1
+    FROM section_translations
+    WHERE book_id = $1 AND heading_id = $2 AND lang = $3
+)`,
+		bookID,
+		headingID,
+		lang,
+	).Scan(&exists); err != nil {
+		return fmt.Errorf("ReaderRepo - ensureSectionTranslation - QueryRow: %w", err)
+	}
+	if !exists {
+		return entity.ErrTranslationNotFound
 	}
 
 	return nil
@@ -986,6 +1110,44 @@ func scanTOCEntry(row rowScanner, includeAudio bool) (entity.BookTOCEntry, error
 	}
 
 	return entry, nil
+}
+
+func scanTranslationFeedback(row rowScanner) (entity.TranslationFeedback, error) {
+	var feedback entity.TranslationFeedback
+	var userID sql.NullString
+	var clientID sql.NullString
+	var reason sql.NullString
+	var note sql.NullString
+	var userAgent sql.NullString
+	var clientIP sql.NullString
+
+	err := row.Scan(
+		&feedback.ID,
+		&feedback.BookID,
+		&feedback.HeadingID,
+		&feedback.Lang,
+		&userID,
+		&clientID,
+		&feedback.Vote,
+		&reason,
+		&note,
+		&userAgent,
+		&clientIP,
+		&feedback.CreatedAt,
+		&feedback.UpdatedAt,
+	)
+	if err != nil {
+		return entity.TranslationFeedback{}, err
+	}
+
+	feedback.UserID = nullableString(userID)
+	feedback.ClientID = nullableString(clientID)
+	feedback.Reason = nullableString(reason)
+	feedback.Note = nullableString(note)
+	feedback.UserAgent = nullableString(userAgent)
+	feedback.ClientIP = nullableString(clientIP)
+
+	return feedback, nil
 }
 
 func nullableString(value sql.NullString) *string {

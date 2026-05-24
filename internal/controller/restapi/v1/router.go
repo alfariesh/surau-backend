@@ -53,6 +53,10 @@ func NewRoutes(
 		bookGroup.Get("/:book_id/toc", r.listBookTOC)
 		bookGroup.Get("/:book_id/toc/:heading_id/read", r.readBookTOCSection)
 		bookGroup.Get("/:book_id/toc/:heading_id/playlist", r.getBookTOCPlaylist)
+		bookGroup.Post("/:book_id/toc/:heading_id/translation-feedback", limiter.New(limiter.Config{
+			Max:        30,
+			Expiration: time.Minute,
+		}), r.createTranslationFeedback)
 	}
 
 	apiV1Group.Get("/categories", r.listCategories)
@@ -80,6 +84,10 @@ func NewRoutes(
 	adminGroup := protected.Group("/admin", middleware.Admin(u))
 	{
 		adminGroup.Get("/books", r.adminListBooks)
+		adminGroup.Get("/translation-feedbacks", r.adminListTranslationFeedbacks)
+		adminGroup.Get("/translation-feedbacks/summary", r.adminTranslationFeedbackSummary)
+		adminGroup.Post("/translation-feedbacks/:id/resolve", r.adminResolveTranslationFeedback)
+		adminGroup.Post("/translation-feedbacks/:id/reopen", r.adminReopenTranslationFeedback)
 		adminGroup.Put("/books/:book_id/publication", r.adminUpdatePublication)
 		adminGroup.Put("/books/:book_id/metadata-draft", r.adminSaveMetadataDraft)
 		adminGroup.Post("/books/:book_id/metadata-draft/publish", r.adminPublishMetadataDraft)

@@ -474,6 +474,54 @@ h1 {
   opacity: 0.45;
 }
 
+.feedback-panel {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 12px;
+}
+
+.feedback-actions,
+.feedback-submit-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.feedback-actions .section-label {
+  margin-right: auto;
+}
+
+.feedback-form {
+  display: grid;
+  gap: 8px;
+}
+
+.feedback-form select,
+.feedback-form textarea {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  padding: 9px 10px;
+  font: inherit;
+  outline: none;
+}
+
+.feedback-form textarea {
+  resize: vertical;
+  min-height: 82px;
+}
+
+.feedback-form select:focus,
+.feedback-form textarea:focus {
+  border-color: var(--accent);
+}
+
 .section-nav {
   justify-content: space-between;
   gap: 12px;

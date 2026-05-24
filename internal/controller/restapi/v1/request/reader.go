@@ -26,3 +26,16 @@ type CreateTOCBookmark struct {
 	Label *string `json:"label" validate:"omitempty,max=255"`
 	Note  *string `json:"note"  validate:"omitempty,max=2000"`
 } // @name v1.CreateTOCBookmark
+
+// CreateTranslationFeedback -.
+type CreateTranslationFeedback struct {
+	Vote     string  `json:"vote"      validate:"required,oneof=like dislike" example:"dislike"`
+	Reason   *string `json:"reason"    validate:"omitempty,oneof=inaccurate unclear style typo formatting other"`
+	Note     *string `json:"note"      validate:"omitempty,max=2000"`
+	ClientID *string `json:"client_id" validate:"omitempty,max=128"`
+} // @name v1.CreateTranslationFeedback
+
+// ResolveTranslationFeedback -.
+type ResolveTranslationFeedback struct {
+	Note *string `json:"note" validate:"omitempty,max=2000"`
+} // @name v1.ResolveTranslationFeedback

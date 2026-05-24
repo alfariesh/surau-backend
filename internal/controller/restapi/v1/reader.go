@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/evrone/go-clean-template/internal/controller/restapi/v1/request"
 	"github.com/evrone/go-clean-template/internal/controller/restapi/v1/response"
 	"github.com/evrone/go-clean-template/internal/entity"
 	"github.com/gofiber/fiber/v2"
@@ -266,6 +267,65 @@ func (r *V1) getBookTOCPlaylist(ctx *fiber.Ctx) error {
 	}
 
 	return ctx.Status(http.StatusOK).JSON(playlist)
+}
+
+func (r *V1) createTranslationFeedback(ctx *fiber.Ctx) error {
+	bookID, err := pathInt(ctx, "book_id")
+	if err != nil {
+		return errorResponse(ctx, http.StatusBadRequest, "invalid book_id")
+	}
+
+	headingID, err := pathInt(ctx, "heading_id")
+	if err != nil {
+		return errorResponse(ctx, http.StatusBadRequest, "invalid heading_id")
+	}
+
+	var body request.CreateTranslationFeedback
+	if err = ctx.BodyParser(&body); err != nil {
+		return errorResponse(ctx, http.StatusBadRequest, "invalid request body")
+	}
+
+	if err = r.v.Struct(body); err != nil {
+		return errorResponse(ctx, http.StatusBadRequest, "invalid request body")
+	}
+
+	userAgent := ctx.Get("User-Agent")
+	clientIP := ctx.IP()
+	feedback, err := r.reader.CreateTranslationFeedback(
+		ctx.UserContext(),
+		bookID,
+		headingID,
+		ctx.Query("lang"),
+		body.Vote,
+		body.Reason,
+		body.Note,
+		body.ClientID,
+		&userAgent,
+		&clientIP,
+	)
+	if err != nil {
+		r.l.Error(err, "restapi - v1 - createTranslationFeedback")
+
+		if errors.Is(err, entity.ErrBookNotFound) {
+			return errorResponse(ctx, http.StatusNotFound, "book not found")
+		}
+
+		if errors.Is(err, entity.ErrHeadingNotFound) {
+			return errorResponse(ctx, http.StatusNotFound, "heading not found")
+		}
+
+		if errors.Is(err, entity.ErrTranslationNotFound) {
+			return errorResponse(ctx, http.StatusNotFound, "translation not found")
+		}
+
+		if errors.Is(err, entity.ErrInvalidFeedback) {
+			return errorResponse(ctx, http.StatusBadRequest, "invalid feedback")
+		}
+
+		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
+	}
+
+	return ctx.Status(http.StatusCreated).JSON(feedback)
 }
 
 func pathInt(ctx *fiber.Ctx, key string) (int, error) {

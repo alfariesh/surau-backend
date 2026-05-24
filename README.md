@@ -29,6 +29,7 @@ Public reader:
 - `GET /v1/books/{book_id}/toc?lang=id&include_audio=true`
 - `GET /v1/books/{book_id}/toc/{heading_id}/read?lang=id`
 - `GET /v1/books/{book_id}/toc/{heading_id}/playlist?lang=id`
+- `POST /v1/books/{book_id}/toc/{heading_id}/translation-feedback?lang=id`
 
 Auth and personal reader:
 
@@ -42,6 +43,13 @@ Auth and personal reader:
 - `POST /v1/me/bookmarks`
 - `POST /v1/me/bookmarks/toc/{book_id}/{heading_id}`
 - `DELETE /v1/me/bookmarks/{id}`
+
+Admin feedback review:
+
+- `GET /v1/admin/translation-feedbacks?book_id=&heading_id=&lang=&vote=&status=&limit=&offset=`
+- `GET /v1/admin/translation-feedbacks/summary?book_id=&heading_id=&lang=&vote=&status=&limit=`
+- `POST /v1/admin/translation-feedbacks/{id}/resolve`
+- `POST /v1/admin/translation-feedbacks/{id}/reopen`
 
 ## Local Setup
 
@@ -147,6 +155,27 @@ Catalog endpoints support an optional `lang` query parameter:
 - `GET /v1/books/{book_id}?lang=id`
 
 If a requested catalog translation does not exist, the API falls back to the raw Arabic metadata. When a translation exists, public responses include `translation_status`, `translation_reviewed_by`, and `translation_reviewed_at` where available. Section reader and TOC responses expose the same label fields for generated or reviewed translations.
+
+Reader translation feedback is a lightweight public signal, not editorial approval. Send `vote=like` for good sections, or `vote=dislike` with optional `reason` and `note` when a translation needs attention:
+
+```sh
+curl -X POST 'http://127.0.0.1:8080/v1/books/1/toc/5/translation-feedback?lang=id' \
+  -H 'Content-Type: application/json' \
+  -d '{"vote":"dislike","reason":"style","note":"Terasa terlalu literal.","client_id":"local-browser-id"}'
+```
+
+Allowed reasons: `inaccurate`, `unclear`, `style`, `typo`, `formatting`, `other`. `client_id` is optional, but lets the backend update the same reader's feedback instead of inserting duplicates.
+
+Admin feedback endpoints require an admin JWT. Use the list endpoint for raw notes and the summary endpoint to prioritize review queues by most disliked heading. Feedback defaults to `status=open`; resolved feedback is hidden from default list/summary, `status=resolved` shows handled items, and `status=all` includes both.
+
+Resolve a handled feedback item:
+
+```sh
+curl -X POST 'http://127.0.0.1:8080/v1/admin/translation-feedbacks/{id}/resolve' \
+  -H 'Authorization: Bearer <admin-token>' \
+  -H 'Content-Type: application/json' \
+  -d '{"note":"Reworked wording and re-imported the section."}'
+```
 
 Run QA before import:
 

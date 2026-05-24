@@ -1,6 +1,7 @@
 const apiBase = "/api";
 const pageLimit = 120;
 const requestTimeoutMs = 15000;
+const feedbackClientIDKey = "surau.feedback.client_id";
 
 const state = {
   lang: "id",
@@ -14,6 +15,7 @@ const state = {
   pageTotal: 0,
   activeHeadingID: null,
   activePageID: null,
+  activeTranslation: null,
   showArabic: true,
   showTranslation: true,
 };
@@ -42,6 +44,14 @@ const el = {
   nextSection: document.querySelector("#nextSection"),
   translationPane: document.querySelector("#translationPane"),
   translationContent: document.querySelector("#translationContent"),
+  feedbackPanel: document.querySelector("#feedbackPanel"),
+  feedbackLike: document.querySelector("#feedbackLike"),
+  feedbackDislike: document.querySelector("#feedbackDislike"),
+  feedbackForm: document.querySelector("#feedbackForm"),
+  feedbackReason: document.querySelector("#feedbackReason"),
+  feedbackNote: document.querySelector("#feedbackNote"),
+  feedbackSubmit: document.querySelector("#feedbackSubmit"),
+  feedbackCancel: document.querySelector("#feedbackCancel"),
   arabicPane: document.querySelector("#arabicPane"),
   arabicContent: document.querySelector("#arabicContent"),
   childrenPane: document.querySelector("#childrenPane"),
@@ -102,6 +112,16 @@ function bindEvents() {
   });
   el.prevPageChunk.addEventListener("click", () => loadPageChunk(Math.max(0, state.pageOffset - pageLimit), { readLast: true }));
   el.nextPageChunk.addEventListener("click", () => loadPageChunk(state.pageOffset + pageLimit, { readFirst: true }));
+  el.feedbackLike.addEventListener("click", () => submitFeedback("like"));
+  el.feedbackDislike.addEventListener("click", () => {
+    el.feedbackForm.classList.toggle("is-hidden");
+    if (!el.feedbackForm.classList.contains("is-hidden")) el.feedbackNote.focus();
+  });
+  el.feedbackSubmit.addEventListener("click", () => submitFeedback("dislike"));
+  el.feedbackCancel.addEventListener("click", () => {
+    el.feedbackForm.classList.add("is-hidden");
+    el.feedbackNote.value = "";
+  });
   window.addEventListener("hashchange", handleHashChange);
 }
 
@@ -362,6 +382,8 @@ function renderPage(page) {
   el.translationBadge.classList.remove("is-reviewed");
   el.translationBadge.textContent = "Page reader";
   el.translationContent.innerHTML = `<p class="muted">Mode halaman menampilkan teks Arab per halaman. Translation tetap tersedia di mode Bab.</p>`;
+  state.activeTranslation = null;
+  renderFeedbackPanel(null);
   el.arabicContent.innerHTML = page.content_html || "";
   el.childrenPane.classList.add("is-hidden");
   renderNavigation();
@@ -369,13 +391,16 @@ function renderPage(page) {
 }
 
 function renderTranslation(translation) {
+  state.activeTranslation = translation || null;
   if (!translation) {
     el.translationContent.innerHTML = `<p class="muted">Translation belum diimport untuk bahasa ini.</p>`;
+    renderFeedbackPanel(null);
     setBadge(null);
     return;
   }
 
   el.translationContent.innerHTML = renderMarkdown(translation.content || "");
+  renderFeedbackPanel(translation);
   setBadge(translation);
 }
 
@@ -422,6 +447,53 @@ function renderNavigation() {
   el.nextSection.disabled = !next;
   el.prevSection.textContent = previous ? `← ${clip(previous.title, 34)}` : "← Previous";
   el.nextSection.textContent = next ? `${clip(next.title, 34)} →` : "Next →";
+}
+
+function renderFeedbackPanel(translation) {
+  const canSendFeedback = state.mode === "toc" && translation && translation.lang && translation.lang !== "ar";
+  el.feedbackPanel.classList.toggle("is-hidden", !canSendFeedback);
+  el.feedbackForm.classList.add("is-hidden");
+  el.feedbackNote.value = "";
+  el.feedbackLike.disabled = !canSendFeedback;
+  el.feedbackDislike.disabled = !canSendFeedback;
+  el.feedbackSubmit.disabled = !canSendFeedback;
+}
+
+async function submitFeedback(vote) {
+  if (!state.activeBook || !state.activeHeadingID || !state.activeTranslation) return;
+
+  const payload = {
+    vote,
+    client_id: getFeedbackClientID(),
+  };
+  if (vote === "dislike") {
+    payload.reason = el.feedbackReason.value;
+    payload.note = el.feedbackNote.value.trim();
+  }
+
+  try {
+    setFeedbackBusy(true);
+    const query = new URLSearchParams({ lang: state.activeTranslation.lang || state.lang });
+    await requestJSON(`/v1/books/${state.activeBook.id}/toc/${state.activeHeadingID}/translation-feedback?${query}`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+      headers: { "Content-Type": "application/json" },
+    });
+    showError(vote === "like" ? "Feedback saved: like" : "Feedback saved: dislike");
+    el.feedbackForm.classList.add("is-hidden");
+    el.feedbackNote.value = "";
+  } catch (error) {
+    showError(error);
+  } finally {
+    setFeedbackBusy(false);
+  }
+}
+
+function setFeedbackBusy(isBusy) {
+  el.feedbackLike.disabled = isBusy;
+  el.feedbackDislike.disabled = isBusy;
+  el.feedbackSubmit.disabled = isBusy;
+  el.feedbackCancel.disabled = isBusy;
 }
 
 function renderPageNavigation() {
@@ -513,13 +585,15 @@ function inlineMarkdown(value) {
     .replace(/\[(\d{1,3})\]/g, "<sup>[$1]</sup>");
 }
 
-async function requestJSON(path) {
+async function requestJSON(path, options = {}) {
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), requestTimeoutMs);
 
   try {
     const response = await fetch(`${apiBase}${path}`, {
-      headers: { Accept: "application/json" },
+      method: options.method || "GET",
+      headers: { Accept: "application/json", ...(options.headers || {}) },
+      body: options.body,
       signal: controller.signal,
     });
     if (!response.ok) {
@@ -535,6 +609,15 @@ async function requestJSON(path) {
   } finally {
     window.clearTimeout(timeout);
   }
+}
+
+function getFeedbackClientID() {
+  let clientID = window.localStorage.getItem(feedbackClientIDKey);
+  if (clientID) return clientID;
+
+  clientID = window.crypto?.randomUUID ? window.crypto.randomUUID() : `client-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  window.localStorage.setItem(feedbackClientIDKey, clientID);
+  return clientID;
 }
 
 function flattenTOC(nodes) {

@@ -49,6 +49,7 @@ type (
 		ListBookHeadings(ctx context.Context, bookID int, query string) ([]entity.BookHeading, error)
 		ListTOCEntries(ctx context.Context, bookID int, lang string, includeAudio bool) ([]entity.BookTOCEntry, error)
 		GetSection(ctx context.Context, bookID, headingID int, lang string) (entity.BookSection, error)
+		CreateTranslationFeedback(ctx context.Context, feedback entity.TranslationFeedback) (entity.TranslationFeedback, error)
 	}
 
 	// PersonalRepo -.
@@ -72,6 +73,10 @@ type (
 		SaveHeadingDraft(ctx context.Context, actorID string, edit entity.BookHeadingEdit) (entity.BookHeadingEdit, error)
 		PublishHeadingDraft(ctx context.Context, actorID string, bookID, headingID int) (entity.BookHeadingEdit, error)
 		AddCollectionItem(ctx context.Context, actorID, slug string, bookID int, sortOrder *int) (entity.BookCollectionItem, error)
+		ListTranslationFeedbacks(ctx context.Context, filter TranslationFeedbackFilter) ([]entity.AdminTranslationFeedback, int, error)
+		TranslationFeedbackSummary(ctx context.Context, filter TranslationFeedbackFilter) (entity.AdminTranslationFeedbackSummary, error)
+		ResolveTranslationFeedback(ctx context.Context, actorID, feedbackID string, note *string) (entity.AdminTranslationFeedback, error)
+		ReopenTranslationFeedback(ctx context.Context, actorID, feedbackID string) (entity.AdminTranslationFeedback, error)
 	}
 
 	// TaskFilter -.
@@ -121,5 +126,16 @@ type (
 		HasContent *bool
 		Limit      uint64
 		Offset     uint64
+	}
+
+	// TranslationFeedbackFilter -.
+	TranslationFeedbackFilter struct {
+		BookID    *int
+		HeadingID *int
+		Lang      string
+		Vote      string
+		Status    string
+		Limit     uint64
+		Offset    uint64
 	}
 )
