@@ -254,30 +254,36 @@ func buildTOCPlaylist(
 
 func tocNodeFromEntry(entry entity.BookTOCEntry) entity.BookTOCNode {
 	return entity.BookTOCNode{
-		BookID:         entry.BookID,
-		HeadingID:      entry.HeadingID,
-		ParentID:       entry.ParentID,
-		PageID:         entry.PageID,
-		Depth:          entry.Depth,
-		Ordinal:        entry.Ordinal,
-		Title:          entry.Title,
-		HasAudio:       entry.HasAudio,
-		HasTranslation: entry.HasTranslation,
-		Audio:          entry.Audio,
-		Children:       []entity.BookTOCNode{},
+		BookID:                entry.BookID,
+		HeadingID:             entry.HeadingID,
+		ParentID:              entry.ParentID,
+		PageID:                entry.PageID,
+		Depth:                 entry.Depth,
+		Ordinal:               entry.Ordinal,
+		Title:                 entry.Title,
+		HasAudio:              entry.HasAudio,
+		HasTranslation:        entry.HasTranslation,
+		TranslationStatus:     entry.TranslationStatus,
+		TranslationReviewedBy: entry.TranslationReviewedBy,
+		TranslationReviewedAt: entry.TranslationReviewedAt,
+		Audio:                 entry.Audio,
+		Children:              []entity.BookTOCNode{},
 	}
 }
 
 func tocLinkFromEntry(entry entity.BookTOCEntry) entity.BookTOCLink {
 	return entity.BookTOCLink{
-		HeadingID:      entry.HeadingID,
-		Title:          entry.Title,
-		ParentID:       entry.ParentID,
-		PageID:         entry.PageID,
-		Depth:          entry.Depth,
-		Ordinal:        entry.Ordinal,
-		HasAudio:       entry.HasAudio,
-		HasTranslation: entry.HasTranslation,
+		HeadingID:             entry.HeadingID,
+		Title:                 entry.Title,
+		ParentID:              entry.ParentID,
+		PageID:                entry.PageID,
+		Depth:                 entry.Depth,
+		Ordinal:               entry.Ordinal,
+		HasAudio:              entry.HasAudio,
+		HasTranslation:        entry.HasTranslation,
+		TranslationStatus:     entry.TranslationStatus,
+		TranslationReviewedBy: entry.TranslationReviewedBy,
+		TranslationReviewedAt: entry.TranslationReviewedAt,
 	}
 }
 

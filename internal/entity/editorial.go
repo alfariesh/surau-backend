@@ -13,6 +13,9 @@ const (
 
 	EditStatusDraft     = "draft"
 	EditStatusPublished = "published"
+
+	FeedbackStatusOpen     = "open"
+	FeedbackStatusResolved = "resolved"
 )
 
 // BookPublication controls public visibility for one book.
@@ -78,3 +81,50 @@ type AdminPageEdit struct {
 	Draft     *BookPageEdit `json:"draft"`
 	Published *BookPageEdit `json:"published"`
 } // @name entity.AdminPageEdit
+
+// AdminTranslationFeedback shows one reader feedback row with editorial context.
+type AdminTranslationFeedback struct {
+	ID                    string     `json:"id"         example:"550e8400-e29b-41d4-a716-446655440000"`
+	BookID                int        `json:"book_id"    example:"797"`
+	BookTitle             string     `json:"book_title"`
+	HeadingID             int        `json:"heading_id" example:"10"`
+	HeadingTitle          string     `json:"heading_title"`
+	Lang                  string     `json:"lang"       example:"id"`
+	UserID                *string    `json:"user_id,omitempty"`
+	ClientID              *string    `json:"client_id,omitempty"`
+	Vote                  string     `json:"vote"       example:"dislike"`
+	Reason                *string    `json:"reason,omitempty" example:"style"`
+	Note                  *string    `json:"note,omitempty"`
+	Status                string     `json:"status"     example:"open"`
+	ResolvedBy            *string    `json:"resolved_by,omitempty"`
+	ResolvedAt            *time.Time `json:"resolved_at,omitempty"`
+	ResolutionNote        *string    `json:"resolution_note,omitempty"`
+	UserAgent             *string    `json:"user_agent,omitempty"`
+	ClientIP              *string    `json:"client_ip,omitempty"`
+	TranslationStatus     string     `json:"translation_status" example:"generated"`
+	TranslationReviewedBy *string    `json:"translation_reviewed_by,omitempty"`
+	TranslationReviewedAt *time.Time `json:"translation_reviewed_at,omitempty"`
+	CreatedAt             time.Time  `json:"created_at" example:"2026-01-01T00:00:00Z"`
+	UpdatedAt             time.Time  `json:"updated_at" example:"2026-01-01T00:00:00Z"`
+} // @name entity.AdminTranslationFeedback
+
+// TranslationFeedbackHeadingSummary aggregates feedback for one translated heading.
+type TranslationFeedbackHeadingSummary struct {
+	BookID       int            `json:"book_id"    example:"797"`
+	BookTitle    string         `json:"book_title"`
+	HeadingID    int            `json:"heading_id" example:"10"`
+	HeadingTitle string         `json:"heading_title"`
+	Lang         string         `json:"lang"       example:"id"`
+	Total        int            `json:"total"      example:"10"`
+	Likes        int            `json:"likes"      example:"6"`
+	Dislikes     int            `json:"dislikes"   example:"4"`
+	Reasons      map[string]int `json:"reasons"`
+} // @name entity.TranslationFeedbackHeadingSummary
+
+// AdminTranslationFeedbackSummary aggregates reader feedback for admin review.
+type AdminTranslationFeedbackSummary struct {
+	Total               int                                 `json:"total"    example:"25"`
+	Likes               int                                 `json:"likes"    example:"18"`
+	Dislikes            int                                 `json:"dislikes" example:"7"`
+	TopDislikedHeadings []TranslationFeedbackHeadingSummary `json:"top_disliked_headings"`
+} // @name entity.AdminTranslationFeedbackSummary

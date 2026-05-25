@@ -36,10 +36,10 @@ type (
 
 	// Reader -.
 	Reader interface {
-		Categories(ctx context.Context) ([]entity.Category, error)
-		Authors(ctx context.Context, query string, limit, offset int) ([]entity.Author, int, error)
-		Books(ctx context.Context, query string, categoryID, authorID *int, hasContent *bool, limit, offset int) ([]entity.Book, int, error)
-		Book(ctx context.Context, bookID int) (entity.Book, error)
+		Categories(ctx context.Context, lang string) ([]entity.Category, error)
+		Authors(ctx context.Context, query string, limit, offset int, lang string) ([]entity.Author, int, error)
+		Books(ctx context.Context, query string, categoryID, authorID *int, hasContent *bool, limit, offset int, lang string) ([]entity.Book, int, error)
+		Book(ctx context.Context, bookID int, lang string) (entity.Book, error)
 		Pages(ctx context.Context, bookID int, limit, offset int) ([]entity.BookPage, int, error)
 		Page(ctx context.Context, bookID, pageID int) (entity.BookPage, error)
 		Headings(ctx context.Context, bookID int, query string) ([]entity.BookHeading, error)
@@ -47,6 +47,39 @@ type (
 		TOC(ctx context.Context, bookID int, lang string, includeAudio bool) ([]entity.BookTOCNode, error)
 		TOCRead(ctx context.Context, bookID, headingID int, lang string) (entity.BookTOCRead, error)
 		TOCPlaylist(ctx context.Context, bookID, headingID int, lang string) (entity.BookTOCPlaylist, error)
+		CreateTranslationFeedback(
+			ctx context.Context,
+			bookID int,
+			headingID int,
+			lang string,
+			vote string,
+			reason *string,
+			note *string,
+			clientID *string,
+			userAgent *string,
+			clientIP *string,
+		) (entity.TranslationFeedback, error)
+	}
+
+	// BookRAG -.
+	BookRAG interface {
+		AskBook(
+			ctx context.Context,
+			bookID int,
+			question string,
+			lang string,
+			maxCitations int,
+			includeTrace bool,
+		) (entity.BookRAGResponse, error)
+		AskBookStream(
+			ctx context.Context,
+			bookID int,
+			question string,
+			lang string,
+			maxCitations int,
+			includeTrace bool,
+			emit func(event string, payload any) error,
+		) error
 	}
 
 	// Personal -.
@@ -70,5 +103,9 @@ type (
 		SaveHeadingDraft(ctx context.Context, actorID string, edit entity.BookHeadingEdit) (entity.BookHeadingEdit, error)
 		PublishHeadingDraft(ctx context.Context, actorID string, bookID, headingID int) (entity.BookHeadingEdit, error)
 		AddCollectionItem(ctx context.Context, actorID, slug string, bookID int, sortOrder *int) (entity.BookCollectionItem, error)
+		TranslationFeedbacks(ctx context.Context, bookID, headingID *int, lang, vote, status string, limit, offset int) ([]entity.AdminTranslationFeedback, int, error)
+		TranslationFeedbackSummary(ctx context.Context, bookID, headingID *int, lang, vote, status string, limit int) (entity.AdminTranslationFeedbackSummary, error)
+		ResolveTranslationFeedback(ctx context.Context, actorID, feedbackID string, note *string) (entity.AdminTranslationFeedback, error)
+		ReopenTranslationFeedback(ctx context.Context, actorID, feedbackID string) (entity.AdminTranslationFeedback, error)
 	}
 )

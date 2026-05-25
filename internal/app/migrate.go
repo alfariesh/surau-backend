@@ -5,6 +5,7 @@ package app
 import (
 	"errors"
 	"log"
+	"net/url"
 	"os"
 	"time"
 
@@ -25,7 +26,7 @@ func init() {
 		log.Fatalf("migrate: environment variable not declared: PG_URL")
 	}
 
-	databaseURL += "?sslmode=disable"
+	databaseURL = withDefaultSSLMode(databaseURL, "disable")
 
 	var (
 		attempts = _defaultAttempts
@@ -60,4 +61,21 @@ func init() {
 	}
 
 	log.Printf("Migrate: up success")
+}
+
+func withDefaultSSLMode(databaseURL, sslMode string) string {
+	parsedURL, err := url.Parse(databaseURL)
+	if err != nil {
+		return databaseURL
+	}
+
+	query := parsedURL.Query()
+	if query.Has("sslmode") {
+		return databaseURL
+	}
+
+	query.Set("sslmode", sslMode)
+	parsedURL.RawQuery = query.Encode()
+
+	return parsedURL.String()
 }

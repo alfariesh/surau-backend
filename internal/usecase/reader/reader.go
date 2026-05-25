@@ -24,14 +24,15 @@ func New(r repo.ReaderRepo) *UseCase {
 }
 
 // Categories returns catalog categories.
-func (uc *UseCase) Categories(ctx context.Context) ([]entity.Category, error) {
-	return uc.repo.ListCategories(ctx)
+func (uc *UseCase) Categories(ctx context.Context, lang string) ([]entity.Category, error) {
+	return uc.repo.ListCategories(ctx, normalizeOptionalLang(lang))
 }
 
 // Authors returns paginated authors.
-func (uc *UseCase) Authors(ctx context.Context, query string, limit, offset int) ([]entity.Author, int, error) {
+func (uc *UseCase) Authors(ctx context.Context, query string, limit, offset int, lang string) ([]entity.Author, int, error) {
 	return uc.repo.ListAuthors(ctx, repo.AuthorFilter{
 		Query:  strings.TrimSpace(query),
+		Lang:   normalizeOptionalLang(lang),
 		Limit:  clampLimit(limit),
 		Offset: clampOffset(offset),
 	})
@@ -44,9 +45,11 @@ func (uc *UseCase) Books(
 	categoryID, authorID *int,
 	hasContent *bool,
 	limit, offset int,
+	lang string,
 ) ([]entity.Book, int, error) {
 	return uc.repo.ListBooks(ctx, repo.BookFilter{
 		Query:      strings.TrimSpace(query),
+		Lang:       normalizeOptionalLang(lang),
 		CategoryID: categoryID,
 		AuthorID:   authorID,
 		HasContent: hasContent,
@@ -56,8 +59,8 @@ func (uc *UseCase) Books(
 }
 
 // Book returns one book.
-func (uc *UseCase) Book(ctx context.Context, bookID int) (entity.Book, error) {
-	return uc.repo.GetBook(ctx, bookID)
+func (uc *UseCase) Book(ctx context.Context, bookID int, lang string) (entity.Book, error) {
+	return uc.repo.GetBook(ctx, bookID, normalizeOptionalLang(lang))
 }
 
 // Pages returns paginated pages for a book.
@@ -101,4 +104,13 @@ func clampOffset(offset int) uint64 {
 	}
 
 	return uint64(offset)
+}
+
+func normalizeOptionalLang(lang string) string {
+	lang = strings.ToLower(strings.TrimSpace(lang))
+	if lang == "ar" {
+		return ""
+	}
+
+	return lang
 }

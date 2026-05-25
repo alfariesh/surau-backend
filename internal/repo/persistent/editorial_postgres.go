@@ -371,6 +371,187 @@ RETURNING collection_slug, book_id, sort_order, created_by, created_at`
 	return item, nil
 }
 
+// ListTranslationFeedbacks returns paginated reader translation feedback for admin review.
+func (r *EditorialRepo) ListTranslationFeedbacks(
+	ctx context.Context,
+	filter repo.TranslationFeedbackFilter,
+) ([]entity.AdminTranslationFeedback, int, error) {
+	countBuilder := r.feedbackBaseBuilder("COUNT(*)")
+	dataBuilder := r.feedbackSelectBuilder().
+		OrderBy("tf.updated_at DESC", "tf.created_at DESC").
+		Limit(filter.Limit).
+		Offset(filter.Offset)
+
+	countBuilder, dataBuilder = applyTranslationFeedbackFilter(countBuilder, dataBuilder, filter)
+
+	total, err := r.count(ctx, countBuilder)
+	if err != nil {
+		return nil, 0, fmt.Errorf("EditorialRepo - ListTranslationFeedbacks - count: %w", err)
+	}
+
+	sqlText, args, err := dataBuilder.ToSql()
+	if err != nil {
+		return nil, 0, fmt.Errorf("EditorialRepo - ListTranslationFeedbacks - dataBuilder: %w", err)
+	}
+
+	rows, err := r.Pool.Query(ctx, sqlText, args...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("EditorialRepo - ListTranslationFeedbacks - r.Pool.Query: %w", err)
+	}
+	defer rows.Close()
+
+	feedbacks := make([]entity.AdminTranslationFeedback, 0, filter.Limit)
+	for rows.Next() {
+		feedback, err := scanAdminTranslationFeedback(rows)
+		if err != nil {
+			return nil, 0, fmt.Errorf("EditorialRepo - ListTranslationFeedbacks - scanAdminTranslationFeedback: %w", err)
+		}
+
+		feedbacks = append(feedbacks, feedback)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("EditorialRepo - ListTranslationFeedbacks - rows.Err: %w", err)
+	}
+
+	return feedbacks, total, nil
+}
+
+// TranslationFeedbackSummary aggregates feedback for admin review queues.
+func (r *EditorialRepo) TranslationFeedbackSummary(
+	ctx context.Context,
+	filter repo.TranslationFeedbackFilter,
+) (entity.AdminTranslationFeedbackSummary, error) {
+	summaryBuilder := r.feedbackBaseBuilder(
+		"COUNT(*)",
+		"COUNT(*) FILTER (WHERE tf.vote = 'like')",
+		"COUNT(*) FILTER (WHERE tf.vote = 'dislike')",
+	)
+	summaryBuilder, _ = applyTranslationFeedbackFilter(summaryBuilder, r.Builder.Select("1"), filter)
+
+	sqlText, args, err := summaryBuilder.ToSql()
+	if err != nil {
+		return entity.AdminTranslationFeedbackSummary{}, fmt.Errorf("EditorialRepo - TranslationFeedbackSummary - summaryBuilder: %w", err)
+	}
+
+	var summary entity.AdminTranslationFeedbackSummary
+	if err = r.Pool.QueryRow(ctx, sqlText, args...).Scan(&summary.Total, &summary.Likes, &summary.Dislikes); err != nil {
+		return entity.AdminTranslationFeedbackSummary{}, fmt.Errorf("EditorialRepo - TranslationFeedbackSummary - summary scan: %w", err)
+	}
+
+	topBuilder := r.feedbackBaseBuilder(
+		"tf.book_id",
+		"COALESCE(me.display_title, b.name) AS book_title",
+		"tf.heading_id",
+		"COALESCE(he.content, h.content) AS heading_title",
+		"tf.lang",
+		"COUNT(*) AS total",
+		"COUNT(*) FILTER (WHERE tf.vote = 'like') AS likes",
+		"COUNT(*) FILTER (WHERE tf.vote = 'dislike') AS dislikes",
+	).
+		GroupBy("tf.book_id", "COALESCE(me.display_title, b.name)", "tf.heading_id", "COALESCE(he.content, h.content)", "tf.lang").
+		Having("COUNT(*) FILTER (WHERE tf.vote = 'dislike') > 0").
+		OrderBy("dislikes DESC", "total DESC", "tf.book_id ASC", "tf.heading_id ASC", "tf.lang ASC").
+		Limit(filter.Limit)
+	topBuilder, _ = applyTranslationFeedbackFilter(topBuilder, r.Builder.Select("1"), filter)
+
+	sqlText, args, err = topBuilder.ToSql()
+	if err != nil {
+		return entity.AdminTranslationFeedbackSummary{}, fmt.Errorf("EditorialRepo - TranslationFeedbackSummary - topBuilder: %w", err)
+	}
+
+	rows, err := r.Pool.Query(ctx, sqlText, args...)
+	if err != nil {
+		return entity.AdminTranslationFeedbackSummary{}, fmt.Errorf("EditorialRepo - TranslationFeedbackSummary - top query: %w", err)
+	}
+	defer rows.Close()
+
+	topHeadings := make([]entity.TranslationFeedbackHeadingSummary, 0, filter.Limit)
+	for rows.Next() {
+		item, err := scanFeedbackHeadingSummary(rows)
+		if err != nil {
+			return entity.AdminTranslationFeedbackSummary{}, fmt.Errorf("EditorialRepo - TranslationFeedbackSummary - scanFeedbackHeadingSummary: %w", err)
+		}
+
+		topHeadings = append(topHeadings, item)
+	}
+
+	if err = rows.Err(); err != nil {
+		return entity.AdminTranslationFeedbackSummary{}, fmt.Errorf("EditorialRepo - TranslationFeedbackSummary - rows.Err: %w", err)
+	}
+
+	if err = r.fillFeedbackReasons(ctx, topHeadings, filter); err != nil {
+		return entity.AdminTranslationFeedbackSummary{}, err
+	}
+
+	summary.TopDislikedHeadings = topHeadings
+
+	return summary, nil
+}
+
+// ResolveTranslationFeedback marks a reader feedback item as handled by an admin.
+func (r *EditorialRepo) ResolveTranslationFeedback(
+	ctx context.Context,
+	actorID, feedbackID string,
+	note *string,
+) (entity.AdminTranslationFeedback, error) {
+	result, err := r.Pool.Exec(ctx, `
+UPDATE translation_feedbacks
+SET status = 'resolved',
+    resolved_by = $2,
+    resolved_at = now(),
+    resolution_note = $3,
+    updated_at = now()
+WHERE id = $1`, feedbackID, actorID, note)
+	if err != nil {
+		return entity.AdminTranslationFeedback{}, fmt.Errorf("EditorialRepo - ResolveTranslationFeedback - Exec: %w", err)
+	}
+
+	if result.RowsAffected() == 0 {
+		return entity.AdminTranslationFeedback{}, entity.ErrFeedbackNotFound
+	}
+
+	feedback, err := r.getAdminTranslationFeedback(ctx, feedbackID)
+	if err != nil {
+		return entity.AdminTranslationFeedback{}, err
+	}
+
+	_ = r.audit(ctx, actorID, "translation_feedback.resolve", feedback.BookID, nil, &feedback.HeadingID, "", feedback)
+
+	return feedback, nil
+}
+
+// ReopenTranslationFeedback moves a handled feedback item back into the active queue.
+func (r *EditorialRepo) ReopenTranslationFeedback(
+	ctx context.Context,
+	actorID, feedbackID string,
+) (entity.AdminTranslationFeedback, error) {
+	result, err := r.Pool.Exec(ctx, `
+UPDATE translation_feedbacks
+SET status = 'open',
+    resolved_by = NULL,
+    resolved_at = NULL,
+    resolution_note = NULL,
+    updated_at = now()
+WHERE id = $1`, feedbackID)
+	if err != nil {
+		return entity.AdminTranslationFeedback{}, fmt.Errorf("EditorialRepo - ReopenTranslationFeedback - Exec: %w", err)
+	}
+
+	if result.RowsAffected() == 0 {
+		return entity.AdminTranslationFeedback{}, entity.ErrFeedbackNotFound
+	}
+
+	feedback, err := r.getAdminTranslationFeedback(ctx, feedbackID)
+	if err != nil {
+		return entity.AdminTranslationFeedback{}, err
+	}
+
+	_ = r.audit(ctx, actorID, "translation_feedback.reopen", feedback.BookID, nil, &feedback.HeadingID, "", feedback)
+
+	return feedback, nil
+}
+
 func (r *EditorialRepo) adminBookSelectBuilder() sq.SelectBuilder {
 	return r.Builder.
 		Select(
@@ -404,6 +585,67 @@ func (r *EditorialRepo) adminBookSelectBuilder() sq.SelectBuilder {
 		LeftJoin("book_metadata_edits me ON me.book_id = b.id AND me.status = 'published'").
 		LeftJoin("authors a ON a.id = b.author_id").
 		LeftJoin("categories c ON c.id = COALESCE(me.category_id, b.category_id)")
+}
+
+func (r *EditorialRepo) feedbackBaseBuilder(columns ...string) sq.SelectBuilder {
+	return r.Builder.
+		Select(columns...).
+		From("translation_feedbacks tf").
+		Join("books b ON b.id = tf.book_id").
+		Join("book_headings h ON h.book_id = tf.book_id AND h.heading_id = tf.heading_id").
+		Join("section_translations st ON st.book_id = tf.book_id AND st.heading_id = tf.heading_id AND st.lang = tf.lang").
+		LeftJoin("book_metadata_edits me ON me.book_id = b.id AND me.status = 'published'").
+		LeftJoin("book_heading_edits he ON he.book_id = h.book_id AND he.heading_id = h.heading_id AND he.status = 'published'")
+}
+
+func (r *EditorialRepo) feedbackSelectBuilder() sq.SelectBuilder {
+	return r.feedbackBaseBuilder(
+		"tf.id",
+		"tf.book_id",
+		"COALESCE(me.display_title, b.name) AS book_title",
+		"tf.heading_id",
+		"COALESCE(he.content, h.content) AS heading_title",
+		"tf.lang",
+		"tf.user_id",
+		"tf.client_id",
+		"tf.vote",
+		"tf.reason",
+		"tf.note",
+		"tf.status",
+		"tf.resolved_by",
+		"tf.resolved_at",
+		"tf.resolution_note",
+		"tf.user_agent",
+		"tf.client_ip",
+		"st.translation_status",
+		"st.reviewed_by",
+		"st.reviewed_at",
+		"tf.created_at",
+		"tf.updated_at",
+	)
+}
+
+func (r *EditorialRepo) getAdminTranslationFeedback(
+	ctx context.Context,
+	feedbackID string,
+) (entity.AdminTranslationFeedback, error) {
+	sqlText, args, err := r.feedbackSelectBuilder().
+		Where(sq.Eq{"tf.id": feedbackID}).
+		ToSql()
+	if err != nil {
+		return entity.AdminTranslationFeedback{}, fmt.Errorf("EditorialRepo - getAdminTranslationFeedback - Builder: %w", err)
+	}
+
+	feedback, err := scanAdminTranslationFeedback(r.Pool.QueryRow(ctx, sqlText, args...))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return entity.AdminTranslationFeedback{}, entity.ErrFeedbackNotFound
+		}
+
+		return entity.AdminTranslationFeedback{}, fmt.Errorf("EditorialRepo - getAdminTranslationFeedback - scanAdminTranslationFeedback: %w", err)
+	}
+
+	return feedback, nil
 }
 
 func (r *EditorialRepo) count(ctx context.Context, builder sq.SelectBuilder) (int, error) {
@@ -508,6 +750,112 @@ func applyEditorialBookFilter(countBuilder, dataBuilder sq.SelectBuilder, filter
 	}
 
 	return countBuilder, dataBuilder
+}
+
+func applyTranslationFeedbackFilter(
+	countBuilder,
+	dataBuilder sq.SelectBuilder,
+	filter repo.TranslationFeedbackFilter,
+) (sq.SelectBuilder, sq.SelectBuilder) {
+	if filter.BookID != nil {
+		countBuilder = countBuilder.Where(sq.Eq{"tf.book_id": *filter.BookID})
+		dataBuilder = dataBuilder.Where(sq.Eq{"tf.book_id": *filter.BookID})
+	}
+
+	if filter.HeadingID != nil {
+		countBuilder = countBuilder.Where(sq.Eq{"tf.heading_id": *filter.HeadingID})
+		dataBuilder = dataBuilder.Where(sq.Eq{"tf.heading_id": *filter.HeadingID})
+	}
+
+	if filter.Lang != "" {
+		countBuilder = countBuilder.Where(sq.Eq{"tf.lang": filter.Lang})
+		dataBuilder = dataBuilder.Where(sq.Eq{"tf.lang": filter.Lang})
+	}
+
+	if filter.Vote != "" {
+		countBuilder = countBuilder.Where(sq.Eq{"tf.vote": filter.Vote})
+		dataBuilder = dataBuilder.Where(sq.Eq{"tf.vote": filter.Vote})
+	}
+
+	if filter.Status != "" {
+		countBuilder = countBuilder.Where(sq.Eq{"tf.status": filter.Status})
+		dataBuilder = dataBuilder.Where(sq.Eq{"tf.status": filter.Status})
+	}
+
+	return countBuilder, dataBuilder
+}
+
+func (r *EditorialRepo) fillFeedbackReasons(
+	ctx context.Context,
+	items []entity.TranslationFeedbackHeadingSummary,
+	filter repo.TranslationFeedbackFilter,
+) error {
+	if len(items) == 0 {
+		return nil
+	}
+
+	conditions := make([]sq.Sqlizer, 0, len(items))
+	for _, item := range items {
+		conditions = append(conditions, sq.And{
+			sq.Eq{"book_id": item.BookID},
+			sq.Eq{"heading_id": item.HeadingID},
+			sq.Eq{"lang": item.Lang},
+		})
+	}
+
+	builder := r.Builder.
+		Select("book_id", "heading_id", "lang", "reason", "COUNT(*)").
+		From("translation_feedbacks").
+		Where(sq.Or(conditions)).
+		Where(sq.Eq{"vote": "dislike"}).
+		Where("reason IS NOT NULL").
+		GroupBy("book_id", "heading_id", "lang", "reason").
+		PlaceholderFormat(sq.Dollar)
+	if filter.Status != "" {
+		builder = builder.Where(sq.Eq{"status": filter.Status})
+	}
+
+	sqlText, args, err := builder.ToSql()
+	if err != nil {
+		return fmt.Errorf("EditorialRepo - fillFeedbackReasons - Builder: %w", err)
+	}
+
+	rows, err := r.Pool.Query(ctx, sqlText, args...)
+	if err != nil {
+		return fmt.Errorf("EditorialRepo - fillFeedbackReasons - Query: %w", err)
+	}
+	defer rows.Close()
+
+	index := make(map[string]int, len(items))
+	for i, item := range items {
+		items[i].Reasons = map[string]int{}
+		index[feedbackSummaryKey(item.BookID, item.HeadingID, item.Lang)] = i
+	}
+
+	for rows.Next() {
+		var bookID int
+		var headingID int
+		var lang string
+		var reason string
+		var count int
+		if err = rows.Scan(&bookID, &headingID, &lang, &reason, &count); err != nil {
+			return fmt.Errorf("EditorialRepo - fillFeedbackReasons - Scan: %w", err)
+		}
+
+		if i, ok := index[feedbackSummaryKey(bookID, headingID, lang)]; ok {
+			items[i].Reasons[reason] = count
+		}
+	}
+
+	if err = rows.Err(); err != nil {
+		return fmt.Errorf("EditorialRepo - fillFeedbackReasons - rows.Err: %w", err)
+	}
+
+	return nil
+}
+
+func feedbackSummaryKey(bookID, headingID int, lang string) string {
+	return fmt.Sprintf("%d:%d:%s", bookID, headingID, lang)
 }
 
 func scanPublication(row rowScanner) (entity.BookPublication, error) {
@@ -634,6 +982,84 @@ func scanCollectionItem(row rowScanner) (entity.BookCollectionItem, error) {
 
 	item.SortOrder = nullableInt(sortOrder)
 	item.CreatedBy = nullableString(createdBy)
+
+	return item, nil
+}
+
+func scanAdminTranslationFeedback(row rowScanner) (entity.AdminTranslationFeedback, error) {
+	var feedback entity.AdminTranslationFeedback
+	var userID sql.NullString
+	var clientID sql.NullString
+	var reason sql.NullString
+	var note sql.NullString
+	var resolvedBy sql.NullString
+	var resolvedAt sql.NullTime
+	var resolutionNote sql.NullString
+	var userAgent sql.NullString
+	var clientIP sql.NullString
+	var reviewedBy sql.NullString
+	var reviewedAt sql.NullTime
+
+	err := row.Scan(
+		&feedback.ID,
+		&feedback.BookID,
+		&feedback.BookTitle,
+		&feedback.HeadingID,
+		&feedback.HeadingTitle,
+		&feedback.Lang,
+		&userID,
+		&clientID,
+		&feedback.Vote,
+		&reason,
+		&note,
+		&feedback.Status,
+		&resolvedBy,
+		&resolvedAt,
+		&resolutionNote,
+		&userAgent,
+		&clientIP,
+		&feedback.TranslationStatus,
+		&reviewedBy,
+		&reviewedAt,
+		&feedback.CreatedAt,
+		&feedback.UpdatedAt,
+	)
+	if err != nil {
+		return entity.AdminTranslationFeedback{}, err
+	}
+
+	feedback.UserID = nullableString(userID)
+	feedback.ClientID = nullableString(clientID)
+	feedback.Reason = nullableString(reason)
+	feedback.Note = nullableString(note)
+	feedback.ResolvedBy = nullableString(resolvedBy)
+	feedback.ResolvedAt = nullableTime(resolvedAt)
+	feedback.ResolutionNote = nullableString(resolutionNote)
+	feedback.UserAgent = nullableString(userAgent)
+	feedback.ClientIP = nullableString(clientIP)
+	feedback.TranslationReviewedBy = nullableString(reviewedBy)
+	feedback.TranslationReviewedAt = nullableTime(reviewedAt)
+
+	return feedback, nil
+}
+
+func scanFeedbackHeadingSummary(row rowScanner) (entity.TranslationFeedbackHeadingSummary, error) {
+	var item entity.TranslationFeedbackHeadingSummary
+	err := row.Scan(
+		&item.BookID,
+		&item.BookTitle,
+		&item.HeadingID,
+		&item.HeadingTitle,
+		&item.Lang,
+		&item.Total,
+		&item.Likes,
+		&item.Dislikes,
+	)
+	if err != nil {
+		return entity.TranslationFeedbackHeadingSummary{}, err
+	}
+
+	item.Reasons = map[string]int{}
 
 	return item, nil
 }

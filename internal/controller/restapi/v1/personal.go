@@ -59,7 +59,7 @@ func (r *V1) saveProgress(ctx *fiber.Ctx) error {
 	if err != nil {
 		r.l.Error(err, "restapi - v1 - saveProgress")
 
-		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
+		return readerLocationErrorResponse(ctx, err)
 	}
 
 	return ctx.Status(http.StatusOK).JSON(progress)
@@ -94,7 +94,7 @@ func (r *V1) saveTOCProgress(ctx *fiber.Ctx) error {
 	if err != nil {
 		r.l.Error(err, "restapi - v1 - saveTOCProgress")
 
-		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
+		return readerLocationErrorResponse(ctx, err)
 	}
 
 	return ctx.Status(http.StatusOK).JSON(progress)
@@ -146,7 +146,7 @@ func (r *V1) createBookmark(ctx *fiber.Ctx) error {
 	if err != nil {
 		r.l.Error(err, "restapi - v1 - createBookmark")
 
-		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
+		return readerLocationErrorResponse(ctx, err)
 	}
 
 	return ctx.Status(http.StatusCreated).JSON(bookmark)
@@ -181,7 +181,7 @@ func (r *V1) createTOCBookmark(ctx *fiber.Ctx) error {
 	if err != nil {
 		r.l.Error(err, "restapi - v1 - createTOCBookmark")
 
-		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
+		return readerLocationErrorResponse(ctx, err)
 	}
 
 	return ctx.Status(http.StatusCreated).JSON(bookmark)
@@ -210,4 +210,19 @@ func (r *V1) deleteBookmark(ctx *fiber.Ctx) error {
 	}
 
 	return ctx.SendStatus(http.StatusNoContent)
+}
+
+func readerLocationErrorResponse(ctx *fiber.Ctx, err error) error {
+	switch {
+	case errors.Is(err, entity.ErrBookNotFound):
+		return errorResponse(ctx, http.StatusNotFound, "book not found")
+	case errors.Is(err, entity.ErrPageNotFound):
+		return errorResponse(ctx, http.StatusBadRequest, "page not found")
+	case errors.Is(err, entity.ErrHeadingNotFound):
+		return errorResponse(ctx, http.StatusBadRequest, "heading not found")
+	case errors.Is(err, entity.ErrInvalidReaderLocation):
+		return errorResponse(ctx, http.StatusBadRequest, "invalid reader location")
+	default:
+		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
+	}
 }

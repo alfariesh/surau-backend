@@ -30,11 +30,21 @@ func NewReaderRepo(pg *postgres.Postgres) *ReaderRepo {
 }
 
 // ListCategories returns non-deleted categories ordered for catalog display.
-func (r *ReaderRepo) ListCategories(ctx context.Context) ([]entity.Category, error) {
+func (r *ReaderRepo) ListCategories(ctx context.Context, lang string) ([]entity.Category, error) {
 	sqlText, args, err := r.Builder.
-		Select("id, name, display_order, is_deleted, updated_at").
-		From("categories").
-		Where(sq.Eq{"is_deleted": false}).
+		Select(
+			"c.id",
+			"COALESCE(ct.name, c.name) AS name",
+			"c.display_order",
+			"ct.translation_status",
+			"ct.reviewed_by",
+			"ct.reviewed_at",
+			"c.is_deleted",
+			"c.updated_at",
+		).
+		From("categories c").
+		LeftJoin("category_translations ct ON ct.category_id = c.id AND ct.lang = ?", lang).
+		Where(sq.Eq{"c.is_deleted": false}).
 		OrderBy("display_order ASC NULLS LAST", "id ASC").
 		ToSql()
 	if err != nil {
@@ -51,12 +61,27 @@ func (r *ReaderRepo) ListCategories(ctx context.Context) ([]entity.Category, err
 	for rows.Next() {
 		var category entity.Category
 		var displayOrder sql.NullInt64
+		var translationStatus sql.NullString
+		var reviewedBy sql.NullString
+		var reviewedAt sql.NullTime
 
-		if err = rows.Scan(&category.ID, &category.Name, &displayOrder, &category.IsDeleted, &category.UpdatedAt); err != nil {
+		if err = rows.Scan(
+			&category.ID,
+			&category.Name,
+			&displayOrder,
+			&translationStatus,
+			&reviewedBy,
+			&reviewedAt,
+			&category.IsDeleted,
+			&category.UpdatedAt,
+		); err != nil {
 			return nil, fmt.Errorf("ReaderRepo - ListCategories - rows.Scan: %w", err)
 		}
 
 		category.DisplayOrder = nullableInt(displayOrder)
+		category.TranslationStatus = nullableString(translationStatus)
+		category.TranslationReviewedBy = nullableString(reviewedBy)
+		category.TranslationReviewedAt = nullableTime(reviewedAt)
 		categories = append(categories, category)
 	}
 
@@ -69,19 +94,36 @@ func (r *ReaderRepo) ListCategories(ctx context.Context) ([]entity.Category, err
 
 // ListAuthors returns paginated authors.
 func (r *ReaderRepo) ListAuthors(ctx context.Context, filter repo.AuthorFilter) ([]entity.Author, int, error) {
-	countBuilder := r.Builder.Select("COUNT(*)").From("authors").Where(sq.Eq{"is_deleted": false})
+	countBuilder := r.Builder.
+		Select("COUNT(*)").
+		From("authors a").
+		LeftJoin("author_translations at ON at.author_id = a.id AND at.lang = ?", filter.Lang).
+		Where(sq.Eq{"a.is_deleted": false})
 	dataBuilder := r.Builder.
-		Select("id, name, biography, death_text, death_number, is_deleted, updated_at").
-		From("authors").
-		Where(sq.Eq{"is_deleted": false}).
+		Select(
+			"a.id",
+			"COALESCE(at.name, a.name) AS name",
+			"COALESCE(at.biography, a.biography) AS biography",
+			"COALESCE(at.death_text, a.death_text) AS death_text",
+			"a.death_number",
+			"at.translation_status",
+			"at.reviewed_by",
+			"at.reviewed_at",
+			"a.is_deleted",
+			"a.updated_at",
+		).
+		From("authors a").
+		LeftJoin("author_translations at ON at.author_id = a.id AND at.lang = ?", filter.Lang).
+		Where(sq.Eq{"a.is_deleted": false}).
 		OrderBy("name ASC").
 		Limit(filter.Limit).
 		Offset(filter.Offset)
 
 	if filter.Query != "" {
 		like := "%" + filter.Query + "%"
-		countBuilder = countBuilder.Where("name ILIKE ?", like)
-		dataBuilder = dataBuilder.Where("name ILIKE ?", like)
+		condition := "(a.name ILIKE ? OR COALESCE(at.name, a.name) ILIKE ? OR COALESCE(at.biography, a.biography) ILIKE ?)"
+		countBuilder = countBuilder.Where(condition, like, like, like)
+		dataBuilder = dataBuilder.Where(condition, like, like, like)
 	}
 
 	total, err := r.count(ctx, countBuilder)
@@ -124,17 +166,20 @@ func (r *ReaderRepo) ListBooks(ctx context.Context, filter repo.BookFilter) ([]e
 		From("books b").
 		Join("book_publications p ON p.book_id = b.id AND p.status = 'published'").
 		LeftJoin("book_metadata_edits me ON me.book_id = b.id AND me.status = 'published'").
+		LeftJoin("book_metadata_translations bmt ON bmt.book_id = b.id AND bmt.lang = ?", filter.Lang).
 		LeftJoin("authors a ON a.id = b.author_id").
+		LeftJoin("author_translations at ON at.author_id = a.id AND at.lang = ?", filter.Lang).
 		LeftJoin("categories c ON c.id = COALESCE(me.category_id, b.category_id)").
+		LeftJoin("category_translations ct ON ct.category_id = c.id AND ct.lang = ?", filter.Lang).
 		Where(sq.Eq{"b.is_deleted": false})
 
-	dataBuilder := r.bookSelectBuilder().
+	dataBuilder := r.bookSelectBuilder(filter.Lang).
 		Where(sq.Eq{"b.is_deleted": false}).
 		OrderBy(
 			"p.featured DESC",
 			"p.sort_order ASC NULLS LAST",
 			"b.has_content DESC",
-			"COALESCE(me.display_title, b.name) ASC",
+			"COALESCE(bmt.display_title, me.display_title, b.name) ASC",
 			"b.id ASC",
 		).
 		Limit(filter.Limit).
@@ -175,9 +220,8 @@ func (r *ReaderRepo) ListBooks(ctx context.Context, filter repo.BookFilter) ([]e
 	return books, total, nil
 }
 
-// GetBook returns one book by id.
-func (r *ReaderRepo) GetBook(ctx context.Context, bookID int) (entity.Book, error) {
-	sqlText, args, err := r.bookSelectBuilder().
+func (r *ReaderRepo) GetBook(ctx context.Context, bookID int, lang string) (entity.Book, error) {
+	sqlText, args, err := r.bookSelectBuilder(lang).
 		Where(sq.Eq{"b.id": bookID, "b.is_deleted": false}).
 		ToSql()
 	if err != nil {
@@ -320,6 +364,9 @@ SELECT h.book_id,
        h.ordinal,
        COALESCE(he.content, h.content) AS title,
        (st.book_id IS NOT NULL) AS has_translation,
+       st.translation_status,
+       st.reviewed_by,
+       st.reviewed_at,
        (sa.book_id IS NOT NULL) AS has_audio,
        sa.lang,
        sa.url,
@@ -443,6 +490,89 @@ WHERE h.book_id = $1 AND h.heading_id = $2 AND h.is_deleted = false`
 	return section, nil
 }
 
+// CreateTranslationFeedback stores or updates a reader signal for one translated section.
+func (r *ReaderRepo) CreateTranslationFeedback(
+	ctx context.Context,
+	feedback entity.TranslationFeedback,
+) (entity.TranslationFeedback, error) {
+	if err := r.ensurePublishedBook(ctx, feedback.BookID); err != nil {
+		return entity.TranslationFeedback{}, err
+	}
+	if err := r.ensurePublishedHeading(ctx, feedback.BookID, feedback.HeadingID); err != nil {
+		return entity.TranslationFeedback{}, err
+	}
+	if err := r.ensureSectionTranslation(ctx, feedback.BookID, feedback.HeadingID, feedback.Lang); err != nil {
+		return entity.TranslationFeedback{}, err
+	}
+
+	sqlText := `
+INSERT INTO translation_feedbacks (
+    id, book_id, heading_id, lang, user_id, client_id, vote, reason, note, user_agent, client_ip, created_at, updated_at
+)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, now(), now())
+RETURNING id, book_id, heading_id, lang, user_id, client_id, vote, reason, note, user_agent, client_ip, created_at, updated_at`
+	if feedback.UserID != nil {
+		sqlText = `
+INSERT INTO translation_feedbacks (
+    id, book_id, heading_id, lang, user_id, client_id, vote, reason, note, user_agent, client_ip, created_at, updated_at
+)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, now(), now())
+ON CONFLICT (book_id, heading_id, lang, user_id) WHERE user_id IS NOT NULL
+DO UPDATE SET
+    vote = EXCLUDED.vote,
+    reason = EXCLUDED.reason,
+    note = EXCLUDED.note,
+    user_agent = EXCLUDED.user_agent,
+    client_ip = EXCLUDED.client_ip,
+    status = 'open',
+    resolved_by = NULL,
+    resolved_at = NULL,
+    resolution_note = NULL,
+    updated_at = now()
+RETURNING id, book_id, heading_id, lang, user_id, client_id, vote, reason, note, user_agent, client_ip, created_at, updated_at`
+	} else if feedback.ClientID != nil {
+		sqlText = `
+INSERT INTO translation_feedbacks (
+    id, book_id, heading_id, lang, user_id, client_id, vote, reason, note, user_agent, client_ip, created_at, updated_at
+)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, now(), now())
+ON CONFLICT (book_id, heading_id, lang, client_id) WHERE user_id IS NULL AND client_id IS NOT NULL
+DO UPDATE SET
+    vote = EXCLUDED.vote,
+    reason = EXCLUDED.reason,
+    note = EXCLUDED.note,
+    user_agent = EXCLUDED.user_agent,
+    client_ip = EXCLUDED.client_ip,
+    status = 'open',
+    resolved_by = NULL,
+    resolved_at = NULL,
+    resolution_note = NULL,
+    updated_at = now()
+RETURNING id, book_id, heading_id, lang, user_id, client_id, vote, reason, note, user_agent, client_ip, created_at, updated_at`
+	}
+
+	created, err := scanTranslationFeedback(r.Pool.QueryRow(
+		ctx,
+		sqlText,
+		feedback.ID,
+		feedback.BookID,
+		feedback.HeadingID,
+		feedback.Lang,
+		feedback.UserID,
+		feedback.ClientID,
+		feedback.Vote,
+		feedback.Reason,
+		feedback.Note,
+		feedback.UserAgent,
+		feedback.ClientIP,
+	))
+	if err != nil {
+		return entity.TranslationFeedback{}, fmt.Errorf("ReaderRepo - CreateTranslationFeedback - scanTranslationFeedback: %w", err)
+	}
+
+	return created, nil
+}
+
 func (r *ReaderRepo) count(ctx context.Context, builder sq.SelectBuilder) (int, error) {
 	sqlText, args, err := builder.ToSql()
 	if err != nil {
@@ -477,27 +607,71 @@ WHERE b.id = $1 AND b.is_deleted = false`,
 	return nil
 }
 
-func (r *ReaderRepo) bookSelectBuilder() sq.SelectBuilder {
+func (r *ReaderRepo) ensurePublishedHeading(ctx context.Context, bookID, headingID int) error {
+	var exists bool
+	if err := r.Pool.QueryRow(ctx, `
+SELECT EXISTS (
+    SELECT 1
+    FROM book_headings
+    WHERE book_id = $1 AND heading_id = $2 AND is_deleted = false
+)`,
+		bookID,
+		headingID,
+	).Scan(&exists); err != nil {
+		return fmt.Errorf("ReaderRepo - ensurePublishedHeading - QueryRow: %w", err)
+	}
+	if !exists {
+		return entity.ErrHeadingNotFound
+	}
+
+	return nil
+}
+
+func (r *ReaderRepo) ensureSectionTranslation(ctx context.Context, bookID, headingID int, lang string) error {
+	var exists bool
+	if err := r.Pool.QueryRow(ctx, `
+SELECT EXISTS (
+    SELECT 1
+    FROM section_translations
+    WHERE book_id = $1 AND heading_id = $2 AND lang = $3
+)`,
+		bookID,
+		headingID,
+		lang,
+	).Scan(&exists); err != nil {
+		return fmt.Errorf("ReaderRepo - ensureSectionTranslation - QueryRow: %w", err)
+	}
+	if !exists {
+		return entity.ErrTranslationNotFound
+	}
+
+	return nil
+}
+
+func (r *ReaderRepo) bookSelectBuilder(lang string) sq.SelectBuilder {
 	return r.Builder.
 		Select(
 			"b.id",
-			"COALESCE(me.display_title, b.name) AS name",
+			"COALESCE(bmt.display_title, me.display_title, b.name) AS name",
 			"COALESCE(me.category_id, b.category_id) AS category_id",
-			"c.name AS category_name",
+			"COALESCE(ct.name, c.name) AS category_name",
 			"b.author_id",
-			"a.name AS author_name",
+			"COALESCE(at.name, a.name) AS author_name",
 			"b.type",
 			"b.printed",
 			"b.minor_release",
 			"b.major_release",
-			"b.bibliography",
-			"b.hint",
+			"COALESCE(bmt.bibliography, b.bibliography) AS bibliography",
+			"COALESCE(bmt.hint, b.hint) AS hint",
 			"b.pdf_links",
 			"b.metadata",
 			"b.source_date",
-			"me.description",
+			"COALESCE(bmt.description, me.description) AS description",
 			"me.cover_url",
 			"me.notes AS editorial_notes",
+			"bmt.translation_status",
+			"bmt.reviewed_by",
+			"bmt.reviewed_at",
 			"p.status AS publication_status",
 			"p.featured",
 			"p.sort_order",
@@ -508,8 +682,11 @@ func (r *ReaderRepo) bookSelectBuilder() sq.SelectBuilder {
 		From("books b").
 		Join("book_publications p ON p.book_id = b.id AND p.status = 'published'").
 		LeftJoin("book_metadata_edits me ON me.book_id = b.id AND me.status = 'published'").
+		LeftJoin("book_metadata_translations bmt ON bmt.book_id = b.id AND bmt.lang = ?", lang).
 		LeftJoin("authors a ON a.id = b.author_id").
-		LeftJoin("categories c ON c.id = COALESCE(me.category_id, b.category_id)")
+		LeftJoin("author_translations at ON at.author_id = a.id AND at.lang = ?", lang).
+		LeftJoin("categories c ON c.id = COALESCE(me.category_id, b.category_id)").
+		LeftJoin("category_translations ct ON ct.category_id = c.id AND ct.lang = ?", lang)
 }
 
 func (r *ReaderRepo) pageSelectBuilder() sq.SelectBuilder {
@@ -584,13 +761,15 @@ func (r *ReaderRepo) getSectionTranslation(ctx context.Context, bookID, headingI
 	}
 
 	sqlText := `
-SELECT book_id, heading_id, lang, title, content, source, metadata, updated_at
+SELECT book_id, heading_id, lang, title, content, source, translation_status, reviewed_by, reviewed_at, metadata, updated_at
 FROM section_translations
 WHERE book_id = $1 AND heading_id = $2 AND lang = $3`
 
 	var translation entity.SectionTranslation
 	var title sql.NullString
 	var source sql.NullString
+	var reviewedBy sql.NullString
+	var reviewedAt sql.NullTime
 	var metadata []byte
 
 	err := r.Pool.QueryRow(ctx, sqlText, bookID, headingID, lang).Scan(
@@ -600,6 +779,9 @@ WHERE book_id = $1 AND heading_id = $2 AND lang = $3`
 		&title,
 		&translation.Content,
 		&source,
+		&translation.Status,
+		&reviewedBy,
+		&reviewedAt,
 		&metadata,
 		&translation.UpdatedAt,
 	)
@@ -613,6 +795,8 @@ WHERE book_id = $1 AND heading_id = $2 AND lang = $3`
 
 	translation.Title = nullableString(title)
 	translation.Source = nullableString(source)
+	translation.ReviewedBy = nullableString(reviewedBy)
+	translation.ReviewedAt = nullableTime(reviewedAt)
 	translation.Metadata = entity.RawJSON(metadata)
 
 	return &translation, nil
@@ -664,9 +848,16 @@ WHERE book_id = $1 AND heading_id = $2 AND lang = $3`
 func applyBookFilter(countBuilder, dataBuilder sq.SelectBuilder, filter repo.BookFilter) (sq.SelectBuilder, sq.SelectBuilder) {
 	if filter.Query != "" {
 		like := "%" + filter.Query + "%"
-		condition := "(COALESCE(me.display_title, b.name) ILIKE ? OR a.name ILIKE ? OR c.name ILIKE ?)"
-		countBuilder = countBuilder.Where(condition, like, like, like)
-		dataBuilder = dataBuilder.Where(condition, like, like, like)
+		condition := `(COALESCE(bmt.display_title, me.display_title, b.name) ILIKE ?
+			OR b.name ILIKE ?
+			OR COALESCE(at.name, a.name) ILIKE ?
+			OR a.name ILIKE ?
+			OR COALESCE(ct.name, c.name) ILIKE ?
+			OR c.name ILIKE ?
+			OR COALESCE(bmt.bibliography, b.bibliography) ILIKE ?
+			OR COALESCE(bmt.hint, b.hint) ILIKE ?)`
+		countBuilder = countBuilder.Where(condition, like, like, like, like, like, like, like, like)
+		dataBuilder = dataBuilder.Where(condition, like, like, like, like, like, like, like, like)
 	}
 
 	if filter.CategoryID != nil {
@@ -692,6 +883,9 @@ func scanAuthor(row rowScanner) (entity.Author, error) {
 	var biography sql.NullString
 	var deathText sql.NullString
 	var deathNumber sql.NullInt64
+	var translationStatus sql.NullString
+	var reviewedBy sql.NullString
+	var reviewedAt sql.NullTime
 
 	err := row.Scan(
 		&author.ID,
@@ -699,6 +893,9 @@ func scanAuthor(row rowScanner) (entity.Author, error) {
 		&biography,
 		&deathText,
 		&deathNumber,
+		&translationStatus,
+		&reviewedBy,
+		&reviewedAt,
 		&author.IsDeleted,
 		&author.UpdatedAt,
 	)
@@ -709,6 +906,9 @@ func scanAuthor(row rowScanner) (entity.Author, error) {
 	author.Biography = nullableString(biography)
 	author.DeathText = nullableString(deathText)
 	author.DeathNumber = nullableInt(deathNumber)
+	author.TranslationStatus = nullableString(translationStatus)
+	author.TranslationReviewedBy = nullableString(reviewedBy)
+	author.TranslationReviewedAt = nullableTime(reviewedAt)
 
 	return author, nil
 }
@@ -731,6 +931,9 @@ func scanBook(row rowScanner) (entity.Book, error) {
 	var description sql.NullString
 	var coverURL sql.NullString
 	var editorialNotes sql.NullString
+	var translationStatus sql.NullString
+	var reviewedBy sql.NullString
+	var reviewedAt sql.NullTime
 	var publicationStatus sql.NullString
 	var sortOrder sql.NullInt64
 
@@ -753,6 +956,9 @@ func scanBook(row rowScanner) (entity.Book, error) {
 		&description,
 		&coverURL,
 		&editorialNotes,
+		&translationStatus,
+		&reviewedBy,
+		&reviewedAt,
 		&publicationStatus,
 		&book.Featured,
 		&sortOrder,
@@ -780,6 +986,9 @@ func scanBook(row rowScanner) (entity.Book, error) {
 	book.Description = nullableString(description)
 	book.CoverURL = nullableString(coverURL)
 	book.EditorialNotes = nullableString(editorialNotes)
+	book.TranslationStatus = nullableString(translationStatus)
+	book.TranslationReviewedBy = nullableString(reviewedBy)
+	book.TranslationReviewedAt = nullableTime(reviewedAt)
 	book.PublicationStatus = nullableString(publicationStatus)
 	book.SortOrder = nullableInt(sortOrder)
 
@@ -812,6 +1021,8 @@ func scanPage(row rowScanner) (entity.BookPage, error) {
 	page.Part = nullableString(part)
 	page.PrintedPage = nullableString(printedPage)
 	page.Number = nullableString(number)
+	page.ContentHTML = readerutil.SanitizeHTML(page.ContentHTML)
+	page.ContentText = readerutil.PlainText(page.ContentHTML)
 	page.Services = entity.RawJSON(services)
 
 	return page, nil
@@ -844,6 +1055,9 @@ func scanHeading(row rowScanner) (entity.BookHeading, error) {
 func scanTOCEntry(row rowScanner, includeAudio bool) (entity.BookTOCEntry, error) {
 	var entry entity.BookTOCEntry
 	var parentID sql.NullInt64
+	var translationStatus sql.NullString
+	var reviewedBy sql.NullString
+	var reviewedAt sql.NullTime
 	var audioLang sql.NullString
 	var audioURL sql.NullString
 	var narrator sql.NullString
@@ -861,6 +1075,9 @@ func scanTOCEntry(row rowScanner, includeAudio bool) (entity.BookTOCEntry, error
 		&entry.Ordinal,
 		&entry.Title,
 		&entry.HasTranslation,
+		&translationStatus,
+		&reviewedBy,
+		&reviewedAt,
 		&entry.HasAudio,
 		&audioLang,
 		&audioURL,
@@ -875,6 +1092,9 @@ func scanTOCEntry(row rowScanner, includeAudio bool) (entity.BookTOCEntry, error
 	}
 
 	entry.ParentID = nullableInt(parentID)
+	entry.TranslationStatus = nullableString(translationStatus)
+	entry.TranslationReviewedBy = nullableString(reviewedBy)
+	entry.TranslationReviewedAt = nullableTime(reviewedAt)
 	if includeAudio && entry.HasAudio {
 		entry.Audio = &entity.SectionAudio{
 			BookID:          entry.BookID,
@@ -890,6 +1110,44 @@ func scanTOCEntry(row rowScanner, includeAudio bool) (entity.BookTOCEntry, error
 	}
 
 	return entry, nil
+}
+
+func scanTranslationFeedback(row rowScanner) (entity.TranslationFeedback, error) {
+	var feedback entity.TranslationFeedback
+	var userID sql.NullString
+	var clientID sql.NullString
+	var reason sql.NullString
+	var note sql.NullString
+	var userAgent sql.NullString
+	var clientIP sql.NullString
+
+	err := row.Scan(
+		&feedback.ID,
+		&feedback.BookID,
+		&feedback.HeadingID,
+		&feedback.Lang,
+		&userID,
+		&clientID,
+		&feedback.Vote,
+		&reason,
+		&note,
+		&userAgent,
+		&clientIP,
+		&feedback.CreatedAt,
+		&feedback.UpdatedAt,
+	)
+	if err != nil {
+		return entity.TranslationFeedback{}, err
+	}
+
+	feedback.UserID = nullableString(userID)
+	feedback.ClientID = nullableString(clientID)
+	feedback.Reason = nullableString(reason)
+	feedback.Note = nullableString(note)
+	feedback.UserAgent = nullableString(userAgent)
+	feedback.ClientIP = nullableString(clientIP)
+
+	return feedback, nil
 }
 
 func nullableString(value sql.NullString) *string {

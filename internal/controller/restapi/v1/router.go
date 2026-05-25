@@ -1,18 +1,22 @@
 package v1
 
 import (
+	"time"
+
 	"github.com/evrone/go-clean-template/internal/controller/restapi/middleware"
 	"github.com/evrone/go-clean-template/internal/usecase"
 	"github.com/evrone/go-clean-template/pkg/jwt"
 	"github.com/evrone/go-clean-template/pkg/logger"
 	"github.com/go-playground/validator/v10"
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/limiter"
 )
 
 // NewRoutes -.
 func NewRoutes(
 	apiV1Group fiber.Router,
 	reader usecase.Reader,
+	bookRAG usecase.BookRAG,
 	u usecase.User,
 	personal usecase.Personal,
 	editorial usecase.Editorial,
@@ -21,6 +25,7 @@ func NewRoutes(
 ) {
 	r := &V1{
 		reader:    reader,
+		bookRAG:   bookRAG,
 		u:         u,
 		personal:  personal,
 		editorial: editorial,
@@ -29,7 +34,10 @@ func NewRoutes(
 	}
 
 	// Public routes
-	authGroup := apiV1Group.Group("/auth")
+	authGroup := apiV1Group.Group("/auth", limiter.New(limiter.Config{
+		Max:        10,
+		Expiration: time.Minute,
+	}))
 	{
 		authGroup.Post("/register", r.register)
 		authGroup.Post("/login", r.login)
@@ -40,6 +48,10 @@ func NewRoutes(
 	{
 		bookGroup.Get("/", r.listBooks)
 		bookGroup.Get("/:book_id", r.getBook)
+		bookGroup.Post("/:book_id/rag", limiter.New(limiter.Config{
+			Max:        20,
+			Expiration: time.Minute,
+		}), r.askBookRAG)
 		bookGroup.Get("/:book_id/pages", r.listBookPages)
 		bookGroup.Get("/:book_id/pages/:page_id", r.getBookPage)
 		bookGroup.Get("/:book_id/headings", r.listBookHeadings)
@@ -47,6 +59,10 @@ func NewRoutes(
 		bookGroup.Get("/:book_id/toc", r.listBookTOC)
 		bookGroup.Get("/:book_id/toc/:heading_id/read", r.readBookTOCSection)
 		bookGroup.Get("/:book_id/toc/:heading_id/playlist", r.getBookTOCPlaylist)
+		bookGroup.Post("/:book_id/toc/:heading_id/translation-feedback", limiter.New(limiter.Config{
+			Max:        30,
+			Expiration: time.Minute,
+		}), r.createTranslationFeedback)
 	}
 
 	apiV1Group.Get("/categories", r.listCategories)
@@ -74,6 +90,10 @@ func NewRoutes(
 	adminGroup := protected.Group("/admin", middleware.Admin(u))
 	{
 		adminGroup.Get("/books", r.adminListBooks)
+		adminGroup.Get("/translation-feedbacks", r.adminListTranslationFeedbacks)
+		adminGroup.Get("/translation-feedbacks/summary", r.adminTranslationFeedbackSummary)
+		adminGroup.Post("/translation-feedbacks/:id/resolve", r.adminResolveTranslationFeedback)
+		adminGroup.Post("/translation-feedbacks/:id/reopen", r.adminReopenTranslationFeedback)
 		adminGroup.Put("/books/:book_id/publication", r.adminUpdatePublication)
 		adminGroup.Put("/books/:book_id/metadata-draft", r.adminSaveMetadataDraft)
 		adminGroup.Post("/books/:book_id/metadata-draft/publish", r.adminPublishMetadataDraft)

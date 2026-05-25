@@ -1,0 +1,71 @@
+{
+  "style_version": "reader-profile-v1",
+  "term_style": "balanced",
+  "default_profile": "general",
+  "profiles": {
+    "general": {
+      "label": "General Islamic classical prose",
+      "technical": false,
+      "category_keywords": [],
+      "book_keywords": [],
+      "style_guide": "Use polished, faithful book prose. Preserve the author's argument flow, keep technical terms only when they carry real scholarly meaning, and avoid making the translation feel like a glossary.",
+      "term_policy": "Translate ordinary vocabulary naturally. Keep Arabic technical terms only when a plain target-language word would lose precision, and clarify the term smoothly on first use."
+    },
+    "arabic_language": {
+      "label": "Arabic grammar, morphology, rhetoric, and language sciences",
+      "technical": true,
+      "category_keywords": ["النحو", "الصرف", "البلاغة", "العربية", "إعراب", "لغة عربية", "علوم اللغة"],
+      "book_keywords": ["آجرومية", "ألفية", "قطر الندى", "شذور الذهب", "مغني اللبيب", "الكافية", "التصريف", "البلاغة"],
+      "style_guide": "Render this as a precise Arabic-language sciences textbook. Preserve core grammatical terms in transliteration when the technical distinction matters, especially *kalam*, *kalimah*, *ism*, *fi'l*, *harf*, *i'rab*, *mabni*, *marfu'*, *mansub*, *majrur*, and *majzum*. Explain a term naturally on first use, then reuse it consistently. Translate technical titles naturally, for example 'Bab tentang *kalam*' rather than leaving a half-Arabic title when the phrase is not a fixed book title.",
+      "term_policy": "Prefer 'kalam (a complete meaningful utterance)' or 'kalimah (a word)' when the Arabic distinction is central. Do not flatten technical nahw terms into ordinary target-language words when that would confuse the lesson. For الخفض, prefer *khafd* or 'status jar/genitive' rather than reducing it to 'kasrah' unless the source specifically names kasrah. Render الألف واللام as one technical marker such as *alif-lam* or the definite article, not as two separate signs."
+    },
+    "fiqh": {
+      "label": "Fiqh, usul al-fiqh, and legal maxims",
+      "technical": true,
+      "category_keywords": ["فقه", "أصول الفقه", "قواعد فقهية", "فتاوى", "فرائض", "فقهي"],
+      "book_keywords": ["عمدة الفقه", "زاد المستقنع", "دليل الطالب", "أبي شجاع", "الورقات", "المستصفى", "المغني"],
+      "style_guide": "Render this as careful legal prose. Preserve legal distinctions such as conditions, pillars, causes, impediments, validity, invalidity, obligation, recommendation, dislikedness, concession, and exception. Keep the wording crisp and ordered.",
+      "term_policy": "Use target-language legal equivalents when clear, but keep terms such as *rukun*, *syarat*, *mani'*, *wajib*, *sunnah*, *makruh*, *haram*, or their English equivalents consistently when they are technical labels."
+    },
+    "aqidah": {
+      "label": "Aqidah, tawhid, creed, and sectarian discussions",
+      "technical": true,
+      "category_keywords": ["العقيدة", "التوحيد", "الإيمان", "الفرق", "الملل", "النحل", "الردود"],
+      "book_keywords": ["العقيدة الواسطية", "كتاب التوحيد", "لمعة الاعتقاد", "الشريعة", "السنة", "الرد على", "درء تعارض"],
+      "style_guide": "Render this with theological precision and restraint. Preserve doctrinal distinctions without softening, expanding, or modernizing the author's claims. Be especially careful with negation, affirmation, causality, and labels for groups or doctrines.",
+      "term_policy": "Keep core terms such as *tawhid*, *shirk*, *iman*, *kufr*, *bid'ah*, *ta'wil*, *ta'til*, and *tashbih* when they function as technical creed vocabulary, with a smooth first-use clarification."
+    },
+    "hadith": {
+      "label": "Hadith texts, hadith commentary, and hadith sciences",
+      "technical": true,
+      "category_keywords": ["حديث", "مصطلح الحديث", "السنة", "الجرح", "التعديل", "رجال الحديث", "علل الحديث", "الأسانيد"],
+      "book_keywords": ["الأربعين النووية", "رياض الصالحين", "عمدة الأحكام", "بلوغ المرام", "الأدب المفرد", "صحيح", "سنن", "مسند"],
+      "style_guide": "Render hadith material with clear separation between isnad, matn, commentary, narrator discussion, and grading. Do not put the isnad or the formula 'telah menceritakan kepada kami' inside a blockquote; keep the chain as ordinary prose. Use blockquotes only for the prophetic matn, direct question-answer dialogue, or clearly quoted speech. Preserve chains, narrator names, and grading terms accurately.",
+      "term_policy": "Keep hadith technical terms such as *isnad*, *matn*, *rawi*, *sahih*, *hasan*, *da'if*, *mursal*, and *musnad* when they are labels, and clarify them only when needed for readability."
+    },
+    "tafsir": {
+      "label": "Tafsir and Qur'anic sciences",
+      "technical": false,
+      "category_keywords": ["تفسير", "علوم القرآن", "القرآن", "قراءات", "التجويد"],
+      "book_keywords": ["تفسير", "الطبري", "ابن كثير", "السعدي", "القرطبي", "الكشاف", "أحكام القرآن"],
+      "style_guide": "Render this as faithful tafsir prose. Qur'anic passages must appear as blockquotes when clearly quoted, and references must not be invented. Preserve exegetical contrasts, variant readings, and cited opinions carefully.",
+      "term_policy": "Translate smoothly, keeping terms such as *tafsir*, *qira'ah*, *nasikh*, *mansukh*, and *asbab al-nuzul* only when they are technical labels."
+    },
+    "history": {
+      "label": "Sirah, history, tabaqat, and biography",
+      "technical": false,
+      "category_keywords": ["سيرة", "تاريخ", "تراجم", "طبقات", "أنساب", "فتوح", "مغازي", "وفيات"],
+      "book_keywords": ["السيرة", "تاريخ", "الطبقات", "البداية والنهاية", "سير أعلام", "الإصابة", "الاستيعاب", "الرحيق المختوم"],
+      "style_guide": "Render this as flowing historical narrative. Prioritize readable chronology, names, places, and events. Avoid unnecessary transliteration except for proper names, places, book titles, or terms that cannot be translated without distortion.",
+      "term_policy": "Use natural target-language prose. Do not overload the reader with Arabic technical terms unless the term is central to the historical account."
+    },
+    "adab_tazkiyah": {
+      "label": "Adab, akhlaq, dhikr, tazkiyah, and devotional prose",
+      "technical": false,
+      "category_keywords": ["آداب", "أدب", "أخلاق", "زهد", "رقائق", "أذكار", "دعاء", "تزكية", "الرقاق"],
+      "book_keywords": ["الأذكار", "رياض الصالحين", "مدارج السالكين", "إحياء", "الزهد", "حلية الأولياء", "الأدب المفرد"],
+      "style_guide": "Render this as refined devotional and ethical prose. Keep the tone reverent, calm, and literary without adding emotional flourishes that are not in the source.",
+      "term_policy": "Translate naturally, preserving terms such as *taqwa*, *ikhlas*, *dhikr*, *zuhd*, and *sabr* when they are central spiritual concepts."
+    }
+  }
+}

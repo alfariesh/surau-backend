@@ -1,0 +1,93 @@
+# Deploy VPS dengan Docker Compose
+
+Dokumen ini untuk deployment sederhana di satu server VPS dengan domain `api.surau.org`: aplikasi Go berjalan sebagai container, PostgreSQL berjalan sebagai container, dan port aplikasi hanya dibuka ke `127.0.0.1:8080` agar bisa diletakkan di belakang Nginx/Caddy/Cloudflare Tunnel.
+
+## 1. Siapkan server
+
+Install Docker Engine dan Docker Compose plugin di server, lalu clone repo ini.
+
+```sh
+git clone <repo-url> surau-backend
+cd surau-backend
+```
+
+## 2. Buat environment production
+
+```sh
+cp .env.production.example .env.production
+openssl rand -hex 32
+```
+
+Edit `.env.production`:
+
+- Ganti `POSTGRES_PASSWORD`.
+- Ganti password yang sama di bagian `PG_URL`.
+- Ganti `JWT_SECRET` dengan output `openssl rand -hex 32`.
+- Biarkan `APP_BIND_ADDR=127.0.0.1` jika reverse proxy ada di server yang sama.
+- Biarkan `APP_PUBLISHED_PORT=8080`, kecuali port 8080 sudah dipakai service lain.
+
+Jika memakai database cloud, ganti `PG_URL` ke URL provider. Untuk database yang wajib SSL, pakai `?sslmode=require`.
+Jika password database berisi karakter khusus seperti `@`, `#`, `/`, atau `:`, encode password tersebut di `PG_URL`.
+
+## 3. Build dan jalankan
+
+```sh
+docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build
+```
+
+Aplikasi otomatis menjalankan migration saat container `app` start karena Dockerfile membangun binary dengan tag `migrate`.
+
+## 4. Cek health
+
+```sh
+docker compose --env-file .env.production -f docker-compose.prod.yml ps
+curl -i http://127.0.0.1:8080/healthz
+curl -i http://127.0.0.1:8080/readyz
+curl -i https://api.surau.org/healthz
+```
+
+`/healthz` mengecek proses HTTP. `/readyz` mengecek koneksi PostgreSQL.
+
+## 5. Cloudflare DNS
+
+Di Cloudflare DNS untuk zona `surau.org`, buat record:
+
+- Type: `A`
+- Name: `api`
+- Content: IP publik VPS
+- Proxy status: Proxied
+
+Jika reverse proxy di VPS sudah memakai sertifikat HTTPS valid, gunakan mode SSL/TLS Cloudflare `Full (strict)`.
+
+## 6. Reverse proxy contoh
+
+Contoh Nginx host config:
+
+```nginx
+server {
+    listen 80;
+    server_name api.surau.org;
+
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+Untuk HTTPS, pasang Certbot atau gunakan Caddy/Cloudflare Tunnel.
+
+## 7. Update aplikasi
+
+```sh
+git pull
+docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build
+docker compose --env-file .env.production -f docker-compose.prod.yml logs -f app
+```
+
+## Catatan data
+
+Database disimpan di Docker volume `surau-backend-prod_db_data`, dimount ke `/var/lib/postgresql` sesuai layout image PostgreSQL 18. Jangan jalankan `docker compose down -v` di production kecuali memang ingin menghapus data.

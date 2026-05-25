@@ -4,6 +4,7 @@
 
 # Config
 .env
+.env.production
 .env.local
 .env.*.local
 
@@ -28,3 +29,7 @@ scripts/__pycache__/
 tmp/
 
 coverage.txt
+
+# Temporary directories
+temp-pageIndex/
+temp-langextract/

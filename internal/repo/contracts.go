@@ -40,15 +40,31 @@ type (
 
 	// ReaderRepo -.
 	ReaderRepo interface {
-		ListCategories(ctx context.Context) ([]entity.Category, error)
+		ListCategories(ctx context.Context, lang string) ([]entity.Category, error)
 		ListAuthors(ctx context.Context, filter AuthorFilter) ([]entity.Author, int, error)
 		ListBooks(ctx context.Context, filter BookFilter) ([]entity.Book, int, error)
-		GetBook(ctx context.Context, bookID int) (entity.Book, error)
+		GetBook(ctx context.Context, bookID int, lang string) (entity.Book, error)
 		ListBookPages(ctx context.Context, bookID int, filter PageFilter) ([]entity.BookPage, int, error)
 		GetBookPage(ctx context.Context, bookID, pageID int) (entity.BookPage, error)
 		ListBookHeadings(ctx context.Context, bookID int, query string) ([]entity.BookHeading, error)
 		ListTOCEntries(ctx context.Context, bookID int, lang string, includeAudio bool) ([]entity.BookTOCEntry, error)
 		GetSection(ctx context.Context, bookID, headingID int, lang string) (entity.BookSection, error)
+		CreateTranslationFeedback(ctx context.Context, feedback entity.TranslationFeedback) (entity.TranslationFeedback, error)
+	}
+
+	// BookRAGRepo provides PageIndex-like retrieval data for book RAG.
+	BookRAGRepo interface {
+		GetRAGBookDocument(ctx context.Context, bookID int, lang string) (entity.RAGBookDocument, error)
+		ListRAGStructure(ctx context.Context, bookID int, lang string) ([]entity.RAGStructureNode, error)
+		GetRAGPageSources(
+			ctx context.Context,
+			bookID int,
+			headingIDs []int,
+			focusPageIDs []int,
+			lang string,
+			maxPages int,
+		) ([]entity.RAGPageSource, error)
+		SearchRAGPages(ctx context.Context, bookID int, query string, lang string, limit int) ([]entity.RAGSearchResult, error)
 	}
 
 	// PersonalRepo -.
@@ -72,6 +88,10 @@ type (
 		SaveHeadingDraft(ctx context.Context, actorID string, edit entity.BookHeadingEdit) (entity.BookHeadingEdit, error)
 		PublishHeadingDraft(ctx context.Context, actorID string, bookID, headingID int) (entity.BookHeadingEdit, error)
 		AddCollectionItem(ctx context.Context, actorID, slug string, bookID int, sortOrder *int) (entity.BookCollectionItem, error)
+		ListTranslationFeedbacks(ctx context.Context, filter TranslationFeedbackFilter) ([]entity.AdminTranslationFeedback, int, error)
+		TranslationFeedbackSummary(ctx context.Context, filter TranslationFeedbackFilter) (entity.AdminTranslationFeedbackSummary, error)
+		ResolveTranslationFeedback(ctx context.Context, actorID, feedbackID string, note *string) (entity.AdminTranslationFeedback, error)
+		ReopenTranslationFeedback(ctx context.Context, actorID, feedbackID string) (entity.AdminTranslationFeedback, error)
 	}
 
 	// TaskFilter -.
@@ -84,6 +104,7 @@ type (
 	// BookFilter -.
 	BookFilter struct {
 		Query      string
+		Lang       string
 		CategoryID *int
 		AuthorID   *int
 		HasContent *bool
@@ -94,6 +115,7 @@ type (
 	// AuthorFilter -.
 	AuthorFilter struct {
 		Query  string
+		Lang   string
 		Limit  uint64
 		Offset uint64
 	}
@@ -119,5 +141,16 @@ type (
 		HasContent *bool
 		Limit      uint64
 		Offset     uint64
+	}
+
+	// TranslationFeedbackFilter -.
+	TranslationFeedbackFilter struct {
+		BookID    *int
+		HeadingID *int
+		Lang      string
+		Vote      string
+		Status    string
+		Limit     uint64
+		Offset    uint64
 	}
 )

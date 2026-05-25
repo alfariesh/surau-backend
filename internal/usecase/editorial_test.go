@@ -165,3 +165,95 @@ func TestEditorialSaveMetadataDraftTrimsEmptyFields(t *testing.T) {
 	assert.Nil(t, edit.Description)
 	assert.Nil(t, edit.CategoryID)
 }
+
+func TestEditorialTranslationFeedbacksStatusFilter(t *testing.T) {
+	t.Parallel()
+
+	t.Run("defaults to open feedback", func(t *testing.T) {
+		t.Parallel()
+
+		uc, mockRepo := newEditorialUseCase(t)
+		bookID := 1
+
+		mockRepo.EXPECT().
+			ListTranslationFeedbacks(context.Background(), repo.TranslationFeedbackFilter{
+				BookID: &bookID,
+				Lang:   "id",
+				Status: entity.FeedbackStatusOpen,
+				Limit:  50,
+				Offset: 0,
+			}).
+			Return([]entity.AdminTranslationFeedback{{BookID: 1, Status: entity.FeedbackStatusOpen}}, 1, nil)
+
+		feedbacks, total, err := uc.TranslationFeedbacks(context.Background(), &bookID, nil, " ID ", "", "", 0, -1)
+
+		require.NoError(t, err)
+		assert.Equal(t, 1, total)
+		assert.Equal(t, entity.FeedbackStatusOpen, feedbacks[0].Status)
+	})
+
+	t.Run("all status removes status filter", func(t *testing.T) {
+		t.Parallel()
+
+		uc, mockRepo := newEditorialUseCase(t)
+
+		mockRepo.EXPECT().
+			TranslationFeedbackSummary(context.Background(), repo.TranslationFeedbackFilter{
+				Vote:   "dislike",
+				Limit:  25,
+				Offset: 0,
+			}).
+			Return(entity.AdminTranslationFeedbackSummary{Dislikes: 2}, nil)
+
+		summary, err := uc.TranslationFeedbackSummary(context.Background(), nil, nil, "", " DISLIKE ", " all ", 25)
+
+		require.NoError(t, err)
+		assert.Equal(t, 2, summary.Dislikes)
+	})
+
+	t.Run("invalid status is rejected", func(t *testing.T) {
+		t.Parallel()
+
+		uc, _ := newEditorialUseCase(t)
+
+		_, _, err := uc.TranslationFeedbacks(context.Background(), nil, nil, "", "", "done", 10, 0)
+
+		require.ErrorIs(t, err, entity.ErrInvalidFeedback)
+	})
+}
+
+func TestEditorialResolveTranslationFeedback(t *testing.T) {
+	t.Parallel()
+
+	t.Run("trims resolution note", func(t *testing.T) {
+		t.Parallel()
+
+		uc, mockRepo := newEditorialUseCase(t)
+		note := "  Sudah diperbaiki.  "
+		expectedNote := "Sudah diperbaiki."
+
+		mockRepo.EXPECT().
+			ResolveTranslationFeedback(context.Background(), "actor-id", "feedback-id", &expectedNote).
+			Return(entity.AdminTranslationFeedback{
+				ID:             "feedback-id",
+				Status:         entity.FeedbackStatusResolved,
+				ResolutionNote: &expectedNote,
+			}, nil)
+
+		feedback, err := uc.ResolveTranslationFeedback(context.Background(), "actor-id", " feedback-id ", &note)
+
+		require.NoError(t, err)
+		assert.Equal(t, entity.FeedbackStatusResolved, feedback.Status)
+		assert.Equal(t, &expectedNote, feedback.ResolutionNote)
+	})
+
+	t.Run("empty id is rejected", func(t *testing.T) {
+		t.Parallel()
+
+		uc, _ := newEditorialUseCase(t)
+
+		_, err := uc.ReopenTranslationFeedback(context.Background(), "actor-id", " ")
+
+		require.ErrorIs(t, err, entity.ErrInvalidFeedback)
+	})
+}

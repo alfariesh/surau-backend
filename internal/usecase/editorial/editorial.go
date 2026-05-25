@@ -146,6 +146,63 @@ func (uc *UseCase) AddCollectionItem(
 	return uc.repo.AddCollectionItem(ctx, actorID, strings.TrimSpace(slug), bookID, sortOrder)
 }
 
+// TranslationFeedbacks returns paginated reader feedback for admin review.
+func (uc *UseCase) TranslationFeedbacks(
+	ctx context.Context,
+	bookID, headingID *int,
+	lang, vote, status string,
+	limit, offset int,
+) ([]entity.AdminTranslationFeedback, int, error) {
+	filter, err := translationFeedbackFilter(bookID, headingID, lang, vote, status, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return uc.repo.ListTranslationFeedbacks(ctx, filter)
+}
+
+// TranslationFeedbackSummary aggregates reader feedback for admin review.
+func (uc *UseCase) TranslationFeedbackSummary(
+	ctx context.Context,
+	bookID, headingID *int,
+	lang, vote, status string,
+	limit int,
+) (entity.AdminTranslationFeedbackSummary, error) {
+	filter, err := translationFeedbackFilter(bookID, headingID, lang, vote, status, limit, 0)
+	if err != nil {
+		return entity.AdminTranslationFeedbackSummary{}, err
+	}
+
+	return uc.repo.TranslationFeedbackSummary(ctx, filter)
+}
+
+// ResolveTranslationFeedback marks reader feedback as handled by an admin.
+func (uc *UseCase) ResolveTranslationFeedback(
+	ctx context.Context,
+	actorID, feedbackID string,
+	note *string,
+) (entity.AdminTranslationFeedback, error) {
+	feedbackID = strings.TrimSpace(feedbackID)
+	if feedbackID == "" {
+		return entity.AdminTranslationFeedback{}, entity.ErrInvalidFeedback
+	}
+
+	return uc.repo.ResolveTranslationFeedback(ctx, actorID, feedbackID, trimStringPtr(note))
+}
+
+// ReopenTranslationFeedback moves a handled feedback row back to the active queue.
+func (uc *UseCase) ReopenTranslationFeedback(
+	ctx context.Context,
+	actorID, feedbackID string,
+) (entity.AdminTranslationFeedback, error) {
+	feedbackID = strings.TrimSpace(feedbackID)
+	if feedbackID == "" {
+		return entity.AdminTranslationFeedback{}, entity.ErrInvalidFeedback
+	}
+
+	return uc.repo.ReopenTranslationFeedback(ctx, actorID, feedbackID)
+}
+
 func isPublicationStatus(status string) bool {
 	switch status {
 	case entity.PublicationStatusHidden,
@@ -156,6 +213,38 @@ func isPublicationStatus(status string) bool {
 	default:
 		return false
 	}
+}
+
+func translationFeedbackFilter(
+	bookID, headingID *int,
+	lang, vote, status string,
+	limit, offset int,
+) (repo.TranslationFeedbackFilter, error) {
+	lang = strings.ToLower(strings.TrimSpace(lang))
+	vote = strings.ToLower(strings.TrimSpace(vote))
+	if vote != "" && vote != "like" && vote != "dislike" {
+		return repo.TranslationFeedbackFilter{}, entity.ErrInvalidFeedback
+	}
+
+	status = strings.ToLower(strings.TrimSpace(status))
+	if status == "" {
+		status = entity.FeedbackStatusOpen
+	}
+	if status == "all" {
+		status = ""
+	} else if status != entity.FeedbackStatusOpen && status != entity.FeedbackStatusResolved {
+		return repo.TranslationFeedbackFilter{}, entity.ErrInvalidFeedback
+	}
+
+	return repo.TranslationFeedbackFilter{
+		BookID:    bookID,
+		HeadingID: headingID,
+		Lang:      lang,
+		Vote:      vote,
+		Status:    status,
+		Limit:     clampLimit(limit),
+		Offset:    clampOffset(offset),
+	}, nil
 }
 
 func trimStringPtr(value *string) *string {

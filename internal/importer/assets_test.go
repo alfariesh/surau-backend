@@ -59,6 +59,78 @@ func TestReaderAssetValidate(t *testing.T) {
 			},
 			wantErr: true,
 		},
+		{
+			name: "book metadata translation",
+			asset: importer.ReaderAsset{
+				Kind:         "book_metadata_translation",
+				BookID:       797,
+				Lang:         "id",
+				DisplayTitle: stringPtr("Judul Kitab"),
+			},
+		},
+		{
+			name: "author translation",
+			asset: importer.ReaderAsset{
+				Kind:     "author_translation",
+				AuthorID: 177,
+				Lang:     "id",
+				Name:     stringPtr("Nama Penulis"),
+			},
+		},
+		{
+			name: "category translation",
+			asset: importer.ReaderAsset{
+				Kind:       "category_translation",
+				CategoryID: 10,
+				Lang:       "id",
+				Name:       stringPtr("Ilmu Hadis"),
+			},
+		},
+		{
+			name: "reviewed translation",
+			asset: importer.ReaderAsset{
+				Kind:       "translation",
+				BookID:     797,
+				HeadingID:  10,
+				Lang:       "id",
+				Content:    "Terjemahan",
+				Status:     "reviewed",
+				ReviewedBy: stringPtr("Editor A"),
+			},
+		},
+		{
+			name: "reviewed translation missing reviewer",
+			asset: importer.ReaderAsset{
+				Kind:      "translation",
+				BookID:    797,
+				HeadingID: 10,
+				Lang:      "id",
+				Content:   "Terjemahan",
+				Status:    "reviewed",
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid translation status",
+			asset: importer.ReaderAsset{
+				Kind:      "translation",
+				BookID:    797,
+				HeadingID: 10,
+				Lang:      "id",
+				Content:   "Terjemahan",
+				Status:    "approved",
+			},
+			wantErr: true,
+		},
+		{
+			name: "book metadata missing title",
+			asset: importer.ReaderAsset{
+				Kind:   "book_metadata_translation",
+				BookID: 797,
+				Lang:   "id",
+			},
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -99,4 +171,8 @@ func TestReaderAssetSampleJSONL(t *testing.T) {
 
 	require.NoError(t, scanner.Err())
 	require.Positive(t, count)
+}
+
+func stringPtr(value string) *string {
+	return &value
 }

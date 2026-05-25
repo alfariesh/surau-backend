@@ -12,6 +12,7 @@ type V1 struct {
 	u         usecase.User
 	tk        usecase.Task
 	reader    usecase.Reader
+	bookRAG   usecase.BookRAG
 	personal  usecase.Personal
 	editorial usecase.Editorial
 	l         logger.Interface
