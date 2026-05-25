@@ -28,6 +28,10 @@ MIN_CONTENT_CHARS_FAIL = 120
 MIN_CONTENT_CHARS_WARN = 300
 MANY_FOOTNOTE_THRESHOLD = 2
 VALID_TRANSLATION_STATUSES = {"generated", "reviewed"}
+SCRIPT_DIR = Path(__file__).resolve().parent
+DEFAULT_PROFILE_MAP = SCRIPT_DIR / "translation_profiles.json"
+STYLE_VERSION = "reader-profile-v1"
+TECHNICAL_ITALIC_CHECK_CHARS = 700
 
 RAW_BRACKET_RE = re.compile(
     r"\[\s*(?:Mereka\s+berkata|They\s+said|قالوا|قال)\s*[:：][^\]]{10,}\]",
@@ -36,6 +40,7 @@ RAW_BRACKET_RE = re.compile(
 FOOTNOTE_RE = re.compile(r"\[\d{1,3}\]")
 EMPTY_HEADING_RE = re.compile(r"(?m)^#{1,6}\s*$")
 BLOCKQUOTE_RE = re.compile(r"(?m)^>\s+\S")
+ITALIC_TERM_RE = re.compile(r"(?<!\*)\*[^*\n]{2,60}\*(?!\*)|(?<!_)_[^_\n]{2,60}_(?!_)")
 SCRIPTURE_OR_HADITH_RE = re.compile(
     r"(QS\.|Q\.S\.|Al-Qur['’`]?an|Allah(?:\s+Ta['’`]?ala)?\s+berfirman|"
     r"Rasulullah[^.\n]{0,120}(?:bersabda|berkata)|\bHR\.|Muttafaq\s+['’`]?alaih|"
@@ -139,12 +144,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--all-toc", action="store_true", help="Require all TOC headings to have translation rows")
     parser.add_argument("--report", default="", help="Write machine-readable JSON report")
     parser.add_argument("--strict", action="store_true", help="Treat warnings as failures")
+    parser.add_argument("--profile-map", default=str(DEFAULT_PROFILE_MAP), help="Translation profile JSON config")
     return parser.parse_args()
 
 
 def run_qa(args: argparse.Namespace) -> dict[str, Any]:
     file_path = Path(args.file)
     issues: list[Issue] = []
+    profile_map, profile_issues = load_profile_map(Path(args.profile_map).expanduser())
+    issues.extend(profile_issues)
     rows, parse_issues = read_jsonl(file_path)
     issues.extend(parse_issues)
 
@@ -162,7 +170,7 @@ def run_qa(args: argparse.Namespace) -> dict[str, Any]:
 
     seen: dict[tuple[int, int, str], AssetRow] = {}
     for row in translation_rows:
-        issues.extend(validate_translation_row(row))
+        issues.extend(validate_translation_row(row, profile_map))
         key = (row.book_id or 0, row.heading_id or 0, row.lang)
         if all(key):
             if key in seen:
@@ -244,6 +252,28 @@ def read_jsonl(path: Path) -> tuple[list[AssetRow], list[Issue]]:
     return rows, issues
 
 
+def load_profile_map(path: Path) -> tuple[dict[str, Any], list[Issue]]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except OSError as err:
+        return {"profiles": {}}, [Issue(FAIL, "PROFILE_MAP_READ_FAILED", str(err))]
+    except json.JSONDecodeError as err:
+        return {"profiles": {}}, [Issue(FAIL, "PROFILE_MAP_INVALID_JSON", f"invalid profile map JSON: {err}")]
+
+    profiles = payload.get("profiles")
+    if not isinstance(profiles, dict):
+        return {"profiles": {}}, [Issue(FAIL, "PROFILE_MAP_INVALID", "profile map must contain profiles object")]
+    if payload.get("style_version") != STYLE_VERSION:
+        return payload, [
+            Issue(
+                FAIL,
+                "PROFILE_MAP_STYLE_VERSION",
+                f"profile map must use style_version={STYLE_VERSION}",
+            )
+        ]
+    return payload, []
+
+
 def validate_common_shape(row: AssetRow, expected_book_id: int | None, expected_lang: str | None) -> list[Issue]:
     issues: list[Issue] = []
     if not row.kind:
@@ -267,7 +297,7 @@ def validate_common_shape(row: AssetRow, expected_book_id: int | None, expected_
     return issues
 
 
-def validate_translation_row(row: AssetRow) -> list[Issue]:
+def validate_translation_row(row: AssetRow, profile_map: dict[str, Any]) -> list[Issue]:
     issues: list[Issue] = []
     content = row.content
     title = row.title
@@ -293,8 +323,10 @@ def validate_translation_row(row: AssetRow) -> list[Issue]:
     metadata = row.metadata
     if metadata is None:
         issues.append(row_issue(WARN, "MISSING_METADATA", "metadata is missing", row))
-    elif isinstance(metadata, dict) and metadata.get("truncated_source") is True:
-        issues.append(row_issue(FAIL, "TRUNCATED_SOURCE", "metadata.truncated_source must not be true", row))
+    elif isinstance(metadata, dict):
+        if metadata.get("truncated_source") is True:
+            issues.append(row_issue(FAIL, "TRUNCATED_SOURCE", "metadata.truncated_source must not be true", row))
+        issues.extend(validate_profile_metadata(row, metadata, profile_map))
 
     if "[DRY RUN]" in title or "[DRY RUN]" in content:
         issues.append(row_issue(FAIL, "DRY_RUN_PLACEHOLDER", "dry-run placeholder found", row))
@@ -320,6 +352,46 @@ def validate_translation_row(row: AssetRow) -> list[Issue]:
 
     if SCRIPTURE_OR_HADITH_RE.search(content) and not BLOCKQUOTE_RE.search(content):
         issues.append(row_issue(WARN, "MISSING_BLOCKQUOTE", "section appears to cite scripture/hadith but has no blockquote", row))
+
+    return issues
+
+
+def validate_profile_metadata(row: AssetRow, metadata: dict[str, Any], profile_map: dict[str, Any]) -> list[Issue]:
+    issues: list[Issue] = []
+    profiles = profile_map.get("profiles")
+    if not isinstance(profiles, dict):
+        profiles = {}
+
+    profile_name = str(metadata.get("translation_profile") or "").strip()
+    if not profile_name:
+        issues.append(row_issue(WARN, "MISSING_TRANSLATION_PROFILE", "metadata.translation_profile is missing", row))
+        return issues
+    if profile_name not in profiles:
+        issues.append(row_issue(FAIL, "INVALID_TRANSLATION_PROFILE", f"unknown translation_profile={profile_name}", row))
+        return issues
+
+    style_version = str(metadata.get("style_version") or "").strip()
+    if style_version != STYLE_VERSION:
+        issues.append(
+            row_issue(
+                WARN,
+                "STYLE_VERSION_MISMATCH",
+                f"metadata.style_version should be {STYLE_VERSION}",
+                row,
+            )
+        )
+
+    profile = profiles.get(profile_name)
+    is_technical = isinstance(profile, dict) and bool(profile.get("technical"))
+    if is_technical and len(row.content) >= TECHNICAL_ITALIC_CHECK_CHARS and not ITALIC_TERM_RE.search(row.content):
+        issues.append(
+            row_issue(
+                WARN,
+                "MISSING_TECHNICAL_ITALICS",
+                "technical profile section has no italicized technical term",
+                row,
+            )
+        )
 
     return issues
 

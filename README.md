@@ -145,6 +145,11 @@ go run ./cmd/import-reader-assets --file=tmp/book-1-id.jsonl
 
 Use `--target-lang en` for English, repeat `--heading-id` for multiple sections, or use `--all-toc --limit=5` for a small batch. The generated translation content is Markdown with a professional scholarly style, including blockquotes for Qur'an, hadith, or clearly quoted source speech.
 
+Reader translation prompts are category-aware. `--profile auto` detects a
+translation profile from book/category metadata, while `--profile fiqh`,
+`--profile history`, and similar overrides are available for manual curation.
+Generated JSONL metadata stores the profile and `style_version`.
+
 See [scripts/README.md](/Users/macmini/Downloads/surau-backend/scripts/README.md) for script-specific usage and the recommended translation batching strategy.
 
 Catalog endpoints support an optional `lang` query parameter:

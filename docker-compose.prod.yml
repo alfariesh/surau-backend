@@ -1,17 +1,15 @@
-name: surau-backend
+name: surau-backend-prod
 
 services:
   db:
     image: postgres:18.4-alpine
     restart: unless-stopped
-    env_file:
-      - .env.production
     environment:
       POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB}
     volumes:
-      - db_data:/var/lib/postgresql/data
+      - db_data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
       interval: 10s
@@ -26,13 +24,23 @@ services:
       context: .
       dockerfile: Dockerfile
     restart: unless-stopped
-    env_file:
-      - .env.production
+    environment:
+      APP_NAME: ${APP_NAME:?set APP_NAME}
+      APP_VERSION: ${APP_VERSION:?set APP_VERSION}
+      HTTP_PORT: ${HTTP_PORT:-8080}
+      HTTP_USE_PREFORK_MODE: ${HTTP_USE_PREFORK_MODE:-false}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      METRICS_ENABLED: ${METRICS_ENABLED:-false}
+      SWAGGER_ENABLED: ${SWAGGER_ENABLED:-false}
+      PG_POOL_MAX: ${PG_POOL_MAX:-10}
+      PG_URL: ${PG_URL:?set PG_URL}
+      JWT_TOKEN_EXPIRY: ${JWT_TOKEN_EXPIRY:-24h}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
     depends_on:
       db:
         condition: service_healthy
     ports:
-      - "${APP_BIND_ADDR:-127.0.0.1}:8080:8080"
+      - "${APP_BIND_ADDR:-127.0.0.1}:${APP_PUBLISHED_PORT:-8080}:8080"
     networks:
       - internal
 

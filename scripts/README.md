@@ -60,9 +60,11 @@ python3 scripts/translate_reader_assets.py \
   --base-url http://127.0.0.1:8080 \
   --book-id 1 \
   --heading-id 5 \
+  --profile auto \
   --target-lang id \
   --max-source-chars 2500 \
-  --out /tmp/surau-book-1-heading-5-id.jsonl
+  --out /tmp/surau-book-1-heading-5-id.jsonl \
+  --eval-report /tmp/surau-book-1-heading-5-id.eval.json
 ```
 
 ### Full Book Queue
@@ -74,6 +76,7 @@ python3 scripts/translate_reader_assets.py \
   --base-url http://127.0.0.1:8080 \
   --book-id 1 \
   --all-toc \
+  --profile auto \
   --target-lang id \
   --concurrency 10 \
   --resume \
@@ -93,6 +96,11 @@ Notes:
   default, while successful rows remain importable.
 - JSONL row order is not guaranteed when `--concurrency` is greater than `1`;
   import does not require ordered rows.
+- `--profile auto` fetches `/v1/books/{book_id}?lang=ar`, detects the
+  translation profile from book/category metadata, and stores it in row
+  metadata. Use `--profile fiqh`, `--profile history`, etc. to override.
+- `--eval-report` writes a compact JSON report for generated rows with detected
+  profile, content length, QA status, and warning/failure counts.
 
 Import a generated JSONL file. For the full-book example above:
 
@@ -111,6 +119,65 @@ curl 'http://127.0.0.1:8080/v1/books/1/toc/5/read?lang=id'
 
 Do not translate a full book and two languages in one LLM call, even when the
 context window looks large. Use TOC sections as the unit of work.
+
+### Category-Aware Translation Profiles
+
+Reader translations use profile-aware prompting. Profiles live in
+`scripts/translation_profiles.json` and are selected automatically from
+`category_id`, `category_name`, book title, and bibliography. The default term
+style is balanced: preserve Arabic technical terms when precision would be lost,
+but keep the prose readable.
+
+Profiles:
+
+- `general`: safe fallback for uncategorized classical prose.
+- `arabic_language`: nahwu, sharaf, balaghah, and language sciences; preserve
+  terms such as *kalam*, *kalimah*, *ism*, *fi'l*, *harf*, and *i'rab* when
+  the distinction matters.
+- `fiqh`: legal prose; preserve conditions, pillars, validity, invalidity,
+  exceptions, and rulings with crisp wording.
+- `aqidah`: creed and sectarian discussions; preserve doctrinal terms such as
+  *tawhid*, *shirk*, *iman*, *bid'ah*, *ta'wil*, and *ta'til*.
+- `hadith`: hadith texts, commentary, and sciences; preserve matn/isnad,
+  narrator names, and grading terms.
+- `tafsir`: tafsir and Qur'anic sciences; keep quoted ayat in blockquotes and
+  never invent references.
+- `history`: sirah, tarikh, tabaqat, and biography; prioritize flowing
+  historical narrative and avoid unnecessary transliteration.
+- `adab_tazkiyah`: adab, akhlaq, dhikr, and devotional prose; keep a refined,
+  faithful tone without extra emotional flourishes.
+
+Sample one to three headings before a full run:
+
+```sh
+python3 scripts/translate_reader_assets.py \
+  --base-url http://127.0.0.1:8080 \
+  --book-id 1 \
+  --all-toc \
+  --limit 3 \
+  --profile auto \
+  --target-lang id \
+  --out /tmp/surau-book-1-id-profile-sample.jsonl \
+  --eval-report /tmp/surau-book-1-id-profile-sample.eval.json
+
+python3 scripts/qa_reader_assets.py \
+  --file /tmp/surau-book-1-id-profile-sample.jsonl \
+  --book-id 1 \
+  --lang id \
+  --report /tmp/surau-book-1-id-profile-sample.qa.json
+```
+
+Manual override when category metadata is too broad:
+
+```sh
+python3 scripts/translate_reader_assets.py \
+  --base-url http://127.0.0.1:8080 \
+  --book-id 1 \
+  --heading-id 5 \
+  --profile hadith \
+  --target-lang id \
+  --out /tmp/surau-book-1-heading-5-id-hadith-profile.jsonl
+```
 
 Recommended pipeline:
 
@@ -172,6 +239,7 @@ Common fatal checks:
 - missing TOC translations when `--all-toc` is used
 - dry-run placeholders
 - invalid `translation_status`
+- invalid `metadata.translation_profile`
 - `translation_status=reviewed` without `translation_reviewed_by`
 - `metadata.truncated_source=true`
 - raw translated-source brackets such as `[Mereka berkata: ...]`
@@ -179,6 +247,9 @@ Common fatal checks:
 Common warnings:
 
 - short content
+- missing `metadata.translation_profile`
+- outdated `metadata.style_version`
+- technical profile sections with no italicized technical terms on long content
 - many Markdown footnotes
 - possible Qur'an/hadith references without blockquotes
 - minor Markdown shape issues

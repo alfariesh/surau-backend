@@ -1,6 +1,6 @@
 # Deploy VPS dengan Docker Compose
 
-Dokumen ini untuk deployment sederhana di satu server VPS: aplikasi Go berjalan sebagai container, PostgreSQL berjalan sebagai container, dan port aplikasi hanya dibuka ke `127.0.0.1:8080` agar bisa diletakkan di belakang Nginx/Caddy/Cloudflare Tunnel.
+Dokumen ini untuk deployment sederhana di satu server VPS dengan domain `api.surau.org`: aplikasi Go berjalan sebagai container, PostgreSQL berjalan sebagai container, dan port aplikasi hanya dibuka ke `127.0.0.1:8080` agar bisa diletakkan di belakang Nginx/Caddy/Cloudflare Tunnel.
 
 ## 1. Siapkan server
 
@@ -24,8 +24,10 @@ Edit `.env.production`:
 - Ganti password yang sama di bagian `PG_URL`.
 - Ganti `JWT_SECRET` dengan output `openssl rand -hex 32`.
 - Biarkan `APP_BIND_ADDR=127.0.0.1` jika reverse proxy ada di server yang sama.
+- Biarkan `APP_PUBLISHED_PORT=8080`, kecuali port 8080 sudah dipakai service lain.
 
 Jika memakai database cloud, ganti `PG_URL` ke URL provider. Untuk database yang wajib SSL, pakai `?sslmode=require`.
+Jika password database berisi karakter khusus seperti `@`, `#`, `/`, atau `:`, encode password tersebut di `PG_URL`.
 
 ## 3. Build dan jalankan
 
@@ -41,18 +43,30 @@ Aplikasi otomatis menjalankan migration saat container `app` start karena Docker
 docker compose --env-file .env.production -f docker-compose.prod.yml ps
 curl -i http://127.0.0.1:8080/healthz
 curl -i http://127.0.0.1:8080/readyz
+curl -i https://api.surau.org/healthz
 ```
 
 `/healthz` mengecek proses HTTP. `/readyz` mengecek koneksi PostgreSQL.
 
-## 5. Reverse proxy contoh
+## 5. Cloudflare DNS
+
+Di Cloudflare DNS untuk zona `surau.org`, buat record:
+
+- Type: `A`
+- Name: `api`
+- Content: IP publik VPS
+- Proxy status: Proxied
+
+Jika reverse proxy di VPS sudah memakai sertifikat HTTPS valid, gunakan mode SSL/TLS Cloudflare `Full (strict)`.
+
+## 6. Reverse proxy contoh
 
 Contoh Nginx host config:
 
 ```nginx
 server {
     listen 80;
-    server_name api.example.com;
+    server_name api.surau.org;
 
     location / {
         proxy_pass http://127.0.0.1:8080;
@@ -66,7 +80,7 @@ server {
 
 Untuk HTTPS, pasang Certbot atau gunakan Caddy/Cloudflare Tunnel.
 
-## 6. Update aplikasi
+## 7. Update aplikasi
 
 ```sh
 git pull
@@ -76,4 +90,4 @@ docker compose --env-file .env.production -f docker-compose.prod.yml logs -f app
 
 ## Catatan data
 
-Database disimpan di Docker volume `surau-backend_db_data`. Jangan jalankan `docker compose down -v` di production kecuali memang ingin menghapus data.
+Database disimpan di Docker volume `surau-backend-prod_db_data`, dimount ke `/var/lib/postgresql` sesuai layout image PostgreSQL 18. Jangan jalankan `docker compose down -v` di production kecuali memang ingin menghapus data.

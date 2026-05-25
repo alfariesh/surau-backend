@@ -33,6 +33,7 @@ def make_args(path: Path, **kwargs: object):
         "all_toc": False,
         "report": "",
         "strict": False,
+        "profile_map": str(SCRIPT_DIR / "translation_profiles.json"),
     }
     defaults.update(kwargs)
     return type("Args", (), defaults)()
@@ -66,7 +67,13 @@ def translation(
         "title": title,
         "content": content or LONG_CONTENT,
         "translation_status": translation_status,
-        "metadata": metadata if metadata is not None else {"truncated_source": False},
+        "metadata": metadata
+        if metadata is not None
+        else {
+            "truncated_source": False,
+            "style_version": "reader-profile-v1",
+            "translation_profile": "general",
+        },
     }
     if reviewed_by:
         row["translation_reviewed_by"] = reviewed_by
@@ -101,9 +108,74 @@ class QATest(unittest.TestCase):
         self.assertIn("DUPLICATE_TRANSLATION", self.issue_codes(report))
 
     def test_truncated_source_fails(self) -> None:
-        report = self.run_qa_for_rows([translation(metadata={"truncated_source": True})])
+        report = self.run_qa_for_rows(
+            [
+                translation(
+                    metadata={
+                        "truncated_source": True,
+                        "style_version": "reader-profile-v1",
+                        "translation_profile": "general",
+                    }
+                )
+            ]
+        )
 
         self.assertIn("TRUNCATED_SOURCE", self.issue_codes(report))
+
+    def test_missing_translation_profile_warns(self) -> None:
+        report = self.run_qa_for_rows([translation(metadata={"truncated_source": False})])
+
+        self.assertIn("MISSING_TRANSLATION_PROFILE", self.issue_codes(report))
+        self.assertEqual(report["summary"]["failures"], 0)  # type: ignore[index]
+
+    def test_invalid_translation_profile_fails(self) -> None:
+        report = self.run_qa_for_rows(
+            [
+                translation(
+                    metadata={
+                        "truncated_source": False,
+                        "style_version": "reader-profile-v1",
+                        "translation_profile": "unknown",
+                    }
+                )
+            ]
+        )
+
+        self.assertIn("INVALID_TRANSLATION_PROFILE", self.issue_codes(report))
+
+    def test_style_version_mismatch_warns(self) -> None:
+        report = self.run_qa_for_rows(
+            [
+                translation(
+                    metadata={
+                        "truncated_source": False,
+                        "style_version": "old",
+                        "translation_profile": "general",
+                    }
+                )
+            ]
+        )
+
+        self.assertIn("STYLE_VERSION_MISMATCH", self.issue_codes(report))
+        self.assertEqual(report["summary"]["failures"], 0)  # type: ignore[index]
+
+    def test_technical_profile_without_italics_warns(self) -> None:
+        content = "\n\n".join([LONG_CONTENT, LONG_CONTENT, LONG_CONTENT])
+        report = self.run_qa_for_rows(
+            [
+                translation(
+                    content=content,
+                    metadata={
+                        "truncated_source": False,
+                        "style_version": "reader-profile-v1",
+                        "translation_profile": "fiqh",
+                    },
+                )
+            ]
+        )
+
+        self.assertIn("MISSING_TECHNICAL_ITALICS", self.issue_codes(report))
+        self.assertEqual(report["summary"]["failures"], 0)  # type: ignore[index]
 
     def test_dry_run_fails(self) -> None:
         report = self.run_qa_for_rows([translation(title="[DRY RUN] Judul")])
