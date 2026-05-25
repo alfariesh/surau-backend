@@ -26,6 +26,7 @@ Public reader:
 - `GET /v1/books/{book_id}/pages/{page_id}`
 - `GET /v1/books/{book_id}/headings?q=`
 - `GET /v1/books/{book_id}/sections/{heading_id}?lang=id`
+- `POST /v1/books/{book_id}/rag?lang=id`
 - `GET /v1/books/{book_id}/toc?lang=id&include_audio=true`
 - `GET /v1/books/{book_id}/toc/{heading_id}/read?lang=id`
 - `GET /v1/books/{book_id}/toc/{heading_id}/playlist?lang=id`
@@ -71,8 +72,23 @@ METRICS_ENABLED=false \
 SWAGGER_ENABLED=false \
 JWT_SECRET=dev-secret \
 JWT_TOKEN_EXPIRY=24h \
+RAG_LLM_API_KEY='your-openai-compatible-key' \
+RAG_LLM_BASE_URL='https://ai.sumopod.com/v1' \
+RAG_LLM_MODEL='glm-5.1' \
 go run -tags migrate ./cmd/app
 ```
+
+## Book RAG
+
+The book RAG endpoint uses a PageIndex-like vectorless retrieval flow over the existing TOC and page range tables. It only serves published books and cites page-level source blocks.
+
+```sh
+curl -X POST 'http://127.0.0.1:8080/v1/books/797/rag?lang=id' \
+  -H 'Content-Type: application/json' \
+  -d '{"question":"Apa definisi hadis sahih?","max_citations":5}'
+```
+
+Set `RAG_LLM_API_KEY` for your OpenAI-compatible provider. Optional defaults are `RAG_LLM_BASE_URL=https://ai.sumopod.com/v1`, `RAG_LLM_MODEL=glm-5.1`, `RAG_LLM_TIMEOUT=45s`, `RAG_LLM_MAX_TOKENS=1400`, `RAG_LLM_TEMPERATURE=0.1`, and `RAG_MAX_CONTEXT_PAGES=8`.
 
 ## Import Raw Books
 

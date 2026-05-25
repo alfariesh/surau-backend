@@ -52,6 +52,21 @@ type (
 		CreateTranslationFeedback(ctx context.Context, feedback entity.TranslationFeedback) (entity.TranslationFeedback, error)
 	}
 
+	// BookRAGRepo provides PageIndex-like retrieval data for book RAG.
+	BookRAGRepo interface {
+		GetRAGBookDocument(ctx context.Context, bookID int, lang string) (entity.RAGBookDocument, error)
+		ListRAGStructure(ctx context.Context, bookID int, lang string) ([]entity.RAGStructureNode, error)
+		GetRAGPageSources(
+			ctx context.Context,
+			bookID int,
+			headingIDs []int,
+			focusPageIDs []int,
+			lang string,
+			maxPages int,
+		) ([]entity.RAGPageSource, error)
+		SearchRAGPages(ctx context.Context, bookID int, query string, lang string, limit int) ([]entity.RAGSearchResult, error)
+	}
+
 	// PersonalRepo -.
 	PersonalRepo interface {
 		GetProgress(ctx context.Context, userID string, bookID int) (entity.ReadingProgress, error)

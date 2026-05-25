@@ -1,7 +1,10 @@
 package v1
 
 import (
+	"bufio"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -92,6 +95,103 @@ func (r *V1) getBook(ctx *fiber.Ctx) error {
 	}
 
 	return ctx.Status(http.StatusOK).JSON(book)
+}
+
+func (r *V1) askBookRAG(ctx *fiber.Ctx) error {
+	if r.bookRAG == nil {
+		return errorResponse(ctx, http.StatusServiceUnavailable, "rag is not configured")
+	}
+
+	bookID, err := pathInt(ctx, "book_id")
+	if err != nil {
+		return errorResponse(ctx, http.StatusBadRequest, "invalid book_id")
+	}
+
+	var body request.BookRAG
+	if err = ctx.BodyParser(&body); err != nil {
+		return errorResponse(ctx, http.StatusBadRequest, "invalid request body")
+	}
+	if err = r.v.Struct(body); err != nil {
+		return errorResponse(ctx, http.StatusBadRequest, "invalid request body")
+	}
+
+	lang := ctx.Query("lang")
+	if body.Stream {
+		return r.streamBookRAG(ctx, bookID, lang, body)
+	}
+
+	answer, err := r.bookRAG.AskBook(
+		ctx.UserContext(),
+		bookID,
+		body.Question,
+		lang,
+		body.MaxCitations,
+		body.IncludeTrace,
+	)
+	if err != nil {
+		r.l.Error(err, "restapi - v1 - askBookRAG")
+
+		return r.bookRAGErrorResponse(ctx, err)
+	}
+
+	return ctx.Status(http.StatusOK).JSON(answer)
+}
+
+func (r *V1) streamBookRAG(ctx *fiber.Ctx, bookID int, lang string, body request.BookRAG) error {
+	userCtx := ctx.UserContext()
+	ctx.Set("Content-Type", "text/event-stream")
+	ctx.Set("Cache-Control", "no-cache")
+	ctx.Set("Connection", "keep-alive")
+	ctx.Set("X-Accel-Buffering", "no")
+
+	ctx.Context().SetBodyStreamWriter(func(w *bufio.Writer) {
+		emit := func(event string, payload any) error {
+			return writeSSEEvent(w, event, payload)
+		}
+
+		if err := r.bookRAG.AskBookStream(
+			userCtx,
+			bookID,
+			body.Question,
+			lang,
+			body.MaxCitations,
+			body.IncludeTrace,
+			emit,
+		); err != nil {
+			r.l.Error(err, "restapi - v1 - streamBookRAG")
+		}
+	})
+
+	return nil
+}
+
+func (r *V1) bookRAGErrorResponse(ctx *fiber.Ctx, err error) error {
+	if errors.Is(err, entity.ErrInvalidQuestion) {
+		return errorResponse(ctx, http.StatusBadRequest, "invalid question")
+	}
+	if errors.Is(err, entity.ErrBookNotFound) {
+		return errorResponse(ctx, http.StatusNotFound, "book not found")
+	}
+	if errors.Is(err, entity.ErrRAGNotConfigured) {
+		return errorResponse(ctx, http.StatusServiceUnavailable, "rag llm is not configured")
+	}
+	if errors.Is(err, entity.ErrRAGEvidenceNotFound) {
+		return errorResponse(ctx, http.StatusNotFound, "rag evidence not found")
+	}
+
+	return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
+}
+
+func writeSSEEvent(w *bufio.Writer, event string, payload any) error {
+	data, err := json.Marshal(payload)
+	if err != nil {
+		data, _ = json.Marshal(map[string]string{"error": "failed to encode event"})
+	}
+	if _, err = fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event, data); err != nil {
+		return err
+	}
+
+	return w.Flush()
 }
 
 func (r *V1) listBookPages(ctx *fiber.Ctx) error {

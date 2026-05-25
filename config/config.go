@@ -15,6 +15,7 @@ type (
 		Log     log
 		PG      pg
 		JWT     jwt
+		RAG     rag
 		Metrics metrics
 		Swagger swagger
 	}
@@ -48,6 +49,17 @@ type (
 		TokenExpiry time.Duration `env:"JWT_TOKEN_EXPIRY" envDefault:"24h"`
 	}
 
+	// RAG -.
+	rag struct {
+		LLMBaseURL      string        `env:"RAG_LLM_BASE_URL" envDefault:"https://ai.sumopod.com/v1"`
+		LLMAPIKey       string        `env:"RAG_LLM_API_KEY"`
+		LLMModel        string        `env:"RAG_LLM_MODEL" envDefault:"glm-5.1"`
+		LLMTimeout      time.Duration `env:"RAG_LLM_TIMEOUT" envDefault:"45s"`
+		LLMMaxTokens    int           `env:"RAG_LLM_MAX_TOKENS" envDefault:"1400"`
+		LLMTemperature  float64       `env:"RAG_LLM_TEMPERATURE" envDefault:"0.1"`
+		MaxContextPages int           `env:"RAG_MAX_CONTEXT_PAGES" envDefault:"8"`
+	}
+
 	// Metrics -.
 	metrics struct {
 		Enabled bool `env:"METRICS_ENABLED" envDefault:"true"`
@@ -67,6 +79,15 @@ func NewConfig() (*Config, error) {
 	}
 	if cfg.PG.PoolMax < 1 || cfg.PG.PoolMax > 100 {
 		return nil, fmt.Errorf("config error: PG_POOL_MAX must be between 1 and 100")
+	}
+	if cfg.RAG.LLMTimeout <= 0 {
+		return nil, fmt.Errorf("config error: RAG_LLM_TIMEOUT must be positive")
+	}
+	if cfg.RAG.LLMMaxTokens < 1 {
+		return nil, fmt.Errorf("config error: RAG_LLM_MAX_TOKENS must be positive")
+	}
+	if cfg.RAG.MaxContextPages < 1 {
+		return nil, fmt.Errorf("config error: RAG_MAX_CONTEXT_PAGES must be positive")
 	}
 
 	return cfg, nil

@@ -35,6 +35,14 @@ type CreateTranslationFeedback struct {
 	ClientID *string `json:"client_id" validate:"omitempty,max=128"`
 } // @name v1.CreateTranslationFeedback
 
+// BookRAG -.
+type BookRAG struct {
+	Question     string `json:"question"      validate:"required,min=2,max=4000" example:"Apa definisi hadis sahih?"`
+	Stream       bool   `json:"stream"        example:"false"`
+	IncludeTrace bool   `json:"include_trace" example:"false"`
+	MaxCitations int    `json:"max_citations" validate:"omitempty,min=1,max=10" example:"5"`
+} // @name v1.BookRAG
+
 // ResolveTranslationFeedback -.
 type ResolveTranslationFeedback struct {
 	Note *string `json:"note" validate:"omitempty,max=2000"`

@@ -40,7 +40,7 @@
       "technical": true,
       "category_keywords": ["حديث", "مصطلح الحديث", "السنة", "الجرح", "التعديل", "رجال الحديث", "علل الحديث", "الأسانيد"],
       "book_keywords": ["الأربعين النووية", "رياض الصالحين", "عمدة الأحكام", "بلوغ المرام", "الأدب المفرد", "صحيح", "سنن", "مسند"],
-      "style_guide": "Render hadith material with clear separation between matn, commentary, narrator discussion, and grading. Use blockquotes for hadith matn when clearly quoted. Preserve chains, narrator names, and grading terms accurately.",
+      "style_guide": "Render hadith material with clear separation between isnad, matn, commentary, narrator discussion, and grading. Do not put the isnad or the formula 'telah menceritakan kepada kami' inside a blockquote; keep the chain as ordinary prose. Use blockquotes only for the prophetic matn, direct question-answer dialogue, or clearly quoted speech. Preserve chains, narrator names, and grading terms accurately.",
       "term_policy": "Keep hadith technical terms such as *isnad*, *matn*, *rawi*, *sahih*, *hasan*, *da'if*, *mursal*, and *musnad* when they are labels, and clarify them only when needed for readability."
     },
     "tafsir": {

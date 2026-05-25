@@ -31,7 +31,7 @@ VALID_TRANSLATION_STATUSES = {"generated", "reviewed"}
 SCRIPT_DIR = Path(__file__).resolve().parent
 DEFAULT_PROFILE_MAP = SCRIPT_DIR / "translation_profiles.json"
 STYLE_VERSION = "reader-profile-v1"
-TECHNICAL_ITALIC_CHECK_CHARS = 700
+TECHNICAL_ITALIC_CHECK_CHARS = 1200
 
 RAW_BRACKET_RE = re.compile(
     r"\[\s*(?:Mereka\s+berkata|They\s+said|قالوا|قال)\s*[:：][^\]]{10,}\]",

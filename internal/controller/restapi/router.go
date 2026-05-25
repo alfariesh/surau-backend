@@ -37,6 +37,7 @@ func NewRouter(
 	cfg *config.Config,
 	db databasePinger,
 	r usecase.Reader,
+	bookRAG usecase.BookRAG,
 	u usecase.User,
 	p usecase.Personal,
 	e usecase.Editorial,
@@ -79,6 +80,6 @@ func NewRouter(
 	// Routers
 	apiV1Group := app.Group("/v1")
 	{
-		v1.NewRoutes(apiV1Group, r, u, p, e, jwtManager, l)
+		v1.NewRoutes(apiV1Group, r, bookRAG, u, p, e, jwtManager, l)
 	}
 }

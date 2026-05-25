@@ -61,6 +61,27 @@ type (
 		) (entity.TranslationFeedback, error)
 	}
 
+	// BookRAG -.
+	BookRAG interface {
+		AskBook(
+			ctx context.Context,
+			bookID int,
+			question string,
+			lang string,
+			maxCitations int,
+			includeTrace bool,
+		) (entity.BookRAGResponse, error)
+		AskBookStream(
+			ctx context.Context,
+			bookID int,
+			question string,
+			lang string,
+			maxCitations int,
+			includeTrace bool,
+			emit func(event string, payload any) error,
+		) error
+	}
+
 	// Personal -.
 	Personal interface {
 		GetProgress(ctx context.Context, userID string, bookID int) (entity.ReadingProgress, error)

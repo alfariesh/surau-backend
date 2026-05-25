@@ -179,6 +179,54 @@ python3 scripts/translate_reader_assets.py \
   --out /tmp/surau-book-1-heading-5-id-hadith-profile.jsonl
 ```
 
+Real profile smoke test that has worked well locally:
+
+```sh
+# Nahwu: شرح ابن عقيل على ألفية ابن مالك
+python3 scripts/translate_reader_assets.py \
+  --base-url http://127.0.0.1:8080 \
+  --book-id 9904 \
+  --heading-id 54 \
+  --heading-id 50 \
+  --heading-id 66 \
+  --profile auto \
+  --target-lang id \
+  --out /tmp/surau-profile-real-test/nahwu-id.jsonl \
+  --eval-report /tmp/surau-profile-real-test/nahwu-id.eval.json
+
+# Hadith: صحيح البخاري
+python3 scripts/translate_reader_assets.py \
+  --base-url http://127.0.0.1:8080 \
+  --book-id 735 \
+  --heading-id 10 \
+  --heading-id 11 \
+  --heading-id 12 \
+  --profile auto \
+  --target-lang id \
+  --out /tmp/surau-profile-real-test/hadith-id.jsonl \
+  --eval-report /tmp/surau-profile-real-test/hadith-id.eval.json
+
+# History: الكامل في التاريخ
+python3 scripts/translate_reader_assets.py \
+  --base-url http://127.0.0.1:8080 \
+  --book-id 21712 \
+  --heading-id 12 \
+  --heading-id 9 \
+  --heading-id 11 \
+  --profile auto \
+  --target-lang id \
+  --out /tmp/surau-profile-real-test/history-id.jsonl \
+  --eval-report /tmp/surau-profile-real-test/history-id.eval.json
+```
+
+Then QA each file before import:
+
+```sh
+python3 scripts/qa_reader_assets.py --file /tmp/surau-profile-real-test/nahwu-id.jsonl --book-id 9904 --lang id
+python3 scripts/qa_reader_assets.py --file /tmp/surau-profile-real-test/hadith-id.jsonl --book-id 735 --lang id
+python3 scripts/qa_reader_assets.py --file /tmp/surau-profile-real-test/history-id.jsonl --book-id 21712 --lang id
+```
+
 Recommended pipeline:
 
 1. Translate one `(book_id, heading_id, lang)` per call.
@@ -187,6 +235,10 @@ Recommended pipeline:
    a QA pass.
 4. Keep a per-book glossary/style guide and pass it into every section call.
 5. Import generated rows as draft/editorial assets, review them, then publish.
+
+For a pilot batch, avoid jumping straight to full books. Translate 5-10
+headings each from five genres first: nahwu, hadith, fiqh, tafsir, and
+history/sirah. QA, import, inspect in the reader, then scale to full-book runs.
 
 In practical terms, "full book" means one command that queues all TOC headings,
 not one LLM request containing the entire book.

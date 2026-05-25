@@ -16,6 +16,7 @@ import (
 func NewRoutes(
 	apiV1Group fiber.Router,
 	reader usecase.Reader,
+	bookRAG usecase.BookRAG,
 	u usecase.User,
 	personal usecase.Personal,
 	editorial usecase.Editorial,
@@ -24,6 +25,7 @@ func NewRoutes(
 ) {
 	r := &V1{
 		reader:    reader,
+		bookRAG:   bookRAG,
 		u:         u,
 		personal:  personal,
 		editorial: editorial,
@@ -46,6 +48,10 @@ func NewRoutes(
 	{
 		bookGroup.Get("/", r.listBooks)
 		bookGroup.Get("/:book_id", r.getBook)
+		bookGroup.Post("/:book_id/rag", limiter.New(limiter.Config{
+			Max:        20,
+			Expiration: time.Minute,
+		}), r.askBookRAG)
 		bookGroup.Get("/:book_id/pages", r.listBookPages)
 		bookGroup.Get("/:book_id/pages/:page_id", r.getBookPage)
 		bookGroup.Get("/:book_id/headings", r.listBookHeadings)

@@ -10,6 +10,8 @@ import (
 	"github.com/evrone/go-clean-template/config"
 	"github.com/evrone/go-clean-template/internal/controller/restapi"
 	"github.com/evrone/go-clean-template/internal/repo/persistent"
+	"github.com/evrone/go-clean-template/internal/repo/webapi"
+	"github.com/evrone/go-clean-template/internal/usecase/bookrag"
 	"github.com/evrone/go-clean-template/internal/usecase/editorial"
 	"github.com/evrone/go-clean-template/internal/usecase/personal"
 	"github.com/evrone/go-clean-template/internal/usecase/reader"
@@ -23,6 +25,7 @@ import (
 type useCases struct {
 	user      *user.UseCase
 	reader    *reader.UseCase
+	bookRAG   *bookrag.UseCase
 	personal  *personal.UseCase
 	editorial *editorial.UseCase
 }
@@ -31,15 +34,25 @@ type servers struct {
 	http *httpserver.Server
 }
 
-func initUseCases(pg *postgres.Postgres, jwtManager *jwt.Manager) useCases {
+func initUseCases(cfg *config.Config, pg *postgres.Postgres, jwtManager *jwt.Manager) useCases {
 	userRepo := persistent.NewUserRepo(pg)
 	readerRepo := persistent.NewReaderRepo(pg)
+	bookRAGRepo := persistent.NewBookRAGRepo(pg)
 	personalRepo := persistent.NewPersonalRepo(pg)
 	editorialRepo := persistent.NewEditorialRepo(pg)
+	llmClient := webapi.NewOpenAICompatibleClient(webapi.OpenAICompatibleOptions{
+		BaseURL:     cfg.RAG.LLMBaseURL,
+		APIKey:      cfg.RAG.LLMAPIKey,
+		Model:       cfg.RAG.LLMModel,
+		Timeout:     cfg.RAG.LLMTimeout,
+		MaxTokens:   cfg.RAG.LLMMaxTokens,
+		Temperature: cfg.RAG.LLMTemperature,
+	})
 
 	return useCases{
 		user:      user.New(userRepo, jwtManager),
 		reader:    reader.New(readerRepo),
+		bookRAG:   bookrag.New(bookRAGRepo, llmClient, bookrag.Options{MaxContextPages: cfg.RAG.MaxContextPages}),
 		personal:  personal.New(personalRepo),
 		editorial: editorial.New(editorialRepo),
 	}
@@ -48,7 +61,7 @@ func initUseCases(pg *postgres.Postgres, jwtManager *jwt.Manager) useCases {
 func initServers(cfg *config.Config, pg *postgres.Postgres, uc useCases, jwtManager *jwt.Manager, l logger.Interface) servers {
 	// HTTP Server
 	httpServer := httpserver.New(l, httpserver.Port(cfg.HTTP.Port), httpserver.Prefork(cfg.HTTP.UsePreforkMode))
-	restapi.NewRouter(httpServer.App, cfg, pg, uc.reader, uc.user, uc.personal, uc.editorial, jwtManager, l)
+	restapi.NewRouter(httpServer.App, cfg, pg, uc.reader, uc.bookRAG, uc.user, uc.personal, uc.editorial, jwtManager, l)
 
 	return servers{
 		http: httpServer,
@@ -95,7 +108,7 @@ func Run(cfg *config.Config) {
 	// JWT
 	jwtManager := jwt.New(cfg.JWT.Secret, cfg.JWT.TokenExpiry)
 
-	uc := initUseCases(pg, jwtManager)
+	uc := initUseCases(cfg, pg, jwtManager)
 	s := initServers(cfg, pg, uc, jwtManager, l)
 	s.startServers()
 	s.waitForShutdown(l)

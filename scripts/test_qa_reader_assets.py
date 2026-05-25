@@ -160,7 +160,7 @@ class QATest(unittest.TestCase):
         self.assertEqual(report["summary"]["failures"], 0)  # type: ignore[index]
 
     def test_technical_profile_without_italics_warns(self) -> None:
-        content = "\n\n".join([LONG_CONTENT, LONG_CONTENT, LONG_CONTENT])
+        content = "\n\n".join([LONG_CONTENT, LONG_CONTENT, LONG_CONTENT, LONG_CONTENT, LONG_CONTENT])
         report = self.run_qa_for_rows(
             [
                 translation(
