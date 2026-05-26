@@ -27,8 +27,21 @@ func TestReaderTOC(t *testing.T) {
 
 	uc, mockRepo := newReaderUseCase(t)
 	parentID := 1
+	summary := "Root summary"
+	summaryLang := "id"
 	entries := []entity.BookTOCEntry{
-		{BookID: 1, HeadingID: 1, Title: "Root", PageID: 1, Depth: 0, Ordinal: 0, HasAudio: true},
+		{
+			BookID:      1,
+			HeadingID:   1,
+			Title:       "Root",
+			PageID:      1,
+			Depth:       0,
+			Ordinal:     0,
+			Summary:     &summary,
+			SummaryLang: &summaryLang,
+			HasSummary:  true,
+			HasAudio:    true,
+		},
 		{BookID: 1, HeadingID: 2, ParentID: &parentID, Title: "Child", PageID: 2, Depth: 1, Ordinal: 1, HasTranslation: true},
 	}
 
@@ -41,6 +54,9 @@ func TestReaderTOC(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, toc, 1)
 	assert.Equal(t, "Root", toc[0].Title)
+	assert.Equal(t, &summary, toc[0].Summary)
+	assert.Equal(t, &summaryLang, toc[0].SummaryLang)
+	assert.True(t, toc[0].HasSummary)
 	assert.True(t, toc[0].HasAudio)
 	require.Len(t, toc[0].Children, 1)
 	assert.Equal(t, "Child", toc[0].Children[0].Title)
@@ -53,9 +69,23 @@ func TestReaderTOCRead(t *testing.T) {
 	uc, mockRepo := newReaderUseCase(t)
 	rootID := 1
 	currentID := 2
+	summary := "Current summary"
+	summaryLang := "id"
 	entries := []entity.BookTOCEntry{
 		{BookID: 1, HeadingID: 1, Title: "Root", PageID: 1, Depth: 0, Ordinal: 0},
-		{BookID: 1, HeadingID: 2, ParentID: &rootID, Title: "Current", PageID: 2, Depth: 1, Ordinal: 1, HasAudio: true},
+		{
+			BookID:      1,
+			HeadingID:   2,
+			ParentID:    &rootID,
+			Title:       "Current",
+			PageID:      2,
+			Depth:       1,
+			Ordinal:     1,
+			Summary:     &summary,
+			SummaryLang: &summaryLang,
+			HasSummary:  true,
+			HasAudio:    true,
+		},
 		{BookID: 1, HeadingID: 3, ParentID: &currentID, Title: "Child", PageID: 3, Depth: 2, Ordinal: 2},
 	}
 	audio := &entity.SectionAudio{BookID: 1, HeadingID: 2, Lang: "id", URL: "https://cdn.test/2.mp3"}
@@ -80,6 +110,9 @@ func TestReaderTOCRead(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Equal(t, "Current", read.Title)
+	assert.Equal(t, &summary, read.Summary)
+	assert.Equal(t, &summaryLang, read.SummaryLang)
+	assert.True(t, read.HasSummary)
 	assert.Equal(t, 2, read.StartPageID)
 	assert.Equal(t, 4, read.EndPageID)
 	assert.Equal(t, audio, read.Audio)

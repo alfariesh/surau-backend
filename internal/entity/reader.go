@@ -114,6 +114,12 @@ type BookTOCEntry struct {
 	Depth                 int           `json:"depth"           example:"0"`
 	Ordinal               int           `json:"ordinal"         example:"9"`
 	Title                 string        `json:"title"           example:"النوع الأول: الصحيح"`
+	Summary               *string       `json:"summary,omitempty"`
+	SummaryLang           *string       `json:"summary_lang,omitempty" example:"id"`
+	HasSummary            bool          `json:"has_summary"     example:"true"`
+	SummaryStatus         *string       `json:"summary_status,omitempty" example:"generated"`
+	SummaryReviewedBy     *string       `json:"summary_reviewed_by,omitempty" example:"Editor A"`
+	SummaryReviewedAt     *time.Time    `json:"summary_reviewed_at,omitempty" example:"2026-01-01T00:00:00Z"`
 	HasAudio              bool          `json:"has_audio"       example:"true"`
 	HasTranslation        bool          `json:"has_translation" example:"true"`
 	TranslationStatus     *string       `json:"translation_status,omitempty" example:"generated"`
@@ -131,6 +137,12 @@ type BookTOCNode struct {
 	Depth                 int           `json:"depth"           example:"0"`
 	Ordinal               int           `json:"ordinal"         example:"9"`
 	Title                 string        `json:"title"           example:"النوع الأول: الصحيح"`
+	Summary               *string       `json:"summary,omitempty"`
+	SummaryLang           *string       `json:"summary_lang,omitempty" example:"id"`
+	HasSummary            bool          `json:"has_summary"     example:"true"`
+	SummaryStatus         *string       `json:"summary_status,omitempty" example:"generated"`
+	SummaryReviewedBy     *string       `json:"summary_reviewed_by,omitempty" example:"Editor A"`
+	SummaryReviewedAt     *time.Time    `json:"summary_reviewed_at,omitempty" example:"2026-01-01T00:00:00Z"`
 	HasAudio              bool          `json:"has_audio"       example:"true"`
 	HasTranslation        bool          `json:"has_translation" example:"true"`
 	TranslationStatus     *string       `json:"translation_status,omitempty" example:"generated"`
@@ -148,6 +160,12 @@ type BookTOCLink struct {
 	PageID                int        `json:"page_id"         example:"12"`
 	Depth                 int        `json:"depth"           example:"0"`
 	Ordinal               int        `json:"ordinal"         example:"9"`
+	Summary               *string    `json:"summary,omitempty"`
+	SummaryLang           *string    `json:"summary_lang,omitempty" example:"id"`
+	HasSummary            bool       `json:"has_summary"     example:"true"`
+	SummaryStatus         *string    `json:"summary_status,omitempty" example:"generated"`
+	SummaryReviewedBy     *string    `json:"summary_reviewed_by,omitempty" example:"Editor A"`
+	SummaryReviewedAt     *time.Time `json:"summary_reviewed_at,omitempty" example:"2026-01-01T00:00:00Z"`
 	HasAudio              bool       `json:"has_audio"       example:"true"`
 	HasTranslation        bool       `json:"has_translation" example:"true"`
 	TranslationStatus     *string    `json:"translation_status,omitempty" example:"generated"`
@@ -218,6 +236,9 @@ type BookTOCRead struct {
 	BookID       int                 `json:"book_id"       example:"797"`
 	HeadingID    int                 `json:"heading_id"    example:"10"`
 	Title        string              `json:"title"         example:"باب النية"`
+	Summary      *string             `json:"summary,omitempty"`
+	SummaryLang  *string             `json:"summary_lang,omitempty" example:"id"`
+	HasSummary   bool                `json:"has_summary"   example:"true"`
 	Breadcrumb   []BookTOCLink       `json:"breadcrumb"`
 	Children     []BookTOCLink       `json:"children"`
 	Previous     *BookTOCLink        `json:"previous"`

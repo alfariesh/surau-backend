@@ -12,6 +12,8 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+const arabicSearchMarks = "\u064b\u064c\u064d\u064e\u064f\u0650\u0651\u0652\u0653\u0654\u0655\u0670\u0640"
+
 // BookRAGRepo provides retrieval queries for PageIndex-like book RAG.
 type BookRAGRepo struct {
 	*postgres.Postgres
@@ -59,6 +61,12 @@ SELECT h.book_id,
        h.depth,
        h.ordinal,
        COALESCE(st.title, he.content, h.content) AS title,
+       COALESCE(bhs_lang.summary, bhs_ar.summary) AS summary,
+       CASE
+           WHEN bhs_lang.summary IS NOT NULL THEN bhs_lang.lang
+           WHEN bhs_ar.summary IS NOT NULL THEN bhs_ar.lang
+           ELSE NULL
+       END AS summary_lang,
        hr.start_page_id,
        hr.end_page_id
 FROM book_headings h
@@ -66,6 +74,8 @@ JOIN book_heading_ranges hr ON hr.book_id = h.book_id AND hr.heading_id = h.head
 JOIN book_publications p ON p.book_id = h.book_id AND p.status = 'published'
 LEFT JOIN book_heading_edits he ON he.book_id = h.book_id AND he.heading_id = h.heading_id AND he.status = 'published'
 LEFT JOIN section_translations st ON st.book_id = h.book_id AND st.heading_id = h.heading_id AND st.lang = $2
+LEFT JOIN book_heading_summaries bhs_lang ON bhs_lang.book_id = h.book_id AND bhs_lang.heading_id = h.heading_id AND bhs_lang.lang = $2
+LEFT JOIN book_heading_summaries bhs_ar ON bhs_ar.book_id = h.book_id AND bhs_ar.heading_id = h.heading_id AND bhs_ar.lang = 'ar'
 WHERE h.book_id = $1 AND h.is_deleted = false
 ORDER BY h.ordinal ASC, h.heading_id ASC`
 
@@ -210,6 +220,7 @@ func (r *BookRAGRepo) SearchRAGPages(
 	if query == "" || limit <= 0 {
 		return []entity.RAGSearchResult{}, nil
 	}
+	query = stripArabicSearchMarks(query)
 
 	sqlText := `
 SELECT h.heading_id,
@@ -217,7 +228,12 @@ SELECT h.heading_id,
        GREATEST(
            similarity(COALESCE(he.content, h.content), $2),
            similarity(COALESCE(pe.content_text, bp.content_text), $2),
-           similarity(COALESCE(st.content, ''), $2)
+           similarity(COALESCE(st.content, ''), $2),
+           similarity(COALESCE(bhs_lang.summary, bhs_ar.summary, ''), $2),
+           similarity(translate(COALESCE(he.content, h.content), $5, ''), $2),
+           similarity(translate(COALESCE(pe.content_text, bp.content_text), $5, ''), $2),
+           similarity(translate(COALESCE(st.content, ''), $5, ''), $2),
+           similarity(translate(COALESCE(bhs_lang.summary, bhs_ar.summary, ''), $5, ''), $2)
        ) AS score
 FROM book_headings h
 JOIN book_heading_ranges hr ON hr.book_id = h.book_id AND hr.heading_id = h.heading_id
@@ -226,6 +242,8 @@ JOIN book_publications p ON p.book_id = h.book_id AND p.status = 'published'
 LEFT JOIN book_heading_edits he ON he.book_id = h.book_id AND he.heading_id = h.heading_id AND he.status = 'published'
 LEFT JOIN book_page_edits pe ON pe.book_id = bp.book_id AND pe.page_id = bp.page_id AND pe.status = 'published'
 LEFT JOIN section_translations st ON st.book_id = h.book_id AND st.heading_id = h.heading_id AND st.lang = $3
+LEFT JOIN book_heading_summaries bhs_lang ON bhs_lang.book_id = h.book_id AND bhs_lang.heading_id = h.heading_id AND bhs_lang.lang = $3
+LEFT JOIN book_heading_summaries bhs_ar ON bhs_ar.book_id = h.book_id AND bhs_ar.heading_id = h.heading_id AND bhs_ar.lang = 'ar'
 WHERE h.book_id = $1
   AND h.is_deleted = false
   AND bp.is_deleted = false
@@ -233,14 +251,24 @@ WHERE h.book_id = $1
       COALESCE(he.content, h.content) ILIKE '%' || $2 || '%'
       OR COALESCE(pe.content_text, bp.content_text) ILIKE '%' || $2 || '%'
       OR COALESCE(st.content, '') ILIKE '%' || $2 || '%'
+      OR COALESCE(bhs_lang.summary, bhs_ar.summary, '') ILIKE '%' || $2 || '%'
       OR COALESCE(he.content, h.content) % $2
       OR COALESCE(pe.content_text, bp.content_text) % $2
       OR COALESCE(st.content, '') % $2
+      OR COALESCE(bhs_lang.summary, bhs_ar.summary, '') % $2
+      OR translate(COALESCE(he.content, h.content), $5, '') ILIKE '%' || $2 || '%'
+      OR translate(COALESCE(pe.content_text, bp.content_text), $5, '') ILIKE '%' || $2 || '%'
+      OR translate(COALESCE(st.content, ''), $5, '') ILIKE '%' || $2 || '%'
+      OR translate(COALESCE(bhs_lang.summary, bhs_ar.summary, ''), $5, '') ILIKE '%' || $2 || '%'
+      OR translate(COALESCE(he.content, h.content), $5, '') % $2
+      OR translate(COALESCE(pe.content_text, bp.content_text), $5, '') % $2
+      OR translate(COALESCE(st.content, ''), $5, '') % $2
+      OR translate(COALESCE(bhs_lang.summary, bhs_ar.summary, ''), $5, '') % $2
   )
 ORDER BY score DESC, h.depth DESC, bp.page_id ASC, h.heading_id ASC
 LIMIT $4`
 
-	rows, err := r.Pool.Query(ctx, sqlText, bookID, query, lang, limit)
+	rows, err := r.Pool.Query(ctx, sqlText, bookID, query, lang, limit, arabicSearchMarks)
 	if err != nil {
 		return nil, fmt.Errorf("BookRAGRepo - SearchRAGPages - Query: %w", err)
 	}
@@ -265,6 +293,8 @@ LIMIT $4`
 func scanRAGStructureNode(row rowScanner) (entity.RAGStructureNode, error) {
 	var node entity.RAGStructureNode
 	var parentID sql.NullInt64
+	var summary sql.NullString
+	var summaryLang sql.NullString
 	if err := row.Scan(
 		&node.BookID,
 		&node.HeadingID,
@@ -273,6 +303,8 @@ func scanRAGStructureNode(row rowScanner) (entity.RAGStructureNode, error) {
 		&node.Depth,
 		&node.Ordinal,
 		&node.Title,
+		&summary,
+		&summaryLang,
 		&node.StartPageID,
 		&node.EndPageID,
 	); err != nil {
@@ -280,6 +312,8 @@ func scanRAGStructureNode(row rowScanner) (entity.RAGStructureNode, error) {
 	}
 
 	node.ParentID = nullableInt(parentID)
+	node.Summary = nullableString(summary)
+	node.SummaryLang = nullableString(summaryLang)
 
 	return node, nil
 }
@@ -323,4 +357,14 @@ func int32Slice(values []int) []int32 {
 	}
 
 	return result
+}
+
+func stripArabicSearchMarks(value string) string {
+	return strings.Map(func(r rune) rune {
+		if strings.ContainsRune(arabicSearchMarks, r) {
+			return -1
+		}
+
+		return r
+	}, value)
 }

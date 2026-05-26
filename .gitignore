@@ -33,3 +33,4 @@ coverage.txt
 # Temporary directories
 temp-pageIndex/
 temp-langextract/
+temp-pageIndex-condb/

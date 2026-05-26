@@ -50,9 +50,16 @@ func initUseCases(cfg *config.Config, pg *postgres.Postgres, jwtManager *jwt.Man
 	})
 
 	return useCases{
-		user:      user.New(userRepo, jwtManager),
-		reader:    reader.New(readerRepo),
-		bookRAG:   bookrag.New(bookRAGRepo, llmClient, bookrag.Options{MaxContextPages: cfg.RAG.MaxContextPages}),
+		user:   user.New(userRepo, jwtManager),
+		reader: reader.New(readerRepo),
+		bookRAG: bookrag.New(bookRAGRepo, llmClient, bookrag.Options{
+			MaxContextPages:      cfg.RAG.MaxContextPages,
+			TreeFullMaxNodes:     cfg.RAG.TreeFullMaxNodes,
+			TreeBlockMaxNodes:    cfg.RAG.TreeBlockMaxNodes,
+			TreeBeamSize:         cfg.RAG.TreeBeamSize,
+			TreeMaxTurns:         cfg.RAG.TreeMaxTurns,
+			TreeMaxBlocksPerTurn: cfg.RAG.TreeMaxBlocksPerTurn,
+		}),
 		personal:  personal.New(personalRepo),
 		editorial: editorial.New(editorialRepo),
 	}

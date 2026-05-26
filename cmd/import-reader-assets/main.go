@@ -23,8 +23,9 @@ func main() {
 	}
 
 	fmt.Printf(
-		"translations=%d audio=%d book_metadata=%d authors=%d categories=%d skipped=%d\n",
+		"translations=%d summaries=%d audio=%d book_metadata=%d authors=%d categories=%d skipped=%d\n",
 		stats.Translations,
+		stats.Summaries,
 		stats.Audio,
 		stats.BookMetadataTranslations,
 		stats.AuthorTranslations,

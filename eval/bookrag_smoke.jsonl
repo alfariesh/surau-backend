@@ -1,0 +1,5 @@
+# Fast-ish BookRAG smoke cases. Run with:
+# go run ./cmd/rag-eval -base-url http://127.0.0.1:8080
+{"name":"jalalain_an_nur_35_light_verse","book_id":12876,"lang":"id","question":"Dalam Tafsir Jalalain, apa makna ayat اللَّهُ نُورُ السَّمَاوَاتِ وَالأَرْضِ?","max_citations":3,"expected_retrieval_mode":"block_tree","max_tree_llm_calls":3,"expected_heading_ids":[2849],"expected_page_ids":[3253],"quote_must_contain":["مُنَوِّرهمَا"]}
+{"name":"taarifat_taqwa_definition","book_id":7312,"lang":"id","question":"Apa definisi التقوى dalam kitab التعريفات?","max_citations":3,"expected_retrieval_mode":"full_tree","max_tree_llm_calls":1,"expected_heading_ids":[5],"expected_page_ids":[60],"quote_must_contain":["التقوى"]}
+{"name":"zubad_hadith_sahih_definition","book_id":797,"lang":"id","question":"Menurut kitab ini, bagaimana definisi الحديث الصحيح?","max_citations":3,"expected_retrieval_mode":"full_tree","max_tree_llm_calls":1,"expected_heading_ids":[11],"expected_page_ids":[12,13],"answer_must_contain":["sanad"]}

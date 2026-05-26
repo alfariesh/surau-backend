@@ -15,15 +15,17 @@ type RAGBookDocument struct {
 
 // RAGStructureNode is one compact TOC/range row used for PageIndex-like tree search.
 type RAGStructureNode struct {
-	BookID      int    `json:"book_id" example:"797"`
-	HeadingID   int    `json:"heading_id" example:"11"`
-	ParentID    *int   `json:"parent_id,omitempty" example:"1"`
-	PageID      int    `json:"page_id" example:"12"`
-	Depth       int    `json:"depth" example:"0"`
-	Ordinal     int    `json:"ordinal" example:"10"`
-	Title       string `json:"title" example:"النوع الأول: الصحيح"`
-	StartPageID int    `json:"start_page_id" example:"12"`
-	EndPageID   int    `json:"end_page_id" example:"15"`
+	BookID      int     `json:"book_id" example:"797"`
+	HeadingID   int     `json:"heading_id" example:"11"`
+	ParentID    *int    `json:"parent_id,omitempty" example:"1"`
+	PageID      int     `json:"page_id" example:"12"`
+	Depth       int     `json:"depth" example:"0"`
+	Ordinal     int     `json:"ordinal" example:"10"`
+	Title       string  `json:"title" example:"النوع الأول: الصحيح"`
+	Summary     *string `json:"summary,omitempty"`
+	SummaryLang *string `json:"summary_lang,omitempty" example:"ar"`
+	StartPageID int     `json:"start_page_id" example:"12"`
+	EndPageID   int     `json:"end_page_id" example:"15"`
 }
 
 // RAGSearchResult is a lexical fallback hit for a heading/page pair.
@@ -72,6 +74,10 @@ type BookRAGTrace struct {
 	LexicalHeadingIDs  []int    `json:"lexical_heading_ids,omitempty"`
 	FocusPageIDs       []int    `json:"focus_page_ids,omitempty"`
 	SourceRefs         []string `json:"source_refs,omitempty"`
+	RetrievalMode      string   `json:"retrieval_mode,omitempty"`
+	TreeLLMCalls       int      `json:"tree_llm_calls,omitempty"`
+	TreeBlocks         int      `json:"tree_blocks,omitempty"`
+	TreeCandidateCount int      `json:"tree_candidate_count,omitempty"`
 	Repaired           bool     `json:"repaired"`
 }
 

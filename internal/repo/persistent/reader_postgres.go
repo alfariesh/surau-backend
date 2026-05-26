@@ -363,6 +363,12 @@ SELECT h.book_id,
        h.depth,
        h.ordinal,
        COALESCE(he.content, h.content) AS title,
+       (bhs.book_id IS NOT NULL) AS has_summary,
+       bhs.lang AS summary_lang,
+       bhs.summary,
+       bhs.summary_status,
+       bhs.reviewed_by AS summary_reviewed_by,
+       bhs.reviewed_at AS summary_reviewed_at,
        (st.book_id IS NOT NULL) AS has_translation,
        st.translation_status,
        st.reviewed_by,
@@ -377,6 +383,7 @@ SELECT h.book_id,
        sa.updated_at
 FROM book_headings h
 LEFT JOIN book_heading_edits he ON he.book_id = h.book_id AND he.heading_id = h.heading_id AND he.status = 'published'
+LEFT JOIN book_heading_summaries bhs ON bhs.book_id = h.book_id AND bhs.heading_id = h.heading_id AND bhs.lang = $2
 LEFT JOIN section_translations st ON st.book_id = h.book_id AND st.heading_id = h.heading_id AND st.lang = $2
 LEFT JOIN section_audio sa ON sa.book_id = h.book_id AND sa.heading_id = h.heading_id AND sa.lang = $2
 WHERE h.book_id = $1 AND h.is_deleted = false
@@ -1055,6 +1062,11 @@ func scanHeading(row rowScanner) (entity.BookHeading, error) {
 func scanTOCEntry(row rowScanner, includeAudio bool) (entity.BookTOCEntry, error) {
 	var entry entity.BookTOCEntry
 	var parentID sql.NullInt64
+	var summaryLang sql.NullString
+	var summary sql.NullString
+	var summaryStatus sql.NullString
+	var summaryReviewedBy sql.NullString
+	var summaryReviewedAt sql.NullTime
 	var translationStatus sql.NullString
 	var reviewedBy sql.NullString
 	var reviewedAt sql.NullTime
@@ -1074,6 +1086,12 @@ func scanTOCEntry(row rowScanner, includeAudio bool) (entity.BookTOCEntry, error
 		&entry.Depth,
 		&entry.Ordinal,
 		&entry.Title,
+		&entry.HasSummary,
+		&summaryLang,
+		&summary,
+		&summaryStatus,
+		&summaryReviewedBy,
+		&summaryReviewedAt,
 		&entry.HasTranslation,
 		&translationStatus,
 		&reviewedBy,
@@ -1092,6 +1110,11 @@ func scanTOCEntry(row rowScanner, includeAudio bool) (entity.BookTOCEntry, error
 	}
 
 	entry.ParentID = nullableInt(parentID)
+	entry.SummaryLang = nullableString(summaryLang)
+	entry.Summary = nullableString(summary)
+	entry.SummaryStatus = nullableString(summaryStatus)
+	entry.SummaryReviewedBy = nullableString(summaryReviewedBy)
+	entry.SummaryReviewedAt = nullableTime(summaryReviewedAt)
 	entry.TranslationStatus = nullableString(translationStatus)
 	entry.TranslationReviewedBy = nullableString(reviewedBy)
 	entry.TranslationReviewedAt = nullableTime(reviewedAt)

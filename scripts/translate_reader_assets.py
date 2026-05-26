@@ -134,15 +134,21 @@ def main() -> int:
     args = parse_args()
     load_env_file(Path(args.env_file).expanduser())
     if not args.model:
-        args.model = os.environ.get("DEEPSEEK_MODEL", "deepseek-v4-flash")
+        args.model = os.environ.get("DEEPSEEK_MODEL") or os.environ.get("RAG_LLM_MODEL") or "deepseek-v4-flash"
     if not args.deepseek_base_url:
-        args.deepseek_base_url = os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+        args.deepseek_base_url = (
+            os.environ.get("DEEPSEEK_BASE_URL")
+            or os.environ.get("RAG_LLM_BASE_URL")
+            or "https://api.deepseek.com"
+        )
+    if not args.provider_name:
+        args.provider_name = resolve_provider_name(args.deepseek_base_url)
 
-    api_key = os.environ.get(args.api_key_env)
+    api_key = os.environ.get(args.api_key_env) or os.environ.get("RAG_LLM_API_KEY")
     if not api_key and not args.dry_run:
         raise SystemExit(
-            f"{args.api_key_env} is required. Put it in {args.env_file} or export "
-            f"it first, for example: export {args.api_key_env}='...'"
+            f"{args.api_key_env} or RAG_LLM_API_KEY is required. Put it in "
+            f"{args.env_file} or export it first."
         )
 
     profile_map = load_translation_profiles(Path(args.profile_map).expanduser())
@@ -180,7 +186,12 @@ def main() -> int:
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     if args.resume and out_path.exists():
-        done_heading_ids = read_completed_heading_ids(out_path, args.book_id, args.target_lang)
+        required_kinds = ["translation"]
+        if args.summary_only:
+            required_kinds = ["heading_summary"]
+        elif args.include_summary:
+            required_kinds = ["translation", "heading_summary"]
+        done_heading_ids = read_completed_heading_ids(out_path, args.book_id, args.target_lang, required_kinds)
         before_count = len(heading_ids)
         heading_ids = [heading_id for heading_id in heading_ids if heading_id not in done_heading_ids]
         skipped_count = before_count - len(heading_ids)
@@ -204,7 +215,7 @@ def main() -> int:
         if args.concurrency == 1:
             for index, heading_id in enumerate(heading_ids, start=1):
                 try:
-                    asset = translate_heading_asset(args, api_key or "", heading_id, index, len(heading_ids))
+                    assets = translate_heading_assets(args, api_key or "", heading_id, index, len(heading_ids))
                 except Exception as err:
                     record_failure(failure_file, args, heading_id, index, len(heading_ids), err)
                     failures.append({"heading_id": heading_id, "error": str(err)})
@@ -212,17 +223,18 @@ def main() -> int:
                         raise
                     continue
 
-                write_jsonl(out_file, asset)
-                generated_assets.append(asset)
-                success_count += 1
+                for asset in assets:
+                    write_jsonl(out_file, asset)
+                    generated_assets.append(asset)
+                    success_count += 1
                 if args.sleep_seconds > 0 and index < len(heading_ids):
                     time.sleep(args.sleep_seconds)
         else:
             with concurrent.futures.ThreadPoolExecutor(max_workers=args.concurrency) as executor:
-                futures: dict[concurrent.futures.Future[dict[str, Any]], tuple[int, int]] = {}
+                futures: dict[concurrent.futures.Future[list[dict[str, Any]]], tuple[int, int]] = {}
                 for index, heading_id in enumerate(heading_ids, start=1):
                     future = executor.submit(
-                        translate_heading_asset,
+                        translate_heading_assets,
                         args,
                         api_key or "",
                         heading_id,
@@ -236,7 +248,7 @@ def main() -> int:
                 for future in concurrent.futures.as_completed(futures):
                     index, heading_id = futures[future]
                     try:
-                        asset = future.result()
+                        assets = future.result()
                     except Exception as err:
                         record_failure(failure_file, args, heading_id, index, len(heading_ids), err)
                         failures.append({"heading_id": heading_id, "error": str(err)})
@@ -244,9 +256,10 @@ def main() -> int:
                             raise
                         continue
 
-                    write_jsonl(out_file, asset)
-                    generated_assets.append(asset)
-                    success_count += 1
+                    for asset in assets:
+                        write_jsonl(out_file, asset)
+                        generated_assets.append(asset)
+                        success_count += 1
                     print(
                         f"[{index}/{len(heading_ids)}] done book={args.book_id} "
                         f"heading={heading_id} lang={args.target_lang}",
@@ -274,8 +287,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--profile", choices=PROFILE_CHOICES, default="auto", help="Translation profile; auto uses book category metadata")
     parser.add_argument("--profile-map", default=str(DEFAULT_PROFILE_MAP), help="Translation profile JSON config")
     parser.add_argument("--out", required=True, help="Output JSONL file")
-    parser.add_argument("--model", default=None, help="DeepSeek model; defaults to DEEPSEEK_MODEL or deepseek-v4-flash")
-    parser.add_argument("--deepseek-base-url", default=None, help="DeepSeek API base URL; defaults to DEEPSEEK_BASE_URL or https://api.deepseek.com")
+    parser.add_argument("--model", default=None, help="LLM model; defaults to DEEPSEEK_MODEL, RAG_LLM_MODEL, or deepseek-v4-flash")
+    parser.add_argument("--deepseek-base-url", default=None, help="OpenAI-compatible API base URL")
+    parser.add_argument("--provider-name", default=None, help="Provider label written to metadata; defaults from LLM_PROVIDER_NAME or base URL")
     parser.add_argument("--api-key-env", default="DEEPSEEK_API_KEY", help="Environment variable containing the DeepSeek API key")
     parser.add_argument(
         "--env-file",
@@ -292,6 +306,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--failure-out", default="", help="Failure JSONL path; defaults to OUT.failures.jsonl")
     parser.add_argument("--eval-report", default="", help="Write a compact JSON evaluation report for generated rows")
     parser.add_argument("--fail-fast", action="store_true", help="Stop on the first failed heading")
+    parser.add_argument("--include-summary", action="store_true", help="Also translate existing source TOC summary rows")
+    parser.add_argument("--summary-only", action="store_true", help="Only translate existing source TOC summaries")
     parser.add_argument("--dry-run", action="store_true", help="Fetch sections and write placeholder rows without calling DeepSeek")
     return parser.parse_args()
 
@@ -303,6 +319,20 @@ def translate_heading_asset(
     index: int,
     total: int,
 ) -> dict[str, Any]:
+    assets = translate_heading_assets(args, api_key, heading_id, index, total)
+    for asset in assets:
+        if asset.get("kind") == "translation":
+            return asset
+    return assets[0]
+
+
+def translate_heading_assets(
+    args: argparse.Namespace,
+    api_key: str,
+    heading_id: int,
+    index: int,
+    total: int,
+) -> list[dict[str, Any]]:
     print(
         f"[{index}/{total}] translating book={args.book_id} "
         f"heading={heading_id} lang={args.target_lang}",
@@ -315,28 +345,62 @@ def translate_heading_asset(
     if args.max_source_chars > 0 and len(source_text) > args.max_source_chars:
         source_text = source_text[: args.max_source_chars].rstrip()
 
-    if args.dry_run:
-        translated = {
-            "title": f"[DRY RUN] {section.get('title', '')}",
-            "content": source_text[:500],
-        }
-    else:
-        translated = translate_section(
-            api_key=api_key,
-            deepseek_base_url=args.deepseek_base_url,
-            model=args.model,
-            target_lang=args.target_lang,
-            book_metadata=args.book_metadata,
-            profile_name=args.selected_profile,
-            profile_source=args.selected_profile_source,
-            profile_config=args.selected_profile_config,
-            source_title=section.get("title", ""),
-            source_text=source_text,
-            max_tokens=args.max_tokens,
-            timeout_seconds=args.timeout_seconds,
-            retries=args.retries,
+    assets: list[dict[str, Any]] = []
+    summary_only = bool(getattr(args, "summary_only", False))
+    include_summary = bool(getattr(args, "include_summary", False))
+
+    if not summary_only:
+        if args.dry_run:
+            translated = {
+                "title": f"[DRY RUN] {section.get('title', '')}",
+                "content": source_text[:500],
+            }
+        else:
+            translated = translate_section(
+                api_key=api_key,
+                deepseek_base_url=args.deepseek_base_url,
+                model=args.model,
+                target_lang=args.target_lang,
+                book_metadata=args.book_metadata,
+                profile_name=args.selected_profile,
+                profile_source=args.selected_profile_source,
+                profile_config=args.selected_profile_config,
+                source_title=section.get("title", ""),
+                source_text=source_text,
+                max_tokens=args.max_tokens,
+                timeout_seconds=args.timeout_seconds,
+                retries=args.retries,
+            )
+        assets.append(
+            build_translation_asset(
+                args,
+                heading_id,
+                index,
+                total,
+                section,
+                translated,
+                bool(args.max_source_chars > 0 and len(original_text) > args.max_source_chars),
+            )
         )
 
+    if include_summary or summary_only:
+        summary_asset = translate_summary_asset(args, api_key, heading_id, index, total, section)
+        if summary_asset is not None:
+            assets.append(summary_asset)
+
+    return assets
+
+
+def build_translation_asset(
+    args: argparse.Namespace,
+    heading_id: int,
+    index: int,
+    total: int,
+    section: dict[str, Any],
+    translated: dict[str, str],
+    truncated_source: bool,
+) -> dict[str, Any]:
+    provider_name = getattr(args, "provider_name", None) or resolve_provider_name(args.deepseek_base_url)
     return {
         "kind": "translation",
         "book_id": args.book_id,
@@ -347,7 +411,7 @@ def translate_heading_asset(
         "source": args.model,
         "translation_status": "generated",
         "metadata": {
-            "provider": "deepseek",
+            "provider": provider_name,
             "model": args.model,
             "format": "markdown",
             "source_lang": args.source_lang,
@@ -364,7 +428,64 @@ def translate_heading_asset(
             "generated_at": datetime.now(timezone.utc).isoformat(),
             "source_title": section.get("title", ""),
             "source_endpoint": f"/v1/books/{args.book_id}/toc/{heading_id}/read",
-            "truncated_source": bool(args.max_source_chars > 0 and len(original_text) > args.max_source_chars),
+            "truncated_source": truncated_source,
+        },
+    }
+
+
+def translate_summary_asset(
+    args: argparse.Namespace,
+    api_key: str,
+    heading_id: int,
+    index: int,
+    total: int,
+    section: dict[str, Any],
+) -> dict[str, Any] | None:
+    provider_name = getattr(args, "provider_name", None) or resolve_provider_name(args.deepseek_base_url)
+    source_summary = str(section.get("summary") or "").strip()
+    source_summary_lang = str(section.get("summary_lang") or args.source_lang).strip() or args.source_lang
+    if not source_summary:
+        if args.summary_only:
+            raise RuntimeError(f"heading {heading_id} has no source summary in lang={args.source_lang}")
+        print(f"[{index}/{total}] skip summary heading={heading_id}: no source summary", file=sys.stderr)
+        return None
+
+    if args.dry_run:
+        translated_summary = f"[DRY RUN] {source_summary[:300]}"
+    else:
+        translated_summary = translate_summary(
+            api_key=api_key,
+            deepseek_base_url=args.deepseek_base_url,
+            model=args.model,
+            target_lang=args.target_lang,
+            source_lang=source_summary_lang,
+            source_title=section.get("title", ""),
+            source_summary=source_summary,
+            max_tokens=min(args.max_tokens, 1200),
+            timeout_seconds=args.timeout_seconds,
+            retries=args.retries,
+        )
+
+    return {
+        "kind": "heading_summary",
+        "book_id": args.book_id,
+        "heading_id": heading_id,
+        "lang": args.target_lang,
+        "summary": translated_summary,
+        "source": args.model,
+        "summary_status": "generated",
+        "metadata": {
+            "provider": provider_name,
+            "model": args.model,
+            "unit": "toc_summary",
+            "style_version": "reader-summary-v1",
+            "source_lang": source_summary_lang,
+            "target_lang": args.target_lang,
+            "source_title": section.get("title", ""),
+            "source_endpoint": f"/v1/books/{args.book_id}/toc/{heading_id}/read",
+            "selection_index": index,
+            "selection_total": total,
+            "generated_at": datetime.now(timezone.utc).isoformat(),
         },
     }
 
@@ -398,8 +519,9 @@ def record_failure(
     )
 
 
-def read_completed_heading_ids(out_path: Path, book_id: int, lang: str) -> set[int]:
-    completed: set[int] = set()
+def read_completed_heading_ids(out_path: Path, book_id: int, lang: str, required_kinds: list[str] | None = None) -> set[int]:
+    required = set(required_kinds or ["translation"])
+    completed_by_heading: dict[int, set[str]] = {}
     with out_path.open("r", encoding="utf-8") as out_file:
         for line_number, line in enumerate(out_file, start=1):
             line = line.strip()
@@ -409,11 +531,12 @@ def read_completed_heading_ids(out_path: Path, book_id: int, lang: str) -> set[i
                 row = json.loads(line)
             except json.JSONDecodeError as err:
                 raise RuntimeError(f"Invalid JSONL in {out_path}:{line_number}: {err}") from err
-            if row.get("kind") != "translation":
+            kind = str(row.get("kind") or "")
+            if kind not in required:
                 continue
             if int(row.get("book_id", 0)) == book_id and row.get("lang") == lang:
-                completed.add(int(row["heading_id"]))
-    return completed
+                completed_by_heading.setdefault(int(row["heading_id"]), set()).add(kind)
+    return {heading_id for heading_id, kinds in completed_by_heading.items() if required.issubset(kinds)}
 
 
 def load_env_file(path: Path) -> None:
@@ -540,6 +663,18 @@ def resolve_translation_profile(
     if best_score == 0:
         return default_profile, "auto:default"
     return best_profile, "auto:" + ",".join(best_matches[:3])
+
+
+def resolve_provider_name(base_url: str) -> str:
+    env_name = os.environ.get("LLM_PROVIDER_NAME")
+    if env_name and env_name.strip():
+        return env_name.strip()
+    normalized = base_url.casefold()
+    if "deepseek" in normalized:
+        return "deepseek"
+    if "sumopod" in normalized:
+        return "sumopod"
+    return "openai-compatible"
 
 
 def metadata_text(metadata: dict[str, Any], keys: list[str]) -> str:
@@ -700,7 +835,8 @@ def translate_section(
     url = f"{deepseek_base_url.rstrip('/')}/chat/completions"
 
     response = request_json("POST", url, headers=headers, payload=payload, timeout_seconds=timeout_seconds, retries=retries)
-    content = response["choices"][0]["message"]["content"]
+    message = response["choices"][0]["message"]
+    content = message.get("content") or message.get("reasoning_content", "")
     translated = load_json_object(content)
 
     title = str(translated.get("title", "")).strip()
@@ -709,6 +845,68 @@ def translate_section(
         raise RuntimeError("DeepSeek returned JSON without non-empty title/content")
 
     return {"title": title, "content": body}
+
+
+def translate_summary(
+    *,
+    api_key: str,
+    deepseek_base_url: str,
+    model: str,
+    target_lang: str,
+    source_lang: str,
+    source_title: str,
+    source_summary: str,
+    max_tokens: int,
+    timeout_seconds: int,
+    retries: int,
+) -> str:
+    target_name = TARGET_NAMES[target_lang]
+    payload = {
+        "model": model,
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    "Translate reader-facing Islamic book section summaries faithfully. "
+                    "Keep the summary concise and natural. Do not add details outside "
+                    "the source summary. Return strict JSON only with key \"summary\"."
+                ),
+            },
+            {
+                "role": "user",
+                "content": json.dumps(
+                    {
+                        "target_language": target_name,
+                        "target_style_guide": TARGET_STYLE_GUIDES[target_lang],
+                        "source_language": source_lang,
+                        "source_title": source_title,
+                        "source_summary": source_summary,
+                        "json_schema": {"summary": "string"},
+                    },
+                    ensure_ascii=False,
+                ),
+            },
+        ],
+        "response_format": {"type": "json_object"},
+        "thinking": {"type": "disabled"},
+        "temperature": 0.25,
+        "max_tokens": max_tokens,
+    }
+    response = request_json(
+        "POST",
+        f"{deepseek_base_url.rstrip('/')}/chat/completions",
+        headers={"Authorization": f"Bearer {api_key}"},
+        payload=payload,
+        timeout_seconds=timeout_seconds,
+        retries=retries,
+    )
+    message = response["choices"][0]["message"]
+    content = message.get("content") or message.get("reasoning_content", "")
+    parsed = load_json_object(content)
+    summary = str(parsed.get("summary") or "").strip()
+    if not summary:
+        raise RuntimeError("DeepSeek returned JSON without non-empty summary")
+    return summary
 
 
 def request_json(

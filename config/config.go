@@ -51,13 +51,18 @@ type (
 
 	// RAG -.
 	rag struct {
-		LLMBaseURL      string        `env:"RAG_LLM_BASE_URL" envDefault:"https://ai.sumopod.com/v1"`
-		LLMAPIKey       string        `env:"RAG_LLM_API_KEY"`
-		LLMModel        string        `env:"RAG_LLM_MODEL" envDefault:"glm-5.1"`
-		LLMTimeout      time.Duration `env:"RAG_LLM_TIMEOUT" envDefault:"45s"`
-		LLMMaxTokens    int           `env:"RAG_LLM_MAX_TOKENS" envDefault:"1400"`
-		LLMTemperature  float64       `env:"RAG_LLM_TEMPERATURE" envDefault:"0.1"`
-		MaxContextPages int           `env:"RAG_MAX_CONTEXT_PAGES" envDefault:"8"`
+		LLMBaseURL           string        `env:"RAG_LLM_BASE_URL" envDefault:"https://ai.sumopod.com/v1"`
+		LLMAPIKey            string        `env:"RAG_LLM_API_KEY"`
+		LLMModel             string        `env:"RAG_LLM_MODEL" envDefault:"glm-5.1"`
+		LLMTimeout           time.Duration `env:"RAG_LLM_TIMEOUT" envDefault:"45s"`
+		LLMMaxTokens         int           `env:"RAG_LLM_MAX_TOKENS" envDefault:"1400"`
+		LLMTemperature       float64       `env:"RAG_LLM_TEMPERATURE" envDefault:"0.1"`
+		MaxContextPages      int           `env:"RAG_MAX_CONTEXT_PAGES" envDefault:"8"`
+		TreeFullMaxNodes     int           `env:"RAG_TREE_FULL_MAX_NODES" envDefault:"450"`
+		TreeBlockMaxNodes    int           `env:"RAG_TREE_BLOCK_MAX_NODES" envDefault:"120"`
+		TreeBeamSize         int           `env:"RAG_TREE_BEAM_SIZE" envDefault:"3"`
+		TreeMaxTurns         int           `env:"RAG_TREE_MAX_TURNS" envDefault:"6"`
+		TreeMaxBlocksPerTurn int           `env:"RAG_TREE_MAX_BLOCKS_PER_TURN" envDefault:"6"`
 	}
 
 	// Metrics -.
@@ -88,6 +93,21 @@ func NewConfig() (*Config, error) {
 	}
 	if cfg.RAG.MaxContextPages < 1 {
 		return nil, fmt.Errorf("config error: RAG_MAX_CONTEXT_PAGES must be positive")
+	}
+	if cfg.RAG.TreeFullMaxNodes < 1 {
+		return nil, fmt.Errorf("config error: RAG_TREE_FULL_MAX_NODES must be positive")
+	}
+	if cfg.RAG.TreeBlockMaxNodes < 1 {
+		return nil, fmt.Errorf("config error: RAG_TREE_BLOCK_MAX_NODES must be positive")
+	}
+	if cfg.RAG.TreeBeamSize < 1 {
+		return nil, fmt.Errorf("config error: RAG_TREE_BEAM_SIZE must be positive")
+	}
+	if cfg.RAG.TreeMaxTurns < 1 {
+		return nil, fmt.Errorf("config error: RAG_TREE_MAX_TURNS must be positive")
+	}
+	if cfg.RAG.TreeMaxBlocksPerTurn < 1 {
+		return nil, fmt.Errorf("config error: RAG_TREE_MAX_BLOCKS_PER_TURN must be positive")
 	}
 
 	return cfg, nil

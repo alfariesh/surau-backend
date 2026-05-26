@@ -88,7 +88,23 @@ curl -X POST 'http://127.0.0.1:8080/v1/books/797/rag?lang=id' \
   -d '{"question":"Apa definisi hadis sahih?","max_citations":5}'
 ```
 
-Set `RAG_LLM_API_KEY` for your OpenAI-compatible provider. Optional defaults are `RAG_LLM_BASE_URL=https://ai.sumopod.com/v1`, `RAG_LLM_MODEL=glm-5.1`, `RAG_LLM_TIMEOUT=45s`, `RAG_LLM_MAX_TOKENS=1400`, `RAG_LLM_TEMPERATURE=0.1`, and `RAG_MAX_CONTEXT_PAGES=8`.
+Set `RAG_LLM_API_KEY` for your OpenAI-compatible provider. Optional defaults are `RAG_LLM_BASE_URL=https://ai.sumopod.com/v1`, `RAG_LLM_MODEL=glm-5.1`, `RAG_LLM_TIMEOUT=45s`, `RAG_LLM_MAX_TOKENS=1400`, `RAG_LLM_TEMPERATURE=0.1`, `RAG_MAX_CONTEXT_PAGES=8`, `RAG_TREE_FULL_MAX_NODES=450`, `RAG_TREE_BLOCK_MAX_NODES=120`, `RAG_TREE_BEAM_SIZE=3`, `RAG_TREE_MAX_TURNS=6`, and `RAG_TREE_MAX_BLOCKS_PER_TURN=6`.
+
+Reader TOC summaries can be generated separately with `scripts/generate_reader_summaries.py`. The script defaults to `SUMMARY_LLM_BASE_URL=https://ai.sumopod.com/v1`, `SUMMARY_LLM_MODEL=glm-5.1`, and falls back to the `RAG_LLM_*` environment if `SUMMARY_LLM_*` is not set. Summaries are stored per `(book_id, heading_id, lang)` for reader display and RAG tree ranking; citations still come from original page text.
+
+Run the black-box golden eval against a local or deployed API:
+
+```sh
+go run ./cmd/rag-eval \
+  -base-url http://127.0.0.1:8080 \
+  -cases eval/bookrag_smoke.jsonl
+```
+
+The eval posts to `/v1/books/{book_id}/rag`, requests `include_trace=true`, and checks citation heading/page IDs, retrieval mode, tree LLM call budget, not-found behavior, and optional answer/quote substrings. Use `-output json` for CI-friendly output.
+It retries failed cases once by default (`-retries 1`) to reduce one-off LLM sampling noise while still reporting the attempt count.
+`answer_must_contain` is a warning by default because answer wording can vary; pass `-strict-answer` to make it a failure.
+Use `-verbose` when debugging slow or invisible failures; it prints per-case start/finish lines to stderr while the eval is still running.
+Use `eval/bookrag_golden.jsonl` for the fuller, costlier suite that includes medium-book and not-found cases.
 
 ## Import Raw Books
 
