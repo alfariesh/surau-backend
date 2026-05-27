@@ -17,6 +17,7 @@ func NewRoutes(
 	apiV1Group fiber.Router,
 	reader usecase.Reader,
 	bookRAG usecase.BookRAG,
+	quran usecase.Quran,
 	u usecase.User,
 	personal usecase.Personal,
 	editorial usecase.Editorial,
@@ -26,6 +27,7 @@ func NewRoutes(
 	r := &V1{
 		reader:    reader,
 		bookRAG:   bookRAG,
+		quran:     quran,
 		u:         u,
 		personal:  personal,
 		editorial: editorial,
@@ -59,6 +61,7 @@ func NewRoutes(
 		bookGroup.Get("/:book_id/toc", r.listBookTOC)
 		bookGroup.Get("/:book_id/toc/:heading_id/read", r.readBookTOCSection)
 		bookGroup.Get("/:book_id/toc/:heading_id/playlist", r.getBookTOCPlaylist)
+		bookGroup.Get("/:book_id/quran-references", r.listBookQuranReferences)
 		bookGroup.Post("/:book_id/toc/:heading_id/translation-feedback", limiter.New(limiter.Config{
 			Max:        30,
 			Expiration: time.Minute,
@@ -67,6 +70,15 @@ func NewRoutes(
 
 	apiV1Group.Get("/categories", r.listCategories)
 	apiV1Group.Get("/authors", r.listAuthors)
+
+	quranGroup := apiV1Group.Group("/quran")
+	{
+		quranGroup.Get("/recitations", r.listQuranRecitations)
+		quranGroup.Get("/surahs", r.listQuranSurahs)
+		quranGroup.Get("/surahs/:surah_id/ayahs", r.listQuranSurahAyahs)
+		quranGroup.Get("/ayahs/:ayah_key", r.getQuranAyah)
+		quranGroup.Get("/search", r.searchQuran)
+	}
 
 	// Protected routes
 	protected := apiV1Group.Group("", middleware.Auth(jwtManager))

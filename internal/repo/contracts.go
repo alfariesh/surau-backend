@@ -67,6 +67,33 @@ type (
 		SearchRAGPages(ctx context.Context, bookID int, query string, lang string, limit int) ([]entity.RAGSearchResult, error)
 	}
 
+	// QuranRepo provides public Quran browse/search and kitab reference lookups.
+	QuranRepo interface {
+		ListSurahs(ctx context.Context, lang string) ([]entity.QuranSurah, error)
+		ListRecitations(ctx context.Context) ([]entity.QuranRecitation, error)
+		GetAyah(
+			ctx context.Context,
+			ayahKey string,
+			lang string,
+			translationSource string,
+			includeAudio bool,
+			recitationID string,
+		) (entity.QuranAyah, error)
+		ListSurahAyahs(
+			ctx context.Context,
+			surahID int,
+			fromAyah int,
+			toAyah int,
+			lang string,
+			translationSource string,
+			includeTranslation bool,
+			includeAudio bool,
+			recitationID string,
+		) ([]entity.QuranAyah, error)
+		SearchAyahs(ctx context.Context, filter QuranSearchFilter) ([]entity.QuranSearchResult, int, error)
+		ListBookQuranReferences(ctx context.Context, filter QuranBookReferenceFilter) ([]entity.BookQuranReference, int, error)
+	}
+
 	// PersonalRepo -.
 	PersonalRepo interface {
 		GetProgress(ctx context.Context, userID string, bookID int) (entity.ReadingProgress, error)
@@ -152,5 +179,24 @@ type (
 		Status    string
 		Limit     uint64
 		Offset    uint64
+	}
+
+	// QuranSearchFilter -.
+	QuranSearchFilter struct {
+		Query             string
+		Lang              string
+		TranslationSource string
+		Limit             uint64
+		Offset            uint64
+	}
+
+	// QuranBookReferenceFilter -.
+	QuranBookReferenceFilter struct {
+		BookID            int
+		Lang              string
+		TranslationSource string
+		Status            string
+		Limit             uint64
+		Offset            uint64
 	}
 )

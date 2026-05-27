@@ -1,0 +1,923 @@
+package persistent
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"fmt"
+	"strings"
+
+	sq "github.com/Masterminds/squirrel"
+	"github.com/evrone/go-clean-template/internal/entity"
+	"github.com/evrone/go-clean-template/internal/quranutil"
+	"github.com/evrone/go-clean-template/internal/readerutil"
+	"github.com/evrone/go-clean-template/internal/repo"
+	"github.com/evrone/go-clean-template/pkg/postgres"
+	"github.com/jackc/pgx/v5"
+)
+
+// QuranRepo provides Quran browse/search queries.
+type QuranRepo struct {
+	*postgres.Postgres
+}
+
+// NewQuranRepo creates a Quran repository.
+func NewQuranRepo(pg *postgres.Postgres) *QuranRepo {
+	return &QuranRepo{pg}
+}
+
+// ListSurahs returns imported surahs in mushaf order.
+func (r *QuranRepo) ListSurahs(ctx context.Context, lang string) ([]entity.QuranSurah, error) {
+	rows, err := r.Pool.Query(ctx, `
+SELECT s.surah_id,
+       s.name_arabic,
+       s.name_latin,
+       s.name_translation,
+       s.revelation_type,
+       s.ayah_count,
+       s.metadata,
+       s.updated_at,
+       si.lang,
+       si.surah_name,
+       si.text_html,
+       si.short_text,
+       si.source_name,
+       si.source_url,
+       si.qul_resource_id,
+       si.format,
+       si.license_status,
+       si.checksum,
+       si.metadata,
+       si.imported_at,
+       si.updated_at
+FROM quran_surahs s
+LEFT JOIN quran_surah_infos si ON si.surah_id = s.surah_id AND si.lang = $1
+ORDER BY s.surah_id ASC`, lang)
+	if err != nil {
+		return nil, fmt.Errorf("QuranRepo - ListSurahs - Query: %w", err)
+	}
+	defer rows.Close()
+
+	surahs := make([]entity.QuranSurah, 0, 114)
+	for rows.Next() {
+		surah, err := scanQuranSurah(rows)
+		if err != nil {
+			return nil, fmt.Errorf("QuranRepo - ListSurahs - scanQuranSurah: %w", err)
+		}
+
+		surahs = append(surahs, surah)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("QuranRepo - ListSurahs - rows.Err: %w", err)
+	}
+
+	return surahs, nil
+}
+
+// ListRecitations returns imported recitation resources with track coverage.
+func (r *QuranRepo) ListRecitations(ctx context.Context) ([]entity.QuranRecitation, error) {
+	rows, err := r.Pool.Query(ctx, `
+SELECT r.id,
+       r.name,
+       r.reciter_name,
+       r.style,
+       r.mode,
+       r.source_url,
+       r.qul_resource_id,
+       r.format,
+       r.license_status,
+       r.checksum,
+       r.metadata,
+       r.imported_at,
+       r.updated_at,
+       COUNT(t.recitation_id)::int AS track_count,
+       COUNT(t.public_url)::int AS public_track_count
+FROM quran_recitations r
+LEFT JOIN quran_audio_tracks t ON t.recitation_id = r.id
+GROUP BY r.id
+ORDER BY r.mode ASC, r.name ASC, r.id ASC`)
+	if err != nil {
+		return nil, fmt.Errorf("QuranRepo - ListRecitations - Query: %w", err)
+	}
+	defer rows.Close()
+
+	recitations := make([]entity.QuranRecitation, 0)
+	for rows.Next() {
+		recitation, err := scanQuranRecitation(rows)
+		if err != nil {
+			return nil, fmt.Errorf("QuranRepo - ListRecitations - scanQuranRecitation: %w", err)
+		}
+
+		recitations = append(recitations, recitation)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("QuranRepo - ListRecitations - rows.Err: %w", err)
+	}
+
+	return recitations, nil
+}
+
+// GetAyah returns one ayah by ayah_key.
+func (r *QuranRepo) GetAyah(
+	ctx context.Context,
+	ayahKey string,
+	lang string,
+	translationSource string,
+	includeAudio bool,
+	recitationID string,
+) (entity.QuranAyah, error) {
+	ayah, err := scanQuranAyah(r.Pool.QueryRow(ctx, quranAyahSelectSQL(`
+WHERE a.ayah_key = $1`, true), ayahKey, lang, translationSource))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return entity.QuranAyah{}, entity.ErrQuranAyahNotFound
+		}
+
+		return entity.QuranAyah{}, fmt.Errorf("QuranRepo - GetAyah - scanQuranAyah: %w", err)
+	}
+
+	if includeAudio {
+		audioByAyah, err := r.audioTracksForAyahs(ctx, []string{ayah.AyahKey}, recitationID)
+		if err != nil {
+			return entity.QuranAyah{}, err
+		}
+		ayah.Audio = audioByAyah[ayah.AyahKey]
+	}
+
+	return ayah, nil
+}
+
+// ListSurahAyahs returns all ayahs or an ayah range for one surah.
+func (r *QuranRepo) ListSurahAyahs(
+	ctx context.Context,
+	surahID int,
+	fromAyah int,
+	toAyah int,
+	lang string,
+	translationSource string,
+	includeTranslation bool,
+	includeAudio bool,
+	recitationID string,
+) ([]entity.QuranAyah, error) {
+	if err := r.ensureQuranSurah(ctx, surahID); err != nil {
+		return nil, err
+	}
+
+	args := []any{surahID, lang, translationSource}
+	conditions := []string{"a.surah_id = $1"}
+	if fromAyah > 0 {
+		args = append(args, fromAyah)
+		conditions = append(conditions, fmt.Sprintf("a.ayah_number >= $%d", len(args)))
+	}
+	if toAyah > 0 {
+		args = append(args, toAyah)
+		conditions = append(conditions, fmt.Sprintf("a.ayah_number <= $%d", len(args)))
+	}
+	where := "\nWHERE " + strings.Join(conditions, " AND ") + "\nORDER BY a.ayah_number ASC"
+
+	rows, err := r.Pool.Query(ctx, quranAyahSelectSQL(where, includeTranslation), args...)
+	if err != nil {
+		return nil, fmt.Errorf("QuranRepo - ListSurahAyahs - Query: %w", err)
+	}
+	defer rows.Close()
+
+	ayahs := make([]entity.QuranAyah, 0)
+	ayahKeys := make([]string, 0)
+	for rows.Next() {
+		ayah, err := scanQuranAyah(rows)
+		if err != nil {
+			return nil, fmt.Errorf("QuranRepo - ListSurahAyahs - scanQuranAyah: %w", err)
+		}
+
+		ayahs = append(ayahs, ayah)
+		ayahKeys = append(ayahKeys, ayah.AyahKey)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("QuranRepo - ListSurahAyahs - rows.Err: %w", err)
+	}
+
+	if includeAudio && len(ayahKeys) > 0 {
+		audioByAyah, err := r.audioTracksForAyahs(ctx, ayahKeys, recitationID)
+		if err != nil {
+			return nil, err
+		}
+		for i := range ayahs {
+			ayahs[i].Audio = audioByAyah[ayahs[i].AyahKey]
+		}
+	}
+
+	return ayahs, nil
+}
+
+// SearchAyahs searches Arabic Quran text and selected translation text.
+func (r *QuranRepo) SearchAyahs(
+	ctx context.Context,
+	filter repo.QuranSearchFilter,
+) ([]entity.QuranSearchResult, int, error) {
+	query := strings.TrimSpace(filter.Query)
+	if query == "" {
+		return []entity.QuranSearchResult{}, 0, nil
+	}
+
+	searchQuery := query
+	if normalized := quranutil.NormalizeKey(query); normalized != "" {
+		searchQuery = normalized
+	}
+	like := "%" + searchQuery + "%"
+	countSQL := `
+SELECT COUNT(*)
+FROM quran_ayahs a
+LEFT JOIN quran_ayah_translations t
+       ON t.surah_id = a.surah_id
+      AND t.ayah_number = a.ayah_number
+      AND t.lang = $2
+      AND t.source_id = $3
+WHERE COALESCE(a.search_text, '') ILIKE $4
+   OR COALESCE(a.text_qpc_hafs, '') ILIKE $4
+   OR COALESCE(t.text, '') ILIKE $4
+   OR similarity(COALESCE(a.search_text, ''), $1) > 0.18
+   OR similarity(COALESCE(a.text_qpc_hafs, ''), $1) > 0.18
+   OR similarity(COALESCE(t.text, ''), $1) > 0.18`
+
+	var total int
+	if err := r.Pool.QueryRow(ctx, countSQL, searchQuery, filter.Lang, filter.TranslationSource, like).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("QuranRepo - SearchAyahs - count: %w", err)
+	}
+
+	rows, err := r.Pool.Query(ctx, quranSearchSQL, searchQuery, filter.Lang, filter.TranslationSource, like, filter.Limit, filter.Offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("QuranRepo - SearchAyahs - Query: %w", err)
+	}
+	defer rows.Close()
+
+	results := make([]entity.QuranSearchResult, 0, filter.Limit)
+	for rows.Next() {
+		ayah, score, err := scanQuranAyahWithScore(rows)
+		if err != nil {
+			return nil, 0, fmt.Errorf("QuranRepo - SearchAyahs - scanQuranAyahWithScore: %w", err)
+		}
+
+		results = append(results, entity.QuranSearchResult{Ayah: ayah, Score: score})
+	}
+	if err = rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("QuranRepo - SearchAyahs - rows.Err: %w", err)
+	}
+
+	return results, total, nil
+}
+
+// ListBookQuranReferences returns linked Quran citations for a published kitab.
+func (r *QuranRepo) ListBookQuranReferences(
+	ctx context.Context,
+	filter repo.QuranBookReferenceFilter,
+) ([]entity.BookQuranReference, int, error) {
+	if err := r.ensureQuranPublishedBook(ctx, filter.BookID); err != nil {
+		return nil, 0, err
+	}
+
+	countBuilder := r.Builder.
+		Select("COUNT(*)").
+		From("quran_book_references qbr").
+		Where(sq.Eq{"qbr.book_id": filter.BookID})
+	dataBuilder := r.Builder.
+		Select(quranBookReferenceColumns()...).
+		From("quran_book_references qbr").
+		Where(sq.Eq{"qbr.book_id": filter.BookID}).
+		OrderBy("qbr.page_id ASC", "qbr.created_at ASC").
+		Limit(filter.Limit).
+		Offset(filter.Offset)
+	if filter.Status != "" && filter.Status != "all" {
+		countBuilder = countBuilder.Where(sq.Eq{"qbr.review_status": filter.Status})
+		dataBuilder = dataBuilder.Where(sq.Eq{"qbr.review_status": filter.Status})
+	}
+
+	total, err := r.countQuran(ctx, countBuilder)
+	if err != nil {
+		return nil, 0, fmt.Errorf("QuranRepo - ListBookQuranReferences - count: %w", err)
+	}
+
+	sqlText, args, err := dataBuilder.ToSql()
+	if err != nil {
+		return nil, 0, fmt.Errorf("QuranRepo - ListBookQuranReferences - ToSql: %w", err)
+	}
+	rows, err := r.Pool.Query(ctx, sqlText, args...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("QuranRepo - ListBookQuranReferences - Query: %w", err)
+	}
+	defer rows.Close()
+
+	references := make([]entity.BookQuranReference, 0, filter.Limit)
+	for rows.Next() {
+		reference, err := scanBookQuranReference(rows)
+		if err != nil {
+			return nil, 0, fmt.Errorf("QuranRepo - ListBookQuranReferences - scanBookQuranReference: %w", err)
+		}
+
+		references = append(references, reference)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("QuranRepo - ListBookQuranReferences - rows.Err: %w", err)
+	}
+
+	for i := range references {
+		ref := &references[i]
+		if ref.SurahID == nil || ref.FromAyahNumber == nil || ref.ToAyahNumber == nil {
+			continue
+		}
+		ayahs, err := r.ListSurahAyahs(
+			ctx,
+			*ref.SurahID,
+			*ref.FromAyahNumber,
+			*ref.ToAyahNumber,
+			filter.Lang,
+			filter.TranslationSource,
+			true,
+			false,
+			"",
+		)
+		if err != nil {
+			return nil, 0, err
+		}
+		ref.Ayahs = ayahs
+	}
+
+	return references, total, nil
+}
+
+const quranSearchSQL = `
+SELECT a.surah_id,
+       a.ayah_number,
+       a.ayah_key,
+       a.text_qpc_hafs,
+       a.text_imlaei_simple,
+       a.search_text,
+       a.script_type,
+       a.font_family,
+       a.page_number,
+       a.juz_number,
+       a.hizb_number,
+       a.metadata,
+       a.updated_at,
+       t.source_id,
+       t.lang,
+       t.text,
+       t.footnotes,
+       t.chunks,
+       t.metadata,
+       t.updated_at,
+       GREATEST(
+           similarity(COALESCE(a.search_text, ''), $1),
+           similarity(COALESCE(a.text_qpc_hafs, ''), $1),
+           similarity(COALESCE(t.text, ''), $1)
+       )::float8 AS score
+FROM quran_ayahs a
+LEFT JOIN quran_ayah_translations t
+       ON t.surah_id = a.surah_id
+      AND t.ayah_number = a.ayah_number
+      AND t.lang = $2
+      AND t.source_id = $3
+WHERE COALESCE(a.search_text, '') ILIKE $4
+   OR COALESCE(a.text_qpc_hafs, '') ILIKE $4
+   OR COALESCE(t.text, '') ILIKE $4
+   OR similarity(COALESCE(a.search_text, ''), $1) > 0.18
+   OR similarity(COALESCE(a.text_qpc_hafs, ''), $1) > 0.18
+   OR similarity(COALESCE(t.text, ''), $1) > 0.18
+ORDER BY score DESC, a.surah_id ASC, a.ayah_number ASC
+LIMIT $5 OFFSET $6`
+
+func quranAyahSelectSQL(where string, includeTranslation bool) string {
+	translationColumns := `
+       t.source_id,
+       t.lang,
+       t.text,
+       t.footnotes,
+       t.chunks,
+       t.metadata,
+       t.updated_at`
+	translationJoin := `
+LEFT JOIN quran_ayah_translations t
+       ON t.surah_id = a.surah_id
+      AND t.ayah_number = a.ayah_number
+      AND t.lang = $2
+      AND t.source_id = $3`
+	if !includeTranslation {
+		translationColumns = `
+       NULL::text AS source_id,
+       NULL::text AS lang,
+       NULL::text AS text,
+       NULL::jsonb AS footnotes,
+       NULL::jsonb AS chunks,
+       NULL::jsonb AS translation_metadata,
+       NULL::timestamptz AS translation_updated_at`
+		translationJoin = `
+LEFT JOIN quran_ayah_translations t
+       ON false
+      AND t.lang = $2
+      AND t.source_id = $3`
+	}
+
+	return `
+SELECT a.surah_id,
+       a.ayah_number,
+       a.ayah_key,
+       a.text_qpc_hafs,
+       a.text_imlaei_simple,
+       a.search_text,
+       a.script_type,
+       a.font_family,
+       a.page_number,
+       a.juz_number,
+       a.hizb_number,
+       a.metadata,
+       a.updated_at,` + translationColumns + `
+FROM quran_ayahs a` + translationJoin + where
+}
+
+func (r *QuranRepo) audioTracksForAyahs(
+	ctx context.Context,
+	ayahKeys []string,
+	recitationID string,
+) (map[string][]entity.QuranAudioTrack, error) {
+	rows, err := r.Pool.Query(ctx, `
+SELECT t.recitation_id,
+       t.track_type,
+       t.track_key,
+       t.surah_id,
+       t.ayah_number,
+       t.audio_url,
+       t.r2_key,
+       t.public_url,
+       t.duration_ms,
+       t.duration_seconds,
+       t.mime_type,
+       t.metadata,
+       t.updated_at,
+       s.segment_index,
+       (s.surah_id::text || ':' || s.ayah_number::text) AS segment_ayah_key,
+       s.timestamp_from_ms,
+       s.timestamp_to_ms,
+       s.duration_ms,
+       s.metadata
+FROM quran_audio_tracks t
+LEFT JOIN quran_audio_segments s
+       ON s.recitation_id = t.recitation_id
+      AND s.track_type = t.track_type
+      AND s.track_key = t.track_key
+WHERE (
+    (t.track_type = 'ayah' AND t.track_key = ANY($1))
+    OR
+    (t.track_type = 'surah' AND (s.surah_id::text || ':' || s.ayah_number::text) = ANY($1))
+)
+  AND ($2 = '' OR t.recitation_id = $2)
+ORDER BY t.recitation_id ASC, t.track_type ASC, t.track_key ASC, s.segment_index ASC`,
+		ayahKeys,
+		strings.TrimSpace(recitationID),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("QuranRepo - audioTracksForAyahs - Query: %w", err)
+	}
+	defer rows.Close()
+
+	grouped := make(map[string]map[string]*entity.QuranAudioTrack)
+	for rows.Next() {
+		track, mapKey, segment, hasSegment, err := scanQuranAudioTrackRow(rows)
+		if err != nil {
+			return nil, fmt.Errorf("QuranRepo - audioTracksForAyahs - scanQuranAudioTrackRow: %w", err)
+		}
+		if mapKey == "" {
+			continue
+		}
+		if grouped[mapKey] == nil {
+			grouped[mapKey] = make(map[string]*entity.QuranAudioTrack)
+		}
+		trackID := track.RecitationID + ":" + track.TrackType + ":" + track.TrackKey
+		existing := grouped[mapKey][trackID]
+		if existing == nil {
+			existing = &track
+			grouped[mapKey][trackID] = existing
+		}
+		if hasSegment {
+			existing.Segments = append(existing.Segments, segment)
+		}
+	}
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("QuranRepo - audioTracksForAyahs - rows.Err: %w", err)
+	}
+
+	result := make(map[string][]entity.QuranAudioTrack, len(grouped))
+	for ayahKey, tracks := range grouped {
+		for _, track := range tracks {
+			result[ayahKey] = append(result[ayahKey], *track)
+		}
+	}
+
+	return result, nil
+}
+
+func (r *QuranRepo) ensureQuranSurah(ctx context.Context, surahID int) error {
+	var exists bool
+	if err := r.Pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM quran_surahs WHERE surah_id = $1)`, surahID).
+		Scan(&exists); err != nil {
+		return fmt.Errorf("QuranRepo - ensureQuranSurah - QueryRow: %w", err)
+	}
+	if !exists {
+		return entity.ErrQuranSurahNotFound
+	}
+
+	return nil
+}
+
+func (r *QuranRepo) ensureQuranPublishedBook(ctx context.Context, bookID int) error {
+	var exists bool
+	if err := r.Pool.QueryRow(ctx, `
+SELECT EXISTS (
+    SELECT 1
+    FROM books b
+    JOIN book_publications p ON p.book_id = b.id AND p.status = 'published'
+    WHERE b.id = $1 AND b.is_deleted = false
+)`, bookID).Scan(&exists); err != nil {
+		return fmt.Errorf("QuranRepo - ensureQuranPublishedBook - QueryRow: %w", err)
+	}
+	if !exists {
+		return entity.ErrBookNotFound
+	}
+
+	return nil
+}
+
+func quranBookReferenceColumns() []string {
+	return []string{
+		"qbr.id::text",
+		"qbr.book_id",
+		"qbr.page_id",
+		"qbr.heading_id",
+		"qbr.knowledge_mention_id::text",
+		"qbr.source_text",
+		"qbr.normalized_text",
+		"qbr.reference_kind",
+		"qbr.surah_id",
+		"qbr.from_ayah_number",
+		"qbr.to_ayah_number",
+		"qbr.from_ayah_key",
+		"qbr.to_ayah_key",
+		"qbr.match_strategy",
+		"qbr.confidence::float8",
+		"qbr.review_status",
+		"qbr.metadata",
+		"qbr.created_at",
+		"qbr.updated_at",
+	}
+}
+
+func (r *QuranRepo) countQuran(ctx context.Context, builder sq.SelectBuilder) (int, error) {
+	sqlText, args, err := builder.ToSql()
+	if err != nil {
+		return 0, fmt.Errorf("building count query: %w", err)
+	}
+
+	var total int
+	if err = r.Pool.QueryRow(ctx, sqlText, args...).Scan(&total); err != nil {
+		return 0, fmt.Errorf("executing count query: %w", err)
+	}
+
+	return total, nil
+}
+
+func scanQuranRecitation(row rowScanner) (entity.QuranRecitation, error) {
+	var recitation entity.QuranRecitation
+	var reciterName sql.NullString
+	var style sql.NullString
+	var sourceURL sql.NullString
+	var resourceID sql.NullString
+	var checksum sql.NullString
+	var metadata []byte
+	var importedAt sql.NullTime
+
+	err := row.Scan(
+		&recitation.ID,
+		&recitation.Name,
+		&reciterName,
+		&style,
+		&recitation.Mode,
+		&sourceURL,
+		&resourceID,
+		&recitation.Format,
+		&recitation.LicenseStatus,
+		&checksum,
+		&metadata,
+		&importedAt,
+		&recitation.UpdatedAt,
+		&recitation.TrackCount,
+		&recitation.PublicTrackCount,
+	)
+	if err != nil {
+		return entity.QuranRecitation{}, err
+	}
+
+	recitation.ReciterName = nullableString(reciterName)
+	recitation.Style = nullableString(style)
+	recitation.SourceURL = nullableString(sourceURL)
+	recitation.QULResourceID = nullableString(resourceID)
+	recitation.Checksum = nullableString(checksum)
+	recitation.Metadata = entity.RawJSON(metadata)
+	recitation.ImportedAt = nullableTime(importedAt)
+	recitation.HasPublicAudio = recitation.PublicTrackCount > 0 && recitation.PublicTrackCount == recitation.TrackCount
+
+	return recitation, nil
+}
+
+func scanQuranSurah(row rowScanner) (entity.QuranSurah, error) {
+	var surah entity.QuranSurah
+	var nameArabic sql.NullString
+	var nameLatin sql.NullString
+	var nameTranslation sql.NullString
+	var revelationType sql.NullString
+	var metadata []byte
+	var infoLang sql.NullString
+	var infoSurahName sql.NullString
+	var infoTextHTML sql.NullString
+	var infoShortText sql.NullString
+	var infoSourceName sql.NullString
+	var infoSourceURL sql.NullString
+	var infoResourceID sql.NullString
+	var infoFormat sql.NullString
+	var infoLicenseStatus sql.NullString
+	var infoChecksum sql.NullString
+	var infoMetadata []byte
+	var infoImportedAt sql.NullTime
+	var infoUpdatedAt sql.NullTime
+
+	err := row.Scan(
+		&surah.SurahID,
+		&nameArabic,
+		&nameLatin,
+		&nameTranslation,
+		&revelationType,
+		&surah.AyahCount,
+		&metadata,
+		&surah.UpdatedAt,
+		&infoLang,
+		&infoSurahName,
+		&infoTextHTML,
+		&infoShortText,
+		&infoSourceName,
+		&infoSourceURL,
+		&infoResourceID,
+		&infoFormat,
+		&infoLicenseStatus,
+		&infoChecksum,
+		&infoMetadata,
+		&infoImportedAt,
+		&infoUpdatedAt,
+	)
+	if err != nil {
+		return entity.QuranSurah{}, err
+	}
+
+	surah.NameArabic = nullableString(nameArabic)
+	surah.NameLatin = nullableString(nameLatin)
+	surah.NameTranslation = nullableString(nameTranslation)
+	surah.RevelationType = nullableString(revelationType)
+	surah.Metadata = entity.RawJSON(metadata)
+	if infoLang.Valid {
+		info := &entity.QuranSurahInfo{
+			Lang:          infoLang.String,
+			SurahName:     nullableString(infoSurahName),
+			TextHTML:      readerutil.SanitizeHTML(infoTextHTML.String),
+			ShortText:     nullableString(infoShortText),
+			SourceName:    infoSourceName.String,
+			SourceURL:     nullableString(infoSourceURL),
+			QULResourceID: nullableString(infoResourceID),
+			Format:        infoFormat.String,
+			LicenseStatus: infoLicenseStatus.String,
+			Checksum:      nullableString(infoChecksum),
+			Metadata:      entity.RawJSON(infoMetadata),
+			ImportedAt:    nullableTime(infoImportedAt),
+		}
+		if infoUpdatedAt.Valid {
+			info.UpdatedAt = infoUpdatedAt.Time
+		}
+		surah.Info = info
+	}
+
+	return surah, nil
+}
+
+func scanQuranAyah(row rowScanner) (entity.QuranAyah, error) {
+	ayah, _, err := scanQuranAyahInternal(row, false)
+	return ayah, err
+}
+
+func scanQuranAyahWithScore(row rowScanner) (entity.QuranAyah, float64, error) {
+	return scanQuranAyahInternal(row, true)
+}
+
+func scanQuranAyahInternal(row rowScanner, withScore bool) (entity.QuranAyah, float64, error) {
+	var ayah entity.QuranAyah
+	var textQPCHafs sql.NullString
+	var textImlaei sql.NullString
+	var searchText sql.NullString
+	var scriptType sql.NullString
+	var fontFamily sql.NullString
+	var pageNumber sql.NullInt64
+	var juzNumber sql.NullInt64
+	var hizbNumber sql.NullInt64
+	var metadata []byte
+	var sourceID sql.NullString
+	var lang sql.NullString
+	var translationText sql.NullString
+	var footnotes []byte
+	var chunks []byte
+	var translationMetadata []byte
+	var translationUpdatedAt sql.NullTime
+	var score sql.NullFloat64
+
+	dest := []any{
+		&ayah.SurahID,
+		&ayah.AyahNumber,
+		&ayah.AyahKey,
+		&textQPCHafs,
+		&textImlaei,
+		&searchText,
+		&scriptType,
+		&fontFamily,
+		&pageNumber,
+		&juzNumber,
+		&hizbNumber,
+		&metadata,
+		&ayah.UpdatedAt,
+		&sourceID,
+		&lang,
+		&translationText,
+		&footnotes,
+		&chunks,
+		&translationMetadata,
+		&translationUpdatedAt,
+	}
+	if withScore {
+		dest = append(dest, &score)
+	}
+
+	if err := row.Scan(dest...); err != nil {
+		return entity.QuranAyah{}, 0, err
+	}
+
+	ayah.TextQPCHafs = nullableString(textQPCHafs)
+	ayah.TextImlaeiSimple = nullableString(textImlaei)
+	ayah.SearchText = nullableString(searchText)
+	ayah.ScriptType = nullableString(scriptType)
+	ayah.FontFamily = nullableString(fontFamily)
+	ayah.PageNumber = nullableInt(pageNumber)
+	ayah.JuzNumber = nullableInt(juzNumber)
+	ayah.HizbNumber = nullableInt(hizbNumber)
+	ayah.Metadata = entity.RawJSON(metadata)
+	if sourceID.Valid {
+		translation := &entity.QuranTranslation{
+			SourceID:  sourceID.String,
+			Lang:      lang.String,
+			Text:      translationText.String,
+			Footnotes: entity.RawJSON(footnotes),
+			Chunks:    entity.RawJSON(chunks),
+			Metadata:  entity.RawJSON(translationMetadata),
+		}
+		if translationUpdatedAt.Valid {
+			translation.UpdatedAt = translationUpdatedAt.Time
+		}
+		ayah.Translation = translation
+	}
+
+	return ayah, score.Float64, nil
+}
+
+func scanQuranAudioTrackRow(row rowScanner) (
+	entity.QuranAudioTrack,
+	string,
+	entity.QuranAudioSegment,
+	bool,
+	error,
+) {
+	var track entity.QuranAudioTrack
+	var ayahNumber sql.NullInt64
+	var audioURL sql.NullString
+	var r2Key sql.NullString
+	var publicURL sql.NullString
+	var durationMS sql.NullInt64
+	var durationSeconds sql.NullInt64
+	var mimeType sql.NullString
+	var metadata []byte
+	var segmentIndex sql.NullInt64
+	var segmentAyahKey sql.NullString
+	var timestampFrom sql.NullInt64
+	var timestampTo sql.NullInt64
+	var segmentDuration sql.NullInt64
+	var segmentMetadata []byte
+
+	err := row.Scan(
+		&track.RecitationID,
+		&track.TrackType,
+		&track.TrackKey,
+		&track.SurahID,
+		&ayahNumber,
+		&audioURL,
+		&r2Key,
+		&publicURL,
+		&durationMS,
+		&durationSeconds,
+		&mimeType,
+		&metadata,
+		&track.UpdatedAt,
+		&segmentIndex,
+		&segmentAyahKey,
+		&timestampFrom,
+		&timestampTo,
+		&segmentDuration,
+		&segmentMetadata,
+	)
+	if err != nil {
+		return entity.QuranAudioTrack{}, "", entity.QuranAudioSegment{}, false, err
+	}
+
+	track.AyahNumber = nullableInt(ayahNumber)
+	track.AudioURL = nullableString(audioURL)
+	track.R2Key = nullableString(r2Key)
+	track.PublicURL = nullableString(publicURL)
+	track.DurationMS = nullableInt(durationMS)
+	track.DurationSeconds = nullableInt(durationSeconds)
+	track.MIMEType = nullableString(mimeType)
+	track.Metadata = entity.RawJSON(metadata)
+
+	mapKey := track.TrackKey
+	var segment entity.QuranAudioSegment
+	hasSegment := segmentIndex.Valid && segmentAyahKey.Valid
+	if hasSegment {
+		mapKey = segmentAyahKey.String
+		segment = entity.QuranAudioSegment{
+			SegmentIndex:    int(segmentIndex.Int64),
+			AyahKey:         segmentAyahKey.String,
+			TimestampFromMS: int(timestampFrom.Int64),
+			TimestampToMS:   int(timestampTo.Int64),
+			DurationMS:      nullableInt(segmentDuration),
+			Metadata:        entity.RawJSON(segmentMetadata),
+		}
+	}
+
+	return track, mapKey, segment, hasSegment, nil
+}
+
+func scanBookQuranReference(row rowScanner) (entity.BookQuranReference, error) {
+	var reference entity.BookQuranReference
+	var headingID sql.NullInt64
+	var knowledgeMentionID sql.NullString
+	var surahID sql.NullInt64
+	var fromAyah sql.NullInt64
+	var toAyah sql.NullInt64
+	var fromAyahKey sql.NullString
+	var toAyahKey sql.NullString
+	var confidence sql.NullFloat64
+	var metadata []byte
+
+	err := row.Scan(
+		&reference.ID,
+		&reference.BookID,
+		&reference.PageID,
+		&headingID,
+		&knowledgeMentionID,
+		&reference.SourceText,
+		&reference.NormalizedText,
+		&reference.ReferenceKind,
+		&surahID,
+		&fromAyah,
+		&toAyah,
+		&fromAyahKey,
+		&toAyahKey,
+		&reference.MatchStrategy,
+		&confidence,
+		&reference.ReviewStatus,
+		&metadata,
+		&reference.CreatedAt,
+		&reference.UpdatedAt,
+	)
+	if err != nil {
+		return entity.BookQuranReference{}, err
+	}
+
+	reference.HeadingID = nullableInt(headingID)
+	reference.KnowledgeMentionID = nullableString(knowledgeMentionID)
+	reference.SurahID = nullableInt(surahID)
+	reference.FromAyahNumber = nullableInt(fromAyah)
+	reference.ToAyahNumber = nullableInt(toAyah)
+	reference.FromAyahKey = nullableString(fromAyahKey)
+	reference.ToAyahKey = nullableString(toAyahKey)
+	reference.Confidence = nullableFloat(confidence)
+	reference.Metadata = entity.RawJSON(metadata)
+
+	return reference, nil
+}
+
+func nullableFloat(value sql.NullFloat64) *float64 {
+	if !value.Valid {
+		return nil
+	}
+
+	return &value.Float64
+}

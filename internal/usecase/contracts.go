@@ -82,6 +82,33 @@ type (
 		) error
 	}
 
+	// Quran -.
+	Quran interface {
+		Surahs(ctx context.Context, lang string) ([]entity.QuranSurah, error)
+		Recitations(ctx context.Context) ([]entity.QuranRecitation, error)
+		Ayah(
+			ctx context.Context,
+			ayahKey string,
+			lang string,
+			translationSource string,
+			includeAudio bool,
+			recitationID string,
+		) (entity.QuranAyah, error)
+		SurahAyahs(
+			ctx context.Context,
+			surahID int,
+			fromAyah int,
+			toAyah int,
+			lang string,
+			translationSource string,
+			includeTranslation bool,
+			includeAudio bool,
+			recitationID string,
+		) ([]entity.QuranAyah, error)
+		Search(ctx context.Context, query, lang string, limit, offset int) ([]entity.QuranSearchResult, int, error)
+		BookReferences(ctx context.Context, bookID int, lang, status string, limit, offset int) ([]entity.BookQuranReference, int, error)
+	}
+
 	// Personal -.
 	Personal interface {
 		GetProgress(ctx context.Context, userID string, bookID int) (entity.ReadingProgress, error)

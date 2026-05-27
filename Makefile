@@ -79,6 +79,10 @@ import-reader-assets: ### Import translation/audio JSONL: make import-reader-ass
 	go run ./cmd/import-reader-assets --file='$(FILE)'
 .PHONY: import-reader-assets
 
+import-quran-assets: ### Import local QUL Quran exports: make import-quran-assets QUL_ARGS='--dry-run ...'
+	go run ./cmd/import-quran-assets $(QUL_ARGS)
+.PHONY: import-quran-assets
+
 docker-rm-volume: ### remove docker volume
 	docker volume rm go-clean-template_pg-data
 .PHONY: docker-rm-volume

@@ -13,6 +13,7 @@ type V1 struct {
 	tk        usecase.Task
 	reader    usecase.Reader
 	bookRAG   usecase.BookRAG
+	quran     usecase.Quran
 	personal  usecase.Personal
 	editorial usecase.Editorial
 	l         logger.Interface

@@ -1,0 +1,26 @@
+DROP INDEX IF EXISTS idx_quran_book_references_mention_unique;
+DROP INDEX IF EXISTS idx_quran_book_references_surah;
+DROP INDEX IF EXISTS idx_quran_book_references_book_status;
+DROP INDEX IF EXISTS idx_quran_audio_segments_ayah;
+DROP INDEX IF EXISTS idx_quran_audio_tracks_ayah;
+DROP INDEX IF EXISTS idx_quran_ayah_translations_text_trgm;
+DROP INDEX IF EXISTS idx_quran_ayah_translations_lang;
+DROP INDEX IF EXISTS idx_quran_ayahs_search_text_trgm;
+DROP INDEX IF EXISTS idx_quran_ayahs_text_qpc_trgm;
+DROP INDEX IF EXISTS idx_quran_ayahs_page;
+DROP INDEX IF EXISTS idx_quran_ayahs_surah;
+DROP INDEX IF EXISTS idx_quran_surah_infos_text_trgm;
+DROP INDEX IF EXISTS idx_quran_surah_infos_lang;
+DROP INDEX IF EXISTS idx_quran_surahs_name_arabic_trgm;
+DROP INDEX IF EXISTS idx_quran_import_runs_resource;
+
+DROP TABLE IF EXISTS quran_book_references;
+DROP TABLE IF EXISTS quran_audio_segments;
+DROP TABLE IF EXISTS quran_audio_tracks;
+DROP TABLE IF EXISTS quran_recitations;
+DROP TABLE IF EXISTS quran_ayah_translations;
+DROP TABLE IF EXISTS quran_translation_sources;
+DROP TABLE IF EXISTS quran_ayahs;
+DROP TABLE IF EXISTS quran_surah_infos;
+DROP TABLE IF EXISTS quran_surahs;
+DROP TABLE IF EXISTS quran_import_runs;

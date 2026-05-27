@@ -14,6 +14,7 @@ import (
 	"github.com/evrone/go-clean-template/internal/usecase/bookrag"
 	"github.com/evrone/go-clean-template/internal/usecase/editorial"
 	"github.com/evrone/go-clean-template/internal/usecase/personal"
+	"github.com/evrone/go-clean-template/internal/usecase/quran"
 	"github.com/evrone/go-clean-template/internal/usecase/reader"
 	"github.com/evrone/go-clean-template/internal/usecase/user"
 	"github.com/evrone/go-clean-template/pkg/httpserver"
@@ -26,6 +27,7 @@ type useCases struct {
 	user      *user.UseCase
 	reader    *reader.UseCase
 	bookRAG   *bookrag.UseCase
+	quran     *quran.UseCase
 	personal  *personal.UseCase
 	editorial *editorial.UseCase
 }
@@ -38,6 +40,7 @@ func initUseCases(cfg *config.Config, pg *postgres.Postgres, jwtManager *jwt.Man
 	userRepo := persistent.NewUserRepo(pg)
 	readerRepo := persistent.NewReaderRepo(pg)
 	bookRAGRepo := persistent.NewBookRAGRepo(pg)
+	quranRepo := persistent.NewQuranRepo(pg)
 	personalRepo := persistent.NewPersonalRepo(pg)
 	editorialRepo := persistent.NewEditorialRepo(pg)
 	llmClient := webapi.NewOpenAICompatibleClient(webapi.OpenAICompatibleOptions{
@@ -60,6 +63,7 @@ func initUseCases(cfg *config.Config, pg *postgres.Postgres, jwtManager *jwt.Man
 			TreeMaxTurns:         cfg.RAG.TreeMaxTurns,
 			TreeMaxBlocksPerTurn: cfg.RAG.TreeMaxBlocksPerTurn,
 		}),
+		quran:     quran.New(quranRepo),
 		personal:  personal.New(personalRepo),
 		editorial: editorial.New(editorialRepo),
 	}
@@ -68,7 +72,7 @@ func initUseCases(cfg *config.Config, pg *postgres.Postgres, jwtManager *jwt.Man
 func initServers(cfg *config.Config, pg *postgres.Postgres, uc useCases, jwtManager *jwt.Manager, l logger.Interface) servers {
 	// HTTP Server
 	httpServer := httpserver.New(l, httpserver.Port(cfg.HTTP.Port), httpserver.Prefork(cfg.HTTP.UsePreforkMode))
-	restapi.NewRouter(httpServer.App, cfg, pg, uc.reader, uc.bookRAG, uc.user, uc.personal, uc.editorial, jwtManager, l)
+	restapi.NewRouter(httpServer.App, cfg, pg, uc.reader, uc.bookRAG, uc.quran, uc.user, uc.personal, uc.editorial, jwtManager, l)
 
 	return servers{
 		http: httpServer,

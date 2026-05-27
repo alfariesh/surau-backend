@@ -25,4 +25,8 @@ var (
 	ErrInvalidRole           = errors.New("invalid role")
 	ErrInvalidStatus         = errors.New("invalid status")
 	ErrDraftNotFound         = errors.New("draft not found")
+	ErrQuranSurahNotFound    = errors.New("quran surah not found")
+	ErrQuranAyahNotFound     = errors.New("quran ayah not found")
+	ErrInvalidAyahKey        = errors.New("invalid ayah key")
+	ErrInvalidQuranRange     = errors.New("invalid quran range")
 )

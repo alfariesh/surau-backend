@@ -30,7 +30,16 @@ Public reader:
 - `GET /v1/books/{book_id}/toc?lang=id&include_audio=true`
 - `GET /v1/books/{book_id}/toc/{heading_id}/read?lang=id`
 - `GET /v1/books/{book_id}/toc/{heading_id}/playlist?lang=id`
+- `GET /v1/books/{book_id}/quran-references?lang=id&status=approved`
 - `POST /v1/books/{book_id}/toc/{heading_id}/translation-feedback?lang=id`
+
+Public Quran:
+
+- `GET /v1/quran/surahs?lang=id`
+- `GET /v1/quran/recitations`
+- `GET /v1/quran/ayahs/{ayah_key}?lang=id&translation_source=qul-kfgqpc-id-simple&include_audio=false&recitation_id=`
+- `GET /v1/quran/surahs/{surah_id}/ayahs?from=&to=&lang=id&include_translation=true&include_audio=false&recitation_id=`
+- `GET /v1/quran/search?q=&lang=id&limit=&offset=`
 
 Auth and personal reader:
 
@@ -156,6 +165,27 @@ Run:
 PG_URL='postgres://user:myAwEsOm3pa55@w0rd@localhost:5432/db' \
 go run ./cmd/import-reader-assets --file=examples/reader-assets.sample.jsonl
 ```
+
+## Import Quran Assets
+
+Quran data is a standalone domain sourced from local QUL exports. The app does not call QUL at runtime. Download the QUL files first, then import them:
+
+```sh
+PG_URL='postgres://user:myAwEsOm3pa55@w0rd@localhost:5432/db' \
+go run ./cmd/import-quran-assets \
+  --surah-names-json=/path/to/surahs.json \
+  --surah-info-json=/path/to/surah-info-id.json \
+  --surah-info-json=/path/to/surah-info-en.json \
+  --script-qpc-hafs-json=/path/to/qpc-hafs.json \
+  --script-imlaei-simple-json=/path/to/imlaei-simple.json \
+  --translation-simple-json=/path/to/kfgqpc-id-simple.json \
+  --translation-footnote-tags-json=/path/to/kfgqpc-id-footnotes.json \
+  --recitation-json=/path/to/surah-recitation-yasser-al-dosari.zip \
+  --recitation-json=/path/to/ayah-recitation-mishari-rashid-al-afasy-murattal-hafs-953.json.zip \
+  --resolve-references
+```
+
+Use `--dry-run` to parse and count rows without writing. JSON files may be passed directly or as single-resource QUL `.zip` downloads. `--surah-info-json` is repeatable for multiple languages, and `--recitation-json` is repeatable for multiple reciters or recitation modes. V1 imports QPC Hafs display text, Imlaei/simple search text, language-specific surah information, King Fahad Indonesian translation source `qul-kfgqpc-id-simple`, optional footnote/chunk payloads, and recitation timestamp metadata. Audio files themselves stay outside Postgres; `r2_key` and `public_url` are prepared for later Cloudflare R2 ingestion.
 
 ## Generate Test Translations with DeepSeek
 
