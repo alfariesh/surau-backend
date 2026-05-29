@@ -72,6 +72,7 @@ func (uc *UseCase) TOCRead(ctx context.Context, bookID, headingID int, lang stri
 		OriginalText:              section.OriginalText,
 		Translation:               section.Translation,
 		Audio:                     section.Audio,
+		Availability:              section.Availability,
 	}, nil
 }
 
@@ -290,6 +291,7 @@ func tocNodeFromEntry(entry entity.BookTOCEntry) entity.BookTOCNode {
 		TranslationReviewedBy:     entry.TranslationReviewedBy,
 		TranslationReviewedAt:     entry.TranslationReviewedAt,
 		Audio:                     entry.Audio,
+		Availability:              entry.Availability,
 		Children:                  []entity.BookTOCNode{},
 	}
 }
@@ -319,6 +321,7 @@ func tocLinkFromEntry(entry entity.BookTOCEntry) entity.BookTOCLink {
 		TranslationStatus:         entry.TranslationStatus,
 		TranslationReviewedBy:     entry.TranslationReviewedBy,
 		TranslationReviewedAt:     entry.TranslationReviewedAt,
+		Availability:              entry.Availability,
 	}
 }
 

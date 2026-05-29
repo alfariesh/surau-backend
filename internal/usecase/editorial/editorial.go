@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/evrone/go-clean-template/internal/entity"
+	"github.com/evrone/go-clean-template/internal/readerlang"
 	"github.com/evrone/go-clean-template/internal/readerutil"
 	"github.com/evrone/go-clean-template/internal/repo"
 )
@@ -176,6 +177,23 @@ func (uc *UseCase) TranslationFeedbackSummary(
 	return uc.repo.TranslationFeedbackSummary(ctx, filter)
 }
 
+// MissingReaderAssets returns admin queue items for missing localized reader assets.
+func (uc *UseCase) MissingReaderAssets(
+	ctx context.Context,
+	targetLang string,
+	assetType string,
+	bookID *int,
+	limit,
+	offset int,
+) (entity.AdminMissingReaderAssets, error) {
+	filter, err := missingReaderAssetFilter(targetLang, assetType, bookID, limit, offset)
+	if err != nil {
+		return entity.AdminMissingReaderAssets{}, err
+	}
+
+	return uc.repo.ListMissingReaderAssets(ctx, filter)
+}
+
 // ResolveTranslationFeedback marks reader feedback as handled by an admin.
 func (uc *UseCase) ResolveTranslationFeedback(
 	ctx context.Context,
@@ -245,6 +263,52 @@ func translationFeedbackFilter(
 		Limit:     clampLimit(limit),
 		Offset:    clampOffset(offset),
 	}, nil
+}
+
+func missingReaderAssetFilter(
+	targetLang string,
+	assetType string,
+	bookID *int,
+	limit,
+	offset int,
+) (repo.MissingReaderAssetFilter, error) {
+	targetLang = strings.TrimSpace(targetLang)
+	targetLangs := []string{readerlang.Default, readerlang.English}
+	if targetLang != "" {
+		normalized, err := readerlang.Normalize(targetLang)
+		if err != nil || normalized == readerlang.Arabic {
+			return repo.MissingReaderAssetFilter{}, entity.ErrUnsupportedLanguage
+		}
+
+		targetLangs = []string{normalized}
+	}
+
+	assetType = strings.ToLower(strings.TrimSpace(assetType))
+	if assetType != "" && !isMissingReaderAssetType(assetType) {
+		return repo.MissingReaderAssetFilter{}, entity.ErrInvalidAssetType
+	}
+
+	return repo.MissingReaderAssetFilter{
+		TargetLangs: targetLangs,
+		AssetType:   assetType,
+		BookID:      bookID,
+		Limit:       clampLimit(limit),
+		Offset:      clampOffset(offset),
+	}, nil
+}
+
+func isMissingReaderAssetType(assetType string) bool {
+	switch assetType {
+	case entity.MissingAssetBookMetadata,
+		entity.MissingAssetCategoryMetadata,
+		entity.MissingAssetAuthorMetadata,
+		entity.MissingAssetSectionTranslation,
+		entity.MissingAssetHeadingSummary,
+		entity.MissingAssetSectionAudio:
+		return true
+	default:
+		return false
+	}
 }
 
 func trimStringPtr(value *string) *string {

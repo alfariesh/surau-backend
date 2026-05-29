@@ -275,7 +275,7 @@ Catalog endpoints support an optional `lang` query parameter:
 
 Supported kitab languages are `ar`, `id`, and `en`; empty `lang` defaults to `id`, and region tags such as `en-US` normalize to `en`. Unsupported languages return `400 {"error":"unsupported language"}`.
 
-If a requested catalog translation does not exist, the API falls back to the raw Arabic metadata and includes `localization` metadata with `requested_lang`, `display_lang`, `is_fallback`, `available_langs`, and per-field language hints. Section reader and TOC responses expose `requested_lang`, `title_lang`, `is_title_fallback`, `available_translation_langs`, `available_summary_langs`, and `translation_missing`. Section translation content stays exact-language only: if `lang=en` is missing but `lang=id` exists, `translation` remains `null` and the frontend can offer `id` from `available_translation_langs`.
+If a requested catalog translation does not exist, the API falls back to the raw Arabic metadata and includes `localization` metadata with `requested_lang`, `display_lang`, `is_fallback`, `available_langs`, per-field language hints, and nested `availability`. Section reader and TOC responses expose `requested_lang`, `title_lang`, `is_title_fallback`, `available_translation_langs`, `available_summary_langs`, `translation_missing`, and `availability.title|translation|summary|audio` action hints. Section translation content stays exact-language only: if `lang=en` is missing but `lang=id` exists, `translation` remains `null` and the frontend can offer `id` from `available_translation_langs`.
 
 See [docs/kitab-multilingual-api.md](docs/kitab-multilingual-api.md) for the FE-facing multilingual kitab contract.
 
@@ -290,6 +290,8 @@ curl -X POST 'http://127.0.0.1:8080/v1/books/1/toc/5/translation-feedback?lang=i
 Allowed reasons: `inaccurate`, `unclear`, `style`, `typo`, `formatting`, `other`. `client_id` is optional, but lets the backend update the same reader's feedback instead of inserting duplicates.
 
 Admin feedback endpoints require an admin JWT. Use the list endpoint for raw notes and the summary endpoint to prioritize review queues by most disliked heading. Feedback defaults to `status=open`; resolved feedback is hidden from default list/summary, `status=resolved` shows handled items, and `status=all` includes both.
+
+Admin reader localization gaps are available at `GET /v1/admin/reader/missing-assets`. Filter with `target_lang=id|en`, `asset_type=book_metadata|category_metadata|author_metadata|section_translation|heading_summary|section_audio`, `book_id`, `limit`, and `offset`. Empty `target_lang` means both `id,en`; `target_lang=ar` is rejected because Arabic is source content.
 
 Resolve a handled feedback item:
 

@@ -1,5 +1,69 @@
 basePath: /v1
 definitions:
+  entity.AdminMissingReaderAsset:
+    properties:
+      asset_type:
+        example: section_translation
+        type: string
+      author_id:
+        example: 2
+        type: integer
+      author_name:
+        type: string
+      available_langs:
+        example:
+        - id
+        items:
+          type: string
+        type: array
+      book_id:
+        example: 797
+        type: integer
+      book_title:
+        type: string
+      category_id:
+        example: 1
+        type: integer
+      category_name:
+        type: string
+      heading_id:
+        example: 10
+        type: integer
+      heading_title:
+        type: string
+      source_updated_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      target_lang:
+        example: en
+        type: string
+    type: object
+  entity.AdminMissingReaderAssetCount:
+    properties:
+      asset_type:
+        example: section_translation
+        type: string
+      target_lang:
+        example: en
+        type: string
+      total:
+        example: 20
+        type: integer
+    type: object
+  entity.AdminMissingReaderAssets:
+    properties:
+      counts:
+        items:
+          $ref: '#/definitions/entity.AdminMissingReaderAssetCount'
+        type: array
+      items:
+        items:
+          $ref: '#/definitions/entity.AdminMissingReaderAsset'
+        type: array
+      total:
+        example: 42
+        type: integer
+    type: object
   entity.Author:
     properties:
       biography:
@@ -32,6 +96,33 @@ definitions:
         type: string
       updated_at:
         example: "2026-01-01T00:00:00Z"
+        type: string
+    type: object
+  entity.AvailabilityDecision:
+    properties:
+      action:
+        example: offer_available_lang
+        type: string
+      available_langs:
+        example:
+        - id
+        items:
+          type: string
+        type: array
+      display_lang:
+        example: ar
+        type: string
+      is_fallback:
+        example: true
+        type: boolean
+      missing:
+        example: true
+        type: boolean
+      reason:
+        example: alternative_langs_available
+        type: string
+      requested_lang:
+        example: en
         type: string
     type: object
   entity.BookHeading:
@@ -158,6 +249,8 @@ definitions:
     properties:
       audio:
         $ref: '#/definitions/entity.SectionAudio'
+      availability:
+        $ref: '#/definitions/entity.ReaderAvailability'
       available_summary_langs:
         example:
         - id
@@ -205,6 +298,8 @@ definitions:
     type: object
   entity.BookTOCLink:
     properties:
+      availability:
+        $ref: '#/definitions/entity.ReaderAvailability'
       available_summary_langs:
         example:
         - id
@@ -284,6 +379,8 @@ definitions:
     properties:
       audio:
         $ref: '#/definitions/entity.SectionAudio'
+      availability:
+        $ref: '#/definitions/entity.ReaderAvailability'
       available_summary_langs:
         example:
         - id
@@ -412,6 +509,8 @@ definitions:
     properties:
       audio:
         $ref: '#/definitions/entity.SectionAudio'
+      availability:
+        $ref: '#/definitions/entity.ReaderAvailability'
       available_summary_langs:
         example:
         - id
@@ -524,6 +623,8 @@ definitions:
     type: object
   entity.LocalizationMeta:
     properties:
+      availability:
+        $ref: '#/definitions/entity.AvailabilityDecision'
       available_langs:
         example:
         - id
@@ -783,6 +884,17 @@ definitions:
       updated_at:
         example: "2026-01-01T00:00:00Z"
         type: string
+    type: object
+  entity.ReaderAvailability:
+    properties:
+      audio:
+        $ref: '#/definitions/entity.AvailabilityDecision'
+      summary:
+        $ref: '#/definitions/entity.AvailabilityDecision'
+      title:
+        $ref: '#/definitions/entity.AvailabilityDecision'
+      translation:
+        $ref: '#/definitions/entity.AvailabilityDecision'
     type: object
   entity.SectionAudio:
     properties:
@@ -1423,6 +1535,70 @@ info:
   title: Go Clean Template API
   version: "1.0"
 paths:
+  /admin/reader/missing-assets:
+    get:
+      description: Admin-only queue of missing kitab metadata, section translations,
+        summaries, and audio for target languages id/en.
+      operationId: admin-list-missing-reader-assets
+      parameters:
+      - description: 'Target language: id or en; empty returns both'
+        enum:
+        - id
+        - en
+        in: query
+        name: target_lang
+        type: string
+      - description: Asset type filter
+        enum:
+        - book_metadata
+        - category_metadata
+        - author_metadata
+        - section_translation
+        - heading_summary
+        - section_audio
+        in: query
+        name: asset_type
+        type: string
+      - description: Book ID
+        in: query
+        name: book_id
+        type: integer
+      - default: 50
+        description: Page size
+        in: query
+        name: limit
+        type: integer
+      - default: 0
+        description: Page offset
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.AdminMissingReaderAssets'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      summary: List missing reader assets
+      tags:
+      - admin
   /auth/change-password:
     post:
       consumes:

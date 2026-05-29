@@ -147,6 +147,7 @@ type (
 		AddCollectionItem(ctx context.Context, actorID, slug string, bookID int, sortOrder *int) (entity.BookCollectionItem, error)
 		ListTranslationFeedbacks(ctx context.Context, filter TranslationFeedbackFilter) ([]entity.AdminTranslationFeedback, int, error)
 		TranslationFeedbackSummary(ctx context.Context, filter TranslationFeedbackFilter) (entity.AdminTranslationFeedbackSummary, error)
+		ListMissingReaderAssets(ctx context.Context, filter MissingReaderAssetFilter) (entity.AdminMissingReaderAssets, error)
 		ResolveTranslationFeedback(ctx context.Context, actorID, feedbackID string, note *string) (entity.AdminTranslationFeedback, error)
 		ReopenTranslationFeedback(ctx context.Context, actorID, feedbackID string) (entity.AdminTranslationFeedback, error)
 	}
@@ -209,6 +210,15 @@ type (
 		Status    string
 		Limit     uint64
 		Offset    uint64
+	}
+
+	// MissingReaderAssetFilter -.
+	MissingReaderAssetFilter struct {
+		TargetLangs []string
+		AssetType   string
+		BookID      *int
+		Limit       uint64
+		Offset      uint64
 	}
 
 	// QuranSearchFilter -.

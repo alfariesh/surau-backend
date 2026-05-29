@@ -32,7 +32,7 @@ func (r *V1) adminListBooks(ctx *fiber.Ctx) error {
 		queryInt(ctx, "offset", 0),
 	)
 	if err != nil {
-		r.l.Error(err, "restapi - v1 - adminListBooks")
+		r.logEditorialError(err, "restapi - v1 - adminListBooks")
 
 		if errors.Is(err, entity.ErrInvalidStatus) {
 			return errorResponse(ctx, http.StatusBadRequest, "invalid status")
@@ -66,7 +66,7 @@ func (r *V1) adminListTranslationFeedbacks(ctx *fiber.Ctx) error {
 		queryInt(ctx, "offset", 0),
 	)
 	if err != nil {
-		r.l.Error(err, "restapi - v1 - adminListTranslationFeedbacks")
+		r.logEditorialError(err, "restapi - v1 - adminListTranslationFeedbacks")
 
 		return r.editorialError(ctx, err)
 	}
@@ -95,12 +95,51 @@ func (r *V1) adminTranslationFeedbackSummary(ctx *fiber.Ctx) error {
 		queryInt(ctx, "limit", 20),
 	)
 	if err != nil {
-		r.l.Error(err, "restapi - v1 - adminTranslationFeedbackSummary")
+		r.logEditorialError(err, "restapi - v1 - adminTranslationFeedbackSummary")
 
 		return r.editorialError(ctx, err)
 	}
 
 	return ctx.Status(http.StatusOK).JSON(summary)
+}
+
+// @Summary     List missing reader assets
+// @Description Admin-only queue of missing kitab metadata, section translations, summaries, and audio for target languages id/en.
+// @ID          admin-list-missing-reader-assets
+// @Tags        admin
+// @Produce     json
+// @Param       target_lang query    string false "Target language: id or en; empty returns both" Enums(id,en)
+// @Param       asset_type  query    string false "Asset type filter" Enums(book_metadata,category_metadata,author_metadata,section_translation,heading_summary,section_audio)
+// @Param       book_id     query    int    false "Book ID"
+// @Param       limit       query    int    false "Page size" default(50)
+// @Param       offset      query    int    false "Page offset" default(0)
+// @Success     200         {object} entity.AdminMissingReaderAssets
+// @Failure     400         {object} response.Error
+// @Failure     401         {object} response.Error
+// @Failure     403         {object} response.Error
+// @Failure     500         {object} response.Error
+// @Router      /admin/reader/missing-assets [get]
+func (r *V1) adminMissingReaderAssets(ctx *fiber.Ctx) error {
+	bookID, err := optionalQueryInt(ctx, "book_id")
+	if err != nil {
+		return errorResponse(ctx, http.StatusBadRequest, "invalid book_id")
+	}
+
+	assets, err := r.editorial.MissingReaderAssets(
+		ctx.UserContext(),
+		ctx.Query("target_lang"),
+		ctx.Query("asset_type"),
+		bookID,
+		queryInt(ctx, "limit", 50),
+		queryInt(ctx, "offset", 0),
+	)
+	if err != nil {
+		r.logEditorialError(err, "restapi - v1 - adminMissingReaderAssets")
+
+		return r.editorialError(ctx, err)
+	}
+
+	return ctx.Status(http.StatusOK).JSON(assets)
 }
 
 func (r *V1) adminUpdatePublication(ctx *fiber.Ctx) error {
@@ -132,7 +171,7 @@ func (r *V1) adminUpdatePublication(ctx *fiber.Ctx) error {
 		body.SortOrder,
 	)
 	if err != nil {
-		r.l.Error(err, "restapi - v1 - adminUpdatePublication")
+		r.logEditorialError(err, "restapi - v1 - adminUpdatePublication")
 
 		return r.editorialError(ctx, err)
 	}
@@ -169,7 +208,7 @@ func (r *V1) adminSaveMetadataDraft(ctx *fiber.Ctx) error {
 		Notes:        body.Notes,
 	})
 	if err != nil {
-		r.l.Error(err, "restapi - v1 - adminSaveMetadataDraft")
+		r.logEditorialError(err, "restapi - v1 - adminSaveMetadataDraft")
 
 		return r.editorialError(ctx, err)
 	}
@@ -190,7 +229,7 @@ func (r *V1) adminPublishMetadataDraft(ctx *fiber.Ctx) error {
 
 	edit, err := r.editorial.PublishMetadataDraft(ctx.UserContext(), actorID, bookID)
 	if err != nil {
-		r.l.Error(err, "restapi - v1 - adminPublishMetadataDraft")
+		r.logEditorialError(err, "restapi - v1 - adminPublishMetadataDraft")
 
 		return r.editorialError(ctx, err)
 	}
@@ -206,7 +245,7 @@ func (r *V1) adminGetPageEdit(ctx *fiber.Ctx) error {
 
 	edit, err := r.editorial.GetPageEdit(ctx.UserContext(), bookID, pageID)
 	if err != nil {
-		r.l.Error(err, "restapi - v1 - adminGetPageEdit")
+		r.logEditorialError(err, "restapi - v1 - adminGetPageEdit")
 
 		return r.editorialError(ctx, err)
 	}
@@ -240,7 +279,7 @@ func (r *V1) adminSavePageDraft(ctx *fiber.Ctx) error {
 		ContentHTML: body.ContentHTML,
 	})
 	if err != nil {
-		r.l.Error(err, "restapi - v1 - adminSavePageDraft")
+		r.logEditorialError(err, "restapi - v1 - adminSavePageDraft")
 
 		return r.editorialError(ctx, err)
 	}
@@ -261,7 +300,7 @@ func (r *V1) adminPublishPageDraft(ctx *fiber.Ctx) error {
 
 	edit, err := r.editorial.PublishPageDraft(ctx.UserContext(), actorID, bookID, pageID)
 	if err != nil {
-		r.l.Error(err, "restapi - v1 - adminPublishPageDraft")
+		r.logEditorialError(err, "restapi - v1 - adminPublishPageDraft")
 
 		return r.editorialError(ctx, err)
 	}
@@ -295,7 +334,7 @@ func (r *V1) adminSaveHeadingDraft(ctx *fiber.Ctx) error {
 		Content:   body.Content,
 	})
 	if err != nil {
-		r.l.Error(err, "restapi - v1 - adminSaveHeadingDraft")
+		r.logEditorialError(err, "restapi - v1 - adminSaveHeadingDraft")
 
 		return r.editorialError(ctx, err)
 	}
@@ -316,7 +355,7 @@ func (r *V1) adminPublishHeadingDraft(ctx *fiber.Ctx) error {
 
 	edit, err := r.editorial.PublishHeadingDraft(ctx.UserContext(), actorID, bookID, headingID)
 	if err != nil {
-		r.l.Error(err, "restapi - v1 - adminPublishHeadingDraft")
+		r.logEditorialError(err, "restapi - v1 - adminPublishHeadingDraft")
 
 		return r.editorialError(ctx, err)
 	}
@@ -346,7 +385,7 @@ func (r *V1) adminAddCollectionItem(ctx *fiber.Ctx) error {
 
 	item, err := r.editorial.AddCollectionItem(ctx.UserContext(), actorID, slug, body.BookID, body.SortOrder)
 	if err != nil {
-		r.l.Error(err, "restapi - v1 - adminAddCollectionItem")
+		r.logEditorialError(err, "restapi - v1 - adminAddCollectionItem")
 
 		return r.editorialError(ctx, err)
 	}
@@ -378,7 +417,7 @@ func (r *V1) adminResolveTranslationFeedback(ctx *fiber.Ctx) error {
 
 	feedback, err := r.editorial.ResolveTranslationFeedback(ctx.UserContext(), actorID, feedbackID, body.Note)
 	if err != nil {
-		r.l.Error(err, "restapi - v1 - adminResolveTranslationFeedback")
+		r.logEditorialError(err, "restapi - v1 - adminResolveTranslationFeedback")
 
 		return r.editorialError(ctx, err)
 	}
@@ -399,7 +438,7 @@ func (r *V1) adminReopenTranslationFeedback(ctx *fiber.Ctx) error {
 
 	feedback, err := r.editorial.ReopenTranslationFeedback(ctx.UserContext(), actorID, feedbackID)
 	if err != nil {
-		r.l.Error(err, "restapi - v1 - adminReopenTranslationFeedback")
+		r.logEditorialError(err, "restapi - v1 - adminReopenTranslationFeedback")
 
 		return r.editorialError(ctx, err)
 	}
@@ -409,6 +448,10 @@ func (r *V1) adminReopenTranslationFeedback(ctx *fiber.Ctx) error {
 
 func (r *V1) editorialError(ctx *fiber.Ctx, err error) error {
 	switch {
+	case errors.Is(err, entity.ErrUnsupportedLanguage):
+		return errorResponse(ctx, http.StatusBadRequest, "unsupported language")
+	case errors.Is(err, entity.ErrInvalidAssetType):
+		return errorResponse(ctx, http.StatusBadRequest, "invalid asset_type")
 	case errors.Is(err, entity.ErrInvalidStatus):
 		return errorResponse(ctx, http.StatusBadRequest, "invalid status")
 	case errors.Is(err, entity.ErrInvalidFeedback):

@@ -21,6 +21,184 @@ type EditorialRepo struct {
 	*postgres.Postgres
 }
 
+const missingReaderAssetsCTE = `
+WITH target_langs AS (
+    SELECT unnest($1::TEXT[]) AS lang
+),
+published_books AS (
+    SELECT b.id AS book_id,
+           COALESCE(me.display_title, b.name) AS book_title,
+           COALESCE(me.category_id, b.category_id) AS category_id,
+           c.name AS category_name,
+           b.author_id,
+           a.name AS author_name,
+           b.updated_at AS book_updated_at,
+           c.updated_at AS category_updated_at,
+           a.updated_at AS author_updated_at
+    FROM books b
+    JOIN book_publications p ON p.book_id = b.id AND p.status = 'published'
+    LEFT JOIN book_metadata_edits me ON me.book_id = b.id AND me.status = 'published'
+    LEFT JOIN categories c ON c.id = COALESCE(me.category_id, b.category_id)
+    LEFT JOIN authors a ON a.id = b.author_id
+    WHERE b.is_deleted = false
+),
+missing AS (
+    SELECT 'book_metadata'::TEXT AS asset_type,
+           tl.lang AS target_lang,
+           pb.book_id,
+           pb.book_title,
+           NULL::INT AS heading_id,
+           NULL::TEXT AS heading_title,
+           pb.category_id,
+           pb.category_name,
+           pb.author_id,
+           pb.author_name,
+           COALESCE(av.available_langs, ARRAY[]::TEXT[]) AS available_langs,
+           pb.book_updated_at AS source_updated_at
+    FROM published_books pb
+    CROSS JOIN target_langs tl
+    LEFT JOIN book_metadata_translations bmt ON bmt.book_id = pb.book_id AND bmt.lang = tl.lang
+    LEFT JOIN LATERAL (
+        SELECT array_agg(lang ORDER BY lang) AS available_langs
+        FROM book_metadata_translations
+        WHERE book_id = pb.book_id
+    ) av ON true
+    WHERE bmt.book_id IS NULL
+
+    UNION ALL
+
+    SELECT 'category_metadata'::TEXT AS asset_type,
+           tl.lang AS target_lang,
+           pb.book_id,
+           pb.book_title,
+           NULL::INT AS heading_id,
+           NULL::TEXT AS heading_title,
+           pb.category_id,
+           pb.category_name,
+           pb.author_id,
+           pb.author_name,
+           COALESCE(av.available_langs, ARRAY[]::TEXT[]) AS available_langs,
+           pb.category_updated_at AS source_updated_at
+    FROM published_books pb
+    CROSS JOIN target_langs tl
+    LEFT JOIN category_translations ct ON ct.category_id = pb.category_id AND ct.lang = tl.lang
+    LEFT JOIN LATERAL (
+        SELECT array_agg(lang ORDER BY lang) AS available_langs
+        FROM category_translations
+        WHERE category_id = pb.category_id
+    ) av ON true
+    WHERE pb.category_id IS NOT NULL AND ct.category_id IS NULL
+
+    UNION ALL
+
+    SELECT 'author_metadata'::TEXT AS asset_type,
+           tl.lang AS target_lang,
+           pb.book_id,
+           pb.book_title,
+           NULL::INT AS heading_id,
+           NULL::TEXT AS heading_title,
+           pb.category_id,
+           pb.category_name,
+           pb.author_id,
+           pb.author_name,
+           COALESCE(av.available_langs, ARRAY[]::TEXT[]) AS available_langs,
+           pb.author_updated_at AS source_updated_at
+    FROM published_books pb
+    CROSS JOIN target_langs tl
+    LEFT JOIN author_translations atr ON atr.author_id = pb.author_id AND atr.lang = tl.lang
+    LEFT JOIN LATERAL (
+        SELECT array_agg(lang ORDER BY lang) AS available_langs
+        FROM author_translations
+        WHERE author_id = pb.author_id
+    ) av ON true
+    WHERE pb.author_id IS NOT NULL AND atr.author_id IS NULL
+
+    UNION ALL
+
+    SELECT 'section_translation'::TEXT AS asset_type,
+           tl.lang AS target_lang,
+           pb.book_id,
+           pb.book_title,
+           h.heading_id,
+           COALESCE(he.content, h.content) AS heading_title,
+           pb.category_id,
+           pb.category_name,
+           pb.author_id,
+           pb.author_name,
+           COALESCE(av.available_langs, ARRAY[]::TEXT[]) AS available_langs,
+           h.updated_at AS source_updated_at
+    FROM published_books pb
+    JOIN book_headings h ON h.book_id = pb.book_id AND h.is_deleted = false
+    LEFT JOIN book_heading_edits he ON he.book_id = h.book_id AND he.heading_id = h.heading_id AND he.status = 'published'
+    CROSS JOIN target_langs tl
+    LEFT JOIN section_translations st ON st.book_id = h.book_id AND st.heading_id = h.heading_id AND st.lang = tl.lang
+    LEFT JOIN LATERAL (
+        SELECT array_agg(lang ORDER BY lang) AS available_langs
+        FROM section_translations
+        WHERE book_id = h.book_id AND heading_id = h.heading_id
+    ) av ON true
+    WHERE st.book_id IS NULL
+
+    UNION ALL
+
+    SELECT 'heading_summary'::TEXT AS asset_type,
+           tl.lang AS target_lang,
+           pb.book_id,
+           pb.book_title,
+           h.heading_id,
+           COALESCE(he.content, h.content) AS heading_title,
+           pb.category_id,
+           pb.category_name,
+           pb.author_id,
+           pb.author_name,
+           COALESCE(av.available_langs, ARRAY[]::TEXT[]) AS available_langs,
+           h.updated_at AS source_updated_at
+    FROM published_books pb
+    JOIN book_headings h ON h.book_id = pb.book_id AND h.is_deleted = false
+    LEFT JOIN book_heading_edits he ON he.book_id = h.book_id AND he.heading_id = h.heading_id AND he.status = 'published'
+    CROSS JOIN target_langs tl
+    LEFT JOIN book_heading_summaries bhs ON bhs.book_id = h.book_id AND bhs.heading_id = h.heading_id AND bhs.lang = tl.lang
+    LEFT JOIN LATERAL (
+        SELECT array_agg(lang ORDER BY lang) AS available_langs
+        FROM book_heading_summaries
+        WHERE book_id = h.book_id AND heading_id = h.heading_id
+    ) av ON true
+    WHERE bhs.book_id IS NULL
+
+    UNION ALL
+
+    SELECT 'section_audio'::TEXT AS asset_type,
+           tl.lang AS target_lang,
+           pb.book_id,
+           pb.book_title,
+           h.heading_id,
+           COALESCE(he.content, h.content) AS heading_title,
+           pb.category_id,
+           pb.category_name,
+           pb.author_id,
+           pb.author_name,
+           COALESCE(av.available_langs, ARRAY[]::TEXT[]) AS available_langs,
+           h.updated_at AS source_updated_at
+    FROM published_books pb
+    JOIN book_headings h ON h.book_id = pb.book_id AND h.is_deleted = false
+    LEFT JOIN book_heading_edits he ON he.book_id = h.book_id AND he.heading_id = h.heading_id AND he.status = 'published'
+    CROSS JOIN target_langs tl
+    LEFT JOIN section_audio sa ON sa.book_id = h.book_id AND sa.heading_id = h.heading_id AND sa.lang = tl.lang
+    LEFT JOIN LATERAL (
+        SELECT array_agg(lang ORDER BY lang) AS available_langs
+        FROM section_audio
+        WHERE book_id = h.book_id AND heading_id = h.heading_id
+    ) av ON true
+    WHERE sa.book_id IS NULL
+),
+filtered AS (
+    SELECT *
+    FROM missing
+    WHERE ($2 = '' OR asset_type = $2)
+      AND ($3::INT IS NULL OR book_id = $3)
+)
+`
+
 // NewEditorialRepo creates an editorial repository.
 func NewEditorialRepo(pg *postgres.Postgres) *EditorialRepo {
 	return &EditorialRepo{pg}
@@ -487,6 +665,87 @@ func (r *EditorialRepo) TranslationFeedbackSummary(
 	summary.TopDislikedHeadings = topHeadings
 
 	return summary, nil
+}
+
+// ListMissingReaderAssets returns missing localized reader assets for admin queues.
+func (r *EditorialRepo) ListMissingReaderAssets(
+	ctx context.Context,
+	filter repo.MissingReaderAssetFilter,
+) (entity.AdminMissingReaderAssets, error) {
+	const itemSQL = missingReaderAssetsCTE + `
+SELECT asset_type,
+       target_lang,
+       book_id,
+       book_title,
+       heading_id,
+       heading_title,
+       category_id,
+       category_name,
+       author_id,
+       author_name,
+       available_langs,
+       source_updated_at,
+       COUNT(*) OVER() AS total
+FROM filtered
+ORDER BY asset_type ASC, target_lang ASC, book_id ASC, heading_id ASC NULLS FIRST
+LIMIT $4 OFFSET $5`
+
+	rows, err := r.Pool.Query(
+		ctx,
+		itemSQL,
+		filter.TargetLangs,
+		filter.AssetType,
+		filter.BookID,
+		filter.Limit,
+		filter.Offset,
+	)
+	if err != nil {
+		return entity.AdminMissingReaderAssets{}, fmt.Errorf("EditorialRepo - ListMissingReaderAssets - items: %w", err)
+	}
+	defer rows.Close()
+
+	result := entity.AdminMissingReaderAssets{
+		Items:  make([]entity.AdminMissingReaderAsset, 0, filter.Limit),
+		Counts: []entity.AdminMissingReaderAssetCount{},
+	}
+	for rows.Next() {
+		item, total, err := scanAdminMissingReaderAsset(rows)
+		if err != nil {
+			return entity.AdminMissingReaderAssets{}, fmt.Errorf("EditorialRepo - ListMissingReaderAssets - scan item: %w", err)
+		}
+
+		result.Total = total
+		result.Items = append(result.Items, item)
+	}
+	if err = rows.Err(); err != nil {
+		return entity.AdminMissingReaderAssets{}, fmt.Errorf("EditorialRepo - ListMissingReaderAssets - item rows: %w", err)
+	}
+
+	const countSQL = missingReaderAssetsCTE + `
+SELECT asset_type, target_lang, COUNT(*) AS total
+FROM filtered
+GROUP BY asset_type, target_lang
+ORDER BY asset_type ASC, target_lang ASC`
+
+	countRows, err := r.Pool.Query(ctx, countSQL, filter.TargetLangs, filter.AssetType, filter.BookID)
+	if err != nil {
+		return entity.AdminMissingReaderAssets{}, fmt.Errorf("EditorialRepo - ListMissingReaderAssets - counts: %w", err)
+	}
+	defer countRows.Close()
+
+	for countRows.Next() {
+		var count entity.AdminMissingReaderAssetCount
+		if err = countRows.Scan(&count.AssetType, &count.TargetLang, &count.Total); err != nil {
+			return entity.AdminMissingReaderAssets{}, fmt.Errorf("EditorialRepo - ListMissingReaderAssets - scan count: %w", err)
+		}
+
+		result.Counts = append(result.Counts, count)
+	}
+	if err = countRows.Err(); err != nil {
+		return entity.AdminMissingReaderAssets{}, fmt.Errorf("EditorialRepo - ListMissingReaderAssets - count rows: %w", err)
+	}
+
+	return result, nil
 }
 
 // ResolveTranslationFeedback marks a reader feedback item as handled by an admin.
@@ -1054,6 +1313,51 @@ func scanAdminTranslationFeedback(row rowScanner) (entity.AdminTranslationFeedba
 	feedback.TranslationReviewedAt = nullableTime(reviewedAt)
 
 	return feedback, nil
+}
+
+func scanAdminMissingReaderAsset(row rowScanner) (entity.AdminMissingReaderAsset, int, error) {
+	var item entity.AdminMissingReaderAsset
+	var bookID sql.NullInt64
+	var bookTitle sql.NullString
+	var headingID sql.NullInt64
+	var headingTitle sql.NullString
+	var categoryID sql.NullInt64
+	var categoryName sql.NullString
+	var authorID sql.NullInt64
+	var authorName sql.NullString
+	var availableLangs []string
+	var total int
+
+	err := row.Scan(
+		&item.AssetType,
+		&item.TargetLang,
+		&bookID,
+		&bookTitle,
+		&headingID,
+		&headingTitle,
+		&categoryID,
+		&categoryName,
+		&authorID,
+		&authorName,
+		&availableLangs,
+		&item.SourceUpdatedAt,
+		&total,
+	)
+	if err != nil {
+		return entity.AdminMissingReaderAsset{}, 0, err
+	}
+
+	item.BookID = nullableInt(bookID)
+	item.BookTitle = nullableString(bookTitle)
+	item.HeadingID = nullableInt(headingID)
+	item.HeadingTitle = nullableString(headingTitle)
+	item.CategoryID = nullableInt(categoryID)
+	item.CategoryName = nullableString(categoryName)
+	item.AuthorID = nullableInt(authorID)
+	item.AuthorName = nullableString(authorName)
+	item.AvailableLangs = emptyStringSlice(availableLangs)
+
+	return item, total, nil
 }
 
 func scanFeedbackHeadingSummary(row rowScanner) (entity.TranslationFeedbackHeadingSummary, error) {

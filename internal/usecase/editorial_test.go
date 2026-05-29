@@ -222,6 +222,77 @@ func TestEditorialTranslationFeedbacksStatusFilter(t *testing.T) {
 	})
 }
 
+func TestEditorialMissingReaderAssetsFilter(t *testing.T) {
+	t.Parallel()
+
+	t.Run("defaults target languages and normalizes filters", func(t *testing.T) {
+		t.Parallel()
+
+		uc, mockRepo := newEditorialUseCase(t)
+		bookID := 797
+
+		mockRepo.EXPECT().
+			ListMissingReaderAssets(context.Background(), repo.MissingReaderAssetFilter{
+				TargetLangs: []string{"id", "en"},
+				AssetType:   entity.MissingAssetSectionTranslation,
+				BookID:      &bookID,
+				Limit:       200,
+				Offset:      0,
+			}).
+			Return(entity.AdminMissingReaderAssets{Total: 1}, nil)
+
+		got, err := uc.MissingReaderAssets(
+			context.Background(),
+			"",
+			" SECTION_TRANSLATION ",
+			&bookID,
+			999,
+			-1,
+		)
+
+		require.NoError(t, err)
+		assert.Equal(t, 1, got.Total)
+	})
+
+	t.Run("normalizes target language region", func(t *testing.T) {
+		t.Parallel()
+
+		uc, mockRepo := newEditorialUseCase(t)
+
+		mockRepo.EXPECT().
+			ListMissingReaderAssets(context.Background(), repo.MissingReaderAssetFilter{
+				TargetLangs: []string{"en"},
+				Limit:       50,
+				Offset:      0,
+			}).
+			Return(entity.AdminMissingReaderAssets{}, nil)
+
+		_, err := uc.MissingReaderAssets(context.Background(), "en-US", "", nil, 0, 0)
+
+		require.NoError(t, err)
+	})
+
+	t.Run("rejects arabic target", func(t *testing.T) {
+		t.Parallel()
+
+		uc, _ := newEditorialUseCase(t)
+
+		_, err := uc.MissingReaderAssets(context.Background(), "ar", "", nil, 50, 0)
+
+		require.ErrorIs(t, err, entity.ErrUnsupportedLanguage)
+	})
+
+	t.Run("rejects invalid asset type", func(t *testing.T) {
+		t.Parallel()
+
+		uc, _ := newEditorialUseCase(t)
+
+		_, err := uc.MissingReaderAssets(context.Background(), "id", "metadata", nil, 50, 0)
+
+		require.ErrorIs(t, err, entity.ErrInvalidAssetType)
+	})
+}
+
 func TestEditorialResolveTranslationFeedback(t *testing.T) {
 	t.Parallel()
 

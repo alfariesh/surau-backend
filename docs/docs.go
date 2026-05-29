@@ -15,6 +15,97 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/admin/reader/missing-assets": {
+            "get": {
+                "description": "Admin-only queue of missing kitab metadata, section translations, summaries, and audio for target languages id/en.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "List missing reader assets",
+                "operationId": "admin-list-missing-reader-assets",
+                "parameters": [
+                    {
+                        "enum": [
+                            "id",
+                            "en"
+                        ],
+                        "type": "string",
+                        "description": "Target language: id or en; empty returns both",
+                        "name": "target_lang",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "book_metadata",
+                            "category_metadata",
+                            "author_metadata",
+                            "section_translation",
+                            "heading_summary",
+                            "section_audio"
+                        ],
+                        "type": "string",
+                        "description": "Asset type filter",
+                        "name": "asset_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Book ID",
+                        "name": "book_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 50,
+                        "description": "Page size",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Page offset",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.AdminMissingReaderAssets"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
         "/auth/change-password": {
             "post": {
                 "description": "Change the current user's password and revoke older JWTs",
@@ -2166,6 +2257,98 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "entity.AdminMissingReaderAsset": {
+            "type": "object",
+            "properties": {
+                "asset_type": {
+                    "type": "string",
+                    "example": "section_translation"
+                },
+                "author_id": {
+                    "type": "integer",
+                    "example": 2
+                },
+                "author_name": {
+                    "type": "string"
+                },
+                "available_langs": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "id"
+                    ]
+                },
+                "book_id": {
+                    "type": "integer",
+                    "example": 797
+                },
+                "book_title": {
+                    "type": "string"
+                },
+                "category_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "category_name": {
+                    "type": "string"
+                },
+                "heading_id": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "heading_title": {
+                    "type": "string"
+                },
+                "source_updated_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "target_lang": {
+                    "type": "string",
+                    "example": "en"
+                }
+            }
+        },
+        "entity.AdminMissingReaderAssetCount": {
+            "type": "object",
+            "properties": {
+                "asset_type": {
+                    "type": "string",
+                    "example": "section_translation"
+                },
+                "target_lang": {
+                    "type": "string",
+                    "example": "en"
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 20
+                }
+            }
+        },
+        "entity.AdminMissingReaderAssets": {
+            "type": "object",
+            "properties": {
+                "counts": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.AdminMissingReaderAssetCount"
+                    }
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.AdminMissingReaderAsset"
+                    }
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 42
+                }
+            }
+        },
         "entity.Author": {
             "type": "object",
             "properties": {
@@ -2210,6 +2393,44 @@ const docTemplate = `{
                 "updated_at": {
                     "type": "string",
                     "example": "2026-01-01T00:00:00Z"
+                }
+            }
+        },
+        "entity.AvailabilityDecision": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "example": "offer_available_lang"
+                },
+                "available_langs": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "id"
+                    ]
+                },
+                "display_lang": {
+                    "type": "string",
+                    "example": "ar"
+                },
+                "is_fallback": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "missing": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "reason": {
+                    "type": "string",
+                    "example": "alternative_langs_available"
+                },
+                "requested_lang": {
+                    "type": "string",
+                    "example": "en"
                 }
             }
         },
@@ -2385,6 +2606,9 @@ const docTemplate = `{
                 "audio": {
                     "$ref": "#/definitions/entity.SectionAudio"
                 },
+                "availability": {
+                    "$ref": "#/definitions/entity.ReaderAvailability"
+                },
                 "available_summary_langs": {
                     "type": "array",
                     "items": {
@@ -2452,6 +2676,9 @@ const docTemplate = `{
         "entity.BookTOCLink": {
             "type": "object",
             "properties": {
+                "availability": {
+                    "$ref": "#/definitions/entity.ReaderAvailability"
+                },
                 "available_summary_langs": {
                     "type": "array",
                     "items": {
@@ -2560,6 +2787,9 @@ const docTemplate = `{
             "properties": {
                 "audio": {
                     "$ref": "#/definitions/entity.SectionAudio"
+                },
+                "availability": {
+                    "$ref": "#/definitions/entity.ReaderAvailability"
                 },
                 "available_summary_langs": {
                     "type": "array",
@@ -2739,6 +2969,9 @@ const docTemplate = `{
                 "audio": {
                     "$ref": "#/definitions/entity.SectionAudio"
                 },
+                "availability": {
+                    "$ref": "#/definitions/entity.ReaderAvailability"
+                },
                 "available_summary_langs": {
                     "type": "array",
                     "items": {
@@ -2897,6 +3130,9 @@ const docTemplate = `{
         "entity.LocalizationMeta": {
             "type": "object",
             "properties": {
+                "availability": {
+                    "$ref": "#/definitions/entity.AvailabilityDecision"
+                },
                 "available_langs": {
                     "type": "array",
                     "items": {
@@ -3263,6 +3499,23 @@ const docTemplate = `{
                 "updated_at": {
                     "type": "string",
                     "example": "2026-01-01T00:00:00Z"
+                }
+            }
+        },
+        "entity.ReaderAvailability": {
+            "type": "object",
+            "properties": {
+                "audio": {
+                    "$ref": "#/definitions/entity.AvailabilityDecision"
+                },
+                "summary": {
+                    "$ref": "#/definitions/entity.AvailabilityDecision"
+                },
+                "title": {
+                    "$ref": "#/definitions/entity.AvailabilityDecision"
+                },
+                "translation": {
+                    "$ref": "#/definitions/entity.AvailabilityDecision"
                 }
             }
         },

@@ -16,6 +16,13 @@ const (
 
 	FeedbackStatusOpen     = "open"
 	FeedbackStatusResolved = "resolved"
+
+	MissingAssetBookMetadata       = "book_metadata"
+	MissingAssetCategoryMetadata   = "category_metadata"
+	MissingAssetAuthorMetadata     = "author_metadata"
+	MissingAssetSectionTranslation = "section_translation"
+	MissingAssetHeadingSummary     = "heading_summary"
+	MissingAssetSectionAudio       = "section_audio"
 )
 
 // BookPublication controls public visibility for one book.
@@ -128,3 +135,33 @@ type AdminTranslationFeedbackSummary struct {
 	Dislikes            int                                 `json:"dislikes" example:"7"`
 	TopDislikedHeadings []TranslationFeedbackHeadingSummary `json:"top_disliked_headings"`
 } // @name entity.AdminTranslationFeedbackSummary
+
+// AdminMissingReaderAsset describes one missing localized reader asset for editorial work.
+type AdminMissingReaderAsset struct {
+	AssetType       string    `json:"asset_type"        example:"section_translation"`
+	TargetLang      string    `json:"target_lang"       example:"en"`
+	BookID          *int      `json:"book_id"           example:"797"`
+	BookTitle       *string   `json:"book_title"`
+	HeadingID       *int      `json:"heading_id"        example:"10"`
+	HeadingTitle    *string   `json:"heading_title"`
+	CategoryID      *int      `json:"category_id"       example:"1"`
+	CategoryName    *string   `json:"category_name"`
+	AuthorID        *int      `json:"author_id"         example:"2"`
+	AuthorName      *string   `json:"author_name"`
+	AvailableLangs  []string  `json:"available_langs"   example:"id"`
+	SourceUpdatedAt time.Time `json:"source_updated_at" example:"2026-01-01T00:00:00Z"`
+} // @name entity.AdminMissingReaderAsset
+
+// AdminMissingReaderAssetCount aggregates missing reader assets by type and target language.
+type AdminMissingReaderAssetCount struct {
+	AssetType  string `json:"asset_type"  example:"section_translation"`
+	TargetLang string `json:"target_lang" example:"en"`
+	Total      int    `json:"total"       example:"20"`
+} // @name entity.AdminMissingReaderAssetCount
+
+// AdminMissingReaderAssets groups paginated missing asset items and aggregate counts.
+type AdminMissingReaderAssets struct {
+	Items  []AdminMissingReaderAsset      `json:"items"`
+	Total  int                            `json:"total" example:"42"`
+	Counts []AdminMissingReaderAssetCount `json:"counts"`
+} // @name entity.AdminMissingReaderAssets

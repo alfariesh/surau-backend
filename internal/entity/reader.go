@@ -7,11 +7,12 @@ import (
 
 // LocalizationMeta describes which language was requested and which language is displayed.
 type LocalizationMeta struct {
-	RequestedLang  string            `json:"requested_lang"  example:"en"`
-	DisplayLang    string            `json:"display_lang"    example:"ar"`
-	IsFallback     bool              `json:"is_fallback"     example:"true"`
-	AvailableLangs []string          `json:"available_langs" example:"id"`
-	FieldLangs     map[string]string `json:"field_langs"     swaggertype:"object"`
+	RequestedLang  string               `json:"requested_lang"  example:"en"`
+	DisplayLang    string               `json:"display_lang"    example:"ar"`
+	IsFallback     bool                 `json:"is_fallback"     example:"true"`
+	AvailableLangs []string             `json:"available_langs" example:"id"`
+	FieldLangs     map[string]string    `json:"field_langs"     swaggertype:"object"`
+	Availability   AvailabilityDecision `json:"availability"`
 } // @name entity.LocalizationMeta
 
 // LanguageCoverage summarizes available per-language reader assets for one book.
@@ -128,88 +129,91 @@ type BookHeading struct {
 
 // BookTOCEntry is one flat TOC row with optional requested-language asset metadata.
 type BookTOCEntry struct {
-	BookID                    int           `json:"book_id"         example:"797"`
-	HeadingID                 int           `json:"heading_id"      example:"10"`
-	ParentID                  *int          `json:"parent_id"       example:"1"`
-	PageID                    int           `json:"page_id"         example:"12"`
-	Depth                     int           `json:"depth"           example:"0"`
-	Ordinal                   int           `json:"ordinal"         example:"9"`
-	Title                     string        `json:"title"           example:"النوع الأول: الصحيح"`
-	RequestedLang             string        `json:"requested_lang"  example:"en"`
-	TitleLang                 string        `json:"title_lang"      example:"ar"`
-	IsTitleFallback           bool          `json:"is_title_fallback" example:"true"`
-	Summary                   *string       `json:"summary,omitempty"`
-	SummaryLang               *string       `json:"summary_lang,omitempty" example:"id"`
-	HasSummary                bool          `json:"has_summary"     example:"true"`
-	SummaryStatus             *string       `json:"summary_status,omitempty" example:"generated"`
-	SummaryReviewedBy         *string       `json:"summary_reviewed_by,omitempty" example:"Editor A"`
-	SummaryReviewedAt         *time.Time    `json:"summary_reviewed_at,omitempty" example:"2026-01-01T00:00:00Z"`
-	HasAudio                  bool          `json:"has_audio"       example:"true"`
-	HasTranslation            bool          `json:"has_translation" example:"true"`
-	TranslationMissing        bool          `json:"translation_missing" example:"false"`
-	AvailableTranslationLangs []string      `json:"available_translation_langs" example:"id"`
-	AvailableSummaryLangs     []string      `json:"available_summary_langs" example:"id"`
-	TranslationStatus         *string       `json:"translation_status,omitempty" example:"generated"`
-	TranslationReviewedBy     *string       `json:"translation_reviewed_by,omitempty" example:"Editor A"`
-	TranslationReviewedAt     *time.Time    `json:"translation_reviewed_at,omitempty" example:"2026-01-01T00:00:00Z"`
-	Audio                     *SectionAudio `json:"audio,omitempty"`
+	BookID                    int                `json:"book_id"         example:"797"`
+	HeadingID                 int                `json:"heading_id"      example:"10"`
+	ParentID                  *int               `json:"parent_id"       example:"1"`
+	PageID                    int                `json:"page_id"         example:"12"`
+	Depth                     int                `json:"depth"           example:"0"`
+	Ordinal                   int                `json:"ordinal"         example:"9"`
+	Title                     string             `json:"title"           example:"النوع الأول: الصحيح"`
+	RequestedLang             string             `json:"requested_lang"  example:"en"`
+	TitleLang                 string             `json:"title_lang"      example:"ar"`
+	IsTitleFallback           bool               `json:"is_title_fallback" example:"true"`
+	Summary                   *string            `json:"summary,omitempty"`
+	SummaryLang               *string            `json:"summary_lang,omitempty" example:"id"`
+	HasSummary                bool               `json:"has_summary"     example:"true"`
+	SummaryStatus             *string            `json:"summary_status,omitempty" example:"generated"`
+	SummaryReviewedBy         *string            `json:"summary_reviewed_by,omitempty" example:"Editor A"`
+	SummaryReviewedAt         *time.Time         `json:"summary_reviewed_at,omitempty" example:"2026-01-01T00:00:00Z"`
+	HasAudio                  bool               `json:"has_audio"       example:"true"`
+	HasTranslation            bool               `json:"has_translation" example:"true"`
+	TranslationMissing        bool               `json:"translation_missing" example:"false"`
+	AvailableTranslationLangs []string           `json:"available_translation_langs" example:"id"`
+	AvailableSummaryLangs     []string           `json:"available_summary_langs" example:"id"`
+	TranslationStatus         *string            `json:"translation_status,omitempty" example:"generated"`
+	TranslationReviewedBy     *string            `json:"translation_reviewed_by,omitempty" example:"Editor A"`
+	TranslationReviewedAt     *time.Time         `json:"translation_reviewed_at,omitempty" example:"2026-01-01T00:00:00Z"`
+	Audio                     *SectionAudio      `json:"audio,omitempty"`
+	Availability              ReaderAvailability `json:"availability"`
 } // @name entity.BookTOCEntry
 
 // BookTOCNode is a nested TOC response node.
 type BookTOCNode struct {
-	BookID                    int           `json:"book_id"         example:"797"`
-	HeadingID                 int           `json:"heading_id"      example:"10"`
-	ParentID                  *int          `json:"parent_id"       example:"1"`
-	PageID                    int           `json:"page_id"         example:"12"`
-	Depth                     int           `json:"depth"           example:"0"`
-	Ordinal                   int           `json:"ordinal"         example:"9"`
-	Title                     string        `json:"title"           example:"النوع الأول: الصحيح"`
-	RequestedLang             string        `json:"requested_lang"  example:"en"`
-	TitleLang                 string        `json:"title_lang"      example:"ar"`
-	IsTitleFallback           bool          `json:"is_title_fallback" example:"true"`
-	Summary                   *string       `json:"summary,omitempty"`
-	SummaryLang               *string       `json:"summary_lang,omitempty" example:"id"`
-	HasSummary                bool          `json:"has_summary"     example:"true"`
-	SummaryStatus             *string       `json:"summary_status,omitempty" example:"generated"`
-	SummaryReviewedBy         *string       `json:"summary_reviewed_by,omitempty" example:"Editor A"`
-	SummaryReviewedAt         *time.Time    `json:"summary_reviewed_at,omitempty" example:"2026-01-01T00:00:00Z"`
-	HasAudio                  bool          `json:"has_audio"       example:"true"`
-	HasTranslation            bool          `json:"has_translation" example:"true"`
-	TranslationMissing        bool          `json:"translation_missing" example:"false"`
-	AvailableTranslationLangs []string      `json:"available_translation_langs" example:"id"`
-	AvailableSummaryLangs     []string      `json:"available_summary_langs" example:"id"`
-	TranslationStatus         *string       `json:"translation_status,omitempty" example:"generated"`
-	TranslationReviewedBy     *string       `json:"translation_reviewed_by,omitempty" example:"Editor A"`
-	TranslationReviewedAt     *time.Time    `json:"translation_reviewed_at,omitempty" example:"2026-01-01T00:00:00Z"`
-	Audio                     *SectionAudio `json:"audio,omitempty"`
-	Children                  []BookTOCNode `json:"children"`
+	BookID                    int                `json:"book_id"         example:"797"`
+	HeadingID                 int                `json:"heading_id"      example:"10"`
+	ParentID                  *int               `json:"parent_id"       example:"1"`
+	PageID                    int                `json:"page_id"         example:"12"`
+	Depth                     int                `json:"depth"           example:"0"`
+	Ordinal                   int                `json:"ordinal"         example:"9"`
+	Title                     string             `json:"title"           example:"النوع الأول: الصحيح"`
+	RequestedLang             string             `json:"requested_lang"  example:"en"`
+	TitleLang                 string             `json:"title_lang"      example:"ar"`
+	IsTitleFallback           bool               `json:"is_title_fallback" example:"true"`
+	Summary                   *string            `json:"summary,omitempty"`
+	SummaryLang               *string            `json:"summary_lang,omitempty" example:"id"`
+	HasSummary                bool               `json:"has_summary"     example:"true"`
+	SummaryStatus             *string            `json:"summary_status,omitempty" example:"generated"`
+	SummaryReviewedBy         *string            `json:"summary_reviewed_by,omitempty" example:"Editor A"`
+	SummaryReviewedAt         *time.Time         `json:"summary_reviewed_at,omitempty" example:"2026-01-01T00:00:00Z"`
+	HasAudio                  bool               `json:"has_audio"       example:"true"`
+	HasTranslation            bool               `json:"has_translation" example:"true"`
+	TranslationMissing        bool               `json:"translation_missing" example:"false"`
+	AvailableTranslationLangs []string           `json:"available_translation_langs" example:"id"`
+	AvailableSummaryLangs     []string           `json:"available_summary_langs" example:"id"`
+	TranslationStatus         *string            `json:"translation_status,omitempty" example:"generated"`
+	TranslationReviewedBy     *string            `json:"translation_reviewed_by,omitempty" example:"Editor A"`
+	TranslationReviewedAt     *time.Time         `json:"translation_reviewed_at,omitempty" example:"2026-01-01T00:00:00Z"`
+	Audio                     *SectionAudio      `json:"audio,omitempty"`
+	Availability              ReaderAvailability `json:"availability"`
+	Children                  []BookTOCNode      `json:"children"`
 } // @name entity.BookTOCNode
 
 // BookTOCLink is a compact TOC pointer for navigation context.
 type BookTOCLink struct {
-	HeadingID                 int        `json:"heading_id"      example:"10"`
-	Title                     string     `json:"title"           example:"النوع الأول: الصحيح"`
-	RequestedLang             string     `json:"requested_lang"  example:"en"`
-	TitleLang                 string     `json:"title_lang"      example:"ar"`
-	IsTitleFallback           bool       `json:"is_title_fallback" example:"true"`
-	ParentID                  *int       `json:"parent_id"       example:"1"`
-	PageID                    int        `json:"page_id"         example:"12"`
-	Depth                     int        `json:"depth"           example:"0"`
-	Ordinal                   int        `json:"ordinal"         example:"9"`
-	Summary                   *string    `json:"summary,omitempty"`
-	SummaryLang               *string    `json:"summary_lang,omitempty" example:"id"`
-	HasSummary                bool       `json:"has_summary"     example:"true"`
-	SummaryStatus             *string    `json:"summary_status,omitempty" example:"generated"`
-	SummaryReviewedBy         *string    `json:"summary_reviewed_by,omitempty" example:"Editor A"`
-	SummaryReviewedAt         *time.Time `json:"summary_reviewed_at,omitempty" example:"2026-01-01T00:00:00Z"`
-	HasAudio                  bool       `json:"has_audio"       example:"true"`
-	HasTranslation            bool       `json:"has_translation" example:"true"`
-	TranslationMissing        bool       `json:"translation_missing" example:"false"`
-	AvailableTranslationLangs []string   `json:"available_translation_langs" example:"id"`
-	AvailableSummaryLangs     []string   `json:"available_summary_langs" example:"id"`
-	TranslationStatus         *string    `json:"translation_status,omitempty" example:"generated"`
-	TranslationReviewedBy     *string    `json:"translation_reviewed_by,omitempty" example:"Editor A"`
-	TranslationReviewedAt     *time.Time `json:"translation_reviewed_at,omitempty" example:"2026-01-01T00:00:00Z"`
+	HeadingID                 int                `json:"heading_id"      example:"10"`
+	Title                     string             `json:"title"           example:"النوع الأول: الصحيح"`
+	RequestedLang             string             `json:"requested_lang"  example:"en"`
+	TitleLang                 string             `json:"title_lang"      example:"ar"`
+	IsTitleFallback           bool               `json:"is_title_fallback" example:"true"`
+	ParentID                  *int               `json:"parent_id"       example:"1"`
+	PageID                    int                `json:"page_id"         example:"12"`
+	Depth                     int                `json:"depth"           example:"0"`
+	Ordinal                   int                `json:"ordinal"         example:"9"`
+	Summary                   *string            `json:"summary,omitempty"`
+	SummaryLang               *string            `json:"summary_lang,omitempty" example:"id"`
+	HasSummary                bool               `json:"has_summary"     example:"true"`
+	SummaryStatus             *string            `json:"summary_status,omitempty" example:"generated"`
+	SummaryReviewedBy         *string            `json:"summary_reviewed_by,omitempty" example:"Editor A"`
+	SummaryReviewedAt         *time.Time         `json:"summary_reviewed_at,omitempty" example:"2026-01-01T00:00:00Z"`
+	HasAudio                  bool               `json:"has_audio"       example:"true"`
+	HasTranslation            bool               `json:"has_translation" example:"true"`
+	TranslationMissing        bool               `json:"translation_missing" example:"false"`
+	AvailableTranslationLangs []string           `json:"available_translation_langs" example:"id"`
+	AvailableSummaryLangs     []string           `json:"available_summary_langs" example:"id"`
+	TranslationStatus         *string            `json:"translation_status,omitempty" example:"generated"`
+	TranslationReviewedBy     *string            `json:"translation_reviewed_by,omitempty" example:"Editor A"`
+	TranslationReviewedAt     *time.Time         `json:"translation_reviewed_at,omitempty" example:"2026-01-01T00:00:00Z"`
+	Availability              ReaderAvailability `json:"availability"`
 } // @name entity.BookTOCLink
 
 // SectionTranslation is optional translated content for a heading section.
@@ -274,6 +278,7 @@ type BookSection struct {
 	OriginalText              string              `json:"original_text"`
 	Translation               *SectionTranslation `json:"translation"`
 	Audio                     *SectionAudio       `json:"audio"`
+	Availability              ReaderAvailability  `json:"availability"`
 } // @name entity.BookSection
 
 // BookTOCRead is an article-like section response with TOC navigation context.
@@ -300,6 +305,7 @@ type BookTOCRead struct {
 	OriginalText              string              `json:"original_text"`
 	Translation               *SectionTranslation `json:"translation"`
 	Audio                     *SectionAudio       `json:"audio"`
+	Availability              ReaderAvailability  `json:"availability"`
 } // @name entity.BookTOCRead
 
 // BookTOCPlaylist is a continuous audiobook manifest for one TOC subtree.

@@ -58,10 +58,14 @@ func TestReaderUnsupportedLanguageRoutes(t *testing.T) {
 }
 
 func newReaderLanguageTestApp(reader *fakeReader) *fiber.App {
+	return newReaderLanguageTestAppWithLogger(reader, logger.New("error"))
+}
+
+func newReaderLanguageTestAppWithLogger(reader *fakeReader, l logger.Interface) *fiber.App {
 	app := fiber.New()
 	controller := &V1{
 		reader: reader,
-		l:      logger.New("error"),
+		l:      l,
 		v:      validator.New(validator.WithRequiredStructEnabled()),
 	}
 	app.Get("/v1/categories", controller.listCategories)

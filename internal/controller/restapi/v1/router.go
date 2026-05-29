@@ -109,6 +109,7 @@ func NewRoutes(
 	adminGroup := protected.Group("/admin", middleware.Admin(u))
 	{
 		adminGroup.Get("/books", r.adminListBooks)
+		adminGroup.Get("/reader/missing-assets", r.adminMissingReaderAssets)
 		adminGroup.Get("/translation-feedbacks", r.adminListTranslationFeedbacks)
 		adminGroup.Get("/translation-feedbacks/summary", r.adminTranslationFeedbackSummary)
 		adminGroup.Post("/translation-feedbacks/:id/resolve", r.adminResolveTranslationFeedback)

@@ -437,6 +437,7 @@ SELECT h.book_id,
        ($2 <> 'ar' AND st.book_id IS NULL) AS translation_missing,
        COALESCE(st_av.available_langs, ARRAY[]::TEXT[]) AS available_translation_langs,
        COALESCE(bhs_av.available_langs, ARRAY[]::TEXT[]) AS available_summary_langs,
+       COALESCE(sa_av.available_langs, ARRAY[]::TEXT[]) AS available_audio_langs,
        st.translation_status,
        st.reviewed_by,
        st.reviewed_at,
@@ -467,6 +468,11 @@ LEFT JOIN LATERAL (
     FROM book_heading_summaries
     WHERE book_id = h.book_id AND heading_id = h.heading_id
 ) bhs_av ON true
+LEFT JOIN LATERAL (
+    SELECT array_agg(lang ORDER BY lang) AS available_langs
+    FROM section_audio
+    WHERE book_id = h.book_id AND heading_id = h.heading_id
+) sa_av ON true
 LEFT JOIN section_audio sa
     ON sa.book_id = h.book_id AND sa.heading_id = h.heading_id AND sa.lang = $2
 WHERE h.book_id = $1 AND h.is_deleted = false
@@ -512,14 +518,25 @@ SELECT h.book_id,
        hr.start_anchor,
        hr.end_anchor,
        CASE WHEN NULLIF(st_title.title, '') IS NOT NULL THEN $3 ELSE 'ar' END AS title_lang,
+       (COALESCE(bhs_lang.book_id, bhs_ar.book_id) IS NOT NULL) AS has_summary,
+       CASE
+           WHEN bhs_lang.book_id IS NOT NULL THEN bhs_lang.lang
+           WHEN bhs_ar.book_id IS NOT NULL THEN bhs_ar.lang
+           ELSE NULL
+       END AS summary_lang,
        COALESCE(st_av.available_langs, ARRAY[]::TEXT[]) AS available_translation_langs,
-       COALESCE(bhs_av.available_langs, ARRAY[]::TEXT[]) AS available_summary_langs
+       COALESCE(bhs_av.available_langs, ARRAY[]::TEXT[]) AS available_summary_langs,
+       COALESCE(sa_av.available_langs, ARRAY[]::TEXT[]) AS available_audio_langs
 FROM book_headings h
 JOIN book_heading_ranges hr ON hr.book_id = h.book_id AND hr.heading_id = h.heading_id
 JOIN book_publications p ON p.book_id = h.book_id AND p.status = 'published'
 LEFT JOIN book_heading_edits he ON he.book_id = h.book_id AND he.heading_id = h.heading_id AND he.status = 'published'
 LEFT JOIN section_translations st_title
     ON st_title.book_id = h.book_id AND st_title.heading_id = h.heading_id AND st_title.lang = $3 AND $3 <> 'ar'
+LEFT JOIN book_heading_summaries bhs_lang
+    ON bhs_lang.book_id = h.book_id AND bhs_lang.heading_id = h.heading_id AND bhs_lang.lang = $3
+LEFT JOIN book_heading_summaries bhs_ar
+    ON bhs_ar.book_id = h.book_id AND bhs_ar.heading_id = h.heading_id AND bhs_ar.lang = 'ar' AND $3 <> 'ar'
 LEFT JOIN LATERAL (
     SELECT array_agg(lang ORDER BY lang) AS available_langs
     FROM section_translations
@@ -530,6 +547,11 @@ LEFT JOIN LATERAL (
     FROM book_heading_summaries
     WHERE book_id = h.book_id AND heading_id = h.heading_id
 ) bhs_av ON true
+LEFT JOIN LATERAL (
+    SELECT array_agg(lang ORDER BY lang) AS available_langs
+    FROM section_audio
+    WHERE book_id = h.book_id AND heading_id = h.heading_id
+) sa_av ON true
 WHERE h.book_id = $1 AND h.heading_id = $2 AND h.is_deleted = false`
 
 	var heading entity.BookHeading
@@ -539,8 +561,11 @@ WHERE h.book_id = $1 AND h.heading_id = $2 AND h.is_deleted = false`
 	var startPageID int
 	var endPageID int
 	var titleLang string
+	var hasSummary bool
+	var summaryLang sql.NullString
 	var availableTranslationLangs []string
 	var availableSummaryLangs []string
+	var availableAudioLangs []string
 
 	err := r.Pool.QueryRow(ctx, sqlText, bookID, headingID, lang).Scan(
 		&heading.BookID,
@@ -557,8 +582,11 @@ WHERE h.book_id = $1 AND h.heading_id = $2 AND h.is_deleted = false`
 		&startAnchor,
 		&endAnchor,
 		&titleLang,
+		&hasSummary,
+		&summaryLang,
 		&availableTranslationLangs,
 		&availableSummaryLangs,
+		&availableAudioLangs,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -614,6 +642,19 @@ WHERE h.book_id = $1 AND h.heading_id = $2 AND h.is_deleted = false`
 	section.Translation = translation
 	section.TranslationMissing = lang != "ar" && translation == nil
 	section.Audio = audio
+	section.Availability = entity.NewReaderAvailability(
+		section.RequestedLang,
+		section.TitleLang,
+		section.IsTitleFallback,
+		translation != nil,
+		section.TranslationMissing,
+		nullableString(summaryLang),
+		hasSummary,
+		audio != nil,
+		section.AvailableTranslationLangs,
+		section.AvailableSummaryLangs,
+		emptyStringSlice(availableAudioLangs),
+	)
 
 	return section, nil
 }
@@ -1390,6 +1431,7 @@ func scanTOCEntry(row rowScanner, includeAudio bool) (entity.BookTOCEntry, error
 	var summaryReviewedAt sql.NullTime
 	var availableTranslationLangs []string
 	var availableSummaryLangs []string
+	var availableAudioLangs []string
 	var translationStatus sql.NullString
 	var reviewedBy sql.NullString
 	var reviewedAt sql.NullTime
@@ -1422,6 +1464,7 @@ func scanTOCEntry(row rowScanner, includeAudio bool) (entity.BookTOCEntry, error
 		&entry.TranslationMissing,
 		&availableTranslationLangs,
 		&availableSummaryLangs,
+		&availableAudioLangs,
 		&translationStatus,
 		&reviewedBy,
 		&reviewedAt,
@@ -1447,9 +1490,23 @@ func scanTOCEntry(row rowScanner, includeAudio bool) (entity.BookTOCEntry, error
 	entry.SummaryReviewedAt = nullableTime(summaryReviewedAt)
 	entry.AvailableTranslationLangs = emptyStringSlice(availableTranslationLangs)
 	entry.AvailableSummaryLangs = emptyStringSlice(availableSummaryLangs)
+	availableAudioLangs = emptyStringSlice(availableAudioLangs)
 	entry.TranslationStatus = nullableString(translationStatus)
 	entry.TranslationReviewedBy = nullableString(reviewedBy)
 	entry.TranslationReviewedAt = nullableTime(reviewedAt)
+	entry.Availability = entity.NewReaderAvailability(
+		entry.RequestedLang,
+		entry.TitleLang,
+		entry.IsTitleFallback,
+		entry.HasTranslation,
+		entry.TranslationMissing,
+		entry.SummaryLang,
+		entry.HasSummary,
+		entry.HasAudio,
+		entry.AvailableTranslationLangs,
+		entry.AvailableSummaryLangs,
+		availableAudioLangs,
+	)
 	if includeAudio && entry.HasAudio {
 		entry.Audio = &entity.SectionAudio{
 			BookID:          entry.BookID,
@@ -1516,12 +1573,15 @@ func localizationMeta(
 		fieldLangs = map[string]string{}
 	}
 
+	availableLangs = emptyStringSlice(availableLangs)
+
 	return entity.LocalizationMeta{
 		RequestedLang:  requestedLang,
 		DisplayLang:    displayLang,
 		IsFallback:     isFallback,
-		AvailableLangs: emptyStringSlice(availableLangs),
+		AvailableLangs: availableLangs,
 		FieldLangs:     fieldLangs,
+		Availability:   entity.CatalogAvailability(requestedLang, displayLang, isFallback, availableLangs),
 	}
 }
 

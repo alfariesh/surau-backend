@@ -27,7 +27,7 @@ import (
 func (r *V1) listCategories(ctx *fiber.Ctx) error {
 	categories, err := r.reader.Categories(ctx.UserContext(), ctx.Query("lang"))
 	if err != nil {
-		r.l.Error(err, "restapi - v1 - listCategories")
+		r.logReaderError(err, "restapi - v1 - listCategories")
 
 		if errors.Is(err, entity.ErrUnsupportedLanguage) {
 			return errorResponse(ctx, http.StatusBadRequest, "unsupported language")
@@ -61,7 +61,7 @@ func (r *V1) listAuthors(ctx *fiber.Ctx) error {
 		ctx.Query("lang"),
 	)
 	if err != nil {
-		r.l.Error(err, "restapi - v1 - listAuthors")
+		r.logReaderError(err, "restapi - v1 - listAuthors")
 
 		if errors.Is(err, entity.ErrUnsupportedLanguage) {
 			return errorResponse(ctx, http.StatusBadRequest, "unsupported language")
@@ -116,7 +116,7 @@ func (r *V1) listBooks(ctx *fiber.Ctx) error {
 		ctx.Query("lang"),
 	)
 	if err != nil {
-		r.l.Error(err, "restapi - v1 - listBooks")
+		r.logReaderError(err, "restapi - v1 - listBooks")
 
 		if errors.Is(err, entity.ErrUnsupportedLanguage) {
 			return errorResponse(ctx, http.StatusBadRequest, "unsupported language")
@@ -148,7 +148,7 @@ func (r *V1) getBook(ctx *fiber.Ctx) error {
 
 	book, err := r.reader.Book(ctx.UserContext(), bookID, ctx.Query("lang"))
 	if err != nil {
-		r.l.Error(err, "restapi - v1 - getBook")
+		r.logReaderError(err, "restapi - v1 - getBook")
 
 		if errors.Is(err, entity.ErrBookNotFound) {
 			return errorResponse(ctx, http.StatusNotFound, "book not found")
@@ -211,7 +211,7 @@ func (r *V1) askBookRAG(ctx *fiber.Ctx) error {
 		body.IncludeTrace,
 	)
 	if err != nil {
-		r.l.Error(err, "restapi - v1 - askBookRAG")
+		r.logReaderError(err, "restapi - v1 - askBookRAG")
 
 		return r.bookRAGErrorResponse(ctx, err)
 	}
@@ -240,7 +240,7 @@ func (r *V1) streamBookRAG(ctx *fiber.Ctx, bookID int, lang string, body request
 			body.IncludeTrace,
 			emit,
 		); err != nil {
-			r.l.Error(err, "restapi - v1 - streamBookRAG")
+			r.logReaderError(err, "restapi - v1 - streamBookRAG")
 		}
 	})
 
@@ -304,7 +304,7 @@ func (r *V1) listBookPages(ctx *fiber.Ctx) error {
 		queryInt(ctx, "offset", 0),
 	)
 	if err != nil {
-		r.l.Error(err, "restapi - v1 - listBookPages")
+		r.logReaderError(err, "restapi - v1 - listBookPages")
 
 		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
 	}
@@ -337,7 +337,7 @@ func (r *V1) getBookPage(ctx *fiber.Ctx) error {
 
 	page, err := r.reader.Page(ctx.UserContext(), bookID, pageID)
 	if err != nil {
-		r.l.Error(err, "restapi - v1 - getBookPage")
+		r.logReaderError(err, "restapi - v1 - getBookPage")
 
 		if errors.Is(err, entity.ErrPageNotFound) {
 			return errorResponse(ctx, http.StatusNotFound, "page not found")
@@ -368,7 +368,7 @@ func (r *V1) listBookHeadings(ctx *fiber.Ctx) error {
 
 	headings, err := r.reader.Headings(ctx.UserContext(), bookID, ctx.Query("q"))
 	if err != nil {
-		r.l.Error(err, "restapi - v1 - listBookHeadings")
+		r.logReaderError(err, "restapi - v1 - listBookHeadings")
 
 		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
 	}
@@ -402,7 +402,7 @@ func (r *V1) getBookSection(ctx *fiber.Ctx) error {
 
 	section, err := r.reader.Section(ctx.UserContext(), bookID, headingID, ctx.Query("lang"))
 	if err != nil {
-		r.l.Error(err, "restapi - v1 - getBookSection")
+		r.logReaderError(err, "restapi - v1 - getBookSection")
 
 		if errors.Is(err, entity.ErrHeadingNotFound) {
 			return errorResponse(ctx, http.StatusNotFound, "heading not found")
@@ -449,7 +449,7 @@ func (r *V1) listBookTOC(ctx *fiber.Ctx) error {
 
 	toc, err := r.reader.TOC(ctx.UserContext(), bookID, ctx.Query("lang"), includeAudio)
 	if err != nil {
-		r.l.Error(err, "restapi - v1 - listBookTOC")
+		r.logReaderError(err, "restapi - v1 - listBookTOC")
 
 		if errors.Is(err, entity.ErrBookNotFound) {
 			return errorResponse(ctx, http.StatusNotFound, "book not found")
@@ -491,7 +491,7 @@ func (r *V1) readBookTOCSection(ctx *fiber.Ctx) error {
 
 	section, err := r.reader.TOCRead(ctx.UserContext(), bookID, headingID, ctx.Query("lang"))
 	if err != nil {
-		r.l.Error(err, "restapi - v1 - readBookTOCSection")
+		r.logReaderError(err, "restapi - v1 - readBookTOCSection")
 
 		if errors.Is(err, entity.ErrBookNotFound) {
 			return errorResponse(ctx, http.StatusNotFound, "book not found")
@@ -537,7 +537,7 @@ func (r *V1) getBookTOCPlaylist(ctx *fiber.Ctx) error {
 
 	playlist, err := r.reader.TOCPlaylist(ctx.UserContext(), bookID, headingID, ctx.Query("lang"))
 	if err != nil {
-		r.l.Error(err, "restapi - v1 - getBookTOCPlaylist")
+		r.logReaderError(err, "restapi - v1 - getBookTOCPlaylist")
 
 		if errors.Is(err, entity.ErrBookNotFound) {
 			return errorResponse(ctx, http.StatusNotFound, "book not found")
@@ -607,7 +607,7 @@ func (r *V1) createTranslationFeedback(ctx *fiber.Ctx) error {
 		&clientIP,
 	)
 	if err != nil {
-		r.l.Error(err, "restapi - v1 - createTranslationFeedback")
+		r.logReaderError(err, "restapi - v1 - createTranslationFeedback")
 
 		if errors.Is(err, entity.ErrBookNotFound) {
 			return errorResponse(ctx, http.StatusNotFound, "book not found")

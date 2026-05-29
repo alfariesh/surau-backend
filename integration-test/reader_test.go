@@ -180,6 +180,9 @@ func TestReaderMultilingualKitabContract(t *testing.T) {
 		t.Fatalf("en read title fallback = lang %q fallback %v", enRead.TitleLang, enRead.IsTitleFallback)
 	}
 	assertHasLang(t, enRead.AvailableTranslationLangs, "id")
+	assertAvailability(t, enRead.Availability.Translation, "offer_available_lang", "en", "ar", true)
+	assertAvailability(t, enRead.Availability.Summary, "offer_available_lang", "en", "ar", true)
+	assertAvailability(t, enRead.Availability.Audio, "offer_available_lang", "en", "ar", true)
 
 	idRead := getTOCRead(t, "id")
 	if idRead.Translation == nil {
@@ -191,6 +194,9 @@ func TestReaderMultilingualKitabContract(t *testing.T) {
 	if idRead.TranslationMissing {
 		t.Fatal("id exact translation should not be marked missing")
 	}
+	assertAvailability(t, idRead.Availability.Translation, "show_requested", "id", "id", false)
+	assertAvailability(t, idRead.Availability.Summary, "show_requested", "id", "id", false)
+	assertAvailability(t, idRead.Availability.Audio, "show_requested", "id", "id", false)
 
 	arRead := getTOCRead(t, "ar")
 	if arRead.Translation != nil {
@@ -202,6 +208,7 @@ func TestReaderMultilingualKitabContract(t *testing.T) {
 	if arRead.TitleLang != "ar" || arRead.IsTitleFallback {
 		t.Fatalf("ar read title metadata = lang %q fallback %v", arRead.TitleLang, arRead.IsTitleFallback)
 	}
+	assertAvailability(t, arRead.Availability.Translation, "hide_translation_tab", "ar", "ar", false)
 
 	feedbackBody := bytes.NewBufferString(`{"vote":"like","client_id":"missing-en-client"}`)
 	resp = doJSON(t, http.MethodPost, fmt.Sprintf(
@@ -216,6 +223,77 @@ func TestReaderMultilingualKitabContract(t *testing.T) {
 	}
 	if errorBody.Error != "translation not found" {
 		t.Fatalf("missing en feedback error = %q", errorBody.Error)
+	}
+
+	resp = doJSON(t, http.MethodGet, baseURL()+"/v1/admin/reader/missing-assets?target_lang=en", nil, "")
+	decodeAndClose(t, resp, &errorBody)
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("admin missing queue without auth expected 401, got %d", resp.StatusCode)
+	}
+
+	adminToken := adminJWT(t)
+	resp = doJSON(t, http.MethodGet, fmt.Sprintf(
+		"%s/v1/admin/reader/missing-assets?target_lang=en&book_id=%d",
+		baseURL(),
+		fixtureBookID,
+	), nil, adminToken)
+	var allMissing missingAssetsResponse
+	decodeAndClose(t, resp, &allMissing)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("admin missing all assets expected 200, got %d", resp.StatusCode)
+	}
+	if allMissing.Total != 6 {
+		t.Fatalf("admin missing all assets total = %d items %+v", allMissing.Total, allMissing.Items)
+	}
+	for _, assetType := range []string{
+		"author_metadata",
+		"book_metadata",
+		"category_metadata",
+		"heading_summary",
+		"section_audio",
+		"section_translation",
+	} {
+		assertMissingCount(t, allMissing.Counts, assetType, "en", 1)
+	}
+
+	resp = doJSON(t, http.MethodGet, fmt.Sprintf(
+		"%s/v1/admin/reader/missing-assets?target_lang=en&asset_type=section_translation&book_id=%d",
+		baseURL(),
+		fixtureBookID,
+	), nil, adminToken)
+	var missing missingAssetsResponse
+	decodeAndClose(t, resp, &missing)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("admin missing section translations expected 200, got %d", resp.StatusCode)
+	}
+	if missing.Total != 1 || len(missing.Items) != 1 {
+		t.Fatalf("admin missing section translations = total %d items %+v", missing.Total, missing.Items)
+	}
+	item := missing.Items[0]
+	if item.AssetType != "section_translation" || item.TargetLang != "en" {
+		t.Fatalf("admin missing item type/lang = %+v", item)
+	}
+	if item.BookID == nil || *item.BookID != fixtureBookID || item.HeadingID == nil || *item.HeadingID != fixtureHeadingID {
+		t.Fatalf("admin missing item ids = %+v", item)
+	}
+	assertHasLang(t, item.AvailableLangs, "id")
+
+	resp = doJSON(t, http.MethodGet, baseURL()+"/v1/admin/reader/missing-assets?target_lang=ar", nil, adminToken)
+	decodeAndClose(t, resp, &errorBody)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("admin missing queue target_lang=ar expected 400, got %d", resp.StatusCode)
+	}
+	if errorBody.Error != "unsupported language" {
+		t.Fatalf("admin missing queue ar error = %q", errorBody.Error)
+	}
+
+	resp = doJSON(t, http.MethodGet, baseURL()+"/v1/admin/reader/missing-assets?target_lang=en&asset_type=metadata", nil, adminToken)
+	decodeAndClose(t, resp, &errorBody)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("admin missing queue invalid asset_type expected 400, got %d", resp.StatusCode)
+	}
+	if errorBody.Error != "invalid asset_type" {
+		t.Fatalf("admin missing queue invalid asset_type error = %q", errorBody.Error)
 	}
 }
 
@@ -298,6 +376,63 @@ WHERE email = $1`, email)
 	}
 }
 
+func setUserRoleByEmail(t *testing.T, email string, role string) {
+	t.Helper()
+
+	pool := integrationDB(t)
+	defer pool.Close()
+
+	ctx, cancel := context.WithTimeout(t.Context(), requestTimeout)
+	defer cancel()
+
+	tag, err := pool.Exec(ctx, `
+UPDATE users
+SET role = $2,
+    updated_at = now()
+WHERE email = $1`, email, role)
+	if err != nil {
+		t.Fatalf("set user role: %v", err)
+	}
+	if tag.RowsAffected() != 1 {
+		t.Fatalf("set user role affected %d rows", tag.RowsAffected())
+	}
+}
+
+func adminJWT(t *testing.T) string {
+	t.Helper()
+
+	nano := time.Now().UnixNano()
+	email := fmt.Sprintf("admin_%d@test.local", nano)
+	registerBody := fmt.Sprintf(`{"username":"admin_%d","email":%q,"password":"testpass123"}`, nano, email)
+	resp := doJSON(t, http.MethodPost, baseURL()+"/v1/auth/register", bytes.NewBufferString(registerBody), "")
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("admin register expected 201, got %d", resp.StatusCode)
+	}
+
+	verifyRegisteredEmail(t, email)
+	setUserRoleByEmail(t, email, "admin")
+
+	loginBody := fmt.Sprintf(`{"email":%q,"password":"testpass123"}`, email)
+	resp = doJSON(t, http.MethodPost, baseURL()+"/v1/auth/login", bytes.NewBufferString(loginBody), "")
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("admin login expected 200, got %d", resp.StatusCode)
+	}
+
+	var tokenResp struct {
+		Token string `json:"token"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
+		t.Fatalf("decode admin token: %v", err)
+	}
+	if tokenResp.Token == "" {
+		t.Fatal("expected admin token")
+	}
+
+	return tokenResp.Token
+}
+
 func seedMultilingualKitabFixture(t *testing.T) {
 	t.Helper()
 
@@ -312,6 +447,22 @@ func seedMultilingualKitabFixture(t *testing.T) {
 		t.Fatalf("begin fixture tx: %v", err)
 	}
 	defer tx.Rollback(ctx)
+
+	execFixtureSQL(t, ctx, tx, `DELETE FROM book_metadata_translations WHERE book_id = $1 AND lang = 'en'`, fixtureBookID)
+	execFixtureSQL(t, ctx, tx, `DELETE FROM category_translations WHERE category_id = $1 AND lang = 'en'`, fixtureCategoryID)
+	execFixtureSQL(t, ctx, tx, `DELETE FROM author_translations WHERE author_id = $1 AND lang = 'en'`, fixtureAuthorID)
+	execFixtureSQL(t, ctx, tx, `DELETE FROM section_translations WHERE book_id = $1 AND heading_id = $2 AND lang = 'en'`,
+		fixtureBookID,
+		fixtureHeadingID,
+	)
+	execFixtureSQL(t, ctx, tx, `DELETE FROM section_audio WHERE book_id = $1 AND heading_id = $2 AND lang = 'en'`,
+		fixtureBookID,
+		fixtureHeadingID,
+	)
+	execFixtureSQL(t, ctx, tx, `DELETE FROM book_heading_summaries WHERE book_id = $1 AND heading_id = $2 AND lang = 'en'`,
+		fixtureBookID,
+		fixtureHeadingID,
+	)
 
 	execFixtureSQL(t, ctx, tx, `
 INSERT INTO categories (id, name, display_order)
@@ -472,11 +623,12 @@ type bookListResponse struct {
 }
 
 type localization struct {
-	RequestedLang  string            `json:"requested_lang"`
-	DisplayLang    string            `json:"display_lang"`
-	IsFallback     bool              `json:"is_fallback"`
-	AvailableLangs []string          `json:"available_langs"`
-	FieldLangs     map[string]string `json:"field_langs"`
+	RequestedLang  string               `json:"requested_lang"`
+	DisplayLang    string               `json:"display_lang"`
+	IsFallback     bool                 `json:"is_fallback"`
+	AvailableLangs []string             `json:"available_langs"`
+	FieldLangs     map[string]string    `json:"field_langs"`
+	Availability   availabilityDecision `json:"availability"`
 }
 
 type languageCoverage struct {
@@ -487,17 +639,18 @@ type languageCoverage struct {
 }
 
 type tocNode struct {
-	HeadingID                 int       `json:"heading_id"`
-	Title                     string    `json:"title"`
-	RequestedLang             string    `json:"requested_lang"`
-	TitleLang                 string    `json:"title_lang"`
-	IsTitleFallback           bool      `json:"is_title_fallback"`
-	SummaryLang               *string   `json:"summary_lang"`
-	HasTranslation            bool      `json:"has_translation"`
-	TranslationMissing        bool      `json:"translation_missing"`
-	AvailableTranslationLangs []string  `json:"available_translation_langs"`
-	AvailableSummaryLangs     []string  `json:"available_summary_langs"`
-	Children                  []tocNode `json:"children"`
+	HeadingID                 int          `json:"heading_id"`
+	Title                     string       `json:"title"`
+	RequestedLang             string       `json:"requested_lang"`
+	TitleLang                 string       `json:"title_lang"`
+	IsTitleFallback           bool         `json:"is_title_fallback"`
+	SummaryLang               *string      `json:"summary_lang"`
+	HasTranslation            bool         `json:"has_translation"`
+	TranslationMissing        bool         `json:"translation_missing"`
+	AvailableTranslationLangs []string     `json:"available_translation_langs"`
+	AvailableSummaryLangs     []string     `json:"available_summary_langs"`
+	Availability              availability `json:"availability"`
+	Children                  []tocNode    `json:"children"`
 }
 
 type tocReadResponse struct {
@@ -510,12 +663,54 @@ type tocReadResponse struct {
 	AvailableTranslationLangs []string            `json:"available_translation_langs"`
 	AvailableSummaryLangs     []string            `json:"available_summary_langs"`
 	Translation               *translationPayload `json:"translation"`
+	Availability              availability        `json:"availability"`
 }
 
 type translationPayload struct {
 	Lang    string  `json:"lang"`
 	Title   *string `json:"title"`
 	Content string  `json:"content"`
+}
+
+type availability struct {
+	Title       availabilityDecision `json:"title"`
+	Translation availabilityDecision `json:"translation"`
+	Summary     availabilityDecision `json:"summary"`
+	Audio       availabilityDecision `json:"audio"`
+}
+
+type availabilityDecision struct {
+	Action        string `json:"action"`
+	RequestedLang string `json:"requested_lang"`
+	DisplayLang   string `json:"display_lang"`
+	Missing       bool   `json:"missing"`
+}
+
+type missingAssetsResponse struct {
+	Items  []missingAssetItem  `json:"items"`
+	Total  int                 `json:"total"`
+	Counts []missingAssetCount `json:"counts"`
+}
+
+type missingAssetItem struct {
+	AssetType       string    `json:"asset_type"`
+	TargetLang      string    `json:"target_lang"`
+	BookID          *int      `json:"book_id"`
+	BookTitle       *string   `json:"book_title"`
+	HeadingID       *int      `json:"heading_id"`
+	HeadingTitle    *string   `json:"heading_title"`
+	CategoryID      *int      `json:"category_id"`
+	CategoryName    *string   `json:"category_name"`
+	AuthorID        *int      `json:"author_id"`
+	AuthorName      *string   `json:"author_name"`
+	AvailableLangs  []string  `json:"available_langs"`
+	SourceUpdatedAt time.Time `json:"source_updated_at"`
+}
+
+type missingAssetCount struct {
+	AssetType  string `json:"asset_type"`
+	TargetLang string `json:"target_lang"`
+	Total      int    `json:"total"`
 }
 
 func getBook(t *testing.T, lang string) bookResponse {
@@ -633,6 +828,47 @@ func assertTOCNode(t *testing.T, node tocNode, requested, titleLang string, titl
 	assertHasLang(t, node.AvailableTranslationLangs, "id")
 	assertHasLang(t, node.AvailableSummaryLangs, "id")
 	assertHasLang(t, node.AvailableSummaryLangs, "ar")
+}
+
+func assertAvailability(
+	t *testing.T,
+	availability availabilityDecision,
+	action string,
+	requestedLang string,
+	displayLang string,
+	missing bool,
+) {
+	t.Helper()
+
+	if availability.Action != action ||
+		availability.RequestedLang != requestedLang ||
+		availability.DisplayLang != displayLang ||
+		availability.Missing != missing {
+		t.Fatalf(
+			"availability = %+v, want action=%s requested=%s display=%s missing=%v",
+			availability,
+			action,
+			requestedLang,
+			displayLang,
+			missing,
+		)
+	}
+}
+
+func assertMissingCount(t *testing.T, counts []missingAssetCount, assetType, targetLang string, total int) {
+	t.Helper()
+
+	for _, count := range counts {
+		if count.AssetType == assetType && count.TargetLang == targetLang {
+			if count.Total != total {
+				t.Fatalf("missing count %s/%s = %d, want %d", assetType, targetLang, count.Total, total)
+			}
+
+			return
+		}
+	}
+
+	t.Fatalf("missing count %s/%s not found in %+v", assetType, targetLang, counts)
 }
 
 func assertHasLang(t *testing.T, langs []string, lang string) {
