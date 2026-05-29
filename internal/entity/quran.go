@@ -68,6 +68,7 @@ type QuranRecitation struct {
 	TrackCount       int        `json:"track_count" example:"6236"`
 	PublicTrackCount int        `json:"public_track_count" example:"0"`
 	HasPublicAudio   bool       `json:"has_public_audio" example:"false"`
+	IsDefault        bool       `json:"is_default" example:"false"`
 	Metadata         RawJSON    `json:"metadata,omitempty" swaggertype:"object"`
 	ImportedAt       *time.Time `json:"imported_at,omitempty" example:"2026-01-01T00:00:00Z"`
 	UpdatedAt        time.Time  `json:"updated_at" example:"2026-01-01T00:00:00Z"`

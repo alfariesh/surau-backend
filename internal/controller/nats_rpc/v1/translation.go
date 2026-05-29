@@ -13,7 +13,7 @@ import (
 
 func (r *V1) getHistory() server.CallHandler {
 	return func(msg *nats.Msg) (any, error) {
-		userID, _, err := extractUserID(msg, r.j)
+		userID, _, err := extractUserID(msg, r.j, r.u)
 		if err != nil {
 			return nil, fmt.Errorf("nats_rpc - V1 - getHistory - auth: %w", err)
 		}
@@ -31,7 +31,7 @@ func (r *V1) getHistory() server.CallHandler {
 
 func (r *V1) translate() server.CallHandler {
 	return func(msg *nats.Msg) (any, error) {
-		userID, data, err := extractUserID(msg, r.j)
+		userID, data, err := extractUserID(msg, r.j, r.u)
 		if err != nil {
 			return nil, fmt.Errorf("nats_rpc - V1 - translate - auth: %w", err)
 		}
@@ -40,11 +40,11 @@ func (r *V1) translate() server.CallHandler {
 
 		err = json.Unmarshal(data, &req)
 		if err != nil {
-			return nil, fmt.Errorf("nats_rpc - V1 - translate - json.Unmarshal: %w", err)
+			return nil, badRequestError("nats_rpc - V1 - translate - json.Unmarshal", err)
 		}
 
 		if err = r.v.Struct(req); err != nil {
-			return nil, fmt.Errorf("nats_rpc - V1 - translate - validation: %w", err)
+			return nil, badRequestError("nats_rpc - V1 - translate - validation", err)
 		}
 
 		translation, err := r.t.Translate(context.Background(), userID, entity.Translation{

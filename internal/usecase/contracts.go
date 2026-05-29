@@ -22,6 +22,11 @@ type (
 		Login(ctx context.Context, email, password string) (string, error)
 		GetUser(ctx context.Context, userID string) (entity.User, error)
 		SetRoleByEmail(ctx context.Context, email, role string) (entity.User, error)
+		VerifyEmail(ctx context.Context, token string) error
+		ResendEmailVerification(ctx context.Context, email string) error
+		ForgotPassword(ctx context.Context, email string) error
+		ResetPassword(ctx context.Context, token, password string) error
+		ChangePassword(ctx context.Context, userID, currentPassword, newPassword string) error
 	}
 
 	// Task -.
@@ -84,7 +89,8 @@ type (
 
 	// Quran -.
 	Quran interface {
-		Surahs(ctx context.Context, lang string) ([]entity.QuranSurah, error)
+		Surahs(ctx context.Context, lang string, includeInfo bool) ([]entity.QuranSurah, error)
+		Surah(ctx context.Context, surahID int, lang string) (entity.QuranSurah, error)
 		Recitations(ctx context.Context) ([]entity.QuranRecitation, error)
 		Ayah(
 			ctx context.Context,

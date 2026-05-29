@@ -21,14 +21,20 @@ func TestQuranRoutes(t *testing.T) {
 	app := newQuranTestApp(&fakeQuran{})
 
 	tests := []struct {
-		name       string
-		path       string
-		wantStatus int
-		wantBody   string
+		name        string
+		path        string
+		wantStatus  int
+		wantBody    string
+		wantNotBody string
 	}{
-		{name: "surahs", path: "/v1/quran/surahs?lang=id", wantStatus: http.StatusOK, wantBody: `"surah_id":73`},
-		{name: "recitations", path: "/v1/quran/recitations", wantStatus: http.StatusOK, wantBody: `"mode":"ayah"`},
-		{name: "ayah", path: "/v1/quran/ayahs/73:1?include_audio=true&recitation_id=rec-1", wantStatus: http.StatusOK, wantBody: `"ayah_key":"73:1"`},
+		{name: "surahs are light by default", path: "/v1/quran/surahs?lang=id", wantStatus: http.StatusOK, wantBody: `"surah_id":73`, wantNotBody: `"info"`},
+		{name: "surahs include info when requested", path: "/v1/quran/surahs?lang=id&include_info=true", wantStatus: http.StatusOK, wantBody: `"info"`},
+		{name: "surah detail includes info", path: "/v1/quran/surahs/73?lang=id", wantStatus: http.StatusOK, wantBody: `"text_html"`},
+		{name: "recitations include default flag", path: "/v1/quran/recitations", wantStatus: http.StatusOK, wantBody: `"is_default":true`},
+		{name: "ayah uses default audio without recitation id", path: "/v1/quran/ayahs/73:1?include_audio=true", wantStatus: http.StatusOK, wantBody: `"recitation_id":"rec-default"`},
+		{name: "ayah invalid recitation returns not found", path: "/v1/quran/ayahs/73:1?include_audio=true&recitation_id=bad-id", wantStatus: http.StatusNotFound, wantBody: `"quran recitation not found"`},
+		{name: "ayah invalid include audio", path: "/v1/quran/ayahs/73:1?include_audio=wat", wantStatus: http.StatusBadRequest, wantBody: `"invalid include_audio"`},
+		{name: "surahs invalid include info", path: "/v1/quran/surahs?include_info=wat", wantStatus: http.StatusBadRequest, wantBody: `"invalid include_info"`},
 		{name: "surah ayahs", path: "/v1/quran/surahs/73/ayahs?from=1&to=1&recitation_id=rec-1", wantStatus: http.StatusOK, wantBody: `"text_qpc_hafs"`},
 		{name: "search", path: "/v1/quran/search?q=muzammil", wantStatus: http.StatusOK, wantBody: `"results"`},
 		{name: "book refs", path: "/v1/books/797/quran-references", wantStatus: http.StatusOK, wantBody: `"references"`},
@@ -45,6 +51,9 @@ func TestQuranRoutes(t *testing.T) {
 			body, err := io.ReadAll(resp.Body)
 			require.NoError(t, err)
 			assert.Contains(t, string(body), tt.wantBody)
+			if tt.wantNotBody != "" {
+				assert.NotContains(t, string(body), tt.wantNotBody)
+			}
 		})
 	}
 }
@@ -59,6 +68,7 @@ func newQuranTestApp(quran *fakeQuran) *fiber.App {
 	app.Get("/v1/quran/surahs", controller.listQuranSurahs)
 	app.Get("/v1/quran/recitations", controller.listQuranRecitations)
 	app.Get("/v1/quran/ayahs/:ayah_key", controller.getQuranAyah)
+	app.Get("/v1/quran/surahs/:surah_id", controller.getQuranSurah)
 	app.Get("/v1/quran/surahs/:surah_id/ayahs", controller.listQuranSurahAyahs)
 	app.Get("/v1/quran/search", controller.searchQuran)
 	app.Get("/v1/books/:book_id/quran-references", controller.listBookQuranReferences)
@@ -68,14 +78,24 @@ func newQuranTestApp(quran *fakeQuran) *fiber.App {
 
 type fakeQuran struct{}
 
-func (f *fakeQuran) Surahs(_ context.Context, _ string) ([]entity.QuranSurah, error) {
+func (f *fakeQuran) Surahs(_ context.Context, _ string, includeInfo bool) ([]entity.QuranSurah, error) {
+	name := "المزمل"
+	surah := entity.QuranSurah{SurahID: 73, NameArabic: &name, AyahCount: 20}
+	if includeInfo {
+		surah.Info = fakeSurahInfo()
+	}
+
+	return []entity.QuranSurah{surah}, nil
+}
+
+func (f *fakeQuran) Surah(_ context.Context, surahID int, _ string) (entity.QuranSurah, error) {
 	name := "المزمل"
 
-	return []entity.QuranSurah{{SurahID: 73, NameArabic: &name, AyahCount: 20}}, nil
+	return entity.QuranSurah{SurahID: surahID, NameArabic: &name, AyahCount: 20, Info: fakeSurahInfo()}, nil
 }
 
 func (f *fakeQuran) Recitations(_ context.Context) ([]entity.QuranRecitation, error) {
-	return []entity.QuranRecitation{{ID: "rec-1", Name: "Reciter", Mode: "ayah", TrackCount: 6236}}, nil
+	return []entity.QuranRecitation{{ID: "rec-default", Name: "Reciter", Mode: "ayah", TrackCount: 6236, PublicTrackCount: 6236, HasPublicAudio: true, IsDefault: true}}, nil
 }
 
 func (f *fakeQuran) Ayah(
@@ -83,12 +103,23 @@ func (f *fakeQuran) Ayah(
 	ayahKey string,
 	_ string,
 	_ string,
-	_ bool,
-	_ string,
+	includeAudio bool,
+	recitationID string,
 ) (entity.QuranAyah, error) {
-	text := "يَـٰٓأَيُّهَا ٱلْمُزَّمِّلُ"
+	if recitationID == "bad-id" {
+		return entity.QuranAyah{}, entity.ErrQuranRecitationNotFound
+	}
 
-	return entity.QuranAyah{SurahID: 73, AyahNumber: 1, AyahKey: ayahKey, TextQPCHafs: &text}, nil
+	text := "يَـٰٓأَيُّهَا ٱلْمُزَّمِّلُ"
+	ayah := entity.QuranAyah{SurahID: 73, AyahNumber: 1, AyahKey: ayahKey, TextQPCHafs: &text}
+	if includeAudio {
+		if recitationID == "" {
+			recitationID = "rec-default"
+		}
+		ayah.Audio = []entity.QuranAudioTrack{{RecitationID: recitationID, TrackType: "ayah", TrackKey: ayahKey, SurahID: 73}}
+	}
+
+	return ayah, nil
 }
 
 func (f *fakeQuran) SurahAyahs(
@@ -126,4 +157,14 @@ func (f *fakeQuran) BookReferences(
 	_ int,
 ) ([]entity.BookQuranReference, int, error) {
 	return []entity.BookQuranReference{{ID: "ref-1", BookID: bookID, PageID: 1, SourceText: "سورة المزمل: 1", ReferenceKind: "surah_ayah", MatchStrategy: "explicit_surah_ayah", ReviewStatus: "approved"}}, 1, nil
+}
+
+func fakeSurahInfo() *entity.QuranSurahInfo {
+	return &entity.QuranSurahInfo{
+		Lang:          "id",
+		TextHTML:      "<p>Info</p>",
+		SourceName:    "QUL Surah information",
+		Format:        "json",
+		LicenseStatus: "needs_review",
+	}
 }

@@ -7,6 +7,11 @@ option go_package = "docs/proto/v1";
 service AuthService {
   rpc Register (RegisterRequest) returns (RegisterResponse);
   rpc Login (LoginRequest) returns (LoginResponse);
+  rpc VerifyEmail (VerifyEmailRequest) returns (VerifyEmailResponse);
+  rpc ResendEmailVerification (ResendEmailVerificationRequest) returns (ResendEmailVerificationResponse);
+  rpc ForgotPassword (ForgotPasswordRequest) returns (ForgotPasswordResponse);
+  rpc ResetPassword (ResetPasswordRequest) returns (ResetPasswordResponse);
+  rpc ChangePassword (ChangePasswordRequest) returns (ChangePasswordResponse);
   rpc GetProfile (GetProfileRequest) returns (GetProfileResponse);
 }
 
@@ -22,6 +27,7 @@ message RegisterResponse {
   string email = 3;
   string created_at = 4;
   string updated_at = 5;
+  bool email_verified = 6;
 }
 
 message LoginRequest {
@@ -33,6 +39,48 @@ message LoginResponse {
   string token = 1;
 }
 
+message VerifyEmailRequest {
+  string token = 1;
+}
+
+message VerifyEmailResponse {
+  bool email_verified = 1;
+}
+
+message ResendEmailVerificationRequest {
+  string email = 1;
+}
+
+message ResendEmailVerificationResponse {
+  bool accepted = 1;
+}
+
+message ForgotPasswordRequest {
+  string email = 1;
+}
+
+message ForgotPasswordResponse {
+  bool accepted = 1;
+}
+
+message ResetPasswordRequest {
+  string token = 1;
+  string password = 2;
+}
+
+message ResetPasswordResponse {
+  bool password_reset = 1;
+}
+
+message ChangePasswordRequest {
+  string current_password = 1;
+  string new_password = 2;
+}
+
+message ChangePasswordResponse {
+  bool password_changed = 1;
+}
+
 message GetProfileRequest {}
 
 message GetProfileResponse {
@@ -41,4 +89,5 @@ message GetProfileResponse {
   string email = 3;
   string created_at = 4;
   string updated_at = 5;
+  bool email_verified = 6;
 }

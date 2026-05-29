@@ -15,6 +15,117 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/auth/change-password": {
+            "post": {
+                "description": "Change the current user's password and revoke older JWTs",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Change password",
+                "operationId": "change-password",
+                "parameters": [
+                    {
+                        "description": "Current and new password",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.ChangePassword"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.PasswordChanged"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/auth/forgot-password": {
+            "post": {
+                "description": "Send a password reset email when the account exists",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Forgot password",
+                "operationId": "forgot-password",
+                "parameters": [
+                    {
+                        "description": "Email address",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.ForgotPassword"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Accepted"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
         "/auth/login": {
             "post": {
                 "description": "Authenticate user and get JWT token",
@@ -55,6 +166,12 @@ const docTemplate = `{
                     },
                     "401": {
                         "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
                         "schema": {
                             "$ref": "#/definitions/v1.Error"
                         }
@@ -108,6 +225,613 @@ const docTemplate = `{
                     },
                     "409": {
                         "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/resend-verification": {
+            "post": {
+                "description": "Resend email verification for an existing unverified user",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Resend verification email",
+                "operationId": "resend-verification",
+                "parameters": [
+                    {
+                        "description": "Email address",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.ResendVerification"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Accepted"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/reset-password": {
+            "post": {
+                "description": "Reset password using a one-time token",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Reset password",
+                "operationId": "reset-password",
+                "parameters": [
+                    {
+                        "description": "Password reset token and new password",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.ResetPassword"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.PasswordReset"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/verify-email": {
+            "post": {
+                "description": "Verify a user's email address using a one-time token",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Verify email",
+                "operationId": "verify-email",
+                "parameters": [
+                    {
+                        "description": "Email verification token",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.VerifyEmail"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.EmailVerification"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/books/{book_id}/quran-references": {
+            "get": {
+                "description": "List Quran references linked to a public kitab. Defaults to approved references.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "quran"
+                ],
+                "summary": "List book Quran references",
+                "operationId": "list-book-quran-references",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Book ID",
+                        "name": "book_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "default": "id",
+                        "description": "Language code",
+                        "name": "lang",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "approved",
+                            "pending",
+                            "rejected",
+                            "ambiguous",
+                            "needs_review",
+                            "all"
+                        ],
+                        "type": "string",
+                        "default": "approved",
+                        "description": "Review status",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 50,
+                        "description": "Limit",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Offset",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.BookQuranReferenceList"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/quran/ayahs/{ayah_key}": {
+            "get": {
+                "description": "Get one ayah by canonical ayah key. When include_audio=true and recitation_id is omitted, the backend uses the default public recitation.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "quran"
+                ],
+                "summary": "Get Quran ayah",
+                "operationId": "get-quran-ayah",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Canonical ayah key, for example 73:4",
+                        "name": "ayah_key",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "default": "id",
+                        "description": "Language code",
+                        "name": "lang",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "default": "qul-kfgqpc-id-simple",
+                        "description": "Translation source",
+                        "name": "translation_source",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Include audio track and timestamp segments",
+                        "name": "include_audio",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Recitation ID. Defaults to the public default recitation when include_audio=true.",
+                        "name": "recitation_id",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.QuranAyah"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/quran/recitations": {
+            "get": {
+                "description": "List imported recitation resources and audio coverage. Exactly one full-public recitation may be marked is_default.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "quran"
+                ],
+                "summary": "List Quran recitations",
+                "operationId": "list-quran-recitations",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/entity.QuranRecitation"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/quran/search": {
+            "get": {
+                "description": "Search Arabic Quran text and the selected Indonesian translation.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "quran"
+                ],
+                "summary": "Search Quran",
+                "operationId": "search-quran",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Search query",
+                        "name": "q",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "default": "id",
+                        "description": "Language code",
+                        "name": "lang",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 50,
+                        "description": "Limit",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Offset",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.QuranSearchList"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/quran/surahs": {
+            "get": {
+                "description": "List Quran surahs in mushaf order. Surah info is omitted by default; pass include_info=true for language-specific info HTML.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "quran"
+                ],
+                "summary": "List Quran surahs",
+                "operationId": "list-quran-surahs",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "default": "id",
+                        "description": "Language code",
+                        "name": "lang",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Include surah info HTML",
+                        "name": "include_info",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/entity.QuranSurah"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/quran/surahs/{surah_id}": {
+            "get": {
+                "description": "Get one Quran surah with language-specific info.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "quran"
+                ],
+                "summary": "Get Quran surah",
+                "operationId": "get-quran-surah",
+                "parameters": [
+                    {
+                        "maximum": 114,
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "Surah ID",
+                        "name": "surah_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "default": "id",
+                        "description": "Language code",
+                        "name": "lang",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.QuranSurah"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/quran/surahs/{surah_id}/ayahs": {
+            "get": {
+                "description": "List all ayahs or an ayah range for one surah. When include_audio=true and recitation_id is omitted, the backend uses the default public recitation.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "quran"
+                ],
+                "summary": "List Quran ayahs for a surah",
+                "operationId": "list-quran-surah-ayahs",
+                "parameters": [
+                    {
+                        "maximum": 114,
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "Surah ID",
+                        "name": "surah_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Starting ayah number",
+                        "name": "from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Ending ayah number",
+                        "name": "to",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "default": "id",
+                        "description": "Language code",
+                        "name": "lang",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "default": "qul-kfgqpc-id-simple",
+                        "description": "Translation source",
+                        "name": "translation_source",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "default": true,
+                        "description": "Include selected translation",
+                        "name": "include_translation",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Include audio track and timestamp segments",
+                        "name": "include_audio",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Recitation ID. Defaults to the public default recitation when include_audio=true.",
+                        "name": "recitation_id",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/entity.QuranAyah"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
                         "schema": {
                             "$ref": "#/definitions/v1.Error"
                         }
@@ -640,6 +1364,432 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "entity.BookQuranReference": {
+            "type": "object",
+            "properties": {
+                "ayahs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.QuranAyah"
+                    }
+                },
+                "book_id": {
+                    "type": "integer",
+                    "example": 797
+                },
+                "confidence": {
+                    "type": "number",
+                    "example": 1
+                },
+                "created_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "from_ayah_key": {
+                    "type": "string",
+                    "example": "73:4"
+                },
+                "from_ayah_number": {
+                    "type": "integer",
+                    "example": 4
+                },
+                "heading_id": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "knowledge_mention_id": {
+                    "type": "string"
+                },
+                "match_strategy": {
+                    "type": "string",
+                    "example": "explicit_surah_ayah"
+                },
+                "metadata": {
+                    "type": "object"
+                },
+                "normalized_text": {
+                    "type": "string"
+                },
+                "page_id": {
+                    "type": "integer",
+                    "example": 12
+                },
+                "reference_kind": {
+                    "type": "string",
+                    "example": "surah_ayah"
+                },
+                "review_status": {
+                    "type": "string",
+                    "example": "approved"
+                },
+                "source_text": {
+                    "type": "string"
+                },
+                "surah_id": {
+                    "type": "integer",
+                    "example": 73
+                },
+                "to_ayah_key": {
+                    "type": "string",
+                    "example": "73:4"
+                },
+                "to_ayah_number": {
+                    "type": "integer",
+                    "example": 4
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                }
+            }
+        },
+        "entity.QuranAudioSegment": {
+            "type": "object",
+            "properties": {
+                "ayah_key": {
+                    "type": "string",
+                    "example": "73:4"
+                },
+                "duration_ms": {
+                    "type": "integer",
+                    "example": 3000
+                },
+                "metadata": {
+                    "type": "object"
+                },
+                "segment_index": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "timestamp_from_ms": {
+                    "type": "integer",
+                    "example": 1200
+                },
+                "timestamp_to_ms": {
+                    "type": "integer",
+                    "example": 4200
+                }
+            }
+        },
+        "entity.QuranAudioTrack": {
+            "type": "object",
+            "properties": {
+                "audio_url": {
+                    "type": "string"
+                },
+                "ayah_number": {
+                    "type": "integer",
+                    "example": 4
+                },
+                "duration_ms": {
+                    "type": "integer"
+                },
+                "duration_seconds": {
+                    "type": "integer"
+                },
+                "metadata": {
+                    "type": "object"
+                },
+                "mime_type": {
+                    "type": "string",
+                    "example": "audio/mpeg"
+                },
+                "public_url": {
+                    "type": "string"
+                },
+                "r2_key": {
+                    "type": "string"
+                },
+                "recitation_id": {
+                    "type": "string",
+                    "example": "qul-recitation"
+                },
+                "segments": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.QuranAudioSegment"
+                    }
+                },
+                "surah_id": {
+                    "type": "integer",
+                    "example": 73
+                },
+                "track_key": {
+                    "type": "string",
+                    "example": "73:4"
+                },
+                "track_type": {
+                    "type": "string",
+                    "example": "ayah"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                }
+            }
+        },
+        "entity.QuranAyah": {
+            "type": "object",
+            "properties": {
+                "audio": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.QuranAudioTrack"
+                    }
+                },
+                "ayah_key": {
+                    "type": "string",
+                    "example": "73:4"
+                },
+                "ayah_number": {
+                    "type": "integer",
+                    "example": 4
+                },
+                "font_family": {
+                    "type": "string"
+                },
+                "hizb_number": {
+                    "type": "integer"
+                },
+                "juz_number": {
+                    "type": "integer"
+                },
+                "metadata": {
+                    "type": "object"
+                },
+                "page_number": {
+                    "type": "integer"
+                },
+                "script_type": {
+                    "type": "string"
+                },
+                "search_text": {
+                    "type": "string"
+                },
+                "surah_id": {
+                    "type": "integer",
+                    "example": 73
+                },
+                "text_imlaei_simple": {
+                    "type": "string"
+                },
+                "text_qpc_hafs": {
+                    "type": "string"
+                },
+                "translation": {
+                    "$ref": "#/definitions/entity.QuranTranslation"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                }
+            }
+        },
+        "entity.QuranRecitation": {
+            "type": "object",
+            "properties": {
+                "checksum": {
+                    "type": "string"
+                },
+                "format": {
+                    "type": "string",
+                    "example": "json"
+                },
+                "has_public_audio": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "id": {
+                    "type": "string",
+                    "example": "qul-ayah-recitation-mishari-rashid-al-afasy-murattal-hafs-953"
+                },
+                "imported_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "is_default": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "license_status": {
+                    "type": "string",
+                    "example": "needs_review"
+                },
+                "metadata": {
+                    "type": "object"
+                },
+                "mode": {
+                    "type": "string",
+                    "example": "ayah"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "QUL ayah recitation mishari rashid al afasy murattal hafs 953"
+                },
+                "public_track_count": {
+                    "type": "integer",
+                    "example": 0
+                },
+                "qul_resource_id": {
+                    "type": "string",
+                    "example": "953"
+                },
+                "reciter_name": {
+                    "type": "string",
+                    "example": "Mishari Rashid Al-Afasy"
+                },
+                "source_url": {
+                    "type": "string"
+                },
+                "style": {
+                    "type": "string",
+                    "example": "murattal"
+                },
+                "track_count": {
+                    "type": "integer",
+                    "example": 6236
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                }
+            }
+        },
+        "entity.QuranSearchResult": {
+            "type": "object",
+            "properties": {
+                "ayah": {
+                    "$ref": "#/definitions/entity.QuranAyah"
+                },
+                "score": {
+                    "type": "number",
+                    "example": 0.82
+                }
+            }
+        },
+        "entity.QuranSurah": {
+            "type": "object",
+            "properties": {
+                "ayah_count": {
+                    "type": "integer",
+                    "example": 20
+                },
+                "info": {
+                    "$ref": "#/definitions/entity.QuranSurahInfo"
+                },
+                "metadata": {
+                    "type": "object"
+                },
+                "name_arabic": {
+                    "type": "string",
+                    "example": "المزمل"
+                },
+                "name_latin": {
+                    "type": "string",
+                    "example": "Al-Muzzammil"
+                },
+                "name_translation": {
+                    "type": "string",
+                    "example": "Orang yang Berselimut"
+                },
+                "revelation_type": {
+                    "type": "string",
+                    "example": "makkiyah"
+                },
+                "surah_id": {
+                    "type": "integer",
+                    "example": 73
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                }
+            }
+        },
+        "entity.QuranSurahInfo": {
+            "type": "object",
+            "properties": {
+                "checksum": {
+                    "type": "string"
+                },
+                "format": {
+                    "type": "string",
+                    "example": "json"
+                },
+                "imported_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "lang": {
+                    "type": "string",
+                    "example": "id"
+                },
+                "license_status": {
+                    "type": "string",
+                    "example": "needs_review"
+                },
+                "metadata": {
+                    "type": "object"
+                },
+                "qul_resource_id": {
+                    "type": "string"
+                },
+                "short_text": {
+                    "type": "string"
+                },
+                "source_name": {
+                    "type": "string",
+                    "example": "QUL Surah information"
+                },
+                "source_url": {
+                    "type": "string"
+                },
+                "surah_name": {
+                    "type": "string",
+                    "example": "Al-Fatihah"
+                },
+                "text_html": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                }
+            }
+        },
+        "entity.QuranTranslation": {
+            "type": "object",
+            "properties": {
+                "chunks": {
+                    "type": "object"
+                },
+                "footnotes": {
+                    "type": "object"
+                },
+                "lang": {
+                    "type": "string",
+                    "example": "id"
+                },
+                "metadata": {
+                    "type": "object"
+                },
+                "source_id": {
+                    "type": "string",
+                    "example": "qul-kfgqpc-id-simple"
+                },
+                "text": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                }
+            }
+        },
         "entity.Task": {
             "type": "object",
             "properties": {
@@ -733,9 +1883,17 @@ const docTemplate = `{
                     "type": "string",
                     "example": "john@example.com"
                 },
+                "email_verified": {
+                    "type": "boolean",
+                    "example": true
+                },
                 "id": {
                     "type": "string",
                     "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "role": {
+                    "type": "string",
+                    "example": "user"
                 },
                 "updated_at": {
                     "type": "string",
@@ -744,6 +1902,51 @@ const docTemplate = `{
                 "username": {
                     "type": "string",
                     "example": "johndoe"
+                }
+            }
+        },
+        "v1.Accepted": {
+            "type": "object",
+            "properties": {
+                "accepted": {
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        },
+        "v1.BookQuranReferenceList": {
+            "type": "object",
+            "properties": {
+                "references": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.BookQuranReference"
+                    }
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 42
+                }
+            }
+        },
+        "v1.ChangePassword": {
+            "type": "object",
+            "required": [
+                "current_password",
+                "new_password"
+            ],
+            "properties": {
+                "current_password": {
+                    "type": "string",
+                    "maxLength": 72,
+                    "minLength": 8,
+                    "example": "oldsecret123"
+                },
+                "new_password": {
+                    "type": "string",
+                    "maxLength": 72,
+                    "minLength": 8,
+                    "example": "newsecret123"
                 }
             }
         },
@@ -765,12 +1968,33 @@ const docTemplate = `{
                 }
             }
         },
+        "v1.EmailVerification": {
+            "type": "object",
+            "properties": {
+                "email_verified": {
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        },
         "v1.Error": {
             "type": "object",
             "properties": {
                 "error": {
                     "type": "string",
                     "example": "message"
+                }
+            }
+        },
+        "v1.ForgotPassword": {
+            "type": "object",
+            "required": [
+                "email"
+            ],
+            "properties": {
+                "email": {
+                    "type": "string",
+                    "example": "john@example.com"
                 }
             }
         },
@@ -787,7 +2011,42 @@ const docTemplate = `{
                 },
                 "password": {
                     "type": "string",
+                    "maxLength": 72,
+                    "minLength": 8,
                     "example": "secret123"
+                }
+            }
+        },
+        "v1.PasswordChanged": {
+            "type": "object",
+            "properties": {
+                "password_changed": {
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        },
+        "v1.PasswordReset": {
+            "type": "object",
+            "properties": {
+                "password_reset": {
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        },
+        "v1.QuranSearchList": {
+            "type": "object",
+            "properties": {
+                "results": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.QuranSearchResult"
+                    }
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 42
                 }
             }
         },
@@ -805,7 +2064,8 @@ const docTemplate = `{
                 },
                 "password": {
                     "type": "string",
-                    "minLength": 6,
+                    "maxLength": 72,
+                    "minLength": 8,
                     "example": "secret123"
                 },
                 "username": {
@@ -813,6 +2073,37 @@ const docTemplate = `{
                     "maxLength": 255,
                     "minLength": 3,
                     "example": "johndoe"
+                }
+            }
+        },
+        "v1.ResendVerification": {
+            "type": "object",
+            "required": [
+                "email"
+            ],
+            "properties": {
+                "email": {
+                    "type": "string",
+                    "example": "john@example.com"
+                }
+            }
+        },
+        "v1.ResetPassword": {
+            "type": "object",
+            "required": [
+                "password",
+                "token"
+            ],
+            "properties": {
+                "password": {
+                    "type": "string",
+                    "maxLength": 72,
+                    "minLength": 8,
+                    "example": "newsecret123"
+                },
+                "token": {
+                    "type": "string",
+                    "example": "G66NnGZnWg4W88qGz3p9N0-GxjKuxEOHHsvWv3kBaBA"
                 }
             }
         },
@@ -900,6 +2191,18 @@ const docTemplate = `{
                     "example": "Updated task"
                 }
             }
+        },
+        "v1.VerifyEmail": {
+            "type": "object",
+            "required": [
+                "token"
+            ],
+            "properties": {
+                "token": {
+                    "type": "string",
+                    "example": "G66NnGZnWg4W88qGz3p9N0-GxjKuxEOHHsvWv3kBaBA"
+                }
+            }
         }
     },
     "securityDefinitions": {
@@ -918,7 +2221,7 @@ var SwaggerInfo = &swag.Spec{
 	BasePath:         "/v1",
 	Schemes:          []string{},
 	Title:            "Go Clean Template API",
-	Description:      "Multi-domain clean architecture template with translation, user, and task management",
+	Description:      "Surau classical book reader API",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 	LeftDelim:        "{{",

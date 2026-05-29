@@ -83,6 +83,10 @@ import-quran-assets: ### Import local QUL Quran exports: make import-quran-asset
 	go run ./cmd/import-quran-assets $(QUL_ARGS)
 .PHONY: import-quran-assets
 
+sync-quran-audio-r2: ### Sync Quran audio R2 manifest into Postgres: make sync-quran-audio-r2 QURAN_AUDIO_R2_ARGS='--dry-run ...'
+	go run ./cmd/sync-quran-audio-r2 $(QURAN_AUDIO_R2_ARGS)
+.PHONY: sync-quran-audio-r2
+
 docker-rm-volume: ### remove docker volume
 	docker volume rm go-clean-template_pg-data
 .PHONY: docker-rm-volume

@@ -24,9 +24,38 @@ type (
 	// UserRepo -.
 	UserRepo interface {
 		Store(ctx context.Context, user *entity.User) error
+		StoreWithVerificationToken(ctx context.Context, user *entity.User, token *entity.EmailVerificationToken) error
 		GetByID(ctx context.Context, id string) (entity.User, error)
 		GetByEmail(ctx context.Context, email string) (entity.User, error)
 		SetRoleByEmail(ctx context.Context, email, role string) (entity.User, error)
+		ChangePassword(ctx context.Context, userID, passwordHash string) (entity.User, error)
+		ReplaceVerificationToken(ctx context.Context, token *entity.EmailVerificationToken) error
+		RevokeUnusedVerificationTokens(ctx context.Context, userID string) error
+		GetVerificationTokenByHash(ctx context.Context, tokenHash string) (entity.EmailVerificationToken, error)
+		GetLatestUnusedVerificationToken(ctx context.Context, userID string) (entity.EmailVerificationToken, error)
+		VerifyEmailWithToken(ctx context.Context, tokenID, userID string) (entity.User, error)
+		ReplacePasswordResetToken(ctx context.Context, token *entity.PasswordResetToken) error
+		RevokeUnusedPasswordResetTokens(ctx context.Context, userID string) error
+		GetPasswordResetTokenByHash(ctx context.Context, tokenHash string) (entity.PasswordResetToken, error)
+		GetLatestUnusedPasswordResetToken(ctx context.Context, userID string) (entity.PasswordResetToken, error)
+		ResetPasswordWithToken(ctx context.Context, tokenID, userID, passwordHash string) (entity.User, error)
+		RecordAuthLoginFingerprint(ctx context.Context, fingerprint entity.AuthLoginFingerprint) (bool, error)
+		AcquireAuthNotificationCooldown(ctx context.Context, cooldown entity.AuthNotificationCooldown) (bool, error)
+	}
+
+	// AuthRateLimitRepo -.
+	AuthRateLimitRepo interface {
+		IncrementAuthRateLimit(ctx context.Context, limit entity.AuthRateLimit) (entity.AuthRateLimitResult, error)
+	}
+
+	// AuthAuditRepo -.
+	AuthAuditRepo interface {
+		StoreAuthAuditLog(ctx context.Context, log entity.AuthAuditLog) error
+	}
+
+	// EmailSender -.
+	EmailSender interface {
+		Send(ctx context.Context, message entity.EmailMessage) error
 	}
 
 	// TaskRepo -.
@@ -69,7 +98,8 @@ type (
 
 	// QuranRepo provides public Quran browse/search and kitab reference lookups.
 	QuranRepo interface {
-		ListSurahs(ctx context.Context, lang string) ([]entity.QuranSurah, error)
+		ListSurahs(ctx context.Context, lang string, includeInfo bool) ([]entity.QuranSurah, error)
+		GetSurah(ctx context.Context, surahID int, lang string) (entity.QuranSurah, error)
 		ListRecitations(ctx context.Context) ([]entity.QuranRecitation, error)
 		GetAyah(
 			ctx context.Context,

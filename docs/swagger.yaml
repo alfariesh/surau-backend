@@ -1,5 +1,307 @@
 basePath: /v1
 definitions:
+  entity.BookQuranReference:
+    properties:
+      ayahs:
+        items:
+          $ref: '#/definitions/entity.QuranAyah'
+        type: array
+      book_id:
+        example: 797
+        type: integer
+      confidence:
+        example: 1
+        type: number
+      created_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      from_ayah_key:
+        example: "73:4"
+        type: string
+      from_ayah_number:
+        example: 4
+        type: integer
+      heading_id:
+        example: 10
+        type: integer
+      id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      knowledge_mention_id:
+        type: string
+      match_strategy:
+        example: explicit_surah_ayah
+        type: string
+      metadata:
+        type: object
+      normalized_text:
+        type: string
+      page_id:
+        example: 12
+        type: integer
+      reference_kind:
+        example: surah_ayah
+        type: string
+      review_status:
+        example: approved
+        type: string
+      source_text:
+        type: string
+      surah_id:
+        example: 73
+        type: integer
+      to_ayah_key:
+        example: "73:4"
+        type: string
+      to_ayah_number:
+        example: 4
+        type: integer
+      updated_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+    type: object
+  entity.QuranAudioSegment:
+    properties:
+      ayah_key:
+        example: "73:4"
+        type: string
+      duration_ms:
+        example: 3000
+        type: integer
+      metadata:
+        type: object
+      segment_index:
+        example: 1
+        type: integer
+      timestamp_from_ms:
+        example: 1200
+        type: integer
+      timestamp_to_ms:
+        example: 4200
+        type: integer
+    type: object
+  entity.QuranAudioTrack:
+    properties:
+      audio_url:
+        type: string
+      ayah_number:
+        example: 4
+        type: integer
+      duration_ms:
+        type: integer
+      duration_seconds:
+        type: integer
+      metadata:
+        type: object
+      mime_type:
+        example: audio/mpeg
+        type: string
+      public_url:
+        type: string
+      r2_key:
+        type: string
+      recitation_id:
+        example: qul-recitation
+        type: string
+      segments:
+        items:
+          $ref: '#/definitions/entity.QuranAudioSegment'
+        type: array
+      surah_id:
+        example: 73
+        type: integer
+      track_key:
+        example: "73:4"
+        type: string
+      track_type:
+        example: ayah
+        type: string
+      updated_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+    type: object
+  entity.QuranAyah:
+    properties:
+      audio:
+        items:
+          $ref: '#/definitions/entity.QuranAudioTrack'
+        type: array
+      ayah_key:
+        example: "73:4"
+        type: string
+      ayah_number:
+        example: 4
+        type: integer
+      font_family:
+        type: string
+      hizb_number:
+        type: integer
+      juz_number:
+        type: integer
+      metadata:
+        type: object
+      page_number:
+        type: integer
+      script_type:
+        type: string
+      search_text:
+        type: string
+      surah_id:
+        example: 73
+        type: integer
+      text_imlaei_simple:
+        type: string
+      text_qpc_hafs:
+        type: string
+      translation:
+        $ref: '#/definitions/entity.QuranTranslation'
+      updated_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+    type: object
+  entity.QuranRecitation:
+    properties:
+      checksum:
+        type: string
+      format:
+        example: json
+        type: string
+      has_public_audio:
+        example: false
+        type: boolean
+      id:
+        example: qul-ayah-recitation-mishari-rashid-al-afasy-murattal-hafs-953
+        type: string
+      imported_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      is_default:
+        example: false
+        type: boolean
+      license_status:
+        example: needs_review
+        type: string
+      metadata:
+        type: object
+      mode:
+        example: ayah
+        type: string
+      name:
+        example: QUL ayah recitation mishari rashid al afasy murattal hafs 953
+        type: string
+      public_track_count:
+        example: 0
+        type: integer
+      qul_resource_id:
+        example: "953"
+        type: string
+      reciter_name:
+        example: Mishari Rashid Al-Afasy
+        type: string
+      source_url:
+        type: string
+      style:
+        example: murattal
+        type: string
+      track_count:
+        example: 6236
+        type: integer
+      updated_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+    type: object
+  entity.QuranSearchResult:
+    properties:
+      ayah:
+        $ref: '#/definitions/entity.QuranAyah'
+      score:
+        example: 0.82
+        type: number
+    type: object
+  entity.QuranSurah:
+    properties:
+      ayah_count:
+        example: 20
+        type: integer
+      info:
+        $ref: '#/definitions/entity.QuranSurahInfo'
+      metadata:
+        type: object
+      name_arabic:
+        example: المزمل
+        type: string
+      name_latin:
+        example: Al-Muzzammil
+        type: string
+      name_translation:
+        example: Orang yang Berselimut
+        type: string
+      revelation_type:
+        example: makkiyah
+        type: string
+      surah_id:
+        example: 73
+        type: integer
+      updated_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+    type: object
+  entity.QuranSurahInfo:
+    properties:
+      checksum:
+        type: string
+      format:
+        example: json
+        type: string
+      imported_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      lang:
+        example: id
+        type: string
+      license_status:
+        example: needs_review
+        type: string
+      metadata:
+        type: object
+      qul_resource_id:
+        type: string
+      short_text:
+        type: string
+      source_name:
+        example: QUL Surah information
+        type: string
+      source_url:
+        type: string
+      surah_name:
+        example: Al-Fatihah
+        type: string
+      text_html:
+        type: string
+      updated_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+    type: object
+  entity.QuranTranslation:
+    properties:
+      chunks:
+        type: object
+      footnotes:
+        type: object
+      lang:
+        example: id
+        type: string
+      metadata:
+        type: object
+      source_id:
+        example: qul-kfgqpc-id-simple
+        type: string
+      text:
+        type: string
+      updated_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+    type: object
   entity.Task:
     properties:
       created_at:
@@ -65,8 +367,14 @@ definitions:
       email:
         example: john@example.com
         type: string
+      email_verified:
+        example: true
+        type: boolean
       id:
         example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      role:
+        example: user
         type: string
       updated_at:
         example: "2026-01-01T00:00:00Z"
@@ -74,6 +382,38 @@ definitions:
       username:
         example: johndoe
         type: string
+    type: object
+  v1.Accepted:
+    properties:
+      accepted:
+        example: true
+        type: boolean
+    type: object
+  v1.BookQuranReferenceList:
+    properties:
+      references:
+        items:
+          $ref: '#/definitions/entity.BookQuranReference'
+        type: array
+      total:
+        example: 42
+        type: integer
+    type: object
+  v1.ChangePassword:
+    properties:
+      current_password:
+        example: oldsecret123
+        maxLength: 72
+        minLength: 8
+        type: string
+      new_password:
+        example: newsecret123
+        maxLength: 72
+        minLength: 8
+        type: string
+    required:
+    - current_password
+    - new_password
     type: object
   v1.CreateTask:
     properties:
@@ -88,11 +428,25 @@ definitions:
     required:
     - title
     type: object
+  v1.EmailVerification:
+    properties:
+      email_verified:
+        example: true
+        type: boolean
+    type: object
   v1.Error:
     properties:
       error:
         example: message
         type: string
+    type: object
+  v1.ForgotPassword:
+    properties:
+      email:
+        example: john@example.com
+        type: string
+    required:
+    - email
     type: object
   v1.Login:
     properties:
@@ -101,10 +455,34 @@ definitions:
         type: string
       password:
         example: secret123
+        maxLength: 72
+        minLength: 8
         type: string
     required:
     - email
     - password
+    type: object
+  v1.PasswordChanged:
+    properties:
+      password_changed:
+        example: true
+        type: boolean
+    type: object
+  v1.PasswordReset:
+    properties:
+      password_reset:
+        example: true
+        type: boolean
+    type: object
+  v1.QuranSearchList:
+    properties:
+      results:
+        items:
+          $ref: '#/definitions/entity.QuranSearchResult'
+        type: array
+      total:
+        example: 42
+        type: integer
     type: object
   v1.Register:
     properties:
@@ -113,7 +491,8 @@ definitions:
         type: string
       password:
         example: secret123
-        minLength: 6
+        maxLength: 72
+        minLength: 8
         type: string
       username:
         example: johndoe
@@ -124,6 +503,28 @@ definitions:
     - email
     - password
     - username
+    type: object
+  v1.ResendVerification:
+    properties:
+      email:
+        example: john@example.com
+        type: string
+    required:
+    - email
+    type: object
+  v1.ResetPassword:
+    properties:
+      password:
+        example: newsecret123
+        maxLength: 72
+        minLength: 8
+        type: string
+      token:
+        example: G66NnGZnWg4W88qGz3p9N0-GxjKuxEOHHsvWv3kBaBA
+        type: string
+    required:
+    - password
+    - token
     type: object
   v1.TaskList:
     properties:
@@ -183,14 +584,93 @@ definitions:
     required:
     - title
     type: object
+  v1.VerifyEmail:
+    properties:
+      token:
+        example: G66NnGZnWg4W88qGz3p9N0-GxjKuxEOHHsvWv3kBaBA
+        type: string
+    required:
+    - token
+    type: object
 host: localhost:8080
 info:
   contact: {}
-  description: Multi-domain clean architecture template with translation, user, and
-    task management
+  description: Surau classical book reader API
   title: Go Clean Template API
   version: "1.0"
 paths:
+  /auth/change-password:
+    post:
+      consumes:
+      - application/json
+      description: Change the current user's password and revoke older JWTs
+      operationId: change-password
+      parameters:
+      - description: Current and new password
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.ChangePassword'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.PasswordChanged'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Change password
+      tags:
+      - auth
+  /auth/forgot-password:
+    post:
+      consumes:
+      - application/json
+      description: Send a password reset email when the account exists
+      operationId: forgot-password
+      parameters:
+      - description: Email address
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.ForgotPassword'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/v1.Accepted'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/v1.Error'
+      summary: Forgot password
+      tags:
+      - auth
   /auth/login:
     post:
       consumes:
@@ -217,6 +697,10 @@ paths:
             $ref: '#/definitions/v1.Error'
         "401":
           description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
           schema:
             $ref: '#/definitions/v1.Error'
         "500":
@@ -258,9 +742,428 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/v1.Error'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/v1.Error'
       summary: Register
       tags:
       - auth
+  /auth/resend-verification:
+    post:
+      consumes:
+      - application/json
+      description: Resend email verification for an existing unverified user
+      operationId: resend-verification
+      parameters:
+      - description: Email address
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.ResendVerification'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/v1.Accepted'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/v1.Error'
+      summary: Resend verification email
+      tags:
+      - auth
+  /auth/reset-password:
+    post:
+      consumes:
+      - application/json
+      description: Reset password using a one-time token
+      operationId: reset-password
+      parameters:
+      - description: Password reset token and new password
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.ResetPassword'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.PasswordReset'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      summary: Reset password
+      tags:
+      - auth
+  /auth/verify-email:
+    post:
+      consumes:
+      - application/json
+      description: Verify a user's email address using a one-time token
+      operationId: verify-email
+      parameters:
+      - description: Email verification token
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.VerifyEmail'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.EmailVerification'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      summary: Verify email
+      tags:
+      - auth
+  /books/{book_id}/quran-references:
+    get:
+      description: List Quran references linked to a public kitab. Defaults to approved
+        references.
+      operationId: list-book-quran-references
+      parameters:
+      - description: Book ID
+        in: path
+        name: book_id
+        required: true
+        type: integer
+      - default: id
+        description: Language code
+        in: query
+        name: lang
+        type: string
+      - default: approved
+        description: Review status
+        enum:
+        - approved
+        - pending
+        - rejected
+        - ambiguous
+        - needs_review
+        - all
+        in: query
+        name: status
+        type: string
+      - default: 50
+        description: Limit
+        in: query
+        name: limit
+        type: integer
+      - default: 0
+        description: Offset
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.BookQuranReferenceList'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      summary: List book Quran references
+      tags:
+      - quran
+  /quran/ayahs/{ayah_key}:
+    get:
+      description: Get one ayah by canonical ayah key. When include_audio=true and
+        recitation_id is omitted, the backend uses the default public recitation.
+      operationId: get-quran-ayah
+      parameters:
+      - description: Canonical ayah key, for example 73:4
+        in: path
+        name: ayah_key
+        required: true
+        type: string
+      - default: id
+        description: Language code
+        in: query
+        name: lang
+        type: string
+      - default: qul-kfgqpc-id-simple
+        description: Translation source
+        in: query
+        name: translation_source
+        type: string
+      - default: false
+        description: Include audio track and timestamp segments
+        in: query
+        name: include_audio
+        type: boolean
+      - description: Recitation ID. Defaults to the public default recitation when
+          include_audio=true.
+        in: query
+        name: recitation_id
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.QuranAyah'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      summary: Get Quran ayah
+      tags:
+      - quran
+  /quran/recitations:
+    get:
+      description: List imported recitation resources and audio coverage. Exactly
+        one full-public recitation may be marked is_default.
+      operationId: list-quran-recitations
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/entity.QuranRecitation'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      summary: List Quran recitations
+      tags:
+      - quran
+  /quran/search:
+    get:
+      description: Search Arabic Quran text and the selected Indonesian translation.
+      operationId: search-quran
+      parameters:
+      - description: Search query
+        in: query
+        name: q
+        required: true
+        type: string
+      - default: id
+        description: Language code
+        in: query
+        name: lang
+        type: string
+      - default: 50
+        description: Limit
+        in: query
+        name: limit
+        type: integer
+      - default: 0
+        description: Offset
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.QuranSearchList'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      summary: Search Quran
+      tags:
+      - quran
+  /quran/surahs:
+    get:
+      description: List Quran surahs in mushaf order. Surah info is omitted by default;
+        pass include_info=true for language-specific info HTML.
+      operationId: list-quran-surahs
+      parameters:
+      - default: id
+        description: Language code
+        in: query
+        name: lang
+        type: string
+      - default: false
+        description: Include surah info HTML
+        in: query
+        name: include_info
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/entity.QuranSurah'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      summary: List Quran surahs
+      tags:
+      - quran
+  /quran/surahs/{surah_id}:
+    get:
+      description: Get one Quran surah with language-specific info.
+      operationId: get-quran-surah
+      parameters:
+      - description: Surah ID
+        in: path
+        maximum: 114
+        minimum: 1
+        name: surah_id
+        required: true
+        type: integer
+      - default: id
+        description: Language code
+        in: query
+        name: lang
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.QuranSurah'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      summary: Get Quran surah
+      tags:
+      - quran
+  /quran/surahs/{surah_id}/ayahs:
+    get:
+      description: List all ayahs or an ayah range for one surah. When include_audio=true
+        and recitation_id is omitted, the backend uses the default public recitation.
+      operationId: list-quran-surah-ayahs
+      parameters:
+      - description: Surah ID
+        in: path
+        maximum: 114
+        minimum: 1
+        name: surah_id
+        required: true
+        type: integer
+      - description: Starting ayah number
+        in: query
+        name: from
+        type: integer
+      - description: Ending ayah number
+        in: query
+        name: to
+        type: integer
+      - default: id
+        description: Language code
+        in: query
+        name: lang
+        type: string
+      - default: qul-kfgqpc-id-simple
+        description: Translation source
+        in: query
+        name: translation_source
+        type: string
+      - default: true
+        description: Include selected translation
+        in: query
+        name: include_translation
+        type: boolean
+      - default: false
+        description: Include audio track and timestamp segments
+        in: query
+        name: include_audio
+        type: boolean
+      - description: Recitation ID. Defaults to the public default recitation when
+          include_audio=true.
+        in: query
+        name: recitation_id
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/entity.QuranAyah'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      summary: List Quran ayahs for a surah
+      tags:
+      - quran
   /tasks:
     get:
       description: List tasks for the current user with optional filtering

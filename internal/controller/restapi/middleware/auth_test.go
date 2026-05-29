@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/evrone/go-clean-template/internal/controller/restapi/middleware"
+	"github.com/evrone/go-clean-template/internal/entity"
 	"github.com/evrone/go-clean-template/pkg/jwt"
 	"github.com/gofiber/fiber/v2"
 	"github.com/stretchr/testify/assert"
@@ -17,10 +18,10 @@ import (
 func newTestApp(t *testing.T) (*fiber.App, *jwt.Manager) {
 	t.Helper()
 
-	jwtManager := jwt.New("test-secret", time.Hour)
+	jwtManager := jwt.New("0123456789abcdef0123456789abcdef", time.Hour, jwt.DefaultIssuer, jwt.DefaultAudience)
 
 	app := fiber.New()
-	app.Use(middleware.Auth(jwtManager))
+	app.Use(middleware.Auth(jwtManager, stubUserUseCase{user: entity.User{ID: "user-id-123"}}))
 	app.Get("/test", func(c *fiber.Ctx) error {
 		userID, ok := c.Locals("userID").(string)
 		if !ok {
@@ -67,6 +68,17 @@ func TestAuthMiddleware(t *testing.T) {
 			authHeader:     "Bearer " + validToken,
 			expectedStatus: http.StatusOK,
 			expectedBody:   "user-id-123",
+		},
+		{
+			name:           "valid lowercase bearer with extra spaces",
+			authHeader:     "bearer   " + validToken + " ",
+			expectedStatus: http.StatusOK,
+			expectedBody:   "user-id-123",
+		},
+		{
+			name:           "empty bearer token",
+			authHeader:     "Bearer ",
+			expectedStatus: http.StatusUnauthorized,
 		},
 	}
 

@@ -34,6 +34,26 @@ func (s stubUserUseCase) SetRoleByEmail(context.Context, string, string) (entity
 	return entity.User{}, nil
 }
 
+func (s stubUserUseCase) VerifyEmail(context.Context, string) error {
+	return nil
+}
+
+func (s stubUserUseCase) ResendEmailVerification(context.Context, string) error {
+	return nil
+}
+
+func (s stubUserUseCase) ForgotPassword(context.Context, string) error {
+	return nil
+}
+
+func (s stubUserUseCase) ResetPassword(context.Context, string, string) error {
+	return nil
+}
+
+func (s stubUserUseCase) ChangePassword(context.Context, string, string, string) error {
+	return nil
+}
+
 func TestAdminMiddleware(t *testing.T) {
 	t.Parallel()
 

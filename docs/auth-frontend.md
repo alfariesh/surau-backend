@@ -1,0 +1,842 @@
+# Frontend Auth Integration Guide
+
+Dokumen ini adalah kontrak integrasi auth untuk frontend Surau. Fokus utama frontend adalah REST API. Backend juga punya dukungan gRPC, NATS, dan AMQP untuk service lain, tetapi aplikasi web/mobile frontend sebaiknya memakai endpoint HTTP di bawah `/v1`.
+
+## Ringkasan
+
+- Auth memakai JWT Bearer token.
+- Login sukses selalu mengembalikan shape yang sama: `{ "token": "..." }`.
+- Tidak ada refresh token, cookie auth, session DB, MFA, atau logout server-side.
+- Email verification dan reset password dikirim memakai Cloudflare Email Service dari backend.
+- User baru belum bisa login sampai email verified.
+- Reset password dan change password akan membuat semua JWT lama invalid.
+- Backend juga mengirim email keamanan best-effort untuk password changed, email verified, role changed, new login/device, dan suspicious failed login.
+- Error REST memakai shape umum: `{ "error": "message" }`.
+
+## Base URL
+
+Gunakan environment frontend seperti:
+
+```env
+VITE_API_BASE_URL=http://localhost:8080
+# atau
+NEXT_PUBLIC_API_BASE_URL=http://localhost:8080
+```
+
+Semua path di dokumen ini memakai prefix `/v1`, contoh:
+
+```text
+POST {API_BASE_URL}/v1/auth/login
+```
+
+Header umum:
+
+```http
+Content-Type: application/json
+Accept: application/json
+```
+
+Karena backend memakai Bearer token, frontend tidak perlu mengirim cookie credentials. Pada `fetch`, default `credentials: "same-origin"` aman untuk same-origin. Untuk cross-origin API, gunakan default atau `credentials: "omit"` kecuali ada kebutuhan lain di luar auth ini.
+
+Protected endpoint wajib memakai:
+
+```http
+Authorization: Bearer <token>
+```
+
+Backend menerima scheme `Bearer` secara case-insensitive, tetapi frontend tetap disarankan selalu mengirim format standar `Bearer <token>`.
+
+## Model Data
+
+### User
+
+Response register dan profile memakai object user:
+
+```json
+{
+  "id": 1,
+  "username": "ahmad",
+  "email": "ahmad@example.com",
+  "role": "user",
+  "email_verified": true,
+  "created_at": "2026-05-27T10:00:00Z",
+  "updated_at": "2026-05-27T10:00:00Z"
+}
+```
+
+Catatan:
+
+- `password_hash` tidak pernah dikirim ke frontend.
+- `token_version` tidak dikirim ke frontend.
+- Jangan jadikan decoded JWT sebagai source of truth untuk UI user. Ambil profile dari `/v1/user/profile`.
+
+### Token
+
+```json
+{
+  "token": "eyJhbGciOiJIUzI1NiIs..."
+}
+```
+
+Token dipakai apa adanya di header `Authorization`.
+
+### Error
+
+```json
+{
+  "error": "invalid credentials"
+}
+```
+
+Frontend sebaiknya branch berdasarkan HTTP status terlebih dahulu, lalu pakai string `error` untuk copy yang lebih spesifik.
+
+## Validasi Frontend
+
+Backend tetap melakukan validasi final. Frontend sebaiknya melakukan validasi awal untuk UX.
+
+| Field | Rule | Catatan |
+| --- | --- | --- |
+| `username` | trim, 3 sampai 255 karakter | Untuk register. |
+| `email` | trim, format email valid | Kirim email yang sudah di-trim. |
+| `password` | 8 sampai 72 bytes | Jangan trim password. Spasi adalah bagian password. |
+| `current_password` | 8 sampai 72 bytes | Untuk change password. Jangan trim. |
+| `new_password` | 8 sampai 72 bytes | Untuk change/reset password. Jangan trim. |
+| `token` | string non-empty | Token verify/reset berasal dari query param FE. |
+
+Penting: batas password adalah bytes, bukan jumlah karakter. Untuk JavaScript:
+
+```ts
+export function byteLength(value: string): number {
+  return new TextEncoder().encode(value).length;
+}
+
+export function isValidPassword(value: string): boolean {
+  const length = byteLength(value);
+  return length >= 8 && length <= 72;
+}
+```
+
+Jangan lakukan `.trim()` pada password sebelum dikirim.
+
+## Endpoint Ringkas
+
+| Method | Path | Auth | Success |
+| --- | --- | --- | --- |
+| `POST` | `/v1/auth/register` | Public | `201 User` |
+| `POST` | `/v1/auth/login` | Public | `200 { "token": "..." }` |
+| `POST` | `/v1/auth/verify-email` | Public | `200 { "email_verified": true }` |
+| `POST` | `/v1/auth/resend-verification` | Public | `202 { "accepted": true }` |
+| `POST` | `/v1/auth/forgot-password` | Public | `202 { "accepted": true }` |
+| `POST` | `/v1/auth/reset-password` | Public | `200 { "password_reset": true }` |
+| `POST` | `/v1/auth/change-password` | Bearer | `200 { "password_changed": true }` |
+| `GET` | `/v1/user/profile` | Bearer | `200 User` |
+
+## Flow Register dan Verify Email
+
+1. User submit register form.
+2. FE panggil `POST /v1/auth/register`.
+3. Backend membuat user dengan `email_verified=false`.
+4. Backend mengirim email verification via Cloudflare.
+5. FE tampilkan screen "cek email" dan tombol resend.
+6. Link email membuka halaman FE: `${EMAIL_VERIFY_FRONTEND_URL}?token=<token>`.
+7. Halaman FE membaca query param `token`.
+8. FE panggil `POST /v1/auth/verify-email`.
+9. Setelah sukses, arahkan user ke login.
+
+### Register
+
+Request:
+
+```http
+POST /v1/auth/register
+Content-Type: application/json
+```
+
+```json
+{
+  "username": "ahmad",
+  "email": "ahmad@example.com",
+  "password": "correct horse battery"
+}
+```
+
+Success `201`:
+
+```json
+{
+  "id": 1,
+  "username": "ahmad",
+  "email": "ahmad@example.com",
+  "role": "user",
+  "email_verified": false,
+  "created_at": "2026-05-27T10:00:00Z",
+  "updated_at": "2026-05-27T10:00:00Z"
+}
+```
+
+Error penting:
+
+| Status | Error | FE behavior |
+| --- | --- | --- |
+| `400` | `invalid request body` | Tampilkan validasi field. |
+| `409` | `user already exists` | Arahkan ke login atau forgot password. |
+| `429` | `too many auth attempts` | Tampilkan cooldown. |
+| `503` | `email delivery failed` | User bisa coba resend verification. |
+| `500` | `internal server error` | Tampilkan pesan umum. |
+
+Catatan `503`: user mungkin sudah tersimpan sebagai unverified, tetapi email gagal dikirim. FE sebaiknya tetap menyediakan form resend verification.
+
+### Verify Email
+
+Request:
+
+```http
+POST /v1/auth/verify-email
+Content-Type: application/json
+```
+
+```json
+{
+  "token": "token-dari-query-param"
+}
+```
+
+Success `200`:
+
+```json
+{
+  "email_verified": true
+}
+```
+
+Error penting:
+
+| Status | Error | FE behavior |
+| --- | --- | --- |
+| `400` | `invalid request body` | Token kosong atau body salah. |
+| `400` | `invalid verification token` | Tampilkan link expired/invalid dan beri opsi resend. |
+| `500` | `internal server error` | Tampilkan pesan umum. |
+
+Token verification bersifat single-use dan punya TTL. Setelah submit, hapus token dari URL:
+
+```ts
+window.history.replaceState({}, document.title, window.location.pathname);
+```
+
+Pada router modern, gunakan `router.replace("/verify-email")` atau route sukses sesuai framework.
+
+### Resend Verification
+
+Request:
+
+```http
+POST /v1/auth/resend-verification
+Content-Type: application/json
+```
+
+```json
+{
+  "email": "ahmad@example.com"
+}
+```
+
+Success `202`:
+
+```json
+{
+  "accepted": true
+}
+```
+
+Error penting:
+
+| Status | Error | FE behavior |
+| --- | --- | --- |
+| `400` | `invalid request body` | Email invalid. |
+| `429` | `verification email recently sent` | Tampilkan cooldown resend. |
+| `429` | `too many auth attempts` | Tampilkan cooldown umum. |
+| `503` | `email delivery failed` | Tampilkan gagal kirim email. |
+| `500` | `internal server error` | Tampilkan pesan umum. |
+
+Untuk mengurangi account probing, backend juga mengembalikan `202 accepted` bila email tidak ditemukan atau sudah verified. FE jangan menampilkan pesan seperti "email tidak ditemukan" untuk flow ini.
+
+## Flow Login
+
+1. User submit email dan password.
+2. FE panggil `POST /v1/auth/login`.
+3. Jika sukses, simpan token dan ambil profile.
+4. Jika `403 email not verified`, arahkan ke screen verifikasi email.
+5. Jika `401 invalid credentials`, tampilkan email/password salah.
+
+Request:
+
+```http
+POST /v1/auth/login
+Content-Type: application/json
+```
+
+```json
+{
+  "email": "ahmad@example.com",
+  "password": "correct horse battery"
+}
+```
+
+Success `200`:
+
+```json
+{
+  "token": "eyJhbGciOiJIUzI1NiIs..."
+}
+```
+
+Error penting:
+
+| Status | Error | FE behavior |
+| --- | --- | --- |
+| `400` | `invalid request body` | Tampilkan validasi field. |
+| `401` | `invalid credentials` | Email atau password salah. |
+| `403` | `email not verified` | Tampilkan screen verify/resend. |
+| `429` | `too many auth attempts` | Tampilkan cooldown login. |
+| `500` | `internal server error` | Tampilkan pesan umum. |
+
+## Flow Profile dan Session Bootstrap
+
+Saat aplikasi dibuka:
+
+1. Ambil token dari storage.
+2. Jika tidak ada token, user dianggap guest.
+3. Jika ada token, panggil `GET /v1/user/profile`.
+4. Jika `200`, simpan user di state.
+5. Jika `401`, hapus token dan arahkan ke login.
+
+Request:
+
+```http
+GET /v1/user/profile
+Authorization: Bearer <token>
+```
+
+Success `200`:
+
+```json
+{
+  "id": 1,
+  "username": "ahmad",
+  "email": "ahmad@example.com",
+  "role": "user",
+  "email_verified": true,
+  "created_at": "2026-05-27T10:00:00Z",
+  "updated_at": "2026-05-27T10:00:00Z"
+}
+```
+
+Error penting:
+
+| Status | Error | FE behavior |
+| --- | --- | --- |
+| `401` | `missing authorization header` | Clear token, redirect login. |
+| `401` | `invalid authorization header format` | Clear token, redirect login. |
+| `401` | `invalid or expired token` | Clear token, redirect login. |
+| `401` | `unauthorized` | Clear token, redirect login. |
+| `404` | `user not found` | Clear token, redirect login. |
+| `500` | `internal server error` | Tampilkan pesan umum. |
+
+## Flow Forgot dan Reset Password
+
+### Forgot Password
+
+1. User submit email di halaman forgot password.
+2. FE panggil `POST /v1/auth/forgot-password`.
+3. Backend membuat token reset dan mengirim email.
+4. FE selalu tampilkan pesan netral: "Jika email terdaftar, link reset akan dikirim."
+5. Link email membuka halaman FE: `${PASSWORD_RESET_FRONTEND_URL}?token=<token>`.
+
+Request:
+
+```http
+POST /v1/auth/forgot-password
+Content-Type: application/json
+```
+
+```json
+{
+  "email": "ahmad@example.com"
+}
+```
+
+Success `202`:
+
+```json
+{
+  "accepted": true
+}
+```
+
+Error penting:
+
+| Status | Error | FE behavior |
+| --- | --- | --- |
+| `400` | `invalid request body` | Email invalid. |
+| `429` | `password reset email recently sent` | Tampilkan cooldown. |
+| `429` | `too many auth attempts` | Tampilkan cooldown umum. |
+| `503` | `email delivery failed` | Tampilkan gagal kirim email. |
+| `500` | `internal server error` | Tampilkan pesan umum. |
+
+Backend mengembalikan `202 accepted` untuk email yang tidak ditemukan supaya tidak ada account probing. FE jangan membedakan email terdaftar dan tidak terdaftar.
+
+### Reset Password
+
+1. Halaman reset membaca query param `token`.
+2. User input password baru.
+3. FE panggil `POST /v1/auth/reset-password`.
+4. Jika sukses, hapus token auth lokal jika ada.
+5. Arahkan user ke login.
+
+Request:
+
+```http
+POST /v1/auth/reset-password
+Content-Type: application/json
+```
+
+```json
+{
+  "token": "token-dari-query-param",
+  "password": "new correct horse battery"
+}
+```
+
+Success `200`:
+
+```json
+{
+  "password_reset": true
+}
+```
+
+Error penting:
+
+| Status | Error | FE behavior |
+| --- | --- | --- |
+| `400` | `invalid request body` | Token/password invalid, expired, used, atau body salah. |
+| `429` | `too many auth attempts` | Tampilkan cooldown. |
+| `500` | `internal server error` | Tampilkan pesan umum. |
+
+Reset password juga menandai `email_verified=true`. Ini berarti user yang belum verified tetap boleh reset password, dan setelah reset sukses email dianggap verified.
+
+Reset password akan increment `token_version`, sehingga JWT lama milik user tersebut otomatis invalid. FE harus clear token lokal setelah reset sukses.
+
+## Flow Change Password
+
+Endpoint ini untuk user yang masih login.
+
+1. User buka settings/security.
+2. User input current password dan new password.
+3. FE panggil `POST /v1/auth/change-password` dengan Bearer token.
+4. Jika sukses, backend membuat semua JWT lama invalid, termasuk token yang sedang dipakai.
+5. FE harus clear token dan arahkan user ke login.
+
+Request:
+
+```http
+POST /v1/auth/change-password
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+```json
+{
+  "current_password": "old password",
+  "new_password": "new correct horse battery"
+}
+```
+
+Success `200`:
+
+```json
+{
+  "password_changed": true
+}
+```
+
+Error penting:
+
+| Status | Error | FE behavior |
+| --- | --- | --- |
+| `400` | `invalid request body` | Current/new password invalid. |
+| `401` | `invalid credentials` | Current password salah. |
+| `401` | `invalid or expired token` | Clear token, redirect login. |
+| `401` | `unauthorized` | Clear token, redirect login. |
+| `429` | `too many auth attempts` | Tampilkan cooldown. |
+| `500` | `internal server error` | Tampilkan pesan umum. |
+
+## Token Revocation Behavior
+
+JWT membawa claim `token_version`. Backend membandingkan versi token dengan `users.token_version` di database pada setiap protected request.
+
+Token menjadi invalid ketika:
+
+- Expired.
+- Signature/issuer/audience invalid.
+- User tidak ditemukan.
+- User `token_version` sudah berubah setelah reset password atau change password.
+
+Frontend behavior:
+
+- Pada protected request yang mendapat `401`, clear token lokal.
+- Redirect ke login atau tampilkan session expired.
+- Jangan retry otomatis dengan token yang sama.
+- Tidak ada refresh token untuk memperoleh token baru. User harus login ulang.
+
+## Rate Limit Behavior
+
+Backend memakai DB-backed rate limit supaya berlaku lintas instance dan lintas transport.
+
+Default yang perlu diketahui FE:
+
+| Action | Limit |
+| --- | --- |
+| Login | `5/email/5m`, `30/ip/5m` |
+| Register | `3/email/1h`, `10/ip/1h` |
+| Forgot password | `3/email/1h`, `20/ip/1h` |
+| Resend verification | `3/email/1h`, `20/ip/1h` |
+| Reset password | `5/token/15m`, `30/ip/15m` |
+| Change password | `5/user/5m`, `30/ip/5m` |
+
+Jika kena limit, REST mengembalikan `429`.
+
+Backend belum mengirim header `Retry-After`, jadi FE sebaiknya memakai copy umum:
+
+- "Terlalu banyak percobaan. Coba lagi beberapa saat."
+- Untuk resend/forgot, disable tombol selama minimal 60 detik setelah request sukses atau rate-limited.
+
+## Recommended Frontend Routes
+
+| Route FE | Fungsi |
+| --- | --- |
+| `/register` | Register form. |
+| `/login` | Login form. |
+| `/verify-email?token=...` | Consume token verification dari email. |
+| `/forgot-password` | Request reset password email. |
+| `/reset-password?token=...` | Consume token reset dari email. |
+| `/settings/security` | Change password untuk user login. |
+
+Backend environment harus menunjuk ke route FE yang benar:
+
+```env
+EMAIL_VERIFY_FRONTEND_URL=https://app.example.com/verify-email
+PASSWORD_RESET_FRONTEND_URL=https://app.example.com/reset-password
+AUTH_EMAIL_NOTIFICATIONS_ENABLED=true
+AUTH_NEW_LOGIN_EMAIL_ENABLED=true
+AUTH_FAILED_LOGIN_EMAIL_ENABLED=true
+AUTH_PASSWORD_CHANGED_EMAIL_ENABLED=true
+AUTH_EMAIL_VERIFIED_EMAIL_ENABLED=true
+AUTH_ROLE_CHANGED_EMAIL_ENABLED=true
+```
+
+Email keamanan tidak mengubah response API. Jika email notifikasi gagal dikirim, flow utama tetap sukses selama operasi utama sukses.
+
+## Recommended Auth State
+
+Minimal state frontend:
+
+```ts
+type AuthStatus = "loading" | "guest" | "authenticated";
+
+type AuthState = {
+  status: AuthStatus;
+  token: string | null;
+  user: User | null;
+};
+```
+
+Route guard:
+
+| Kondisi | Behavior |
+| --- | --- |
+| `status=loading` | Tampilkan loading ringan. |
+| Protected page tanpa token | Redirect login. |
+| Protected page token invalid | Clear token, redirect login. |
+| Login/register saat sudah authenticated | Redirect ke app utama. |
+| Login mendapat `403 email not verified` | Tampilkan screen resend verification. |
+
+## TypeScript Example
+
+Contoh ini framework-agnostic. Adaptasikan storage/router sesuai React, Next.js, Vue, Svelte, atau mobile client.
+
+```ts
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8080";
+
+export type User = {
+  id: number;
+  username: string;
+  email: string;
+  role: string;
+  email_verified: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type LoginResponse = {
+  token: string;
+};
+
+export type ApiErrorBody = {
+  error?: string;
+};
+
+export class ApiError extends Error {
+  status: number;
+  body: ApiErrorBody;
+
+  constructor(status: number, body: ApiErrorBody) {
+    super(body.error ?? `HTTP ${status}`);
+    this.status = status;
+    this.body = body;
+  }
+}
+
+function getToken(): string | null {
+  return window.localStorage.getItem("surau_token");
+}
+
+function setToken(token: string): void {
+  window.localStorage.setItem("surau_token", token);
+}
+
+function clearToken(): void {
+  window.localStorage.removeItem("surau_token");
+}
+
+async function apiFetch<T>(
+  path: string,
+  options: {
+    method?: string;
+    body?: unknown;
+    auth?: boolean;
+    signal?: AbortSignal;
+  } = {},
+): Promise<T> {
+  const headers: Record<string, string> = {
+    Accept: "application/json",
+  };
+
+  if (options.body !== undefined) {
+    headers["Content-Type"] = "application/json";
+  }
+
+  if (options.auth) {
+    const token = getToken();
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+  }
+
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method: options.method ?? "GET",
+    headers,
+    body: options.body === undefined ? undefined : JSON.stringify(options.body),
+    signal: options.signal,
+  });
+
+  const text = await response.text();
+  const data = text ? JSON.parse(text) : {};
+
+  if (!response.ok) {
+    if (response.status === 401 && options.auth) {
+      clearToken();
+    }
+    throw new ApiError(response.status, data);
+  }
+
+  return data as T;
+}
+
+export async function register(input: {
+  username: string;
+  email: string;
+  password: string;
+}): Promise<User> {
+  return apiFetch<User>("/v1/auth/register", {
+    method: "POST",
+    body: {
+      username: input.username.trim(),
+      email: input.email.trim(),
+      password: input.password,
+    },
+  });
+}
+
+export async function login(input: {
+  email: string;
+  password: string;
+}): Promise<User> {
+  const result = await apiFetch<LoginResponse>("/v1/auth/login", {
+    method: "POST",
+    body: {
+      email: input.email.trim(),
+      password: input.password,
+    },
+  });
+
+  setToken(result.token);
+  return getProfile();
+}
+
+export async function getProfile(): Promise<User> {
+  return apiFetch<User>("/v1/user/profile", {
+    auth: true,
+  });
+}
+
+export async function verifyEmail(token: string): Promise<{ email_verified: true }> {
+  return apiFetch<{ email_verified: true }>("/v1/auth/verify-email", {
+    method: "POST",
+    body: { token },
+  });
+}
+
+export async function resendVerification(email: string): Promise<{ accepted: true }> {
+  return apiFetch<{ accepted: true }>("/v1/auth/resend-verification", {
+    method: "POST",
+    body: { email: email.trim() },
+  });
+}
+
+export async function forgotPassword(email: string): Promise<{ accepted: true }> {
+  return apiFetch<{ accepted: true }>("/v1/auth/forgot-password", {
+    method: "POST",
+    body: { email: email.trim() },
+  });
+}
+
+export async function resetPassword(input: {
+  token: string;
+  password: string;
+}): Promise<{ password_reset: true }> {
+  const result = await apiFetch<{ password_reset: true }>("/v1/auth/reset-password", {
+    method: "POST",
+    body: {
+      token: input.token,
+      password: input.password,
+    },
+  });
+
+  clearToken();
+  return result;
+}
+
+export async function changePassword(input: {
+  currentPassword: string;
+  newPassword: string;
+}): Promise<{ password_changed: true }> {
+  const result = await apiFetch<{ password_changed: true }>(
+    "/v1/auth/change-password",
+    {
+      method: "POST",
+      auth: true,
+      body: {
+        current_password: input.currentPassword,
+        new_password: input.newPassword,
+      },
+    },
+  );
+
+  clearToken();
+  return result;
+}
+```
+
+Catatan storage:
+
+- `localStorage` mudah dipakai tetapi rentan jika ada XSS.
+- In-memory storage lebih aman terhadap persistence, tetapi user akan logout saat reload.
+- Backend saat ini hanya mendukung Bearer token, bukan HttpOnly cookie.
+- Apa pun storage yang dipilih, prioritaskan proteksi XSS di frontend.
+
+## Error Handling Copy
+
+Mapping copy yang disarankan:
+
+| Status/Error | Copy UI |
+| --- | --- |
+| `400 invalid request body` | "Periksa kembali data yang kamu isi." |
+| `401 invalid credentials` | "Email atau password salah." |
+| `401 invalid or expired token` | "Sesi kamu sudah berakhir. Silakan login lagi." |
+| `403 email not verified` | "Email belum diverifikasi. Cek inbox atau kirim ulang email verifikasi." |
+| `409 user already exists` | "Email ini sudah terdaftar. Silakan login atau reset password." |
+| `429 too many auth attempts` | "Terlalu banyak percobaan. Coba lagi beberapa saat." |
+| `429 verification email recently sent` | "Email verifikasi baru saja dikirim. Tunggu sebentar sebelum mengirim ulang." |
+| `429 password reset email recently sent` | "Email reset password baru saja dikirim. Tunggu sebentar sebelum mengirim ulang." |
+| `503 email delivery failed` | "Email belum bisa dikirim. Coba lagi nanti." |
+| `500 internal server error` | "Terjadi gangguan. Coba lagi nanti." |
+
+## Security Checklist FE
+
+- Selalu kirim `Authorization: Bearer <token>` untuk protected endpoint.
+- Clear token pada semua response `401` dari protected endpoint.
+- Clear token setelah reset password sukses.
+- Clear token setelah change password sukses.
+- Jangan trim password.
+- Trim username dan email.
+- Jangan log password, JWT, verification token, atau reset token di console/analytics.
+- Jangan menampilkan token verify/reset di UI.
+- Hapus token verify/reset dari URL setelah diproses.
+- Jangan ungkap apakah email terdaftar pada forgot password dan resend verification.
+- Jangan mengandalkan decoded JWT untuk role/profile final.
+- Ambil profile dari backend setelah login dan saat app bootstrap.
+- Tampilkan state loading saat bootstrap agar halaman protected tidak flicker.
+- Pakai HTTPS di production.
+- Jika browser memblokir request karena CORS, deployment backend perlu mengizinkan origin frontend serta header `Authorization` dan `Content-Type`.
+
+## QA Checklist FE
+
+### Register
+
+- Register valid menampilkan screen cek email.
+- Register password 7 bytes ditolak FE.
+- Register password lebih dari 72 bytes ditolak FE.
+- Password dengan spasi awal/akhir tidak di-trim.
+- Duplicate email menampilkan copy login/forgot password.
+- Jika register mendapat `503 email delivery failed`, user tetap bisa memakai resend verification.
+
+### Email Verification
+
+- `/verify-email?token=valid` memanggil backend dan sukses.
+- Token invalid/expired menampilkan opsi resend.
+- Token dipakai dua kali menampilkan invalid/expired.
+- Token hilang dari URL setelah submit.
+
+### Login
+
+- Login user verified sukses, token tersimpan, profile ter-load.
+- Login password salah menampilkan `invalid credentials`.
+- Login user belum verified menampilkan screen verify/resend.
+- Login kena `429` menampilkan cooldown.
+
+### Forgot/Reset Password
+
+- Forgot password selalu menampilkan pesan netral untuk email terdaftar atau tidak.
+- Reset password valid sukses dan redirect login.
+- Reset password clear token lama jika user sebelumnya login.
+- Reset token invalid/expired/used menampilkan pesan token invalid.
+- Setelah reset, login dengan password lama gagal dan password baru sukses.
+
+### Change Password
+
+- User login bisa change password dengan current password benar.
+- Current password salah menampilkan error.
+- Setelah sukses, token lama invalid dan user diarahkan login.
+- Login ulang dengan password baru sukses.
+
+### Session
+
+- App bootstrap dengan token valid berhasil load profile.
+- App bootstrap dengan token expired/revoked clear token dan redirect login.
+- Protected API mendapat `401` clear token.
+
+## Swagger
+
+Jika backend dijalankan dengan `SWAGGER_ENABLED=true`, dokumentasi OpenAPI tersedia di `/swagger/index.html`. Gunakan Swagger untuk mengecek field terbaru, tetapi dokumen ini tetap menjadi panduan flow frontend auth.

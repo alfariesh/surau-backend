@@ -36,13 +36,14 @@ func NewRoutes(
 	}
 
 	// Public routes
-	authGroup := apiV1Group.Group("/auth", limiter.New(limiter.Config{
-		Max:        10,
-		Expiration: time.Minute,
-	}))
+	authGroup := apiV1Group.Group("/auth")
 	{
 		authGroup.Post("/register", r.register)
 		authGroup.Post("/login", r.login)
+		authGroup.Post("/verify-email", r.verifyEmail)
+		authGroup.Post("/resend-verification", r.resendVerification)
+		authGroup.Post("/forgot-password", r.forgotPassword)
+		authGroup.Post("/reset-password", r.resetPassword)
 	}
 
 	// Public reader routes
@@ -75,13 +76,19 @@ func NewRoutes(
 	{
 		quranGroup.Get("/recitations", r.listQuranRecitations)
 		quranGroup.Get("/surahs", r.listQuranSurahs)
+		quranGroup.Get("/surahs/:surah_id", r.getQuranSurah)
 		quranGroup.Get("/surahs/:surah_id/ayahs", r.listQuranSurahAyahs)
 		quranGroup.Get("/ayahs/:ayah_key", r.getQuranAyah)
 		quranGroup.Get("/search", r.searchQuran)
 	}
 
 	// Protected routes
-	protected := apiV1Group.Group("", middleware.Auth(jwtManager))
+	protected := apiV1Group.Group("", middleware.Auth(jwtManager, u))
+
+	protectedAuthGroup := protected.Group("/auth")
+	{
+		protectedAuthGroup.Post("/change-password", r.changePassword)
+	}
 
 	userGroup := protected.Group("/user")
 	{

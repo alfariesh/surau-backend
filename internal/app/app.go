@@ -9,6 +9,7 @@ import (
 
 	"github.com/evrone/go-clean-template/config"
 	"github.com/evrone/go-clean-template/internal/controller/restapi"
+	"github.com/evrone/go-clean-template/internal/repo"
 	"github.com/evrone/go-clean-template/internal/repo/persistent"
 	"github.com/evrone/go-clean-template/internal/repo/webapi"
 	"github.com/evrone/go-clean-template/internal/usecase/bookrag"
@@ -51,9 +52,94 @@ func initUseCases(cfg *config.Config, pg *postgres.Postgres, jwtManager *jwt.Man
 		MaxTokens:   cfg.RAG.LLMMaxTokens,
 		Temperature: cfg.RAG.LLMTemperature,
 	})
+	var emailSender repo.EmailSender
+	if cfg.Email.DeliveryMode == config.EmailDeliveryModeLog {
+		emailSender = webapi.NewLogEmailSender()
+	} else {
+		emailSender = webapi.NewCloudflareEmailClient(webapi.CloudflareEmailOptions{
+			AccountID:   cfg.Email.CloudflareAccountID,
+			APIToken:    cfg.Email.CloudflareAPIToken,
+			FromAddress: cfg.Email.FromAddress,
+			FromName:    cfg.Email.FromName,
+			ReplyTo:     cfg.Email.ReplyTo,
+			Timeout:     cfg.Email.HTTPTimeout,
+		})
+	}
+	var rateLimiter repo.AuthRateLimitRepo
+	if cfg.AuthRateLimit.Enabled {
+		rateLimiter = userRepo
+	}
 
 	return useCases{
-		user:   user.New(userRepo, jwtManager),
+		user: user.New(userRepo, jwtManager, emailSender, user.Options{
+			VerifyFrontendURL:        cfg.Email.VerifyFrontendURL,
+			VerificationTTL:          cfg.Email.VerificationTTL,
+			ResendCooldown:           cfg.Email.ResendCooldown,
+			PasswordResetFrontendURL: cfg.Email.PasswordResetFrontendURL,
+			PasswordResetTTL:         cfg.Email.PasswordResetTTL,
+			PasswordResetCooldown:    cfg.Email.PasswordResetCooldown,
+			RateLimiter:              rateLimiter,
+			AuditLogger:              userRepo,
+			EmailNotifications: user.EmailNotificationOptions{
+				Enabled:                cfg.AuthEmail.NotificationsEnabled,
+				NewLoginEnabled:        cfg.AuthEmail.NewLoginEnabled,
+				FailedLoginEnabled:     cfg.AuthEmail.FailedLoginEnabled,
+				PasswordChangedEnabled: cfg.AuthEmail.PasswordChangedEnabled,
+				EmailVerifiedEnabled:   cfg.AuthEmail.EmailVerifiedEnabled,
+				RoleChangedEnabled:     cfg.AuthEmail.RoleChangedEnabled,
+				FailedLoginCooldown:    cfg.AuthEmail.FailedLoginCooldown,
+			},
+			RateLimit: user.RateLimitOptions{
+				LoginEmail: user.RateLimitRule{
+					Max:    cfg.AuthRateLimit.LoginEmailMax,
+					Window: cfg.AuthRateLimit.LoginEmailWindow,
+				},
+				LoginIP: user.RateLimitRule{
+					Max:    cfg.AuthRateLimit.LoginIPMax,
+					Window: cfg.AuthRateLimit.LoginIPWindow,
+				},
+				RegisterEmail: user.RateLimitRule{
+					Max:    cfg.AuthRateLimit.RegisterEmailMax,
+					Window: cfg.AuthRateLimit.RegisterEmailWindow,
+				},
+				RegisterIP: user.RateLimitRule{
+					Max:    cfg.AuthRateLimit.RegisterIPMax,
+					Window: cfg.AuthRateLimit.RegisterIPWindow,
+				},
+				ForgotPasswordEmail: user.RateLimitRule{
+					Max:    cfg.AuthRateLimit.ForgotPasswordEmailMax,
+					Window: cfg.AuthRateLimit.ForgotPasswordEmailWindow,
+				},
+				ForgotPasswordIP: user.RateLimitRule{
+					Max:    cfg.AuthRateLimit.ForgotPasswordIPMax,
+					Window: cfg.AuthRateLimit.ForgotPasswordIPWindow,
+				},
+				ResendVerificationEmail: user.RateLimitRule{
+					Max:    cfg.AuthRateLimit.ResendVerificationEmailMax,
+					Window: cfg.AuthRateLimit.ResendVerificationEmailWindow,
+				},
+				ResendVerificationIP: user.RateLimitRule{
+					Max:    cfg.AuthRateLimit.ResendVerificationIPMax,
+					Window: cfg.AuthRateLimit.ResendVerificationIPWindow,
+				},
+				ResetPasswordToken: user.RateLimitRule{
+					Max:    cfg.AuthRateLimit.ResetPasswordTokenMax,
+					Window: cfg.AuthRateLimit.ResetPasswordTokenWindow,
+				},
+				ResetPasswordIP: user.RateLimitRule{
+					Max:    cfg.AuthRateLimit.ResetPasswordIPMax,
+					Window: cfg.AuthRateLimit.ResetPasswordIPWindow,
+				},
+				ChangePasswordUser: user.RateLimitRule{
+					Max:    cfg.AuthRateLimit.ChangePasswordUserMax,
+					Window: cfg.AuthRateLimit.ChangePasswordUserWindow,
+				},
+				ChangePasswordIP: user.RateLimitRule{
+					Max:    cfg.AuthRateLimit.ChangePasswordIPMax,
+					Window: cfg.AuthRateLimit.ChangePasswordIPWindow,
+				},
+			},
+		}),
 		reader: reader.New(readerRepo),
 		bookRAG: bookrag.New(bookRAGRepo, llmClient, bookrag.Options{
 			MaxContextPages:      cfg.RAG.MaxContextPages,
@@ -117,7 +203,7 @@ func Run(cfg *config.Config) {
 	defer pg.Close()
 
 	// JWT
-	jwtManager := jwt.New(cfg.JWT.Secret, cfg.JWT.TokenExpiry)
+	jwtManager := jwt.New(cfg.JWT.Secret, cfg.JWT.TokenExpiry, cfg.JWT.Issuer, cfg.JWT.Audience)
 
 	uc := initUseCases(cfg, pg, jwtManager)
 	s := initServers(cfg, pg, uc, jwtManager, l)

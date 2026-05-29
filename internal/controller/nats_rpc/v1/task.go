@@ -14,7 +14,7 @@ import (
 
 func (r *V1) createTask() server.CallHandler {
 	return func(msg *nats.Msg) (any, error) {
-		userID, data, err := extractUserID(msg, r.j)
+		userID, data, err := extractUserID(msg, r.j, r.u)
 		if err != nil {
 			return nil, fmt.Errorf("nats_rpc - V1 - createTask - auth: %w", err)
 		}
@@ -23,11 +23,11 @@ func (r *V1) createTask() server.CallHandler {
 
 		err = json.Unmarshal(data, &req)
 		if err != nil {
-			return nil, fmt.Errorf("nats_rpc - V1 - createTask - json.Unmarshal: %w", err)
+			return nil, badRequestError("nats_rpc - V1 - createTask - json.Unmarshal", err)
 		}
 
 		if err = r.v.Struct(req); err != nil {
-			return nil, fmt.Errorf("nats_rpc - V1 - createTask - validation: %w", err)
+			return nil, badRequestError("nats_rpc - V1 - createTask - validation", err)
 		}
 
 		task, err := r.tk.Create(context.Background(), userID, req.Title, req.Description)
@@ -43,7 +43,7 @@ func (r *V1) createTask() server.CallHandler {
 
 func (r *V1) getTask() server.CallHandler {
 	return func(msg *nats.Msg) (any, error) {
-		userID, data, err := extractUserID(msg, r.j)
+		userID, data, err := extractUserID(msg, r.j, r.u)
 		if err != nil {
 			return nil, fmt.Errorf("nats_rpc - V1 - getTask - auth: %w", err)
 		}
@@ -52,11 +52,11 @@ func (r *V1) getTask() server.CallHandler {
 
 		err = json.Unmarshal(data, &req)
 		if err != nil {
-			return nil, fmt.Errorf("nats_rpc - V1 - getTask - json.Unmarshal: %w", err)
+			return nil, badRequestError("nats_rpc - V1 - getTask - json.Unmarshal", err)
 		}
 
 		if err = r.v.Struct(req); err != nil {
-			return nil, fmt.Errorf("nats_rpc - V1 - getTask - validation: %w", err)
+			return nil, badRequestError("nats_rpc - V1 - getTask - validation", err)
 		}
 
 		task, err := r.tk.Get(context.Background(), userID, req.ID)
@@ -72,7 +72,7 @@ func (r *V1) getTask() server.CallHandler {
 
 func (r *V1) listTasks() server.CallHandler {
 	return func(msg *nats.Msg) (any, error) {
-		userID, data, err := extractUserID(msg, r.j)
+		userID, data, err := extractUserID(msg, r.j, r.u)
 		if err != nil {
 			return nil, fmt.Errorf("nats_rpc - V1 - listTasks - auth: %w", err)
 		}
@@ -81,11 +81,11 @@ func (r *V1) listTasks() server.CallHandler {
 
 		err = json.Unmarshal(data, &req)
 		if err != nil {
-			return nil, fmt.Errorf("nats_rpc - V1 - listTasks - json.Unmarshal: %w", err)
+			return nil, badRequestError("nats_rpc - V1 - listTasks - json.Unmarshal", err)
 		}
 
 		if err = r.v.Struct(req); err != nil {
-			return nil, fmt.Errorf("nats_rpc - V1 - listTasks - validation: %w", err)
+			return nil, badRequestError("nats_rpc - V1 - listTasks - validation", err)
 		}
 
 		var status *entity.TaskStatus
@@ -108,7 +108,7 @@ func (r *V1) listTasks() server.CallHandler {
 
 func (r *V1) updateTask() server.CallHandler {
 	return func(msg *nats.Msg) (any, error) {
-		userID, data, err := extractUserID(msg, r.j)
+		userID, data, err := extractUserID(msg, r.j, r.u)
 		if err != nil {
 			return nil, fmt.Errorf("nats_rpc - V1 - updateTask - auth: %w", err)
 		}
@@ -117,11 +117,11 @@ func (r *V1) updateTask() server.CallHandler {
 
 		err = json.Unmarshal(data, &req)
 		if err != nil {
-			return nil, fmt.Errorf("nats_rpc - V1 - updateTask - json.Unmarshal: %w", err)
+			return nil, badRequestError("nats_rpc - V1 - updateTask - json.Unmarshal", err)
 		}
 
 		if err = r.v.Struct(req); err != nil {
-			return nil, fmt.Errorf("nats_rpc - V1 - updateTask - validation: %w", err)
+			return nil, badRequestError("nats_rpc - V1 - updateTask - validation", err)
 		}
 
 		task, err := r.tk.Update(context.Background(), userID, req.ID, req.Title, req.Description)
@@ -137,7 +137,7 @@ func (r *V1) updateTask() server.CallHandler {
 
 func (r *V1) transitionTask() server.CallHandler {
 	return func(msg *nats.Msg) (any, error) {
-		userID, data, err := extractUserID(msg, r.j)
+		userID, data, err := extractUserID(msg, r.j, r.u)
 		if err != nil {
 			return nil, fmt.Errorf("nats_rpc - V1 - transitionTask - auth: %w", err)
 		}
@@ -146,11 +146,11 @@ func (r *V1) transitionTask() server.CallHandler {
 
 		err = json.Unmarshal(data, &req)
 		if err != nil {
-			return nil, fmt.Errorf("nats_rpc - V1 - transitionTask - json.Unmarshal: %w", err)
+			return nil, badRequestError("nats_rpc - V1 - transitionTask - json.Unmarshal", err)
 		}
 
 		if err = r.v.Struct(req); err != nil {
-			return nil, fmt.Errorf("nats_rpc - V1 - transitionTask - validation: %w", err)
+			return nil, badRequestError("nats_rpc - V1 - transitionTask - validation", err)
 		}
 
 		task, err := r.tk.Transition(context.Background(), userID, req.ID, entity.TaskStatus(req.Status))
@@ -166,7 +166,7 @@ func (r *V1) transitionTask() server.CallHandler {
 
 func (r *V1) deleteTask() server.CallHandler {
 	return func(msg *nats.Msg) (any, error) {
-		userID, data, err := extractUserID(msg, r.j)
+		userID, data, err := extractUserID(msg, r.j, r.u)
 		if err != nil {
 			return nil, fmt.Errorf("nats_rpc - V1 - deleteTask - auth: %w", err)
 		}
@@ -175,11 +175,11 @@ func (r *V1) deleteTask() server.CallHandler {
 
 		err = json.Unmarshal(data, &req)
 		if err != nil {
-			return nil, fmt.Errorf("nats_rpc - V1 - deleteTask - json.Unmarshal: %w", err)
+			return nil, badRequestError("nats_rpc - V1 - deleteTask - json.Unmarshal", err)
 		}
 
 		if err = r.v.Struct(req); err != nil {
-			return nil, fmt.Errorf("nats_rpc - V1 - deleteTask - validation: %w", err)
+			return nil, badRequestError("nats_rpc - V1 - deleteTask - validation", err)
 		}
 
 		err = r.tk.Delete(context.Background(), userID, req.ID)

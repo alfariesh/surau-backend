@@ -30,8 +30,17 @@ func New(r repo.QuranRepo) *UseCase {
 }
 
 // Surahs returns all imported Quran surahs.
-func (uc *UseCase) Surahs(ctx context.Context, lang string) ([]entity.QuranSurah, error) {
-	return uc.repo.ListSurahs(ctx, normalizeLang(lang))
+func (uc *UseCase) Surahs(ctx context.Context, lang string, includeInfo bool) ([]entity.QuranSurah, error) {
+	return uc.repo.ListSurahs(ctx, normalizeLang(lang), includeInfo)
+}
+
+// Surah returns one imported Quran surah with language-specific info.
+func (uc *UseCase) Surah(ctx context.Context, surahID int, lang string) (entity.QuranSurah, error) {
+	if surahID <= 0 || surahID > 114 {
+		return entity.QuranSurah{}, entity.ErrQuranSurahNotFound
+	}
+
+	return uc.repo.GetSurah(ctx, surahID, normalizeLang(lang))
 }
 
 // Recitations returns imported Quran recitation resources.

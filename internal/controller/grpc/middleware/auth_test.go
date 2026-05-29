@@ -6,6 +6,7 @@ import (
 	"time"
 
 	grpcmw "github.com/evrone/go-clean-template/internal/controller/grpc/middleware"
+	"github.com/evrone/go-clean-template/internal/entity"
 	"github.com/evrone/go-clean-template/pkg/jwt"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -21,6 +22,44 @@ type ctxCapture struct {
 	ctx context.Context
 }
 
+type stubAuthUserUseCase struct{}
+
+func (stubAuthUserUseCase) Register(context.Context, string, string, string) (entity.User, error) {
+	return entity.User{}, nil
+}
+
+func (stubAuthUserUseCase) Login(context.Context, string, string) (string, error) {
+	return "", nil
+}
+
+func (stubAuthUserUseCase) GetUser(_ context.Context, userID string) (entity.User, error) {
+	return entity.User{ID: userID}, nil
+}
+
+func (stubAuthUserUseCase) SetRoleByEmail(context.Context, string, string) (entity.User, error) {
+	return entity.User{}, nil
+}
+
+func (stubAuthUserUseCase) VerifyEmail(context.Context, string) error {
+	return nil
+}
+
+func (stubAuthUserUseCase) ResendEmailVerification(context.Context, string) error {
+	return nil
+}
+
+func (stubAuthUserUseCase) ForgotPassword(context.Context, string) error {
+	return nil
+}
+
+func (stubAuthUserUseCase) ResetPassword(context.Context, string, string) error {
+	return nil
+}
+
+func (stubAuthUserUseCase) ChangePassword(context.Context, string, string, string) error {
+	return nil
+}
+
 func (c *ctxCapture) handler(_ context.Context, _ any) (any, error) {
 	return respOK, nil
 }
@@ -34,14 +73,14 @@ func (c *ctxCapture) capturingHandler(ctx context.Context, _ any) (any, error) {
 func newJWTManager(t *testing.T) *jwt.Manager {
 	t.Helper()
 
-	return jwt.New("test-secret", time.Hour)
+	return jwt.New("0123456789abcdef0123456789abcdef", time.Hour, jwt.DefaultIssuer, jwt.DefaultAudience)
 }
 
 func runSkipAuthTest(t *testing.T, method string) {
 	t.Helper()
 
 	jwtMgr := newJWTManager(t)
-	interceptor := grpcmw.AuthInterceptor(jwtMgr)
+	interceptor := grpcmw.AuthInterceptor(jwtMgr, stubAuthUserUseCase{})
 	info := &grpc.UnaryServerInfo{FullMethod: method}
 
 	called := false
@@ -72,7 +111,7 @@ func TestAuthInterceptor_MissingMetadata(t *testing.T) {
 	t.Parallel()
 
 	jwtMgr := newJWTManager(t)
-	interceptor := grpcmw.AuthInterceptor(jwtMgr)
+	interceptor := grpcmw.AuthInterceptor(jwtMgr, stubAuthUserUseCase{})
 	info := &grpc.UnaryServerInfo{FullMethod: "/grpc.v1.TaskService/GetTask"}
 
 	capture := &ctxCapture{}
@@ -92,7 +131,7 @@ func TestAuthInterceptor_MissingAuthorizationToken(t *testing.T) {
 	t.Parallel()
 
 	jwtMgr := newJWTManager(t)
-	interceptor := grpcmw.AuthInterceptor(jwtMgr)
+	interceptor := grpcmw.AuthInterceptor(jwtMgr, stubAuthUserUseCase{})
 	info := &grpc.UnaryServerInfo{FullMethod: "/grpc.v1.TaskService/GetTask"}
 
 	md := metadata.New(map[string]string{"other-key": "value"})
@@ -115,7 +154,7 @@ func TestAuthInterceptor_InvalidToken(t *testing.T) {
 	t.Parallel()
 
 	jwtMgr := newJWTManager(t)
-	interceptor := grpcmw.AuthInterceptor(jwtMgr)
+	interceptor := grpcmw.AuthInterceptor(jwtMgr, stubAuthUserUseCase{})
 	info := &grpc.UnaryServerInfo{FullMethod: "/grpc.v1.TaskService/GetTask"}
 
 	md := metadata.Pairs("authorization", "invalid-token")
@@ -138,7 +177,7 @@ func TestAuthInterceptor_ValidToken(t *testing.T) {
 	t.Parallel()
 
 	jwtMgr := newJWTManager(t)
-	interceptor := grpcmw.AuthInterceptor(jwtMgr)
+	interceptor := grpcmw.AuthInterceptor(jwtMgr, stubAuthUserUseCase{})
 	info := &grpc.UnaryServerInfo{FullMethod: "/grpc.v1.TaskService/GetTask"}
 
 	token, err := jwtMgr.GenerateToken("user-id-123")
@@ -159,11 +198,36 @@ func TestAuthInterceptor_ValidToken(t *testing.T) {
 	assert.Equal(t, "user-id-123", userID)
 }
 
+func TestAuthInterceptor_ValidBearerToken(t *testing.T) {
+	t.Parallel()
+
+	jwtMgr := newJWTManager(t)
+	interceptor := grpcmw.AuthInterceptor(jwtMgr, stubAuthUserUseCase{})
+	info := &grpc.UnaryServerInfo{FullMethod: "/grpc.v1.TaskService/GetTask"}
+
+	token, err := jwtMgr.GenerateToken("user-id-123")
+	require.NoError(t, err)
+
+	md := metadata.Pairs("authorization", "Bearer "+token)
+	ctx := metadata.NewIncomingContext(t.Context(), md)
+
+	capture := &ctxCapture{}
+
+	resp, err := interceptor(ctx, nil, info, capture.capturingHandler)
+
+	require.NoError(t, err)
+	assert.Equal(t, respOK, resp)
+
+	userID, ok := grpcmw.UserIDFromContext(capture.ctx)
+	assert.True(t, ok)
+	assert.Equal(t, "user-id-123", userID)
+}
+
 func TestUserIDFromContext_WithValue(t *testing.T) {
 	t.Parallel()
 
 	jwtMgr := newJWTManager(t)
-	interceptor := grpcmw.AuthInterceptor(jwtMgr)
+	interceptor := grpcmw.AuthInterceptor(jwtMgr, stubAuthUserUseCase{})
 	info := &grpc.UnaryServerInfo{FullMethod: "/grpc.v1.TaskService/GetTask"}
 
 	token, err := jwtMgr.GenerateToken("user-42")

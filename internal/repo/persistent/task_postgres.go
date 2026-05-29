@@ -46,7 +46,7 @@ func (r *TaskRepo) GetByID(ctx context.Context, userID, taskID string) (entity.T
 	sql, args, err := r.Builder.
 		Select("id, user_id, title, description, status, created_at, updated_at").
 		From("tasks").
-		Where(sq.Eq{"id": taskID}).
+		Where(sq.Eq{"id": taskID, "user_id": userID}).
 		ToSql()
 	if err != nil {
 		return entity.Task{}, fmt.Errorf("TaskRepo - GetByID - r.Builder: %w", err)
@@ -62,10 +62,6 @@ func (r *TaskRepo) GetByID(ctx context.Context, userID, taskID string) (entity.T
 		}
 
 		return entity.Task{}, fmt.Errorf("TaskRepo - GetByID - r.Pool.QueryRow: %w", err)
-	}
-
-	if task.UserID != userID {
-		return entity.Task{}, entity.ErrTaskForbidden
 	}
 
 	return task, nil

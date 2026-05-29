@@ -8,6 +8,7 @@ REST + auth backend for an Islamic classical book reader. The service imports ra
 - Fiber REST API
 - PostgreSQL via pgx
 - JWT auth for profile, progress, and bookmarks
+- Cloudflare Email Service for transactional email verification and password reset
 - SQLite importer via `modernc.org/sqlite`
 
 The runtime app no longer starts RabbitMQ, NATS, or gRPC. Legacy packages may still compile in the tree, but `cmd/app` wires only REST + Postgres + JWT.
@@ -35,16 +36,26 @@ Public reader:
 
 Public Quran:
 
-- `GET /v1/quran/surahs?lang=id`
+- `GET /v1/quran/surahs?lang=id&include_info=false`
+- `GET /v1/quran/surahs/{surah_id}?lang=id`
 - `GET /v1/quran/recitations`
 - `GET /v1/quran/ayahs/{ayah_key}?lang=id&translation_source=qul-kfgqpc-id-simple&include_audio=false&recitation_id=`
 - `GET /v1/quran/surahs/{surah_id}/ayahs?from=&to=&lang=id&include_translation=true&include_audio=false&recitation_id=`
 - `GET /v1/quran/search?q=&lang=id&limit=&offset=`
 
+`/v1/quran/surahs` is lightweight by default and omits `info`; use `include_info=true` or the single-surah endpoint when the UI needs surah background HTML. `/v1/quran/recitations` marks the deterministic public default with `is_default=true`. If `include_audio=true` is requested without `recitation_id`, ayah endpoints use that default recitation; an unknown explicit `recitation_id` returns `404 quran recitation not found`.
+
+See [docs/quran-api.md](docs/quran-api.md) for the full FE-facing Quran API contract, response shapes, audio behavior, and integration checklist.
+
 Auth and personal reader:
 
 - `POST /v1/auth/register`
 - `POST /v1/auth/login`
+- `POST /v1/auth/verify-email`
+- `POST /v1/auth/resend-verification`
+- `POST /v1/auth/forgot-password`
+- `POST /v1/auth/reset-password`
+- `POST /v1/auth/change-password` (Bearer auth)
 - `GET /v1/user/profile`
 - `GET /v1/me/progress/{book_id}`
 - `PUT /v1/me/progress/{book_id}`
@@ -79,13 +90,43 @@ PG_POOL_MAX=4 \
 PG_URL='postgres://user:myAwEsOm3pa55@w0rd@localhost:5432/db' \
 METRICS_ENABLED=false \
 SWAGGER_ENABLED=false \
-JWT_SECRET=dev-secret \
+JWT_SECRET=dev-secret-change-me-32-bytes-minimum \
 JWT_TOKEN_EXPIRY=24h \
+JWT_ISSUER=surau-backend \
+JWT_AUDIENCE=surau-api \
+AUTH_RATE_LIMIT_ENABLED=true \
+AUTH_EMAIL_NOTIFICATIONS_ENABLED=true \
+AUTH_FAILED_LOGIN_EMAIL_COOLDOWN=24h \
+AUTH_NEW_LOGIN_EMAIL_ENABLED=true \
+AUTH_FAILED_LOGIN_EMAIL_ENABLED=true \
+AUTH_PASSWORD_CHANGED_EMAIL_ENABLED=true \
+AUTH_EMAIL_VERIFIED_EMAIL_ENABLED=true \
+AUTH_ROLE_CHANGED_EMAIL_ENABLED=true \
+EMAIL_DELIVERY_MODE=log \
+CF_EMAIL_ACCOUNT_ID='your-cloudflare-account-id' \
+CF_EMAIL_API_TOKEN='your-cloudflare-email-token' \
+EMAIL_FROM_ADDRESS='noreply@yourdomain.com' \
+EMAIL_FROM_NAME='Surau' \
+EMAIL_VERIFY_FRONTEND_URL='http://localhost:3005/verify-email' \
+EMAIL_VERIFICATION_TTL=24h \
+EMAIL_RESEND_COOLDOWN=1m \
+PASSWORD_RESET_FRONTEND_URL='http://localhost:3005/reset-password' \
+PASSWORD_RESET_TTL=1h \
+PASSWORD_RESET_RESEND_COOLDOWN=1m \
+EMAIL_HTTP_TIMEOUT=10s \
 RAG_LLM_API_KEY='your-openai-compatible-key' \
 RAG_LLM_BASE_URL='https://ai.sumopod.com/v1' \
 RAG_LLM_MODEL='glm-5.1' \
 go run -tags migrate ./cmd/app
 ```
+
+Set `EMAIL_DELIVERY_MODE=log` for local development to print verification and password reset links in the backend logs instead of calling an external email provider. In production, use `EMAIL_DELIVERY_MODE=cloudflare`; email verification, password reset, and best-effort auth security notifications then use Cloudflare Email Service REST API. The sending domain must be onboarded in Cloudflare Email Service with SPF, DKIM, DMARC, and bounce records configured before real transactional emails can be delivered.
+
+Auth uses DB-backed rate limits for login, register, email verification resend, forgot/reset password, and change password so limits work across multiple app instances. Password reset and authenticated password change increment `users.token_version`, which invalidates older JWTs on the next protected request. Sanitized auth events are written to `auth_audit_logs` for investigation; passwords, raw JWTs, and raw verification/reset tokens are never stored there. Optional security notifications cover password changed, email verified, role changed, new login fingerprint, and suspicious failed login rate-limit events.
+
+Frontend auth integration details are documented in [docs/auth-frontend.md](docs/auth-frontend.md), including endpoint contracts, error handling, token storage guidance, and verification/reset password flows.
+
+Security scan baseline notes are documented in [docs/security-scan-baseline.md](docs/security-scan-baseline.md).
 
 ## Book RAG
 
@@ -186,6 +227,17 @@ go run ./cmd/import-quran-assets \
 ```
 
 Use `--dry-run` to parse and count rows without writing. JSON files may be passed directly or as single-resource QUL `.zip` downloads. `--surah-info-json` is repeatable for multiple languages, and `--recitation-json` is repeatable for multiple reciters or recitation modes. V1 imports QPC Hafs display text, Imlaei/simple search text, language-specific surah information, King Fahad Indonesian translation source `qul-kfgqpc-id-simple`, optional footnote/chunk payloads, and recitation timestamp metadata. Audio files themselves stay outside Postgres; `r2_key` and `public_url` are prepared for later Cloudflare R2 ingestion.
+
+After audio files are uploaded to Cloudflare R2, sync the manifest back into Postgres:
+
+```sh
+PG_URL='postgres://user:myAwEsOm3pa55@w0rd@localhost:5432/db' \
+go run ./cmd/sync-quran-audio-r2 \
+  --manifest-jsonl=tmp/quran-audio-r2-manifest.jsonl \
+  --public-base-url=https://your-public-r2-base-url
+```
+
+Use `--dry-run` to validate manifest counts without writing. If `--public-base-url` is omitted, the command updates `r2_key` only and leaves existing `public_url` values unchanged.
 
 ## Generate Test Translations with DeepSeek
 

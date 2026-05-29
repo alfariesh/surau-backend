@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
 	sq "github.com/Masterminds/squirrel"
@@ -27,32 +28,13 @@ func NewQuranRepo(pg *postgres.Postgres) *QuranRepo {
 }
 
 // ListSurahs returns imported surahs in mushaf order.
-func (r *QuranRepo) ListSurahs(ctx context.Context, lang string) ([]entity.QuranSurah, error) {
-	rows, err := r.Pool.Query(ctx, `
-SELECT s.surah_id,
-       s.name_arabic,
-       s.name_latin,
-       s.name_translation,
-       s.revelation_type,
-       s.ayah_count,
-       s.metadata,
-       s.updated_at,
-       si.lang,
-       si.surah_name,
-       si.text_html,
-       si.short_text,
-       si.source_name,
-       si.source_url,
-       si.qul_resource_id,
-       si.format,
-       si.license_status,
-       si.checksum,
-       si.metadata,
-       si.imported_at,
-       si.updated_at
-FROM quran_surahs s
-LEFT JOIN quran_surah_infos si ON si.surah_id = s.surah_id AND si.lang = $1
-ORDER BY s.surah_id ASC`, lang)
+func (r *QuranRepo) ListSurahs(ctx context.Context, lang string, includeInfo bool) ([]entity.QuranSurah, error) {
+	args := []any{}
+	if includeInfo {
+		args = append(args, lang)
+	}
+
+	rows, err := r.Pool.Query(ctx, quranSurahSelectSQL("\nORDER BY s.surah_id ASC", includeInfo), args...)
 	if err != nil {
 		return nil, fmt.Errorf("QuranRepo - ListSurahs - Query: %w", err)
 	}
@@ -72,6 +54,21 @@ ORDER BY s.surah_id ASC`, lang)
 	}
 
 	return surahs, nil
+}
+
+// GetSurah returns one imported surah with language-specific info.
+func (r *QuranRepo) GetSurah(ctx context.Context, surahID int, lang string) (entity.QuranSurah, error) {
+	surah, err := scanQuranSurah(r.Pool.QueryRow(ctx, quranSurahSelectSQL(`
+WHERE s.surah_id = $2`, true), lang, surahID))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return entity.QuranSurah{}, entity.ErrQuranSurahNotFound
+		}
+
+		return entity.QuranSurah{}, fmt.Errorf("QuranRepo - GetSurah - scanQuranSurah: %w", err)
+	}
+
+	return surah, nil
 }
 
 // ListRecitations returns imported recitation resources with track coverage.
@@ -113,6 +110,8 @@ ORDER BY r.mode ASC, r.name ASC, r.id ASC`)
 	if err = rows.Err(); err != nil {
 		return nil, fmt.Errorf("QuranRepo - ListRecitations - rows.Err: %w", err)
 	}
+
+	markDefaultRecitation(recitations)
 
 	return recitations, nil
 }
@@ -344,6 +343,53 @@ func (r *QuranRepo) ListBookQuranReferences(
 	return references, total, nil
 }
 
+func quranSurahSelectSQL(where string, includeInfo bool) string {
+	infoColumns := `
+       NULL::text AS lang,
+       NULL::text AS surah_name,
+       NULL::text AS text_html,
+       NULL::text AS short_text,
+       NULL::text AS source_name,
+       NULL::text AS source_url,
+       NULL::text AS qul_resource_id,
+       NULL::text AS format,
+       NULL::text AS license_status,
+       NULL::text AS checksum,
+       NULL::jsonb AS info_metadata,
+       NULL::timestamptz AS imported_at,
+       NULL::timestamptz AS info_updated_at`
+	infoJoin := ""
+	if includeInfo {
+		infoColumns = `
+       si.lang,
+       si.surah_name,
+       si.text_html,
+       si.short_text,
+       si.source_name,
+       si.source_url,
+       si.qul_resource_id,
+       si.format,
+       si.license_status,
+       si.checksum,
+       si.metadata,
+       si.imported_at,
+       si.updated_at`
+		infoJoin = `
+LEFT JOIN quran_surah_infos si ON si.surah_id = s.surah_id AND si.lang = $1`
+	}
+
+	return `
+SELECT s.surah_id,
+       s.name_arabic,
+       s.name_latin,
+       s.name_translation,
+       s.revelation_type,
+       s.ayah_count,
+       s.metadata,
+       s.updated_at,` + infoColumns + `
+FROM quran_surahs s` + infoJoin + where
+}
+
 const quranSearchSQL = `
 SELECT a.surah_id,
        a.ayah_number,
@@ -438,6 +484,14 @@ func (r *QuranRepo) audioTracksForAyahs(
 	ayahKeys []string,
 	recitationID string,
 ) (map[string][]entity.QuranAudioTrack, error) {
+	recitationID, err := r.resolveAudioRecitationID(ctx, recitationID)
+	if err != nil {
+		return nil, err
+	}
+	if recitationID == "" {
+		return map[string][]entity.QuranAudioTrack{}, nil
+	}
+
 	rows, err := r.Pool.Query(ctx, `
 SELECT t.recitation_id,
        t.track_type,
@@ -465,13 +519,13 @@ LEFT JOIN quran_audio_segments s
       AND s.track_key = t.track_key
 WHERE (
     (t.track_type = 'ayah' AND t.track_key = ANY($1))
-    OR
-    (t.track_type = 'surah' AND (s.surah_id::text || ':' || s.ayah_number::text) = ANY($1))
-)
-  AND ($2 = '' OR t.recitation_id = $2)
-ORDER BY t.recitation_id ASC, t.track_type ASC, t.track_key ASC, s.segment_index ASC`,
+	    OR
+	    (t.track_type = 'surah' AND (s.surah_id::text || ':' || s.ayah_number::text) = ANY($1))
+	)
+	  AND t.recitation_id = $2
+	ORDER BY t.recitation_id ASC, t.track_type ASC, t.track_key ASC, s.segment_index ASC`,
 		ayahKeys,
-		strings.TrimSpace(recitationID),
+		recitationID,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("QuranRepo - audioTracksForAyahs - Query: %w", err)
@@ -509,9 +563,54 @@ ORDER BY t.recitation_id ASC, t.track_type ASC, t.track_key ASC, s.segment_index
 		for _, track := range tracks {
 			result[ayahKey] = append(result[ayahKey], *track)
 		}
+		sort.Slice(result[ayahKey], func(i, j int) bool {
+			return quranAudioTrackLess(result[ayahKey][i], result[ayahKey][j])
+		})
 	}
 
 	return result, nil
+}
+
+func (r *QuranRepo) resolveAudioRecitationID(ctx context.Context, recitationID string) (string, error) {
+	recitationID = strings.TrimSpace(recitationID)
+	if recitationID == "" {
+		return r.defaultPublicRecitationID(ctx)
+	}
+
+	var exists bool
+	if err := r.Pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM quran_recitations WHERE id = $1)`, recitationID).
+		Scan(&exists); err != nil {
+		return "", fmt.Errorf("QuranRepo - resolveAudioRecitationID - QueryRow: %w", err)
+	}
+	if !exists {
+		return "", entity.ErrQuranRecitationNotFound
+	}
+
+	return recitationID, nil
+}
+
+func (r *QuranRepo) defaultPublicRecitationID(ctx context.Context) (string, error) {
+	var recitationID string
+	err := r.Pool.QueryRow(ctx, `
+SELECT r.id
+FROM quran_recitations r
+JOIN quran_audio_tracks t ON t.recitation_id = r.id
+GROUP BY r.id, r.mode, r.name
+HAVING COUNT(t.recitation_id) > 0
+   AND COUNT(t.public_url) = COUNT(t.recitation_id)
+ORDER BY CASE r.mode WHEN 'ayah' THEN 0 WHEN 'surah' THEN 1 ELSE 2 END,
+         r.name ASC,
+         r.id ASC
+LIMIT 1`).Scan(&recitationID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", nil
+		}
+
+		return "", fmt.Errorf("QuranRepo - defaultPublicRecitationID - QueryRow: %w", err)
+	}
+
+	return recitationID, nil
 }
 
 func (r *QuranRepo) ensureQuranSurah(ctx context.Context, surahID int) error {
@@ -581,6 +680,58 @@ func (r *QuranRepo) countQuran(ctx context.Context, builder sq.SelectBuilder) (i
 	}
 
 	return total, nil
+}
+
+func markDefaultRecitation(recitations []entity.QuranRecitation) {
+	defaultIndex := -1
+	for i := range recitations {
+		if !recitations[i].HasPublicAudio {
+			continue
+		}
+		if defaultIndex == -1 || quranRecitationLess(recitations[i], recitations[defaultIndex]) {
+			defaultIndex = i
+		}
+	}
+	if defaultIndex >= 0 {
+		recitations[defaultIndex].IsDefault = true
+	}
+}
+
+func quranRecitationLess(left entity.QuranRecitation, right entity.QuranRecitation) bool {
+	leftRank := quranRecitationModeRank(left.Mode)
+	rightRank := quranRecitationModeRank(right.Mode)
+	if leftRank != rightRank {
+		return leftRank < rightRank
+	}
+	if left.Name != right.Name {
+		return left.Name < right.Name
+	}
+
+	return left.ID < right.ID
+}
+
+func quranRecitationModeRank(mode string) int {
+	switch mode {
+	case "ayah":
+		return 0
+	case "surah":
+		return 1
+	default:
+		return 2
+	}
+}
+
+func quranAudioTrackLess(left entity.QuranAudioTrack, right entity.QuranAudioTrack) bool {
+	if left.RecitationID != right.RecitationID {
+		return left.RecitationID < right.RecitationID
+	}
+	leftRank := quranRecitationModeRank(left.TrackType)
+	rightRank := quranRecitationModeRank(right.TrackType)
+	if leftRank != rightRank {
+		return leftRank < rightRank
+	}
+
+	return left.TrackKey < right.TrackKey
 }
 
 func scanQuranRecitation(row rowScanner) (entity.QuranRecitation, error) {

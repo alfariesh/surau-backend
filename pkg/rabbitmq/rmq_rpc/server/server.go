@@ -162,7 +162,7 @@ func (s *Server) serveCall(d *amqp.Delivery) {
 
 	response, err := callHandler(d)
 	if err != nil {
-		s.publish(d, nil, rmqrpc.ErrInternalServer.Error())
+		s.publish(d, nil, statusForError(err))
 
 		s.logger.Error(err, "rmq_rpc server - Server - serveCall - callHandler")
 
@@ -175,6 +175,23 @@ func (s *Server) serveCall(d *amqp.Delivery) {
 	}
 
 	s.publish(d, body, rmqrpc.Success)
+}
+
+func statusForError(err error) string {
+	switch {
+	case errors.Is(err, rmqrpc.ErrBadRequest):
+		return rmqrpc.ErrBadRequest.Error()
+	case errors.Is(err, rmqrpc.ErrUnauthenticated):
+		return rmqrpc.ErrUnauthenticated.Error()
+	case errors.Is(err, rmqrpc.ErrFailedPrecondition):
+		return rmqrpc.ErrFailedPrecondition.Error()
+	case errors.Is(err, rmqrpc.ErrUnavailable):
+		return rmqrpc.ErrUnavailable.Error()
+	case errors.Is(err, rmqrpc.ErrRateLimited):
+		return rmqrpc.ErrRateLimited.Error()
+	default:
+		return rmqrpc.ErrInternalServer.Error()
+	}
 }
 
 func (s *Server) ack(d *amqp.Delivery, multiple bool) {
