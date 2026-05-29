@@ -31,6 +31,7 @@ func TestQuranRoutes(t *testing.T) {
 		{name: "surahs include info when requested", path: "/v1/quran/surahs?lang=id&include_info=true", wantStatus: http.StatusOK, wantBody: `"info"`},
 		{name: "surah detail includes info", path: "/v1/quran/surahs/73?lang=id", wantStatus: http.StatusOK, wantBody: `"text_html"`},
 		{name: "recitations include default flag", path: "/v1/quran/recitations", wantStatus: http.StatusOK, wantBody: `"is_default":true`},
+		{name: "translation sources", path: "/v1/quran/translation-sources?lang=id", wantStatus: http.StatusOK, wantBody: `"coverage"`},
 		{name: "ayah uses default audio without recitation id", path: "/v1/quran/ayahs/73:1?include_audio=true", wantStatus: http.StatusOK, wantBody: `"recitation_id":"rec-default"`},
 		{name: "ayah invalid recitation returns not found", path: "/v1/quran/ayahs/73:1?include_audio=true&recitation_id=bad-id", wantStatus: http.StatusNotFound, wantBody: `"quran recitation not found"`},
 		{name: "ayah invalid include audio", path: "/v1/quran/ayahs/73:1?include_audio=wat", wantStatus: http.StatusBadRequest, wantBody: `"invalid include_audio"`},
@@ -38,6 +39,8 @@ func TestQuranRoutes(t *testing.T) {
 		{name: "surah ayahs", path: "/v1/quran/surahs/73/ayahs?from=1&to=1&recitation_id=rec-1", wantStatus: http.StatusOK, wantBody: `"text_qpc_hafs"`},
 		{name: "search", path: "/v1/quran/search?q=muzammil", wantStatus: http.StatusOK, wantBody: `"results"`},
 		{name: "book refs", path: "/v1/books/797/quran-references", wantStatus: http.StatusOK, wantBody: `"references"`},
+		{name: "unsupported lang", path: "/v1/quran/ayahs/73:1?lang=fr", wantStatus: http.StatusBadRequest, wantBody: `"unsupported language"`},
+		{name: "unknown translation source", path: "/v1/quran/ayahs/73:1?translation_source=bad-source", wantStatus: http.StatusNotFound, wantBody: `"quran translation source not found"`},
 	}
 
 	for _, tt := range tests {
@@ -67,6 +70,7 @@ func newQuranTestApp(quran *fakeQuran) *fiber.App {
 	}
 	app.Get("/v1/quran/surahs", controller.listQuranSurahs)
 	app.Get("/v1/quran/recitations", controller.listQuranRecitations)
+	app.Get("/v1/quran/translation-sources", controller.listQuranTranslationSources)
 	app.Get("/v1/quran/ayahs/:ayah_key", controller.getQuranAyah)
 	app.Get("/v1/quran/surahs/:surah_id", controller.getQuranSurah)
 	app.Get("/v1/quran/surahs/:surah_id/ayahs", controller.listQuranSurahAyahs)
@@ -98,14 +102,32 @@ func (f *fakeQuran) Recitations(_ context.Context) ([]entity.QuranRecitation, er
 	return []entity.QuranRecitation{{ID: "rec-default", Name: "Reciter", Mode: "ayah", TrackCount: 6236, PublicTrackCount: 6236, HasPublicAudio: true, IsDefault: true}}, nil
 }
 
+func (f *fakeQuran) TranslationSources(_ context.Context, _ string) ([]entity.QuranTranslationSource, error) {
+	return []entity.QuranTranslationSource{{
+		ID:            "qul-kfgqpc-id-simple",
+		Lang:          "id",
+		Name:          "King Fahad Quran Complex",
+		Format:        "simple.json",
+		LicenseStatus: "needs_review",
+		Coverage:      entity.QuranTranslationCoverage{TranslatedAyahs: 6236, TotalAyahs: 6236, Percent: 100},
+		IsDefault:     true,
+	}}, nil
+}
+
 func (f *fakeQuran) Ayah(
 	_ context.Context,
 	ayahKey string,
-	_ string,
-	_ string,
+	lang string,
+	translationSource string,
 	includeAudio bool,
 	recitationID string,
 ) (entity.QuranAyah, error) {
+	if lang == "fr" {
+		return entity.QuranAyah{}, entity.ErrUnsupportedLanguage
+	}
+	if translationSource == "bad-source" {
+		return entity.QuranAyah{}, entity.ErrQuranTranslationSourceNotFound
+	}
 	if recitationID == "bad-id" {
 		return entity.QuranAyah{}, entity.ErrQuranRecitationNotFound
 	}
@@ -157,6 +179,17 @@ func (f *fakeQuran) BookReferences(
 	_ int,
 ) ([]entity.BookQuranReference, int, error) {
 	return []entity.BookQuranReference{{ID: "ref-1", BookID: bookID, PageID: 1, SourceText: "سورة المزمل: 1", ReferenceKind: "surah_ayah", MatchStrategy: "explicit_surah_ayah", ReviewStatus: "approved"}}, 1, nil
+}
+
+func (f *fakeQuran) MissingAssets(
+	context.Context,
+	string,
+	string,
+	*int,
+	int,
+	int,
+) (entity.AdminMissingQuranAssets, error) {
+	return entity.AdminMissingQuranAssets{}, nil
 }
 
 func fakeSurahInfo() *entity.QuranSurahInfo {

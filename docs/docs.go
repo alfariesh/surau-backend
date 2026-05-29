@@ -15,6 +15,95 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/admin/quran/missing-assets": {
+            "get": {
+                "description": "Admin-only queue of missing Quran surah info, ayah translations, translation sources, and public audio.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "List missing Quran assets",
+                "operationId": "admin-list-missing-quran-assets",
+                "parameters": [
+                    {
+                        "enum": [
+                            "id",
+                            "en"
+                        ],
+                        "type": "string",
+                        "description": "Target language: id or en; empty returns both",
+                        "name": "target_lang",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "surah_info",
+                            "ayah_translation",
+                            "translation_source",
+                            "audio_public"
+                        ],
+                        "type": "string",
+                        "description": "Asset type filter",
+                        "name": "asset_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Surah ID",
+                        "name": "surah_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 50,
+                        "description": "Page size",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Page offset",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.AdminMissingQuranAssets"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
         "/admin/reader/missing-assets": {
             "get": {
                 "description": "Admin-only queue of missing kitab metadata, section translations, summaries, and audio for target languages id/en.",
@@ -655,7 +744,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_evrone_go-clean-template_internal_entity.Book"
+                            "$ref": "#/definitions/entity.Book"
                         }
                     },
                     "400": {
@@ -968,7 +1057,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_evrone_go-clean-template_internal_entity.BookRAGResponse"
+                            "$ref": "#/definitions/entity.BookRAGResponse"
                         }
                     },
                     "400": {
@@ -1396,8 +1485,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "default": "qul-kfgqpc-id-simple",
-                        "description": "Translation source",
+                        "description": "Translation source ID. Empty uses language default.",
                         "name": "translation_source",
                         "in": "query"
                     },
@@ -1681,8 +1769,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "default": "qul-kfgqpc-id-simple",
-                        "description": "Translation source",
+                        "description": "Translation source ID. Empty uses language default.",
                         "name": "translation_source",
                         "in": "query"
                     },
@@ -1725,6 +1812,51 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/quran/translation-sources": {
+            "get": {
+                "description": "List imported Quran translation sources for the requested language, with coverage and default marker.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "quran"
+                ],
+                "summary": "List Quran translation sources",
+                "operationId": "list-quran-translation-sources",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "default": "id",
+                        "description": "Language code: ar, id, or en",
+                        "name": "lang",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/entity.QuranTranslationSource"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
                         "schema": {
                             "$ref": "#/definitions/v1.Error"
                         }
@@ -2257,6 +2389,102 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "entity.AdminMissingQuranAsset": {
+            "type": "object",
+            "properties": {
+                "asset_type": {
+                    "type": "string",
+                    "example": "ayah_translation"
+                },
+                "available_langs": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "id"
+                    ]
+                },
+                "ayah_key": {
+                    "type": "string",
+                    "example": "73:4"
+                },
+                "ayah_number": {
+                    "type": "integer",
+                    "example": 4
+                },
+                "recitation_id": {
+                    "type": "string"
+                },
+                "source_updated_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "surah_id": {
+                    "type": "integer",
+                    "example": 73
+                },
+                "surah_name": {
+                    "type": "string"
+                },
+                "target_lang": {
+                    "type": "string",
+                    "example": "en"
+                },
+                "track_key": {
+                    "type": "string",
+                    "example": "73:4"
+                },
+                "track_type": {
+                    "type": "string",
+                    "example": "ayah"
+                },
+                "translation_source_id": {
+                    "type": "string"
+                },
+                "translation_source_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "entity.AdminMissingQuranAssetCount": {
+            "type": "object",
+            "properties": {
+                "asset_type": {
+                    "type": "string",
+                    "example": "ayah_translation"
+                },
+                "target_lang": {
+                    "type": "string",
+                    "example": "en"
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 20
+                }
+            }
+        },
+        "entity.AdminMissingQuranAssets": {
+            "type": "object",
+            "properties": {
+                "counts": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.AdminMissingQuranAssetCount"
+                    }
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.AdminMissingQuranAsset"
+                    }
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 42
+                }
+            }
+        },
         "entity.AdminMissingReaderAsset": {
             "type": "object",
             "properties": {
@@ -2434,6 +2662,121 @@ const docTemplate = `{
                 }
             }
         },
+        "entity.Book": {
+            "type": "object",
+            "properties": {
+                "author_id": {
+                    "type": "integer",
+                    "example": 177
+                },
+                "author_name": {
+                    "type": "string",
+                    "example": "فضل الرحمن صافي"
+                },
+                "bibliography": {
+                    "type": "string"
+                },
+                "category_id": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "category_name": {
+                    "type": "string",
+                    "example": "علوم الحديث"
+                },
+                "cover_url": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "editorial_notes": {
+                    "type": "string"
+                },
+                "featured": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "has_content": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "hint": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer",
+                    "example": 797
+                },
+                "is_deleted": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "language_coverage": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.LanguageCoverage"
+                    }
+                },
+                "localization": {
+                    "$ref": "#/definitions/entity.LocalizationMeta"
+                },
+                "major_release": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "metadata": {
+                    "type": "object"
+                },
+                "minor_release": {
+                    "type": "integer",
+                    "example": 0
+                },
+                "name": {
+                    "type": "string",
+                    "example": "الزبد في مصطلح الحديث"
+                },
+                "pdf_links": {
+                    "type": "object"
+                },
+                "printed": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "publication_status": {
+                    "type": "string",
+                    "example": "published"
+                },
+                "sort_order": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "source_date": {
+                    "type": "string",
+                    "example": "02091443"
+                },
+                "translation_reviewed_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "translation_reviewed_by": {
+                    "type": "string",
+                    "example": "Editor A"
+                },
+                "translation_status": {
+                    "type": "string",
+                    "example": "generated"
+                },
+                "type": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                }
+            }
+        },
         "entity.BookHeading": {
             "type": "object",
             "properties": {
@@ -2597,6 +2940,127 @@ const docTemplate = `{
                 "updated_at": {
                     "type": "string",
                     "example": "2026-01-01T00:00:00Z"
+                }
+            }
+        },
+        "entity.BookRAGCitation": {
+            "type": "object",
+            "properties": {
+                "anchor": {
+                    "type": "string",
+                    "example": "toc-11"
+                },
+                "book_id": {
+                    "type": "integer",
+                    "example": 797
+                },
+                "heading_id": {
+                    "type": "integer",
+                    "example": 11
+                },
+                "heading_title": {
+                    "type": "string",
+                    "example": "النوع الأول: الصحيح"
+                },
+                "page_id": {
+                    "type": "integer",
+                    "example": 12
+                },
+                "part": {
+                    "type": "string",
+                    "example": "1"
+                },
+                "printed_page": {
+                    "type": "string",
+                    "example": "12"
+                },
+                "quote": {
+                    "type": "string",
+                    "example": "الحديث الصحيح هو..."
+                },
+                "ref": {
+                    "type": "string",
+                    "example": "1"
+                },
+                "url": {
+                    "type": "string",
+                    "example": "/v1/books/797/toc/11/read?lang=id"
+                }
+            }
+        },
+        "entity.BookRAGResponse": {
+            "type": "object",
+            "properties": {
+                "answer": {
+                    "type": "string"
+                },
+                "book_id": {
+                    "type": "integer",
+                    "example": 797
+                },
+                "citations": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.BookRAGCitation"
+                    }
+                },
+                "question": {
+                    "type": "string",
+                    "example": "Apa definisi hadis sahih?"
+                },
+                "requested_lang": {
+                    "type": "string",
+                    "example": "id"
+                },
+                "trace": {
+                    "$ref": "#/definitions/entity.BookRAGTrace"
+                }
+            }
+        },
+        "entity.BookRAGTrace": {
+            "type": "object",
+            "properties": {
+                "focus_page_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "lexical_heading_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "repaired": {
+                    "type": "boolean"
+                },
+                "retrieval_mode": {
+                    "type": "string"
+                },
+                "selected_heading_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "source_refs": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "tree_blocks": {
+                    "type": "integer"
+                },
+                "tree_candidate_count": {
+                    "type": "integer"
+                },
+                "tree_llm_calls": {
+                    "type": "integer"
+                },
+                "tree_reasoning": {
+                    "type": "string"
                 }
             }
         },
@@ -3253,6 +3717,18 @@ const docTemplate = `{
                         "$ref": "#/definitions/entity.QuranAudioTrack"
                     }
                 },
+                "availability": {
+                    "$ref": "#/definitions/entity.QuranAyahAvailability"
+                },
+                "available_translation_langs": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "id"
+                    ]
+                },
                 "ayah_key": {
                     "type": "string",
                     "example": "73:4"
@@ -3276,6 +3752,10 @@ const docTemplate = `{
                 "page_number": {
                     "type": "integer"
                 },
+                "requested_lang": {
+                    "type": "string",
+                    "example": "en"
+                },
                 "script_type": {
                     "type": "string"
                 },
@@ -3295,9 +3775,24 @@ const docTemplate = `{
                 "translation": {
                     "$ref": "#/definitions/entity.QuranTranslation"
                 },
+                "translation_missing": {
+                    "type": "boolean",
+                    "example": true
+                },
                 "updated_at": {
                     "type": "string",
                     "example": "2026-01-01T00:00:00Z"
+                }
+            }
+        },
+        "entity.QuranAyahAvailability": {
+            "type": "object",
+            "properties": {
+                "audio": {
+                    "$ref": "#/definitions/entity.AvailabilityDecision"
+                },
+                "translation": {
+                    "$ref": "#/definitions/entity.AvailabilityDecision"
                 }
             }
         },
@@ -3377,6 +3872,18 @@ const docTemplate = `{
                 "ayah": {
                     "$ref": "#/definitions/entity.QuranAyah"
                 },
+                "matched_field": {
+                    "type": "string",
+                    "example": "translation"
+                },
+                "matched_lang": {
+                    "type": "string",
+                    "example": "ar"
+                },
+                "matched_source_id": {
+                    "type": "string",
+                    "example": "qul-kfgqpc-id-simple"
+                },
                 "score": {
                     "type": "number",
                     "example": 0.82
@@ -3392,6 +3899,9 @@ const docTemplate = `{
                 },
                 "info": {
                     "$ref": "#/definitions/entity.QuranSurahInfo"
+                },
+                "localization": {
+                    "$ref": "#/definitions/entity.LocalizationMeta"
                 },
                 "metadata": {
                     "type": "object"
@@ -3494,6 +4004,79 @@ const docTemplate = `{
                     "example": "qul-kfgqpc-id-simple"
                 },
                 "text": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                }
+            }
+        },
+        "entity.QuranTranslationCoverage": {
+            "type": "object",
+            "properties": {
+                "percent": {
+                    "type": "number",
+                    "example": 100
+                },
+                "total_ayahs": {
+                    "type": "integer",
+                    "example": 6236
+                },
+                "translated_ayahs": {
+                    "type": "integer",
+                    "example": 6236
+                }
+            }
+        },
+        "entity.QuranTranslationSource": {
+            "type": "object",
+            "properties": {
+                "checksum": {
+                    "type": "string"
+                },
+                "coverage": {
+                    "$ref": "#/definitions/entity.QuranTranslationCoverage"
+                },
+                "format": {
+                    "type": "string",
+                    "example": "simple.json"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "qul-kfgqpc-id-simple"
+                },
+                "imported_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "is_default": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "lang": {
+                    "type": "string",
+                    "example": "id"
+                },
+                "license_status": {
+                    "type": "string",
+                    "example": "needs_review"
+                },
+                "metadata": {
+                    "type": "object"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "King Fahad Quran Complex"
+                },
+                "qul_resource_id": {
+                    "type": "string",
+                    "example": "173"
+                },
+                "source_url": {
+                    "type": "string"
+                },
+                "translator": {
                     "type": "string"
                 },
                 "updated_at": {
@@ -3620,11 +4203,7 @@ const docTemplate = `{
                     "example": "550e8400-e29b-41d4-a716-446655440000"
                 },
                 "status": {
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/entity.TaskStatus"
-                        }
-                    ],
+                    "type": "string",
                     "example": "todo"
                 },
                 "title": {
@@ -3640,19 +4219,6 @@ const docTemplate = `{
                     "example": "550e8400-e29b-41d4-a716-446655440000"
                 }
             }
-        },
-        "entity.TaskStatus": {
-            "type": "string",
-            "enum": [
-                "todo",
-                "in_progress",
-                "done"
-            ],
-            "x-enum-varnames": [
-                "TaskStatusTodo",
-                "TaskStatusInProgress",
-                "TaskStatusDone"
-            ]
         },
         "entity.Translation": {
             "type": "object",
@@ -3771,242 +4337,6 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_evrone_go-clean-template_internal_entity.Book": {
-            "type": "object",
-            "properties": {
-                "author_id": {
-                    "type": "integer",
-                    "example": 177
-                },
-                "author_name": {
-                    "type": "string",
-                    "example": "فضل الرحمن صافي"
-                },
-                "bibliography": {
-                    "type": "string"
-                },
-                "category_id": {
-                    "type": "integer",
-                    "example": 10
-                },
-                "category_name": {
-                    "type": "string",
-                    "example": "علوم الحديث"
-                },
-                "cover_url": {
-                    "type": "string"
-                },
-                "description": {
-                    "type": "string"
-                },
-                "editorial_notes": {
-                    "type": "string"
-                },
-                "featured": {
-                    "type": "boolean",
-                    "example": false
-                },
-                "has_content": {
-                    "type": "boolean",
-                    "example": true
-                },
-                "hint": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "integer",
-                    "example": 797
-                },
-                "is_deleted": {
-                    "type": "boolean",
-                    "example": false
-                },
-                "language_coverage": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/entity.LanguageCoverage"
-                    }
-                },
-                "localization": {
-                    "$ref": "#/definitions/entity.LocalizationMeta"
-                },
-                "major_release": {
-                    "type": "integer",
-                    "example": 1
-                },
-                "metadata": {
-                    "type": "object"
-                },
-                "minor_release": {
-                    "type": "integer",
-                    "example": 0
-                },
-                "name": {
-                    "type": "string",
-                    "example": "الزبد في مصطلح الحديث"
-                },
-                "pdf_links": {
-                    "type": "object"
-                },
-                "printed": {
-                    "type": "integer",
-                    "example": 1
-                },
-                "publication_status": {
-                    "type": "string",
-                    "example": "published"
-                },
-                "sort_order": {
-                    "type": "integer",
-                    "example": 10
-                },
-                "source_date": {
-                    "type": "string",
-                    "example": "02091443"
-                },
-                "translation_reviewed_at": {
-                    "type": "string",
-                    "example": "2026-01-01T00:00:00Z"
-                },
-                "translation_reviewed_by": {
-                    "type": "string",
-                    "example": "Editor A"
-                },
-                "translation_status": {
-                    "type": "string",
-                    "example": "generated"
-                },
-                "type": {
-                    "type": "integer",
-                    "example": 1
-                },
-                "updated_at": {
-                    "type": "string",
-                    "example": "2026-01-01T00:00:00Z"
-                }
-            }
-        },
-        "github_com_evrone_go-clean-template_internal_entity.BookRAGCitation": {
-            "type": "object",
-            "properties": {
-                "anchor": {
-                    "type": "string",
-                    "example": "toc-11"
-                },
-                "book_id": {
-                    "type": "integer",
-                    "example": 797
-                },
-                "heading_id": {
-                    "type": "integer",
-                    "example": 11
-                },
-                "heading_title": {
-                    "type": "string",
-                    "example": "النوع الأول: الصحيح"
-                },
-                "page_id": {
-                    "type": "integer",
-                    "example": 12
-                },
-                "part": {
-                    "type": "string",
-                    "example": "1"
-                },
-                "printed_page": {
-                    "type": "string",
-                    "example": "12"
-                },
-                "quote": {
-                    "type": "string",
-                    "example": "الحديث الصحيح هو..."
-                },
-                "ref": {
-                    "type": "string",
-                    "example": "1"
-                },
-                "url": {
-                    "type": "string",
-                    "example": "/v1/books/797/toc/11/read?lang=id"
-                }
-            }
-        },
-        "github_com_evrone_go-clean-template_internal_entity.BookRAGResponse": {
-            "type": "object",
-            "properties": {
-                "answer": {
-                    "type": "string"
-                },
-                "book_id": {
-                    "type": "integer",
-                    "example": 797
-                },
-                "citations": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/github_com_evrone_go-clean-template_internal_entity.BookRAGCitation"
-                    }
-                },
-                "question": {
-                    "type": "string",
-                    "example": "Apa definisi hadis sahih?"
-                },
-                "requested_lang": {
-                    "type": "string",
-                    "example": "id"
-                },
-                "trace": {
-                    "$ref": "#/definitions/github_com_evrone_go-clean-template_internal_entity.BookRAGTrace"
-                }
-            }
-        },
-        "github_com_evrone_go-clean-template_internal_entity.BookRAGTrace": {
-            "type": "object",
-            "properties": {
-                "focus_page_ids": {
-                    "type": "array",
-                    "items": {
-                        "type": "integer"
-                    }
-                },
-                "lexical_heading_ids": {
-                    "type": "array",
-                    "items": {
-                        "type": "integer"
-                    }
-                },
-                "repaired": {
-                    "type": "boolean"
-                },
-                "retrieval_mode": {
-                    "type": "string"
-                },
-                "selected_heading_ids": {
-                    "type": "array",
-                    "items": {
-                        "type": "integer"
-                    }
-                },
-                "source_refs": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "tree_blocks": {
-                    "type": "integer"
-                },
-                "tree_candidate_count": {
-                    "type": "integer"
-                },
-                "tree_llm_calls": {
-                    "type": "integer"
-                },
-                "tree_reasoning": {
-                    "type": "string"
-                }
-            }
-        },
         "v1.Accepted": {
             "type": "object",
             "properties": {
@@ -4037,7 +4367,7 @@ const docTemplate = `{
                 "books": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/github_com_evrone_go-clean-template_internal_entity.Book"
+                        "$ref": "#/definitions/entity.Book"
                     }
                 },
                 "total": {
@@ -4348,15 +4678,11 @@ const docTemplate = `{
             ],
             "properties": {
                 "status": {
+                    "type": "string",
                     "enum": [
                         "todo",
                         "in_progress",
                         "done"
-                    ],
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/entity.TaskStatus"
-                        }
                     ],
                     "example": "in_progress"
                 }

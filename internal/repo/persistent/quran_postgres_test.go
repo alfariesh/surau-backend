@@ -46,3 +46,59 @@ func TestQuranAudioTrackLessPrefersAyahTrack(t *testing.T) {
 	assert.True(t, quranAudioTrackLess(ayahTrack, surahTrack))
 	assert.False(t, quranAudioTrackLess(surahTrack, ayahTrack))
 }
+
+func TestApplyQuranAyahMetadata(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		ayah        entity.QuranAyah
+		lang        string
+		wantMissing bool
+		wantAction  string
+	}{
+		{
+			name:       "arabic hides translation tab",
+			ayah:       entity.QuranAyah{AvailableTranslationLangs: []string{"id"}},
+			lang:       "ar",
+			wantAction: entity.AvailabilityActionHideTranslation,
+		},
+		{
+			name: "exact requested translation",
+			ayah: entity.QuranAyah{
+				Translation:               &entity.QuranTranslation{Lang: "id", Text: "Terjemah"},
+				AvailableTranslationLangs: []string{"id"},
+			},
+			lang:       "id",
+			wantAction: entity.AvailabilityActionShowRequested,
+		},
+		{
+			name: "missing requested with alternative",
+			ayah: entity.QuranAyah{
+				AvailableTranslationLangs: []string{"id"},
+			},
+			lang:        "en",
+			wantMissing: true,
+			wantAction:  entity.AvailabilityActionOfferLang,
+		},
+		{
+			name:        "missing requested without alternative",
+			ayah:        entity.QuranAyah{},
+			lang:        "en",
+			wantMissing: true,
+			wantAction:  entity.AvailabilityActionHideTranslation,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			applyQuranAyahMetadata(&tt.ayah, tt.lang, true, false)
+
+			assert.Equal(t, tt.lang, tt.ayah.RequestedLang)
+			assert.Equal(t, tt.wantMissing, tt.ayah.TranslationMissing)
+			assert.Equal(t, tt.wantAction, tt.ayah.Availability.Translation.Action)
+		})
+	}
+}

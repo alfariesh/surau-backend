@@ -29,9 +29,9 @@ func (r *V1) listQuranSurahs(ctx *fiber.Ctx) error {
 
 	surahs, err := r.quran.Surahs(ctx.UserContext(), ctx.Query("lang"), includeInfo)
 	if err != nil {
-		r.l.Error(err, "restapi - v1 - listQuranSurahs")
+		r.logQuranError(err, "restapi - v1 - listQuranSurahs")
 
-		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
+		return r.quranErrorResponse(ctx, err)
 	}
 
 	return ctx.Status(http.StatusOK).JSON(surahs)
@@ -57,7 +57,7 @@ func (r *V1) getQuranSurah(ctx *fiber.Ctx) error {
 
 	surah, err := r.quran.Surah(ctx.UserContext(), surahID, ctx.Query("lang"))
 	if err != nil {
-		r.l.Error(err, "restapi - v1 - getQuranSurah")
+		r.logQuranError(err, "restapi - v1 - getQuranSurah")
 
 		return r.quranErrorResponse(ctx, err)
 	}
@@ -84,6 +84,27 @@ func (r *V1) listQuranRecitations(ctx *fiber.Ctx) error {
 	return ctx.Status(http.StatusOK).JSON(recitations)
 }
 
+// @Summary     List Quran translation sources
+// @Description List imported Quran translation sources for the requested language, with coverage and default marker.
+// @ID          list-quran-translation-sources
+// @Tags        quran
+// @Produce     json
+// @Param       lang query string false "Language code: ar, id, or en" default(id)
+// @Success     200  {array} entity.QuranTranslationSource
+// @Failure     400  {object} response.Error
+// @Failure     500  {object} response.Error
+// @Router      /quran/translation-sources [get]
+func (r *V1) listQuranTranslationSources(ctx *fiber.Ctx) error {
+	sources, err := r.quran.TranslationSources(ctx.UserContext(), ctx.Query("lang"))
+	if err != nil {
+		r.logQuranError(err, "restapi - v1 - listQuranTranslationSources")
+
+		return r.quranErrorResponse(ctx, err)
+	}
+
+	return ctx.Status(http.StatusOK).JSON(sources)
+}
+
 // @Summary     Get Quran ayah
 // @Description Get one ayah by canonical ayah key. When include_audio=true and recitation_id is omitted, the backend uses the default public recitation.
 // @ID          get-quran-ayah
@@ -91,7 +112,7 @@ func (r *V1) listQuranRecitations(ctx *fiber.Ctx) error {
 // @Produce     json
 // @Param       ayah_key           path     string true  "Canonical ayah key, for example 73:4"
 // @Param       lang               query    string false "Language code" default(id)
-// @Param       translation_source query    string false "Translation source" default(qul-kfgqpc-id-simple)
+// @Param       translation_source query    string false "Translation source ID. Empty uses language default."
 // @Param       include_audio      query    bool   false "Include audio track and timestamp segments" default(false)
 // @Param       recitation_id      query    string false "Recitation ID. Defaults to the public default recitation when include_audio=true."
 // @Success     200                {object} entity.QuranAyah
@@ -115,7 +136,7 @@ func (r *V1) getQuranAyah(ctx *fiber.Ctx) error {
 		ctx.Query("recitation_id"),
 	)
 	if err != nil {
-		r.l.Error(err, "restapi - v1 - getQuranAyah")
+		r.logQuranError(err, "restapi - v1 - getQuranAyah")
 
 		return r.quranErrorResponse(ctx, err)
 	}
@@ -132,7 +153,7 @@ func (r *V1) getQuranAyah(ctx *fiber.Ctx) error {
 // @Param       from               query    int    false "Starting ayah number"
 // @Param       to                 query    int    false "Ending ayah number"
 // @Param       lang               query    string false "Language code" default(id)
-// @Param       translation_source query    string false "Translation source" default(qul-kfgqpc-id-simple)
+// @Param       translation_source query    string false "Translation source ID. Empty uses language default."
 // @Param       include_translation query   bool   false "Include selected translation" default(true)
 // @Param       include_audio      query    bool   false "Include audio track and timestamp segments" default(false)
 // @Param       recitation_id      query    string false "Recitation ID. Defaults to the public default recitation when include_audio=true."
@@ -190,7 +211,7 @@ func (r *V1) listQuranSurahAyahs(ctx *fiber.Ctx) error {
 		ctx.Query("recitation_id"),
 	)
 	if err != nil {
-		r.l.Error(err, "restapi - v1 - listQuranSurahAyahs")
+		r.logQuranError(err, "restapi - v1 - listQuranSurahAyahs")
 
 		return r.quranErrorResponse(ctx, err)
 	}
@@ -219,9 +240,9 @@ func (r *V1) searchQuran(ctx *fiber.Ctx) error {
 		queryInt(ctx, "offset", 0),
 	)
 	if err != nil {
-		r.l.Error(err, "restapi - v1 - searchQuran")
+		r.logQuranError(err, "restapi - v1 - searchQuran")
 
-		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
+		return r.quranErrorResponse(ctx, err)
 	}
 
 	return ctx.Status(http.StatusOK).JSON(response.QuranSearchList{Results: results, Total: total})
@@ -257,7 +278,7 @@ func (r *V1) listBookQuranReferences(ctx *fiber.Ctx) error {
 		queryInt(ctx, "offset", 0),
 	)
 	if err != nil {
-		r.l.Error(err, "restapi - v1 - listBookQuranReferences")
+		r.logQuranError(err, "restapi - v1 - listBookQuranReferences")
 
 		return r.quranErrorResponse(ctx, err)
 	}
@@ -266,8 +287,14 @@ func (r *V1) listBookQuranReferences(ctx *fiber.Ctx) error {
 }
 
 func (r *V1) quranErrorResponse(ctx *fiber.Ctx, err error) error {
+	if errors.Is(err, entity.ErrUnsupportedLanguage) {
+		return errorResponse(ctx, http.StatusBadRequest, "unsupported language")
+	}
 	if errors.Is(err, entity.ErrInvalidAyahKey) || errors.Is(err, entity.ErrInvalidQuranRange) {
 		return errorResponse(ctx, http.StatusBadRequest, err.Error())
+	}
+	if errors.Is(err, entity.ErrInvalidAssetType) {
+		return errorResponse(ctx, http.StatusBadRequest, "invalid asset type")
 	}
 	if errors.Is(err, entity.ErrQuranSurahNotFound) {
 		return errorResponse(ctx, http.StatusNotFound, "quran surah not found")
@@ -277,6 +304,9 @@ func (r *V1) quranErrorResponse(ctx *fiber.Ctx, err error) error {
 	}
 	if errors.Is(err, entity.ErrQuranRecitationNotFound) {
 		return errorResponse(ctx, http.StatusNotFound, "quran recitation not found")
+	}
+	if errors.Is(err, entity.ErrQuranTranslationSourceNotFound) {
+		return errorResponse(ctx, http.StatusNotFound, "quran translation source not found")
 	}
 	if errors.Is(err, entity.ErrBookNotFound) {
 		return errorResponse(ctx, http.StatusNotFound, "book not found")

@@ -34,6 +34,8 @@ func main() {
 	flag.StringVar(&opts.TranslationSimplePath, "translation-simple-json", "", "King Fahad Indonesian simple translation JSON export")
 	flag.StringVar(&opts.TranslationFootnoteTagsPath, "translation-footnote-tags-json", "", "optional translation with footnote tags JSON export")
 	flag.Var(&recitationPaths, "recitation-json", "optional QUL recitation/timestamp JSON export; repeat for multiple reciters")
+	flag.StringVar(&opts.TranslationLang, "translation-lang", "", "translation language: ar, id, or en (default id)")
+	flag.StringVar(&opts.SurahInfoLang, "surah-info-lang", "", "optional surah info language override: ar, id, or en")
 	flag.StringVar(&opts.TranslationSourceID, "translation-source-id", "", "translation source id")
 	flag.StringVar(&opts.TranslationSourceName, "translation-source-name", "", "translation source display name")
 	flag.StringVar(&opts.LicenseStatus, "license-status", "", "license review status")

@@ -142,6 +142,45 @@ func (r *V1) adminMissingReaderAssets(ctx *fiber.Ctx) error {
 	return ctx.Status(http.StatusOK).JSON(assets)
 }
 
+// @Summary     List missing Quran assets
+// @Description Admin-only queue of missing Quran surah info, ayah translations, translation sources, and public audio.
+// @ID          admin-list-missing-quran-assets
+// @Tags        admin
+// @Produce     json
+// @Param       target_lang query    string false "Target language: id or en; empty returns both" Enums(id,en)
+// @Param       asset_type  query    string false "Asset type filter" Enums(surah_info,ayah_translation,translation_source,audio_public)
+// @Param       surah_id    query    int    false "Surah ID"
+// @Param       limit       query    int    false "Page size" default(50)
+// @Param       offset      query    int    false "Page offset" default(0)
+// @Success     200         {object} entity.AdminMissingQuranAssets
+// @Failure     400         {object} response.Error
+// @Failure     401         {object} response.Error
+// @Failure     403         {object} response.Error
+// @Failure     500         {object} response.Error
+// @Router      /admin/quran/missing-assets [get]
+func (r *V1) adminMissingQuranAssets(ctx *fiber.Ctx) error {
+	surahID, err := optionalQueryInt(ctx, "surah_id")
+	if err != nil {
+		return errorResponse(ctx, http.StatusBadRequest, "invalid surah_id")
+	}
+
+	assets, err := r.quran.MissingAssets(
+		ctx.UserContext(),
+		ctx.Query("target_lang"),
+		ctx.Query("asset_type"),
+		surahID,
+		queryInt(ctx, "limit", 50),
+		queryInt(ctx, "offset", 0),
+	)
+	if err != nil {
+		r.logQuranError(err, "restapi - v1 - adminMissingQuranAssets")
+
+		return r.quranErrorResponse(ctx, err)
+	}
+
+	return ctx.Status(http.StatusOK).JSON(assets)
+}
+
 func (r *V1) adminUpdatePublication(ctx *fiber.Ctx) error {
 	actorID, ok := ctx.Locals("userID").(string)
 	if !ok {

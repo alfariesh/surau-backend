@@ -75,6 +75,7 @@ func NewRoutes(
 	quranGroup := apiV1Group.Group("/quran")
 	{
 		quranGroup.Get("/recitations", r.listQuranRecitations)
+		quranGroup.Get("/translation-sources", r.listQuranTranslationSources)
 		quranGroup.Get("/surahs", r.listQuranSurahs)
 		quranGroup.Get("/surahs/:surah_id", r.getQuranSurah)
 		quranGroup.Get("/surahs/:surah_id/ayahs", r.listQuranSurahAyahs)
@@ -110,6 +111,7 @@ func NewRoutes(
 	{
 		adminGroup.Get("/books", r.adminListBooks)
 		adminGroup.Get("/reader/missing-assets", r.adminMissingReaderAssets)
+		adminGroup.Get("/quran/missing-assets", r.adminMissingQuranAssets)
 		adminGroup.Get("/translation-feedbacks", r.adminListTranslationFeedbacks)
 		adminGroup.Get("/translation-feedbacks/summary", r.adminTranslationFeedbackSummary)
 		adminGroup.Post("/translation-feedbacks/:id/resolve", r.adminResolveTranslationFeedback)

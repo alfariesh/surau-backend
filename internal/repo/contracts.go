@@ -101,6 +101,7 @@ type (
 		ListSurahs(ctx context.Context, lang string, includeInfo bool) ([]entity.QuranSurah, error)
 		GetSurah(ctx context.Context, surahID int, lang string) (entity.QuranSurah, error)
 		ListRecitations(ctx context.Context) ([]entity.QuranRecitation, error)
+		ListTranslationSources(ctx context.Context, lang string) ([]entity.QuranTranslationSource, error)
 		GetAyah(
 			ctx context.Context,
 			ayahKey string,
@@ -122,6 +123,7 @@ type (
 		) ([]entity.QuranAyah, error)
 		SearchAyahs(ctx context.Context, filter QuranSearchFilter) ([]entity.QuranSearchResult, int, error)
 		ListBookQuranReferences(ctx context.Context, filter QuranBookReferenceFilter) ([]entity.BookQuranReference, int, error)
+		ListMissingQuranAssets(ctx context.Context, filter MissingQuranAssetFilter) (entity.AdminMissingQuranAssets, error)
 	}
 
 	// PersonalRepo -.
@@ -217,6 +219,15 @@ type (
 		TargetLangs []string
 		AssetType   string
 		BookID      *int
+		Limit       uint64
+		Offset      uint64
+	}
+
+	// MissingQuranAssetFilter -.
+	MissingQuranAssetFilter struct {
+		TargetLangs []string
+		AssetType   string
+		SurahID     *int
 		Limit       uint64
 		Offset      uint64
 	}

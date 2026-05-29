@@ -39,11 +39,14 @@ Public Quran:
 - `GET /v1/quran/surahs?lang=id&include_info=false`
 - `GET /v1/quran/surahs/{surah_id}?lang=id`
 - `GET /v1/quran/recitations`
+- `GET /v1/quran/translation-sources?lang=id`
 - `GET /v1/quran/ayahs/{ayah_key}?lang=id&translation_source=qul-kfgqpc-id-simple&include_audio=false&recitation_id=`
 - `GET /v1/quran/surahs/{surah_id}/ayahs?from=&to=&lang=id&include_translation=true&include_audio=false&recitation_id=`
 - `GET /v1/quran/search?q=&lang=id&limit=&offset=`
 
-`/v1/quran/surahs` is lightweight by default and omits `info`; use `include_info=true` or the single-surah endpoint when the UI needs surah background HTML. `/v1/quran/recitations` marks the deterministic public default with `is_default=true`. If `include_audio=true` is requested without `recitation_id`, ayah endpoints use that default recitation; an unknown explicit `recitation_id` returns `404 quran recitation not found`.
+Quran `lang` follows the same contract as kitab: supported `ar`, `id`, and `en`; empty defaults to `id`; region tags normalize to the primary language; unsupported explicit languages return `400 {"error":"unsupported language"}`. Quran Arabic text is always canonical source content. Translation and surah info are exact-language only; if `lang=en` is missing but `id` exists, the response keeps `translation`/`info` empty and exposes availability metadata for FE language offers.
+
+`/v1/quran/surahs` is lightweight by default and omits `info`; use `include_info=true` or the single-surah endpoint when the UI needs surah background HTML. `/v1/quran/translation-sources` lists per-language sources with coverage and default markers. `/v1/quran/recitations` marks the deterministic public default with `is_default=true`. If `include_audio=true` is requested without `recitation_id`, ayah endpoints use that default recitation; an unknown explicit `recitation_id` returns `404 quran recitation not found`.
 
 See [docs/quran-api.md](docs/quran-api.md) for the full FE-facing Quran API contract, response shapes, audio behavior, and integration checklist.
 
@@ -220,13 +223,14 @@ go run ./cmd/import-quran-assets \
   --script-qpc-hafs-json=/path/to/qpc-hafs.json \
   --script-imlaei-simple-json=/path/to/imlaei-simple.json \
   --translation-simple-json=/path/to/kfgqpc-id-simple.json \
+  --translation-lang=id \
   --translation-footnote-tags-json=/path/to/kfgqpc-id-footnotes.json \
   --recitation-json=/path/to/surah-recitation-yasser-al-dosari.zip \
   --recitation-json=/path/to/ayah-recitation-mishari-rashid-al-afasy-murattal-hafs-953.json.zip \
   --resolve-references
 ```
 
-Use `--dry-run` to parse and count rows without writing. JSON files may be passed directly or as single-resource QUL `.zip` downloads. `--surah-info-json` is repeatable for multiple languages, and `--recitation-json` is repeatable for multiple reciters or recitation modes. V1 imports QPC Hafs display text, Imlaei/simple search text, language-specific surah information, King Fahad Indonesian translation source `qul-kfgqpc-id-simple`, optional footnote/chunk payloads, and recitation timestamp metadata. Audio files themselves stay outside Postgres; `r2_key` and `public_url` are prepared for later Cloudflare R2 ingestion.
+Use `--dry-run` to parse and count rows without writing. JSON files may be passed directly or as single-resource QUL `.zip` downloads. `--surah-info-json` is repeatable for multiple languages, and `--surah-info-lang` can override filename inference for a batch. `--translation-lang` defaults to `id` and supports `id` or `en` translation imports with a matching `--translation-source-id`. V1 imports QPC Hafs display text, Imlaei/simple search text, language-specific surah information, translation source metadata, optional footnote/chunk payloads, and recitation timestamp metadata. Audio files themselves stay outside Postgres; `r2_key` and `public_url` are prepared for later Cloudflare R2 ingestion.
 
 After audio files are uploaded to Cloudflare R2, sync the manifest back into Postgres:
 
@@ -277,7 +281,7 @@ Supported kitab languages are `ar`, `id`, and `en`; empty `lang` defaults to `id
 
 If a requested catalog translation does not exist, the API falls back to the raw Arabic metadata and includes `localization` metadata with `requested_lang`, `display_lang`, `is_fallback`, `available_langs`, per-field language hints, and nested `availability`. Section reader and TOC responses expose `requested_lang`, `title_lang`, `is_title_fallback`, `available_translation_langs`, `available_summary_langs`, `translation_missing`, and `availability.title|translation|summary|audio` action hints. Section translation content stays exact-language only: if `lang=en` is missing but `lang=id` exists, `translation` remains `null` and the frontend can offer `id` from `available_translation_langs`.
 
-See [docs/kitab-multilingual-api.md](docs/kitab-multilingual-api.md) for the FE-facing multilingual kitab contract.
+See [docs/kitab-multilingual-api.md](docs/kitab-multilingual-api.md) for the multilingual kitab API contract and [docs/kitab-frontend-contract.md](docs/kitab-frontend-contract.md) for frontend consumption examples.
 
 Reader translation feedback is a lightweight public signal, not editorial approval. Send `vote=like` for good sections, or `vote=dislike` with optional `reason` and `note` when a translation needs attention:
 
@@ -292,6 +296,8 @@ Allowed reasons: `inaccurate`, `unclear`, `style`, `typo`, `formatting`, `other`
 Admin feedback endpoints require an admin JWT. Use the list endpoint for raw notes and the summary endpoint to prioritize review queues by most disliked heading. Feedback defaults to `status=open`; resolved feedback is hidden from default list/summary, `status=resolved` shows handled items, and `status=all` includes both.
 
 Admin reader localization gaps are available at `GET /v1/admin/reader/missing-assets`. Filter with `target_lang=id|en`, `asset_type=book_metadata|category_metadata|author_metadata|section_translation|heading_summary|section_audio`, `book_id`, `limit`, and `offset`. Empty `target_lang` means both `id,en`; `target_lang=ar` is rejected because Arabic is source content.
+
+Admin Quran gaps are available at `GET /v1/admin/quran/missing-assets`. Filter with `target_lang=id|en`, `asset_type=surah_info|ayah_translation|translation_source|audio_public`, `surah_id`, `limit`, and `offset`. Empty `target_lang` means both `id,en`; `target_lang=ar` is rejected because Arabic is source content.
 
 Resolve a handled feedback item:
 

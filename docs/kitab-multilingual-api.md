@@ -3,6 +3,7 @@
 Last updated: 2026-05-29
 
 This document defines the public multilingual contract for kitab/catalog reader APIs.
+For frontend implementation examples, TypeScript helpers, and UI branching rules, see `docs/kitab-frontend-contract.md`.
 
 ## Language Rules
 

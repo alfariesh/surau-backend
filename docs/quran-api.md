@@ -1,6 +1,6 @@
 # Quran API Contract
 
-Last updated: 2026-05-28
+Last updated: 2026-05-29
 
 This document is the FE-facing contract for the Quran backend. It covers the public Quran read APIs, response shapes, audio behavior, errors, and the recommended fetch flow. The Quran domain is standalone: Quran rows live in dedicated Quran tables and are linked to kitab data only through Quran reference records.
 
@@ -10,7 +10,7 @@ This document is the FE-facing contract for the Quran backend. It covers the pub
 - Auth: public Quran endpoints do not require bearer auth.
 - Content type: JSON.
 - Default language: `id`.
-- Default translation source: `qul-kfgqpc-id-simple` (King Fahad Indonesian simple export from QUL).
+- Default translation source: language-specific. For Indonesian the preferred default is `qul-kfgqpc-id-simple` when imported; for other languages the backend chooses the highest-coverage source deterministically.
 - Canonical ayah key: `{surah_id}:{ayah_number}`, for example `73:4`.
 - Surah IDs are numeric `1` through `114`.
 - Ayah numbers are numeric inside each surah.
@@ -27,7 +27,7 @@ This document is the FE-facing contract for the Quran backend. It covers the pub
 | `text_qpc_hafs` | QPC Hafs display script | Main Arabic display text. |
 | `text_imlaei_simple` | Imlaei/simple script | Search-friendly plain Arabic display/fallback. |
 | `search_text` | Backend search normalization helper | Usually not needed for visual UI. |
-| `translation.text` | Indonesian translation from selected source | Translation body. |
+| `translation.text` | Exact requested-language translation from selected/default source | Translation body. |
 
 Use `text_qpc_hafs` for Quran display when present. Use `text_imlaei_simple` as fallback if display text is missing.
 
@@ -39,7 +39,22 @@ Surah info is language-specific background HTML. It can be large, so `/v1/quran/
 - Use `/v1/quran/surahs/{surah_id}` for a detail/header screen that needs `info`.
 - Use `/v1/quran/surahs?include_info=true` only if the UI truly needs all surah info in one call.
 
+Surah info is exact-language only. If `lang=en` info is not imported, `info` is omitted and `localization.available_langs` tells FE which languages can be offered.
+
 `info.text_html` is sanitized by backend, but FE should still render it only in the Quran info area, not inside arbitrary user-controlled HTML containers.
+
+### Multilingual Availability
+
+Quran uses the same `lang` contract as kitab reader:
+
+- Supported: `ar`, `id`, `en`.
+- Empty defaults to `id`.
+- Region tags normalize to primary language, for example `en-US -> en`.
+- Unsupported explicit languages return `400 {"error":"unsupported language"}`.
+- No automatic `en -> id` translation fallback.
+- Arabic Quran text is canonical source content and always remains available.
+
+FE should use `localization` on surah responses and `availability.translation|audio` on ayah responses as the source of truth for tabs, empty states, labels, and language offers.
 
 ### Audio Tracks
 
@@ -110,9 +125,9 @@ Affected params:
 
 ### Language
 
-`lang` is trimmed and lowercased. Empty value defaults to `id`.
+`lang` is trimmed, lowercased, and region-normalized. Empty value defaults to `id`.
 
-If a language-specific translation or surah info is not imported, the main Quran object can still be returned, but the optional language-specific object may be omitted.
+If a language-specific translation or surah info is not imported, the main Quran object is still returned, but the optional language-specific object is omitted and availability metadata explains the missing asset.
 
 ## Endpoints
 
@@ -287,7 +302,43 @@ Status: `200`
 
 Use the recitation with `is_default=true` as the initial selected recitation. If the user chooses another recitation, pass its `id` as `recitation_id` on ayah endpoints.
 
-### 4. Get One Ayah
+### 4. List Translation Sources
+
+```http
+GET /v1/quran/translation-sources?lang=id
+```
+
+Use this before rendering translation source pickers or deciding whether a requested language has imported Quran translations.
+
+### Response
+
+Status: `200`
+
+```json
+[
+  {
+    "id": "qul-kfgqpc-id-simple",
+    "lang": "id",
+    "name": "King Fahad Quran Complex",
+    "source_url": "https://qul.tarteel.ai/resources/translation/173",
+    "qul_resource_id": "173",
+    "format": "simple.json",
+    "license_status": "needs_review",
+    "coverage": {
+      "translated_ayahs": 6236,
+      "total_ayahs": 6236,
+      "percent": 100
+    },
+    "is_default": true,
+    "metadata": {},
+    "updated_at": "2026-05-29T00:00:00Z"
+  }
+]
+```
+
+For `lang=ar`, the response is an empty array because Arabic is source text, not a translation source.
+
+### 5. Get One Ayah
 
 ```http
 GET /v1/quran/ayahs/{ayah_key}?lang=id&translation_source=qul-kfgqpc-id-simple&include_audio=false&recitation_id=
@@ -306,7 +357,7 @@ Use this for direct ayah pages, citation previews, or one-off lookup.
 | Param | Type | Default | Notes |
 | --- | --- | --- | --- |
 | `lang` | string | `id` | Translation language. |
-| `translation_source` | string | `qul-kfgqpc-id-simple` | Translation source ID. |
+| `translation_source` | string | language default | Translation source ID. Explicit unknown or wrong-language source returns `404`. |
 | `include_audio` | boolean | `false` | Adds audio tracks when true. |
 | `recitation_id` | string | empty | If empty and `include_audio=true`, backend uses default recitation. |
 
@@ -334,10 +385,70 @@ Status: `200`
     "metadata": {},
     "updated_at": "2026-05-28T00:00:00Z"
   },
+  "requested_lang": "id",
+  "available_translation_langs": ["id"],
+  "translation_missing": false,
+  "availability": {
+    "translation": {
+      "action": "show_requested",
+      "reason": "exact_available",
+      "requested_lang": "id",
+      "display_lang": "id",
+      "is_fallback": false,
+      "missing": false,
+      "available_langs": ["id"]
+    },
+    "audio": {
+      "action": "hide_audio",
+      "reason": "unavailable",
+      "requested_lang": "id",
+      "display_lang": "ar",
+      "is_fallback": false,
+      "missing": true,
+      "available_langs": []
+    }
+  },
   "metadata": {},
   "updated_at": "2026-05-28T00:00:00Z"
 }
 ```
+
+### Missing Requested Translation
+
+When `lang=en` has no exact translation but Indonesian exists, Arabic still renders and the requested translation stays empty:
+
+```json
+{
+  "ayah_key": "1:1",
+  "text_qpc_hafs": "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ",
+  "translation": null,
+  "requested_lang": "en",
+  "available_translation_langs": ["id"],
+  "translation_missing": true,
+  "availability": {
+    "translation": {
+      "action": "offer_available_lang",
+      "reason": "alternative_langs_available",
+      "requested_lang": "en",
+      "display_lang": "ar",
+      "is_fallback": true,
+      "missing": true,
+      "available_langs": ["id"]
+    },
+    "audio": {
+      "action": "hide_audio",
+      "reason": "unavailable",
+      "requested_lang": "en",
+      "display_lang": "ar",
+      "is_fallback": false,
+      "missing": true,
+      "available_langs": []
+    }
+  }
+}
+```
+
+For `lang=ar`, `translation` is omitted/null and `availability.translation.action` is `hide_translation_tab`.
 
 ### Response With Ayah Audio
 
@@ -412,7 +523,7 @@ If the selected/default recitation is `mode="surah"`, the audio item can be a fu
 | `404` | `{"error":"quran ayah not found"}` | Ayah key is valid but not imported. |
 | `404` | `{"error":"quran recitation not found"}` | Explicit `recitation_id` does not exist. |
 
-### 5. List Ayahs In A Surah
+### 6. List Ayahs In A Surah
 
 ```http
 GET /v1/quran/surahs/{surah_id}/ayahs?from=&to=&lang=id&include_translation=true&include_audio=false&recitation_id=
@@ -427,7 +538,7 @@ Use this for the main Quran reader screen.
 | `from` | integer | empty | Optional first ayah. Must be positive when present. |
 | `to` | integer | empty | Optional last ayah. Must be positive when present. |
 | `lang` | string | `id` | Translation language. |
-| `translation_source` | string | `qul-kfgqpc-id-simple` | Supported by backend even if omitted from the README short list. |
+| `translation_source` | string | language default | Explicit source override. Unknown or wrong-language source returns `404`. |
 | `include_translation` | boolean | `true` | Set false for Arabic-only views. |
 | `include_audio` | boolean | `false` | Adds audio tracks when true. |
 | `recitation_id` | string | empty | If empty and audio is requested, backend uses default recitation. |
@@ -477,7 +588,7 @@ Status: `200`
 | `404` | `{"error":"quran surah not found"}` | Surah is outside `1..114` or not imported. |
 | `404` | `{"error":"quran recitation not found"}` | Explicit `recitation_id` does not exist. |
 
-### 6. Search Quran
+### 7. Search Quran
 
 ```http
 GET /v1/quran/search?q=&lang=id&limit=50&offset=0
@@ -514,7 +625,10 @@ Status: `200`
         },
         "updated_at": "2026-05-28T00:00:00Z"
       },
-      "score": 0.82
+      "score": 0.82,
+      "matched_lang": "id",
+      "matched_source_id": "qul-kfgqpc-id-simple",
+      "matched_field": "translation"
     }
   ],
   "total": 1
@@ -526,9 +640,10 @@ Status: `200`
 - Debounce search input.
 - Keep using `limit` and `offset` for pagination.
 - Display results by `ayah.ayah_key`, surah name from cached surah list, Arabic text, and translation.
+- Use `matched_lang`, `matched_source_id`, and `matched_field` to label why a result matched when the requested translation is missing but another imported translation matched.
 - Search does not include audio.
 
-### 7. Book Quran References
+### 8. Book Quran References
 
 ```http
 GET /v1/books/{book_id}/quran-references?lang=id&status=approved&limit=50&offset=0
@@ -616,6 +731,48 @@ Status: `200`
 | `400` | `{"error":"invalid book_id"}` | Path value is not a positive integer. |
 | `404` | `{"error":"book not found"}` | Book does not exist or is not published. |
 
+### 9. Admin Missing Quran Assets
+
+```http
+GET /v1/admin/quran/missing-assets?target_lang=en&asset_type=ayah_translation&surah_id=73
+```
+
+Admin-only queue for Quran localization and media gaps. Empty `target_lang` returns both `id` and `en`; `target_lang=ar` returns `400` because Arabic is source content.
+
+Supported `asset_type` values:
+
+- `surah_info`
+- `ayah_translation`
+- `translation_source`
+- `audio_public`
+
+Response:
+
+```json
+{
+  "items": [
+    {
+      "asset_type": "ayah_translation",
+      "target_lang": "en",
+      "surah_id": 73,
+      "surah_name": "Al-Muzzammil",
+      "ayah_number": 4,
+      "ayah_key": "73:4",
+      "available_langs": ["id"],
+      "source_updated_at": "2026-05-29T00:00:00Z"
+    }
+  ],
+  "total": 1,
+  "counts": [
+    {
+      "asset_type": "ayah_translation",
+      "target_lang": "en",
+      "total": 1
+    }
+  ]
+}
+```
+
 ## Response Shape Reference
 
 ### QuranSurah
@@ -629,6 +786,7 @@ type QuranSurah = {
   revelation_type?: string;
   ayah_count: number;
   info?: QuranSurahInfo;
+  localization: LocalizationMeta;
   metadata?: Record<string, unknown>;
   updated_at: string;
 };
@@ -669,10 +827,52 @@ type QuranAyah = {
   page_number?: number;
   juz_number?: number;
   hizb_number?: number;
-  translation?: QuranTranslation;
+  translation: QuranTranslation | null;
   audio?: QuranAudioTrack[];
+  requested_lang: "ar" | "id" | "en";
+  available_translation_langs: string[];
+  translation_missing: boolean;
+  availability: QuranAyahAvailability;
   metadata?: Record<string, unknown>;
   updated_at: string;
+};
+```
+
+### AvailabilityDecision
+
+```ts
+type AvailabilityDecision = {
+  action:
+    | "show_requested"
+    | "show_arabic"
+    | "offer_available_lang"
+    | "hide_translation_tab"
+    | "hide_audio";
+  reason:
+    | "source_language"
+    | "exact_available"
+    | "arabic_fallback"
+    | "alternative_langs_available"
+    | "unavailable";
+  requested_lang: "ar" | "id" | "en";
+  display_lang: "ar" | "id" | "en";
+  is_fallback: boolean;
+  missing: boolean;
+  available_langs: string[];
+};
+
+type LocalizationMeta = {
+  requested_lang: "ar" | "id" | "en";
+  display_lang: "ar" | "id" | "en";
+  is_fallback: boolean;
+  available_langs: string[];
+  field_langs: Record<string, string>;
+  availability: AvailabilityDecision;
+};
+
+type QuranAyahAvailability = {
+  translation: AvailabilityDecision;
+  audio: AvailabilityDecision;
 };
 ```
 
@@ -686,6 +886,31 @@ type QuranTranslation = {
   footnotes?: unknown;
   chunks?: unknown;
   metadata?: Record<string, unknown>;
+  updated_at: string;
+};
+```
+
+### QuranTranslationSource
+
+```ts
+type QuranTranslationSource = {
+  id: string;
+  lang: "id" | "en";
+  name: string;
+  translator?: string;
+  source_url?: string;
+  qul_resource_id?: string;
+  format: string;
+  license_status: string;
+  checksum?: string;
+  coverage: {
+    translated_ayahs: number;
+    total_ayahs: number;
+    percent: number;
+  };
+  is_default: boolean;
+  metadata?: Record<string, unknown>;
+  imported_at?: string;
   updated_at: string;
 };
 ```
@@ -787,10 +1012,12 @@ type BookQuranReference = {
 ### Surah Reader Page
 
 1. Fetch `GET /v1/quran/surahs/{surah_id}?lang=id` for header/info.
-2. Fetch `GET /v1/quran/surahs/{surah_id}/ayahs?lang=id&include_translation=true`.
-3. If audio is enabled, call the ayah list with `include_audio=true&recitation_id={selectedRecitationID}`.
-4. Render Arabic from `text_qpc_hafs`, translation from `translation.text`.
-5. If the selected recitation is a surah track, use the current ayah's segment to seek inside the same full-surah audio file.
+2. Fetch `GET /v1/quran/translation-sources?lang=id` if the UI lets users choose translation sources.
+3. Fetch `GET /v1/quran/surahs/{surah_id}/ayahs?lang=id&include_translation=true`.
+4. If audio is enabled, call the ayah list with `include_audio=true&recitation_id={selectedRecitationID}`.
+5. Render Arabic from `text_qpc_hafs`, translation from `translation.text` only when `translation` is not null.
+6. Use `availability.translation.action` for translation tabs, empty states, and language offers.
+7. If the selected recitation is a surah track, use the current ayah's segment to seek inside the same full-surah audio file.
 
 ### Audio Setup
 
@@ -835,9 +1062,11 @@ Common Quran errors:
 | `400` | `invalid to` |
 | `400` | `invalid ayah key` |
 | `400` | `invalid quran range` |
+| `400` | `unsupported language` |
 | `404` | `quran surah not found` |
 | `404` | `quran ayah not found` |
 | `404` | `quran recitation not found` |
+| `404` | `quran translation source not found` |
 | `404` | `book not found` |
 | `500` | `internal server error` |
 
@@ -850,7 +1079,10 @@ http://localhost:8080/v1/quran/surahs?lang=id
 http://localhost:8080/v1/quran/surahs?lang=id&include_info=true
 http://localhost:8080/v1/quran/surahs/73?lang=id
 http://localhost:8080/v1/quran/recitations
+http://localhost:8080/v1/quran/translation-sources?lang=id
 http://localhost:8080/v1/quran/ayahs/1:1?lang=id&include_audio=true
+http://localhost:8080/v1/quran/ayahs/1:1?lang=en
+http://localhost:8080/v1/quran/ayahs/1:1?lang=fr
 http://localhost:8080/v1/quran/ayahs/1:1?lang=id&include_audio=true&recitation_id=bad-id
 http://localhost:8080/v1/quran/surahs/73/ayahs?from=1&to=5&lang=id&include_translation=true
 http://localhost:8080/v1/quran/search?q=rahman&lang=id&limit=10&offset=0
@@ -861,6 +1093,9 @@ Expected key checks:
 - Surah list default should not include `info`.
 - Single surah detail should include `info` when imported for the requested language.
 - Recitations should include at most one `is_default=true`.
+- Translation sources should include `coverage` and at most one `is_default=true` per language.
+- Unsupported language should return `400 unsupported language`.
+- Missing `lang=en` translation should keep Arabic text and expose `translation_missing` plus availability metadata.
 - Ayah audio without `recitation_id` should use the default public recitation.
 - Bad explicit `recitation_id` should return `404 quran recitation not found`.
 

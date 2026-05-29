@@ -92,6 +92,7 @@ type (
 		Surahs(ctx context.Context, lang string, includeInfo bool) ([]entity.QuranSurah, error)
 		Surah(ctx context.Context, surahID int, lang string) (entity.QuranSurah, error)
 		Recitations(ctx context.Context) ([]entity.QuranRecitation, error)
+		TranslationSources(ctx context.Context, lang string) ([]entity.QuranTranslationSource, error)
 		Ayah(
 			ctx context.Context,
 			ayahKey string,
@@ -113,6 +114,7 @@ type (
 		) ([]entity.QuranAyah, error)
 		Search(ctx context.Context, query, lang string, limit, offset int) ([]entity.QuranSearchResult, int, error)
 		BookReferences(ctx context.Context, bookID int, lang, status string, limit, offset int) ([]entity.BookQuranReference, int, error)
+		MissingAssets(ctx context.Context, targetLang, assetType string, surahID *int, limit, offset int) (entity.AdminMissingQuranAssets, error)
 	}
 
 	// Personal -.

@@ -47,6 +47,36 @@ func TestRunQuranAssetImportDryRun(t *testing.T) {
 	assert.Equal(t, 1, stats.AudioSegments)
 }
 
+func TestQuranAssetImportLangOptions(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	base := QuranAssetOptions{
+		SurahNamesPath:         writeQuranFixture(t, dir, "surahs.json", `[{"surah_id":73,"name_arabic":"المزمل","ayah_count":1}]`),
+		SurahInfoPaths:         []string{writeQuranFixture(t, dir, "surah-info.json", `{"73":{"surah_number":73,"text":"<p>Info</p>"}}`)},
+		ScriptQPCHafsPath:      writeQuranFixture(t, dir, "qpc.json", `[{"verse_key":"73:1","text":"يَـٰٓأَيُّهَا ٱلْمُزَّمِّلُ"}]`),
+		ScriptImlaeiSimplePath: writeQuranFixture(t, dir, "simple.json", `{"73:1":"يا ايها المزمل"}`),
+		TranslationSimplePath:  writeQuranFixture(t, dir, "translation.json", `{"73:1":"O wrapped one!"}`),
+		TranslationLang:        "en-US",
+		SurahInfoLang:          "en",
+		DryRun:                 true,
+	}
+
+	stats, err := RunQuranAssetImport(context.Background(), base)
+	require.NoError(t, err)
+	assert.Equal(t, 1, stats.SurahInfos)
+	assert.Equal(t, 1, stats.Translations)
+
+	assets, err := parseQuranAssets(base)
+	require.NoError(t, err)
+	require.Contains(t, assets.surahInfos, "73:en")
+
+	base.TranslationLang = "fr"
+	_, err = RunQuranAssetImport(context.Background(), base)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unsupported language")
+}
+
 func TestResolveQuranMention(t *testing.T) {
 	t.Parallel()
 

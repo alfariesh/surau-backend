@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/evrone/go-clean-template/internal/contentlang"
 	"github.com/evrone/go-clean-template/internal/quranutil"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -35,6 +36,8 @@ type QuranAssetOptions struct {
 	TranslationFootnoteTagsPath string
 	RecitationPath              string
 	RecitationPaths             []string
+	TranslationLang             string
+	SurahInfoLang               string
 	DryRun                      bool
 	ResolveReferences           bool
 	TranslationSourceID         string
@@ -218,6 +221,14 @@ func (opts QuranAssetOptions) validate() error {
 	if strings.TrimSpace(opts.TranslationSimplePath) == "" {
 		return errors.New("translation simple JSON path is required")
 	}
+	if _, err := contentlang.Normalize(opts.TranslationLang); err != nil {
+		return fmt.Errorf("translation lang: %w", err)
+	}
+	if strings.TrimSpace(opts.SurahInfoLang) != "" {
+		if _, err := contentlang.Normalize(opts.SurahInfoLang); err != nil {
+			return fmt.Errorf("surah info lang: %w", err)
+		}
+	}
 
 	return nil
 }
@@ -228,6 +239,10 @@ func (opts QuranAssetOptions) withDefaults() QuranAssetOptions {
 	}
 	if opts.TranslationSourceName == "" {
 		opts.TranslationSourceName = "King Fahad Quran Complex"
+	}
+	opts.TranslationLang = contentlang.MustNormalize(opts.TranslationLang)
+	if strings.TrimSpace(opts.SurahInfoLang) != "" {
+		opts.SurahInfoLang = contentlang.MustNormalize(opts.SurahInfoLang)
 	}
 	if opts.LicenseStatus == "" {
 		opts.LicenseStatus = "needs_review"
@@ -255,7 +270,7 @@ func parseQuranAssets(opts QuranAssetOptions) (quranAssetSet, error) {
 		if strings.TrimSpace(path) == "" {
 			continue
 		}
-		if err := parseSurahInfo(path, &assets); err != nil {
+		if err := parseSurahInfo(path, opts.SurahInfoLang, &assets); err != nil {
 			return quranAssetSet{}, err
 		}
 	}
@@ -325,13 +340,17 @@ func parseSurahNames(path string, assets *quranAssetSet) error {
 	return nil
 }
 
-func parseSurahInfo(path string, assets *quranAssetSet) error {
+func parseSurahInfo(path string, langOverride string, assets *quranAssetSet) error {
 	raw, checksum, err := readAssetFile(path)
 	if err != nil {
 		return fmt.Errorf("read surah info: %w", err)
 	}
 
-	lang := inferSurahInfoLang(path)
+	lang := strings.TrimSpace(langOverride)
+	if lang == "" {
+		lang = inferSurahInfoLang(path)
+	}
+	lang = contentlang.MustNormalize(lang)
 	assets.checksums["surah_info:"+lang] = checksum
 
 	rows, err := jsonRows(raw)
@@ -878,7 +897,7 @@ INSERT INTO quran_translation_sources (
     id, lang, name, source_url, qul_resource_id, format, license_status,
     checksum, metadata, imported_at, updated_at
 )
-VALUES ($1, 'id', $2, $3, '173', 'simple.json', $4, $5, $6::jsonb, now(), now())
+VALUES ($1, $2, $3, $4, '173', 'simple.json', $5, $6, $7::jsonb, now(), now())
 ON CONFLICT (id) DO UPDATE SET
     lang = EXCLUDED.lang,
     name = EXCLUDED.name,
@@ -891,6 +910,7 @@ ON CONFLICT (id) DO UPDATE SET
     imported_at = EXCLUDED.imported_at,
     updated_at = now()`,
 		opts.TranslationSourceID,
+		opts.TranslationLang,
 		opts.TranslationSourceName,
 		"https://qul.tarteel.ai/resources/translation/173",
 		opts.LicenseStatus,
@@ -916,8 +936,9 @@ func upsertQuranTranslations(
 INSERT INTO quran_ayah_translations (
     source_id, surah_id, ayah_number, ayah_key, lang, text, footnotes, chunks, metadata, updated_at
 )
-VALUES ($1, $2, $3, $4, 'id', $5, nullif($6, '')::jsonb, nullif($7, '')::jsonb, COALESCE(nullif($8, '')::jsonb, '{}'::jsonb), now())
+VALUES ($1, $2, $3, $4, $5, $6, nullif($7, '')::jsonb, nullif($8, '')::jsonb, COALESCE(nullif($9, '')::jsonb, '{}'::jsonb), now())
 ON CONFLICT (source_id, surah_id, ayah_number) DO UPDATE SET
+    lang = EXCLUDED.lang,
     text = EXCLUDED.text,
     footnotes = COALESCE(EXCLUDED.footnotes, quran_ayah_translations.footnotes),
     chunks = COALESCE(EXCLUDED.chunks, quran_ayah_translations.chunks),
@@ -927,6 +948,7 @@ ON CONFLICT (source_id, surah_id, ayah_number) DO UPDATE SET
 			translation.SurahID,
 			translation.AyahNumber,
 			translation.AyahKey,
+			opts.TranslationLang,
 			translation.Text,
 			stringOrEmpty(translation.Footnotes),
 			stringOrEmpty(translation.Chunks),

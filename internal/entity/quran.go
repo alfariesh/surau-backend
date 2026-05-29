@@ -4,15 +4,16 @@ import "time"
 
 // QuranSurah describes one Quran surah plus imported QUL metadata.
 type QuranSurah struct {
-	SurahID         int             `json:"surah_id" example:"73"`
-	NameArabic      *string         `json:"name_arabic,omitempty" example:"المزمل"`
-	NameLatin       *string         `json:"name_latin,omitempty" example:"Al-Muzzammil"`
-	NameTranslation *string         `json:"name_translation,omitempty" example:"Orang yang Berselimut"`
-	RevelationType  *string         `json:"revelation_type,omitempty" example:"makkiyah"`
-	AyahCount       int             `json:"ayah_count" example:"20"`
-	Info            *QuranSurahInfo `json:"info,omitempty"`
-	Metadata        RawJSON         `json:"metadata,omitempty" swaggertype:"object"`
-	UpdatedAt       time.Time       `json:"updated_at" example:"2026-01-01T00:00:00Z"`
+	SurahID         int              `json:"surah_id" example:"73"`
+	NameArabic      *string          `json:"name_arabic,omitempty" example:"المزمل"`
+	NameLatin       *string          `json:"name_latin,omitempty" example:"Al-Muzzammil"`
+	NameTranslation *string          `json:"name_translation,omitempty" example:"Orang yang Berselimut"`
+	RevelationType  *string          `json:"revelation_type,omitempty" example:"makkiyah"`
+	AyahCount       int              `json:"ayah_count" example:"20"`
+	Info            *QuranSurahInfo  `json:"info,omitempty"`
+	Localization    LocalizationMeta `json:"localization"`
+	Metadata        RawJSON          `json:"metadata,omitempty" swaggertype:"object"`
+	UpdatedAt       time.Time        `json:"updated_at" example:"2026-01-01T00:00:00Z"`
 } // @name entity.QuranSurah
 
 // QuranSurahInfo stores language-specific imported background information for one surah.
@@ -42,6 +43,31 @@ type QuranTranslation struct {
 	Metadata  RawJSON   `json:"metadata,omitempty" swaggertype:"object"`
 	UpdatedAt time.Time `json:"updated_at" example:"2026-01-01T00:00:00Z"`
 } // @name entity.QuranTranslation
+
+// QuranTranslationCoverage summarizes source coverage against imported ayahs.
+type QuranTranslationCoverage struct {
+	TranslatedAyahs int     `json:"translated_ayahs" example:"6236"`
+	TotalAyahs      int     `json:"total_ayahs"      example:"6236"`
+	Percent         float64 `json:"percent"          example:"100"`
+} // @name entity.QuranTranslationCoverage
+
+// QuranTranslationSource describes one imported Quran translation source.
+type QuranTranslationSource struct {
+	ID            string                   `json:"id"             example:"qul-kfgqpc-id-simple"`
+	Lang          string                   `json:"lang"           example:"id"`
+	Name          string                   `json:"name"           example:"King Fahad Quran Complex"`
+	Translator    *string                  `json:"translator,omitempty"`
+	SourceURL     *string                  `json:"source_url,omitempty"`
+	QULResourceID *string                  `json:"qul_resource_id,omitempty" example:"173"`
+	Format        string                   `json:"format"         example:"simple.json"`
+	LicenseStatus string                   `json:"license_status" example:"needs_review"`
+	Checksum      *string                  `json:"checksum,omitempty"`
+	Coverage      QuranTranslationCoverage `json:"coverage"`
+	IsDefault     bool                     `json:"is_default"     example:"true"`
+	Metadata      RawJSON                  `json:"metadata,omitempty" swaggertype:"object"`
+	ImportedAt    *time.Time               `json:"imported_at,omitempty" example:"2026-01-01T00:00:00Z"`
+	UpdatedAt     time.Time                `json:"updated_at"     example:"2026-01-01T00:00:00Z"`
+} // @name entity.QuranTranslationSource
 
 // QuranAudioSegment is an ayah-level timestamp range for one audio track.
 type QuranAudioSegment struct {
@@ -94,27 +120,40 @@ type QuranAudioTrack struct {
 
 // QuranAyah is one canonical ayah row with optional translation and audio metadata.
 type QuranAyah struct {
-	SurahID          int               `json:"surah_id" example:"73"`
-	AyahNumber       int               `json:"ayah_number" example:"4"`
-	AyahKey          string            `json:"ayah_key" example:"73:4"`
-	TextQPCHafs      *string           `json:"text_qpc_hafs,omitempty"`
-	TextImlaeiSimple *string           `json:"text_imlaei_simple,omitempty"`
-	SearchText       *string           `json:"search_text,omitempty"`
-	ScriptType       *string           `json:"script_type,omitempty"`
-	FontFamily       *string           `json:"font_family,omitempty"`
-	PageNumber       *int              `json:"page_number,omitempty"`
-	JuzNumber        *int              `json:"juz_number,omitempty"`
-	HizbNumber       *int              `json:"hizb_number,omitempty"`
-	Translation      *QuranTranslation `json:"translation,omitempty"`
-	Audio            []QuranAudioTrack `json:"audio,omitempty"`
-	Metadata         RawJSON           `json:"metadata,omitempty" swaggertype:"object"`
-	UpdatedAt        time.Time         `json:"updated_at" example:"2026-01-01T00:00:00Z"`
+	SurahID                   int                   `json:"surah_id" example:"73"`
+	AyahNumber                int                   `json:"ayah_number" example:"4"`
+	AyahKey                   string                `json:"ayah_key" example:"73:4"`
+	TextQPCHafs               *string               `json:"text_qpc_hafs,omitempty"`
+	TextImlaeiSimple          *string               `json:"text_imlaei_simple,omitempty"`
+	SearchText                *string               `json:"search_text,omitempty"`
+	ScriptType                *string               `json:"script_type,omitempty"`
+	FontFamily                *string               `json:"font_family,omitempty"`
+	PageNumber                *int                  `json:"page_number,omitempty"`
+	JuzNumber                 *int                  `json:"juz_number,omitempty"`
+	HizbNumber                *int                  `json:"hizb_number,omitempty"`
+	Translation               *QuranTranslation     `json:"translation"`
+	Audio                     []QuranAudioTrack     `json:"audio,omitempty"`
+	RequestedLang             string                `json:"requested_lang" example:"en"`
+	AvailableTranslationLangs []string              `json:"available_translation_langs" example:"id"`
+	TranslationMissing        bool                  `json:"translation_missing" example:"true"`
+	Availability              QuranAyahAvailability `json:"availability"`
+	Metadata                  RawJSON               `json:"metadata,omitempty" swaggertype:"object"`
+	UpdatedAt                 time.Time             `json:"updated_at" example:"2026-01-01T00:00:00Z"`
 } // @name entity.QuranAyah
+
+// QuranAyahAvailability groups display decisions for ayah translation and audio.
+type QuranAyahAvailability struct {
+	Translation AvailabilityDecision `json:"translation"`
+	Audio       AvailabilityDecision `json:"audio"`
+} // @name entity.QuranAyahAvailability
 
 // QuranSearchResult is one ranked Quran search hit.
 type QuranSearchResult struct {
-	Ayah  QuranAyah `json:"ayah"`
-	Score float64   `json:"score" example:"0.82"`
+	Ayah            QuranAyah `json:"ayah"`
+	Score           float64   `json:"score" example:"0.82"`
+	MatchedLang     string    `json:"matched_lang,omitempty" example:"ar"`
+	MatchedSourceID string    `json:"matched_source_id,omitempty" example:"qul-kfgqpc-id-simple"`
+	MatchedField    string    `json:"matched_field,omitempty" example:"translation"`
 } // @name entity.QuranSearchResult
 
 // BookQuranReference links a kitab location to a Quran surah or ayah range.

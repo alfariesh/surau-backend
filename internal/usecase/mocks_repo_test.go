@@ -941,6 +941,21 @@ func (mr *MockQuranRepoMockRecorder) ListBookQuranReferences(ctx, filter any) *g
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListBookQuranReferences", reflect.TypeOf((*MockQuranRepo)(nil).ListBookQuranReferences), ctx, filter)
 }
 
+// ListMissingQuranAssets mocks base method.
+func (m *MockQuranRepo) ListMissingQuranAssets(ctx context.Context, filter repo.MissingQuranAssetFilter) (entity.AdminMissingQuranAssets, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListMissingQuranAssets", ctx, filter)
+	ret0, _ := ret[0].(entity.AdminMissingQuranAssets)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListMissingQuranAssets indicates an expected call of ListMissingQuranAssets.
+func (mr *MockQuranRepoMockRecorder) ListMissingQuranAssets(ctx, filter any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListMissingQuranAssets", reflect.TypeOf((*MockQuranRepo)(nil).ListMissingQuranAssets), ctx, filter)
+}
+
 // ListRecitations mocks base method.
 func (m *MockQuranRepo) ListRecitations(ctx context.Context) ([]entity.QuranRecitation, error) {
 	m.ctrl.T.Helper()
@@ -984,6 +999,21 @@ func (m *MockQuranRepo) ListSurahs(ctx context.Context, lang string, includeInfo
 func (mr *MockQuranRepoMockRecorder) ListSurahs(ctx, lang, includeInfo any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListSurahs", reflect.TypeOf((*MockQuranRepo)(nil).ListSurahs), ctx, lang, includeInfo)
+}
+
+// ListTranslationSources mocks base method.
+func (m *MockQuranRepo) ListTranslationSources(ctx context.Context, lang string) ([]entity.QuranTranslationSource, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListTranslationSources", ctx, lang)
+	ret0, _ := ret[0].([]entity.QuranTranslationSource)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListTranslationSources indicates an expected call of ListTranslationSources.
+func (mr *MockQuranRepoMockRecorder) ListTranslationSources(ctx, lang any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListTranslationSources", reflect.TypeOf((*MockQuranRepo)(nil).ListTranslationSources), ctx, lang)
 }
 
 // SearchAyahs mocks base method.

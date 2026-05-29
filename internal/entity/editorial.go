@@ -23,6 +23,11 @@ const (
 	MissingAssetSectionTranslation = "section_translation"
 	MissingAssetHeadingSummary     = "heading_summary"
 	MissingAssetSectionAudio       = "section_audio"
+
+	MissingQuranAssetSurahInfo         = "surah_info"
+	MissingQuranAssetAyahTranslation   = "ayah_translation"
+	MissingQuranAssetTranslationSource = "translation_source"
+	MissingQuranAssetAudioPublic       = "audio_public"
 )
 
 // BookPublication controls public visibility for one book.
@@ -165,3 +170,34 @@ type AdminMissingReaderAssets struct {
 	Total  int                            `json:"total" example:"42"`
 	Counts []AdminMissingReaderAssetCount `json:"counts"`
 } // @name entity.AdminMissingReaderAssets
+
+// AdminMissingQuranAsset describes one missing Quran asset for editorial work.
+type AdminMissingQuranAsset struct {
+	AssetType             string    `json:"asset_type"        example:"ayah_translation"`
+	TargetLang            string    `json:"target_lang"       example:"en"`
+	SurahID               *int      `json:"surah_id,omitempty" example:"73"`
+	SurahName             *string   `json:"surah_name,omitempty"`
+	AyahNumber            *int      `json:"ayah_number,omitempty" example:"4"`
+	AyahKey               *string   `json:"ayah_key,omitempty" example:"73:4"`
+	TranslationSourceID   *string   `json:"translation_source_id,omitempty"`
+	TranslationSourceName *string   `json:"translation_source_name,omitempty"`
+	RecitationID          *string   `json:"recitation_id,omitempty"`
+	TrackType             *string   `json:"track_type,omitempty" example:"ayah"`
+	TrackKey              *string   `json:"track_key,omitempty" example:"73:4"`
+	AvailableLangs        []string  `json:"available_langs"   example:"id"`
+	SourceUpdatedAt       time.Time `json:"source_updated_at" example:"2026-01-01T00:00:00Z"`
+} // @name entity.AdminMissingQuranAsset
+
+// AdminMissingQuranAssetCount aggregates missing Quran assets by type and target language.
+type AdminMissingQuranAssetCount struct {
+	AssetType  string `json:"asset_type"  example:"ayah_translation"`
+	TargetLang string `json:"target_lang" example:"en"`
+	Total      int    `json:"total"       example:"20"`
+} // @name entity.AdminMissingQuranAssetCount
+
+// AdminMissingQuranAssets groups paginated Quran missing asset items and aggregate counts.
+type AdminMissingQuranAssets struct {
+	Items  []AdminMissingQuranAsset      `json:"items"`
+	Total  int                           `json:"total" example:"42"`
+	Counts []AdminMissingQuranAssetCount `json:"counts"`
+} // @name entity.AdminMissingQuranAssets

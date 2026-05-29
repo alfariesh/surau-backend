@@ -5,16 +5,15 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/evrone/go-clean-template/internal/contentlang"
 	"github.com/evrone/go-clean-template/internal/entity"
 	"github.com/evrone/go-clean-template/internal/quranutil"
 	"github.com/evrone/go-clean-template/internal/repo"
 )
 
 const (
-	defaultLimit               = 50
-	maxLimit                   = 200
-	defaultLang                = "id"
-	defaultTranslationSourceID = "qul-kfgqpc-id-simple"
+	defaultLimit = 50
+	maxLimit     = 200
 )
 
 var allowedReviewStatuses = []string{"approved", "pending", "rejected", "ambiguous", "needs_review", "all"}
@@ -31,7 +30,12 @@ func New(r repo.QuranRepo) *UseCase {
 
 // Surahs returns all imported Quran surahs.
 func (uc *UseCase) Surahs(ctx context.Context, lang string, includeInfo bool) ([]entity.QuranSurah, error) {
-	return uc.repo.ListSurahs(ctx, normalizeLang(lang), includeInfo)
+	normalizedLang, err := contentlang.Normalize(lang)
+	if err != nil {
+		return nil, err
+	}
+
+	return uc.repo.ListSurahs(ctx, normalizedLang, includeInfo)
 }
 
 // Surah returns one imported Quran surah with language-specific info.
@@ -40,12 +44,30 @@ func (uc *UseCase) Surah(ctx context.Context, surahID int, lang string) (entity.
 		return entity.QuranSurah{}, entity.ErrQuranSurahNotFound
 	}
 
-	return uc.repo.GetSurah(ctx, surahID, normalizeLang(lang))
+	normalizedLang, err := contentlang.Normalize(lang)
+	if err != nil {
+		return entity.QuranSurah{}, err
+	}
+
+	return uc.repo.GetSurah(ctx, surahID, normalizedLang)
 }
 
 // Recitations returns imported Quran recitation resources.
 func (uc *UseCase) Recitations(ctx context.Context) ([]entity.QuranRecitation, error) {
 	return uc.repo.ListRecitations(ctx)
+}
+
+// TranslationSources returns Quran translation sources for one language.
+func (uc *UseCase) TranslationSources(ctx context.Context, lang string) ([]entity.QuranTranslationSource, error) {
+	normalizedLang, err := contentlang.Normalize(lang)
+	if err != nil {
+		return nil, err
+	}
+	if contentlang.IsArabic(normalizedLang) {
+		return []entity.QuranTranslationSource{}, nil
+	}
+
+	return uc.repo.ListTranslationSources(ctx, normalizedLang)
 }
 
 // Ayah returns one ayah by canonical QUL ayah key.
@@ -62,10 +84,15 @@ func (uc *UseCase) Ayah(
 		return entity.QuranAyah{}, entity.ErrInvalidAyahKey
 	}
 
+	normalizedLang, err := contentlang.Normalize(lang)
+	if err != nil {
+		return entity.QuranAyah{}, err
+	}
+
 	return uc.repo.GetAyah(
 		ctx,
 		ayahKey,
-		normalizeLang(lang),
+		normalizedLang,
 		normalizeTranslationSource(translationSource),
 		includeAudio,
 		normalizeRecitationID(recitationID),
@@ -97,12 +124,17 @@ func (uc *UseCase) SurahAyahs(
 		return nil, entity.ErrInvalidQuranRange
 	}
 
+	normalizedLang, err := contentlang.Normalize(lang)
+	if err != nil {
+		return nil, err
+	}
+
 	return uc.repo.ListSurahAyahs(
 		ctx,
 		surahID,
 		fromAyah,
 		toAyah,
-		normalizeLang(lang),
+		normalizedLang,
 		normalizeTranslationSource(translationSource),
 		includeTranslation,
 		includeAudio,
@@ -112,10 +144,15 @@ func (uc *UseCase) SurahAyahs(
 
 // Search returns ranked Quran text or translation hits.
 func (uc *UseCase) Search(ctx context.Context, query, lang string, limit, offset int) ([]entity.QuranSearchResult, int, error) {
+	normalizedLang, err := contentlang.Normalize(lang)
+	if err != nil {
+		return nil, 0, err
+	}
+
 	return uc.repo.SearchAyahs(ctx, repo.QuranSearchFilter{
 		Query:             strings.TrimSpace(query),
-		Lang:              normalizeLang(lang),
-		TranslationSource: defaultTranslationSourceID,
+		Lang:              normalizedLang,
+		TranslationSource: "",
 		Limit:             clampLimit(limit),
 		Offset:            clampOffset(offset),
 	})
@@ -134,14 +171,36 @@ func (uc *UseCase) BookReferences(
 		return nil, 0, entity.ErrBookNotFound
 	}
 
+	normalizedLang, err := contentlang.Normalize(lang)
+	if err != nil {
+		return nil, 0, err
+	}
+
 	return uc.repo.ListBookQuranReferences(ctx, repo.QuranBookReferenceFilter{
 		BookID:            bookID,
-		Lang:              normalizeLang(lang),
-		TranslationSource: defaultTranslationSourceID,
+		Lang:              normalizedLang,
+		TranslationSource: "",
 		Status:            normalizeStatus(status),
 		Limit:             clampLimit(limit),
 		Offset:            clampOffset(offset),
 	})
+}
+
+// MissingAssets returns admin queue items for missing Quran assets.
+func (uc *UseCase) MissingAssets(
+	ctx context.Context,
+	targetLang string,
+	assetType string,
+	surahID *int,
+	limit int,
+	offset int,
+) (entity.AdminMissingQuranAssets, error) {
+	filter, err := missingQuranAssetFilter(targetLang, assetType, surahID, limit, offset)
+	if err != nil {
+		return entity.AdminMissingQuranAssets{}, err
+	}
+
+	return uc.repo.ListMissingQuranAssets(ctx, filter)
 }
 
 func clampLimit(limit int) uint64 {
@@ -163,21 +222,8 @@ func clampOffset(offset int) uint64 {
 	return uint64(offset)
 }
 
-func normalizeLang(lang string) string {
-	lang = strings.ToLower(strings.TrimSpace(lang))
-	if lang == "" {
-		return defaultLang
-	}
-
-	return lang
-}
-
 func normalizeTranslationSource(source string) string {
 	source = strings.TrimSpace(source)
-	if source == "" {
-		return defaultTranslationSourceID
-	}
-
 	return source
 }
 
@@ -192,4 +238,48 @@ func normalizeStatus(status string) string {
 	}
 
 	return "approved"
+}
+
+func missingQuranAssetFilter(
+	targetLang string,
+	assetType string,
+	surahID *int,
+	limit int,
+	offset int,
+) (repo.MissingQuranAssetFilter, error) {
+	targetLang = strings.TrimSpace(targetLang)
+	targetLangs := []string{contentlang.Default, contentlang.English}
+	if targetLang != "" {
+		normalized, err := contentlang.Normalize(targetLang)
+		if err != nil || normalized == contentlang.Arabic {
+			return repo.MissingQuranAssetFilter{}, entity.ErrUnsupportedLanguage
+		}
+
+		targetLangs = []string{normalized}
+	}
+
+	assetType = strings.ToLower(strings.TrimSpace(assetType))
+	if assetType != "" && !isMissingQuranAssetType(assetType) {
+		return repo.MissingQuranAssetFilter{}, entity.ErrInvalidAssetType
+	}
+
+	return repo.MissingQuranAssetFilter{
+		TargetLangs: targetLangs,
+		AssetType:   assetType,
+		SurahID:     surahID,
+		Limit:       clampLimit(limit),
+		Offset:      clampOffset(offset),
+	}, nil
+}
+
+func isMissingQuranAssetType(assetType string) bool {
+	switch assetType {
+	case entity.MissingQuranAssetSurahInfo,
+		entity.MissingQuranAssetAyahTranslation,
+		entity.MissingQuranAssetTranslationSource,
+		entity.MissingQuranAssetAudioPublic:
+		return true
+	default:
+		return false
+	}
 }

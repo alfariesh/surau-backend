@@ -654,6 +654,21 @@ func (mr *MockQuranMockRecorder) BookReferences(ctx, bookID, lang, status, limit
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "BookReferences", reflect.TypeOf((*MockQuran)(nil).BookReferences), ctx, bookID, lang, status, limit, offset)
 }
 
+// MissingAssets mocks base method.
+func (m *MockQuran) MissingAssets(ctx context.Context, targetLang, assetType string, surahID *int, limit, offset int) (entity.AdminMissingQuranAssets, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "MissingAssets", ctx, targetLang, assetType, surahID, limit, offset)
+	ret0, _ := ret[0].(entity.AdminMissingQuranAssets)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// MissingAssets indicates an expected call of MissingAssets.
+func (mr *MockQuranMockRecorder) MissingAssets(ctx, targetLang, assetType, surahID, limit, offset any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MissingAssets", reflect.TypeOf((*MockQuran)(nil).MissingAssets), ctx, targetLang, assetType, surahID, limit, offset)
+}
+
 // Recitations mocks base method.
 func (m *MockQuran) Recitations(ctx context.Context) ([]entity.QuranRecitation, error) {
 	m.ctrl.T.Helper()
@@ -728,6 +743,21 @@ func (m *MockQuran) Surahs(ctx context.Context, lang string, includeInfo bool) (
 func (mr *MockQuranMockRecorder) Surahs(ctx, lang, includeInfo any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Surahs", reflect.TypeOf((*MockQuran)(nil).Surahs), ctx, lang, includeInfo)
+}
+
+// TranslationSources mocks base method.
+func (m *MockQuran) TranslationSources(ctx context.Context, lang string) ([]entity.QuranTranslationSource, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "TranslationSources", ctx, lang)
+	ret0, _ := ret[0].([]entity.QuranTranslationSource)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// TranslationSources indicates an expected call of TranslationSources.
+func (mr *MockQuranMockRecorder) TranslationSources(ctx, lang any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "TranslationSources", reflect.TypeOf((*MockQuran)(nil).TranslationSources), ctx, lang)
 }
 
 // MockPersonal is a mock of Personal interface.

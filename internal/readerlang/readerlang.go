@@ -1,49 +1,25 @@
 // Package readerlang normalizes public kitab language codes.
 package readerlang
 
-import (
-	"strings"
-
-	"github.com/evrone/go-clean-template/internal/entity"
-)
+import "github.com/evrone/go-clean-template/internal/contentlang"
 
 const (
-	Default = "id"
-	Arabic  = "ar"
-	English = "en"
+	Default = contentlang.Default
+	Arabic  = contentlang.Arabic
+	English = contentlang.English
 )
 
 // Normalize returns the supported primary language code for kitab APIs.
 func Normalize(lang string) (string, error) {
-	lang = strings.ToLower(strings.TrimSpace(lang))
-	if lang == "" {
-		return Default, nil
-	}
-
-	lang = strings.ReplaceAll(lang, "_", "-")
-	if before, _, ok := strings.Cut(lang, "-"); ok {
-		lang = before
-	}
-
-	switch lang {
-	case Arabic, Default, English:
-		return lang, nil
-	default:
-		return "", entity.ErrUnsupportedLanguage
-	}
+	return contentlang.Normalize(lang)
 }
 
 // MustNormalize returns a supported language or the default.
 func MustNormalize(lang string) string {
-	normalized, err := Normalize(lang)
-	if err != nil {
-		return Default
-	}
-
-	return normalized
+	return contentlang.MustNormalize(lang)
 }
 
 // IsArabic reports whether the normalized language is the source language.
 func IsArabic(lang string) bool {
-	return lang == Arabic
+	return contentlang.IsArabic(lang)
 }

@@ -1,5 +1,72 @@
 basePath: /v1
 definitions:
+  entity.AdminMissingQuranAsset:
+    properties:
+      asset_type:
+        example: ayah_translation
+        type: string
+      available_langs:
+        example:
+        - id
+        items:
+          type: string
+        type: array
+      ayah_key:
+        example: "73:4"
+        type: string
+      ayah_number:
+        example: 4
+        type: integer
+      recitation_id:
+        type: string
+      source_updated_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      surah_id:
+        example: 73
+        type: integer
+      surah_name:
+        type: string
+      target_lang:
+        example: en
+        type: string
+      track_key:
+        example: "73:4"
+        type: string
+      track_type:
+        example: ayah
+        type: string
+      translation_source_id:
+        type: string
+      translation_source_name:
+        type: string
+    type: object
+  entity.AdminMissingQuranAssetCount:
+    properties:
+      asset_type:
+        example: ayah_translation
+        type: string
+      target_lang:
+        example: en
+        type: string
+      total:
+        example: 20
+        type: integer
+    type: object
+  entity.AdminMissingQuranAssets:
+    properties:
+      counts:
+        items:
+          $ref: '#/definitions/entity.AdminMissingQuranAssetCount'
+        type: array
+      items:
+        items:
+          $ref: '#/definitions/entity.AdminMissingQuranAsset'
+        type: array
+      total:
+        example: 42
+        type: integer
+    type: object
   entity.AdminMissingReaderAsset:
     properties:
       asset_type:
@@ -125,6 +192,89 @@ definitions:
         example: en
         type: string
     type: object
+  entity.Book:
+    properties:
+      author_id:
+        example: 177
+        type: integer
+      author_name:
+        example: فضل الرحمن صافي
+        type: string
+      bibliography:
+        type: string
+      category_id:
+        example: 10
+        type: integer
+      category_name:
+        example: علوم الحديث
+        type: string
+      cover_url:
+        type: string
+      description:
+        type: string
+      editorial_notes:
+        type: string
+      featured:
+        example: false
+        type: boolean
+      has_content:
+        example: true
+        type: boolean
+      hint:
+        type: string
+      id:
+        example: 797
+        type: integer
+      is_deleted:
+        example: false
+        type: boolean
+      language_coverage:
+        items:
+          $ref: '#/definitions/entity.LanguageCoverage'
+        type: array
+      localization:
+        $ref: '#/definitions/entity.LocalizationMeta'
+      major_release:
+        example: 1
+        type: integer
+      metadata:
+        type: object
+      minor_release:
+        example: 0
+        type: integer
+      name:
+        example: الزبد في مصطلح الحديث
+        type: string
+      pdf_links:
+        type: object
+      printed:
+        example: 1
+        type: integer
+      publication_status:
+        example: published
+        type: string
+      sort_order:
+        example: 10
+        type: integer
+      source_date:
+        example: "02091443"
+        type: string
+      translation_reviewed_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      translation_reviewed_by:
+        example: Editor A
+        type: string
+      translation_status:
+        example: generated
+        type: string
+      type:
+        example: 1
+        type: integer
+      updated_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+    type: object
   entity.BookHeading:
     properties:
       book_id:
@@ -243,6 +393,90 @@ definitions:
         type: integer
       updated_at:
         example: "2026-01-01T00:00:00Z"
+        type: string
+    type: object
+  entity.BookRAGCitation:
+    properties:
+      anchor:
+        example: toc-11
+        type: string
+      book_id:
+        example: 797
+        type: integer
+      heading_id:
+        example: 11
+        type: integer
+      heading_title:
+        example: 'النوع الأول: الصحيح'
+        type: string
+      page_id:
+        example: 12
+        type: integer
+      part:
+        example: "1"
+        type: string
+      printed_page:
+        example: "12"
+        type: string
+      quote:
+        example: الحديث الصحيح هو...
+        type: string
+      ref:
+        example: "1"
+        type: string
+      url:
+        example: /v1/books/797/toc/11/read?lang=id
+        type: string
+    type: object
+  entity.BookRAGResponse:
+    properties:
+      answer:
+        type: string
+      book_id:
+        example: 797
+        type: integer
+      citations:
+        items:
+          $ref: '#/definitions/entity.BookRAGCitation'
+        type: array
+      question:
+        example: Apa definisi hadis sahih?
+        type: string
+      requested_lang:
+        example: id
+        type: string
+      trace:
+        $ref: '#/definitions/entity.BookRAGTrace'
+    type: object
+  entity.BookRAGTrace:
+    properties:
+      focus_page_ids:
+        items:
+          type: integer
+        type: array
+      lexical_heading_ids:
+        items:
+          type: integer
+        type: array
+      repaired:
+        type: boolean
+      retrieval_mode:
+        type: string
+      selected_heading_ids:
+        items:
+          type: integer
+        type: array
+      source_refs:
+        items:
+          type: string
+        type: array
+      tree_blocks:
+        type: integer
+      tree_candidate_count:
+        type: integer
+      tree_llm_calls:
+        type: integer
+      tree_reasoning:
         type: string
     type: object
   entity.BookSection:
@@ -709,6 +943,14 @@ definitions:
         items:
           $ref: '#/definitions/entity.QuranAudioTrack'
         type: array
+      availability:
+        $ref: '#/definitions/entity.QuranAyahAvailability'
+      available_translation_langs:
+        example:
+        - id
+        items:
+          type: string
+        type: array
       ayah_key:
         example: "73:4"
         type: string
@@ -725,6 +967,9 @@ definitions:
         type: object
       page_number:
         type: integer
+      requested_lang:
+        example: en
+        type: string
       script_type:
         type: string
       search_text:
@@ -738,9 +983,19 @@ definitions:
         type: string
       translation:
         $ref: '#/definitions/entity.QuranTranslation'
+      translation_missing:
+        example: true
+        type: boolean
       updated_at:
         example: "2026-01-01T00:00:00Z"
         type: string
+    type: object
+  entity.QuranAyahAvailability:
+    properties:
+      audio:
+        $ref: '#/definitions/entity.AvailabilityDecision'
+      translation:
+        $ref: '#/definitions/entity.AvailabilityDecision'
     type: object
   entity.QuranRecitation:
     properties:
@@ -797,6 +1052,15 @@ definitions:
     properties:
       ayah:
         $ref: '#/definitions/entity.QuranAyah'
+      matched_field:
+        example: translation
+        type: string
+      matched_lang:
+        example: ar
+        type: string
+      matched_source_id:
+        example: qul-kfgqpc-id-simple
+        type: string
       score:
         example: 0.82
         type: number
@@ -808,6 +1072,8 @@ definitions:
         type: integer
       info:
         $ref: '#/definitions/entity.QuranSurahInfo'
+      localization:
+        $ref: '#/definitions/entity.LocalizationMeta'
       metadata:
         type: object
       name_arabic:
@@ -880,6 +1146,58 @@ definitions:
         example: qul-kfgqpc-id-simple
         type: string
       text:
+        type: string
+      updated_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+    type: object
+  entity.QuranTranslationCoverage:
+    properties:
+      percent:
+        example: 100
+        type: number
+      total_ayahs:
+        example: 6236
+        type: integer
+      translated_ayahs:
+        example: 6236
+        type: integer
+    type: object
+  entity.QuranTranslationSource:
+    properties:
+      checksum:
+        type: string
+      coverage:
+        $ref: '#/definitions/entity.QuranTranslationCoverage'
+      format:
+        example: simple.json
+        type: string
+      id:
+        example: qul-kfgqpc-id-simple
+        type: string
+      imported_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      is_default:
+        example: true
+        type: boolean
+      lang:
+        example: id
+        type: string
+      license_status:
+        example: needs_review
+        type: string
+      metadata:
+        type: object
+      name:
+        example: King Fahad Quran Complex
+        type: string
+      qul_resource_id:
+        example: "173"
+        type: string
+      source_url:
+        type: string
+      translator:
         type: string
       updated_at:
         example: "2026-01-01T00:00:00Z"
@@ -969,9 +1287,8 @@ definitions:
         example: 550e8400-e29b-41d4-a716-446655440000
         type: string
       status:
-        allOf:
-        - $ref: '#/definitions/entity.TaskStatus'
         example: todo
+        type: string
       title:
         example: My task
         type: string
@@ -982,16 +1299,6 @@ definitions:
         example: 550e8400-e29b-41d4-a716-446655440000
         type: string
     type: object
-  entity.TaskStatus:
-    enum:
-    - todo
-    - in_progress
-    - done
-    type: string
-    x-enum-varnames:
-    - TaskStatusTodo
-    - TaskStatusInProgress
-    - TaskStatusDone
   entity.Translation:
     properties:
       destination:
@@ -1075,173 +1382,6 @@ definitions:
         example: johndoe
         type: string
     type: object
-  github_com_evrone_go-clean-template_internal_entity.Book:
-    properties:
-      author_id:
-        example: 177
-        type: integer
-      author_name:
-        example: فضل الرحمن صافي
-        type: string
-      bibliography:
-        type: string
-      category_id:
-        example: 10
-        type: integer
-      category_name:
-        example: علوم الحديث
-        type: string
-      cover_url:
-        type: string
-      description:
-        type: string
-      editorial_notes:
-        type: string
-      featured:
-        example: false
-        type: boolean
-      has_content:
-        example: true
-        type: boolean
-      hint:
-        type: string
-      id:
-        example: 797
-        type: integer
-      is_deleted:
-        example: false
-        type: boolean
-      language_coverage:
-        items:
-          $ref: '#/definitions/entity.LanguageCoverage'
-        type: array
-      localization:
-        $ref: '#/definitions/entity.LocalizationMeta'
-      major_release:
-        example: 1
-        type: integer
-      metadata:
-        type: object
-      minor_release:
-        example: 0
-        type: integer
-      name:
-        example: الزبد في مصطلح الحديث
-        type: string
-      pdf_links:
-        type: object
-      printed:
-        example: 1
-        type: integer
-      publication_status:
-        example: published
-        type: string
-      sort_order:
-        example: 10
-        type: integer
-      source_date:
-        example: "02091443"
-        type: string
-      translation_reviewed_at:
-        example: "2026-01-01T00:00:00Z"
-        type: string
-      translation_reviewed_by:
-        example: Editor A
-        type: string
-      translation_status:
-        example: generated
-        type: string
-      type:
-        example: 1
-        type: integer
-      updated_at:
-        example: "2026-01-01T00:00:00Z"
-        type: string
-    type: object
-  github_com_evrone_go-clean-template_internal_entity.BookRAGCitation:
-    properties:
-      anchor:
-        example: toc-11
-        type: string
-      book_id:
-        example: 797
-        type: integer
-      heading_id:
-        example: 11
-        type: integer
-      heading_title:
-        example: 'النوع الأول: الصحيح'
-        type: string
-      page_id:
-        example: 12
-        type: integer
-      part:
-        example: "1"
-        type: string
-      printed_page:
-        example: "12"
-        type: string
-      quote:
-        example: الحديث الصحيح هو...
-        type: string
-      ref:
-        example: "1"
-        type: string
-      url:
-        example: /v1/books/797/toc/11/read?lang=id
-        type: string
-    type: object
-  github_com_evrone_go-clean-template_internal_entity.BookRAGResponse:
-    properties:
-      answer:
-        type: string
-      book_id:
-        example: 797
-        type: integer
-      citations:
-        items:
-          $ref: '#/definitions/github_com_evrone_go-clean-template_internal_entity.BookRAGCitation'
-        type: array
-      question:
-        example: Apa definisi hadis sahih?
-        type: string
-      requested_lang:
-        example: id
-        type: string
-      trace:
-        $ref: '#/definitions/github_com_evrone_go-clean-template_internal_entity.BookRAGTrace'
-    type: object
-  github_com_evrone_go-clean-template_internal_entity.BookRAGTrace:
-    properties:
-      focus_page_ids:
-        items:
-          type: integer
-        type: array
-      lexical_heading_ids:
-        items:
-          type: integer
-        type: array
-      repaired:
-        type: boolean
-      retrieval_mode:
-        type: string
-      selected_heading_ids:
-        items:
-          type: integer
-        type: array
-      source_refs:
-        items:
-          type: string
-        type: array
-      tree_blocks:
-        type: integer
-      tree_candidate_count:
-        type: integer
-      tree_llm_calls:
-        type: integer
-      tree_reasoning:
-        type: string
-    type: object
   v1.Accepted:
     properties:
       accepted:
@@ -1262,7 +1402,7 @@ definitions:
     properties:
       books:
         items:
-          $ref: '#/definitions/github_com_evrone_go-clean-template_internal_entity.Book'
+          $ref: '#/definitions/entity.Book'
         type: array
       total:
         example: 42
@@ -1481,13 +1621,12 @@ definitions:
   v1.TransitionTask:
     properties:
       status:
-        allOf:
-        - $ref: '#/definitions/entity.TaskStatus'
         enum:
         - todo
         - in_progress
         - done
         example: in_progress
+        type: string
     required:
     - status
     type: object
@@ -1535,6 +1674,68 @@ info:
   title: Go Clean Template API
   version: "1.0"
 paths:
+  /admin/quran/missing-assets:
+    get:
+      description: Admin-only queue of missing Quran surah info, ayah translations,
+        translation sources, and public audio.
+      operationId: admin-list-missing-quran-assets
+      parameters:
+      - description: 'Target language: id or en; empty returns both'
+        enum:
+        - id
+        - en
+        in: query
+        name: target_lang
+        type: string
+      - description: Asset type filter
+        enum:
+        - surah_info
+        - ayah_translation
+        - translation_source
+        - audio_public
+        in: query
+        name: asset_type
+        type: string
+      - description: Surah ID
+        in: query
+        name: surah_id
+        type: integer
+      - default: 50
+        description: Page size
+        in: query
+        name: limit
+        type: integer
+      - default: 0
+        description: Page offset
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.AdminMissingQuranAssets'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      summary: List missing Quran assets
+      tags:
+      - admin
   /admin/reader/missing-assets:
     get:
       description: Admin-only queue of missing kitab metadata, section translations,
@@ -1968,7 +2169,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_evrone_go-clean-template_internal_entity.Book'
+            $ref: '#/definitions/entity.Book'
         "400":
           description: Bad Request
           schema:
@@ -2184,7 +2385,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_evrone_go-clean-template_internal_entity.BookRAGResponse'
+            $ref: '#/definitions/entity.BookRAGResponse'
         "400":
           description: Bad Request
           schema:
@@ -2480,8 +2681,7 @@ paths:
         in: query
         name: lang
         type: string
-      - default: qul-kfgqpc-id-simple
-        description: Translation source
+      - description: Translation source ID. Empty uses language default.
         in: query
         name: translation_source
         type: string
@@ -2678,8 +2878,7 @@ paths:
         in: query
         name: lang
         type: string
-      - default: qul-kfgqpc-id-simple
-        description: Translation source
+      - description: Translation source ID. Empty uses language default.
         in: query
         name: translation_source
         type: string
@@ -2720,6 +2919,37 @@ paths:
           schema:
             $ref: '#/definitions/v1.Error'
       summary: List Quran ayahs for a surah
+      tags:
+      - quran
+  /quran/translation-sources:
+    get:
+      description: List imported Quran translation sources for the requested language,
+        with coverage and default marker.
+      operationId: list-quran-translation-sources
+      parameters:
+      - default: id
+        description: 'Language code: ar, id, or en'
+        in: query
+        name: lang
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/entity.QuranTranslationSource'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      summary: List Quran translation sources
       tags:
       - quran
   /tasks:
