@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/evrone/go-clean-template/internal/entity"
+	"github.com/evrone/go-clean-template/internal/readerlang"
 	"github.com/evrone/go-clean-template/internal/repo"
 )
 
@@ -119,7 +120,10 @@ func (uc *UseCase) AskBook(
 		return entity.BookRAGResponse{}, entity.ErrInvalidQuestion
 	}
 
-	lang = normalizeLang(lang)
+	lang, err := readerlang.Normalize(lang)
+	if err != nil {
+		return entity.BookRAGResponse{}, err
+	}
 	maxCitations = clampMaxCitations(maxCitations)
 
 	doc, err := uc.repo.GetRAGBookDocument(ctx, bookID, lang)
@@ -149,11 +153,12 @@ func (uc *UseCase) AskBook(
 	focusPageIDs := focusPagesForHeadings(structure, searchResults, headingIDs)
 	if len(headingIDs) == 0 {
 		return entity.BookRAGResponse{
-			BookID:    bookID,
-			Question:  question,
-			Answer:    notFoundAnswer(question),
-			Citations: []entity.BookRAGCitation{},
-			Trace:     buildTrace(includeTrace, treeSelection, lexicalHeadingIDs, focusPageIDs, nil, false),
+			BookID:        bookID,
+			RequestedLang: lang,
+			Question:      question,
+			Answer:        notFoundAnswer(question),
+			Citations:     []entity.BookRAGCitation{},
+			Trace:         buildTrace(includeTrace, treeSelection, lexicalHeadingIDs, focusPageIDs, nil, false),
 		}, nil
 	}
 
@@ -163,11 +168,12 @@ func (uc *UseCase) AskBook(
 	}
 	if len(sources) == 0 {
 		return entity.BookRAGResponse{
-			BookID:    bookID,
-			Question:  question,
-			Answer:    notFoundAnswer(question),
-			Citations: []entity.BookRAGCitation{},
-			Trace:     buildTrace(includeTrace, treeSelection, lexicalHeadingIDs, focusPageIDs, nil, false),
+			BookID:        bookID,
+			RequestedLang: lang,
+			Question:      question,
+			Answer:        notFoundAnswer(question),
+			Citations:     []entity.BookRAGCitation{},
+			Trace:         buildTrace(includeTrace, treeSelection, lexicalHeadingIDs, focusPageIDs, nil, false),
 		}, nil
 	}
 
@@ -179,11 +185,12 @@ func (uc *UseCase) AskBook(
 	}
 
 	return entity.BookRAGResponse{
-		BookID:    bookID,
-		Question:  question,
-		Answer:    answer,
-		Citations: citations,
-		Trace:     buildTrace(includeTrace, treeSelection, lexicalHeadingIDs, focusPageIDs, sources, repaired),
+		BookID:        bookID,
+		RequestedLang: lang,
+		Question:      question,
+		Answer:        answer,
+		Citations:     citations,
+		Trace:         buildTrace(includeTrace, treeSelection, lexicalHeadingIDs, focusPageIDs, sources, repaired),
 	}, nil
 }
 
@@ -1719,6 +1726,8 @@ func publicErrorMessage(err error) string {
 	switch {
 	case errors.Is(err, entity.ErrInvalidQuestion):
 		return "invalid question"
+	case errors.Is(err, entity.ErrUnsupportedLanguage):
+		return "unsupported language"
 	case errors.Is(err, entity.ErrBookNotFound):
 		return "book not found"
 	case errors.Is(err, entity.ErrRAGNotConfigured):

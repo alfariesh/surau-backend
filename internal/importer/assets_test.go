@@ -30,6 +30,27 @@ func TestReaderAssetValidate(t *testing.T) {
 			},
 		},
 		{
+			name: "english region language",
+			asset: importer.ReaderAsset{
+				Kind:      "translation",
+				BookID:    797,
+				HeadingID: 10,
+				Lang:      "en-US",
+				Content:   "Translation",
+			},
+		},
+		{
+			name: "unsupported language",
+			asset: importer.ReaderAsset{
+				Kind:      "translation",
+				BookID:    797,
+				HeadingID: 10,
+				Lang:      "fr",
+				Content:   "Traduction",
+			},
+			wantErr: true,
+		},
+		{
 			name: "audio",
 			asset: importer.ReaderAsset{
 				Kind:      "audio",

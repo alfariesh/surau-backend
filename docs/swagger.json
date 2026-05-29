@@ -385,6 +385,365 @@
                 }
             }
         },
+        "/authors": {
+            "get": {
+                "description": "List authors with requested-language display metadata. Search matches Arabic and any catalog translation; display remains requested language or Arabic fallback.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "kitab"
+                ],
+                "summary": "List kitab authors",
+                "operationId": "list-kitab-authors",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Search query",
+                        "name": "q",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 50,
+                        "description": "Page size",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Page offset",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "default": "id",
+                        "description": "Language code: ar, id, or en",
+                        "name": "lang",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.AuthorList"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/books": {
+            "get": {
+                "description": "List published kitab catalog books. Book list responses keep existing fields, add localization metadata, and omit language_coverage; missing requested catalog translation falls back to Arabic metadata.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "kitab"
+                ],
+                "summary": "List kitab books",
+                "operationId": "list-kitab-books",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Search query",
+                        "name": "q",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Category ID",
+                        "name": "category_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Author ID",
+                        "name": "author_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Filter books that have imported content",
+                        "name": "has_content",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 50,
+                        "description": "Page size",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Page offset",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "default": "id",
+                        "description": "Language code: ar, id, or en",
+                        "name": "lang",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.BookList"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/books/{book_id}": {
+            "get": {
+                "description": "Get one published kitab book. Detail responses include language_coverage with translated, summarized, and audio section counts by language.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "kitab"
+                ],
+                "summary": "Get kitab book",
+                "operationId": "get-kitab-book",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Book ID",
+                        "name": "book_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "default": "id",
+                        "description": "Language code: ar, id, or en",
+                        "name": "lang",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_evrone_go-clean-template_internal_entity.Book"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/books/{book_id}/headings": {
+            "get": {
+                "description": "List raw Arabic heading tree rows for one published kitab.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "kitab"
+                ],
+                "summary": "List kitab headings",
+                "operationId": "list-kitab-headings",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Book ID",
+                        "name": "book_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Search heading title",
+                        "name": "q",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/entity.BookHeading"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/books/{book_id}/pages": {
+            "get": {
+                "description": "List imported source pages for one published kitab.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "kitab"
+                ],
+                "summary": "List kitab pages",
+                "operationId": "list-kitab-pages",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Book ID",
+                        "name": "book_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "default": 50,
+                        "description": "Page size",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Page offset",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.PageList"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/books/{book_id}/pages/{page_id}": {
+            "get": {
+                "description": "Get one imported source page for a published kitab.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "kitab"
+                ],
+                "summary": "Get kitab page",
+                "operationId": "get-kitab-page",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Book ID",
+                        "name": "book_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page ID",
+                        "name": "page_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.BookPage"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
         "/books/{book_id}/quran-references": {
             "get": {
                 "description": "List Quran references linked to a public kitab. Defaults to approved references.",
@@ -456,6 +815,449 @@
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/books/{book_id}/rag": {
+            "post": {
+                "description": "Ask a question against one kitab. Sources include requested translation text only when exact requested-language translation exists; response includes requested_lang.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "kitab"
+                ],
+                "summary": "Ask kitab RAG",
+                "operationId": "ask-kitab-rag",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Book ID",
+                        "name": "book_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "default": "id",
+                        "description": "Language code: ar, id, or en",
+                        "name": "lang",
+                        "in": "query"
+                    },
+                    {
+                        "description": "Question payload",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.BookRAG"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_evrone_go-clean-template_internal_entity.BookRAGResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/books/{book_id}/sections/{heading_id}": {
+            "get": {
+                "description": "Get source section content plus exact requested-language translation. If lang=en is missing while id exists, translation stays null and available_translation_langs lists alternatives.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "kitab"
+                ],
+                "summary": "Get kitab section",
+                "operationId": "get-kitab-section",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Book ID",
+                        "name": "book_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Heading ID",
+                        "name": "heading_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "default": "id",
+                        "description": "Language code: ar, id, or en",
+                        "name": "lang",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.BookSection"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/books/{book_id}/toc": {
+            "get": {
+                "description": "List nested TOC nodes. Titles use exact requested translation when available, otherwise Arabic; metadata exposes requested_lang, title_lang, is_title_fallback, translation_missing, and available language arrays.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "kitab"
+                ],
+                "summary": "List kitab TOC",
+                "operationId": "list-kitab-toc",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Book ID",
+                        "name": "book_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "default": "id",
+                        "description": "Language code: ar, id, or en",
+                        "name": "lang",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Include audio metadata",
+                        "name": "include_audio",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/entity.BookTOCNode"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/books/{book_id}/toc/{heading_id}/playlist": {
+            "get": {
+                "description": "Get a continuous audiobook manifest for one TOC subtree in the exact requested language.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "kitab"
+                ],
+                "summary": "Get kitab TOC audio playlist",
+                "operationId": "get-kitab-toc-playlist",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Book ID",
+                        "name": "book_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Heading ID",
+                        "name": "heading_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "default": "id",
+                        "description": "Language code: ar, id, or en",
+                        "name": "lang",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.BookTOCPlaylist"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/books/{book_id}/toc/{heading_id}/read": {
+            "get": {
+                "description": "Article-style section response with breadcrumb and sibling navigation. Translation content is exact-language only; missing requested translation returns translation=null with translation_missing=true.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "kitab"
+                ],
+                "summary": "Read kitab TOC section",
+                "operationId": "read-kitab-toc-section",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Book ID",
+                        "name": "book_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Heading ID",
+                        "name": "heading_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "default": "id",
+                        "description": "Language code: ar, id, or en",
+                        "name": "lang",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.BookTOCRead"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/books/{book_id}/toc/{heading_id}/translation-feedback": {
+            "post": {
+                "description": "Store feedback for an exact section translation language. Posting feedback for missing lang=en still returns 404 translation not found.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "kitab"
+                ],
+                "summary": "Create kitab translation feedback",
+                "operationId": "create-kitab-translation-feedback",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Book ID",
+                        "name": "book_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Heading ID",
+                        "name": "heading_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "default": "id",
+                        "description": "Language code: ar, id, or en",
+                        "name": "lang",
+                        "in": "query"
+                    },
+                    {
+                        "description": "Feedback payload",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.CreateTranslationFeedback"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/entity.TranslationFeedback"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/categories": {
+            "get": {
+                "description": "List non-deleted kitab categories. Supported lang values are ar, id, and en; empty defaults to id. Catalog metadata falls back to Arabic and exposes localization metadata when the requested translation is missing.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "kitab"
+                ],
+                "summary": "List kitab categories",
+                "operationId": "list-kitab-categories",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "default": "id",
+                        "description": "Language code: ar, id, or en",
+                        "name": "lang",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/entity.Category"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
                         "schema": {
                             "$ref": "#/definitions/v1.Error"
                         }
@@ -1358,6 +2160,136 @@
         }
     },
     "definitions": {
+        "entity.Author": {
+            "type": "object",
+            "properties": {
+                "biography": {
+                    "type": "string"
+                },
+                "death_number": {
+                    "type": "integer",
+                    "example": 1442
+                },
+                "death_text": {
+                    "type": "string",
+                    "example": "1442"
+                },
+                "id": {
+                    "type": "integer",
+                    "example": 177
+                },
+                "is_deleted": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "localization": {
+                    "$ref": "#/definitions/entity.LocalizationMeta"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "فضل الرحمن صافي"
+                },
+                "translation_reviewed_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "translation_reviewed_by": {
+                    "type": "string",
+                    "example": "Editor A"
+                },
+                "translation_status": {
+                    "type": "string",
+                    "example": "generated"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                }
+            }
+        },
+        "entity.BookHeading": {
+            "type": "object",
+            "properties": {
+                "book_id": {
+                    "type": "integer",
+                    "example": 797
+                },
+                "content": {
+                    "type": "string",
+                    "example": "النوع الأول: الصحيح"
+                },
+                "depth": {
+                    "type": "integer",
+                    "example": 0
+                },
+                "heading_id": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "is_deleted": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "ordinal": {
+                    "type": "integer",
+                    "example": 9
+                },
+                "page_id": {
+                    "type": "integer",
+                    "example": 12
+                },
+                "parent_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                }
+            }
+        },
+        "entity.BookPage": {
+            "type": "object",
+            "properties": {
+                "book_id": {
+                    "type": "integer",
+                    "example": 797
+                },
+                "content_html": {
+                    "type": "string"
+                },
+                "content_text": {
+                    "type": "string"
+                },
+                "is_deleted": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "number": {
+                    "type": "string",
+                    "example": "42"
+                },
+                "page_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "part": {
+                    "type": "string",
+                    "example": "1"
+                },
+                "printed_page": {
+                    "type": "string",
+                    "example": "3"
+                },
+                "services": {
+                    "type": "object"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                }
+            }
+        },
         "entity.BookQuranReference": {
             "type": "object",
             "properties": {
@@ -1438,6 +2370,550 @@
                 "updated_at": {
                     "type": "string",
                     "example": "2026-01-01T00:00:00Z"
+                }
+            }
+        },
+        "entity.BookSection": {
+            "type": "object",
+            "properties": {
+                "audio": {
+                    "$ref": "#/definitions/entity.SectionAudio"
+                },
+                "available_summary_langs": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "id"
+                    ]
+                },
+                "available_translation_langs": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "id"
+                    ]
+                },
+                "book_id": {
+                    "type": "integer",
+                    "example": 797
+                },
+                "end_page_id": {
+                    "type": "integer",
+                    "example": 15
+                },
+                "heading": {
+                    "$ref": "#/definitions/entity.BookHeading"
+                },
+                "heading_id": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "is_title_fallback": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "original_html": {
+                    "type": "string"
+                },
+                "original_text": {
+                    "type": "string"
+                },
+                "requested_lang": {
+                    "type": "string",
+                    "example": "en"
+                },
+                "start_page_id": {
+                    "type": "integer",
+                    "example": 12
+                },
+                "title_lang": {
+                    "type": "string",
+                    "example": "ar"
+                },
+                "translation": {
+                    "$ref": "#/definitions/entity.SectionTranslation"
+                },
+                "translation_missing": {
+                    "type": "boolean",
+                    "example": false
+                }
+            }
+        },
+        "entity.BookTOCLink": {
+            "type": "object",
+            "properties": {
+                "available_summary_langs": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "id"
+                    ]
+                },
+                "available_translation_langs": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "id"
+                    ]
+                },
+                "depth": {
+                    "type": "integer",
+                    "example": 0
+                },
+                "has_audio": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "has_summary": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "has_translation": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "heading_id": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "is_title_fallback": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "ordinal": {
+                    "type": "integer",
+                    "example": 9
+                },
+                "page_id": {
+                    "type": "integer",
+                    "example": 12
+                },
+                "parent_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "requested_lang": {
+                    "type": "string",
+                    "example": "en"
+                },
+                "summary": {
+                    "type": "string"
+                },
+                "summary_lang": {
+                    "type": "string",
+                    "example": "id"
+                },
+                "summary_reviewed_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "summary_reviewed_by": {
+                    "type": "string",
+                    "example": "Editor A"
+                },
+                "summary_status": {
+                    "type": "string",
+                    "example": "generated"
+                },
+                "title": {
+                    "type": "string",
+                    "example": "النوع الأول: الصحيح"
+                },
+                "title_lang": {
+                    "type": "string",
+                    "example": "ar"
+                },
+                "translation_missing": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "translation_reviewed_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "translation_reviewed_by": {
+                    "type": "string",
+                    "example": "Editor A"
+                },
+                "translation_status": {
+                    "type": "string",
+                    "example": "generated"
+                }
+            }
+        },
+        "entity.BookTOCNode": {
+            "type": "object",
+            "properties": {
+                "audio": {
+                    "$ref": "#/definitions/entity.SectionAudio"
+                },
+                "available_summary_langs": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "id"
+                    ]
+                },
+                "available_translation_langs": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "id"
+                    ]
+                },
+                "book_id": {
+                    "type": "integer",
+                    "example": 797
+                },
+                "children": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.BookTOCNode"
+                    }
+                },
+                "depth": {
+                    "type": "integer",
+                    "example": 0
+                },
+                "has_audio": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "has_summary": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "has_translation": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "heading_id": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "is_title_fallback": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "ordinal": {
+                    "type": "integer",
+                    "example": 9
+                },
+                "page_id": {
+                    "type": "integer",
+                    "example": 12
+                },
+                "parent_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "requested_lang": {
+                    "type": "string",
+                    "example": "en"
+                },
+                "summary": {
+                    "type": "string"
+                },
+                "summary_lang": {
+                    "type": "string",
+                    "example": "id"
+                },
+                "summary_reviewed_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "summary_reviewed_by": {
+                    "type": "string",
+                    "example": "Editor A"
+                },
+                "summary_status": {
+                    "type": "string",
+                    "example": "generated"
+                },
+                "title": {
+                    "type": "string",
+                    "example": "النوع الأول: الصحيح"
+                },
+                "title_lang": {
+                    "type": "string",
+                    "example": "ar"
+                },
+                "translation_missing": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "translation_reviewed_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "translation_reviewed_by": {
+                    "type": "string",
+                    "example": "Editor A"
+                },
+                "translation_status": {
+                    "type": "string",
+                    "example": "generated"
+                }
+            }
+        },
+        "entity.BookTOCPlaylist": {
+            "type": "object",
+            "properties": {
+                "book_id": {
+                    "type": "integer",
+                    "example": 797
+                },
+                "heading_id": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.BookTOCPlaylistItem"
+                    }
+                },
+                "lang": {
+                    "type": "string",
+                    "example": "id"
+                },
+                "missing_count": {
+                    "type": "integer",
+                    "example": 0
+                },
+                "total_duration_seconds": {
+                    "type": "integer",
+                    "example": 320
+                }
+            }
+        },
+        "entity.BookTOCPlaylistItem": {
+            "type": "object",
+            "properties": {
+                "duration_seconds": {
+                    "type": "integer",
+                    "example": 320
+                },
+                "heading_id": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "mime_type": {
+                    "type": "string",
+                    "example": "audio/mpeg"
+                },
+                "narrator": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string",
+                    "example": "باب النية"
+                },
+                "url": {
+                    "type": "string",
+                    "example": "https://cdn.example/audio.mp3"
+                }
+            }
+        },
+        "entity.BookTOCRead": {
+            "type": "object",
+            "properties": {
+                "audio": {
+                    "$ref": "#/definitions/entity.SectionAudio"
+                },
+                "available_summary_langs": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "id"
+                    ]
+                },
+                "available_translation_langs": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "id"
+                    ]
+                },
+                "book_id": {
+                    "type": "integer",
+                    "example": 797
+                },
+                "breadcrumb": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.BookTOCLink"
+                    }
+                },
+                "children": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.BookTOCLink"
+                    }
+                },
+                "end_page_id": {
+                    "type": "integer",
+                    "example": 15
+                },
+                "has_summary": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "heading_id": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "is_title_fallback": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "next": {
+                    "$ref": "#/definitions/entity.BookTOCLink"
+                },
+                "original_html": {
+                    "type": "string"
+                },
+                "original_text": {
+                    "type": "string"
+                },
+                "previous": {
+                    "$ref": "#/definitions/entity.BookTOCLink"
+                },
+                "requested_lang": {
+                    "type": "string",
+                    "example": "en"
+                },
+                "start_page_id": {
+                    "type": "integer",
+                    "example": 12
+                },
+                "summary": {
+                    "type": "string"
+                },
+                "summary_lang": {
+                    "type": "string",
+                    "example": "id"
+                },
+                "title": {
+                    "type": "string",
+                    "example": "باب النية"
+                },
+                "title_lang": {
+                    "type": "string",
+                    "example": "ar"
+                },
+                "translation": {
+                    "$ref": "#/definitions/entity.SectionTranslation"
+                },
+                "translation_missing": {
+                    "type": "boolean",
+                    "example": false
+                }
+            }
+        },
+        "entity.Category": {
+            "type": "object",
+            "properties": {
+                "display_order": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "id": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "is_deleted": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "localization": {
+                    "$ref": "#/definitions/entity.LocalizationMeta"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "علوم الحديث"
+                },
+                "translation_reviewed_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "translation_reviewed_by": {
+                    "type": "string",
+                    "example": "Editor A"
+                },
+                "translation_status": {
+                    "type": "string",
+                    "example": "generated"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                }
+            }
+        },
+        "entity.LanguageCoverage": {
+            "type": "object",
+            "properties": {
+                "audio_sections": {
+                    "type": "integer",
+                    "example": 40
+                },
+                "lang": {
+                    "type": "string",
+                    "example": "id"
+                },
+                "summarized_sections": {
+                    "type": "integer",
+                    "example": 80
+                },
+                "translated_sections": {
+                    "type": "integer",
+                    "example": 120
+                }
+            }
+        },
+        "entity.LocalizationMeta": {
+            "type": "object",
+            "properties": {
+                "available_langs": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "id"
+                    ]
+                },
+                "display_lang": {
+                    "type": "string",
+                    "example": "ar"
+                },
+                "field_langs": {
+                    "type": "object"
+                },
+                "is_fallback": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "requested_lang": {
+                    "type": "string",
+                    "example": "en"
                 }
             }
         },
@@ -1784,6 +3260,91 @@
                 }
             }
         },
+        "entity.SectionAudio": {
+            "type": "object",
+            "properties": {
+                "book_id": {
+                    "type": "integer",
+                    "example": 797
+                },
+                "duration_seconds": {
+                    "type": "integer",
+                    "example": 120
+                },
+                "heading_id": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "lang": {
+                    "type": "string",
+                    "example": "id"
+                },
+                "metadata": {
+                    "type": "object"
+                },
+                "mime_type": {
+                    "type": "string",
+                    "example": "audio/mpeg"
+                },
+                "narrator": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "url": {
+                    "type": "string",
+                    "example": "https://cdn.example/audio.mp3"
+                }
+            }
+        },
+        "entity.SectionTranslation": {
+            "type": "object",
+            "properties": {
+                "book_id": {
+                    "type": "integer",
+                    "example": 797
+                },
+                "content": {
+                    "type": "string"
+                },
+                "heading_id": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "lang": {
+                    "type": "string",
+                    "example": "id"
+                },
+                "metadata": {
+                    "type": "object"
+                },
+                "source": {
+                    "type": "string",
+                    "example": "manual"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "translation_reviewed_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "translation_reviewed_by": {
+                    "type": "string",
+                    "example": "Editor A"
+                },
+                "translation_status": {
+                    "type": "string",
+                    "example": "generated"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                }
+            }
+        },
         "entity.Task": {
             "type": "object",
             "properties": {
@@ -1855,6 +3416,58 @@
                 }
             }
         },
+        "entity.TranslationFeedback": {
+            "type": "object",
+            "properties": {
+                "book_id": {
+                    "type": "integer",
+                    "example": 797
+                },
+                "client_id": {
+                    "type": "string"
+                },
+                "client_ip": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "heading_id": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "lang": {
+                    "type": "string",
+                    "example": "id"
+                },
+                "note": {
+                    "type": "string"
+                },
+                "reason": {
+                    "type": "string",
+                    "example": "style"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "user_agent": {
+                    "type": "string"
+                },
+                "user_id": {
+                    "type": "string"
+                },
+                "vote": {
+                    "type": "string",
+                    "example": "dislike"
+                }
+            }
+        },
         "entity.TranslationHistory": {
             "type": "object",
             "properties": {
@@ -1899,12 +3512,278 @@
                 }
             }
         },
+        "github_com_evrone_go-clean-template_internal_entity.Book": {
+            "type": "object",
+            "properties": {
+                "author_id": {
+                    "type": "integer",
+                    "example": 177
+                },
+                "author_name": {
+                    "type": "string",
+                    "example": "فضل الرحمن صافي"
+                },
+                "bibliography": {
+                    "type": "string"
+                },
+                "category_id": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "category_name": {
+                    "type": "string",
+                    "example": "علوم الحديث"
+                },
+                "cover_url": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "editorial_notes": {
+                    "type": "string"
+                },
+                "featured": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "has_content": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "hint": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer",
+                    "example": 797
+                },
+                "is_deleted": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "language_coverage": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.LanguageCoverage"
+                    }
+                },
+                "localization": {
+                    "$ref": "#/definitions/entity.LocalizationMeta"
+                },
+                "major_release": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "metadata": {
+                    "type": "object"
+                },
+                "minor_release": {
+                    "type": "integer",
+                    "example": 0
+                },
+                "name": {
+                    "type": "string",
+                    "example": "الزبد في مصطلح الحديث"
+                },
+                "pdf_links": {
+                    "type": "object"
+                },
+                "printed": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "publication_status": {
+                    "type": "string",
+                    "example": "published"
+                },
+                "sort_order": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "source_date": {
+                    "type": "string",
+                    "example": "02091443"
+                },
+                "translation_reviewed_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "translation_reviewed_by": {
+                    "type": "string",
+                    "example": "Editor A"
+                },
+                "translation_status": {
+                    "type": "string",
+                    "example": "generated"
+                },
+                "type": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                }
+            }
+        },
+        "github_com_evrone_go-clean-template_internal_entity.BookRAGCitation": {
+            "type": "object",
+            "properties": {
+                "anchor": {
+                    "type": "string",
+                    "example": "toc-11"
+                },
+                "book_id": {
+                    "type": "integer",
+                    "example": 797
+                },
+                "heading_id": {
+                    "type": "integer",
+                    "example": 11
+                },
+                "heading_title": {
+                    "type": "string",
+                    "example": "النوع الأول: الصحيح"
+                },
+                "page_id": {
+                    "type": "integer",
+                    "example": 12
+                },
+                "part": {
+                    "type": "string",
+                    "example": "1"
+                },
+                "printed_page": {
+                    "type": "string",
+                    "example": "12"
+                },
+                "quote": {
+                    "type": "string",
+                    "example": "الحديث الصحيح هو..."
+                },
+                "ref": {
+                    "type": "string",
+                    "example": "1"
+                },
+                "url": {
+                    "type": "string",
+                    "example": "/v1/books/797/toc/11/read?lang=id"
+                }
+            }
+        },
+        "github_com_evrone_go-clean-template_internal_entity.BookRAGResponse": {
+            "type": "object",
+            "properties": {
+                "answer": {
+                    "type": "string"
+                },
+                "book_id": {
+                    "type": "integer",
+                    "example": 797
+                },
+                "citations": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_evrone_go-clean-template_internal_entity.BookRAGCitation"
+                    }
+                },
+                "question": {
+                    "type": "string",
+                    "example": "Apa definisi hadis sahih?"
+                },
+                "requested_lang": {
+                    "type": "string",
+                    "example": "id"
+                },
+                "trace": {
+                    "$ref": "#/definitions/github_com_evrone_go-clean-template_internal_entity.BookRAGTrace"
+                }
+            }
+        },
+        "github_com_evrone_go-clean-template_internal_entity.BookRAGTrace": {
+            "type": "object",
+            "properties": {
+                "focus_page_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "lexical_heading_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "repaired": {
+                    "type": "boolean"
+                },
+                "retrieval_mode": {
+                    "type": "string"
+                },
+                "selected_heading_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "source_refs": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "tree_blocks": {
+                    "type": "integer"
+                },
+                "tree_candidate_count": {
+                    "type": "integer"
+                },
+                "tree_llm_calls": {
+                    "type": "integer"
+                },
+                "tree_reasoning": {
+                    "type": "string"
+                }
+            }
+        },
         "v1.Accepted": {
             "type": "object",
             "properties": {
                 "accepted": {
                     "type": "boolean",
                     "example": true
+                }
+            }
+        },
+        "v1.AuthorList": {
+            "type": "object",
+            "properties": {
+                "authors": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.Author"
+                    }
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 42
+                }
+            }
+        },
+        "v1.BookList": {
+            "type": "object",
+            "properties": {
+                "books": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_evrone_go-clean-template_internal_entity.Book"
+                    }
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 42
                 }
             }
         },
@@ -1920,6 +3799,34 @@
                 "total": {
                     "type": "integer",
                     "example": 42
+                }
+            }
+        },
+        "v1.BookRAG": {
+            "type": "object",
+            "required": [
+                "question"
+            ],
+            "properties": {
+                "include_trace": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "max_citations": {
+                    "type": "integer",
+                    "maximum": 10,
+                    "minimum": 1,
+                    "example": 5
+                },
+                "question": {
+                    "type": "string",
+                    "maxLength": 4000,
+                    "minLength": 2,
+                    "example": "Apa definisi hadis sahih?"
+                },
+                "stream": {
+                    "type": "boolean",
+                    "example": false
                 }
             }
         },
@@ -1959,6 +3866,41 @@
                     "type": "string",
                     "maxLength": 255,
                     "example": "My task"
+                }
+            }
+        },
+        "v1.CreateTranslationFeedback": {
+            "type": "object",
+            "required": [
+                "vote"
+            ],
+            "properties": {
+                "client_id": {
+                    "type": "string",
+                    "maxLength": 128
+                },
+                "note": {
+                    "type": "string",
+                    "maxLength": 2000
+                },
+                "reason": {
+                    "type": "string",
+                    "enum": [
+                        "inaccurate",
+                        "unclear",
+                        "style",
+                        "typo",
+                        "formatting",
+                        "other"
+                    ]
+                },
+                "vote": {
+                    "type": "string",
+                    "enum": [
+                        "like",
+                        "dislike"
+                    ],
+                    "example": "dislike"
                 }
             }
         },
@@ -2008,6 +3950,21 @@
                     "maxLength": 72,
                     "minLength": 8,
                     "example": "secret123"
+                }
+            }
+        },
+        "v1.PageList": {
+            "type": "object",
+            "properties": {
+                "pages": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.BookPage"
+                    }
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 42
                 }
             }
         },

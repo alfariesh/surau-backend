@@ -58,6 +58,26 @@ func TestAskBookRAG(t *testing.T) {
 	assert.Contains(t, string(body), `"answer":"Jawaban [1]."`)
 }
 
+func TestAskBookRAGUnsupportedLanguage(t *testing.T) {
+	t.Parallel()
+
+	app := newBookRAGTestApp(&fakeBookRAG{err: entity.ErrUnsupportedLanguage})
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/v1/books/797/rag?lang=fr",
+		bytes.NewBufferString(`{"question":"Apa definisi hadis sahih?"}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := app.Test(req)
+
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	assert.Contains(t, string(body), "unsupported language")
+}
+
 func TestAskBookRAGStream(t *testing.T) {
 	t.Parallel()
 
@@ -95,6 +115,7 @@ func newBookRAGTestApp(bookRAG *fakeBookRAG) *fiber.App {
 type fakeBookRAG struct {
 	response entity.BookRAGResponse
 	stream   bool
+	err      error
 }
 
 func (f *fakeBookRAG) AskBook(
@@ -105,6 +126,10 @@ func (f *fakeBookRAG) AskBook(
 	_ int,
 	_ bool,
 ) (entity.BookRAGResponse, error) {
+	if f.err != nil {
+		return entity.BookRAGResponse{}, f.err
+	}
+
 	if f.response.BookID == 0 {
 		f.response.BookID = bookID
 	}

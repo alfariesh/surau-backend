@@ -273,7 +273,11 @@ Catalog endpoints support an optional `lang` query parameter:
 - `GET /v1/books?lang=id`
 - `GET /v1/books/{book_id}?lang=id`
 
-If a requested catalog translation does not exist, the API falls back to the raw Arabic metadata. When a translation exists, public responses include `translation_status`, `translation_reviewed_by`, and `translation_reviewed_at` where available. Section reader and TOC responses expose the same label fields for generated or reviewed translations.
+Supported kitab languages are `ar`, `id`, and `en`; empty `lang` defaults to `id`, and region tags such as `en-US` normalize to `en`. Unsupported languages return `400 {"error":"unsupported language"}`.
+
+If a requested catalog translation does not exist, the API falls back to the raw Arabic metadata and includes `localization` metadata with `requested_lang`, `display_lang`, `is_fallback`, `available_langs`, and per-field language hints. Section reader and TOC responses expose `requested_lang`, `title_lang`, `is_title_fallback`, `available_translation_langs`, `available_summary_langs`, and `translation_missing`. Section translation content stays exact-language only: if `lang=en` is missing but `lang=id` exists, `translation` remains `null` and the frontend can offer `id` from `available_translation_langs`.
+
+See [docs/kitab-multilingual-api.md](docs/kitab-multilingual-api.md) for the FE-facing multilingual kitab contract.
 
 Reader translation feedback is a lightweight public signal, not editorial approval. Send `vote=like` for good sections, or `vote=dislike` with optional `reason` and `note` when a translation needs attention:
 

@@ -83,9 +83,10 @@ type BookRAGTrace struct {
 
 // BookRAGResponse is the public non-streaming RAG response.
 type BookRAGResponse struct {
-	BookID    int               `json:"book_id" example:"797"`
-	Question  string            `json:"question" example:"Apa definisi hadis sahih?"`
-	Answer    string            `json:"answer"`
-	Citations []BookRAGCitation `json:"citations"`
-	Trace     *BookRAGTrace     `json:"trace"`
+	BookID        int               `json:"book_id" example:"797"`
+	RequestedLang string            `json:"requested_lang" example:"id"`
+	Question      string            `json:"question" example:"Apa definisi hadis sahih?"`
+	Answer        string            `json:"answer"`
+	Citations     []BookRAGCitation `json:"citations"`
+	Trace         *BookRAGTrace     `json:"trace"`
 }

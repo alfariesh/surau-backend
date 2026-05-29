@@ -14,10 +14,24 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
+// @Summary     List kitab categories
+// @Description List non-deleted kitab categories. Supported lang values are ar, id, and en; empty defaults to id. Catalog metadata falls back to Arabic and exposes localization metadata when the requested translation is missing.
+// @ID          list-kitab-categories
+// @Tags        kitab
+// @Produce     json
+// @Param       lang query    string false "Language code: ar, id, or en" default(id)
+// @Success     200  {array}  entity.Category
+// @Failure     400  {object} response.Error
+// @Failure     500  {object} response.Error
+// @Router      /categories [get]
 func (r *V1) listCategories(ctx *fiber.Ctx) error {
 	categories, err := r.reader.Categories(ctx.UserContext(), ctx.Query("lang"))
 	if err != nil {
 		r.l.Error(err, "restapi - v1 - listCategories")
+
+		if errors.Is(err, entity.ErrUnsupportedLanguage) {
+			return errorResponse(ctx, http.StatusBadRequest, "unsupported language")
+		}
 
 		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
 	}
@@ -25,6 +39,19 @@ func (r *V1) listCategories(ctx *fiber.Ctx) error {
 	return ctx.Status(http.StatusOK).JSON(categories)
 }
 
+// @Summary     List kitab authors
+// @Description List authors with requested-language display metadata. Search matches Arabic and any catalog translation; display remains requested language or Arabic fallback.
+// @ID          list-kitab-authors
+// @Tags        kitab
+// @Produce     json
+// @Param       q      query    string false "Search query"
+// @Param       limit  query    int    false "Page size" default(50)
+// @Param       offset query    int    false "Page offset" default(0)
+// @Param       lang   query    string false "Language code: ar, id, or en" default(id)
+// @Success     200    {object} response.AuthorList
+// @Failure     400    {object} response.Error
+// @Failure     500    {object} response.Error
+// @Router      /authors [get]
 func (r *V1) listAuthors(ctx *fiber.Ctx) error {
 	authors, total, err := r.reader.Authors(
 		ctx.UserContext(),
@@ -36,12 +63,32 @@ func (r *V1) listAuthors(ctx *fiber.Ctx) error {
 	if err != nil {
 		r.l.Error(err, "restapi - v1 - listAuthors")
 
+		if errors.Is(err, entity.ErrUnsupportedLanguage) {
+			return errorResponse(ctx, http.StatusBadRequest, "unsupported language")
+		}
+
 		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
 	}
 
 	return ctx.Status(http.StatusOK).JSON(response.AuthorList{Authors: authors, Total: total})
 }
 
+// @Summary     List kitab books
+// @Description List published kitab catalog books. Book list responses keep existing fields, add localization metadata, and omit language_coverage; missing requested catalog translation falls back to Arabic metadata.
+// @ID          list-kitab-books
+// @Tags        kitab
+// @Produce     json
+// @Param       q           query    string false "Search query"
+// @Param       category_id query    int    false "Category ID"
+// @Param       author_id   query    int    false "Author ID"
+// @Param       has_content query    bool   false "Filter books that have imported content"
+// @Param       limit       query    int    false "Page size" default(50)
+// @Param       offset      query    int    false "Page offset" default(0)
+// @Param       lang        query    string false "Language code: ar, id, or en" default(id)
+// @Success     200         {object} response.BookList
+// @Failure     400         {object} response.Error
+// @Failure     500         {object} response.Error
+// @Router      /books [get]
 func (r *V1) listBooks(ctx *fiber.Ctx) error {
 	categoryID, err := optionalQueryInt(ctx, "category_id")
 	if err != nil {
@@ -71,12 +118,28 @@ func (r *V1) listBooks(ctx *fiber.Ctx) error {
 	if err != nil {
 		r.l.Error(err, "restapi - v1 - listBooks")
 
+		if errors.Is(err, entity.ErrUnsupportedLanguage) {
+			return errorResponse(ctx, http.StatusBadRequest, "unsupported language")
+		}
+
 		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
 	}
 
 	return ctx.Status(http.StatusOK).JSON(response.BookList{Books: books, Total: total})
 }
 
+// @Summary     Get kitab book
+// @Description Get one published kitab book. Detail responses include language_coverage with translated, summarized, and audio section counts by language.
+// @ID          get-kitab-book
+// @Tags        kitab
+// @Produce     json
+// @Param       book_id path     int    true  "Book ID"
+// @Param       lang    query    string false "Language code: ar, id, or en" default(id)
+// @Success     200     {object} entity.Book
+// @Failure     400     {object} response.Error
+// @Failure     404     {object} response.Error
+// @Failure     500     {object} response.Error
+// @Router      /books/{book_id} [get]
 func (r *V1) getBook(ctx *fiber.Ctx) error {
 	bookID, err := pathInt(ctx, "book_id")
 	if err != nil {
@@ -91,12 +154,31 @@ func (r *V1) getBook(ctx *fiber.Ctx) error {
 			return errorResponse(ctx, http.StatusNotFound, "book not found")
 		}
 
+		if errors.Is(err, entity.ErrUnsupportedLanguage) {
+			return errorResponse(ctx, http.StatusBadRequest, "unsupported language")
+		}
+
 		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
 	}
 
 	return ctx.Status(http.StatusOK).JSON(book)
 }
 
+// @Summary     Ask kitab RAG
+// @Description Ask a question against one kitab. Sources include requested translation text only when exact requested-language translation exists; response includes requested_lang.
+// @ID          ask-kitab-rag
+// @Tags        kitab
+// @Accept      json
+// @Produce     json
+// @Param       book_id path     int             true  "Book ID"
+// @Param       lang    query    string          false "Language code: ar, id, or en" default(id)
+// @Param       body    body     request.BookRAG true  "Question payload"
+// @Success     200     {object} entity.BookRAGResponse
+// @Failure     400     {object} response.Error
+// @Failure     404     {object} response.Error
+// @Failure     503     {object} response.Error
+// @Failure     500     {object} response.Error
+// @Router      /books/{book_id}/rag [post]
 func (r *V1) askBookRAG(ctx *fiber.Ctx) error {
 	if r.bookRAG == nil {
 		return errorResponse(ctx, http.StatusServiceUnavailable, "rag is not configured")
@@ -169,6 +251,9 @@ func (r *V1) bookRAGErrorResponse(ctx *fiber.Ctx, err error) error {
 	if errors.Is(err, entity.ErrInvalidQuestion) {
 		return errorResponse(ctx, http.StatusBadRequest, "invalid question")
 	}
+	if errors.Is(err, entity.ErrUnsupportedLanguage) {
+		return errorResponse(ctx, http.StatusBadRequest, "unsupported language")
+	}
 	if errors.Is(err, entity.ErrBookNotFound) {
 		return errorResponse(ctx, http.StatusNotFound, "book not found")
 	}
@@ -194,6 +279,18 @@ func writeSSEEvent(w *bufio.Writer, event string, payload any) error {
 	return w.Flush()
 }
 
+// @Summary     List kitab pages
+// @Description List imported source pages for one published kitab.
+// @ID          list-kitab-pages
+// @Tags        kitab
+// @Produce     json
+// @Param       book_id path     int true  "Book ID"
+// @Param       limit   query    int false "Page size" default(50)
+// @Param       offset  query    int false "Page offset" default(0)
+// @Success     200     {object} response.PageList
+// @Failure     400     {object} response.Error
+// @Failure     500     {object} response.Error
+// @Router      /books/{book_id}/pages [get]
 func (r *V1) listBookPages(ctx *fiber.Ctx) error {
 	bookID, err := pathInt(ctx, "book_id")
 	if err != nil {
@@ -215,6 +312,18 @@ func (r *V1) listBookPages(ctx *fiber.Ctx) error {
 	return ctx.Status(http.StatusOK).JSON(response.PageList{Pages: pages, Total: total})
 }
 
+// @Summary     Get kitab page
+// @Description Get one imported source page for a published kitab.
+// @ID          get-kitab-page
+// @Tags        kitab
+// @Produce     json
+// @Param       book_id path     int true "Book ID"
+// @Param       page_id path     int true "Page ID"
+// @Success     200     {object} entity.BookPage
+// @Failure     400     {object} response.Error
+// @Failure     404     {object} response.Error
+// @Failure     500     {object} response.Error
+// @Router      /books/{book_id}/pages/{page_id} [get]
 func (r *V1) getBookPage(ctx *fiber.Ctx) error {
 	bookID, err := pathInt(ctx, "book_id")
 	if err != nil {
@@ -240,6 +349,17 @@ func (r *V1) getBookPage(ctx *fiber.Ctx) error {
 	return ctx.Status(http.StatusOK).JSON(page)
 }
 
+// @Summary     List kitab headings
+// @Description List raw Arabic heading tree rows for one published kitab.
+// @ID          list-kitab-headings
+// @Tags        kitab
+// @Produce     json
+// @Param       book_id path     int    true  "Book ID"
+// @Param       q       query    string false "Search heading title"
+// @Success     200     {array}  entity.BookHeading
+// @Failure     400     {object} response.Error
+// @Failure     500     {object} response.Error
+// @Router      /books/{book_id}/headings [get]
 func (r *V1) listBookHeadings(ctx *fiber.Ctx) error {
 	bookID, err := pathInt(ctx, "book_id")
 	if err != nil {
@@ -256,6 +376,19 @@ func (r *V1) listBookHeadings(ctx *fiber.Ctx) error {
 	return ctx.Status(http.StatusOK).JSON(headings)
 }
 
+// @Summary     Get kitab section
+// @Description Get source section content plus exact requested-language translation. If lang=en is missing while id exists, translation stays null and available_translation_langs lists alternatives.
+// @ID          get-kitab-section
+// @Tags        kitab
+// @Produce     json
+// @Param       book_id    path     int    true  "Book ID"
+// @Param       heading_id path     int    true  "Heading ID"
+// @Param       lang       query    string false "Language code: ar, id, or en" default(id)
+// @Success     200        {object} entity.BookSection
+// @Failure     400        {object} response.Error
+// @Failure     404        {object} response.Error
+// @Failure     500        {object} response.Error
+// @Router      /books/{book_id}/sections/{heading_id} [get]
 func (r *V1) getBookSection(ctx *fiber.Ctx) error {
 	bookID, err := pathInt(ctx, "book_id")
 	if err != nil {
@@ -275,12 +408,29 @@ func (r *V1) getBookSection(ctx *fiber.Ctx) error {
 			return errorResponse(ctx, http.StatusNotFound, "heading not found")
 		}
 
+		if errors.Is(err, entity.ErrUnsupportedLanguage) {
+			return errorResponse(ctx, http.StatusBadRequest, "unsupported language")
+		}
+
 		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
 	}
 
 	return ctx.Status(http.StatusOK).JSON(section)
 }
 
+// @Summary     List kitab TOC
+// @Description List nested TOC nodes. Titles use exact requested translation when available, otherwise Arabic; metadata exposes requested_lang, title_lang, is_title_fallback, translation_missing, and available language arrays.
+// @ID          list-kitab-toc
+// @Tags        kitab
+// @Produce     json
+// @Param       book_id       path     int    true  "Book ID"
+// @Param       lang          query    string false "Language code: ar, id, or en" default(id)
+// @Param       include_audio query    bool   false "Include audio metadata" default(false)
+// @Success     200           {array}  entity.BookTOCNode
+// @Failure     400           {object} response.Error
+// @Failure     404           {object} response.Error
+// @Failure     500           {object} response.Error
+// @Router      /books/{book_id}/toc [get]
 func (r *V1) listBookTOC(ctx *fiber.Ctx) error {
 	bookID, err := pathInt(ctx, "book_id")
 	if err != nil {
@@ -305,12 +455,29 @@ func (r *V1) listBookTOC(ctx *fiber.Ctx) error {
 			return errorResponse(ctx, http.StatusNotFound, "book not found")
 		}
 
+		if errors.Is(err, entity.ErrUnsupportedLanguage) {
+			return errorResponse(ctx, http.StatusBadRequest, "unsupported language")
+		}
+
 		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
 	}
 
 	return ctx.Status(http.StatusOK).JSON(toc)
 }
 
+// @Summary     Read kitab TOC section
+// @Description Article-style section response with breadcrumb and sibling navigation. Translation content is exact-language only; missing requested translation returns translation=null with translation_missing=true.
+// @ID          read-kitab-toc-section
+// @Tags        kitab
+// @Produce     json
+// @Param       book_id    path     int    true  "Book ID"
+// @Param       heading_id path     int    true  "Heading ID"
+// @Param       lang       query    string false "Language code: ar, id, or en" default(id)
+// @Success     200        {object} entity.BookTOCRead
+// @Failure     400        {object} response.Error
+// @Failure     404        {object} response.Error
+// @Failure     500        {object} response.Error
+// @Router      /books/{book_id}/toc/{heading_id}/read [get]
 func (r *V1) readBookTOCSection(ctx *fiber.Ctx) error {
 	bookID, err := pathInt(ctx, "book_id")
 	if err != nil {
@@ -334,12 +501,29 @@ func (r *V1) readBookTOCSection(ctx *fiber.Ctx) error {
 			return errorResponse(ctx, http.StatusNotFound, "heading not found")
 		}
 
+		if errors.Is(err, entity.ErrUnsupportedLanguage) {
+			return errorResponse(ctx, http.StatusBadRequest, "unsupported language")
+		}
+
 		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
 	}
 
 	return ctx.Status(http.StatusOK).JSON(section)
 }
 
+// @Summary     Get kitab TOC audio playlist
+// @Description Get a continuous audiobook manifest for one TOC subtree in the exact requested language.
+// @ID          get-kitab-toc-playlist
+// @Tags        kitab
+// @Produce     json
+// @Param       book_id    path     int    true  "Book ID"
+// @Param       heading_id path     int    true  "Heading ID"
+// @Param       lang       query    string false "Language code: ar, id, or en" default(id)
+// @Success     200        {object} entity.BookTOCPlaylist
+// @Failure     400        {object} response.Error
+// @Failure     404        {object} response.Error
+// @Failure     500        {object} response.Error
+// @Router      /books/{book_id}/toc/{heading_id}/playlist [get]
 func (r *V1) getBookTOCPlaylist(ctx *fiber.Ctx) error {
 	bookID, err := pathInt(ctx, "book_id")
 	if err != nil {
@@ -363,12 +547,31 @@ func (r *V1) getBookTOCPlaylist(ctx *fiber.Ctx) error {
 			return errorResponse(ctx, http.StatusNotFound, "heading not found")
 		}
 
+		if errors.Is(err, entity.ErrUnsupportedLanguage) {
+			return errorResponse(ctx, http.StatusBadRequest, "unsupported language")
+		}
+
 		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
 	}
 
 	return ctx.Status(http.StatusOK).JSON(playlist)
 }
 
+// @Summary     Create kitab translation feedback
+// @Description Store feedback for an exact section translation language. Posting feedback for missing lang=en still returns 404 translation not found.
+// @ID          create-kitab-translation-feedback
+// @Tags        kitab
+// @Accept      json
+// @Produce     json
+// @Param       book_id    path     int                               true  "Book ID"
+// @Param       heading_id path     int                               true  "Heading ID"
+// @Param       lang       query    string                            false "Language code: ar, id, or en" default(id)
+// @Param       body       body     request.CreateTranslationFeedback true  "Feedback payload"
+// @Success     201        {object} entity.TranslationFeedback
+// @Failure     400        {object} response.Error
+// @Failure     404        {object} response.Error
+// @Failure     500        {object} response.Error
+// @Router      /books/{book_id}/toc/{heading_id}/translation-feedback [post]
 func (r *V1) createTranslationFeedback(ctx *fiber.Ctx) error {
 	bookID, err := pathInt(ctx, "book_id")
 	if err != nil {
@@ -416,6 +619,10 @@ func (r *V1) createTranslationFeedback(ctx *fiber.Ctx) error {
 
 		if errors.Is(err, entity.ErrTranslationNotFound) {
 			return errorResponse(ctx, http.StatusNotFound, "translation not found")
+		}
+
+		if errors.Is(err, entity.ErrUnsupportedLanguage) {
+			return errorResponse(ctx, http.StatusBadRequest, "unsupported language")
 		}
 
 		if errors.Is(err, entity.ErrInvalidFeedback) {

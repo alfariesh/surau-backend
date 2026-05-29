@@ -24,6 +24,7 @@ var (
 	ErrPageNotFound               = errors.New("page not found")
 	ErrHeadingNotFound            = errors.New("heading not found")
 	ErrTranslationNotFound        = errors.New("translation not found")
+	ErrUnsupportedLanguage        = errors.New("unsupported language")
 	ErrFeedbackNotFound           = errors.New("feedback not found")
 	ErrBookmarkNotFound           = errors.New("bookmark not found")
 	ErrProgressNotFound           = errors.New("reading progress not found")

@@ -2,9 +2,9 @@ package reader
 
 import (
 	"context"
-	"strings"
 
 	"github.com/evrone/go-clean-template/internal/entity"
+	"github.com/evrone/go-clean-template/internal/readerlang"
 )
 
 // TOC returns the nested table of contents for a published book.
@@ -14,7 +14,12 @@ func (uc *UseCase) TOC(
 	lang string,
 	includeAudio bool,
 ) ([]entity.BookTOCNode, error) {
-	entries, err := uc.repo.ListTOCEntries(ctx, bookID, normalizeLang(lang), includeAudio)
+	lang, err := readerlang.Normalize(lang)
+	if err != nil {
+		return nil, err
+	}
+
+	entries, err := uc.repo.ListTOCEntries(ctx, bookID, lang, includeAudio)
 	if err != nil {
 		return nil, err
 	}
@@ -24,7 +29,10 @@ func (uc *UseCase) TOC(
 
 // TOCRead returns one TOC section as an article-like reader response.
 func (uc *UseCase) TOCRead(ctx context.Context, bookID, headingID int, lang string) (entity.BookTOCRead, error) {
-	lang = normalizeLang(lang)
+	lang, err := readerlang.Normalize(lang)
+	if err != nil {
+		return entity.BookTOCRead{}, err
+	}
 
 	entries, err := uc.repo.ListTOCEntries(ctx, bookID, lang, true)
 	if err != nil {
@@ -42,28 +50,37 @@ func (uc *UseCase) TOCRead(ctx context.Context, bookID, headingID int, lang stri
 	}
 
 	return entity.BookTOCRead{
-		BookID:       bookID,
-		HeadingID:    headingID,
-		Title:        context.current.Title,
-		Summary:      context.current.Summary,
-		SummaryLang:  context.current.SummaryLang,
-		HasSummary:   context.current.HasSummary,
-		Breadcrumb:   context.breadcrumb,
-		Children:     context.children,
-		Previous:     context.previous,
-		Next:         context.next,
-		StartPageID:  section.StartPageID,
-		EndPageID:    section.EndPageID,
-		OriginalHTML: section.OriginalHTML,
-		OriginalText: section.OriginalText,
-		Translation:  section.Translation,
-		Audio:        section.Audio,
+		BookID:                    bookID,
+		HeadingID:                 headingID,
+		Title:                     context.current.Title,
+		RequestedLang:             context.current.RequestedLang,
+		TitleLang:                 context.current.TitleLang,
+		IsTitleFallback:           context.current.IsTitleFallback,
+		Summary:                   context.current.Summary,
+		SummaryLang:               context.current.SummaryLang,
+		HasSummary:                context.current.HasSummary,
+		TranslationMissing:        section.TranslationMissing,
+		AvailableTranslationLangs: context.current.AvailableTranslationLangs,
+		AvailableSummaryLangs:     context.current.AvailableSummaryLangs,
+		Breadcrumb:                context.breadcrumb,
+		Children:                  context.children,
+		Previous:                  context.previous,
+		Next:                      context.next,
+		StartPageID:               section.StartPageID,
+		EndPageID:                 section.EndPageID,
+		OriginalHTML:              section.OriginalHTML,
+		OriginalText:              section.OriginalText,
+		Translation:               section.Translation,
+		Audio:                     section.Audio,
 	}, nil
 }
 
 // TOCPlaylist returns a continuous audiobook manifest for one TOC subtree.
 func (uc *UseCase) TOCPlaylist(ctx context.Context, bookID, headingID int, lang string) (entity.BookTOCPlaylist, error) {
-	lang = normalizeLang(lang)
+	lang, err := readerlang.Normalize(lang)
+	if err != nil {
+		return entity.BookTOCPlaylist{}, err
+	}
 
 	entries, err := uc.repo.ListTOCEntries(ctx, bookID, lang, true)
 	if err != nil {
@@ -79,15 +96,6 @@ type tocContext struct {
 	children   []entity.BookTOCLink
 	previous   *entity.BookTOCLink
 	next       *entity.BookTOCLink
-}
-
-func normalizeLang(lang string) string {
-	lang = strings.ToLower(strings.TrimSpace(lang))
-	if lang == "" {
-		return "id"
-	}
-
-	return lang
 }
 
 func buildTOCTree(entries []entity.BookTOCEntry) []entity.BookTOCNode {
@@ -257,48 +265,60 @@ func buildTOCPlaylist(
 
 func tocNodeFromEntry(entry entity.BookTOCEntry) entity.BookTOCNode {
 	return entity.BookTOCNode{
-		BookID:                entry.BookID,
-		HeadingID:             entry.HeadingID,
-		ParentID:              entry.ParentID,
-		PageID:                entry.PageID,
-		Depth:                 entry.Depth,
-		Ordinal:               entry.Ordinal,
-		Title:                 entry.Title,
-		Summary:               entry.Summary,
-		SummaryLang:           entry.SummaryLang,
-		HasSummary:            entry.HasSummary,
-		SummaryStatus:         entry.SummaryStatus,
-		SummaryReviewedBy:     entry.SummaryReviewedBy,
-		SummaryReviewedAt:     entry.SummaryReviewedAt,
-		HasAudio:              entry.HasAudio,
-		HasTranslation:        entry.HasTranslation,
-		TranslationStatus:     entry.TranslationStatus,
-		TranslationReviewedBy: entry.TranslationReviewedBy,
-		TranslationReviewedAt: entry.TranslationReviewedAt,
-		Audio:                 entry.Audio,
-		Children:              []entity.BookTOCNode{},
+		BookID:                    entry.BookID,
+		HeadingID:                 entry.HeadingID,
+		ParentID:                  entry.ParentID,
+		PageID:                    entry.PageID,
+		Depth:                     entry.Depth,
+		Ordinal:                   entry.Ordinal,
+		Title:                     entry.Title,
+		RequestedLang:             entry.RequestedLang,
+		TitleLang:                 entry.TitleLang,
+		IsTitleFallback:           entry.IsTitleFallback,
+		Summary:                   entry.Summary,
+		SummaryLang:               entry.SummaryLang,
+		HasSummary:                entry.HasSummary,
+		SummaryStatus:             entry.SummaryStatus,
+		SummaryReviewedBy:         entry.SummaryReviewedBy,
+		SummaryReviewedAt:         entry.SummaryReviewedAt,
+		HasAudio:                  entry.HasAudio,
+		HasTranslation:            entry.HasTranslation,
+		TranslationMissing:        entry.TranslationMissing,
+		AvailableTranslationLangs: entry.AvailableTranslationLangs,
+		AvailableSummaryLangs:     entry.AvailableSummaryLangs,
+		TranslationStatus:         entry.TranslationStatus,
+		TranslationReviewedBy:     entry.TranslationReviewedBy,
+		TranslationReviewedAt:     entry.TranslationReviewedAt,
+		Audio:                     entry.Audio,
+		Children:                  []entity.BookTOCNode{},
 	}
 }
 
 func tocLinkFromEntry(entry entity.BookTOCEntry) entity.BookTOCLink {
 	return entity.BookTOCLink{
-		HeadingID:             entry.HeadingID,
-		Title:                 entry.Title,
-		ParentID:              entry.ParentID,
-		PageID:                entry.PageID,
-		Depth:                 entry.Depth,
-		Ordinal:               entry.Ordinal,
-		Summary:               entry.Summary,
-		SummaryLang:           entry.SummaryLang,
-		HasSummary:            entry.HasSummary,
-		SummaryStatus:         entry.SummaryStatus,
-		SummaryReviewedBy:     entry.SummaryReviewedBy,
-		SummaryReviewedAt:     entry.SummaryReviewedAt,
-		HasAudio:              entry.HasAudio,
-		HasTranslation:        entry.HasTranslation,
-		TranslationStatus:     entry.TranslationStatus,
-		TranslationReviewedBy: entry.TranslationReviewedBy,
-		TranslationReviewedAt: entry.TranslationReviewedAt,
+		HeadingID:                 entry.HeadingID,
+		Title:                     entry.Title,
+		RequestedLang:             entry.RequestedLang,
+		TitleLang:                 entry.TitleLang,
+		IsTitleFallback:           entry.IsTitleFallback,
+		ParentID:                  entry.ParentID,
+		PageID:                    entry.PageID,
+		Depth:                     entry.Depth,
+		Ordinal:                   entry.Ordinal,
+		Summary:                   entry.Summary,
+		SummaryLang:               entry.SummaryLang,
+		HasSummary:                entry.HasSummary,
+		SummaryStatus:             entry.SummaryStatus,
+		SummaryReviewedBy:         entry.SummaryReviewedBy,
+		SummaryReviewedAt:         entry.SummaryReviewedAt,
+		HasAudio:                  entry.HasAudio,
+		HasTranslation:            entry.HasTranslation,
+		TranslationMissing:        entry.TranslationMissing,
+		AvailableTranslationLangs: entry.AvailableTranslationLangs,
+		AvailableSummaryLangs:     entry.AvailableSummaryLangs,
+		TranslationStatus:         entry.TranslationStatus,
+		TranslationReviewedBy:     entry.TranslationReviewedBy,
+		TranslationReviewedAt:     entry.TranslationReviewedAt,
 	}
 }
 

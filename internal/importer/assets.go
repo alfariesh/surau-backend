@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/evrone/go-clean-template/internal/readerlang"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -68,6 +69,9 @@ type ReaderAsset struct {
 func (a ReaderAsset) Validate() error {
 	if strings.TrimSpace(a.Lang) == "" {
 		return errors.New("lang is required")
+	}
+	if _, err := readerlang.Normalize(a.Lang); err != nil {
+		return err
 	}
 	if a.Kind == "heading_summary" {
 		if err := validateSummaryStatus(a.SummaryStatus, a.SummaryReviewedBy, a.Status, a.ReviewedBy); err != nil {
@@ -184,7 +188,12 @@ func importAssets(ctx context.Context, pool *pgxpool.Pool, reader io.Reader) (As
 			continue
 		}
 
-		asset.Lang = strings.ToLower(strings.TrimSpace(asset.Lang))
+		lang, err := readerlang.Normalize(asset.Lang)
+		if err != nil {
+			stats.Skipped++
+			continue
+		}
+		asset.Lang = lang
 		if err := asset.Validate(); err != nil {
 			stats.Skipped++
 			continue
