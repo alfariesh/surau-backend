@@ -72,6 +72,19 @@ func TestQuranMultilingualContract(t *testing.T) {
 	}
 	assertAvailability(t, idAyah.Availability.Translation, "show_requested", "id", "id", false)
 
+	defaultAudioAyah := getQuranAyahAudio(t, "id", "")
+	if len(defaultAudioAyah.Audio) != 1 {
+		t.Fatalf("default playable recitation audio len = %d, audio %+v", len(defaultAudioAyah.Audio), defaultAudioAyah.Audio)
+	}
+	defaultTrack := defaultAudioAyah.Audio[0]
+	if defaultTrack.RecitationID != fixtureQuranRecitationID || defaultTrack.PublicURL != nil {
+		t.Fatalf("default playable recitation track = %+v", defaultTrack)
+	}
+	if defaultTrack.AudioURL == nil || *defaultTrack.AudioURL == "" {
+		t.Fatalf("default playable recitation should expose source audio_url: %+v", defaultTrack)
+	}
+	assertAvailability(t, defaultAudioAyah.Availability.Audio, "show_requested", "id", "id", false)
+
 	enAyah := getQuranAyah(t, "en")
 	if enAyah.Translation != nil {
 		t.Fatalf("en missing translation should be null, got %+v", enAyah.Translation)
@@ -123,14 +136,14 @@ func TestQuranMultilingualContract(t *testing.T) {
 	}
 	assertAvailability(t, refAyah.Availability.Translation, "offer_available_lang", "en", "ar", true)
 
-	resp = doJSON(t, http.MethodGet, baseURL()+"/v1/admin/quran/missing-assets?target_lang=en", nil, "")
+	resp = doJSON(t, http.MethodGet, baseURL()+"/v1/editorial/quran/missing-assets?target_lang=en", nil, "")
 	decodeAndClose(t, resp, &errorBody)
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("admin quran missing queue without auth expected 401, got %d", resp.StatusCode)
 	}
 
 	adminToken := adminJWT(t)
-	resp = doJSON(t, http.MethodGet, baseURL()+"/v1/admin/quran/missing-assets?target_lang=en", nil, adminToken)
+	resp = doJSON(t, http.MethodGet, baseURL()+"/v1/editorial/quran/missing-assets?target_lang=en", nil, adminToken)
 	var allMissing missingQuranAssetsResponse
 	decodeAndClose(t, resp, &allMissing)
 	if resp.StatusCode != http.StatusOK {
@@ -143,7 +156,7 @@ func TestQuranMultilingualContract(t *testing.T) {
 		assertMissingCount(t, allMissing.Counts, assetType, "en", 1)
 	}
 
-	resp = doJSON(t, http.MethodGet, baseURL()+"/v1/admin/quran/missing-assets?target_lang=en&asset_type=ayah_translation&surah_id=114", nil, adminToken)
+	resp = doJSON(t, http.MethodGet, baseURL()+"/v1/editorial/quran/missing-assets?target_lang=en&asset_type=ayah_translation&surah_id=114", nil, adminToken)
 	var missingTranslations missingQuranAssetsResponse
 	decodeAndClose(t, resp, &missingTranslations)
 	if resp.StatusCode != http.StatusOK {
@@ -162,7 +175,7 @@ func TestQuranMultilingualContract(t *testing.T) {
 	}
 	assertHasLang(t, missingItem.AvailableLangs, "id")
 
-	resp = doJSON(t, http.MethodGet, baseURL()+"/v1/admin/quran/missing-assets?target_lang=ar", nil, adminToken)
+	resp = doJSON(t, http.MethodGet, baseURL()+"/v1/editorial/quran/missing-assets?target_lang=ar", nil, adminToken)
 	decodeAndClose(t, resp, &errorBody)
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("admin quran missing target_lang=ar expected 400, got %d", resp.StatusCode)
@@ -171,7 +184,7 @@ func TestQuranMultilingualContract(t *testing.T) {
 		t.Fatalf("admin quran missing target_lang=ar error = %q", errorBody.Error)
 	}
 
-	resp = doJSON(t, http.MethodGet, baseURL()+"/v1/admin/quran/missing-assets?target_lang=en&asset_type=metadata", nil, adminToken)
+	resp = doJSON(t, http.MethodGet, baseURL()+"/v1/editorial/quran/missing-assets?target_lang=en&asset_type=metadata", nil, adminToken)
 	decodeAndClose(t, resp, &errorBody)
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("admin quran missing invalid asset_type expected 400, got %d", resp.StatusCode)
@@ -326,6 +339,7 @@ type quranAyahResponse struct {
 	AyahNumber                int                       `json:"ayah_number"`
 	AyahKey                   string                    `json:"ayah_key"`
 	Translation               *quranTranslationResponse `json:"translation"`
+	Audio                     []quranAudioTrackResponse `json:"audio"`
 	RequestedLang             string                    `json:"requested_lang"`
 	AvailableTranslationLangs []string                  `json:"available_translation_langs"`
 	TranslationMissing        bool                      `json:"translation_missing"`
@@ -341,6 +355,22 @@ type quranTranslationResponse struct {
 type quranAyahAvailability struct {
 	Translation availabilityDecision `json:"translation"`
 	Audio       availabilityDecision `json:"audio"`
+}
+
+type quranAudioTrackResponse struct {
+	RecitationID string                      `json:"recitation_id"`
+	TrackType    string                      `json:"track_type"`
+	TrackKey     string                      `json:"track_key"`
+	AudioURL     *string                     `json:"audio_url"`
+	PublicURL    *string                     `json:"public_url"`
+	Segments     []quranAudioSegmentResponse `json:"segments"`
+}
+
+type quranAudioSegmentResponse struct {
+	SegmentIndex    int    `json:"segment_index"`
+	AyahKey         string `json:"ayah_key"`
+	TimestampFromMS int    `json:"timestamp_from_ms"`
+	TimestampToMS   int    `json:"timestamp_to_ms"`
 }
 
 type quranSearchResponse struct {
@@ -416,6 +446,23 @@ func getQuranAyah(t *testing.T, lang string) quranAyahResponse {
 	decodeAndClose(t, resp, &ayah)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("get quran ayah %s expected 200, got %d", lang, resp.StatusCode)
+	}
+
+	return ayah
+}
+
+func getQuranAyahAudio(t *testing.T, lang string, recitationID string) quranAyahResponse {
+	t.Helper()
+
+	requestURL := fmt.Sprintf("%s/v1/quran/ayahs/%s?lang=%s&include_audio=true", baseURL(), fixtureQuranAyahKey, lang)
+	if recitationID != "" {
+		requestURL += "&recitation_id=" + url.QueryEscape(recitationID)
+	}
+	resp := doJSON(t, http.MethodGet, requestURL, nil, "")
+	var ayah quranAyahResponse
+	decodeAndClose(t, resp, &ayah)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("get quran ayah audio %s expected 200, got %d", lang, resp.StatusCode)
 	}
 
 	return ayah

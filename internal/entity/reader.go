@@ -337,16 +337,3 @@ type ReadingProgress struct {
 	ProgressPercent *float64  `json:"progress_percent" example:"32.50"`
 	UpdatedAt       time.Time `json:"updated_at"       example:"2026-01-01T00:00:00Z"`
 } // @name entity.ReadingProgress
-
-// Bookmark stores a saved reader location.
-type Bookmark struct {
-	ID        string    `json:"id"         example:"550e8400-e29b-41d4-a716-446655440000"`
-	UserID    string    `json:"user_id"    example:"550e8400-e29b-41d4-a716-446655440000"`
-	BookID    int       `json:"book_id"    example:"797"`
-	PageID    *int      `json:"page_id"    example:"12"`
-	HeadingID *int      `json:"heading_id" example:"10"`
-	Label     *string   `json:"label"`
-	Note      *string   `json:"note"`
-	CreatedAt time.Time `json:"created_at" example:"2026-01-01T00:00:00Z"`
-	UpdatedAt time.Time `json:"updated_at" example:"2026-01-01T00:00:00Z"`
-} // @name entity.Bookmark

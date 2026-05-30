@@ -27,6 +27,7 @@ EMAIL_FROM_NAME=Surau
 EMAIL_REPLY_TO=
 EMAIL_VERIFY_FRONTEND_URL=http://localhost:3005/verify-email
 PASSWORD_RESET_FRONTEND_URL=http://localhost:3005/reset-password
+EMAIL_CHANGE_FRONTEND_URL=http://localhost:3005/change-email
 EMAIL_HTTP_TIMEOUT=10s
 ```
 
@@ -35,7 +36,7 @@ Catatan:
 - `EMAIL_DELIVERY_MODE=cloudflare` wajib jika branch lokal punya mode log.
 - Jika backend tidak punya `EMAIL_DELIVERY_MODE`, abaikan variable itu; backend akan langsung pakai Cloudflare.
 - `EMAIL_FROM_ADDRESS` harus memakai domain yang sudah aktif di Cloudflare Email Service.
-- `EMAIL_VERIFY_FRONTEND_URL` dan `PASSWORD_RESET_FRONTEND_URL` harus mengarah ke port frontend yang sedang dipakai.
+- `EMAIL_VERIFY_FRONTEND_URL`, `PASSWORD_RESET_FRONTEND_URL`, dan `EMAIL_CHANGE_FRONTEND_URL` harus mengarah ke port frontend yang sedang dipakai.
 
 ## Restart Backend
 
@@ -88,11 +89,13 @@ Dengan `AUTH_EMAIL_NOTIFICATIONS_ENABLED=true`, backend juga mengirim email keam
 
 - password berhasil diubah lewat reset password atau change password;
 - email berhasil diverifikasi;
+- email login berhasil diubah;
+- akun berhasil dihapus;
 - role user berubah;
 - login dari kombinasi IP dan user agent baru;
 - percobaan login dibatasi karena rate limit email.
 
-Notifikasi ini tidak membawa password, JWT, verification token, atau reset token. Jika pengiriman notifikasi gagal, operasi utama tetap sukses dan error hanya muncul di log.
+Notifikasi ini tidak membawa password, JWT, verification token, reset token, atau email-change token. Jika pengiriman notifikasi gagal, operasi utama tetap sukses dan error hanya muncul di log.
 
 ## Jika Kena Rate Limit
 

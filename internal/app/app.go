@@ -78,6 +78,10 @@ func initUseCases(cfg *config.Config, pg *postgres.Postgres, jwtManager *jwt.Man
 			PasswordResetFrontendURL: cfg.Email.PasswordResetFrontendURL,
 			PasswordResetTTL:         cfg.Email.PasswordResetTTL,
 			PasswordResetCooldown:    cfg.Email.PasswordResetCooldown,
+			EmailChangeFrontendURL:   cfg.Email.EmailChangeFrontendURL,
+			EmailChangeTTL:           cfg.Email.EmailChangeTTL,
+			EmailChangeCooldown:      cfg.Email.EmailChangeCooldown,
+			SupportEmail:             cfg.Email.ReplyTo,
 			RateLimiter:              rateLimiter,
 			AuditLogger:              userRepo,
 			EmailNotifications: user.EmailNotificationOptions{
@@ -87,6 +91,8 @@ func initUseCases(cfg *config.Config, pg *postgres.Postgres, jwtManager *jwt.Man
 				PasswordChangedEnabled: cfg.AuthEmail.PasswordChangedEnabled,
 				EmailVerifiedEnabled:   cfg.AuthEmail.EmailVerifiedEnabled,
 				RoleChangedEnabled:     cfg.AuthEmail.RoleChangedEnabled,
+				EmailChangedEnabled:    cfg.AuthEmail.EmailChangedEnabled,
+				AccountDeletedEnabled:  cfg.AuthEmail.AccountDeletedEnabled,
 				FailedLoginCooldown:    cfg.AuthEmail.FailedLoginCooldown,
 			},
 			RateLimit: user.RateLimitOptions{
@@ -137,6 +143,26 @@ func initUseCases(cfg *config.Config, pg *postgres.Postgres, jwtManager *jwt.Man
 				ChangePasswordIP: user.RateLimitRule{
 					Max:    cfg.AuthRateLimit.ChangePasswordIPMax,
 					Window: cfg.AuthRateLimit.ChangePasswordIPWindow,
+				},
+				ChangeEmailUser: user.RateLimitRule{
+					Max:    cfg.AuthRateLimit.ChangeEmailUserMax,
+					Window: cfg.AuthRateLimit.ChangeEmailUserWindow,
+				},
+				ChangeEmailIP: user.RateLimitRule{
+					Max:    cfg.AuthRateLimit.ChangeEmailIPMax,
+					Window: cfg.AuthRateLimit.ChangeEmailIPWindow,
+				},
+				ChangeEmailToken: user.RateLimitRule{
+					Max:    cfg.AuthRateLimit.ChangeEmailTokenMax,
+					Window: cfg.AuthRateLimit.ChangeEmailTokenWindow,
+				},
+				DeleteAccountUser: user.RateLimitRule{
+					Max:    cfg.AuthRateLimit.DeleteAccountUserMax,
+					Window: cfg.AuthRateLimit.DeleteAccountUserWindow,
+				},
+				DeleteAccountIP: user.RateLimitRule{
+					Max:    cfg.AuthRateLimit.DeleteAccountIPMax,
+					Window: cfg.AuthRateLimit.DeleteAccountIPWindow,
 				},
 			},
 		}),

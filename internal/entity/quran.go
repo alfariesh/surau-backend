@@ -69,6 +69,23 @@ type QuranTranslationSource struct {
 	UpdatedAt     time.Time                `json:"updated_at"     example:"2026-01-01T00:00:00Z"`
 } // @name entity.QuranTranslationSource
 
+// QuranNavigationBoundary is the first or last ayah marker for a juz/hizb segment.
+type QuranNavigationBoundary struct {
+	SurahID    int     `json:"surah_id" example:"1"`
+	AyahNumber int     `json:"ayah_number" example:"1"`
+	AyahKey    string  `json:"ayah_key" example:"1:1"`
+	SurahName  *string `json:"surah_name,omitempty" example:"Al-Fatihah"`
+} // @name entity.QuranNavigationBoundary
+
+// QuranNavigationSegment summarizes one Quran navigation segment.
+type QuranNavigationSegment struct {
+	Kind      string                  `json:"kind" example:"juz"`
+	Number    int                     `json:"number" example:"1"`
+	AyahCount int                     `json:"ayah_count" example:"148"`
+	Start     QuranNavigationBoundary `json:"start"`
+	End       QuranNavigationBoundary `json:"end"`
+} // @name entity.QuranNavigationSegment
+
 // QuranAudioSegment is an ayah-level timestamp range for one audio track.
 type QuranAudioSegment struct {
 	SegmentIndex    int     `json:"segment_index" example:"1"`
@@ -80,27 +97,31 @@ type QuranAudioSegment struct {
 } // @name entity.QuranAudioSegment
 
 // QuranRecitation describes one imported reciter/resource and its audio coverage.
+// A track is playable when either public_url or source audio_url is present.
 type QuranRecitation struct {
-	ID               string     `json:"id" example:"qul-ayah-recitation-mishari-rashid-al-afasy-murattal-hafs-953"`
-	Name             string     `json:"name" example:"QUL ayah recitation mishari rashid al afasy murattal hafs 953"`
-	ReciterName      *string    `json:"reciter_name,omitempty" example:"Mishari Rashid Al-Afasy"`
-	Style            *string    `json:"style,omitempty" example:"murattal"`
-	Mode             string     `json:"mode" example:"ayah"`
-	SourceURL        *string    `json:"source_url,omitempty"`
-	QULResourceID    *string    `json:"qul_resource_id,omitempty" example:"953"`
-	Format           string     `json:"format" example:"json"`
-	LicenseStatus    string     `json:"license_status" example:"needs_review"`
-	Checksum         *string    `json:"checksum,omitempty"`
-	TrackCount       int        `json:"track_count" example:"6236"`
-	PublicTrackCount int        `json:"public_track_count" example:"0"`
-	HasPublicAudio   bool       `json:"has_public_audio" example:"false"`
-	IsDefault        bool       `json:"is_default" example:"false"`
-	Metadata         RawJSON    `json:"metadata,omitempty" swaggertype:"object"`
-	ImportedAt       *time.Time `json:"imported_at,omitempty" example:"2026-01-01T00:00:00Z"`
-	UpdatedAt        time.Time  `json:"updated_at" example:"2026-01-01T00:00:00Z"`
+	ID                 string     `json:"id" example:"qul-ayah-recitation-mishari-rashid-al-afasy-murattal-hafs-953"`
+	Name               string     `json:"name" example:"QUL ayah recitation mishari rashid al afasy murattal hafs 953"`
+	ReciterName        *string    `json:"reciter_name,omitempty" example:"Mishari Rashid Al-Afasy"`
+	Style              *string    `json:"style,omitempty" example:"murattal"`
+	Mode               string     `json:"mode" example:"ayah"`
+	SourceURL          *string    `json:"source_url,omitempty"`
+	QULResourceID      *string    `json:"qul_resource_id,omitempty" example:"953"`
+	Format             string     `json:"format" example:"json"`
+	LicenseStatus      string     `json:"license_status" example:"needs_review"`
+	Checksum           *string    `json:"checksum,omitempty"`
+	TrackCount         int        `json:"track_count" example:"6236"`
+	PublicTrackCount   int        `json:"public_track_count" example:"0"`
+	PlayableTrackCount int        `json:"playable_track_count" example:"6236"`
+	HasPublicAudio     bool       `json:"has_public_audio" example:"false"`
+	HasPlayableAudio   bool       `json:"has_playable_audio" example:"true"`
+	IsDefault          bool       `json:"is_default" example:"false"`
+	Metadata           RawJSON    `json:"metadata,omitempty" swaggertype:"object"`
+	ImportedAt         *time.Time `json:"imported_at,omitempty" example:"2026-01-01T00:00:00Z"`
+	UpdatedAt          time.Time  `json:"updated_at" example:"2026-01-01T00:00:00Z"`
 } // @name entity.QuranRecitation
 
-// QuranAudioTrack stores recitation track metadata. R2 fields stay nullable until ingestion.
+// QuranAudioTrack stores recitation track metadata. public_url is preferred for
+// playback, while source audio_url is a playable fallback until R2 sync completes.
 type QuranAudioTrack struct {
 	RecitationID    string              `json:"recitation_id" example:"qul-recitation"`
 	TrackType       string              `json:"track_type" example:"ayah"`

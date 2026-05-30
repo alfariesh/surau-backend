@@ -30,6 +30,12 @@ func NewUserRepo(pg *postgres.Postgres) *UserRepo {
 
 // Store -.
 func (r *UserRepo) Store(ctx context.Context, user *entity.User) error {
+	tx, err := r.Pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("UserRepo - Store - r.Pool.Begin: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
 	sql, args, err := r.Builder.
 		Insert("users").
 		Columns("id, username, email, role, password_hash, email_verified, token_version, created_at, updated_at").
@@ -49,14 +55,22 @@ func (r *UserRepo) Store(ctx context.Context, user *entity.User) error {
 		return fmt.Errorf("UserRepo - Store - r.Builder: %w", err)
 	}
 
-	_, err = r.Pool.Exec(ctx, sql, args...)
+	_, err = tx.Exec(ctx, sql, args...)
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 			return entity.ErrUserAlreadyExists
 		}
 
-		return fmt.Errorf("UserRepo - Store - r.Pool.Exec: %w", err)
+		return fmt.Errorf("UserRepo - Store - tx.Exec: %w", err)
+	}
+
+	if err = r.insertDefaultProfileAndPreferences(ctx, tx, user.ID, user.Username, user.CreatedAt); err != nil {
+		return err
+	}
+
+	if err = tx.Commit(ctx); err != nil {
+		return fmt.Errorf("UserRepo - Store - tx.Commit: %w", err)
 	}
 
 	return nil
@@ -102,6 +116,10 @@ func (r *UserRepo) StoreWithVerificationToken(
 		return fmt.Errorf("UserRepo - StoreWithVerificationToken - insert user: %w", err)
 	}
 
+	if err = r.insertDefaultProfileAndPreferences(ctx, tx, user.ID, user.Username, user.CreatedAt); err != nil {
+		return err
+	}
+
 	tokenSQL, tokenArgs, err := r.emailVerificationTokenInsert(token)
 	if err != nil {
 		return fmt.Errorf("UserRepo - StoreWithVerificationToken - token Builder: %w", err)
@@ -128,6 +146,143 @@ func (r *UserRepo) GetByEmail(ctx context.Context, email string) (entity.User, e
 	return r.getUser(ctx, "email", email)
 }
 
+// GetAccount returns the auth user plus product profile and preferences.
+func (r *UserRepo) GetAccount(ctx context.Context, userID string) (entity.UserAccount, error) {
+	const query = `
+SELECT
+    u.id,
+    u.username,
+    u.email,
+    u.role,
+    u.password_hash,
+    u.email_verified,
+    u.token_version,
+    u.created_at,
+    u.updated_at,
+    p.display_name,
+    p.timezone,
+    p.country_code,
+    COALESCE(p.onboarding_version, 1),
+    p.onboarding_completed_at,
+    COALESCE(p.personalization_enabled, TRUE),
+    COALESCE(p.created_at, u.created_at),
+    COALESCE(p.updated_at, u.updated_at),
+    COALESCE(pref.preferred_ui_lang, 'id'),
+    COALESCE(pref.preferred_content_lang, 'id'),
+    COALESCE(pref.fallback_langs, ARRAY['id']::TEXT[]),
+    COALESCE(pref.arabic_level, 'none'),
+    COALESCE(pref.reader_mode, 'arabic_translation'),
+    COALESCE(pref.interests, ARRAY[]::TEXT[]),
+    pref.daily_goal_minutes,
+    pref.quran_translation_source_id,
+    pref.quran_recitation_id,
+    COALESCE(pref.created_at, u.created_at),
+    COALESCE(pref.updated_at, u.updated_at)
+FROM users u
+LEFT JOIN user_profiles p ON p.user_id = u.id
+LEFT JOIN user_preferences pref ON pref.user_id = u.id
+WHERE u.id = $1
+    AND u.deleted_at IS NULL`
+
+	account, err := r.scanUserAccount(ctx, query, userID)
+	if err != nil {
+		return entity.UserAccount{}, err
+	}
+
+	return account, nil
+}
+
+// UpsertProfile stores product profile fields for one user.
+func (r *UserRepo) UpsertProfile(ctx context.Context, profile entity.UserProfile) error {
+	const query = `
+INSERT INTO user_profiles (
+    user_id,
+    display_name,
+    timezone,
+    country_code,
+    onboarding_version,
+    onboarding_completed_at,
+    personalization_enabled,
+    created_at,
+    updated_at
+) VALUES ($1, $2, $3, $4, $5, $6, $7, now(), now())
+ON CONFLICT (user_id) DO UPDATE SET
+    display_name = EXCLUDED.display_name,
+    timezone = EXCLUDED.timezone,
+    country_code = EXCLUDED.country_code,
+    onboarding_version = EXCLUDED.onboarding_version,
+    onboarding_completed_at = EXCLUDED.onboarding_completed_at,
+    personalization_enabled = EXCLUDED.personalization_enabled,
+    updated_at = now()`
+
+	_, err := r.Pool.Exec(
+		ctx,
+		query,
+		profile.UserID,
+		nullableStringPtrArg(profile.DisplayName),
+		nullableStringPtrArg(profile.Timezone),
+		nullableStringPtrArg(profile.CountryCode),
+		profile.OnboardingVersion,
+		profile.OnboardingCompletedAt,
+		profile.PersonalizationEnabled,
+	)
+	if err != nil {
+		return fmt.Errorf("UserRepo - UpsertProfile - Exec: %w", err)
+	}
+
+	return nil
+}
+
+// UpsertPreferences stores reader and Quran preferences for one user.
+func (r *UserRepo) UpsertPreferences(ctx context.Context, preferences entity.UserPreferences) error {
+	const query = `
+INSERT INTO user_preferences (
+    user_id,
+    preferred_ui_lang,
+    preferred_content_lang,
+    fallback_langs,
+    arabic_level,
+    reader_mode,
+    interests,
+    daily_goal_minutes,
+    quran_translation_source_id,
+    quran_recitation_id,
+    created_at,
+    updated_at
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now(), now())
+ON CONFLICT (user_id) DO UPDATE SET
+    preferred_ui_lang = EXCLUDED.preferred_ui_lang,
+    preferred_content_lang = EXCLUDED.preferred_content_lang,
+    fallback_langs = EXCLUDED.fallback_langs,
+    arabic_level = EXCLUDED.arabic_level,
+    reader_mode = EXCLUDED.reader_mode,
+    interests = EXCLUDED.interests,
+    daily_goal_minutes = EXCLUDED.daily_goal_minutes,
+    quran_translation_source_id = EXCLUDED.quran_translation_source_id,
+    quran_recitation_id = EXCLUDED.quran_recitation_id,
+    updated_at = now()`
+
+	_, err := r.Pool.Exec(
+		ctx,
+		query,
+		preferences.UserID,
+		preferences.PreferredUILang,
+		preferences.PreferredContentLang,
+		preferences.FallbackLangs,
+		preferences.ArabicLevel,
+		preferences.ReaderMode,
+		preferences.Interests,
+		preferences.DailyGoalMinutes,
+		nullableStringPtrArg(preferences.QuranTranslationSourceID),
+		nullableStringPtrArg(preferences.QuranRecitationID),
+	)
+	if err != nil {
+		return fmt.Errorf("UserRepo - UpsertPreferences - Exec: %w", err)
+	}
+
+	return nil
+}
+
 // SetRoleByEmail updates one user's role by email.
 func (r *UserRepo) SetRoleByEmail(ctx context.Context, email, role string) (entity.User, error) {
 	sqlText, args, err := r.Builder.
@@ -135,6 +290,7 @@ func (r *UserRepo) SetRoleByEmail(ctx context.Context, email, role string) (enti
 		Set("role", role).
 		Set("updated_at", sq.Expr("now()")).
 		Where(sq.Eq{"email": email}).
+		Where("deleted_at IS NULL").
 		Suffix("RETURNING " + userReturningColumns).
 		ToSql()
 	if err != nil {
@@ -179,6 +335,7 @@ func (r *UserRepo) ChangePassword(ctx context.Context, userID, passwordHash stri
 		Set("token_version", sq.Expr("token_version + 1")).
 		Set("updated_at", sq.Expr("now()")).
 		Where(sq.Eq{"id": userID}).
+		Where("deleted_at IS NULL").
 		Suffix("RETURNING " + userReturningColumns).
 		ToSql()
 	if err != nil {
@@ -356,6 +513,7 @@ func (r *UserRepo) VerifyEmailWithToken(ctx context.Context, tokenID, userID str
 		Set("email_verified_at", sq.Expr("COALESCE(email_verified_at, now())")).
 		Set("updated_at", sq.Expr("now()")).
 		Where(sq.Eq{"id": userID}).
+		Where("deleted_at IS NULL").
 		Suffix("RETURNING " + userReturningColumns).
 		ToSql()
 	if err != nil {
@@ -522,6 +680,7 @@ func (r *UserRepo) ResetPasswordWithToken(ctx context.Context, tokenID, userID, 
 		Set("token_version", sq.Expr("token_version + 1")).
 		Set("updated_at", sq.Expr("now()")).
 		Where(sq.Eq{"id": userID}).
+		Where("deleted_at IS NULL").
 		Suffix("RETURNING " + userReturningColumns).
 		ToSql()
 	if err != nil {
@@ -566,6 +725,267 @@ func (r *UserRepo) ResetPasswordWithToken(ctx context.Context, tokenID, userID, 
 	}
 
 	return user, nil
+}
+
+// ReplaceEmailChangeToken revokes previous unused email-change tokens and stores a new one.
+func (r *UserRepo) ReplaceEmailChangeToken(ctx context.Context, token *entity.EmailChangeToken) error {
+	tx, err := r.Pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("UserRepo - ReplaceEmailChangeToken - r.Pool.Begin: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	sqlText, args, err := r.Builder.
+		Update("email_change_tokens").
+		Set("used_at", sq.Expr("now()")).
+		Where(sq.Eq{"user_id": token.UserID}).
+		Where("used_at IS NULL").
+		ToSql()
+	if err != nil {
+		return fmt.Errorf("UserRepo - ReplaceEmailChangeToken - revoke Builder: %w", err)
+	}
+	if _, err = tx.Exec(ctx, sqlText, args...); err != nil {
+		return fmt.Errorf("UserRepo - ReplaceEmailChangeToken - revoke: %w", err)
+	}
+
+	tokenSQL, tokenArgs, err := r.emailChangeTokenInsert(token)
+	if err != nil {
+		return fmt.Errorf("UserRepo - ReplaceEmailChangeToken - insert Builder: %w", err)
+	}
+	if _, err = tx.Exec(ctx, tokenSQL, tokenArgs...); err != nil {
+		return fmt.Errorf("UserRepo - ReplaceEmailChangeToken - insert: %w", err)
+	}
+
+	if err = tx.Commit(ctx); err != nil {
+		return fmt.Errorf("UserRepo - ReplaceEmailChangeToken - tx.Commit: %w", err)
+	}
+
+	return nil
+}
+
+// RevokeUnusedEmailChangeTokens marks all currently unused email-change tokens as used.
+func (r *UserRepo) RevokeUnusedEmailChangeTokens(ctx context.Context, userID string) error {
+	sqlText, args, err := r.Builder.
+		Update("email_change_tokens").
+		Set("used_at", sq.Expr("now()")).
+		Where(sq.Eq{"user_id": userID}).
+		Where("used_at IS NULL").
+		ToSql()
+	if err != nil {
+		return fmt.Errorf("UserRepo - RevokeUnusedEmailChangeTokens - Builder: %w", err)
+	}
+
+	if _, err = r.Pool.Exec(ctx, sqlText, args...); err != nil {
+		return fmt.Errorf("UserRepo - RevokeUnusedEmailChangeTokens - Exec: %w", err)
+	}
+
+	return nil
+}
+
+// GetEmailChangeTokenByHash finds an email-change token by its SHA-256 hash.
+func (r *UserRepo) GetEmailChangeTokenByHash(ctx context.Context, tokenHash string) (entity.EmailChangeToken, error) {
+	sqlText, args, err := r.Builder.
+		Select("id, user_id, new_email, token_hash, expires_at, used_at, sent_at, created_at").
+		From("email_change_tokens").
+		Where(sq.Eq{"token_hash": tokenHash}).
+		Limit(1).
+		ToSql()
+	if err != nil {
+		return entity.EmailChangeToken{}, fmt.Errorf("UserRepo - GetEmailChangeTokenByHash - Builder: %w", err)
+	}
+
+	token, err := r.scanEmailChangeToken(ctx, sqlText, args...)
+	if err != nil {
+		return entity.EmailChangeToken{}, err
+	}
+
+	return token, nil
+}
+
+// GetLatestUnusedEmailChangeToken returns the most recent unused token for cooldown checks.
+func (r *UserRepo) GetLatestUnusedEmailChangeToken(ctx context.Context, userID string) (entity.EmailChangeToken, error) {
+	sqlText, args, err := r.Builder.
+		Select("id, user_id, new_email, token_hash, expires_at, used_at, sent_at, created_at").
+		From("email_change_tokens").
+		Where(sq.Eq{"user_id": userID}).
+		Where("used_at IS NULL").
+		OrderBy("sent_at DESC").
+		Limit(1).
+		ToSql()
+	if err != nil {
+		return entity.EmailChangeToken{}, fmt.Errorf("UserRepo - GetLatestUnusedEmailChangeToken - Builder: %w", err)
+	}
+
+	token, err := r.scanEmailChangeToken(ctx, sqlText, args...)
+	if err != nil {
+		return entity.EmailChangeToken{}, err
+	}
+
+	return token, nil
+}
+
+// ChangeEmailWithToken atomically marks an email-change token used and updates the user email.
+func (r *UserRepo) ChangeEmailWithToken(
+	ctx context.Context,
+	tokenID string,
+	userID string,
+	newEmail string,
+) (entity.EmailChangeResult, error) {
+	tx, err := r.Pool.Begin(ctx)
+	if err != nil {
+		return entity.EmailChangeResult{}, fmt.Errorf("UserRepo - ChangeEmailWithToken - r.Pool.Begin: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	var oldEmail string
+	err = tx.QueryRow(ctx, "SELECT email FROM users WHERE id = $1 AND deleted_at IS NULL FOR UPDATE", userID).
+		Scan(&oldEmail)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return entity.EmailChangeResult{}, entity.ErrUserNotFound
+		}
+
+		return entity.EmailChangeResult{}, fmt.Errorf("UserRepo - ChangeEmailWithToken - lock user: %w", err)
+	}
+
+	tokenSQL, tokenArgs, err := r.Builder.
+		Update("email_change_tokens").
+		Set("used_at", sq.Expr("now()")).
+		Where(sq.Eq{"id": tokenID, "user_id": userID, "new_email": newEmail}).
+		Where("used_at IS NULL").
+		ToSql()
+	if err != nil {
+		return entity.EmailChangeResult{}, fmt.Errorf("UserRepo - ChangeEmailWithToken - token Builder: %w", err)
+	}
+	tag, err := tx.Exec(ctx, tokenSQL, tokenArgs...)
+	if err != nil {
+		return entity.EmailChangeResult{}, fmt.Errorf("UserRepo - ChangeEmailWithToken - token Exec: %w", err)
+	}
+	if tag.RowsAffected() != 1 {
+		return entity.EmailChangeResult{}, entity.ErrInvalidEmailChangeToken
+	}
+
+	userSQL, userArgs, err := r.Builder.
+		Update("users").
+		Set("email", newEmail).
+		Set("email_verified", true).
+		Set("email_verified_at", sq.Expr("now()")).
+		Set("token_version", sq.Expr("token_version + 1")).
+		Set("updated_at", sq.Expr("now()")).
+		Where(sq.Eq{"id": userID}).
+		Where("deleted_at IS NULL").
+		Suffix("RETURNING " + userReturningColumns).
+		ToSql()
+	if err != nil {
+		return entity.EmailChangeResult{}, fmt.Errorf("UserRepo - ChangeEmailWithToken - user Builder: %w", err)
+	}
+
+	var user entity.User
+	err = tx.QueryRow(ctx, userSQL, userArgs...).Scan(
+		&user.ID,
+		&user.Username,
+		&user.Email,
+		&user.Role,
+		&user.PasswordHash,
+		&user.EmailVerified,
+		&user.TokenVersion,
+		&user.CreatedAt,
+		&user.UpdatedAt,
+	)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return entity.EmailChangeResult{}, entity.ErrUserAlreadyExists
+		}
+		if errors.Is(err, pgx.ErrNoRows) {
+			return entity.EmailChangeResult{}, entity.ErrUserNotFound
+		}
+
+		return entity.EmailChangeResult{}, fmt.Errorf("UserRepo - ChangeEmailWithToken - user QueryRow: %w", err)
+	}
+
+	revokeSQL, revokeArgs, err := r.Builder.
+		Update("email_change_tokens").
+		Set("used_at", sq.Expr("now()")).
+		Where(sq.Eq{"user_id": userID}).
+		Where("used_at IS NULL").
+		ToSql()
+	if err != nil {
+		return entity.EmailChangeResult{}, fmt.Errorf("UserRepo - ChangeEmailWithToken - revoke Builder: %w", err)
+	}
+	if _, err = tx.Exec(ctx, revokeSQL, revokeArgs...); err != nil {
+		return entity.EmailChangeResult{}, fmt.Errorf("UserRepo - ChangeEmailWithToken - revoke Exec: %w", err)
+	}
+
+	if err = tx.Commit(ctx); err != nil {
+		return entity.EmailChangeResult{}, fmt.Errorf("UserRepo - ChangeEmailWithToken - tx.Commit: %w", err)
+	}
+
+	return entity.EmailChangeResult{User: user, OldEmail: oldEmail, NewEmail: user.Email}, nil
+}
+
+// DeleteAccount soft-deletes and anonymizes a user account in one transaction.
+func (r *UserRepo) DeleteAccount(ctx context.Context, userID string) error {
+	tx, err := r.Pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("UserRepo - DeleteAccount - r.Pool.Begin: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	shortID := userID
+	if len(shortID) > 12 {
+		shortID = shortID[:12]
+	}
+	deletedEmail := "deleted+" + userID + "@deleted.local"
+	deletedUsername := "deleted-user-" + shortID
+
+	const userSQL = `
+UPDATE users
+SET
+    username = $2,
+    email = $3,
+    password_hash = $4,
+    email_verified = false,
+    email_verified_at = NULL,
+    token_version = token_version + 1,
+    deleted_at = now(),
+    updated_at = now()
+WHERE id = $1
+    AND deleted_at IS NULL`
+	tag, err := tx.Exec(ctx, userSQL, userID, deletedUsername, deletedEmail, "deleted:"+userID)
+	if err != nil {
+		return fmt.Errorf("UserRepo - DeleteAccount - user Exec: %w", err)
+	}
+	if tag.RowsAffected() != 1 {
+		return entity.ErrUserNotFound
+	}
+
+	statements := []string{
+		"UPDATE user_profiles SET display_name = NULL, timezone = NULL, country_code = NULL, personalization_enabled = false, updated_at = now() WHERE user_id = $1",
+		"DELETE FROM user_preferences WHERE user_id = $1",
+		"DELETE FROM tasks WHERE user_id = $1",
+		"DELETE FROM history WHERE user_id = $1",
+		"DELETE FROM reading_progress WHERE user_id = $1",
+		"DELETE FROM quran_reading_progress WHERE user_id = $1",
+		"DELETE FROM saved_items WHERE user_id = $1",
+		"DELETE FROM translation_feedbacks WHERE user_id = $1",
+		"DELETE FROM email_verification_tokens WHERE user_id = $1",
+		"DELETE FROM password_reset_tokens WHERE user_id = $1",
+		"DELETE FROM email_change_tokens WHERE user_id = $1",
+		"DELETE FROM auth_login_fingerprints WHERE user_id = $1",
+		"UPDATE auth_audit_logs SET email = NULL, client_ip = NULL, user_agent = NULL WHERE user_id = $1",
+	}
+	for _, statement := range statements {
+		if _, err = tx.Exec(ctx, statement, userID); err != nil {
+			return fmt.Errorf("UserRepo - DeleteAccount - cleanup Exec: %w", err)
+		}
+	}
+
+	if err = tx.Commit(ctx); err != nil {
+		return fmt.Errorf("UserRepo - DeleteAccount - tx.Commit: %w", err)
+	}
+
+	return nil
 }
 
 // IncrementAuthRateLimit increments a rate-limit counter for one fixed window.
@@ -752,6 +1172,7 @@ func (r *UserRepo) getUser(ctx context.Context, column, value string) (entity.Us
 		Select(userReturningColumns).
 		From("users").
 		Where(sq.Eq{column: value}).
+		Where("deleted_at IS NULL").
 		ToSql()
 	if err != nil {
 		return entity.User{}, fmt.Errorf("UserRepo - getUser - r.Builder: %w", err)
@@ -782,6 +1203,163 @@ func (r *UserRepo) getUser(ctx context.Context, column, value string) (entity.Us
 	return user, nil
 }
 
+func (r *UserRepo) scanUserAccount(ctx context.Context, sqlText string, args ...any) (entity.UserAccount, error) {
+	var (
+		account                  entity.UserAccount
+		displayName              sql.NullString
+		timezone                 sql.NullString
+		countryCode              sql.NullString
+		onboardingCompletedAt    sql.NullTime
+		dailyGoalMinutes         sql.NullInt64
+		quranTranslationSourceID sql.NullString
+		quranRecitationID        sql.NullString
+	)
+
+	err := r.Pool.QueryRow(ctx, sqlText, args...).Scan(
+		&account.ID,
+		&account.Username,
+		&account.Email,
+		&account.Role,
+		&account.PasswordHash,
+		&account.EmailVerified,
+		&account.TokenVersion,
+		&account.CreatedAt,
+		&account.UpdatedAt,
+		&displayName,
+		&timezone,
+		&countryCode,
+		&account.Profile.OnboardingVersion,
+		&onboardingCompletedAt,
+		&account.Profile.PersonalizationEnabled,
+		&account.Profile.CreatedAt,
+		&account.Profile.UpdatedAt,
+		&account.Preferences.PreferredUILang,
+		&account.Preferences.PreferredContentLang,
+		&account.Preferences.FallbackLangs,
+		&account.Preferences.ArabicLevel,
+		&account.Preferences.ReaderMode,
+		&account.Preferences.Interests,
+		&dailyGoalMinutes,
+		&quranTranslationSourceID,
+		&quranRecitationID,
+		&account.Preferences.CreatedAt,
+		&account.Preferences.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return entity.UserAccount{}, entity.ErrUserNotFound
+		}
+
+		return entity.UserAccount{}, fmt.Errorf("UserRepo - scanUserAccount - QueryRow: %w", err)
+	}
+
+	account.Profile.UserID = account.ID
+	account.Preferences.UserID = account.ID
+	if displayName.Valid {
+		account.Profile.DisplayName = &displayName.String
+	}
+	if timezone.Valid {
+		account.Profile.Timezone = &timezone.String
+	}
+	if countryCode.Valid {
+		account.Profile.CountryCode = &countryCode.String
+	}
+	if onboardingCompletedAt.Valid {
+		account.Profile.OnboardingCompletedAt = &onboardingCompletedAt.Time
+	}
+	if dailyGoalMinutes.Valid {
+		value := int(dailyGoalMinutes.Int64)
+		account.Preferences.DailyGoalMinutes = &value
+	}
+	if quranTranslationSourceID.Valid {
+		account.Preferences.QuranTranslationSourceID = &quranTranslationSourceID.String
+	}
+	if quranRecitationID.Valid {
+		account.Preferences.QuranRecitationID = &quranRecitationID.String
+	}
+	account.OnboardingRequired = account.Profile.OnboardingCompletedAt == nil
+
+	return account, nil
+}
+
+func (r *UserRepo) insertDefaultProfileAndPreferences(
+	ctx context.Context,
+	tx pgx.Tx,
+	userID string,
+	displayName string,
+	createdAt time.Time,
+) error {
+	if createdAt.IsZero() {
+		createdAt = time.Now().UTC()
+	}
+	profile := entity.DefaultUserProfile(userID, createdAt)
+	displayName = strings.TrimSpace(displayName)
+	if displayName != "" {
+		profile.DisplayName = &displayName
+	}
+	preferences := entity.DefaultUserPreferences(userID, createdAt)
+
+	profileSQL, profileArgs, err := r.Builder.
+		Insert("user_profiles").
+		Columns(
+			"user_id",
+			"display_name",
+			"onboarding_version",
+			"personalization_enabled",
+			"created_at",
+			"updated_at",
+		).
+		Values(
+			profile.UserID,
+			nullableStringPtrArg(profile.DisplayName),
+			profile.OnboardingVersion,
+			profile.PersonalizationEnabled,
+			profile.CreatedAt,
+			profile.UpdatedAt,
+		).
+		ToSql()
+	if err != nil {
+		return fmt.Errorf("UserRepo - insertDefaultProfileAndPreferences - profile Builder: %w", err)
+	}
+	if _, err = tx.Exec(ctx, profileSQL, profileArgs...); err != nil {
+		return fmt.Errorf("UserRepo - insertDefaultProfileAndPreferences - profile Exec: %w", err)
+	}
+
+	preferencesSQL, preferencesArgs, err := r.Builder.
+		Insert("user_preferences").
+		Columns(
+			"user_id",
+			"preferred_ui_lang",
+			"preferred_content_lang",
+			"fallback_langs",
+			"arabic_level",
+			"reader_mode",
+			"interests",
+			"created_at",
+			"updated_at",
+		).
+		Values(
+			preferences.UserID,
+			preferences.PreferredUILang,
+			preferences.PreferredContentLang,
+			preferences.FallbackLangs,
+			preferences.ArabicLevel,
+			preferences.ReaderMode,
+			preferences.Interests,
+			preferences.CreatedAt,
+			preferences.UpdatedAt,
+		).
+		ToSql()
+	if err != nil {
+		return fmt.Errorf("UserRepo - insertDefaultProfileAndPreferences - preferences Builder: %w", err)
+	}
+	if _, err = tx.Exec(ctx, preferencesSQL, preferencesArgs...); err != nil {
+		return fmt.Errorf("UserRepo - insertDefaultProfileAndPreferences - preferences Exec: %w", err)
+	}
+
+	return nil
+}
+
 func (r *UserRepo) emailVerificationTokenInsert(token *entity.EmailVerificationToken) (string, []any, error) {
 	return r.Builder.
 		Insert("email_verification_tokens").
@@ -795,6 +1373,23 @@ func (r *UserRepo) passwordResetTokenInsert(token *entity.PasswordResetToken) (s
 		Insert("password_reset_tokens").
 		Columns("id, user_id, token_hash, expires_at, used_at, sent_at, created_at").
 		Values(token.ID, token.UserID, token.TokenHash, token.ExpiresAt, token.UsedAt, token.SentAt, token.CreatedAt).
+		ToSql()
+}
+
+func (r *UserRepo) emailChangeTokenInsert(token *entity.EmailChangeToken) (string, []any, error) {
+	return r.Builder.
+		Insert("email_change_tokens").
+		Columns("id, user_id, new_email, token_hash, expires_at, used_at, sent_at, created_at").
+		Values(
+			token.ID,
+			token.UserID,
+			token.NewEmail,
+			token.TokenHash,
+			token.ExpiresAt,
+			token.UsedAt,
+			token.SentAt,
+			token.CreatedAt,
+		).
 		ToSql()
 }
 
@@ -840,6 +1435,14 @@ func nullableStringArg(value string) any {
 	return value
 }
 
+func nullableStringPtrArg(value *string) any {
+	if value == nil {
+		return nil
+	}
+
+	return nullableStringArg(*value)
+}
+
 func (r *UserRepo) scanPasswordResetToken(
 	ctx context.Context,
 	sqlText string,
@@ -865,6 +1468,40 @@ func (r *UserRepo) scanPasswordResetToken(
 		}
 
 		return entity.PasswordResetToken{}, fmt.Errorf("UserRepo - scanPasswordResetToken - QueryRow: %w", err)
+	}
+	if usedAt.Valid {
+		token.UsedAt = &usedAt.Time
+	}
+
+	return token, nil
+}
+
+func (r *UserRepo) scanEmailChangeToken(
+	ctx context.Context,
+	sqlText string,
+	args ...any,
+) (entity.EmailChangeToken, error) {
+	var (
+		token  entity.EmailChangeToken
+		usedAt sql.NullTime
+	)
+
+	err := r.Pool.QueryRow(ctx, sqlText, args...).Scan(
+		&token.ID,
+		&token.UserID,
+		&token.NewEmail,
+		&token.TokenHash,
+		&token.ExpiresAt,
+		&usedAt,
+		&token.SentAt,
+		&token.CreatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return entity.EmailChangeToken{}, entity.ErrEmailChangeTokenNotFound
+		}
+
+		return entity.EmailChangeToken{}, fmt.Errorf("UserRepo - scanEmailChangeToken - QueryRow: %w", err)
 	}
 	if usedAt.Valid {
 		token.UsedAt = &usedAt.Time

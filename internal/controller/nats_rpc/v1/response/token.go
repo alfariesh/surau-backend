@@ -24,3 +24,13 @@ type PasswordReset struct {
 type PasswordChanged struct {
 	PasswordChanged bool `json:"password_changed"`
 }
+
+// EmailChanged -.
+type EmailChanged struct {
+	EmailChanged bool `json:"email_changed"`
+}
+
+// AccountDeleted -.
+type AccountDeleted struct {
+	AccountDeleted bool `json:"account_deleted"`
+}

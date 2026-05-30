@@ -15,7 +15,7 @@ const (
 	maxLimit     = 200
 )
 
-// UseCase provides admin editorial operations.
+// UseCase provides editorial operations.
 type UseCase struct {
 	repo repo.EditorialRepo
 }

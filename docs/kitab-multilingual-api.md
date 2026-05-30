@@ -4,6 +4,7 @@ Last updated: 2026-05-29
 
 This document defines the public multilingual contract for kitab/catalog reader APIs.
 For frontend implementation examples, TypeScript helpers, and UI branching rules, see `docs/kitab-frontend-contract.md`.
+For a shared kitab + Quran integration entrypoint, see `docs/frontend-integration-contract.md`.
 
 ## Language Rules
 
@@ -121,9 +122,9 @@ Availability actions:
 - `POST /v1/books/{book_id}/toc/{heading_id}/translation-feedback?lang=...` remains exact-language only and returns `404 translation not found` if that section translation does not exist.
 - `POST /v1/books/{book_id}/rag?lang=...` validates the same language contract and includes `requested_lang` in the response.
 
-## Admin Missing Reader Assets Queue
+## Editorial Missing Reader Assets Queue
 
-`GET /v1/admin/reader/missing-assets` is admin-only and exposes reader localization gaps. It does not generate translations, summaries, or audio; it only reports missing assets for editorial tooling.
+`GET /v1/editorial/reader/missing-assets` requires editor or admin role and exposes reader localization gaps. It does not generate translations, summaries, or audio; it only reports missing assets for editorial tooling.
 
 Query parameters:
 

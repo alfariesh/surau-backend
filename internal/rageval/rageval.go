@@ -123,7 +123,7 @@ type ragResponse struct {
 
 // LoadCases reads JSONL golden cases. Blank lines and lines beginning with # are ignored.
 func LoadCases(path string) ([]GoldenCase, error) {
-	file, err := os.Open(path)
+	file, err := os.Open(path) // #nosec G304 -- rag-eval is a CLI tool that intentionally reads an operator-supplied cases file.
 	if err != nil {
 		return nil, fmt.Errorf("open cases: %w", err)
 	}

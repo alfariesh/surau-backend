@@ -16,7 +16,7 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// EditorialRepo manages admin-only publication and edit overlays.
+// EditorialRepo manages editorial publication and edit overlays.
 type EditorialRepo struct {
 	*postgres.Postgres
 }

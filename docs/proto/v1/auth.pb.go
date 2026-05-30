@@ -26,6 +26,8 @@ type RegisterRequest struct {
 	Username      string                 `protobuf:"bytes,1,opt,name=username,proto3" json:"username,omitempty"`
 	Email         string                 `protobuf:"bytes,2,opt,name=email,proto3" json:"email,omitempty"`
 	Password      string                 `protobuf:"bytes,3,opt,name=password,proto3" json:"password,omitempty"`
+	DisplayName   string                 `protobuf:"bytes,4,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
+	Name          string                 `protobuf:"bytes,5,opt,name=name,proto3" json:"name,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -77,6 +79,20 @@ func (x *RegisterRequest) GetEmail() string {
 func (x *RegisterRequest) GetPassword() string {
 	if x != nil {
 		return x.Password
+	}
+	return ""
+}
+
+func (x *RegisterRequest) GetDisplayName() string {
+	if x != nil {
+		return x.DisplayName
+	}
+	return ""
+}
+
+func (x *RegisterRequest) GetName() string {
+	if x != nil {
+		return x.Name
 	}
 	return ""
 }
@@ -717,6 +733,278 @@ func (x *ChangePasswordResponse) GetPasswordChanged() bool {
 	return false
 }
 
+type RequestEmailChangeRequest struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	CurrentPassword string                 `protobuf:"bytes,1,opt,name=current_password,json=currentPassword,proto3" json:"current_password,omitempty"`
+	NewEmail        string                 `protobuf:"bytes,2,opt,name=new_email,json=newEmail,proto3" json:"new_email,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *RequestEmailChangeRequest) Reset() {
+	*x = RequestEmailChangeRequest{}
+	mi := &file_docs_proto_v1_auth_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RequestEmailChangeRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RequestEmailChangeRequest) ProtoMessage() {}
+
+func (x *RequestEmailChangeRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_docs_proto_v1_auth_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RequestEmailChangeRequest.ProtoReflect.Descriptor instead.
+func (*RequestEmailChangeRequest) Descriptor() ([]byte, []int) {
+	return file_docs_proto_v1_auth_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *RequestEmailChangeRequest) GetCurrentPassword() string {
+	if x != nil {
+		return x.CurrentPassword
+	}
+	return ""
+}
+
+func (x *RequestEmailChangeRequest) GetNewEmail() string {
+	if x != nil {
+		return x.NewEmail
+	}
+	return ""
+}
+
+type RequestEmailChangeResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Accepted      bool                   `protobuf:"varint,1,opt,name=accepted,proto3" json:"accepted,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RequestEmailChangeResponse) Reset() {
+	*x = RequestEmailChangeResponse{}
+	mi := &file_docs_proto_v1_auth_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RequestEmailChangeResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RequestEmailChangeResponse) ProtoMessage() {}
+
+func (x *RequestEmailChangeResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_docs_proto_v1_auth_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RequestEmailChangeResponse.ProtoReflect.Descriptor instead.
+func (*RequestEmailChangeResponse) Descriptor() ([]byte, []int) {
+	return file_docs_proto_v1_auth_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *RequestEmailChangeResponse) GetAccepted() bool {
+	if x != nil {
+		return x.Accepted
+	}
+	return false
+}
+
+type VerifyEmailChangeRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Token         string                 `protobuf:"bytes,1,opt,name=token,proto3" json:"token,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *VerifyEmailChangeRequest) Reset() {
+	*x = VerifyEmailChangeRequest{}
+	mi := &file_docs_proto_v1_auth_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *VerifyEmailChangeRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*VerifyEmailChangeRequest) ProtoMessage() {}
+
+func (x *VerifyEmailChangeRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_docs_proto_v1_auth_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use VerifyEmailChangeRequest.ProtoReflect.Descriptor instead.
+func (*VerifyEmailChangeRequest) Descriptor() ([]byte, []int) {
+	return file_docs_proto_v1_auth_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *VerifyEmailChangeRequest) GetToken() string {
+	if x != nil {
+		return x.Token
+	}
+	return ""
+}
+
+type VerifyEmailChangeResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	EmailChanged  bool                   `protobuf:"varint,1,opt,name=email_changed,json=emailChanged,proto3" json:"email_changed,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *VerifyEmailChangeResponse) Reset() {
+	*x = VerifyEmailChangeResponse{}
+	mi := &file_docs_proto_v1_auth_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *VerifyEmailChangeResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*VerifyEmailChangeResponse) ProtoMessage() {}
+
+func (x *VerifyEmailChangeResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_docs_proto_v1_auth_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use VerifyEmailChangeResponse.ProtoReflect.Descriptor instead.
+func (*VerifyEmailChangeResponse) Descriptor() ([]byte, []int) {
+	return file_docs_proto_v1_auth_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *VerifyEmailChangeResponse) GetEmailChanged() bool {
+	if x != nil {
+		return x.EmailChanged
+	}
+	return false
+}
+
+type DeleteAccountRequest struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	CurrentPassword string                 `protobuf:"bytes,1,opt,name=current_password,json=currentPassword,proto3" json:"current_password,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *DeleteAccountRequest) Reset() {
+	*x = DeleteAccountRequest{}
+	mi := &file_docs_proto_v1_auth_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteAccountRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteAccountRequest) ProtoMessage() {}
+
+func (x *DeleteAccountRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_docs_proto_v1_auth_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteAccountRequest.ProtoReflect.Descriptor instead.
+func (*DeleteAccountRequest) Descriptor() ([]byte, []int) {
+	return file_docs_proto_v1_auth_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *DeleteAccountRequest) GetCurrentPassword() string {
+	if x != nil {
+		return x.CurrentPassword
+	}
+	return ""
+}
+
+type DeleteAccountResponse struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	AccountDeleted bool                   `protobuf:"varint,1,opt,name=account_deleted,json=accountDeleted,proto3" json:"account_deleted,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *DeleteAccountResponse) Reset() {
+	*x = DeleteAccountResponse{}
+	mi := &file_docs_proto_v1_auth_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteAccountResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteAccountResponse) ProtoMessage() {}
+
+func (x *DeleteAccountResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_docs_proto_v1_auth_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteAccountResponse.ProtoReflect.Descriptor instead.
+func (*DeleteAccountResponse) Descriptor() ([]byte, []int) {
+	return file_docs_proto_v1_auth_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *DeleteAccountResponse) GetAccountDeleted() bool {
+	if x != nil {
+		return x.AccountDeleted
+	}
+	return false
+}
+
 type GetProfileRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -725,7 +1013,7 @@ type GetProfileRequest struct {
 
 func (x *GetProfileRequest) Reset() {
 	*x = GetProfileRequest{}
-	mi := &file_docs_proto_v1_auth_proto_msgTypes[14]
+	mi := &file_docs_proto_v1_auth_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -737,7 +1025,7 @@ func (x *GetProfileRequest) String() string {
 func (*GetProfileRequest) ProtoMessage() {}
 
 func (x *GetProfileRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_docs_proto_v1_auth_proto_msgTypes[14]
+	mi := &file_docs_proto_v1_auth_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -750,7 +1038,7 @@ func (x *GetProfileRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetProfileRequest.ProtoReflect.Descriptor instead.
 func (*GetProfileRequest) Descriptor() ([]byte, []int) {
-	return file_docs_proto_v1_auth_proto_rawDescGZIP(), []int{14}
+	return file_docs_proto_v1_auth_proto_rawDescGZIP(), []int{20}
 }
 
 type GetProfileResponse struct {
@@ -767,7 +1055,7 @@ type GetProfileResponse struct {
 
 func (x *GetProfileResponse) Reset() {
 	*x = GetProfileResponse{}
-	mi := &file_docs_proto_v1_auth_proto_msgTypes[15]
+	mi := &file_docs_proto_v1_auth_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -779,7 +1067,7 @@ func (x *GetProfileResponse) String() string {
 func (*GetProfileResponse) ProtoMessage() {}
 
 func (x *GetProfileResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_docs_proto_v1_auth_proto_msgTypes[15]
+	mi := &file_docs_proto_v1_auth_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -792,7 +1080,7 @@ func (x *GetProfileResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetProfileResponse.ProtoReflect.Descriptor instead.
 func (*GetProfileResponse) Descriptor() ([]byte, []int) {
-	return file_docs_proto_v1_auth_proto_rawDescGZIP(), []int{15}
+	return file_docs_proto_v1_auth_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *GetProfileResponse) GetId() string {
@@ -841,11 +1129,13 @@ var File_docs_proto_v1_auth_proto protoreflect.FileDescriptor
 
 const file_docs_proto_v1_auth_proto_rawDesc = "" +
 	"\n" +
-	"\x18docs/proto/v1/auth.proto\x12\agrpc.v1\"_\n" +
+	"\x18docs/proto/v1/auth.proto\x12\agrpc.v1\"\x96\x01\n" +
 	"\x0fRegisterRequest\x12\x1a\n" +
 	"\busername\x18\x01 \x01(\tR\busername\x12\x14\n" +
 	"\x05email\x18\x02 \x01(\tR\x05email\x12\x1a\n" +
-	"\bpassword\x18\x03 \x01(\tR\bpassword\"\xb9\x01\n" +
+	"\bpassword\x18\x03 \x01(\tR\bpassword\x12!\n" +
+	"\fdisplay_name\x18\x04 \x01(\tR\vdisplayName\x12\x12\n" +
+	"\x04name\x18\x05 \x01(\tR\x04name\"\xb9\x01\n" +
 	"\x10RegisterResponse\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1a\n" +
 	"\busername\x18\x02 \x01(\tR\busername\x12\x14\n" +
@@ -881,7 +1171,20 @@ const file_docs_proto_v1_auth_proto_rawDesc = "" +
 	"\x10current_password\x18\x01 \x01(\tR\x0fcurrentPassword\x12!\n" +
 	"\fnew_password\x18\x02 \x01(\tR\vnewPassword\"C\n" +
 	"\x16ChangePasswordResponse\x12)\n" +
-	"\x10password_changed\x18\x01 \x01(\bR\x0fpasswordChanged\"\x13\n" +
+	"\x10password_changed\x18\x01 \x01(\bR\x0fpasswordChanged\"c\n" +
+	"\x19RequestEmailChangeRequest\x12)\n" +
+	"\x10current_password\x18\x01 \x01(\tR\x0fcurrentPassword\x12\x1b\n" +
+	"\tnew_email\x18\x02 \x01(\tR\bnewEmail\"8\n" +
+	"\x1aRequestEmailChangeResponse\x12\x1a\n" +
+	"\baccepted\x18\x01 \x01(\bR\baccepted\"0\n" +
+	"\x18VerifyEmailChangeRequest\x12\x14\n" +
+	"\x05token\x18\x01 \x01(\tR\x05token\"@\n" +
+	"\x19VerifyEmailChangeResponse\x12#\n" +
+	"\remail_changed\x18\x01 \x01(\bR\femailChanged\"A\n" +
+	"\x14DeleteAccountRequest\x12)\n" +
+	"\x10current_password\x18\x01 \x01(\tR\x0fcurrentPassword\"@\n" +
+	"\x15DeleteAccountResponse\x12'\n" +
+	"\x0faccount_deleted\x18\x01 \x01(\bR\x0eaccountDeleted\"\x13\n" +
 	"\x11GetProfileRequest\"\xbb\x01\n" +
 	"\x12GetProfileResponse\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1a\n" +
@@ -891,7 +1194,7 @@ const file_docs_proto_v1_auth_proto_rawDesc = "" +
 	"created_at\x18\x04 \x01(\tR\tcreatedAt\x12\x1d\n" +
 	"\n" +
 	"updated_at\x18\x05 \x01(\tR\tupdatedAt\x12%\n" +
-	"\x0eemail_verified\x18\x06 \x01(\bR\remailVerified2\xfb\x04\n" +
+	"\x0eemail_verified\x18\x06 \x01(\bR\remailVerified2\x86\a\n" +
 	"\vAuthService\x12?\n" +
 	"\bRegister\x12\x18.grpc.v1.RegisterRequest\x1a\x19.grpc.v1.RegisterResponse\x126\n" +
 	"\x05Login\x12\x15.grpc.v1.LoginRequest\x1a\x16.grpc.v1.LoginResponse\x12H\n" +
@@ -899,7 +1202,10 @@ const file_docs_proto_v1_auth_proto_rawDesc = "" +
 	"\x17ResendEmailVerification\x12'.grpc.v1.ResendEmailVerificationRequest\x1a(.grpc.v1.ResendEmailVerificationResponse\x12Q\n" +
 	"\x0eForgotPassword\x12\x1e.grpc.v1.ForgotPasswordRequest\x1a\x1f.grpc.v1.ForgotPasswordResponse\x12N\n" +
 	"\rResetPassword\x12\x1d.grpc.v1.ResetPasswordRequest\x1a\x1e.grpc.v1.ResetPasswordResponse\x12Q\n" +
-	"\x0eChangePassword\x12\x1e.grpc.v1.ChangePasswordRequest\x1a\x1f.grpc.v1.ChangePasswordResponse\x12E\n" +
+	"\x0eChangePassword\x12\x1e.grpc.v1.ChangePasswordRequest\x1a\x1f.grpc.v1.ChangePasswordResponse\x12]\n" +
+	"\x12RequestEmailChange\x12\".grpc.v1.RequestEmailChangeRequest\x1a#.grpc.v1.RequestEmailChangeResponse\x12Z\n" +
+	"\x11VerifyEmailChange\x12!.grpc.v1.VerifyEmailChangeRequest\x1a\".grpc.v1.VerifyEmailChangeResponse\x12N\n" +
+	"\rDeleteAccount\x12\x1d.grpc.v1.DeleteAccountRequest\x1a\x1e.grpc.v1.DeleteAccountResponse\x12E\n" +
 	"\n" +
 	"GetProfile\x12\x1a.grpc.v1.GetProfileRequest\x1a\x1b.grpc.v1.GetProfileResponseB\x0fZ\rdocs/proto/v1b\x06proto3"
 
@@ -915,7 +1221,7 @@ func file_docs_proto_v1_auth_proto_rawDescGZIP() []byte {
 	return file_docs_proto_v1_auth_proto_rawDescData
 }
 
-var file_docs_proto_v1_auth_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
+var file_docs_proto_v1_auth_proto_msgTypes = make([]protoimpl.MessageInfo, 22)
 var file_docs_proto_v1_auth_proto_goTypes = []any{
 	(*RegisterRequest)(nil),                 // 0: grpc.v1.RegisterRequest
 	(*RegisterResponse)(nil),                // 1: grpc.v1.RegisterResponse
@@ -931,8 +1237,14 @@ var file_docs_proto_v1_auth_proto_goTypes = []any{
 	(*ResetPasswordResponse)(nil),           // 11: grpc.v1.ResetPasswordResponse
 	(*ChangePasswordRequest)(nil),           // 12: grpc.v1.ChangePasswordRequest
 	(*ChangePasswordResponse)(nil),          // 13: grpc.v1.ChangePasswordResponse
-	(*GetProfileRequest)(nil),               // 14: grpc.v1.GetProfileRequest
-	(*GetProfileResponse)(nil),              // 15: grpc.v1.GetProfileResponse
+	(*RequestEmailChangeRequest)(nil),       // 14: grpc.v1.RequestEmailChangeRequest
+	(*RequestEmailChangeResponse)(nil),      // 15: grpc.v1.RequestEmailChangeResponse
+	(*VerifyEmailChangeRequest)(nil),        // 16: grpc.v1.VerifyEmailChangeRequest
+	(*VerifyEmailChangeResponse)(nil),       // 17: grpc.v1.VerifyEmailChangeResponse
+	(*DeleteAccountRequest)(nil),            // 18: grpc.v1.DeleteAccountRequest
+	(*DeleteAccountResponse)(nil),           // 19: grpc.v1.DeleteAccountResponse
+	(*GetProfileRequest)(nil),               // 20: grpc.v1.GetProfileRequest
+	(*GetProfileResponse)(nil),              // 21: grpc.v1.GetProfileResponse
 }
 var file_docs_proto_v1_auth_proto_depIdxs = []int32{
 	0,  // 0: grpc.v1.AuthService.Register:input_type -> grpc.v1.RegisterRequest
@@ -942,17 +1254,23 @@ var file_docs_proto_v1_auth_proto_depIdxs = []int32{
 	8,  // 4: grpc.v1.AuthService.ForgotPassword:input_type -> grpc.v1.ForgotPasswordRequest
 	10, // 5: grpc.v1.AuthService.ResetPassword:input_type -> grpc.v1.ResetPasswordRequest
 	12, // 6: grpc.v1.AuthService.ChangePassword:input_type -> grpc.v1.ChangePasswordRequest
-	14, // 7: grpc.v1.AuthService.GetProfile:input_type -> grpc.v1.GetProfileRequest
-	1,  // 8: grpc.v1.AuthService.Register:output_type -> grpc.v1.RegisterResponse
-	3,  // 9: grpc.v1.AuthService.Login:output_type -> grpc.v1.LoginResponse
-	5,  // 10: grpc.v1.AuthService.VerifyEmail:output_type -> grpc.v1.VerifyEmailResponse
-	7,  // 11: grpc.v1.AuthService.ResendEmailVerification:output_type -> grpc.v1.ResendEmailVerificationResponse
-	9,  // 12: grpc.v1.AuthService.ForgotPassword:output_type -> grpc.v1.ForgotPasswordResponse
-	11, // 13: grpc.v1.AuthService.ResetPassword:output_type -> grpc.v1.ResetPasswordResponse
-	13, // 14: grpc.v1.AuthService.ChangePassword:output_type -> grpc.v1.ChangePasswordResponse
-	15, // 15: grpc.v1.AuthService.GetProfile:output_type -> grpc.v1.GetProfileResponse
-	8,  // [8:16] is the sub-list for method output_type
-	0,  // [0:8] is the sub-list for method input_type
+	14, // 7: grpc.v1.AuthService.RequestEmailChange:input_type -> grpc.v1.RequestEmailChangeRequest
+	16, // 8: grpc.v1.AuthService.VerifyEmailChange:input_type -> grpc.v1.VerifyEmailChangeRequest
+	18, // 9: grpc.v1.AuthService.DeleteAccount:input_type -> grpc.v1.DeleteAccountRequest
+	20, // 10: grpc.v1.AuthService.GetProfile:input_type -> grpc.v1.GetProfileRequest
+	1,  // 11: grpc.v1.AuthService.Register:output_type -> grpc.v1.RegisterResponse
+	3,  // 12: grpc.v1.AuthService.Login:output_type -> grpc.v1.LoginResponse
+	5,  // 13: grpc.v1.AuthService.VerifyEmail:output_type -> grpc.v1.VerifyEmailResponse
+	7,  // 14: grpc.v1.AuthService.ResendEmailVerification:output_type -> grpc.v1.ResendEmailVerificationResponse
+	9,  // 15: grpc.v1.AuthService.ForgotPassword:output_type -> grpc.v1.ForgotPasswordResponse
+	11, // 16: grpc.v1.AuthService.ResetPassword:output_type -> grpc.v1.ResetPasswordResponse
+	13, // 17: grpc.v1.AuthService.ChangePassword:output_type -> grpc.v1.ChangePasswordResponse
+	15, // 18: grpc.v1.AuthService.RequestEmailChange:output_type -> grpc.v1.RequestEmailChangeResponse
+	17, // 19: grpc.v1.AuthService.VerifyEmailChange:output_type -> grpc.v1.VerifyEmailChangeResponse
+	19, // 20: grpc.v1.AuthService.DeleteAccount:output_type -> grpc.v1.DeleteAccountResponse
+	21, // 21: grpc.v1.AuthService.GetProfile:output_type -> grpc.v1.GetProfileResponse
+	11, // [11:22] is the sub-list for method output_type
+	0,  // [0:11] is the sub-list for method input_type
 	0,  // [0:0] is the sub-list for extension type_name
 	0,  // [0:0] is the sub-list for extension extendee
 	0,  // [0:0] is the sub-list for field type_name
@@ -969,7 +1287,7 @@ func file_docs_proto_v1_auth_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_docs_proto_v1_auth_proto_rawDesc), len(file_docs_proto_v1_auth_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   16,
+			NumMessages:   22,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

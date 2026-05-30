@@ -3,6 +3,7 @@ package usecase
 
 import (
 	"context"
+	"time"
 
 	"github.com/evrone/go-clean-template/internal/entity"
 )
@@ -21,12 +22,31 @@ type (
 		Register(ctx context.Context, username, email, password string) (entity.User, error)
 		Login(ctx context.Context, email, password string) (string, error)
 		GetUser(ctx context.Context, userID string) (entity.User, error)
+		GetUserAccount(ctx context.Context, userID string) (entity.UserAccount, error)
+		CompleteOnboarding(
+			ctx context.Context,
+			userID string,
+			onboarding entity.UserOnboarding,
+		) (entity.UserAccount, error)
+		UpdateUserProfile(
+			ctx context.Context,
+			userID string,
+			patch entity.UserProfilePatch,
+		) (entity.UserAccount, error)
+		UpdateUserPreferences(
+			ctx context.Context,
+			userID string,
+			patch entity.UserPreferencesPatch,
+		) (entity.UserAccount, error)
 		SetRoleByEmail(ctx context.Context, email, role string) (entity.User, error)
 		VerifyEmail(ctx context.Context, token string) error
 		ResendEmailVerification(ctx context.Context, email string) error
 		ForgotPassword(ctx context.Context, email string) error
 		ResetPassword(ctx context.Context, token, password string) error
 		ChangePassword(ctx context.Context, userID, currentPassword, newPassword string) error
+		RequestEmailChange(ctx context.Context, userID, currentPassword, newEmail string) error
+		VerifyEmailChange(ctx context.Context, userID, token string) error
+		DeleteAccount(ctx context.Context, userID, currentPassword string) error
 	}
 
 	// Task -.
@@ -93,6 +113,26 @@ type (
 		Surah(ctx context.Context, surahID int, lang string) (entity.QuranSurah, error)
 		Recitations(ctx context.Context) ([]entity.QuranRecitation, error)
 		TranslationSources(ctx context.Context, lang string) ([]entity.QuranTranslationSource, error)
+		Juz(ctx context.Context, lang string) ([]entity.QuranNavigationSegment, error)
+		JuzAyahs(
+			ctx context.Context,
+			juzNumber int,
+			lang string,
+			translationSource string,
+			includeTranslation bool,
+			includeAudio bool,
+			recitationID string,
+		) ([]entity.QuranAyah, error)
+		Hizbs(ctx context.Context, lang string) ([]entity.QuranNavigationSegment, error)
+		HizbAyahs(
+			ctx context.Context,
+			hizbNumber int,
+			lang string,
+			translationSource string,
+			includeTranslation bool,
+			includeAudio bool,
+			recitationID string,
+		) ([]entity.QuranAyah, error)
 		Ayah(
 			ctx context.Context,
 			ayahKey string,
@@ -121,9 +161,15 @@ type (
 	Personal interface {
 		GetProgress(ctx context.Context, userID string, bookID int) (entity.ReadingProgress, error)
 		SaveProgress(ctx context.Context, userID string, bookID int, pageID, headingID *int, progressPercent *float64) (entity.ReadingProgress, error)
-		ListBookmarks(ctx context.Context, userID string, bookID *int, limit, offset int) ([]entity.Bookmark, int, error)
-		CreateBookmark(ctx context.Context, userID string, bookID int, pageID, headingID *int, label, note *string) (entity.Bookmark, error)
-		DeleteBookmark(ctx context.Context, userID, bookmarkID string) error
+		GetQuranProgress(ctx context.Context, userID string) (entity.QuranReadingProgress, error)
+		GetQuranSurahProgress(ctx context.Context, userID string, surahID int) (entity.QuranReadingProgress, error)
+		ListQuranSurahProgress(ctx context.Context, userID string) ([]entity.QuranReadingProgress, error)
+		SaveQuranProgress(ctx context.Context, userID, ayahKey string, clientObservedAt *time.Time) (entity.QuranReadingProgress, error)
+		ListSavedItems(ctx context.Context, userID, itemType string, bookID, surahID *int, tag string, limit, offset int) ([]entity.SavedItem, int, error)
+		UpsertSavedItem(ctx context.Context, userID string, item entity.SavedItem) (entity.SavedItem, error)
+		UpdateSavedItem(ctx context.Context, userID, savedItemID string, label, note *string, tags []string) (entity.SavedItem, error)
+		DeleteSavedItem(ctx context.Context, userID, savedItemID string) error
+		ListSavedItemTags(ctx context.Context, userID string) ([]string, error)
 	}
 
 	// Editorial -.

@@ -25,7 +25,7 @@ Edit `.env.production`:
 - Ganti `JWT_SECRET` dengan output `openssl rand -hex 32`.
 - Biarkan `JWT_ISSUER=surau-backend` dan `JWT_AUDIENCE=surau-api`, kecuali ada kebutuhan integrasi token khusus.
 - Biarkan `AUTH_RATE_LIMIT_ENABLED=true` untuk limiter DB-backed lintas instance; override nilai `AUTH_RATE_LIMIT_*` hanya jika traffic/UX membutuhkan.
-- Isi `CF_EMAIL_ACCOUNT_ID`, `CF_EMAIL_API_TOKEN`, `EMAIL_FROM_ADDRESS`, `EMAIL_VERIFY_FRONTEND_URL`, dan `PASSWORD_RESET_FRONTEND_URL`.
+- Isi `CF_EMAIL_ACCOUNT_ID`, `CF_EMAIL_API_TOKEN`, `EMAIL_FROM_ADDRESS`, `EMAIL_VERIFY_FRONTEND_URL`, `PASSWORD_RESET_FRONTEND_URL`, dan `EMAIL_CHANGE_FRONTEND_URL`.
 - Pastikan domain `EMAIL_FROM_ADDRESS` sudah onboard di Cloudflare Email Service untuk Email Sending.
 - Biarkan `APP_BIND_ADDR=127.0.0.1` jika reverse proxy ada di server yang sama.
 - Biarkan `APP_PUBLISHED_PORT=8080`, kecuali port 8080 sudah dipakai service lain.
@@ -40,7 +40,7 @@ docker compose --env-file .env.production -f docker-compose.prod.yml up -d --bui
 ```
 
 Aplikasi otomatis menjalankan migration saat container `app` start karena Dockerfile membangun binary dengan tag `migrate`.
-Migration auth terbaru menambahkan `users.token_version`, `auth_rate_limits`, dan `auth_audit_logs`. Setelah password reset/change password, JWT lama otomatis ditolak dan user harus login ulang.
+Migration auth terbaru menambahkan `users.token_version`, `auth_rate_limits`, `auth_audit_logs`, email verification/reset/change token tables, dan soft-delete account fields. Setelah password reset, change password, change email, atau delete account, JWT lama otomatis ditolak dan user harus login ulang.
 
 ## 4. Cek health
 

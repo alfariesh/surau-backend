@@ -26,6 +26,7 @@ func setRequiredEnv(t *testing.T) {
 	t.Setenv("EMAIL_FROM_ADDRESS", "noreply@example.com")
 	t.Setenv("EMAIL_VERIFY_FRONTEND_URL", "https://frontend.example.com/verify-email")
 	t.Setenv("PASSWORD_RESET_FRONTEND_URL", "https://frontend.example.com/reset-password")
+	t.Setenv("EMAIL_CHANGE_FRONTEND_URL", "https://frontend.example.com/change-email")
 }
 
 func unsetEnv(t *testing.T, key string) {
@@ -51,6 +52,8 @@ func TestNewConfig_EmailDefaults(t *testing.T) {
 	unsetEnv(t, "EMAIL_RESEND_COOLDOWN")
 	unsetEnv(t, "PASSWORD_RESET_TTL")
 	unsetEnv(t, "PASSWORD_RESET_RESEND_COOLDOWN")
+	unsetEnv(t, "EMAIL_CHANGE_TTL")
+	unsetEnv(t, "EMAIL_CHANGE_RESEND_COOLDOWN")
 	unsetEnv(t, "EMAIL_HTTP_TIMEOUT")
 
 	cfg, err := NewConfig()
@@ -62,6 +65,8 @@ func TestNewConfig_EmailDefaults(t *testing.T) {
 	assert.Equal(t, "1m0s", cfg.Email.ResendCooldown.String())
 	assert.Equal(t, "1h0m0s", cfg.Email.PasswordResetTTL.String())
 	assert.Equal(t, "1m0s", cfg.Email.PasswordResetCooldown.String())
+	assert.Equal(t, "24h0m0s", cfg.Email.EmailChangeTTL.String())
+	assert.Equal(t, "1m0s", cfg.Email.EmailChangeCooldown.String())
 	assert.Equal(t, "10s", cfg.Email.HTTPTimeout.String())
 }
 
@@ -97,6 +102,11 @@ func TestNewConfig_InvalidEmail(t *testing.T) {
 			value: "/reset-password",
 		},
 		{
+			name:  "invalid email change url",
+			key:   "EMAIL_CHANGE_FRONTEND_URL",
+			value: "/change-email",
+		},
+		{
 			name:  "zero ttl",
 			key:   "EMAIL_VERIFICATION_TTL",
 			value: "0s",
@@ -114,6 +124,16 @@ func TestNewConfig_InvalidEmail(t *testing.T) {
 		{
 			name:  "zero password reset cooldown",
 			key:   "PASSWORD_RESET_RESEND_COOLDOWN",
+			value: "0s",
+		},
+		{
+			name:  "zero email change ttl",
+			key:   "EMAIL_CHANGE_TTL",
+			value: "0s",
+		},
+		{
+			name:  "zero email change cooldown",
+			key:   "EMAIL_CHANGE_RESEND_COOLDOWN",
 			value: "0s",
 		},
 		{
@@ -195,6 +215,8 @@ func TestNewConfig_AuthEmailNotificationDefaults(t *testing.T) {
 	unsetEnv(t, "AUTH_PASSWORD_CHANGED_EMAIL_ENABLED")
 	unsetEnv(t, "AUTH_EMAIL_VERIFIED_EMAIL_ENABLED")
 	unsetEnv(t, "AUTH_ROLE_CHANGED_EMAIL_ENABLED")
+	unsetEnv(t, "AUTH_EMAIL_CHANGED_EMAIL_ENABLED")
+	unsetEnv(t, "AUTH_ACCOUNT_DELETED_EMAIL_ENABLED")
 
 	cfg, err := NewConfig()
 
@@ -206,6 +228,8 @@ func TestNewConfig_AuthEmailNotificationDefaults(t *testing.T) {
 	assert.True(t, cfg.AuthEmail.PasswordChangedEnabled)
 	assert.True(t, cfg.AuthEmail.EmailVerifiedEnabled)
 	assert.True(t, cfg.AuthEmail.RoleChangedEnabled)
+	assert.True(t, cfg.AuthEmail.EmailChangedEnabled)
+	assert.True(t, cfg.AuthEmail.AccountDeletedEnabled)
 }
 
 func TestNewConfig_InvalidAuthEmailNotification(t *testing.T) {

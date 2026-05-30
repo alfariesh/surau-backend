@@ -146,6 +146,34 @@ func (f *fakeAuthUser) GetUser(context.Context, string) (entity.User, error) {
 	return entity.User{}, nil
 }
 
+func (f *fakeAuthUser) GetUserAccount(context.Context, string) (entity.UserAccount, error) {
+	return entity.UserAccount{}, nil
+}
+
+func (f *fakeAuthUser) CompleteOnboarding(
+	context.Context,
+	string,
+	entity.UserOnboarding,
+) (entity.UserAccount, error) {
+	return entity.UserAccount{}, nil
+}
+
+func (f *fakeAuthUser) UpdateUserProfile(
+	context.Context,
+	string,
+	entity.UserProfilePatch,
+) (entity.UserAccount, error) {
+	return entity.UserAccount{}, nil
+}
+
+func (f *fakeAuthUser) UpdateUserPreferences(
+	context.Context,
+	string,
+	entity.UserPreferencesPatch,
+) (entity.UserAccount, error) {
+	return entity.UserAccount{}, nil
+}
+
 func (f *fakeAuthUser) SetRoleByEmail(context.Context, string, string) (entity.User, error) {
 	return entity.User{}, nil
 }
@@ -168,4 +196,16 @@ func (f *fakeAuthUser) ResetPassword(context.Context, string, string) error {
 
 func (f *fakeAuthUser) ChangePassword(context.Context, string, string, string) error {
 	return f.changeErr
+}
+
+func (f *fakeAuthUser) RequestEmailChange(context.Context, string, string, string) error {
+	return nil
+}
+
+func (f *fakeAuthUser) VerifyEmailChange(context.Context, string, string) error {
+	return nil
+}
+
+func (f *fakeAuthUser) DeleteAccount(context.Context, string, string) error {
+	return nil
 }

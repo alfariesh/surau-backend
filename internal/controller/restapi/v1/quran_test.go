@@ -32,6 +32,13 @@ func TestQuranRoutes(t *testing.T) {
 		{name: "surah detail includes info", path: "/v1/quran/surahs/73?lang=id", wantStatus: http.StatusOK, wantBody: `"text_html"`},
 		{name: "recitations include default flag", path: "/v1/quran/recitations", wantStatus: http.StatusOK, wantBody: `"is_default":true`},
 		{name: "translation sources", path: "/v1/quran/translation-sources?lang=id", wantStatus: http.StatusOK, wantBody: `"coverage"`},
+		{name: "juz navigation", path: "/v1/quran/juz?lang=id", wantStatus: http.StatusOK, wantBody: `"kind":"juz"`},
+		{name: "juz ayahs", path: "/v1/quran/juz/29/ayahs?include_translation=false&include_audio=true&recitation_id=rec-1", wantStatus: http.StatusOK, wantBody: `"recitation_id":"rec-1"`},
+		{name: "juz invalid include audio", path: "/v1/quran/juz/29/ayahs?include_audio=wat", wantStatus: http.StatusBadRequest, wantBody: `"invalid include_audio"`},
+		{name: "juz invalid number", path: "/v1/quran/juz/bad/ayahs", wantStatus: http.StatusBadRequest, wantBody: `"invalid juz_number"`},
+		{name: "hizb navigation", path: "/v1/quran/hizbs?lang=id", wantStatus: http.StatusOK, wantBody: `"kind":"hizb"`},
+		{name: "hizb ayahs", path: "/v1/quran/hizbs/57/ayahs", wantStatus: http.StatusOK, wantBody: `"hizb_number":57`},
+		{name: "hizb missing", path: "/v1/quran/hizbs/58/ayahs", wantStatus: http.StatusNotFound, wantBody: `"quran navigation not found"`},
 		{name: "ayah uses default audio without recitation id", path: "/v1/quran/ayahs/73:1?include_audio=true", wantStatus: http.StatusOK, wantBody: `"recitation_id":"rec-default"`},
 		{name: "ayah invalid recitation returns not found", path: "/v1/quran/ayahs/73:1?include_audio=true&recitation_id=bad-id", wantStatus: http.StatusNotFound, wantBody: `"quran recitation not found"`},
 		{name: "ayah invalid include audio", path: "/v1/quran/ayahs/73:1?include_audio=wat", wantStatus: http.StatusBadRequest, wantBody: `"invalid include_audio"`},
@@ -71,6 +78,10 @@ func newQuranTestApp(quran *fakeQuran) *fiber.App {
 	app.Get("/v1/quran/surahs", controller.listQuranSurahs)
 	app.Get("/v1/quran/recitations", controller.listQuranRecitations)
 	app.Get("/v1/quran/translation-sources", controller.listQuranTranslationSources)
+	app.Get("/v1/quran/juz", controller.listQuranJuz)
+	app.Get("/v1/quran/juz/:juz_number/ayahs", controller.listQuranJuzAyahs)
+	app.Get("/v1/quran/hizbs", controller.listQuranHizbs)
+	app.Get("/v1/quran/hizbs/:hizb_number/ayahs", controller.listQuranHizbAyahs)
 	app.Get("/v1/quran/ayahs/:ayah_key", controller.getQuranAyah)
 	app.Get("/v1/quran/surahs/:surah_id", controller.getQuranSurah)
 	app.Get("/v1/quran/surahs/:surah_id/ayahs", controller.listQuranSurahAyahs)
@@ -99,7 +110,19 @@ func (f *fakeQuran) Surah(_ context.Context, surahID int, _ string) (entity.Qura
 }
 
 func (f *fakeQuran) Recitations(_ context.Context) ([]entity.QuranRecitation, error) {
-	return []entity.QuranRecitation{{ID: "rec-default", Name: "Reciter", Mode: "ayah", TrackCount: 6236, PublicTrackCount: 6236, HasPublicAudio: true, IsDefault: true}}, nil
+	return []entity.QuranRecitation{
+		{
+			ID:                 "rec-default",
+			Name:               "Reciter",
+			Mode:               "ayah",
+			TrackCount:         6236,
+			PublicTrackCount:   6236,
+			PlayableTrackCount: 6236,
+			HasPublicAudio:     true,
+			HasPlayableAudio:   true,
+			IsDefault:          true,
+		},
+	}, nil
 }
 
 func (f *fakeQuran) TranslationSources(_ context.Context, _ string) ([]entity.QuranTranslationSource, error) {
@@ -112,6 +135,42 @@ func (f *fakeQuran) TranslationSources(_ context.Context, _ string) ([]entity.Qu
 		Coverage:      entity.QuranTranslationCoverage{TranslatedAyahs: 6236, TotalAyahs: 6236, Percent: 100},
 		IsDefault:     true,
 	}}, nil
+}
+
+func (f *fakeQuran) Juz(_ context.Context, _ string) ([]entity.QuranNavigationSegment, error) {
+	return []entity.QuranNavigationSegment{fakeNavigationSegment("juz", 29)}, nil
+}
+
+func (f *fakeQuran) JuzAyahs(
+	_ context.Context,
+	juzNumber int,
+	_ string,
+	_ string,
+	_ bool,
+	includeAudio bool,
+	recitationID string,
+) ([]entity.QuranAyah, error) {
+	return fakeNavigationAyahs("juz", juzNumber, includeAudio, recitationID)
+}
+
+func (f *fakeQuran) Hizbs(_ context.Context, _ string) ([]entity.QuranNavigationSegment, error) {
+	return []entity.QuranNavigationSegment{fakeNavigationSegment("hizb", 57)}, nil
+}
+
+func (f *fakeQuran) HizbAyahs(
+	_ context.Context,
+	hizbNumber int,
+	_ string,
+	_ string,
+	_ bool,
+	includeAudio bool,
+	recitationID string,
+) ([]entity.QuranAyah, error) {
+	if hizbNumber == 58 {
+		return nil, entity.ErrQuranNavigationNotFound
+	}
+
+	return fakeNavigationAyahs("hizb", hizbNumber, includeAudio, recitationID)
 }
 
 func (f *fakeQuran) Ayah(
@@ -200,4 +259,31 @@ func fakeSurahInfo() *entity.QuranSurahInfo {
 		Format:        "json",
 		LicenseStatus: "needs_review",
 	}
+}
+
+func fakeNavigationSegment(kind string, number int) entity.QuranNavigationSegment {
+	name := "Al-Muzzammil"
+
+	return entity.QuranNavigationSegment{
+		Kind:      kind,
+		Number:    number,
+		AyahCount: 20,
+		Start:     entity.QuranNavigationBoundary{SurahID: 73, AyahNumber: 1, AyahKey: "73:1", SurahName: &name},
+		End:       entity.QuranNavigationBoundary{SurahID: 73, AyahNumber: 20, AyahKey: "73:20", SurahName: &name},
+	}
+}
+
+func fakeNavigationAyahs(kind string, number int, includeAudio bool, recitationID string) ([]entity.QuranAyah, error) {
+	text := "يَـٰٓأَيُّهَا ٱلْمُزَّمِّلُ"
+	ayah := entity.QuranAyah{SurahID: 73, AyahNumber: 1, AyahKey: "73:1", TextQPCHafs: &text}
+	if kind == "juz" {
+		ayah.JuzNumber = &number
+	} else {
+		ayah.HizbNumber = &number
+	}
+	if includeAudio {
+		ayah.Audio = []entity.QuranAudioTrack{{RecitationID: recitationID, TrackType: "ayah", TrackKey: "73:1", SurahID: 73}}
+	}
+
+	return []entity.QuranAyah{ayah}, nil
 }

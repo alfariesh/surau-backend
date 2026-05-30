@@ -58,6 +58,7 @@ func TestQuranAssetImportLangOptions(t *testing.T) {
 		ScriptImlaeiSimplePath: writeQuranFixture(t, dir, "simple.json", `{"73:1":"يا ايها المزمل"}`),
 		TranslationSimplePath:  writeQuranFixture(t, dir, "translation.json", `{"73:1":"O wrapped one!"}`),
 		TranslationLang:        "en-US",
+		TranslationSourceID:    "qul-test-en-simple",
 		SurahInfoLang:          "en",
 		DryRun:                 true,
 	}
@@ -75,6 +76,59 @@ func TestQuranAssetImportLangOptions(t *testing.T) {
 	_, err = RunQuranAssetImport(context.Background(), base)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unsupported language")
+}
+
+func TestQuranAssetOptionsTranslationSourceDefaults(t *testing.T) {
+	t.Parallel()
+
+	defaultID := QuranAssetOptions{}.withDefaults()
+	assert.Equal(t, defaultQuranTranslationSourceID, defaultID.TranslationSourceID)
+	assert.Equal(t, defaultQuranTranslationSourceName, defaultID.TranslationSourceName)
+	assert.Equal(t, defaultQuranTranslationSourceURL, defaultID.TranslationSourceURL)
+	assert.Equal(t, defaultQuranTranslationResourceID, defaultID.TranslationResourceID)
+	assert.Equal(t, defaultQuranTranslationFormat, defaultID.TranslationFormat)
+	assert.Equal(t, defaultQuranTranslationFootnoteFormat, defaultID.TranslationFootnoteFormat)
+
+	customEN := QuranAssetOptions{
+		TranslationLang:       "en",
+		TranslationSourceID:   "qul-haleem-en-simple",
+		TranslationSourceName: "M. A. S. Abdel Haleem",
+	}.withDefaults()
+	assert.Empty(t, customEN.TranslationSourceURL)
+	assert.Empty(t, customEN.TranslationResourceID)
+	assert.Equal(t, defaultQuranTranslationFormat, customEN.TranslationFormat)
+	assert.Equal(t, defaultQuranTranslationFootnoteFormat, customEN.TranslationFootnoteFormat)
+
+	customExplicit := QuranAssetOptions{
+		TranslationLang:           "en",
+		TranslationSourceID:       "qul-haleem-en-simple",
+		TranslationSourceURL:      "https://qul.tarteel.ai/resources/translation/131",
+		TranslationResourceID:     "131",
+		TranslationFormat:         "custom-simple.json",
+		TranslationFootnoteFormat: "custom-footnotes.json",
+	}.withDefaults()
+	assert.Equal(t, "https://qul.tarteel.ai/resources/translation/131", customExplicit.TranslationSourceURL)
+	assert.Equal(t, "131", customExplicit.TranslationResourceID)
+	assert.Equal(t, "custom-simple.json", customExplicit.TranslationFormat)
+	assert.Equal(t, "custom-footnotes.json", customExplicit.TranslationFootnoteFormat)
+}
+
+func TestQuranAssetOptionsRequireSourceIDForNonIDTranslations(t *testing.T) {
+	t.Parallel()
+
+	opts := QuranAssetOptions{
+		SurahNamesPath:         "surahs.json",
+		ScriptQPCHafsPath:      "qpc.json",
+		ScriptImlaeiSimplePath: "simple.json",
+		TranslationSimplePath:  "translation.json",
+		TranslationLang:        "en",
+		DryRun:                 true,
+	}
+
+	err := opts.validate()
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "translation source id is required")
 }
 
 func TestResolveQuranMention(t *testing.T) {

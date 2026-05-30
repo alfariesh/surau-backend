@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/evrone/go-clean-template/internal/controller/restapi/middleware"
+	"github.com/evrone/go-clean-template/internal/entity"
 	"github.com/evrone/go-clean-template/internal/usecase"
 	"github.com/evrone/go-clean-template/pkg/jwt"
 	"github.com/evrone/go-clean-template/pkg/logger"
@@ -76,6 +77,10 @@ func NewRoutes(
 	{
 		quranGroup.Get("/recitations", r.listQuranRecitations)
 		quranGroup.Get("/translation-sources", r.listQuranTranslationSources)
+		quranGroup.Get("/juz", r.listQuranJuz)
+		quranGroup.Get("/juz/:juz_number/ayahs", r.listQuranJuzAyahs)
+		quranGroup.Get("/hizbs", r.listQuranHizbs)
+		quranGroup.Get("/hizbs/:hizb_number/ayahs", r.listQuranHizbAyahs)
 		quranGroup.Get("/surahs", r.listQuranSurahs)
 		quranGroup.Get("/surahs/:surah_id", r.getQuranSurah)
 		quranGroup.Get("/surahs/:surah_id/ayahs", r.listQuranSurahAyahs)
@@ -89,11 +94,17 @@ func NewRoutes(
 	protectedAuthGroup := protected.Group("/auth")
 	{
 		protectedAuthGroup.Post("/change-password", r.changePassword)
+		protectedAuthGroup.Post("/change-email/request", r.requestEmailChange)
+		protectedAuthGroup.Post("/change-email/verify", r.verifyEmailChange)
+		protectedAuthGroup.Post("/delete-account", r.deleteAccount)
 	}
 
 	userGroup := protected.Group("/user")
 	{
 		userGroup.Get("/profile", r.profile)
+		userGroup.Patch("/profile", r.updateProfile)
+		userGroup.Patch("/onboarding", r.updateOnboarding)
+		userGroup.Patch("/preferences", r.updatePreferences)
 	}
 
 	meGroup := protected.Group("/me")
@@ -101,29 +112,45 @@ func NewRoutes(
 		meGroup.Get("/progress/:book_id", r.getProgress)
 		meGroup.Put("/progress/:book_id", r.saveProgress)
 		meGroup.Put("/progress/:book_id/toc/:heading_id", r.saveTOCProgress)
-		meGroup.Get("/bookmarks", r.listBookmarks)
-		meGroup.Post("/bookmarks", r.createBookmark)
-		meGroup.Post("/bookmarks/toc/:book_id/:heading_id", r.createTOCBookmark)
-		meGroup.Delete("/bookmarks/:id", r.deleteBookmark)
+		meGroup.Get("/quran/progress", r.getQuranProgress)
+		meGroup.Put("/quran/progress", r.saveQuranProgress)
+		meGroup.Get("/quran/progress/surahs", r.listQuranSurahProgress)
+		meGroup.Get("/quran/progress/surahs/:surah_id", r.getQuranSurahProgress)
+		meGroup.Get("/saved-items", r.listSavedItems)
+		meGroup.Post("/saved-items", r.upsertSavedItem)
+		meGroup.Get("/saved-items/tags", r.listSavedItemTags)
+		meGroup.Patch("/saved-items/:id", r.updateSavedItem)
+		meGroup.Delete("/saved-items/:id", r.deleteSavedItem)
 	}
 
-	adminGroup := protected.Group("/admin", middleware.Admin(u))
+	editorialGroup := protected.Group("/editorial")
 	{
-		adminGroup.Get("/books", r.adminListBooks)
-		adminGroup.Get("/reader/missing-assets", r.adminMissingReaderAssets)
-		adminGroup.Get("/quran/missing-assets", r.adminMissingQuranAssets)
-		adminGroup.Get("/translation-feedbacks", r.adminListTranslationFeedbacks)
-		adminGroup.Get("/translation-feedbacks/summary", r.adminTranslationFeedbackSummary)
-		adminGroup.Post("/translation-feedbacks/:id/resolve", r.adminResolveTranslationFeedback)
-		adminGroup.Post("/translation-feedbacks/:id/reopen", r.adminReopenTranslationFeedback)
-		adminGroup.Put("/books/:book_id/publication", r.adminUpdatePublication)
-		adminGroup.Put("/books/:book_id/metadata-draft", r.adminSaveMetadataDraft)
-		adminGroup.Post("/books/:book_id/metadata-draft/publish", r.adminPublishMetadataDraft)
-		adminGroup.Get("/books/:book_id/pages/:page_id", r.adminGetPageEdit)
-		adminGroup.Put("/books/:book_id/pages/:page_id/draft", r.adminSavePageDraft)
-		adminGroup.Post("/books/:book_id/pages/:page_id/publish", r.adminPublishPageDraft)
-		adminGroup.Put("/books/:book_id/headings/:heading_id/draft", r.adminSaveHeadingDraft)
-		adminGroup.Post("/books/:book_id/headings/:heading_id/publish", r.adminPublishHeadingDraft)
-		adminGroup.Post("/collections/:slug/items", r.adminAddCollectionItem)
+		editorialReviewGroup := editorialGroup.Group(
+			"",
+			middleware.RequireRoles(u, entity.UserRoleEditor, entity.UserRoleAdmin),
+		)
+		editorialReviewGroup.Get("/books", r.editorialListBooks)
+		editorialReviewGroup.Get("/reader/missing-assets", r.editorialMissingReaderAssets)
+		editorialReviewGroup.Get("/quran/missing-assets", r.editorialMissingQuranAssets)
+		editorialReviewGroup.Get("/translation-feedbacks", r.editorialListTranslationFeedbacks)
+		editorialReviewGroup.Get("/translation-feedbacks/summary", r.editorialTranslationFeedbackSummary)
+		editorialReviewGroup.Post("/translation-feedbacks/:id/resolve", r.editorialResolveTranslationFeedback)
+		editorialReviewGroup.Post("/translation-feedbacks/:id/reopen", r.editorialReopenTranslationFeedback)
+		editorialReviewGroup.Put("/books/:book_id/metadata-draft", r.editorialSaveMetadataDraft)
+		editorialReviewGroup.Get("/books/:book_id/pages/:page_id", r.editorialGetPageEdit)
+		editorialReviewGroup.Put("/books/:book_id/pages/:page_id/draft", r.editorialSavePageDraft)
+		editorialReviewGroup.Put("/books/:book_id/headings/:heading_id/draft", r.editorialSaveHeadingDraft)
+
+		editorialAdminGroup := editorialGroup.Group("", middleware.RequireRoles(u, entity.UserRoleAdmin))
+		editorialAdminGroup.Put("/books/:book_id/publication", r.editorialUpdatePublication)
+		editorialAdminGroup.Post("/books/:book_id/metadata-draft/publish", r.editorialPublishMetadataDraft)
+		editorialAdminGroup.Post("/books/:book_id/pages/:page_id/publish", r.editorialPublishPageDraft)
+		editorialAdminGroup.Post("/books/:book_id/headings/:heading_id/publish", r.editorialPublishHeadingDraft)
+		editorialAdminGroup.Post("/collections/:slug/items", r.editorialAddCollectionItem)
+	}
+
+	adminGroup := protected.Group("/admin", middleware.RequireRoles(u, entity.UserRoleAdmin))
+	{
+		adminGroup.Patch("/users/role", r.adminSetUserRole)
 	}
 }

@@ -11,9 +11,9 @@ func TestMarkDefaultRecitationPrefersFullPublicAyah(t *testing.T) {
 	t.Parallel()
 
 	recitations := []entity.QuranRecitation{
-		{ID: "surah-public", Name: "A", Mode: "surah", TrackCount: 114, PublicTrackCount: 114, HasPublicAudio: true},
-		{ID: "ayah-partial", Name: "A", Mode: "ayah", TrackCount: 6236, PublicTrackCount: 2, HasPublicAudio: false},
-		{ID: "ayah-public", Name: "B", Mode: "ayah", TrackCount: 6236, PublicTrackCount: 6236, HasPublicAudio: true},
+		{ID: "surah-public", Name: "A", Mode: "surah", TrackCount: 114, PublicTrackCount: 114, PlayableTrackCount: 114, HasPublicAudio: true, HasPlayableAudio: true},
+		{ID: "ayah-partial", Name: "A", Mode: "ayah", TrackCount: 6236, PublicTrackCount: 2, PlayableTrackCount: 2, HasPublicAudio: false, HasPlayableAudio: false},
+		{ID: "ayah-public", Name: "B", Mode: "ayah", TrackCount: 6236, PublicTrackCount: 6236, PlayableTrackCount: 6236, HasPublicAudio: true, HasPlayableAudio: true},
 	}
 
 	markDefaultRecitation(recitations)
@@ -23,12 +23,33 @@ func TestMarkDefaultRecitationPrefersFullPublicAyah(t *testing.T) {
 	assert.True(t, recitations[2].IsDefault)
 }
 
-func TestMarkDefaultRecitationLeavesNoDefaultWithoutFullPublicAudio(t *testing.T) {
+func TestMarkDefaultRecitationAcceptsSourceAudioFallback(t *testing.T) {
 	t.Parallel()
 
 	recitations := []entity.QuranRecitation{
-		{ID: "ayah-partial", Name: "A", Mode: "ayah", TrackCount: 6236, PublicTrackCount: 2, HasPublicAudio: false},
-		{ID: "surah-empty", Name: "B", Mode: "surah", TrackCount: 0, PublicTrackCount: 0, HasPublicAudio: false},
+		{
+			ID:                 "ayah-source-audio",
+			Name:               "A",
+			Mode:               "ayah",
+			TrackCount:         6236,
+			PublicTrackCount:   0,
+			PlayableTrackCount: 6236,
+			HasPublicAudio:     false,
+			HasPlayableAudio:   true,
+		},
+	}
+
+	markDefaultRecitation(recitations)
+
+	assert.True(t, recitations[0].IsDefault)
+}
+
+func TestMarkDefaultRecitationLeavesNoDefaultWithoutFullPlayableAudio(t *testing.T) {
+	t.Parallel()
+
+	recitations := []entity.QuranRecitation{
+		{ID: "ayah-partial", Name: "A", Mode: "ayah", TrackCount: 6236, PublicTrackCount: 2, PlayableTrackCount: 2, HasPublicAudio: false, HasPlayableAudio: false},
+		{ID: "surah-empty", Name: "B", Mode: "surah", TrackCount: 0, PublicTrackCount: 0, PlayableTrackCount: 0, HasPublicAudio: false, HasPlayableAudio: false},
 	}
 
 	markDefaultRecitation(recitations)
@@ -45,6 +66,21 @@ func TestQuranAudioTrackLessPrefersAyahTrack(t *testing.T) {
 
 	assert.True(t, quranAudioTrackLess(ayahTrack, surahTrack))
 	assert.False(t, quranAudioTrackLess(surahTrack, ayahTrack))
+}
+
+func TestQuranNavigationColumnAllowlist(t *testing.T) {
+	t.Parallel()
+
+	column, err := quranNavigationColumn("juz")
+	assert.NoError(t, err)
+	assert.Equal(t, "juz_number", column)
+
+	column, err = quranNavigationColumn("hizb")
+	assert.NoError(t, err)
+	assert.Equal(t, "hizb_number", column)
+
+	_, err = quranNavigationColumn("page")
+	assert.ErrorIs(t, err, entity.ErrInvalidQuranRange)
 }
 
 func TestApplyQuranAyahMetadata(t *testing.T) {

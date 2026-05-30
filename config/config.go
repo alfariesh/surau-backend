@@ -76,6 +76,9 @@ type (
 		PasswordResetFrontendURL string        `env:"PASSWORD_RESET_FRONTEND_URL"`
 		PasswordResetTTL         time.Duration `env:"PASSWORD_RESET_TTL" envDefault:"1h"`
 		PasswordResetCooldown    time.Duration `env:"PASSWORD_RESET_RESEND_COOLDOWN" envDefault:"1m"`
+		EmailChangeFrontendURL   string        `env:"EMAIL_CHANGE_FRONTEND_URL"`
+		EmailChangeTTL           time.Duration `env:"EMAIL_CHANGE_TTL" envDefault:"24h"`
+		EmailChangeCooldown      time.Duration `env:"EMAIL_CHANGE_RESEND_COOLDOWN" envDefault:"1m"`
 		HTTPTimeout              time.Duration `env:"EMAIL_HTTP_TIMEOUT" envDefault:"10s"`
 	}
 
@@ -106,6 +109,16 @@ type (
 		ChangePasswordUserWindow      time.Duration `env:"AUTH_RATE_LIMIT_CHANGE_PASSWORD_USER_WINDOW" envDefault:"5m"`
 		ChangePasswordIPMax           int           `env:"AUTH_RATE_LIMIT_CHANGE_PASSWORD_IP_MAX" envDefault:"30"`
 		ChangePasswordIPWindow        time.Duration `env:"AUTH_RATE_LIMIT_CHANGE_PASSWORD_IP_WINDOW" envDefault:"5m"`
+		ChangeEmailUserMax            int           `env:"AUTH_RATE_LIMIT_CHANGE_EMAIL_USER_MAX" envDefault:"3"`
+		ChangeEmailUserWindow         time.Duration `env:"AUTH_RATE_LIMIT_CHANGE_EMAIL_USER_WINDOW" envDefault:"1h"`
+		ChangeEmailIPMax              int           `env:"AUTH_RATE_LIMIT_CHANGE_EMAIL_IP_MAX" envDefault:"10"`
+		ChangeEmailIPWindow           time.Duration `env:"AUTH_RATE_LIMIT_CHANGE_EMAIL_IP_WINDOW" envDefault:"1h"`
+		ChangeEmailTokenMax           int           `env:"AUTH_RATE_LIMIT_CHANGE_EMAIL_TOKEN_MAX" envDefault:"5"`
+		ChangeEmailTokenWindow        time.Duration `env:"AUTH_RATE_LIMIT_CHANGE_EMAIL_TOKEN_WINDOW" envDefault:"15m"`
+		DeleteAccountUserMax          int           `env:"AUTH_RATE_LIMIT_DELETE_ACCOUNT_USER_MAX" envDefault:"3"`
+		DeleteAccountUserWindow       time.Duration `env:"AUTH_RATE_LIMIT_DELETE_ACCOUNT_USER_WINDOW" envDefault:"1h"`
+		DeleteAccountIPMax            int           `env:"AUTH_RATE_LIMIT_DELETE_ACCOUNT_IP_MAX" envDefault:"10"`
+		DeleteAccountIPWindow         time.Duration `env:"AUTH_RATE_LIMIT_DELETE_ACCOUNT_IP_WINDOW" envDefault:"1h"`
 	}
 
 	// AuthEmail -.
@@ -117,6 +130,8 @@ type (
 		PasswordChangedEnabled bool          `env:"AUTH_PASSWORD_CHANGED_EMAIL_ENABLED" envDefault:"true"`
 		EmailVerifiedEnabled   bool          `env:"AUTH_EMAIL_VERIFIED_EMAIL_ENABLED" envDefault:"true"`
 		RoleChangedEnabled     bool          `env:"AUTH_ROLE_CHANGED_EMAIL_ENABLED" envDefault:"true"`
+		EmailChangedEnabled    bool          `env:"AUTH_EMAIL_CHANGED_EMAIL_ENABLED" envDefault:"true"`
+		AccountDeletedEnabled  bool          `env:"AUTH_ACCOUNT_DELETED_EMAIL_ENABLED" envDefault:"true"`
 	}
 
 	// RAG -.
@@ -168,6 +183,7 @@ func NewConfig() (*Config, error) {
 	cfg.Email.ReplyTo = strings.TrimSpace(cfg.Email.ReplyTo)
 	cfg.Email.VerifyFrontendURL = strings.TrimSpace(cfg.Email.VerifyFrontendURL)
 	cfg.Email.PasswordResetFrontendURL = strings.TrimSpace(cfg.Email.PasswordResetFrontendURL)
+	cfg.Email.EmailChangeFrontendURL = strings.TrimSpace(cfg.Email.EmailChangeFrontendURL)
 	switch cfg.Email.DeliveryMode {
 	case EmailDeliveryModeCloudflare:
 		if strings.TrimSpace(cfg.Email.CloudflareAccountID) == "" {
@@ -195,6 +211,9 @@ func NewConfig() (*Config, error) {
 	if !validAbsoluteHTTPURL(cfg.Email.PasswordResetFrontendURL) {
 		return nil, fmt.Errorf("config error: PASSWORD_RESET_FRONTEND_URL must be an absolute http(s) URL")
 	}
+	if !validAbsoluteHTTPURL(cfg.Email.EmailChangeFrontendURL) {
+		return nil, fmt.Errorf("config error: EMAIL_CHANGE_FRONTEND_URL must be an absolute http(s) URL")
+	}
 	if cfg.Email.VerificationTTL <= 0 {
 		return nil, fmt.Errorf("config error: EMAIL_VERIFICATION_TTL must be positive")
 	}
@@ -206,6 +225,12 @@ func NewConfig() (*Config, error) {
 	}
 	if cfg.Email.PasswordResetCooldown <= 0 {
 		return nil, fmt.Errorf("config error: PASSWORD_RESET_RESEND_COOLDOWN must be positive")
+	}
+	if cfg.Email.EmailChangeTTL <= 0 {
+		return nil, fmt.Errorf("config error: EMAIL_CHANGE_TTL must be positive")
+	}
+	if cfg.Email.EmailChangeCooldown <= 0 {
+		return nil, fmt.Errorf("config error: EMAIL_CHANGE_RESEND_COOLDOWN must be positive")
 	}
 	if cfg.Email.HTTPTimeout <= 0 {
 		return nil, fmt.Errorf("config error: EMAIL_HTTP_TIMEOUT must be positive")
@@ -286,6 +311,36 @@ func NewConfig() (*Config, error) {
 			return nil, err
 		}
 		if err := validatePositiveDuration("AUTH_RATE_LIMIT_CHANGE_PASSWORD_IP_WINDOW", cfg.AuthRateLimit.ChangePasswordIPWindow); err != nil {
+			return nil, err
+		}
+		if err := validatePositiveInt("AUTH_RATE_LIMIT_CHANGE_EMAIL_USER_MAX", cfg.AuthRateLimit.ChangeEmailUserMax); err != nil {
+			return nil, err
+		}
+		if err := validatePositiveDuration("AUTH_RATE_LIMIT_CHANGE_EMAIL_USER_WINDOW", cfg.AuthRateLimit.ChangeEmailUserWindow); err != nil {
+			return nil, err
+		}
+		if err := validatePositiveInt("AUTH_RATE_LIMIT_CHANGE_EMAIL_IP_MAX", cfg.AuthRateLimit.ChangeEmailIPMax); err != nil {
+			return nil, err
+		}
+		if err := validatePositiveDuration("AUTH_RATE_LIMIT_CHANGE_EMAIL_IP_WINDOW", cfg.AuthRateLimit.ChangeEmailIPWindow); err != nil {
+			return nil, err
+		}
+		if err := validatePositiveInt("AUTH_RATE_LIMIT_CHANGE_EMAIL_TOKEN_MAX", cfg.AuthRateLimit.ChangeEmailTokenMax); err != nil {
+			return nil, err
+		}
+		if err := validatePositiveDuration("AUTH_RATE_LIMIT_CHANGE_EMAIL_TOKEN_WINDOW", cfg.AuthRateLimit.ChangeEmailTokenWindow); err != nil {
+			return nil, err
+		}
+		if err := validatePositiveInt("AUTH_RATE_LIMIT_DELETE_ACCOUNT_USER_MAX", cfg.AuthRateLimit.DeleteAccountUserMax); err != nil {
+			return nil, err
+		}
+		if err := validatePositiveDuration("AUTH_RATE_LIMIT_DELETE_ACCOUNT_USER_WINDOW", cfg.AuthRateLimit.DeleteAccountUserWindow); err != nil {
+			return nil, err
+		}
+		if err := validatePositiveInt("AUTH_RATE_LIMIT_DELETE_ACCOUNT_IP_MAX", cfg.AuthRateLimit.DeleteAccountIPMax); err != nil {
+			return nil, err
+		}
+		if err := validatePositiveDuration("AUTH_RATE_LIMIT_DELETE_ACCOUNT_IP_WINDOW", cfg.AuthRateLimit.DeleteAccountIPWindow); err != nil {
 			return nil, err
 		}
 	}

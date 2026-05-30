@@ -27,6 +27,9 @@ type (
 		StoreWithVerificationToken(ctx context.Context, user *entity.User, token *entity.EmailVerificationToken) error
 		GetByID(ctx context.Context, id string) (entity.User, error)
 		GetByEmail(ctx context.Context, email string) (entity.User, error)
+		GetAccount(ctx context.Context, userID string) (entity.UserAccount, error)
+		UpsertProfile(ctx context.Context, profile entity.UserProfile) error
+		UpsertPreferences(ctx context.Context, preferences entity.UserPreferences) error
 		SetRoleByEmail(ctx context.Context, email, role string) (entity.User, error)
 		ChangePassword(ctx context.Context, userID, passwordHash string) (entity.User, error)
 		ReplaceVerificationToken(ctx context.Context, token *entity.EmailVerificationToken) error
@@ -39,6 +42,12 @@ type (
 		GetPasswordResetTokenByHash(ctx context.Context, tokenHash string) (entity.PasswordResetToken, error)
 		GetLatestUnusedPasswordResetToken(ctx context.Context, userID string) (entity.PasswordResetToken, error)
 		ResetPasswordWithToken(ctx context.Context, tokenID, userID, passwordHash string) (entity.User, error)
+		ReplaceEmailChangeToken(ctx context.Context, token *entity.EmailChangeToken) error
+		RevokeUnusedEmailChangeTokens(ctx context.Context, userID string) error
+		GetEmailChangeTokenByHash(ctx context.Context, tokenHash string) (entity.EmailChangeToken, error)
+		GetLatestUnusedEmailChangeToken(ctx context.Context, userID string) (entity.EmailChangeToken, error)
+		ChangeEmailWithToken(ctx context.Context, tokenID, userID, newEmail string) (entity.EmailChangeResult, error)
+		DeleteAccount(ctx context.Context, userID string) error
 		RecordAuthLoginFingerprint(ctx context.Context, fingerprint entity.AuthLoginFingerprint) (bool, error)
 		AcquireAuthNotificationCooldown(ctx context.Context, cooldown entity.AuthNotificationCooldown) (bool, error)
 	}
@@ -102,6 +111,7 @@ type (
 		GetSurah(ctx context.Context, surahID int, lang string) (entity.QuranSurah, error)
 		ListRecitations(ctx context.Context) ([]entity.QuranRecitation, error)
 		ListTranslationSources(ctx context.Context, lang string) ([]entity.QuranTranslationSource, error)
+		ListNavigationSegments(ctx context.Context, kind string, lang string) ([]entity.QuranNavigationSegment, error)
 		GetAyah(
 			ctx context.Context,
 			ayahKey string,
@@ -121,6 +131,16 @@ type (
 			includeAudio bool,
 			recitationID string,
 		) ([]entity.QuranAyah, error)
+		ListNavigationAyahs(
+			ctx context.Context,
+			kind string,
+			number int,
+			lang string,
+			translationSource string,
+			includeTranslation bool,
+			includeAudio bool,
+			recitationID string,
+		) ([]entity.QuranAyah, error)
 		SearchAyahs(ctx context.Context, filter QuranSearchFilter) ([]entity.QuranSearchResult, int, error)
 		ListBookQuranReferences(ctx context.Context, filter QuranBookReferenceFilter) ([]entity.BookQuranReference, int, error)
 		ListMissingQuranAssets(ctx context.Context, filter MissingQuranAssetFilter) (entity.AdminMissingQuranAssets, error)
@@ -130,9 +150,15 @@ type (
 	PersonalRepo interface {
 		GetProgress(ctx context.Context, userID string, bookID int) (entity.ReadingProgress, error)
 		SaveProgress(ctx context.Context, progress entity.ReadingProgress) (entity.ReadingProgress, error)
-		ListBookmarks(ctx context.Context, userID string, filter BookmarkFilter) ([]entity.Bookmark, int, error)
-		CreateBookmark(ctx context.Context, bookmark entity.Bookmark) (entity.Bookmark, error)
-		DeleteBookmark(ctx context.Context, userID, bookmarkID string) error
+		GetQuranProgress(ctx context.Context, userID string) (entity.QuranReadingProgress, error)
+		GetQuranSurahProgress(ctx context.Context, userID string, surahID int) (entity.QuranReadingProgress, error)
+		ListQuranSurahProgress(ctx context.Context, userID string) ([]entity.QuranReadingProgress, error)
+		SaveQuranProgress(ctx context.Context, progress entity.QuranReadingProgress) (entity.QuranReadingProgress, error)
+		ListSavedItems(ctx context.Context, userID string, filter SavedItemFilter) ([]entity.SavedItem, int, error)
+		UpsertSavedItem(ctx context.Context, item entity.SavedItem) (entity.SavedItem, error)
+		UpdateSavedItem(ctx context.Context, item entity.SavedItem) (entity.SavedItem, error)
+		DeleteSavedItem(ctx context.Context, userID, savedItemID string) error
+		ListSavedItemTags(ctx context.Context, userID string) ([]string, error)
 	}
 
 	// EditorialRepo -.
@@ -186,11 +212,14 @@ type (
 		Offset uint64
 	}
 
-	// BookmarkFilter -.
-	BookmarkFilter struct {
-		BookID *int
-		Limit  uint64
-		Offset uint64
+	// SavedItemFilter -.
+	SavedItemFilter struct {
+		ItemType string
+		BookID   *int
+		SurahID  *int
+		Tag      string
+		Limit    uint64
+		Offset   uint64
 	}
 
 	// EditorialBookFilter -.

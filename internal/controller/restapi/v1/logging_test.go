@@ -47,7 +47,7 @@ func TestReaderUnexpectedErrorsLogError(t *testing.T) {
 	assert.Equal(t, 1, l.errorCount)
 }
 
-func TestAdminMissingReaderAssetsErrors(t *testing.T) {
+func TestEditorialMissingReaderAssetsErrors(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -81,11 +81,11 @@ func TestAdminMissingReaderAssetsErrors(t *testing.T) {
 			t.Parallel()
 
 			l := &spyLogger{}
-			app := newAdminMissingReaderAssetsTestApp(&fakeMissingAssetsEditorial{err: tt.err}, l)
+			app := newEditorialMissingReaderAssetsTestApp(&fakeMissingAssetsEditorial{err: tt.err}, l)
 			req := httptest.NewRequestWithContext(
 				t.Context(),
 				http.MethodGet,
-				"/v1/admin/reader/missing-assets?target_lang=en&asset_type=section_translation",
+				"/v1/editorial/reader/missing-assets?target_lang=en&asset_type=section_translation",
 				http.NoBody,
 			)
 
@@ -104,7 +104,7 @@ func TestAdminMissingReaderAssetsErrors(t *testing.T) {
 	}
 }
 
-func TestAdminMissingReaderAssetsPassesFilters(t *testing.T) {
+func TestEditorialMissingReaderAssetsPassesFilters(t *testing.T) {
 	t.Parallel()
 
 	l := &spyLogger{}
@@ -116,11 +116,11 @@ func TestAdminMissingReaderAssetsPassesFilters(t *testing.T) {
 			Total: 1,
 		},
 	}
-	app := newAdminMissingReaderAssetsTestApp(editorial, l)
+	app := newEditorialMissingReaderAssetsTestApp(editorial, l)
 	req := httptest.NewRequestWithContext(
 		t.Context(),
 		http.MethodGet,
-		"/v1/admin/reader/missing-assets?target_lang=en-US&asset_type=section_translation&book_id=797&limit=25&offset=5",
+		"/v1/editorial/reader/missing-assets?target_lang=en-US&asset_type=section_translation&book_id=797&limit=25&offset=5",
 		http.NoBody,
 	)
 
@@ -139,14 +139,14 @@ func TestAdminMissingReaderAssetsPassesFilters(t *testing.T) {
 	assert.Zero(t, l.errorCount)
 }
 
-func newAdminMissingReaderAssetsTestApp(editorial usecase.Editorial, l *spyLogger) *fiber.App {
+func newEditorialMissingReaderAssetsTestApp(editorial usecase.Editorial, l *spyLogger) *fiber.App {
 	app := fiber.New()
 	controller := &V1{
 		editorial: editorial,
 		l:         l,
 		v:         validator.New(validator.WithRequiredStructEnabled()),
 	}
-	app.Get("/v1/admin/reader/missing-assets", controller.adminMissingReaderAssets)
+	app.Get("/v1/editorial/reader/missing-assets", controller.editorialMissingReaderAssets)
 
 	return app
 }

@@ -1,6 +1,64 @@
 package entity
 
-import "time"
+import (
+	"strings"
+	"time"
+)
+
+const (
+	UserOnboardingVersion = 1
+
+	UserRoleUser   = "user"
+	UserRoleEditor = "editor"
+	UserRoleAdmin  = "admin"
+
+	UserPreferredLangDefault = "id"
+
+	UserArabicLevelNone         = "none"
+	UserArabicLevelBasic        = "basic"
+	UserArabicLevelIntermediate = "intermediate"
+	UserArabicLevelAdvanced     = "advanced"
+	UserArabicLevelNative       = "native"
+
+	UserReaderModeArabicTranslation = "arabic_translation"
+	UserReaderModeTranslationOnly   = "translation_only"
+	UserReaderModeArabicOnly        = "arabic_only"
+)
+
+// NormalizeUserRole trims, lowercases, and validates a user role.
+func NormalizeUserRole(role string) (string, error) {
+	role = strings.ToLower(strings.TrimSpace(role))
+	if !IsValidUserRole(role) {
+		return "", ErrInvalidRole
+	}
+
+	return role, nil
+}
+
+// IsValidUserRole reports whether role is one of the supported account roles.
+func IsValidUserRole(role string) bool {
+	switch strings.ToLower(strings.TrimSpace(role)) {
+	case UserRoleUser, UserRoleEditor, UserRoleAdmin:
+		return true
+	default:
+		return false
+	}
+}
+
+// CanReviewEditorial reports whether role can access editorial review and draft tools.
+func CanReviewEditorial(role string) bool {
+	switch strings.ToLower(strings.TrimSpace(role)) {
+	case UserRoleEditor, UserRoleAdmin:
+		return true
+	default:
+		return false
+	}
+}
+
+// CanPublishEditorial reports whether role can publish or administer editorial state.
+func CanPublishEditorial(role string) bool {
+	return strings.EqualFold(strings.TrimSpace(role), UserRoleAdmin)
+}
 
 // User -.
 type User struct {
@@ -14,6 +72,107 @@ type User struct {
 	CreatedAt     time.Time `json:"created_at"  example:"2026-01-01T00:00:00Z"`
 	UpdatedAt     time.Time `json:"updated_at"  example:"2026-01-01T00:00:00Z"`
 } // @name entity.User
+
+// UserProfile stores product-level user metadata outside auth identity.
+type UserProfile struct {
+	UserID                 string     `json:"user_id"                  example:"550e8400-e29b-41d4-a716-446655440000"`
+	DisplayName            *string    `json:"display_name,omitempty"   example:"John"`
+	Timezone               *string    `json:"timezone,omitempty"       example:"Asia/Jakarta"`
+	CountryCode            *string    `json:"country_code,omitempty"   example:"ID"`
+	OnboardingVersion      int        `json:"onboarding_version"       example:"1"`
+	OnboardingCompletedAt  *time.Time `json:"onboarding_completed_at,omitempty" example:"2026-01-01T00:00:00Z"`
+	PersonalizationEnabled bool       `json:"personalization_enabled"  example:"true"`
+	CreatedAt              time.Time  `json:"created_at"              example:"2026-01-01T00:00:00Z"`
+	UpdatedAt              time.Time  `json:"updated_at"              example:"2026-01-01T00:00:00Z"`
+} // @name entity.UserProfile
+
+// UserPreferences stores reader and Quran personalization choices.
+type UserPreferences struct {
+	UserID                   string    `json:"user_id"                      example:"550e8400-e29b-41d4-a716-446655440000"`
+	PreferredUILang          string    `json:"preferred_ui_lang"            example:"id"`
+	PreferredContentLang     string    `json:"preferred_content_lang"       example:"id"`
+	FallbackLangs            []string  `json:"fallback_langs"               example:"id,en"`
+	ArabicLevel              string    `json:"arabic_level"                 example:"basic"`
+	ReaderMode               string    `json:"reader_mode"                  example:"arabic_translation"`
+	Interests                []string  `json:"interests"                    example:"tafsir,hadith"`
+	DailyGoalMinutes         *int      `json:"daily_goal_minutes,omitempty" example:"15"`
+	QuranTranslationSourceID *string   `json:"quran_translation_source_id,omitempty"`
+	QuranRecitationID        *string   `json:"quran_recitation_id,omitempty"`
+	CreatedAt                time.Time `json:"created_at"                   example:"2026-01-01T00:00:00Z"`
+	UpdatedAt                time.Time `json:"updated_at"                   example:"2026-01-01T00:00:00Z"`
+} // @name entity.UserPreferences
+
+// UserAccount is the authenticated profile response with product preferences.
+type UserAccount struct {
+	User
+	Profile            UserProfile     `json:"profile"`
+	Preferences        UserPreferences `json:"preferences"`
+	OnboardingRequired bool            `json:"onboarding_required" example:"true"`
+} // @name entity.UserAccount
+
+// UserOnboarding stores the normalized onboarding form submitted by the client.
+type UserOnboarding struct {
+	DisplayName              *string
+	Timezone                 *string
+	CountryCode              *string
+	PersonalizationEnabled   *bool
+	PreferredUILang          string
+	PreferredContentLang     string
+	FallbackLangs            []string
+	ArabicLevel              string
+	ReaderMode               string
+	Interests                []string
+	DailyGoalMinutes         *int
+	QuranTranslationSourceID *string
+	QuranRecitationID        *string
+}
+
+// UserPreferencesPatch stores optional preference changes after onboarding.
+type UserPreferencesPatch struct {
+	PreferredUILang          *string
+	PreferredContentLang     *string
+	FallbackLangs            *[]string
+	ArabicLevel              *string
+	ReaderMode               *string
+	Interests                *[]string
+	DailyGoalMinutes         *int
+	QuranTranslationSourceID *string
+	QuranRecitationID        *string
+}
+
+// UserProfilePatch stores optional profile changes after onboarding.
+type UserProfilePatch struct {
+	DisplayName            *string
+	Timezone               *string
+	CountryCode            *string
+	PersonalizationEnabled *bool
+}
+
+// DefaultUserProfile returns the initial profile row for a new account.
+func DefaultUserProfile(userID string, now time.Time) UserProfile {
+	return UserProfile{
+		UserID:                 userID,
+		OnboardingVersion:      UserOnboardingVersion,
+		PersonalizationEnabled: true,
+		CreatedAt:              now,
+		UpdatedAt:              now,
+	}
+}
+
+// DefaultUserPreferences returns the initial reader preferences for a new account.
+func DefaultUserPreferences(userID string, now time.Time) UserPreferences {
+	return UserPreferences{
+		UserID:               userID,
+		PreferredUILang:      UserPreferredLangDefault,
+		PreferredContentLang: UserPreferredLangDefault,
+		FallbackLangs:        []string{UserPreferredLangDefault},
+		ArabicLevel:          UserArabicLevelNone,
+		ReaderMode:           UserReaderModeArabicTranslation,
+		Interests:            []string{},
+		CreatedAt:            now,
+		UpdatedAt:            now,
+	}
+}
 
 // EmailVerificationToken stores a one-time email verification token hash.
 type EmailVerificationToken struct {
@@ -35,6 +194,25 @@ type PasswordResetToken struct {
 	UsedAt    *time.Time
 	SentAt    time.Time
 	CreatedAt time.Time
+}
+
+// EmailChangeToken stores a one-time email change verification token hash.
+type EmailChangeToken struct {
+	ID        string
+	UserID    string
+	NewEmail  string
+	TokenHash string
+	ExpiresAt time.Time
+	UsedAt    *time.Time
+	SentAt    time.Time
+	CreatedAt time.Time
+}
+
+// EmailChangeResult reports the final state after an atomic email change.
+type EmailChangeResult struct {
+	User     User
+	OldEmail string
+	NewEmail string
 }
 
 // AuthRateLimit stores one rate-limit counter increment request.

@@ -17,7 +17,7 @@ import (
 
 // Register -.
 func (c *AuthController) Register(ctx context.Context, req *v1.RegisterRequest) (*v1.RegisterResponse, error) {
-	user, err := c.u.Register(grpcAuthContext(ctx), req.GetUsername(), req.GetEmail(), req.GetPassword())
+	user, err := c.u.Register(grpcAuthContext(ctx), registerDisplayName(req), req.GetEmail(), req.GetPassword())
 	if err != nil {
 		c.l.Error(err, "grpc - v1 - Register")
 
@@ -178,6 +178,99 @@ func (c *AuthController) ChangePassword(
 	return &v1.ChangePasswordResponse{PasswordChanged: true}, nil
 }
 
+// RequestEmailChange -.
+func (c *AuthController) RequestEmailChange(
+	ctx context.Context,
+	req *v1.RequestEmailChangeRequest,
+) (*v1.RequestEmailChangeResponse, error) {
+	userID, ok := grpcmw.UserIDFromContext(ctx)
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "unauthorized")
+	}
+
+	if err := c.u.RequestEmailChange(grpcAuthContext(ctx), userID, req.GetCurrentPassword(), req.GetNewEmail()); err != nil {
+		c.l.Error(err, "grpc - v1 - RequestEmailChange")
+
+		if errors.Is(err, entity.ErrInvalidAuthInput) {
+			return nil, status.Error(codes.InvalidArgument, "invalid auth input")
+		}
+		if errors.Is(err, entity.ErrInvalidCredentials) {
+			return nil, status.Error(codes.Unauthenticated, "invalid credentials")
+		}
+		if errors.Is(err, entity.ErrUserAlreadyExists) {
+			return nil, status.Error(codes.AlreadyExists, "user already exists")
+		}
+		if errors.Is(err, entity.ErrEmailChangeRateLimited) || errors.Is(err, entity.ErrAuthRateLimited) {
+			return nil, status.Error(codes.ResourceExhausted, "too many auth attempts")
+		}
+		if errors.Is(err, entity.ErrEmailDeliveryFailed) {
+			return nil, status.Error(codes.Unavailable, "email delivery failed")
+		}
+
+		return nil, status.Error(codes.Internal, "internal server error")
+	}
+
+	return &v1.RequestEmailChangeResponse{Accepted: true}, nil
+}
+
+// VerifyEmailChange -.
+func (c *AuthController) VerifyEmailChange(
+	ctx context.Context,
+	req *v1.VerifyEmailChangeRequest,
+) (*v1.VerifyEmailChangeResponse, error) {
+	userID, ok := grpcmw.UserIDFromContext(ctx)
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "unauthorized")
+	}
+
+	if err := c.u.VerifyEmailChange(grpcAuthContext(ctx), userID, req.GetToken()); err != nil {
+		c.l.Error(err, "grpc - v1 - VerifyEmailChange")
+
+		if errors.Is(err, entity.ErrInvalidAuthInput) || errors.Is(err, entity.ErrInvalidEmailChangeToken) {
+			return nil, status.Error(codes.InvalidArgument, "invalid email change input")
+		}
+		if errors.Is(err, entity.ErrUserAlreadyExists) {
+			return nil, status.Error(codes.AlreadyExists, "user already exists")
+		}
+		if errors.Is(err, entity.ErrAuthRateLimited) {
+			return nil, status.Error(codes.ResourceExhausted, "too many auth attempts")
+		}
+
+		return nil, status.Error(codes.Internal, "internal server error")
+	}
+
+	return &v1.VerifyEmailChangeResponse{EmailChanged: true}, nil
+}
+
+// DeleteAccount -.
+func (c *AuthController) DeleteAccount(
+	ctx context.Context,
+	req *v1.DeleteAccountRequest,
+) (*v1.DeleteAccountResponse, error) {
+	userID, ok := grpcmw.UserIDFromContext(ctx)
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "unauthorized")
+	}
+
+	if err := c.u.DeleteAccount(grpcAuthContext(ctx), userID, req.GetCurrentPassword()); err != nil {
+		c.l.Error(err, "grpc - v1 - DeleteAccount")
+
+		if errors.Is(err, entity.ErrInvalidAuthInput) {
+			return nil, status.Error(codes.InvalidArgument, "invalid auth input")
+		}
+		if errors.Is(err, entity.ErrInvalidCredentials) {
+			return nil, status.Error(codes.Unauthenticated, "invalid credentials")
+		}
+		if errors.Is(err, entity.ErrAuthRateLimited) {
+			return nil, status.Error(codes.ResourceExhausted, "too many auth attempts")
+		}
+
+		return nil, status.Error(codes.Internal, "internal server error")
+	}
+
+	return &v1.DeleteAccountResponse{AccountDeleted: true}, nil
+}
+
 // GetProfile -.
 func (c *AuthController) GetProfile(ctx context.Context, _ *v1.GetProfileRequest) (*v1.GetProfileResponse, error) {
 	userID, ok := grpcmw.UserIDFromContext(ctx)
@@ -216,4 +309,15 @@ func grpcAuthContext(ctx context.Context) context.Context {
 	}
 
 	return authmeta.With(ctx, meta)
+}
+
+func registerDisplayName(req *v1.RegisterRequest) string {
+	if req.GetDisplayName() != "" {
+		return req.GetDisplayName()
+	}
+	if req.GetName() != "" {
+		return req.GetName()
+	}
+
+	return req.GetUsername()
 }

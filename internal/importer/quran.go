@@ -23,7 +23,14 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-const defaultQuranTranslationSourceID = "qul-kfgqpc-id-simple"
+const (
+	defaultQuranTranslationSourceID       = "qul-kfgqpc-id-simple"
+	defaultQuranTranslationSourceName     = "King Fahad Quran Complex"
+	defaultQuranTranslationSourceURL      = "https://qul.tarteel.ai/resources/translation/173"
+	defaultQuranTranslationResourceID     = "173"
+	defaultQuranTranslationFormat         = "simple.json"
+	defaultQuranTranslationFootnoteFormat = "translation-with-footnote-tags.json"
+)
 
 // QuranAssetOptions configure local QUL export import.
 type QuranAssetOptions struct {
@@ -42,6 +49,10 @@ type QuranAssetOptions struct {
 	ResolveReferences           bool
 	TranslationSourceID         string
 	TranslationSourceName       string
+	TranslationSourceURL        string
+	TranslationResourceID       string
+	TranslationFormat           string
+	TranslationFootnoteFormat   string
 	LicenseStatus               string
 }
 
@@ -224,6 +235,10 @@ func (opts QuranAssetOptions) validate() error {
 	if _, err := contentlang.Normalize(opts.TranslationLang); err != nil {
 		return fmt.Errorf("translation lang: %w", err)
 	}
+	if normalized := contentlang.MustNormalize(opts.TranslationLang); normalized != contentlang.Default &&
+		strings.TrimSpace(opts.TranslationSourceID) == "" {
+		return errors.New("translation source id is required for non-Indonesian translation imports")
+	}
 	if strings.TrimSpace(opts.SurahInfoLang) != "" {
 		if _, err := contentlang.Normalize(opts.SurahInfoLang); err != nil {
 			return fmt.Errorf("surah info lang: %w", err)
@@ -234,13 +249,37 @@ func (opts QuranAssetOptions) validate() error {
 }
 
 func (opts QuranAssetOptions) withDefaults() QuranAssetOptions {
+	opts.TranslationLang = contentlang.MustNormalize(opts.TranslationLang)
+	opts.TranslationSourceID = strings.TrimSpace(opts.TranslationSourceID)
+	opts.TranslationSourceName = strings.TrimSpace(opts.TranslationSourceName)
+	opts.TranslationSourceURL = strings.TrimSpace(opts.TranslationSourceURL)
+	opts.TranslationResourceID = strings.TrimSpace(opts.TranslationResourceID)
+	opts.TranslationFormat = strings.TrimSpace(opts.TranslationFormat)
+	opts.TranslationFootnoteFormat = strings.TrimSpace(opts.TranslationFootnoteFormat)
 	if opts.TranslationSourceID == "" {
 		opts.TranslationSourceID = defaultQuranTranslationSourceID
 	}
 	if opts.TranslationSourceName == "" {
-		opts.TranslationSourceName = "King Fahad Quran Complex"
+		if opts.isDefaultKingFahadTranslation() {
+			opts.TranslationSourceName = defaultQuranTranslationSourceName
+		} else {
+			opts.TranslationSourceName = opts.TranslationSourceID
+		}
 	}
-	opts.TranslationLang = contentlang.MustNormalize(opts.TranslationLang)
+	if opts.TranslationFormat == "" {
+		opts.TranslationFormat = defaultQuranTranslationFormat
+	}
+	if opts.TranslationFootnoteFormat == "" {
+		opts.TranslationFootnoteFormat = defaultQuranTranslationFootnoteFormat
+	}
+	if opts.isDefaultKingFahadTranslation() {
+		if opts.TranslationSourceURL == "" {
+			opts.TranslationSourceURL = defaultQuranTranslationSourceURL
+		}
+		if opts.TranslationResourceID == "" {
+			opts.TranslationResourceID = defaultQuranTranslationResourceID
+		}
+	}
 	if strings.TrimSpace(opts.SurahInfoLang) != "" {
 		opts.SurahInfoLang = contentlang.MustNormalize(opts.SurahInfoLang)
 	}
@@ -249,6 +288,11 @@ func (opts QuranAssetOptions) withDefaults() QuranAssetOptions {
 	}
 
 	return opts
+}
+
+func (opts QuranAssetOptions) isDefaultKingFahadTranslation() bool {
+	return opts.TranslationLang == contentlang.Default &&
+		opts.TranslationSourceID == defaultQuranTranslationSourceID
 }
 
 func parseQuranAssets(opts QuranAssetOptions) (quranAssetSet, error) {
@@ -822,8 +866,22 @@ func insertQuranImportRuns(ctx context.Context, pool *pgxpool.Pool, opts QuranAs
 		{"surah_names", "QUL Surah names", "https://qul.tarteel.ai/resources/quran-metadata", "", "surah_metadata", "json"},
 		{"qpc_hafs", "QPC Hafs script - Ayah by Ayah", "https://qul.tarteel.ai/resources/quran-script/86", "86", "script", "json"},
 		{"imlaei_simple", "Imlaei simple script", "https://qul.tarteel.ai/resources/quran-script", "", "script", "json"},
-		{"translation_simple", opts.TranslationSourceName, "https://qul.tarteel.ai/resources/translation/173", "173", "translation", "simple.json"},
-		{"translation_footnote_tags", opts.TranslationSourceName, "https://qul.tarteel.ai/resources/translation/173", "173", "translation", "translation-with-footnote-tags.json"},
+		{
+			"translation_simple",
+			opts.TranslationSourceName,
+			opts.TranslationSourceURL,
+			opts.TranslationResourceID,
+			"translation",
+			opts.TranslationFormat,
+		},
+		{
+			"translation_footnote_tags",
+			opts.TranslationSourceName,
+			opts.TranslationSourceURL,
+			opts.TranslationResourceID,
+			"translation",
+			opts.TranslationFootnoteFormat,
+		},
 		{"recitation", "QUL Recitation", "https://qul.tarteel.ai/resources/recitation", "", "recitation", "json"},
 	}
 	for key := range assets.checksums {
@@ -889,6 +947,7 @@ func upsertQuranTranslationSource(
 	metadata := map[string]string{}
 	if footnoteChecksum != "" {
 		metadata["footnote_checksum"] = footnoteChecksum
+		metadata["footnote_format"] = opts.TranslationFootnoteFormat
 	}
 	metadataJSON, _ := json.Marshal(metadata)
 
@@ -897,7 +956,7 @@ INSERT INTO quran_translation_sources (
     id, lang, name, source_url, qul_resource_id, format, license_status,
     checksum, metadata, imported_at, updated_at
 )
-VALUES ($1, $2, $3, $4, '173', 'simple.json', $5, $6, $7::jsonb, now(), now())
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, now(), now())
 ON CONFLICT (id) DO UPDATE SET
     lang = EXCLUDED.lang,
     name = EXCLUDED.name,
@@ -912,7 +971,9 @@ ON CONFLICT (id) DO UPDATE SET
 		opts.TranslationSourceID,
 		opts.TranslationLang,
 		opts.TranslationSourceName,
-		"https://qul.tarteel.ai/resources/translation/173",
+		opts.TranslationSourceURL,
+		opts.TranslationResourceID,
+		opts.TranslationFormat,
 		opts.LicenseStatus,
 		checksum,
 		string(metadataJSON),
@@ -1209,7 +1270,7 @@ func readAssetFile(path string) ([]byte, string, error) {
 }
 
 func readAssetFilePreferred(path string, preferredNames ...string) ([]byte, string, error) {
-	raw, err := os.ReadFile(path)
+	raw, err := os.ReadFile(path) // #nosec G304 -- Quran asset import CLI intentionally reads operator-supplied local asset files.
 	if err != nil {
 		return nil, "", err
 	}

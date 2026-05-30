@@ -5,6 +5,7 @@ Last updated: 2026-05-29
 This guide is the frontend-facing companion to `docs/kitab-multilingual-api.md`.
 Use the backend `availability` objects as the source of truth for UI behavior.
 Frontend code should not recreate fallback rules from raw fields alone.
+For a shared kitab + Quran integration entrypoint, see `docs/frontend-integration-contract.md`.
 
 ## Core Rules
 
@@ -412,15 +413,15 @@ POST /v1/books/{book_id}/toc/{heading_id}/translation-feedback?lang={selectedLan
 
 The backend will return `404 translation not found` for a missing exact-language translation.
 
-## Admin Missing Assets Screen
+## Editorial Missing Assets Screen
 
-Admin UI can use:
+Editorial UI can use:
 
 ```txt
-GET /v1/admin/reader/missing-assets?target_lang=en&asset_type=section_translation&book_id=797
+GET /v1/editorial/reader/missing-assets?target_lang=en&asset_type=section_translation&book_id=797
 ```
 
-Recommended admin columns:
+Recommended editorial columns:
 
 - `asset_type`
 - `target_lang`
@@ -474,6 +475,7 @@ type QuranAyah = {
   text_qpc_hafs?: string;
   text_imlaei_simple?: string;
   translation: QuranTranslation | null;
+  audio?: QuranAudioTrack[];
   requested_lang: KitabLang;
   available_translation_langs: KitabLang[];
   translation_missing: boolean;
@@ -481,6 +483,23 @@ type QuranAyah = {
     translation: AvailabilityDecision;
     audio: AvailabilityDecision;
   };
+};
+
+type QuranAudioSegment = {
+  segment_index: number;
+  ayah_key: string;
+  timestamp_from_ms: number;
+  timestamp_to_ms: number;
+  duration_ms?: number;
+};
+
+type QuranAudioTrack = {
+  recitation_id: string;
+  track_type: "ayah" | "surah" | string;
+  track_key: string;
+  audio_url?: string | null;
+  public_url?: string | null;
+  segments?: QuranAudioSegment[];
 };
 
 export function quranTranslationState(ayah: QuranAyah) {
@@ -494,12 +513,28 @@ export function quranTranslationState(ayah: QuranAyah) {
   }
   return { kind: "hidden" };
 }
+
+export function quranPlayableURL(track: QuranAudioTrack): string | null {
+  return track.public_url || track.audio_url || null;
+}
+
+export function quranCurrentSegment(track: QuranAudioTrack, ayahKey: string): QuranAudioSegment | null {
+  return track.segments?.find((segment) => segment.ayah_key === ayahKey) ?? null;
+}
 ```
 
-Admin Quran gaps use:
+Quran audio rules:
+
+- Use `public_url ?? audio_url` as the playable URL.
+- `public_url` is preferred when present; `audio_url` is valid fallback for local/dev and imported source playback.
+- If `include_audio=true` is sent without `recitation_id`, backend uses the default recitation where `has_playable_audio=true`.
+- For `track_type="surah"`, use `segments` to seek/highlight ayahs inside a full-surah file.
+- For `track_type="ayah"`, the returned track maps to the ayah; if segments exist, use them for highlight/progress.
+
+Editorial Quran gaps use:
 
 ```txt
-GET /v1/admin/quran/missing-assets?target_lang=en&asset_type=ayah_translation&surah_id=73
+GET /v1/editorial/quran/missing-assets?target_lang=en&asset_type=ayah_translation&surah_id=73
 ```
 
 Supported `asset_type`: `surah_info`, `ayah_translation`, `translation_source`, `audio_public`.

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 
 	"github.com/evrone/go-clean-template/internal/entity"
@@ -178,12 +179,21 @@ WHERE rn = 1
 ORDER BY focus_rank ASC, page_id ASC
 LIMIT $5`
 
+	headingIDs32, err := int32Slice("heading IDs", headingIDs)
+	if err != nil {
+		return nil, fmt.Errorf("BookRAGRepo - GetRAGPageSources - heading IDs: %w", err)
+	}
+	focusPageIDs32, err := int32Slice("focus page IDs", focusPageIDs)
+	if err != nil {
+		return nil, fmt.Errorf("BookRAGRepo - GetRAGPageSources - focus page IDs: %w", err)
+	}
+
 	rows, err := r.Pool.Query(
 		ctx,
 		sqlText,
 		bookID,
-		int32Slice(headingIDs),
-		int32Slice(focusPageIDs),
+		headingIDs32,
+		focusPageIDs32,
 		lang,
 		maxPages,
 	)
@@ -350,13 +360,16 @@ func scanRAGPageSource(row rowScanner, lang string) (entity.RAGPageSource, error
 	return source, nil
 }
 
-func int32Slice(values []int) []int32 {
+func int32Slice(name string, values []int) ([]int32, error) {
 	result := make([]int32, 0, len(values))
 	for _, value := range values {
+		if value < math.MinInt32 || value > math.MaxInt32 {
+			return nil, fmt.Errorf("%s contains value outside int32 range: %d", name, value)
+		}
 		result = append(result, int32(value))
 	}
 
-	return result
+	return result, nil
 }
 
 func stripArabicSearchMarks(value string) string {

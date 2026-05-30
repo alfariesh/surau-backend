@@ -12,6 +12,9 @@ service AuthService {
   rpc ForgotPassword (ForgotPasswordRequest) returns (ForgotPasswordResponse);
   rpc ResetPassword (ResetPasswordRequest) returns (ResetPasswordResponse);
   rpc ChangePassword (ChangePasswordRequest) returns (ChangePasswordResponse);
+  rpc RequestEmailChange (RequestEmailChangeRequest) returns (RequestEmailChangeResponse);
+  rpc VerifyEmailChange (VerifyEmailChangeRequest) returns (VerifyEmailChangeResponse);
+  rpc DeleteAccount (DeleteAccountRequest) returns (DeleteAccountResponse);
   rpc GetProfile (GetProfileRequest) returns (GetProfileResponse);
 }
 
@@ -19,6 +22,8 @@ message RegisterRequest {
   string username = 1;
   string email = 2;
   string password = 3;
+  string display_name = 4;
+  string name = 5;
 }
 
 message RegisterResponse {
@@ -79,6 +84,31 @@ message ChangePasswordRequest {
 
 message ChangePasswordResponse {
   bool password_changed = 1;
+}
+
+message RequestEmailChangeRequest {
+  string current_password = 1;
+  string new_email = 2;
+}
+
+message RequestEmailChangeResponse {
+  bool accepted = 1;
+}
+
+message VerifyEmailChangeRequest {
+  string token = 1;
+}
+
+message VerifyEmailChangeResponse {
+  bool email_changed = 1;
+}
+
+message DeleteAccountRequest {
+  string current_password = 1;
+}
+
+message DeleteAccountResponse {
+  bool account_deleted = 1;
 }
 
 message GetProfileRequest {}

@@ -38,6 +38,34 @@ func (s stubAuthUser) GetUser(context.Context, string) (entity.User, error) {
 	return entity.User{}, nil
 }
 
+func (s stubAuthUser) GetUserAccount(context.Context, string) (entity.UserAccount, error) {
+	return entity.UserAccount{}, nil
+}
+
+func (s stubAuthUser) CompleteOnboarding(
+	context.Context,
+	string,
+	entity.UserOnboarding,
+) (entity.UserAccount, error) {
+	return entity.UserAccount{}, nil
+}
+
+func (s stubAuthUser) UpdateUserProfile(
+	context.Context,
+	string,
+	entity.UserProfilePatch,
+) (entity.UserAccount, error) {
+	return entity.UserAccount{}, nil
+}
+
+func (s stubAuthUser) UpdateUserPreferences(
+	context.Context,
+	string,
+	entity.UserPreferencesPatch,
+) (entity.UserAccount, error) {
+	return entity.UserAccount{}, nil
+}
+
 func (s stubAuthUser) SetRoleByEmail(context.Context, string, string) (entity.User, error) {
 	return entity.User{}, nil
 }
@@ -60,6 +88,18 @@ func (s stubAuthUser) ResetPassword(context.Context, string, string) error {
 
 func (s stubAuthUser) ChangePassword(context.Context, string, string, string) error {
 	return s.changeErr
+}
+
+func (s stubAuthUser) RequestEmailChange(context.Context, string, string, string) error {
+	return nil
+}
+
+func (s stubAuthUser) VerifyEmailChange(context.Context, string, string) error {
+	return nil
+}
+
+func (s stubAuthUser) DeleteAccount(context.Context, string, string) error {
+	return nil
 }
 
 type noopLogger struct{}

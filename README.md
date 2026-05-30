@@ -1,13 +1,13 @@
 # Surau Backend
 
-REST + auth backend for an Islamic classical book reader. The service imports raw Shamela-like SQLite data from `/Users/macmini/Downloads/database` into PostgreSQL and serves catalog, page reader, heading/section reader, translation slots, audio slots, progress, and bookmarks.
+REST + auth backend for an Islamic classical book reader. The service imports raw Shamela-like SQLite data from `/Users/macmini/Downloads/database` into PostgreSQL and serves catalog, page reader, heading/section reader, translation slots, audio slots, progress, and saved items.
 
 ## Runtime
 
 - Go 1.26.3+ for builds. The Dockerfile pins `golang:1.26.3-alpine3.23`.
 - Fiber REST API
 - PostgreSQL via pgx
-- JWT auth for profile, progress, and bookmarks
+- JWT auth for profile, progress, and saved items
 - Cloudflare Email Service for transactional email verification and password reset
 - SQLite importer via `modernc.org/sqlite`
 
@@ -40,15 +40,19 @@ Public Quran:
 - `GET /v1/quran/surahs/{surah_id}?lang=id`
 - `GET /v1/quran/recitations`
 - `GET /v1/quran/translation-sources?lang=id`
+- `GET /v1/quran/juz?lang=id`
+- `GET /v1/quran/juz/{juz_number}/ayahs?lang=id&translation_source=&include_translation=true&include_audio=false&recitation_id=`
+- `GET /v1/quran/hizbs?lang=id`
+- `GET /v1/quran/hizbs/{hizb_number}/ayahs?lang=id&translation_source=&include_translation=true&include_audio=false&recitation_id=`
 - `GET /v1/quran/ayahs/{ayah_key}?lang=id&translation_source=qul-kfgqpc-id-simple&include_audio=false&recitation_id=`
 - `GET /v1/quran/surahs/{surah_id}/ayahs?from=&to=&lang=id&include_translation=true&include_audio=false&recitation_id=`
 - `GET /v1/quran/search?q=&lang=id&limit=&offset=`
 
 Quran `lang` follows the same contract as kitab: supported `ar`, `id`, and `en`; empty defaults to `id`; region tags normalize to the primary language; unsupported explicit languages return `400 {"error":"unsupported language"}`. Quran Arabic text is always canonical source content. Translation and surah info are exact-language only; if `lang=en` is missing but `id` exists, the response keeps `translation`/`info` empty and exposes availability metadata for FE language offers.
 
-`/v1/quran/surahs` is lightweight by default and omits `info`; use `include_info=true` or the single-surah endpoint when the UI needs surah background HTML. `/v1/quran/translation-sources` lists per-language sources with coverage and default markers. `/v1/quran/recitations` marks the deterministic public default with `is_default=true`. If `include_audio=true` is requested without `recitation_id`, ayah endpoints use that default recitation; an unknown explicit `recitation_id` returns `404 quran recitation not found`.
+`/v1/quran/surahs` is lightweight by default and omits `info`; use `include_info=true` or the single-surah endpoint when the UI needs surah background HTML. `/v1/quran/juz` and `/v1/quran/hizbs` expose lightweight navigation boundaries from imported QPC Hafs metadata. `/v1/quran/translation-sources` lists per-language sources with coverage and default markers. `/v1/quran/recitations` marks the deterministic playable default with `is_default=true`; playable means a track has `public_url` or source `audio_url`. If `include_audio=true` is requested without `recitation_id`, ayah endpoints use that default recitation; an unknown explicit `recitation_id` returns `404 quran recitation not found`.
 
-See [docs/quran-api.md](docs/quran-api.md) for the full FE-facing Quran API contract, response shapes, audio behavior, and integration checklist.
+Start FE integration from [docs/frontend-integration-contract.md](docs/frontend-integration-contract.md). See [docs/user-onboarding-api.md](docs/user-onboarding-api.md) for user profile, onboarding, and language preferences. See [docs/quran-api.md](docs/quran-api.md) for the full Quran API contract, response shapes, audio behavior, and integration checklist.
 
 Auth and personal reader:
 
@@ -60,20 +64,31 @@ Auth and personal reader:
 - `POST /v1/auth/reset-password`
 - `POST /v1/auth/change-password` (Bearer auth)
 - `GET /v1/user/profile`
+- `PATCH /v1/user/onboarding`
+- `PATCH /v1/user/preferences`
 - `GET /v1/me/progress/{book_id}`
 - `PUT /v1/me/progress/{book_id}`
 - `PUT /v1/me/progress/{book_id}/toc/{heading_id}`
-- `GET /v1/me/bookmarks`
-- `POST /v1/me/bookmarks`
-- `POST /v1/me/bookmarks/toc/{book_id}/{heading_id}`
-- `DELETE /v1/me/bookmarks/{id}`
+- `GET /v1/me/quran/progress`
+- `PUT /v1/me/quran/progress`
+- `GET /v1/me/quran/progress/surahs`
+- `GET /v1/me/quran/progress/surahs/{surah_id}`
+- `GET /v1/me/saved-items?item_type=&book_id=&surah_id=&tag=&limit=&offset=`
+- `POST /v1/me/saved-items`
+- `PATCH /v1/me/saved-items/{id}`
+- `DELETE /v1/me/saved-items/{id}`
+- `GET /v1/me/saved-items/tags`
 
-Admin feedback review:
+Editorial feedback review:
 
-- `GET /v1/admin/translation-feedbacks?book_id=&heading_id=&lang=&vote=&status=&limit=&offset=`
-- `GET /v1/admin/translation-feedbacks/summary?book_id=&heading_id=&lang=&vote=&status=&limit=`
-- `POST /v1/admin/translation-feedbacks/{id}/resolve`
-- `POST /v1/admin/translation-feedbacks/{id}/reopen`
+- `GET /v1/editorial/translation-feedbacks?book_id=&heading_id=&lang=&vote=&status=&limit=&offset=`
+- `GET /v1/editorial/translation-feedbacks/summary?book_id=&heading_id=&lang=&vote=&status=&limit=`
+- `POST /v1/editorial/translation-feedbacks/{id}/resolve`
+- `POST /v1/editorial/translation-feedbacks/{id}/reopen`
+
+Admin user management:
+
+- `PATCH /v1/admin/users/role`
 
 ## Local Setup
 
@@ -105,6 +120,8 @@ AUTH_FAILED_LOGIN_EMAIL_ENABLED=true \
 AUTH_PASSWORD_CHANGED_EMAIL_ENABLED=true \
 AUTH_EMAIL_VERIFIED_EMAIL_ENABLED=true \
 AUTH_ROLE_CHANGED_EMAIL_ENABLED=true \
+AUTH_EMAIL_CHANGED_EMAIL_ENABLED=true \
+AUTH_ACCOUNT_DELETED_EMAIL_ENABLED=true \
 EMAIL_DELIVERY_MODE=log \
 CF_EMAIL_ACCOUNT_ID='your-cloudflare-account-id' \
 CF_EMAIL_API_TOKEN='your-cloudflare-email-token' \
@@ -116,6 +133,9 @@ EMAIL_RESEND_COOLDOWN=1m \
 PASSWORD_RESET_FRONTEND_URL='http://localhost:3005/reset-password' \
 PASSWORD_RESET_TTL=1h \
 PASSWORD_RESET_RESEND_COOLDOWN=1m \
+EMAIL_CHANGE_FRONTEND_URL='http://localhost:3005/change-email' \
+EMAIL_CHANGE_TTL=24h \
+EMAIL_CHANGE_RESEND_COOLDOWN=1m \
 EMAIL_HTTP_TIMEOUT=10s \
 RAG_LLM_API_KEY='your-openai-compatible-key' \
 RAG_LLM_BASE_URL='https://ai.sumopod.com/v1' \
@@ -123,9 +143,9 @@ RAG_LLM_MODEL='glm-5.1' \
 go run -tags migrate ./cmd/app
 ```
 
-Set `EMAIL_DELIVERY_MODE=log` for local development to print verification and password reset links in the backend logs instead of calling an external email provider. In production, use `EMAIL_DELIVERY_MODE=cloudflare`; email verification, password reset, and best-effort auth security notifications then use Cloudflare Email Service REST API. The sending domain must be onboarded in Cloudflare Email Service with SPF, DKIM, DMARC, and bounce records configured before real transactional emails can be delivered.
+Set `EMAIL_DELIVERY_MODE=log` for local development to print verification, password reset, and email-change links in the backend logs instead of calling an external email provider. In production, use `EMAIL_DELIVERY_MODE=cloudflare`; email verification, password reset, email change, and best-effort auth security notifications then use Cloudflare Email Service REST API. The sending domain must be onboarded in Cloudflare Email Service with SPF, DKIM, DMARC, and bounce records configured before real transactional emails can be delivered.
 
-Auth uses DB-backed rate limits for login, register, email verification resend, forgot/reset password, and change password so limits work across multiple app instances. Password reset and authenticated password change increment `users.token_version`, which invalidates older JWTs on the next protected request. Sanitized auth events are written to `auth_audit_logs` for investigation; passwords, raw JWTs, and raw verification/reset tokens are never stored there. Optional security notifications cover password changed, email verified, role changed, new login fingerprint, and suspicious failed login rate-limit events.
+Auth uses DB-backed rate limits for login, register, email verification resend, forgot/reset password, change password, change email, and delete account so limits work across multiple app instances. Password reset, password change, email change, and account delete increment `users.token_version`, which invalidates older JWTs on the next protected request. Sanitized auth events are written to `auth_audit_logs` for investigation; passwords, raw JWTs, and raw verification/reset/email-change tokens are never stored there. Optional security notifications cover password changed, email verified, email changed, account deleted, role changed, new login fingerprint, and suspicious failed login rate-limit events.
 
 Frontend auth integration details are documented in [docs/auth-frontend.md](docs/auth-frontend.md), including endpoint contracts, error handling, token storage guidance, and verification/reset password flows.
 
@@ -224,13 +244,16 @@ go run ./cmd/import-quran-assets \
   --script-imlaei-simple-json=/path/to/imlaei-simple.json \
   --translation-simple-json=/path/to/kfgqpc-id-simple.json \
   --translation-lang=id \
+  --translation-source-id=qul-kfgqpc-id-simple \
+  --translation-source-url=https://qul.tarteel.ai/resources/translation/173 \
+  --translation-resource-id=173 \
   --translation-footnote-tags-json=/path/to/kfgqpc-id-footnotes.json \
   --recitation-json=/path/to/surah-recitation-yasser-al-dosari.zip \
   --recitation-json=/path/to/ayah-recitation-mishari-rashid-al-afasy-murattal-hafs-953.json.zip \
   --resolve-references
 ```
 
-Use `--dry-run` to parse and count rows without writing. JSON files may be passed directly or as single-resource QUL `.zip` downloads. `--surah-info-json` is repeatable for multiple languages, and `--surah-info-lang` can override filename inference for a batch. `--translation-lang` defaults to `id` and supports `id` or `en` translation imports with a matching `--translation-source-id`. V1 imports QPC Hafs display text, Imlaei/simple search text, language-specific surah information, translation source metadata, optional footnote/chunk payloads, and recitation timestamp metadata. Audio files themselves stay outside Postgres; `r2_key` and `public_url` are prepared for later Cloudflare R2 ingestion.
+Use `--dry-run` to parse and count rows without writing. JSON files may be passed directly or as single-resource QUL `.zip` downloads. `--surah-info-json` is repeatable for multiple languages, and `--surah-info-lang` can override filename inference for a batch. `--translation-lang` defaults to `id` and supports `id` or `en` translation imports with a matching `--translation-source-id`; non-Indonesian translation imports must provide a source ID. `--translation-source-url`, `--translation-resource-id`, `--translation-format`, and `--translation-footnote-format` keep source metadata accurate for each QUL translation resource. V1 imports QPC Hafs display text, Imlaei/simple search text, language-specific surah information, translation source metadata, optional footnote/chunk payloads, and recitation timestamp metadata. Audio files themselves stay outside Postgres; `audio_url` remains a playable source fallback, while `r2_key` and `public_url` are prepared for later Cloudflare R2 ingestion.
 
 After audio files are uploaded to Cloudflare R2, sync the manifest back into Postgres:
 
@@ -281,6 +304,8 @@ Supported kitab languages are `ar`, `id`, and `en`; empty `lang` defaults to `id
 
 If a requested catalog translation does not exist, the API falls back to the raw Arabic metadata and includes `localization` metadata with `requested_lang`, `display_lang`, `is_fallback`, `available_langs`, per-field language hints, and nested `availability`. Section reader and TOC responses expose `requested_lang`, `title_lang`, `is_title_fallback`, `available_translation_langs`, `available_summary_langs`, `translation_missing`, and `availability.title|translation|summary|audio` action hints. Section translation content stays exact-language only: if `lang=en` is missing but `lang=id` exists, `translation` remains `null` and the frontend can offer `id` from `available_translation_langs`.
 
+See [docs/frontend-integration-contract.md](docs/frontend-integration-contract.md), [docs/user-onboarding-api.md](docs/user-onboarding-api.md), [docs/kitab-multilingual-api.md](docs/kitab-multilingual-api.md), and [docs/kitab-frontend-contract.md](docs/kitab-frontend-contract.md) before wiring FE fallback states.
+
 See [docs/kitab-multilingual-api.md](docs/kitab-multilingual-api.md) for the multilingual kitab API contract and [docs/kitab-frontend-contract.md](docs/kitab-frontend-contract.md) for frontend consumption examples.
 
 Reader translation feedback is a lightweight public signal, not editorial approval. Send `vote=like` for good sections, or `vote=dislike` with optional `reason` and `note` when a translation needs attention:
@@ -293,17 +318,17 @@ curl -X POST 'http://127.0.0.1:8080/v1/books/1/toc/5/translation-feedback?lang=i
 
 Allowed reasons: `inaccurate`, `unclear`, `style`, `typo`, `formatting`, `other`. `client_id` is optional, but lets the backend update the same reader's feedback instead of inserting duplicates.
 
-Admin feedback endpoints require an admin JWT. Use the list endpoint for raw notes and the summary endpoint to prioritize review queues by most disliked heading. Feedback defaults to `status=open`; resolved feedback is hidden from default list/summary, `status=resolved` shows handled items, and `status=all` includes both.
+Editorial feedback endpoints require an editor or admin JWT. Use the list endpoint for raw notes and the summary endpoint to prioritize review queues by most disliked heading. Feedback defaults to `status=open`; resolved feedback is hidden from default list/summary, `status=resolved` shows handled items, and `status=all` includes both.
 
-Admin reader localization gaps are available at `GET /v1/admin/reader/missing-assets`. Filter with `target_lang=id|en`, `asset_type=book_metadata|category_metadata|author_metadata|section_translation|heading_summary|section_audio`, `book_id`, `limit`, and `offset`. Empty `target_lang` means both `id,en`; `target_lang=ar` is rejected because Arabic is source content.
+Editorial reader localization gaps are available at `GET /v1/editorial/reader/missing-assets`. Filter with `target_lang=id|en`, `asset_type=book_metadata|category_metadata|author_metadata|section_translation|heading_summary|section_audio`, `book_id`, `limit`, and `offset`. Empty `target_lang` means both `id,en`; `target_lang=ar` is rejected because Arabic is source content.
 
-Admin Quran gaps are available at `GET /v1/admin/quran/missing-assets`. Filter with `target_lang=id|en`, `asset_type=surah_info|ayah_translation|translation_source|audio_public`, `surah_id`, `limit`, and `offset`. Empty `target_lang` means both `id,en`; `target_lang=ar` is rejected because Arabic is source content.
+Editorial Quran gaps are available at `GET /v1/editorial/quran/missing-assets`. Filter with `target_lang=id|en`, `asset_type=surah_info|ayah_translation|translation_source|audio_public`, `surah_id`, `limit`, and `offset`. Empty `target_lang` means both `id,en`; `target_lang=ar` is rejected because Arabic is source content.
 
 Resolve a handled feedback item:
 
 ```sh
-curl -X POST 'http://127.0.0.1:8080/v1/admin/translation-feedbacks/{id}/resolve' \
-  -H 'Authorization: Bearer <admin-token>' \
+curl -X POST 'http://127.0.0.1:8080/v1/editorial/translation-feedbacks/{id}/resolve' \
+  -H 'Authorization: Bearer <editor-or-admin-token>' \
   -H 'Content-Type: application/json' \
   -d '{"note":"Reworked wording and re-imported the section."}'
 ```

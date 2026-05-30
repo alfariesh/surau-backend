@@ -1,6 +1,7 @@
 package v1
 
 import (
+	"context"
 	"errors"
 	"net/http"
 
@@ -66,7 +67,7 @@ func (r *V1) getQuranSurah(ctx *fiber.Ctx) error {
 }
 
 // @Summary     List Quran recitations
-// @Description List imported recitation resources and audio coverage. Exactly one full-public recitation may be marked is_default.
+// @Description List imported recitation resources and audio coverage. Exactly one fully playable recitation may be marked is_default. A track is playable when public_url or source audio_url exists.
 // @ID          list-quran-recitations
 // @Tags        quran
 // @Produce     json
@@ -105,8 +106,110 @@ func (r *V1) listQuranTranslationSources(ctx *fiber.Ctx) error {
 	return ctx.Status(http.StatusOK).JSON(sources)
 }
 
+// @Summary     List Quran juz
+// @Description List imported Quran juz segments with lightweight start/end boundaries.
+// @ID          list-quran-juz
+// @Tags        quran
+// @Produce     json
+// @Param       lang query string false "Language code" default(id)
+// @Success     200  {array} entity.QuranNavigationSegment
+// @Failure     400  {object} response.Error
+// @Failure     500  {object} response.Error
+// @Router      /quran/juz [get]
+func (r *V1) listQuranJuz(ctx *fiber.Ctx) error {
+	segments, err := r.quran.Juz(ctx.UserContext(), ctx.Query("lang"))
+	if err != nil {
+		r.logQuranError(err, "restapi - v1 - listQuranJuz")
+
+		return r.quranErrorResponse(ctx, err)
+	}
+
+	return ctx.Status(http.StatusOK).JSON(segments)
+}
+
+// @Summary     List Quran ayahs in a juz
+// @Description List all ayahs in one imported juz segment. When include_audio=true and recitation_id is omitted, the backend uses the default playable recitation.
+// @ID          list-quran-juz-ayahs
+// @Tags        quran
+// @Produce     json
+// @Param       juz_number          path     int    true  "Juz number" minimum(1) maximum(30)
+// @Param       lang                query    string false "Language code" default(id)
+// @Param       translation_source  query    string false "Translation source ID. Empty uses language default."
+// @Param       include_translation query    bool   false "Include selected translation" default(true)
+// @Param       include_audio       query    bool   false "Include audio track and timestamp segments" default(false)
+// @Param       recitation_id       query    string false "Recitation ID. Defaults to the playable default recitation when include_audio=true."
+// @Success     200                 {array}  entity.QuranAyah
+// @Failure     400                 {object} response.Error
+// @Failure     404                 {object} response.Error
+// @Failure     500                 {object} response.Error
+// @Router      /quran/juz/{juz_number}/ayahs [get]
+func (r *V1) listQuranJuzAyahs(ctx *fiber.Ctx) error {
+	juzNumber, err := pathInt(ctx, "juz_number")
+	if err != nil {
+		return errorResponse(ctx, http.StatusBadRequest, "invalid juz_number")
+	}
+
+	ayahs, ok, err := r.quranNavigationAyahs(ctx, juzNumber, "restapi - v1 - listQuranJuzAyahs", r.quran.JuzAyahs)
+	if err != nil || !ok {
+		return err
+	}
+
+	return ctx.Status(http.StatusOK).JSON(ayahs)
+}
+
+// @Summary     List Quran hizbs
+// @Description List imported Quran hizb segments with lightweight start/end boundaries.
+// @ID          list-quran-hizbs
+// @Tags        quran
+// @Produce     json
+// @Param       lang query string false "Language code" default(id)
+// @Success     200  {array} entity.QuranNavigationSegment
+// @Failure     400  {object} response.Error
+// @Failure     500  {object} response.Error
+// @Router      /quran/hizbs [get]
+func (r *V1) listQuranHizbs(ctx *fiber.Ctx) error {
+	segments, err := r.quran.Hizbs(ctx.UserContext(), ctx.Query("lang"))
+	if err != nil {
+		r.logQuranError(err, "restapi - v1 - listQuranHizbs")
+
+		return r.quranErrorResponse(ctx, err)
+	}
+
+	return ctx.Status(http.StatusOK).JSON(segments)
+}
+
+// @Summary     List Quran ayahs in a hizb
+// @Description List all ayahs in one imported hizb segment. When include_audio=true and recitation_id is omitted, the backend uses the default playable recitation.
+// @ID          list-quran-hizb-ayahs
+// @Tags        quran
+// @Produce     json
+// @Param       hizb_number         path     int    true  "Hizb number" minimum(1) maximum(60)
+// @Param       lang                query    string false "Language code" default(id)
+// @Param       translation_source  query    string false "Translation source ID. Empty uses language default."
+// @Param       include_translation query    bool   false "Include selected translation" default(true)
+// @Param       include_audio       query    bool   false "Include audio track and timestamp segments" default(false)
+// @Param       recitation_id       query    string false "Recitation ID. Defaults to the playable default recitation when include_audio=true."
+// @Success     200                 {array}  entity.QuranAyah
+// @Failure     400                 {object} response.Error
+// @Failure     404                 {object} response.Error
+// @Failure     500                 {object} response.Error
+// @Router      /quran/hizbs/{hizb_number}/ayahs [get]
+func (r *V1) listQuranHizbAyahs(ctx *fiber.Ctx) error {
+	hizbNumber, err := pathInt(ctx, "hizb_number")
+	if err != nil {
+		return errorResponse(ctx, http.StatusBadRequest, "invalid hizb_number")
+	}
+
+	ayahs, ok, err := r.quranNavigationAyahs(ctx, hizbNumber, "restapi - v1 - listQuranHizbAyahs", r.quran.HizbAyahs)
+	if err != nil || !ok {
+		return err
+	}
+
+	return ctx.Status(http.StatusOK).JSON(ayahs)
+}
+
 // @Summary     Get Quran ayah
-// @Description Get one ayah by canonical ayah key. When include_audio=true and recitation_id is omitted, the backend uses the default public recitation.
+// @Description Get one ayah by canonical ayah key. When include_audio=true and recitation_id is omitted, the backend uses the default playable recitation.
 // @ID          get-quran-ayah
 // @Tags        quran
 // @Produce     json
@@ -114,7 +217,7 @@ func (r *V1) listQuranTranslationSources(ctx *fiber.Ctx) error {
 // @Param       lang               query    string false "Language code" default(id)
 // @Param       translation_source query    string false "Translation source ID. Empty uses language default."
 // @Param       include_audio      query    bool   false "Include audio track and timestamp segments" default(false)
-// @Param       recitation_id      query    string false "Recitation ID. Defaults to the public default recitation when include_audio=true."
+// @Param       recitation_id      query    string false "Recitation ID. Defaults to the playable default recitation when include_audio=true."
 // @Success     200                {object} entity.QuranAyah
 // @Failure     400                {object} response.Error
 // @Failure     404                {object} response.Error
@@ -145,7 +248,7 @@ func (r *V1) getQuranAyah(ctx *fiber.Ctx) error {
 }
 
 // @Summary     List Quran ayahs for a surah
-// @Description List all ayahs or an ayah range for one surah. When include_audio=true and recitation_id is omitted, the backend uses the default public recitation.
+// @Description List all ayahs or an ayah range for one surah. When include_audio=true and recitation_id is omitted, the backend uses the default playable recitation.
 // @ID          list-quran-surah-ayahs
 // @Tags        quran
 // @Produce     json
@@ -156,7 +259,7 @@ func (r *V1) getQuranAyah(ctx *fiber.Ctx) error {
 // @Param       translation_source query    string false "Translation source ID. Empty uses language default."
 // @Param       include_translation query   bool   false "Include selected translation" default(true)
 // @Param       include_audio      query    bool   false "Include audio track and timestamp segments" default(false)
-// @Param       recitation_id      query    string false "Recitation ID. Defaults to the public default recitation when include_audio=true."
+// @Param       recitation_id      query    string false "Recitation ID. Defaults to the playable default recitation when include_audio=true."
 // @Success     200                {array}  entity.QuranAyah
 // @Failure     400                {object} response.Error
 // @Failure     404                {object} response.Error
@@ -220,7 +323,7 @@ func (r *V1) listQuranSurahAyahs(ctx *fiber.Ctx) error {
 }
 
 // @Summary     Search Quran
-// @Description Search Arabic Quran text and the selected Indonesian translation.
+// @Description Search Arabic Quran text, the requested translation, and other imported translations for discoverability. Display translation remains exact requested language only.
 // @ID          search-quran
 // @Tags        quran
 // @Produce     json
@@ -229,6 +332,7 @@ func (r *V1) listQuranSurahAyahs(ctx *fiber.Ctx) error {
 // @Param       limit  query    int    false "Limit" default(50)
 // @Param       offset query    int    false "Offset" default(0)
 // @Success     200    {object} response.QuranSearchList
+// @Failure     400    {object} response.Error
 // @Failure     500    {object} response.Error
 // @Router      /quran/search [get]
 func (r *V1) searchQuran(ctx *fiber.Ctx) error {
@@ -286,6 +390,55 @@ func (r *V1) listBookQuranReferences(ctx *fiber.Ctx) error {
 	return ctx.Status(http.StatusOK).JSON(response.BookQuranReferenceList{References: references, Total: total})
 }
 
+type quranNavigationAyahLoader func(
+	ctxUser context.Context,
+	number int,
+	lang string,
+	translationSource string,
+	includeTranslation bool,
+	includeAudio bool,
+	recitationID string,
+) ([]entity.QuranAyah, error)
+
+func (r *V1) quranNavigationAyahs(
+	ctx *fiber.Ctx,
+	number int,
+	operation string,
+	load quranNavigationAyahLoader,
+) ([]entity.QuranAyah, bool, error) {
+	includeTranslationValue, err := optionalQueryBool(ctx, "include_translation")
+	if err != nil {
+		return nil, false, errorResponse(ctx, http.StatusBadRequest, "invalid include_translation")
+	}
+	includeAudioValue, err := optionalQueryBool(ctx, "include_audio")
+	if err != nil {
+		return nil, false, errorResponse(ctx, http.StatusBadRequest, "invalid include_audio")
+	}
+
+	includeTranslation := true
+	if includeTranslationValue != nil {
+		includeTranslation = *includeTranslationValue
+	}
+	includeAudio := includeAudioValue != nil && *includeAudioValue
+
+	ayahs, err := load(
+		ctx.UserContext(),
+		number,
+		ctx.Query("lang"),
+		ctx.Query("translation_source"),
+		includeTranslation,
+		includeAudio,
+		ctx.Query("recitation_id"),
+	)
+	if err != nil {
+		r.logQuranError(err, operation)
+
+		return nil, false, r.quranErrorResponse(ctx, err)
+	}
+
+	return ayahs, true, nil
+}
+
 func (r *V1) quranErrorResponse(ctx *fiber.Ctx, err error) error {
 	if errors.Is(err, entity.ErrUnsupportedLanguage) {
 		return errorResponse(ctx, http.StatusBadRequest, "unsupported language")
@@ -301,6 +454,9 @@ func (r *V1) quranErrorResponse(ctx *fiber.Ctx, err error) error {
 	}
 	if errors.Is(err, entity.ErrQuranAyahNotFound) {
 		return errorResponse(ctx, http.StatusNotFound, "quran ayah not found")
+	}
+	if errors.Is(err, entity.ErrQuranNavigationNotFound) {
+		return errorResponse(ctx, http.StatusNotFound, "quran navigation not found")
 	}
 	if errors.Is(err, entity.ErrQuranRecitationNotFound) {
 		return errorResponse(ctx, http.StatusNotFound, "quran recitation not found")

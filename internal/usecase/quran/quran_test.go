@@ -58,6 +58,37 @@ func TestUseCase_AyahNormalizesDefaults(t *testing.T) {
 	assert.Equal(t, "rec-1", repository.getAyahRecitationID)
 }
 
+func TestUseCase_NavigationValidatesRangesAndNormalizes(t *testing.T) {
+	t.Parallel()
+
+	repository := &quranRepoStub{}
+	uc := New(repository)
+
+	_, err := uc.Juz(context.Background(), "en-US")
+	require.NoError(t, err)
+	assert.Equal(t, "juz", repository.navigationKind)
+	assert.Equal(t, contentlang.English, repository.navigationLang)
+
+	_, err = uc.JuzAyahs(context.Background(), 0, "id", "", true, false, "")
+	require.ErrorIs(t, err, entity.ErrInvalidQuranRange)
+
+	_, err = uc.JuzAyahs(context.Background(), 31, "id", "", true, false, "")
+	require.ErrorIs(t, err, entity.ErrInvalidQuranRange)
+
+	_, err = uc.JuzAyahs(context.Background(), 29, "", " source ", false, true, " rec ")
+	require.NoError(t, err)
+	assert.Equal(t, "juz", repository.navigationAyahsKind)
+	assert.Equal(t, 29, repository.navigationAyahsNumber)
+	assert.Equal(t, contentlang.Default, repository.navigationAyahsLang)
+	assert.Equal(t, "source", repository.navigationAyahsTranslationSource)
+	assert.False(t, repository.navigationAyahsIncludeTranslation)
+	assert.True(t, repository.navigationAyahsIncludeAudio)
+	assert.Equal(t, "rec", repository.navigationAyahsRecitationID)
+
+	_, err = uc.HizbAyahs(context.Background(), 61, "id", "", true, false, "")
+	require.ErrorIs(t, err, entity.ErrInvalidQuranRange)
+}
+
 func TestUseCase_RejectsUnsupportedLang(t *testing.T) {
 	t.Parallel()
 
@@ -107,17 +138,26 @@ func TestUseCase_AyahRejectsInvalidKey(t *testing.T) {
 }
 
 type quranRepoStub struct {
-	listSurahsLang           string
-	listSurahsIncludeInfo    bool
-	getSurahCalls            int
-	getSurahID               int
-	getSurahLang             string
-	getAyahKey               string
-	getAyahLang              string
-	getAyahTranslationSource string
-	getAyahIncludeAudio      bool
-	getAyahRecitationID      string
-	missingAssetsFilter      repo.MissingQuranAssetFilter
+	listSurahsLang                    string
+	listSurahsIncludeInfo             bool
+	getSurahCalls                     int
+	getSurahID                        int
+	getSurahLang                      string
+	getAyahKey                        string
+	getAyahLang                       string
+	getAyahTranslationSource          string
+	getAyahIncludeAudio               bool
+	getAyahRecitationID               string
+	navigationKind                    string
+	navigationLang                    string
+	navigationAyahsKind               string
+	navigationAyahsNumber             int
+	navigationAyahsLang               string
+	navigationAyahsTranslationSource  string
+	navigationAyahsIncludeTranslation bool
+	navigationAyahsIncludeAudio       bool
+	navigationAyahsRecitationID       string
+	missingAssetsFilter               repo.MissingQuranAssetFilter
 }
 
 func (r *quranRepoStub) ListSurahs(_ context.Context, lang string, includeInfo bool) ([]entity.QuranSurah, error) {
@@ -141,6 +181,13 @@ func (r *quranRepoStub) ListRecitations(context.Context) ([]entity.QuranRecitati
 
 func (r *quranRepoStub) ListTranslationSources(context.Context, string) ([]entity.QuranTranslationSource, error) {
 	return []entity.QuranTranslationSource{}, nil
+}
+
+func (r *quranRepoStub) ListNavigationSegments(_ context.Context, kind string, lang string) ([]entity.QuranNavigationSegment, error) {
+	r.navigationKind = kind
+	r.navigationLang = lang
+
+	return []entity.QuranNavigationSegment{}, nil
 }
 
 func (r *quranRepoStub) GetAyah(
@@ -171,6 +218,27 @@ func (r *quranRepoStub) ListSurahAyahs(
 	bool,
 	string,
 ) ([]entity.QuranAyah, error) {
+	return []entity.QuranAyah{}, nil
+}
+
+func (r *quranRepoStub) ListNavigationAyahs(
+	_ context.Context,
+	kind string,
+	number int,
+	lang string,
+	translationSource string,
+	includeTranslation bool,
+	includeAudio bool,
+	recitationID string,
+) ([]entity.QuranAyah, error) {
+	r.navigationAyahsKind = kind
+	r.navigationAyahsNumber = number
+	r.navigationAyahsLang = lang
+	r.navigationAyahsTranslationSource = translationSource
+	r.navigationAyahsIncludeTranslation = includeTranslation
+	r.navigationAyahsIncludeAudio = includeAudio
+	r.navigationAyahsRecitationID = recitationID
+
 	return []entity.QuranAyah{}, nil
 }
 

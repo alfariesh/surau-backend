@@ -23,9 +23,12 @@ const (
 	AuthService_Login_FullMethodName                   = "/grpc.v1.AuthService/Login"
 	AuthService_VerifyEmail_FullMethodName             = "/grpc.v1.AuthService/VerifyEmail"
 	AuthService_ResendEmailVerification_FullMethodName = "/grpc.v1.AuthService/ResendEmailVerification"
-	AuthService_ForgotPassword_FullMethodName          = "/grpc.v1.AuthService/ForgotPassword"  // #nosec G101 -- generated RPC method path, not a credential.
-	AuthService_ResetPassword_FullMethodName           = "/grpc.v1.AuthService/ResetPassword"   // #nosec G101 -- generated RPC method path, not a credential.
-	AuthService_ChangePassword_FullMethodName          = "/grpc.v1.AuthService/ChangePassword"  // #nosec G101 -- generated RPC method path, not a credential.
+	AuthService_ForgotPassword_FullMethodName          = "/grpc.v1.AuthService/ForgotPassword" // #nosec G101 -- generated RPC method path, not a credential.
+	AuthService_ResetPassword_FullMethodName           = "/grpc.v1.AuthService/ResetPassword"  // #nosec G101 -- generated RPC method path, not a credential.
+	AuthService_ChangePassword_FullMethodName          = "/grpc.v1.AuthService/ChangePassword" // #nosec G101 -- generated RPC method path, not a credential.
+	AuthService_RequestEmailChange_FullMethodName      = "/grpc.v1.AuthService/RequestEmailChange"
+	AuthService_VerifyEmailChange_FullMethodName       = "/grpc.v1.AuthService/VerifyEmailChange"
+	AuthService_DeleteAccount_FullMethodName           = "/grpc.v1.AuthService/DeleteAccount"
 	AuthService_GetProfile_FullMethodName              = "/grpc.v1.AuthService/GetProfile"
 )
 
@@ -40,6 +43,9 @@ type AuthServiceClient interface {
 	ForgotPassword(ctx context.Context, in *ForgotPasswordRequest, opts ...grpc.CallOption) (*ForgotPasswordResponse, error)
 	ResetPassword(ctx context.Context, in *ResetPasswordRequest, opts ...grpc.CallOption) (*ResetPasswordResponse, error)
 	ChangePassword(ctx context.Context, in *ChangePasswordRequest, opts ...grpc.CallOption) (*ChangePasswordResponse, error)
+	RequestEmailChange(ctx context.Context, in *RequestEmailChangeRequest, opts ...grpc.CallOption) (*RequestEmailChangeResponse, error)
+	VerifyEmailChange(ctx context.Context, in *VerifyEmailChangeRequest, opts ...grpc.CallOption) (*VerifyEmailChangeResponse, error)
+	DeleteAccount(ctx context.Context, in *DeleteAccountRequest, opts ...grpc.CallOption) (*DeleteAccountResponse, error)
 	GetProfile(ctx context.Context, in *GetProfileRequest, opts ...grpc.CallOption) (*GetProfileResponse, error)
 }
 
@@ -121,6 +127,36 @@ func (c *authServiceClient) ChangePassword(ctx context.Context, in *ChangePasswo
 	return out, nil
 }
 
+func (c *authServiceClient) RequestEmailChange(ctx context.Context, in *RequestEmailChangeRequest, opts ...grpc.CallOption) (*RequestEmailChangeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RequestEmailChangeResponse)
+	err := c.cc.Invoke(ctx, AuthService_RequestEmailChange_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *authServiceClient) VerifyEmailChange(ctx context.Context, in *VerifyEmailChangeRequest, opts ...grpc.CallOption) (*VerifyEmailChangeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(VerifyEmailChangeResponse)
+	err := c.cc.Invoke(ctx, AuthService_VerifyEmailChange_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *authServiceClient) DeleteAccount(ctx context.Context, in *DeleteAccountRequest, opts ...grpc.CallOption) (*DeleteAccountResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteAccountResponse)
+	err := c.cc.Invoke(ctx, AuthService_DeleteAccount_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *authServiceClient) GetProfile(ctx context.Context, in *GetProfileRequest, opts ...grpc.CallOption) (*GetProfileResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetProfileResponse)
@@ -142,6 +178,9 @@ type AuthServiceServer interface {
 	ForgotPassword(context.Context, *ForgotPasswordRequest) (*ForgotPasswordResponse, error)
 	ResetPassword(context.Context, *ResetPasswordRequest) (*ResetPasswordResponse, error)
 	ChangePassword(context.Context, *ChangePasswordRequest) (*ChangePasswordResponse, error)
+	RequestEmailChange(context.Context, *RequestEmailChangeRequest) (*RequestEmailChangeResponse, error)
+	VerifyEmailChange(context.Context, *VerifyEmailChangeRequest) (*VerifyEmailChangeResponse, error)
+	DeleteAccount(context.Context, *DeleteAccountRequest) (*DeleteAccountResponse, error)
 	GetProfile(context.Context, *GetProfileRequest) (*GetProfileResponse, error)
 	mustEmbedUnimplementedAuthServiceServer()
 }
@@ -173,6 +212,15 @@ func (UnimplementedAuthServiceServer) ResetPassword(context.Context, *ResetPassw
 }
 func (UnimplementedAuthServiceServer) ChangePassword(context.Context, *ChangePasswordRequest) (*ChangePasswordResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ChangePassword not implemented")
+}
+func (UnimplementedAuthServiceServer) RequestEmailChange(context.Context, *RequestEmailChangeRequest) (*RequestEmailChangeResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RequestEmailChange not implemented")
+}
+func (UnimplementedAuthServiceServer) VerifyEmailChange(context.Context, *VerifyEmailChangeRequest) (*VerifyEmailChangeResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method VerifyEmailChange not implemented")
+}
+func (UnimplementedAuthServiceServer) DeleteAccount(context.Context, *DeleteAccountRequest) (*DeleteAccountResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteAccount not implemented")
 }
 func (UnimplementedAuthServiceServer) GetProfile(context.Context, *GetProfileRequest) (*GetProfileResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetProfile not implemented")
@@ -324,6 +372,60 @@ func _AuthService_ChangePassword_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AuthService_RequestEmailChange_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RequestEmailChangeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AuthServiceServer).RequestEmailChange(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AuthService_RequestEmailChange_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AuthServiceServer).RequestEmailChange(ctx, req.(*RequestEmailChangeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AuthService_VerifyEmailChange_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(VerifyEmailChangeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AuthServiceServer).VerifyEmailChange(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AuthService_VerifyEmailChange_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AuthServiceServer).VerifyEmailChange(ctx, req.(*VerifyEmailChangeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AuthService_DeleteAccount_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteAccountRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AuthServiceServer).DeleteAccount(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AuthService_DeleteAccount_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AuthServiceServer).DeleteAccount(ctx, req.(*DeleteAccountRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _AuthService_GetProfile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GetProfileRequest)
 	if err := dec(in); err != nil {
@@ -376,6 +478,18 @@ var AuthService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ChangePassword",
 			Handler:    _AuthService_ChangePassword_Handler,
+		},
+		{
+			MethodName: "RequestEmailChange",
+			Handler:    _AuthService_RequestEmailChange_Handler,
+		},
+		{
+			MethodName: "VerifyEmailChange",
+			Handler:    _AuthService_VerifyEmailChange_Handler,
+		},
+		{
+			MethodName: "DeleteAccount",
+			Handler:    _AuthService_DeleteAccount_Handler,
 		},
 		{
 			MethodName: "GetProfile",

@@ -58,6 +58,7 @@ func isExpectedQuranError(err error) bool {
 	return errors.Is(err, entity.ErrUnsupportedLanguage) ||
 		errors.Is(err, entity.ErrQuranSurahNotFound) ||
 		errors.Is(err, entity.ErrQuranAyahNotFound) ||
+		errors.Is(err, entity.ErrQuranNavigationNotFound) ||
 		errors.Is(err, entity.ErrQuranRecitationNotFound) ||
 		errors.Is(err, entity.ErrQuranTranslationSourceNotFound) ||
 		errors.Is(err, entity.ErrInvalidAyahKey) ||

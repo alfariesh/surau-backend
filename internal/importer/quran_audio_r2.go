@@ -103,7 +103,7 @@ func loadQuranAudioR2Manifest(path string, publicBaseURL string) ([]quranAudioR2
 		return nil, stats, errors.New("manifest-jsonl is required")
 	}
 
-	file, err := os.Open(path)
+	file, err := os.Open(path) // #nosec G304 -- sync CLI intentionally reads an operator-supplied manifest file.
 	if err != nil {
 		return nil, stats, fmt.Errorf("open manifest: %w", err)
 	}

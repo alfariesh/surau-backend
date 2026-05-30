@@ -27,7 +27,7 @@ func (r *V1) register() server.CallHandler {
 			return nil, badRequestError("amqp_rpc - V1 - register - validation", err)
 		}
 
-		user, err := r.u.Register(amqpAuthContext(), req.Username, req.Email, req.Password)
+		user, err := r.u.Register(amqpAuthContext(), registerDisplayName(req), req.Email, req.Password)
 		if err != nil {
 			r.l.Error(err, "amqp_rpc - V1 - register")
 			if errors.Is(err, entity.ErrInvalidAuthInput) {
@@ -255,4 +255,129 @@ func (r *V1) changePassword() server.CallHandler {
 
 		return response.PasswordChanged{PasswordChanged: true}, nil
 	}
+}
+
+func (r *V1) requestEmailChange() server.CallHandler {
+	return func(d *amqp.Delivery) (any, error) {
+		userID, data, err := extractUserID(d, r.j, r.u)
+		if err != nil {
+			return nil, fmt.Errorf("amqp_rpc - V1 - requestEmailChange - auth: %w", err)
+		}
+
+		var req request.RequestEmailChange
+		err = json.Unmarshal(data, &req)
+		if err != nil {
+			r.l.Error(err, "amqp_rpc - V1 - requestEmailChange")
+
+			return nil, badRequestError("amqp_rpc - V1 - requestEmailChange - json.Unmarshal", err)
+		}
+		if err = r.v.Struct(req); err != nil {
+			return nil, badRequestError("amqp_rpc - V1 - requestEmailChange - validation", err)
+		}
+
+		if err = r.u.RequestEmailChange(amqpAuthContext(), userID, req.CurrentPassword, req.NewEmail); err != nil {
+			r.l.Error(err, "amqp_rpc - V1 - requestEmailChange")
+			if errors.Is(err, entity.ErrInvalidAuthInput) {
+				return nil, badRequestError("amqp_rpc - V1 - requestEmailChange - invalid input", err)
+			}
+			if errors.Is(err, entity.ErrInvalidCredentials) {
+				return nil, unauthenticatedError("amqp_rpc - V1 - requestEmailChange - invalid credentials", err)
+			}
+			if errors.Is(err, entity.ErrUserAlreadyExists) {
+				return nil, failedPreconditionError("amqp_rpc - V1 - requestEmailChange - email already exists", err)
+			}
+			if errors.Is(err, entity.ErrEmailChangeRateLimited) || errors.Is(err, entity.ErrAuthRateLimited) {
+				return nil, rateLimitedError("amqp_rpc - V1 - requestEmailChange - rate limited", err)
+			}
+			if errors.Is(err, entity.ErrEmailDeliveryFailed) {
+				return nil, unavailableError("amqp_rpc - V1 - requestEmailChange - email delivery failed", err)
+			}
+
+			return nil, fmt.Errorf("amqp_rpc - V1 - requestEmailChange: %w", err)
+		}
+
+		return response.Accepted{Accepted: true}, nil
+	}
+}
+
+func (r *V1) verifyEmailChange() server.CallHandler {
+	return func(d *amqp.Delivery) (any, error) {
+		userID, data, err := extractUserID(d, r.j, r.u)
+		if err != nil {
+			return nil, fmt.Errorf("amqp_rpc - V1 - verifyEmailChange - auth: %w", err)
+		}
+
+		var req request.VerifyEmailChange
+		err = json.Unmarshal(data, &req)
+		if err != nil {
+			r.l.Error(err, "amqp_rpc - V1 - verifyEmailChange")
+
+			return nil, badRequestError("amqp_rpc - V1 - verifyEmailChange - json.Unmarshal", err)
+		}
+		if err = r.v.Struct(req); err != nil {
+			return nil, badRequestError("amqp_rpc - V1 - verifyEmailChange - validation", err)
+		}
+
+		if err = r.u.VerifyEmailChange(amqpAuthContext(), userID, req.Token); err != nil {
+			r.l.Error(err, "amqp_rpc - V1 - verifyEmailChange")
+			if errors.Is(err, entity.ErrInvalidAuthInput) || errors.Is(err, entity.ErrInvalidEmailChangeToken) {
+				return nil, badRequestError("amqp_rpc - V1 - verifyEmailChange - invalid input", err)
+			}
+			if errors.Is(err, entity.ErrAuthRateLimited) {
+				return nil, rateLimitedError("amqp_rpc - V1 - verifyEmailChange - rate limited", err)
+			}
+
+			return nil, fmt.Errorf("amqp_rpc - V1 - verifyEmailChange: %w", err)
+		}
+
+		return response.EmailChanged{EmailChanged: true}, nil
+	}
+}
+
+func (r *V1) deleteAccount() server.CallHandler {
+	return func(d *amqp.Delivery) (any, error) {
+		userID, data, err := extractUserID(d, r.j, r.u)
+		if err != nil {
+			return nil, fmt.Errorf("amqp_rpc - V1 - deleteAccount - auth: %w", err)
+		}
+
+		var req request.DeleteAccount
+		err = json.Unmarshal(data, &req)
+		if err != nil {
+			r.l.Error(err, "amqp_rpc - V1 - deleteAccount")
+
+			return nil, badRequestError("amqp_rpc - V1 - deleteAccount - json.Unmarshal", err)
+		}
+		if err = r.v.Struct(req); err != nil {
+			return nil, badRequestError("amqp_rpc - V1 - deleteAccount - validation", err)
+		}
+
+		if err = r.u.DeleteAccount(amqpAuthContext(), userID, req.CurrentPassword); err != nil {
+			r.l.Error(err, "amqp_rpc - V1 - deleteAccount")
+			if errors.Is(err, entity.ErrInvalidAuthInput) {
+				return nil, badRequestError("amqp_rpc - V1 - deleteAccount - invalid input", err)
+			}
+			if errors.Is(err, entity.ErrInvalidCredentials) {
+				return nil, unauthenticatedError("amqp_rpc - V1 - deleteAccount - invalid credentials", err)
+			}
+			if errors.Is(err, entity.ErrAuthRateLimited) {
+				return nil, rateLimitedError("amqp_rpc - V1 - deleteAccount - rate limited", err)
+			}
+
+			return nil, fmt.Errorf("amqp_rpc - V1 - deleteAccount: %w", err)
+		}
+
+		return response.AccountDeleted{AccountDeleted: true}, nil
+	}
+}
+
+func registerDisplayName(req request.Register) string {
+	if req.DisplayName != "" {
+		return req.DisplayName
+	}
+	if req.Name != "" {
+		return req.Name
+	}
+
+	return req.Username
 }

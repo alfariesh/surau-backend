@@ -34,12 +34,13 @@ func Auth(jwtManager *jwt.Manager, users usecase.User) func(*fiber.Ctx) error {
 			return ctx.Status(http.StatusUnauthorized).JSON(errorResponse{Error: "invalid authorization header format"})
 		}
 
-		userID, err := authutil.Authenticate(ctx.UserContext(), jwtManager, users, token)
+		user, err := authutil.AuthenticateUser(ctx.UserContext(), jwtManager, users, token)
 		if err != nil {
 			return ctx.Status(http.StatusUnauthorized).JSON(errorResponse{Error: "invalid or expired token"})
 		}
 
-		ctx.Locals("userID", userID)
+		ctx.Locals("user", user)
+		ctx.Locals("userID", user.ID)
 
 		return ctx.Next()
 	}

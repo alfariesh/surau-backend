@@ -3,9 +3,6 @@ package entity
 import "time"
 
 const (
-	UserRoleUser  = "user"
-	UserRoleAdmin = "admin"
-
 	PublicationStatusHidden    = "hidden"
 	PublicationStatusDraft     = "draft"
 	PublicationStatusPublished = "published"

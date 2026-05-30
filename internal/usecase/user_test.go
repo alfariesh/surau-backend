@@ -38,6 +38,9 @@ func newUserUseCase(t *testing.T) (*user.UseCase, *MockUserRepo, *MockEmailSende
 		PasswordResetFrontendURL: "https://frontend.example.com/reset-password",
 		PasswordResetTTL:         time.Hour,
 		PasswordResetCooldown:    time.Minute,
+		EmailChangeFrontendURL:   "https://frontend.example.com/change-email",
+		EmailChangeTTL:           time.Hour,
+		EmailChangeCooldown:      time.Minute,
 	})
 
 	return useCase, repo, emailSender
@@ -66,6 +69,9 @@ func newUserUseCaseWithNotifications(
 		PasswordResetFrontendURL: "https://frontend.example.com/reset-password",
 		PasswordResetTTL:         time.Hour,
 		PasswordResetCooldown:    time.Minute,
+		EmailChangeFrontendURL:   "https://frontend.example.com/change-email",
+		EmailChangeTTL:           time.Hour,
+		EmailChangeCooldown:      time.Minute,
 		RateLimiter:              limiter,
 		EmailNotifications:       notifications,
 	})
@@ -100,11 +106,74 @@ func newUserUseCaseWithAuthDeps(
 		PasswordResetFrontendURL: "https://frontend.example.com/reset-password",
 		PasswordResetTTL:         time.Hour,
 		PasswordResetCooldown:    time.Minute,
+		EmailChangeFrontendURL:   "https://frontend.example.com/change-email",
+		EmailChangeTTL:           time.Hour,
+		EmailChangeCooldown:      time.Minute,
 		RateLimiter:              limiter,
 		AuditLogger:              auditor,
 	})
 
 	return useCase, repo, emailSender
+}
+
+type accountOption func(*entity.UserAccount)
+
+func testUserAccount(user entity.User, opts ...accountOption) entity.UserAccount {
+	now := time.Now().UTC()
+	account := entity.UserAccount{
+		User:               user,
+		Profile:            entity.DefaultUserProfile(user.ID, now),
+		Preferences:        entity.DefaultUserPreferences(user.ID, now),
+		OnboardingRequired: true,
+	}
+	for _, opt := range opts {
+		opt(&account)
+	}
+
+	return account
+}
+
+func expectUserAccount(
+	repo *MockUserRepo,
+	ctx context.Context,
+	user entity.User,
+	opts ...accountOption,
+) {
+	repo.EXPECT().GetAccount(ctx, user.ID).Return(testUserAccount(user, opts...), nil)
+}
+
+func expectAnyUserAccount(
+	repo *MockUserRepo,
+	ctx context.Context,
+	user entity.User,
+	opts ...accountOption,
+) {
+	repo.EXPECT().GetAccount(ctx, gomock.Any()).DoAndReturn(
+		func(_ context.Context, userID string) (entity.UserAccount, error) {
+			accountUser := user
+			accountUser.ID = userID
+
+			return testUserAccount(accountUser, opts...), nil
+		},
+	)
+}
+
+func withPreferredUILang(lang string) accountOption {
+	return func(account *entity.UserAccount) {
+		account.Preferences.PreferredUILang = lang
+	}
+}
+
+func withDisplayName(name string) accountOption {
+	return func(account *entity.UserAccount) {
+		account.Profile.DisplayName = &name
+	}
+}
+
+func withTimezone(timezone string) accountOption {
+	return func(account *entity.UserAccount) {
+		account.Profile.Timezone = &timezone
+	}
 }
 
 func TestRegister(t *testing.T) {
@@ -125,6 +194,11 @@ func TestRegister(t *testing.T) {
 				return nil
 			},
 		)
+		expectAnyUserAccount(repo, context.Background(), entity.User{
+			Username: "testuser",
+			Email:    "test@example.com",
+			Role:     entity.UserRoleUser,
+		})
 		emailSender.EXPECT().Send(context.Background(), gomock.Any()).DoAndReturn(
 			func(_ context.Context, message entity.EmailMessage) error {
 				assert.Equal(t, "test@example.com", message.To)
@@ -160,6 +234,11 @@ func TestRegister(t *testing.T) {
 
 		uc, repo, emailSender := newUserUseCase(t)
 		repo.EXPECT().StoreWithVerificationToken(context.Background(), gomock.Any(), gomock.Any()).Return(nil)
+		expectAnyUserAccount(repo, context.Background(), entity.User{
+			Username: "testuser",
+			Email:    "test@example.com",
+			Role:     entity.UserRoleUser,
+		})
 		emailSender.EXPECT().Send(context.Background(), gomock.Any()).Return(entity.ErrEmailDeliveryFailed)
 		repo.EXPECT().RevokeUnusedVerificationTokens(context.Background(), gomock.Any()).Return(nil)
 
@@ -243,6 +322,27 @@ func TestSetRoleByEmail(t *testing.T) {
 			Return(expectedUser, nil)
 
 		u, err := uc.SetRoleByEmail(context.Background(), "admin@example.com", entity.UserRoleAdmin)
+
+		require.NoError(t, err)
+		assert.Equal(t, expectedUser, u)
+	})
+
+	t.Run("set editor role normalizes input", func(t *testing.T) {
+		t.Parallel()
+
+		uc, repo, _ := newUserUseCase(t)
+		expectedUser := entity.User{
+			ID:       "user-id-123",
+			Username: "editor",
+			Email:    "editor@example.com",
+			Role:     entity.UserRoleEditor,
+		}
+
+		repo.EXPECT().
+			SetRoleByEmail(context.Background(), "editor@example.com", entity.UserRoleEditor).
+			Return(expectedUser, nil)
+
+		u, err := uc.SetRoleByEmail(context.Background(), " Editor@Example.com ", " EDITOR ")
 
 		require.NoError(t, err)
 		assert.Equal(t, expectedUser, u)
@@ -506,6 +606,11 @@ func TestResendEmailVerification(t *testing.T) {
 				return nil
 			},
 		)
+		expectUserAccount(repo, context.Background(), entity.User{
+			ID:       "user-id-123",
+			Username: "testuser",
+			Email:    "test@example.com",
+		})
 		emailSender.EXPECT().Send(context.Background(), gomock.Any()).Return(nil)
 
 		err := uc.ResendEmailVerification(context.Background(), "test@example.com")
@@ -522,6 +627,11 @@ func TestResendEmailVerification(t *testing.T) {
 		repo.EXPECT().GetLatestUnusedVerificationToken(context.Background(), "user-id-123").
 			Return(entity.EmailVerificationToken{}, entity.ErrVerificationTokenNotFound)
 		repo.EXPECT().ReplaceVerificationToken(context.Background(), gomock.Any()).Return(nil)
+		expectUserAccount(repo, context.Background(), entity.User{
+			ID:       "user-id-123",
+			Username: "testuser",
+			Email:    "test@example.com",
+		})
 		emailSender.EXPECT().Send(context.Background(), gomock.Any()).Return(errors.New("cloudflare down"))
 		repo.EXPECT().RevokeUnusedVerificationTokens(context.Background(), "user-id-123").Return(nil)
 
@@ -575,6 +685,11 @@ func TestForgotPassword(t *testing.T) {
 				return nil
 			},
 		)
+		expectUserAccount(repo, context.Background(), entity.User{
+			ID:       "user-id-123",
+			Username: "testuser",
+			Email:    "test@example.com",
+		})
 		emailSender.EXPECT().Send(context.Background(), gomock.Any()).DoAndReturn(
 			func(_ context.Context, message entity.EmailMessage) error {
 				assert.Equal(t, "test@example.com", message.To)
@@ -598,6 +713,11 @@ func TestForgotPassword(t *testing.T) {
 		repo.EXPECT().GetLatestUnusedPasswordResetToken(context.Background(), "user-id-123").
 			Return(entity.PasswordResetToken{}, entity.ErrPasswordResetTokenNotFound)
 		repo.EXPECT().ReplacePasswordResetToken(context.Background(), gomock.Any()).Return(nil)
+		expectUserAccount(repo, context.Background(), entity.User{
+			ID:       "user-id-123",
+			Username: "testuser",
+			Email:    "test@example.com",
+		})
 		emailSender.EXPECT().Send(context.Background(), gomock.Any()).Return(errors.New("cloudflare down"))
 		repo.EXPECT().RevokeUnusedPasswordResetTokens(context.Background(), "user-id-123").Return(nil)
 
@@ -761,6 +881,218 @@ func TestChangePassword(t *testing.T) {
 	})
 }
 
+func TestUpdateUserProfile(t *testing.T) {
+	t.Parallel()
+
+	now := time.Now().UTC()
+	displayName := "Old Name"
+	existing := entity.UserAccount{
+		User: entity.User{ID: "user-id-123"},
+		Profile: entity.UserProfile{
+			UserID:                 "user-id-123",
+			DisplayName:            &displayName,
+			OnboardingVersion:      entity.UserOnboardingVersion,
+			PersonalizationEnabled: true,
+			CreatedAt:              now,
+			UpdatedAt:              now,
+		},
+		Preferences: entity.DefaultUserPreferences("user-id-123", now),
+	}
+
+	t.Run("updates normal profile fields", func(t *testing.T) {
+		t.Parallel()
+
+		uc, repo, _ := newUserUseCase(t)
+		repo.EXPECT().GetAccount(context.Background(), "user-id-123").Return(existing, nil)
+		repo.EXPECT().UpsertProfile(context.Background(), gomock.Any()).DoAndReturn(
+			func(_ context.Context, profile entity.UserProfile) error {
+				require.NotNil(t, profile.DisplayName)
+				assert.Equal(t, "New Name", *profile.DisplayName)
+				require.NotNil(t, profile.Timezone)
+				assert.Equal(t, "Asia/Jakarta", *profile.Timezone)
+				require.NotNil(t, profile.CountryCode)
+				assert.Equal(t, "ID", *profile.CountryCode)
+				assert.False(t, profile.PersonalizationEnabled)
+
+				return nil
+			},
+		)
+		repo.EXPECT().GetAccount(context.Background(), "user-id-123").Return(existing, nil)
+		newName := " New Name "
+		timezone := " Asia/Jakarta "
+		countryCode := "id"
+		personalization := false
+
+		_, err := uc.UpdateUserProfile(context.Background(), "user-id-123", entity.UserProfilePatch{
+			DisplayName:            &newName,
+			Timezone:               &timezone,
+			CountryCode:            &countryCode,
+			PersonalizationEnabled: &personalization,
+		})
+
+		require.NoError(t, err)
+	})
+
+	t.Run("rejects empty display name", func(t *testing.T) {
+		t.Parallel()
+
+		uc, repo, _ := newUserUseCase(t)
+		repo.EXPECT().GetAccount(context.Background(), "user-id-123").Return(existing, nil)
+		emptyName := "   "
+
+		_, err := uc.UpdateUserProfile(context.Background(), "user-id-123", entity.UserProfilePatch{
+			DisplayName: &emptyName,
+		})
+
+		require.ErrorIs(t, err, entity.ErrInvalidUserPreference)
+	})
+}
+
+func TestEmailChange(t *testing.T) {
+	t.Parallel()
+
+	t.Run("request creates token and sends email to new address", func(t *testing.T) {
+		t.Parallel()
+
+		uc, repo, emailSender := newUserUseCase(t)
+		hash, err := bcrypt.GenerateFromPassword([]byte("password123"), bcrypt.DefaultCost)
+		require.NoError(t, err)
+
+		repo.EXPECT().GetByID(context.Background(), "user-id-123").
+			Return(entity.User{
+				ID:           "user-id-123",
+				Username:     "testuser",
+				Email:        "old@example.com",
+				PasswordHash: string(hash),
+			}, nil)
+		repo.EXPECT().GetByEmail(context.Background(), "new@example.com").Return(entity.User{}, entity.ErrUserNotFound)
+		repo.EXPECT().GetLatestUnusedEmailChangeToken(context.Background(), "user-id-123").
+			Return(entity.EmailChangeToken{}, entity.ErrEmailChangeTokenNotFound)
+		repo.EXPECT().ReplaceEmailChangeToken(context.Background(), gomock.Any()).DoAndReturn(
+			func(_ context.Context, token *entity.EmailChangeToken) error {
+				assert.Equal(t, "user-id-123", token.UserID)
+				assert.Equal(t, "new@example.com", token.NewEmail)
+				assert.Len(t, token.TokenHash, 64)
+
+				return nil
+			},
+		)
+		expectUserAccount(repo, context.Background(), entity.User{
+			ID:       "user-id-123",
+			Username: "testuser",
+			Email:    "old@example.com",
+		})
+		emailSender.EXPECT().Send(context.Background(), gomock.Any()).DoAndReturn(
+			func(_ context.Context, message entity.EmailMessage) error {
+				assert.Equal(t, "new@example.com", message.To)
+				assert.Contains(t, message.Text, "https://frontend.example.com/change-email?token=")
+
+				return nil
+			},
+		)
+
+		err = uc.RequestEmailChange(context.Background(), "user-id-123", "password123", " new@example.com ")
+
+		require.NoError(t, err)
+	})
+
+	t.Run("request rejects duplicate email", func(t *testing.T) {
+		t.Parallel()
+
+		uc, repo, _ := newUserUseCase(t)
+		hash, err := bcrypt.GenerateFromPassword([]byte("password123"), bcrypt.DefaultCost)
+		require.NoError(t, err)
+
+		repo.EXPECT().GetByID(context.Background(), "user-id-123").
+			Return(entity.User{ID: "user-id-123", Email: "old@example.com", PasswordHash: string(hash)}, nil)
+		repo.EXPECT().GetByEmail(context.Background(), "new@example.com").
+			Return(entity.User{ID: "other-user", Email: "new@example.com"}, nil)
+
+		err = uc.RequestEmailChange(context.Background(), "user-id-123", "password123", "new@example.com")
+
+		require.ErrorIs(t, err, entity.ErrUserAlreadyExists)
+	})
+
+	t.Run("verify succeeds once and increments token version in repo path", func(t *testing.T) {
+		t.Parallel()
+
+		uc, repo, _ := newUserUseCase(t)
+		rawToken, tokenHash := testEmailChangeToken()
+		storedToken := entity.EmailChangeToken{
+			ID:        "token-id",
+			UserID:    "user-id-123",
+			NewEmail:  "new@example.com",
+			TokenHash: tokenHash,
+			ExpiresAt: time.Now().Add(time.Hour),
+		}
+		repo.EXPECT().GetEmailChangeTokenByHash(context.Background(), tokenHash).Return(storedToken, nil)
+		repo.EXPECT().ChangeEmailWithToken(context.Background(), "token-id", "user-id-123", "new@example.com").
+			Return(entity.EmailChangeResult{
+				User:     entity.User{ID: "user-id-123", Email: "new@example.com", TokenVersion: 2},
+				OldEmail: "old@example.com",
+				NewEmail: "new@example.com",
+			}, nil)
+
+		err := uc.VerifyEmailChange(context.Background(), "user-id-123", rawToken)
+
+		require.NoError(t, err)
+	})
+
+	t.Run("verify rejects wrong user token", func(t *testing.T) {
+		t.Parallel()
+
+		uc, repo, _ := newUserUseCase(t)
+		rawToken, tokenHash := testEmailChangeToken()
+		repo.EXPECT().GetEmailChangeTokenByHash(context.Background(), tokenHash).
+			Return(entity.EmailChangeToken{
+				ID:        "token-id",
+				UserID:    "another-user",
+				NewEmail:  "new@example.com",
+				TokenHash: tokenHash,
+				ExpiresAt: time.Now().Add(time.Hour),
+			}, nil)
+
+		err := uc.VerifyEmailChange(context.Background(), "user-id-123", rawToken)
+
+		require.ErrorIs(t, err, entity.ErrInvalidEmailChangeToken)
+	})
+}
+
+func TestDeleteAccount(t *testing.T) {
+	t.Parallel()
+
+	t.Run("deletes after current password check", func(t *testing.T) {
+		t.Parallel()
+
+		uc, repo, _ := newUserUseCase(t)
+		hash, err := bcrypt.GenerateFromPassword([]byte("password123"), bcrypt.DefaultCost)
+		require.NoError(t, err)
+
+		repo.EXPECT().GetByID(context.Background(), "user-id-123").
+			Return(entity.User{ID: "user-id-123", Email: "test@example.com", PasswordHash: string(hash)}, nil)
+		repo.EXPECT().DeleteAccount(context.Background(), "user-id-123").Return(nil)
+
+		err = uc.DeleteAccount(context.Background(), "user-id-123", "password123")
+
+		require.NoError(t, err)
+	})
+
+	t.Run("rejects wrong current password", func(t *testing.T) {
+		t.Parallel()
+
+		uc, repo, _ := newUserUseCase(t)
+		hash, err := bcrypt.GenerateFromPassword([]byte("password123"), bcrypt.DefaultCost)
+		require.NoError(t, err)
+
+		repo.EXPECT().GetByID(context.Background(), "user-id-123").
+			Return(entity.User{ID: "user-id-123", PasswordHash: string(hash)}, nil)
+
+		err = uc.DeleteAccount(context.Background(), "user-id-123", "wrongpassword123")
+
+		require.ErrorIs(t, err, entity.ErrInvalidCredentials)
+	})
+}
+
 func TestAuthEmailNotifications(t *testing.T) {
 	t.Parallel()
 
@@ -771,6 +1103,8 @@ func TestAuthEmailNotifications(t *testing.T) {
 		PasswordChangedEnabled: true,
 		EmailVerifiedEnabled:   true,
 		RoleChangedEnabled:     true,
+		EmailChangedEnabled:    true,
+		AccountDeletedEnabled:  true,
 		FailedLoginCooldown:    24 * time.Hour,
 	}
 
@@ -788,11 +1122,21 @@ func TestAuthEmailNotifications(t *testing.T) {
 		repo.EXPECT().GetPasswordResetTokenByHash(context.Background(), tokenHash).Return(storedToken, nil)
 		repo.EXPECT().ResetPasswordWithToken(context.Background(), "token-id", "user-id-123", gomock.Any()).
 			Return(entity.User{ID: "user-id-123", Username: "testuser", Email: "test@example.com", EmailVerified: true}, nil)
+		expectUserAccount(repo, context.Background(), entity.User{
+			ID:            "user-id-123",
+			Username:      "testuser",
+			Email:         "test@example.com",
+			EmailVerified: true,
+		})
 		emailSender.EXPECT().Send(context.Background(), gomock.Any()).DoAndReturn(
 			func(_ context.Context, message entity.EmailMessage) error {
 				assert.Equal(t, "test@example.com", message.To)
 				assert.Contains(t, message.Subject, "Password")
 				assert.Contains(t, message.Text, "Password akun Surau")
+				assert.NotContains(t, message.Text, "Your Surau password")
+				assert.Contains(t, message.Text, "https://www.instagram.com/surauapp")
+				assert.Contains(t, message.HTML, "https://cdn.surau.org/icons/duotone/instagram-duotone-rounded.svg")
+				assert.Contains(t, message.HTML, "https://cdn.surau.org/icons/duotone/youtube.svg")
 				assert.NotContains(t, message.HTML, "href=\"\"")
 
 				return nil
@@ -815,7 +1159,76 @@ func TestAuthEmailNotifications(t *testing.T) {
 			Return(entity.User{ID: "user-id-123", Email: "test@example.com", PasswordHash: string(oldHash)}, nil)
 		repo.EXPECT().ChangePassword(context.Background(), "user-id-123", gomock.Any()).
 			Return(entity.User{ID: "user-id-123", Username: "testuser", Email: "test@example.com"}, nil)
+		expectUserAccount(repo, context.Background(), entity.User{
+			ID:       "user-id-123",
+			Username: "testuser",
+			Email:    "test@example.com",
+		})
 		emailSender.EXPECT().Send(context.Background(), gomock.Any()).Return(errors.New("email down"))
+
+		err = uc.ChangePassword(context.Background(), "user-id-123", "oldpassword123", "newpassword123")
+
+		require.NoError(t, err)
+	})
+
+	t.Run("password changed email follows english ui preference", func(t *testing.T) {
+		t.Parallel()
+
+		uc, repo, emailSender := newUserUseCaseWithNotifications(t, notifications, nil)
+		oldHash, err := bcrypt.GenerateFromPassword([]byte("oldpassword123"), bcrypt.DefaultCost)
+		require.NoError(t, err)
+
+		repo.EXPECT().GetByID(context.Background(), "user-id-123").
+			Return(entity.User{ID: "user-id-123", Email: "test@example.com", PasswordHash: string(oldHash)}, nil)
+		repo.EXPECT().ChangePassword(context.Background(), "user-id-123", gomock.Any()).
+			Return(entity.User{ID: "user-id-123", Username: "testuser", Email: "test@example.com"}, nil)
+		expectUserAccount(repo, context.Background(), entity.User{
+			ID:       "user-id-123",
+			Username: "testuser",
+			Email:    "test@example.com",
+		}, withPreferredUILang("en"))
+		emailSender.EXPECT().Send(context.Background(), gomock.Any()).DoAndReturn(
+			func(_ context.Context, message entity.EmailMessage) error {
+				assert.Equal(t, "Your Surau password was changed", message.Subject)
+				assert.Contains(t, message.Text, "Your Surau account password was just changed.")
+				assert.NotContains(t, message.Text, "Password akun Surau")
+				assert.Contains(t, message.Text, "https://www.facebook.com/surauapp")
+
+				return nil
+			},
+		)
+
+		err = uc.ChangePassword(context.Background(), "user-id-123", "oldpassword123", "newpassword123")
+
+		require.NoError(t, err)
+	})
+
+	t.Run("password changed email supports arabic direction", func(t *testing.T) {
+		t.Parallel()
+
+		uc, repo, emailSender := newUserUseCaseWithNotifications(t, notifications, nil)
+		oldHash, err := bcrypt.GenerateFromPassword([]byte("oldpassword123"), bcrypt.DefaultCost)
+		require.NoError(t, err)
+
+		repo.EXPECT().GetByID(context.Background(), "user-id-123").
+			Return(entity.User{ID: "user-id-123", Email: "test@example.com", PasswordHash: string(oldHash)}, nil)
+		repo.EXPECT().ChangePassword(context.Background(), "user-id-123", gomock.Any()).
+			Return(entity.User{ID: "user-id-123", Username: "testuser", Email: "test@example.com"}, nil)
+		expectUserAccount(repo, context.Background(), entity.User{
+			ID:       "user-id-123",
+			Username: "testuser",
+			Email:    "test@example.com",
+		}, withPreferredUILang("ar"))
+		emailSender.EXPECT().Send(context.Background(), gomock.Any()).DoAndReturn(
+			func(_ context.Context, message entity.EmailMessage) error {
+				assert.Contains(t, message.Subject, "كلمة مرور")
+				assert.Contains(t, message.Text, "تم تغيير كلمة مرور حسابك في Surau")
+				assert.Contains(t, message.HTML, `<html lang="ar" dir="rtl">`)
+				assert.Contains(t, message.HTML, "direction:rtl")
+
+				return nil
+			},
+		)
 
 		err = uc.ChangePassword(context.Background(), "user-id-123", "oldpassword123", "newpassword123")
 
@@ -836,6 +1249,12 @@ func TestAuthEmailNotifications(t *testing.T) {
 		repo.EXPECT().GetVerificationTokenByHash(context.Background(), tokenHash).Return(storedToken, nil)
 		repo.EXPECT().VerifyEmailWithToken(context.Background(), "token-id", "user-id-123").
 			Return(entity.User{ID: "user-id-123", Username: "testuser", Email: "test@example.com", EmailVerified: true}, nil)
+		expectUserAccount(repo, context.Background(), entity.User{
+			ID:            "user-id-123",
+			Username:      "testuser",
+			Email:         "test@example.com",
+			EmailVerified: true,
+		})
 		emailSender.EXPECT().Send(context.Background(), gomock.Any()).DoAndReturn(
 			func(_ context.Context, message entity.EmailMessage) error {
 				assert.Equal(t, "test@example.com", message.To)
@@ -857,6 +1276,12 @@ func TestAuthEmailNotifications(t *testing.T) {
 		uc, repo, emailSender := newUserUseCaseWithNotifications(t, notifications, nil)
 		repo.EXPECT().SetRoleByEmail(context.Background(), "admin@example.com", entity.UserRoleAdmin).
 			Return(entity.User{ID: "user-id-123", Username: "admin", Email: "admin@example.com", Role: entity.UserRoleAdmin}, nil)
+		expectUserAccount(repo, context.Background(), entity.User{
+			ID:       "user-id-123",
+			Username: "admin",
+			Email:    "admin@example.com",
+			Role:     entity.UserRoleAdmin,
+		})
 		emailSender.EXPECT().Send(context.Background(), gomock.Any()).DoAndReturn(
 			func(_ context.Context, message entity.EmailMessage) error {
 				assert.Equal(t, "admin@example.com", message.To)
@@ -867,6 +1292,78 @@ func TestAuthEmailNotifications(t *testing.T) {
 		)
 
 		_, err := uc.SetRoleByEmail(context.Background(), "admin@example.com", entity.UserRoleAdmin)
+
+		require.NoError(t, err)
+	})
+
+	t.Run("email change sends notifications to old and new email", func(t *testing.T) {
+		t.Parallel()
+
+		uc, repo, emailSender := newUserUseCaseWithNotifications(t, notifications, nil)
+		rawToken, tokenHash := testEmailChangeToken()
+		repo.EXPECT().GetEmailChangeTokenByHash(context.Background(), tokenHash).
+			Return(entity.EmailChangeToken{
+				ID:        "token-id",
+				UserID:    "user-id-123",
+				NewEmail:  "new@example.com",
+				TokenHash: tokenHash,
+				ExpiresAt: time.Now().Add(time.Hour),
+			}, nil)
+		repo.EXPECT().ChangeEmailWithToken(context.Background(), "token-id", "user-id-123", "new@example.com").
+			Return(entity.EmailChangeResult{
+				User:     entity.User{ID: "user-id-123", Username: "testuser", Email: "new@example.com"},
+				OldEmail: "old@example.com",
+				NewEmail: "new@example.com",
+			}, nil)
+		expectUserAccount(repo, context.Background(), entity.User{
+			ID:       "user-id-123",
+			Username: "testuser",
+			Email:    "new@example.com",
+		})
+		emailSender.EXPECT().Send(context.Background(), gomock.Any()).Times(2).DoAndReturn(
+			func(_ context.Context, message entity.EmailMessage) error {
+				assert.Contains(t, []string{"old@example.com", "new@example.com"}, message.To)
+				assert.Contains(t, message.Text, "Email akun Surau")
+
+				return errors.New("email down")
+			},
+		)
+
+		err := uc.VerifyEmailChange(context.Background(), "user-id-123", rawToken)
+
+		require.NoError(t, err)
+	})
+
+	t.Run("delete account sends best effort notification", func(t *testing.T) {
+		t.Parallel()
+
+		uc, repo, emailSender := newUserUseCaseWithNotifications(t, notifications, nil)
+		hash, err := bcrypt.GenerateFromPassword([]byte("password123"), bcrypt.DefaultCost)
+		require.NoError(t, err)
+
+		repo.EXPECT().GetByID(context.Background(), "user-id-123").
+			Return(entity.User{
+				ID:           "user-id-123",
+				Username:     "testuser",
+				Email:        "test@example.com",
+				PasswordHash: string(hash),
+			}, nil)
+		expectUserAccount(repo, context.Background(), entity.User{
+			ID:       "user-id-123",
+			Username: "testuser",
+			Email:    "test@example.com",
+		})
+		repo.EXPECT().DeleteAccount(context.Background(), "user-id-123").Return(nil)
+		emailSender.EXPECT().Send(context.Background(), gomock.Any()).DoAndReturn(
+			func(_ context.Context, message entity.EmailMessage) error {
+				assert.Equal(t, "test@example.com", message.To)
+				assert.Contains(t, message.Text, "Akun Surau Anda sudah dihapus")
+
+				return errors.New("email down")
+			},
+		)
+
+		err = uc.DeleteAccount(context.Background(), "user-id-123", "password123")
 
 		require.NoError(t, err)
 	})
@@ -900,11 +1397,19 @@ func TestAuthEmailNotifications(t *testing.T) {
 
 				return true, nil
 			})
+		expectUserAccount(repo, ctx, entity.User{
+			ID:            "user-id-123",
+			Username:      "testuser",
+			Email:         "test@example.com",
+			EmailVerified: true,
+		}, withDisplayName("Ahmad"), withTimezone("Asia/Jakarta"))
 		emailSender.EXPECT().Send(ctx, gomock.Any()).DoAndReturn(
 			func(_ context.Context, message entity.EmailMessage) error {
 				assert.Equal(t, "test@example.com", message.To)
 				assert.Contains(t, message.Text, "Ada login baru")
+				assert.Contains(t, message.Text, "Assalamu'alaikum, Ahmad")
 				assert.Contains(t, message.Text, "203.0.113.10")
+				assert.Contains(t, message.Text, "Asia/Jakarta")
 
 				return nil
 			},
@@ -963,6 +1468,11 @@ func TestAuthEmailNotifications(t *testing.T) {
 
 				return true, nil
 			})
+		expectUserAccount(repo, ctx, entity.User{
+			ID:       "user-id-123",
+			Username: "testuser",
+			Email:    "test@example.com",
+		})
 		emailSender.EXPECT().Send(ctx, gomock.Any()).DoAndReturn(
 			func(_ context.Context, message entity.EmailMessage) error {
 				assert.Equal(t, "test@example.com", message.To)
@@ -1124,6 +1634,144 @@ func TestGetUser_GenericError(t *testing.T) {
 	require.ErrorIs(t, err, errInternalServErr)
 }
 
+func TestGetUserAccount(t *testing.T) {
+	t.Parallel()
+
+	now := time.Now().UTC()
+	expected := entity.UserAccount{
+		User: entity.User{
+			ID:       "user-id-123",
+			Username: "testuser",
+			Email:    "test@example.com",
+		},
+		Profile:            entity.DefaultUserProfile("user-id-123", now),
+		Preferences:        entity.DefaultUserPreferences("user-id-123", now),
+		OnboardingRequired: true,
+	}
+
+	uc, repo, _ := newUserUseCase(t)
+	repo.EXPECT().GetAccount(context.Background(), "user-id-123").Return(expected, nil)
+
+	got, err := uc.GetUserAccount(context.Background(), "user-id-123")
+
+	require.NoError(t, err)
+	assert.Equal(t, expected, got)
+	assert.Equal(t, "id", got.Preferences.PreferredContentLang)
+	assert.True(t, got.OnboardingRequired)
+}
+
+func TestCompleteOnboarding(t *testing.T) {
+	t.Parallel()
+
+	now := time.Now().UTC()
+	existing := entity.UserAccount{
+		User: entity.User{
+			ID:       "user-id-123",
+			Username: "testuser",
+			Email:    "test@example.com",
+		},
+		Profile:            entity.DefaultUserProfile("user-id-123", now),
+		Preferences:        entity.DefaultUserPreferences("user-id-123", now),
+		OnboardingRequired: true,
+	}
+
+	t.Run("stores normalized preferences", func(t *testing.T) {
+		t.Parallel()
+
+		uc, repo, _ := newUserUseCase(t)
+		repo.EXPECT().GetAccount(context.Background(), "user-id-123").Return(existing, nil)
+		repo.EXPECT().UpsertProfile(context.Background(), gomock.Any()).DoAndReturn(
+			func(_ context.Context, profile entity.UserProfile) error {
+				require.NotNil(t, profile.OnboardingCompletedAt)
+				assert.Equal(t, entity.UserOnboardingVersion, profile.OnboardingVersion)
+				assert.Equal(t, "ID", *profile.CountryCode)
+
+				return nil
+			},
+		)
+		repo.EXPECT().UpsertPreferences(context.Background(), gomock.Any()).DoAndReturn(
+			func(_ context.Context, preferences entity.UserPreferences) error {
+				assert.Equal(t, "en", preferences.PreferredUILang)
+				assert.Equal(t, "id", preferences.PreferredContentLang)
+				assert.Equal(t, []string{"id", "en"}, preferences.FallbackLangs)
+				assert.Equal(t, entity.UserArabicLevelBasic, preferences.ArabicLevel)
+				assert.Equal(t, entity.UserReaderModeArabicTranslation, preferences.ReaderMode)
+				assert.Equal(t, []string{"tafsir", "hadith", "arabic_language"}, preferences.Interests)
+
+				return nil
+			},
+		)
+		repo.EXPECT().GetAccount(context.Background(), "user-id-123").Return(existing, nil)
+		countryCode := "id"
+		dailyGoal := 15
+
+		_, err := uc.CompleteOnboarding(context.Background(), "user-id-123", entity.UserOnboarding{
+			CountryCode:          &countryCode,
+			PreferredUILang:      "en-US",
+			PreferredContentLang: "id",
+			FallbackLangs:        []string{"id", "en", "id"},
+			ArabicLevel:          "basic",
+			ReaderMode:           "arabic_translation",
+			Interests:            []string{"tafsir", "hadis", "bahasa_arab"},
+			DailyGoalMinutes:     &dailyGoal,
+		})
+
+		require.NoError(t, err)
+	})
+
+	t.Run("rejects unsupported language", func(t *testing.T) {
+		t.Parallel()
+
+		uc, repo, _ := newUserUseCase(t)
+		repo.EXPECT().GetAccount(context.Background(), "user-id-123").Return(existing, nil)
+
+		_, err := uc.CompleteOnboarding(context.Background(), "user-id-123", entity.UserOnboarding{
+			PreferredContentLang: "fr",
+		})
+
+		require.ErrorIs(t, err, entity.ErrUnsupportedLanguage)
+	})
+}
+
+func TestUpdateUserPreferences(t *testing.T) {
+	t.Parallel()
+
+	now := time.Now().UTC()
+	existing := entity.UserAccount{
+		User: entity.User{ID: "user-id-123"},
+		Profile: entity.UserProfile{
+			UserID:                 "user-id-123",
+			OnboardingVersion:      entity.UserOnboardingVersion,
+			OnboardingCompletedAt:  &now,
+			PersonalizationEnabled: true,
+			CreatedAt:              now,
+			UpdatedAt:              now,
+		},
+		Preferences: entity.DefaultUserPreferences("user-id-123", now),
+	}
+
+	uc, repo, _ := newUserUseCase(t)
+	repo.EXPECT().GetAccount(context.Background(), "user-id-123").Return(existing, nil)
+	repo.EXPECT().UpsertPreferences(context.Background(), gomock.Any()).DoAndReturn(
+		func(_ context.Context, preferences entity.UserPreferences) error {
+			assert.Equal(t, "ar", preferences.PreferredContentLang)
+			assert.Equal(t, entity.UserReaderModeArabicOnly, preferences.ReaderMode)
+
+			return nil
+		},
+	)
+	repo.EXPECT().GetAccount(context.Background(), "user-id-123").Return(existing, nil)
+	lang := "ar"
+	readerMode := entity.UserReaderModeArabicOnly
+
+	_, err := uc.UpdateUserPreferences(context.Background(), "user-id-123", entity.UserPreferencesPatch{
+		PreferredContentLang: &lang,
+		ReaderMode:           &readerMode,
+	})
+
+	require.NoError(t, err)
+}
+
 func testVerificationToken() (string, string) {
 	rawTokenBytes := []byte("0123456789abcdef0123456789abcdef")
 	rawToken := base64.RawURLEncoding.EncodeToString(rawTokenBytes)
@@ -1133,5 +1781,9 @@ func testVerificationToken() (string, string) {
 }
 
 func testPasswordResetToken() (string, string) {
+	return testVerificationToken()
+}
+
+func testEmailChangeToken() (string, string) {
 	return testVerificationToken()
 }

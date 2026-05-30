@@ -7,10 +7,12 @@ Dokumen ini adalah kontrak integrasi auth untuk frontend Surau. Fokus utama fron
 - Auth memakai JWT Bearer token.
 - Login sukses selalu mengembalikan shape yang sama: `{ "token": "..." }`.
 - Tidak ada refresh token, cookie auth, session DB, MFA, atau logout server-side.
-- Email verification dan reset password dikirim memakai Cloudflare Email Service dari backend.
+- Email verification, reset password, dan change email dikirim memakai Cloudflare Email Service dari backend.
 - User baru belum bisa login sampai email verified.
-- Reset password dan change password akan membuat semua JWT lama invalid.
-- Backend juga mengirim email keamanan best-effort untuk password changed, email verified, role changed, new login/device, dan suspicious failed login.
+- Reset password, change password, change email, dan delete account akan membuat semua JWT lama invalid.
+- Profile response berisi user auth + `profile`, `preferences`, dan `onboarding_required`.
+- Onboarding dan preferensi reader didokumentasikan lengkap di `docs/user-onboarding-api.md`.
+- Backend juga mengirim email keamanan best-effort untuk password changed, email verified, email changed, account deleted, role changed, new login/device, dan suspicious failed login.
 - Error REST memakai shape umum: `{ "error": "message" }`.
 
 ## Base URL
@@ -50,7 +52,7 @@ Backend menerima scheme `Bearer` secara case-insensitive, tetapi frontend tetap 
 
 ### User
 
-Response register dan profile memakai object user:
+Response register memakai object user:
 
 ```json
 {
@@ -69,6 +71,42 @@ Catatan:
 - `password_hash` tidak pernah dikirim ke frontend.
 - `token_version` tidak dikirim ke frontend.
 - Jangan jadikan decoded JWT sebagai source of truth untuk UI user. Ambil profile dari `/v1/user/profile`.
+- `GET /v1/user/profile` mengembalikan `UserAccount`, yaitu field user di atas ditambah `profile`, `preferences`, dan `onboarding_required`.
+
+### UserAccount
+
+```json
+{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "username": "ahmad",
+  "email": "ahmad@example.com",
+  "role": "user",
+  "email_verified": true,
+  "created_at": "2026-05-29T08:00:00Z",
+  "updated_at": "2026-05-29T08:00:00Z",
+  "profile": {
+    "user_id": "550e8400-e29b-41d4-a716-446655440000",
+    "onboarding_version": 1,
+    "personalization_enabled": true,
+    "created_at": "2026-05-29T08:00:00Z",
+    "updated_at": "2026-05-29T08:00:00Z"
+  },
+  "preferences": {
+    "user_id": "550e8400-e29b-41d4-a716-446655440000",
+    "preferred_ui_lang": "id",
+    "preferred_content_lang": "id",
+    "fallback_langs": ["id"],
+    "arabic_level": "none",
+    "reader_mode": "arabic_translation",
+    "interests": [],
+    "created_at": "2026-05-29T08:00:00Z",
+    "updated_at": "2026-05-29T08:00:00Z"
+  },
+  "onboarding_required": true
+}
+```
+
+Frontend memakai `preferences.preferred_content_lang` sebagai default bahasa Quran/kitab setelah login.
 
 ### Token
 
@@ -96,8 +134,10 @@ Backend tetap melakukan validasi final. Frontend sebaiknya melakukan validasi aw
 
 | Field | Rule | Catatan |
 | --- | --- | --- |
-| `username` | trim, 3 sampai 255 karakter | Untuk register. |
+| `display_name` / `name` | trim, 3 sampai 255 karakter | Untuk register dan profile. FE baru sebaiknya kirim `name`; backend tetap menerima `username` legacy. |
+| `username` | trim, 3 sampai 255 karakter | Legacy register field; bukan public handle unik lagi. |
 | `email` | trim, format email valid | Kirim email yang sudah di-trim. |
+| `new_email` | trim, format email valid | Untuk secure change email. |
 | `password` | 8 sampai 72 bytes | Jangan trim password. Spasi adalah bagian password. |
 | `current_password` | 8 sampai 72 bytes | Untuk change password. Jangan trim. |
 | `new_password` | 8 sampai 72 bytes | Untuk change/reset password. Jangan trim. |
@@ -129,7 +169,13 @@ Jangan lakukan `.trim()` pada password sebelum dikirim.
 | `POST` | `/v1/auth/forgot-password` | Public | `202 { "accepted": true }` |
 | `POST` | `/v1/auth/reset-password` | Public | `200 { "password_reset": true }` |
 | `POST` | `/v1/auth/change-password` | Bearer | `200 { "password_changed": true }` |
-| `GET` | `/v1/user/profile` | Bearer | `200 User` |
+| `POST` | `/v1/auth/change-email/request` | Bearer | `202 { "accepted": true }` |
+| `POST` | `/v1/auth/change-email/verify` | Bearer | `200 { "email_changed": true }` |
+| `POST` | `/v1/auth/delete-account` | Bearer | `200 { "account_deleted": true }` |
+| `GET` | `/v1/user/profile` | Bearer | `200 UserAccount` |
+| `PATCH` | `/v1/user/profile` | Bearer | `200 UserAccount` |
+| `PATCH` | `/v1/user/onboarding` | Bearer | `200 UserAccount` |
+| `PATCH` | `/v1/user/preferences` | Bearer | `200 UserAccount` |
 
 ## Flow Register dan Verify Email
 
@@ -154,11 +200,13 @@ Content-Type: application/json
 
 ```json
 {
-  "username": "ahmad",
+  "name": "Ahmad",
   "email": "ahmad@example.com",
   "password": "correct horse battery"
 }
 ```
+
+`display_name` juga diterima. `username` masih diterima untuk client lama, tetapi FE baru sebaiknya tidak memakai `username`.
 
 Success `201`:
 
@@ -308,7 +356,9 @@ Saat aplikasi dibuka:
 2. Jika tidak ada token, user dianggap guest.
 3. Jika ada token, panggil `GET /v1/user/profile`.
 4. Jika `200`, simpan user di state.
-5. Jika `401`, hapus token dan arahkan ke login.
+5. Jika `onboarding_required=true`, tampilkan onboarding.
+6. Gunakan `preferences.preferred_content_lang` sebagai default `?lang=` Quran/kitab.
+7. Jika `401`, hapus token dan arahkan ke login.
 
 Request:
 
@@ -321,13 +371,32 @@ Success `200`:
 
 ```json
 {
-  "id": 1,
+  "id": "550e8400-e29b-41d4-a716-446655440000",
   "username": "ahmad",
   "email": "ahmad@example.com",
   "role": "user",
   "email_verified": true,
-  "created_at": "2026-05-27T10:00:00Z",
-  "updated_at": "2026-05-27T10:00:00Z"
+  "created_at": "2026-05-29T08:00:00Z",
+  "updated_at": "2026-05-29T08:00:00Z",
+  "profile": {
+    "user_id": "550e8400-e29b-41d4-a716-446655440000",
+    "onboarding_version": 1,
+    "personalization_enabled": true,
+    "created_at": "2026-05-29T08:00:00Z",
+    "updated_at": "2026-05-29T08:00:00Z"
+  },
+  "preferences": {
+    "user_id": "550e8400-e29b-41d4-a716-446655440000",
+    "preferred_ui_lang": "id",
+    "preferred_content_lang": "id",
+    "fallback_langs": ["id"],
+    "arabic_level": "none",
+    "reader_mode": "arabic_translation",
+    "interests": [],
+    "created_at": "2026-05-29T08:00:00Z",
+    "updated_at": "2026-05-29T08:00:00Z"
+  },
+  "onboarding_required": true
 }
 ```
 
@@ -341,6 +410,88 @@ Error penting:
 | `401` | `unauthorized` | Clear token, redirect login. |
 | `404` | `user not found` | Clear token, redirect login. |
 | `500` | `internal server error` | Tampilkan pesan umum. |
+
+## Flow Onboarding dan Preferences
+
+Onboarding adalah langkah setelah login pertama, bukan bagian dari register.
+Frontend boleh melewati onboarding screen hanya jika `onboarding_required=false`.
+
+Request:
+
+```http
+PATCH /v1/user/onboarding
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+```json
+{
+  "preferred_content_lang": "id",
+  "preferred_ui_lang": "id",
+  "arabic_level": "basic",
+  "reader_mode": "arabic_translation",
+  "interests": ["quran_daily", "tafsir", "hadith"],
+  "daily_goal_minutes": 15
+}
+```
+
+Success `200` mengembalikan `UserAccount` dengan `onboarding_required=false`.
+
+Settings screen memakai:
+
+```http
+PATCH /v1/user/preferences
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+```json
+{
+  "preferred_content_lang": "en",
+  "reader_mode": "translation_only"
+}
+```
+
+Error penting:
+
+| Status | Error | FE behavior |
+| --- | --- | --- |
+| `400` | `unsupported language` | Reset pilihan bahasa ke nilai valid sebelumnya atau `id`. |
+| `400` | `invalid user preference` | Tampilkan error pada field preference. |
+| `401` | `invalid or expired token` | Clear token, redirect login. |
+
+Detail field, enum, dan QA checklist ada di `docs/user-onboarding-api.md`.
+
+## Flow Update Profile
+
+Endpoint ini untuk perubahan data non-auth-sensitive seperti nama tampilan, timezone, negara, dan pilihan personalization.
+
+```http
+PATCH /v1/user/profile
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+```json
+{
+  "display_name": "Ahmad",
+  "timezone": "Asia/Jakarta",
+  "country_code": "ID",
+  "personalization_enabled": true
+}
+```
+
+Field yang tidak dikirim tidak diubah. Kirim `""` untuk clear `timezone` atau `country_code`. Jangan kirim `display_name=""`; backend akan mengembalikan `400`.
+
+Success `200` mengembalikan `UserAccount`.
+
+Error penting:
+
+| Status | Error | FE behavior |
+| --- | --- | --- |
+| `400` | `invalid user preference` | Tampilkan error pada field profile. |
+| `401` | `invalid or expired token` | Clear token, redirect login. |
+| `404` | `user not found` | Clear token, redirect login. |
 
 ## Flow Forgot dan Reset Password
 
@@ -471,6 +622,106 @@ Error penting:
 | `429` | `too many auth attempts` | Tampilkan cooldown. |
 | `500` | `internal server error` | Tampilkan pesan umum. |
 
+## Flow Change Email
+
+Change email adalah flow protected dua langkah. User harus login dan memasukkan current password. Link verifikasi dikirim ke email baru, lalu FE memanggil endpoint verify dengan Bearer token user yang sama. Jika user membuka link tanpa session valid, arahkan ke login lalu lanjutkan verify setelah login.
+
+### Request Change Email
+
+```http
+POST /v1/auth/change-email/request
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+```json
+{
+  "current_password": "current password",
+  "new_email": "new@example.com"
+}
+```
+
+Success `202`:
+
+```json
+{
+  "accepted": true
+}
+```
+
+Link email membuka halaman FE: `${EMAIL_CHANGE_FRONTEND_URL}?token=<token>`.
+
+### Verify Change Email
+
+```http
+POST /v1/auth/change-email/verify
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+```json
+{
+  "token": "token-dari-query-param"
+}
+```
+
+Success `200`:
+
+```json
+{
+  "email_changed": true
+}
+```
+
+Setelah verify sukses, backend increment `token_version`. FE harus clear token lokal dan arahkan user ke login ulang.
+
+Error penting:
+
+| Status | Error | FE behavior |
+| --- | --- | --- |
+| `400` | `invalid request body` | Password/email/token invalid, expired, used, atau bukan milik user login. |
+| `401` | `invalid credentials` | Current password salah. |
+| `401` | `invalid or expired token` | Clear token, redirect login. |
+| `409` | `user already exists` | Email baru sudah dipakai akun lain. |
+| `429` | `too many auth attempts` | Tampilkan cooldown. |
+| `503` | `email delivery failed` | Tampilkan gagal kirim email. |
+
+## Flow Delete Account
+
+Delete account adalah soft delete yang tidak bisa dipulihkan lewat public API. Backend menganonimkan akun, menghapus data personal user, dan membuat semua JWT lama invalid.
+
+```http
+POST /v1/auth/delete-account
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+```json
+{
+  "current_password": "current password"
+}
+```
+
+Success `200`:
+
+```json
+{
+  "account_deleted": true
+}
+```
+
+FE harus clear token lokal, hapus state user, lalu arahkan ke goodbye/login screen.
+
+Error penting:
+
+| Status | Error | FE behavior |
+| --- | --- | --- |
+| `400` | `invalid request body` | Current password invalid format. |
+| `401` | `invalid credentials` | Current password salah. |
+| `401` | `invalid or expired token` | Clear token, redirect login. |
+| `429` | `too many auth attempts` | Tampilkan cooldown. |
+| `500` | `internal server error` | Tampilkan pesan umum. |
+
 ## Token Revocation Behavior
 
 JWT membawa claim `token_version`. Backend membandingkan versi token dengan `users.token_version` di database pada setiap protected request.
@@ -480,7 +731,7 @@ Token menjadi invalid ketika:
 - Expired.
 - Signature/issuer/audience invalid.
 - User tidak ditemukan.
-- User `token_version` sudah berubah setelah reset password atau change password.
+- User `token_version` sudah berubah setelah reset password, change password, change email, atau delete account.
 
 Frontend behavior:
 
@@ -503,6 +754,9 @@ Default yang perlu diketahui FE:
 | Resend verification | `3/email/1h`, `20/ip/1h` |
 | Reset password | `5/token/15m`, `30/ip/15m` |
 | Change password | `5/user/5m`, `30/ip/5m` |
+| Change email request | `3/user/1h`, `10/ip/1h` |
+| Change email verify | `5/token/15m`, `10/ip/1h` |
+| Delete account | `3/user/1h`, `10/ip/1h` |
 
 Jika kena limit, REST mengembalikan `429`.
 
@@ -520,19 +774,25 @@ Backend belum mengirim header `Retry-After`, jadi FE sebaiknya memakai copy umum
 | `/verify-email?token=...` | Consume token verification dari email. |
 | `/forgot-password` | Request reset password email. |
 | `/reset-password?token=...` | Consume token reset dari email. |
-| `/settings/security` | Change password untuk user login. |
+| `/change-email?token=...` | Consume token change email dari email baru. |
+| `/onboarding` | First-run profile/preference setup setelah login. |
+| `/settings/profile` | Update display name/timezone/country. |
+| `/settings/security` | Change password, change email, dan delete account untuk user login. |
 
 Backend environment harus menunjuk ke route FE yang benar:
 
 ```env
 EMAIL_VERIFY_FRONTEND_URL=https://app.example.com/verify-email
 PASSWORD_RESET_FRONTEND_URL=https://app.example.com/reset-password
+EMAIL_CHANGE_FRONTEND_URL=https://app.example.com/change-email
 AUTH_EMAIL_NOTIFICATIONS_ENABLED=true
 AUTH_NEW_LOGIN_EMAIL_ENABLED=true
 AUTH_FAILED_LOGIN_EMAIL_ENABLED=true
 AUTH_PASSWORD_CHANGED_EMAIL_ENABLED=true
 AUTH_EMAIL_VERIFIED_EMAIL_ENABLED=true
 AUTH_ROLE_CHANGED_EMAIL_ENABLED=true
+AUTH_EMAIL_CHANGED_EMAIL_ENABLED=true
+AUTH_ACCOUNT_DELETED_EMAIL_ENABLED=true
 ```
 
 Email keamanan tidak mengubah response API. Jika email notifikasi gagal dikirim, flow utama tetap sukses selama operasi utama sukses.
@@ -547,7 +807,7 @@ type AuthStatus = "loading" | "guest" | "authenticated";
 type AuthState = {
   status: AuthStatus;
   token: string | null;
-  user: User | null;
+  user: UserAccount | null;
 };
 ```
 
@@ -570,13 +830,50 @@ const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8080";
 
 export type User = {
-  id: number;
+  id: string;
   username: string;
   email: string;
   role: string;
   email_verified: boolean;
   created_at: string;
   updated_at: string;
+};
+
+export type ContentLang = "ar" | "id" | "en";
+export type ArabicLevel = "none" | "basic" | "intermediate" | "advanced" | "native";
+export type ReaderMode = "arabic_translation" | "translation_only" | "arabic_only";
+
+export type UserProfile = {
+  user_id: string;
+  display_name?: string | null;
+  timezone?: string | null;
+  country_code?: string | null;
+  onboarding_version: number;
+  onboarding_completed_at?: string | null;
+  personalization_enabled: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type UserPreferences = {
+  user_id: string;
+  preferred_ui_lang: ContentLang;
+  preferred_content_lang: ContentLang;
+  fallback_langs: ContentLang[];
+  arabic_level: ArabicLevel;
+  reader_mode: ReaderMode;
+  interests: string[];
+  daily_goal_minutes?: number | null;
+  quran_translation_source_id?: string | null;
+  quran_recitation_id?: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type UserAccount = User & {
+  profile: UserProfile;
+  preferences: UserPreferences;
+  onboarding_required: boolean;
 };
 
 export type LoginResponse = {
@@ -672,7 +969,7 @@ export async function register(input: {
 export async function login(input: {
   email: string;
   password: string;
-}): Promise<User> {
+}): Promise<UserAccount> {
   const result = await apiFetch<LoginResponse>("/v1/auth/login", {
     method: "POST",
     body: {
@@ -685,9 +982,39 @@ export async function login(input: {
   return getProfile();
 }
 
-export async function getProfile(): Promise<User> {
-  return apiFetch<User>("/v1/user/profile", {
+export async function getProfile(): Promise<UserAccount> {
+  return apiFetch<UserAccount>("/v1/user/profile", {
     auth: true,
+  });
+}
+
+export async function completeOnboarding(input: {
+  display_name?: string;
+  timezone?: string;
+  country_code?: string;
+  personalization_enabled?: boolean;
+  preferred_ui_lang?: ContentLang;
+  preferred_content_lang?: ContentLang;
+  fallback_langs?: ContentLang[];
+  arabic_level?: ArabicLevel;
+  reader_mode?: ReaderMode;
+  interests?: string[];
+  daily_goal_minutes?: number;
+  quran_translation_source_id?: string;
+  quran_recitation_id?: string;
+}): Promise<UserAccount> {
+  return apiFetch<UserAccount>("/v1/user/onboarding", {
+    method: "PATCH",
+    auth: true,
+    body: input,
+  });
+}
+
+export async function updatePreferences(input: Partial<UserPreferences>): Promise<UserAccount> {
+  return apiFetch<UserAccount>("/v1/user/preferences", {
+    method: "PATCH",
+    auth: true,
+    body: input,
   });
 }
 

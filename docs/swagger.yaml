@@ -997,6 +997,61 @@ definitions:
       translation:
         $ref: '#/definitions/entity.AvailabilityDecision'
     type: object
+  entity.QuranNavigationBoundary:
+    properties:
+      ayah_key:
+        example: "1:1"
+        type: string
+      ayah_number:
+        example: 1
+        type: integer
+      surah_id:
+        example: 1
+        type: integer
+      surah_name:
+        example: Al-Fatihah
+        type: string
+    type: object
+  entity.QuranNavigationSegment:
+    properties:
+      ayah_count:
+        example: 148
+        type: integer
+      end:
+        $ref: '#/definitions/entity.QuranNavigationBoundary'
+      kind:
+        example: juz
+        type: string
+      number:
+        example: 1
+        type: integer
+      start:
+        $ref: '#/definitions/entity.QuranNavigationBoundary'
+    type: object
+  entity.QuranReadingProgress:
+    properties:
+      ayah_key:
+        example: "73:4"
+        type: string
+      ayah_number:
+        example: 4
+        type: integer
+      observed_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      position_percent:
+        example: 25
+        type: number
+      surah_id:
+        example: 73
+        type: integer
+      updated_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      user_id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+    type: object
   entity.QuranRecitation:
     properties:
       checksum:
@@ -1004,6 +1059,9 @@ definitions:
       format:
         example: json
         type: string
+      has_playable_audio:
+        example: true
+        type: boolean
       has_public_audio:
         example: false
         type: boolean
@@ -1027,6 +1085,9 @@ definitions:
       name:
         example: QUL ayah recitation mishari rashid al afasy murattal hafs 953
         type: string
+      playable_track_count:
+        example: 6236
+        type: integer
       public_track_count:
         example: 0
         type: integer
@@ -1214,6 +1275,53 @@ definitions:
       translation:
         $ref: '#/definitions/entity.AvailabilityDecision'
     type: object
+  entity.SavedItem:
+    properties:
+      ayah_key:
+        example: "73:4"
+        type: string
+      book_id:
+        example: 797
+        type: integer
+      created_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      from_ayah_number:
+        example: 4
+        type: integer
+      heading_id:
+        example: 10
+        type: integer
+      id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      item_type:
+        example: quran_ayah
+        type: string
+      label:
+        type: string
+      note:
+        type: string
+      page_id:
+        example: 12
+        type: integer
+      surah_id:
+        example: 73
+        type: integer
+      tags:
+        items:
+          type: string
+        type: array
+      to_ayah_number:
+        example: 6
+        type: integer
+      updated_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      user_id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+    type: object
   entity.SectionAudio:
     properties:
       book_id:
@@ -1382,9 +1490,121 @@ definitions:
         example: johndoe
         type: string
     type: object
+  entity.UserAccount:
+    properties:
+      created_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      email:
+        example: john@example.com
+        type: string
+      email_verified:
+        example: true
+        type: boolean
+      id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      onboarding_required:
+        example: true
+        type: boolean
+      preferences:
+        $ref: '#/definitions/entity.UserPreferences'
+      profile:
+        $ref: '#/definitions/entity.UserProfile'
+      role:
+        example: user
+        type: string
+      updated_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      username:
+        example: johndoe
+        type: string
+    type: object
+  entity.UserPreferences:
+    properties:
+      arabic_level:
+        example: basic
+        type: string
+      created_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      daily_goal_minutes:
+        example: 15
+        type: integer
+      fallback_langs:
+        example:
+        - id
+        - en
+        items:
+          type: string
+        type: array
+      interests:
+        example:
+        - tafsir
+        - hadith
+        items:
+          type: string
+        type: array
+      preferred_content_lang:
+        example: id
+        type: string
+      preferred_ui_lang:
+        example: id
+        type: string
+      quran_recitation_id:
+        type: string
+      quran_translation_source_id:
+        type: string
+      reader_mode:
+        example: arabic_translation
+        type: string
+      updated_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      user_id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+    type: object
+  entity.UserProfile:
+    properties:
+      country_code:
+        example: ID
+        type: string
+      created_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      display_name:
+        example: John
+        type: string
+      onboarding_completed_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      onboarding_version:
+        example: 1
+        type: integer
+      personalization_enabled:
+        example: true
+        type: boolean
+      timezone:
+        example: Asia/Jakarta
+        type: string
+      updated_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      user_id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+    type: object
   v1.Accepted:
     properties:
       accepted:
+        example: true
+        type: boolean
+    type: object
+  v1.AccountDeleted:
+    properties:
+      account_deleted:
         example: true
         type: boolean
     type: object
@@ -1494,6 +1714,22 @@ definitions:
     required:
     - vote
     type: object
+  v1.DeleteAccount:
+    properties:
+      current_password:
+        example: secret123
+        maxLength: 72
+        minLength: 8
+        type: string
+    required:
+    - current_password
+    type: object
+  v1.EmailChanged:
+    properties:
+      email_changed:
+        example: true
+        type: boolean
+    type: object
   v1.EmailVerification:
     properties:
       email_verified:
@@ -1550,6 +1786,13 @@ definitions:
         example: true
         type: boolean
     type: object
+  v1.QuranProgressList:
+    properties:
+      surahs:
+        items:
+          $ref: '#/definitions/entity.QuranReadingProgress'
+        type: array
+    type: object
   v1.QuranSearchList:
     properties:
       results:
@@ -1562,8 +1805,16 @@ definitions:
     type: object
   v1.Register:
     properties:
+      display_name:
+        example: John Doe
+        maxLength: 255
+        type: string
       email:
         example: john@example.com
+        type: string
+      name:
+        example: John Doe
+        maxLength: 255
         type: string
       password:
         example: secret123
@@ -1571,14 +1822,26 @@ definitions:
         minLength: 8
         type: string
       username:
-        example: johndoe
+        example: John Doe
         maxLength: 255
-        minLength: 3
         type: string
     required:
     - email
     - password
-    - username
+    type: object
+  v1.RequestEmailChange:
+    properties:
+      current_password:
+        example: secret123
+        maxLength: 72
+        minLength: 8
+        type: string
+      new_email:
+        example: new@example.com
+        type: string
+    required:
+    - current_password
+    - new_email
     type: object
   v1.ResendVerification:
     properties:
@@ -1601,6 +1864,47 @@ definitions:
     required:
     - password
     - token
+    type: object
+  v1.SaveQuranProgress:
+    properties:
+      ayah_key:
+        example: "73:4"
+        maxLength: 16
+        type: string
+      client_observed_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+    required:
+    - ayah_key
+    type: object
+  v1.SavedItemList:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/entity.SavedItem'
+        type: array
+      total:
+        example: 42
+        type: integer
+    type: object
+  v1.SavedItemTags:
+    properties:
+      tags:
+        items:
+          type: string
+        type: array
+    type: object
+  v1.SetUserRole:
+    properties:
+      email:
+        example: editor@example.com
+        type: string
+      role:
+        example: editor
+        type: string
+    required:
+    - email
+    - role
     type: object
   v1.TaskList:
     properties:
@@ -1646,6 +1950,19 @@ definitions:
     - original
     - source
     type: object
+  v1.UpdateSavedItem:
+    properties:
+      label:
+        maxLength: 255
+        type: string
+      note:
+        maxLength: 2000
+        type: string
+      tags:
+        items:
+          type: string
+        type: array
+    type: object
   v1.UpdateTask:
     properties:
       description:
@@ -1659,7 +1976,191 @@ definitions:
     required:
     - title
     type: object
+  v1.UpsertSavedItem:
+    properties:
+      ayah_key:
+        example: "73:4"
+        maxLength: 16
+        type: string
+      book_id:
+        example: 797
+        minimum: 1
+        type: integer
+      from_ayah_number:
+        example: 4
+        minimum: 1
+        type: integer
+      heading_id:
+        example: 10
+        minimum: 1
+        type: integer
+      item_type:
+        enum:
+        - book_page
+        - book_heading
+        - quran_ayah
+        - quran_range
+        example: quran_ayah
+        type: string
+      label:
+        maxLength: 255
+        type: string
+      note:
+        maxLength: 2000
+        type: string
+      page_id:
+        example: 12
+        minimum: 1
+        type: integer
+      surah_id:
+        example: 73
+        maximum: 114
+        minimum: 1
+        type: integer
+      tags:
+        items:
+          type: string
+        type: array
+      to_ayah_number:
+        example: 6
+        minimum: 1
+        type: integer
+    required:
+    - item_type
+    type: object
+  v1.UserOnboarding:
+    properties:
+      arabic_level:
+        example: basic
+        maxLength: 32
+        type: string
+      country_code:
+        example: ID
+        type: string
+      daily_goal_minutes:
+        example: 15
+        maximum: 1440
+        minimum: 1
+        type: integer
+      display_name:
+        example: John
+        maxLength: 255
+        type: string
+      fallback_langs:
+        example:
+        - id
+        - en
+        items:
+          type: string
+        maxItems: 3
+        type: array
+      interests:
+        example:
+        - tafsir
+        - hadith
+        items:
+          type: string
+        maxItems: 20
+        type: array
+      personalization_enabled:
+        example: true
+        type: boolean
+      preferred_content_lang:
+        example: id
+        maxLength: 16
+        type: string
+      preferred_ui_lang:
+        example: id
+        maxLength: 16
+        type: string
+      quran_recitation_id:
+        maxLength: 255
+        type: string
+      quran_translation_source_id:
+        maxLength: 255
+        type: string
+      reader_mode:
+        example: arabic_translation
+        maxLength: 64
+        type: string
+      timezone:
+        example: Asia/Jakarta
+        maxLength: 64
+        type: string
+    type: object
+  v1.UserPreferencesPatch:
+    properties:
+      arabic_level:
+        example: basic
+        maxLength: 32
+        type: string
+      daily_goal_minutes:
+        example: 15
+        maximum: 1440
+        minimum: 1
+        type: integer
+      fallback_langs:
+        example:
+        - id
+        - en
+        items:
+          type: string
+        maxItems: 3
+        type: array
+      interests:
+        example:
+        - tafsir
+        - hadith
+        items:
+          type: string
+        maxItems: 20
+        type: array
+      preferred_content_lang:
+        example: id
+        maxLength: 16
+        type: string
+      preferred_ui_lang:
+        example: id
+        maxLength: 16
+        type: string
+      quran_recitation_id:
+        maxLength: 255
+        type: string
+      quran_translation_source_id:
+        maxLength: 255
+        type: string
+      reader_mode:
+        example: arabic_translation
+        maxLength: 64
+        type: string
+    type: object
+  v1.UserProfilePatch:
+    properties:
+      country_code:
+        example: ID
+        maxLength: 2
+        type: string
+      display_name:
+        example: John Doe
+        maxLength: 255
+        type: string
+      personalization_enabled:
+        example: true
+        type: boolean
+      timezone:
+        example: Asia/Jakarta
+        maxLength: 64
+        type: string
+    type: object
   v1.VerifyEmail:
+    properties:
+      token:
+        example: G66NnGZnWg4W88qGz3p9N0-GxjKuxEOHHsvWv3kBaBA
+        type: string
+    required:
+    - token
+    type: object
+  v1.VerifyEmailChange:
     properties:
       token:
         example: G66NnGZnWg4W88qGz3p9N0-GxjKuxEOHHsvWv3kBaBA
@@ -1674,49 +2175,26 @@ info:
   title: Go Clean Template API
   version: "1.0"
 paths:
-  /admin/quran/missing-assets:
-    get:
-      description: Admin-only queue of missing Quran surah info, ayah translations,
-        translation sources, and public audio.
-      operationId: admin-list-missing-quran-assets
+  /admin/users/role:
+    patch:
+      consumes:
+      - application/json
+      description: Admin-only user role assignment for user, editor, or admin.
+      operationId: admin-set-user-role
       parameters:
-      - description: 'Target language: id or en; empty returns both'
-        enum:
-        - id
-        - en
-        in: query
-        name: target_lang
-        type: string
-      - description: Asset type filter
-        enum:
-        - surah_info
-        - ayah_translation
-        - translation_source
-        - audio_public
-        in: query
-        name: asset_type
-        type: string
-      - description: Surah ID
-        in: query
-        name: surah_id
-        type: integer
-      - default: 50
-        description: Page size
-        in: query
-        name: limit
-        type: integer
-      - default: 0
-        description: Page offset
-        in: query
-        name: offset
-        type: integer
+      - description: User role update
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.SetUserRole'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/entity.AdminMissingQuranAssets'
+            $ref: '#/definitions/entity.User'
         "400":
           description: Bad Request
           schema:
@@ -1729,58 +2207,39 @@ paths:
           description: Forbidden
           schema:
             $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
         "500":
           description: Internal Server Error
           schema:
             $ref: '#/definitions/v1.Error'
-      summary: List missing Quran assets
+      security:
+      - BearerAuth: []
+      summary: Set user role
       tags:
       - admin
-  /admin/reader/missing-assets:
-    get:
-      description: Admin-only queue of missing kitab metadata, section translations,
-        summaries, and audio for target languages id/en.
-      operationId: admin-list-missing-reader-assets
+  /auth/change-email/request:
+    post:
+      consumes:
+      - application/json
+      description: Send a verification link to a new email address
+      operationId: request-email-change
       parameters:
-      - description: 'Target language: id or en; empty returns both'
-        enum:
-        - id
-        - en
-        in: query
-        name: target_lang
-        type: string
-      - description: Asset type filter
-        enum:
-        - book_metadata
-        - category_metadata
-        - author_metadata
-        - section_translation
-        - heading_summary
-        - section_audio
-        in: query
-        name: asset_type
-        type: string
-      - description: Book ID
-        in: query
-        name: book_id
-        type: integer
-      - default: 50
-        description: Page size
-        in: query
-        name: limit
-        type: integer
-      - default: 0
-        description: Page offset
-        in: query
-        name: offset
-        type: integer
+      - description: Current password and new email
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.RequestEmailChange'
       produces:
       - application/json
       responses:
-        "200":
-          description: OK
+        "202":
+          description: Accepted
           schema:
-            $ref: '#/definitions/entity.AdminMissingReaderAssets'
+            $ref: '#/definitions/v1.Accepted'
         "400":
           description: Bad Request
           schema:
@@ -1789,17 +2248,68 @@ paths:
           description: Unauthorized
           schema:
             $ref: '#/definitions/v1.Error'
-        "403":
-          description: Forbidden
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Request email change
+      tags:
+      - auth
+  /auth/change-email/verify:
+    post:
+      consumes:
+      - application/json
+      description: Confirm an email change token for the current user
+      operationId: verify-email-change
+      parameters:
+      - description: Email change token
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.VerifyEmailChange'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.EmailChanged'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "429":
+          description: Too Many Requests
           schema:
             $ref: '#/definitions/v1.Error'
         "500":
           description: Internal Server Error
           schema:
             $ref: '#/definitions/v1.Error'
-      summary: List missing reader assets
+      security:
+      - BearerAuth: []
+      summary: Verify email change
       tags:
-      - admin
+      - auth
   /auth/change-password:
     post:
       consumes:
@@ -1835,6 +2345,47 @@ paths:
       security:
       - BearerAuth: []
       summary: Change password
+      tags:
+      - auth
+  /auth/delete-account:
+    post:
+      consumes:
+      - application/json
+      description: Soft-delete and anonymize the current account
+      operationId: delete-account
+      parameters:
+      - description: Current password
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.DeleteAccount'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.AccountDeleted'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Delete account
       tags:
       - auth
   /auth/forgot-password:
@@ -2665,10 +3216,470 @@ paths:
       summary: List kitab categories
       tags:
       - kitab
+  /editorial/quran/missing-assets:
+    get:
+      description: Editorial queue of missing Quran surah info, ayah translations,
+        translation sources, and app-owned public audio URLs. Source audio_url may
+        still be playable.
+      operationId: editorial-list-missing-quran-assets
+      parameters:
+      - description: 'Target language: id or en; empty returns both'
+        enum:
+        - id
+        - en
+        in: query
+        name: target_lang
+        type: string
+      - description: Asset type filter
+        enum:
+        - surah_info
+        - ayah_translation
+        - translation_source
+        - audio_public
+        in: query
+        name: asset_type
+        type: string
+      - description: Surah ID
+        in: query
+        name: surah_id
+        type: integer
+      - default: 50
+        description: Page size
+        in: query
+        name: limit
+        type: integer
+      - default: 0
+        description: Page offset
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.AdminMissingQuranAssets'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      summary: List missing Quran assets
+      tags:
+      - editorial
+  /editorial/reader/missing-assets:
+    get:
+      description: Editorial queue of missing kitab metadata, section translations,
+        summaries, and audio for target languages id/en.
+      operationId: editorial-list-missing-reader-assets
+      parameters:
+      - description: 'Target language: id or en; empty returns both'
+        enum:
+        - id
+        - en
+        in: query
+        name: target_lang
+        type: string
+      - description: Asset type filter
+        enum:
+        - book_metadata
+        - category_metadata
+        - author_metadata
+        - section_translation
+        - heading_summary
+        - section_audio
+        in: query
+        name: asset_type
+        type: string
+      - description: Book ID
+        in: query
+        name: book_id
+        type: integer
+      - default: 50
+        description: Page size
+        in: query
+        name: limit
+        type: integer
+      - default: 0
+        description: Page offset
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.AdminMissingReaderAssets'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      summary: List missing reader assets
+      tags:
+      - editorial
+  /me/quran/progress:
+    get:
+      description: Return the authenticated user's latest Quran resume position across
+        surahs.
+      operationId: get-quran-progress
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.QuranReadingProgress'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Get latest Quran progress
+      tags:
+      - me
+    put:
+      consumes:
+      - application/json
+      description: Upsert one Quran resume position. Older client_observed_at events
+        do not roll back progress.
+      operationId: save-quran-progress
+      parameters:
+      - description: Quran progress position
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.SaveQuranProgress'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.QuranReadingProgress'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Save Quran progress
+      tags:
+      - me
+  /me/quran/progress/surahs:
+    get:
+      description: Return all authenticated user's per-surah Quran resume positions
+        ordered by observed_at descending.
+      operationId: list-quran-surah-progress
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.QuranProgressList'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: List Quran surah progress
+      tags:
+      - me
+  /me/quran/progress/surahs/{surah_id}:
+    get:
+      description: Return the authenticated user's Quran resume position for one surah.
+      operationId: get-quran-surah-progress
+      parameters:
+      - description: Surah ID
+        in: path
+        name: surah_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.QuranReadingProgress'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Get Quran surah progress
+      tags:
+      - me
+  /me/saved-items:
+    get:
+      description: List private saved Quran and kitab targets. Responses are reference-only
+        and do not hydrate target content.
+      operationId: list-saved-items
+      parameters:
+      - description: Filter by item type
+        enum:
+        - book_page
+        - book_heading
+        - quran_ayah
+        - quran_range
+        in: query
+        name: item_type
+        type: string
+      - description: Filter by kitab book ID
+        in: query
+        name: book_id
+        type: integer
+      - description: Filter by Quran surah ID
+        in: query
+        name: surah_id
+        type: integer
+      - description: Filter by normalized tag
+        in: query
+        name: tag
+        type: string
+      - default: 50
+        description: Limit
+        in: query
+        name: limit
+        type: integer
+      - default: 0
+        description: Offset
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.SavedItemList'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: List saved items
+      tags:
+      - me
+    post:
+      consumes:
+      - application/json
+      description: Save a Quran ayah/range or kitab page/heading. Posting the same
+        target updates label, note, and tags.
+      operationId: upsert-saved-item
+      parameters:
+      - description: Saved item target and metadata
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.UpsertSavedItem'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.SavedItem'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Save or update an item
+      tags:
+      - me
+  /me/saved-items/{id}:
+    delete:
+      description: Delete one private saved item.
+      operationId: delete-saved-item
+      parameters:
+      - description: Saved item ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Delete saved item
+      tags:
+      - me
+    patch:
+      consumes:
+      - application/json
+      description: Update label, note, and tags for one private saved item.
+      operationId: update-saved-item
+      parameters:
+      - description: Saved item ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Saved item metadata
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.UpdateSavedItem'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.SavedItem'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Update saved item metadata
+      tags:
+      - me
+  /me/saved-items/tags:
+    get:
+      description: List distinct normalized tags used by the authenticated user's
+        saved items.
+      operationId: list-saved-item-tags
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.SavedItemTags'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: List saved item tags
+      tags:
+      - me
   /quran/ayahs/{ayah_key}:
     get:
       description: Get one ayah by canonical ayah key. When include_audio=true and
-        recitation_id is omitted, the backend uses the default public recitation.
+        recitation_id is omitted, the backend uses the default playable recitation.
       operationId: get-quran-ayah
       parameters:
       - description: Canonical ayah key, for example 73:4
@@ -2690,7 +3701,7 @@ paths:
         in: query
         name: include_audio
         type: boolean
-      - description: Recitation ID. Defaults to the public default recitation when
+      - description: Recitation ID. Defaults to the playable default recitation when
           include_audio=true.
         in: query
         name: recitation_id
@@ -2717,10 +3728,193 @@ paths:
       summary: Get Quran ayah
       tags:
       - quran
+  /quran/hizbs:
+    get:
+      description: List imported Quran hizb segments with lightweight start/end boundaries.
+      operationId: list-quran-hizbs
+      parameters:
+      - default: id
+        description: Language code
+        in: query
+        name: lang
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/entity.QuranNavigationSegment'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      summary: List Quran hizbs
+      tags:
+      - quran
+  /quran/hizbs/{hizb_number}/ayahs:
+    get:
+      description: List all ayahs in one imported hizb segment. When include_audio=true
+        and recitation_id is omitted, the backend uses the default playable recitation.
+      operationId: list-quran-hizb-ayahs
+      parameters:
+      - description: Hizb number
+        in: path
+        maximum: 60
+        minimum: 1
+        name: hizb_number
+        required: true
+        type: integer
+      - default: id
+        description: Language code
+        in: query
+        name: lang
+        type: string
+      - description: Translation source ID. Empty uses language default.
+        in: query
+        name: translation_source
+        type: string
+      - default: true
+        description: Include selected translation
+        in: query
+        name: include_translation
+        type: boolean
+      - default: false
+        description: Include audio track and timestamp segments
+        in: query
+        name: include_audio
+        type: boolean
+      - description: Recitation ID. Defaults to the playable default recitation when
+          include_audio=true.
+        in: query
+        name: recitation_id
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/entity.QuranAyah'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      summary: List Quran ayahs in a hizb
+      tags:
+      - quran
+  /quran/juz:
+    get:
+      description: List imported Quran juz segments with lightweight start/end boundaries.
+      operationId: list-quran-juz
+      parameters:
+      - default: id
+        description: Language code
+        in: query
+        name: lang
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/entity.QuranNavigationSegment'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      summary: List Quran juz
+      tags:
+      - quran
+  /quran/juz/{juz_number}/ayahs:
+    get:
+      description: List all ayahs in one imported juz segment. When include_audio=true
+        and recitation_id is omitted, the backend uses the default playable recitation.
+      operationId: list-quran-juz-ayahs
+      parameters:
+      - description: Juz number
+        in: path
+        maximum: 30
+        minimum: 1
+        name: juz_number
+        required: true
+        type: integer
+      - default: id
+        description: Language code
+        in: query
+        name: lang
+        type: string
+      - description: Translation source ID. Empty uses language default.
+        in: query
+        name: translation_source
+        type: string
+      - default: true
+        description: Include selected translation
+        in: query
+        name: include_translation
+        type: boolean
+      - default: false
+        description: Include audio track and timestamp segments
+        in: query
+        name: include_audio
+        type: boolean
+      - description: Recitation ID. Defaults to the playable default recitation when
+          include_audio=true.
+        in: query
+        name: recitation_id
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/entity.QuranAyah'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      summary: List Quran ayahs in a juz
+      tags:
+      - quran
   /quran/recitations:
     get:
       description: List imported recitation resources and audio coverage. Exactly
-        one full-public recitation may be marked is_default.
+        one fully playable recitation may be marked is_default. A track is playable
+        when public_url or source audio_url exists.
       operationId: list-quran-recitations
       produces:
       - application/json
@@ -2740,7 +3934,9 @@ paths:
       - quran
   /quran/search:
     get:
-      description: Search Arabic Quran text and the selected Indonesian translation.
+      description: Search Arabic Quran text, the requested translation, and other
+        imported translations for discoverability. Display translation remains exact
+        requested language only.
       operationId: search-quran
       parameters:
       - description: Search query
@@ -2770,6 +3966,10 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/v1.QuranSearchList'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
         "500":
           description: Internal Server Error
           schema:
@@ -2855,7 +4055,7 @@ paths:
   /quran/surahs/{surah_id}/ayahs:
     get:
       description: List all ayahs or an ayah range for one surah. When include_audio=true
-        and recitation_id is omitted, the backend uses the default public recitation.
+        and recitation_id is omitted, the backend uses the default playable recitation.
       operationId: list-quran-surah-ayahs
       parameters:
       - description: Surah ID
@@ -2892,7 +4092,7 @@ paths:
         in: query
         name: include_audio
         type: boolean
-      - description: Recitation ID. Defaults to the public default recitation when
+      - description: Recitation ID. Defaults to the playable default recitation when
           include_audio=true.
         in: query
         name: recitation_id
@@ -3259,6 +4459,89 @@ paths:
       summary: Show history
       tags:
       - translation
+  /user/onboarding:
+    patch:
+      consumes:
+      - application/json
+      description: Store first-run profile and reader preferences for the current
+        user
+      operationId: user-onboarding
+      parameters:
+      - description: Onboarding answers
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.UserOnboarding'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.UserAccount'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Complete onboarding
+      tags:
+      - user
+  /user/preferences:
+    patch:
+      consumes:
+      - application/json
+      description: Update reader and Quran preferences for the current user
+      operationId: user-preferences
+      parameters:
+      - description: Preference changes
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.UserPreferencesPatch'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.UserAccount'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Update preferences
+      tags:
+      - user
   /user/profile:
     get:
       description: Get current user profile
@@ -3269,7 +4552,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/entity.User'
+            $ref: '#/definitions/entity.UserAccount'
         "401":
           description: Unauthorized
           schema:
@@ -3285,6 +4568,46 @@ paths:
       security:
       - BearerAuth: []
       summary: Get profile
+      tags:
+      - user
+    patch:
+      consumes:
+      - application/json
+      description: Update normal profile fields for the current user
+      operationId: update-profile
+      parameters:
+      - description: Profile changes
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.UserProfilePatch'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.UserAccount'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Update profile
       tags:
       - user
 securityDefinitions:

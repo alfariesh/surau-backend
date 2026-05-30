@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/evrone/go-clean-template/internal/entity"
@@ -14,12 +15,13 @@ import (
 func main() {
 	var (
 		email = flag.String("email", "", "user email")
-		role  = flag.String("role", entity.UserRoleAdmin, "user role: user or admin")
+		role  = flag.String("role", entity.UserRoleAdmin, "user role: user, editor, or admin")
 		pgURL = flag.String("pg-url", os.Getenv("PG_URL"), "PostgreSQL connection URL")
 	)
 	flag.Parse()
 
-	if *email == "" {
+	normalizedEmail := strings.ToLower(strings.TrimSpace(*email))
+	if normalizedEmail == "" {
 		fatalf("--email is required")
 	}
 
@@ -27,10 +29,9 @@ func main() {
 		fatalf("--pg-url is required or PG_URL must be set")
 	}
 
-	switch *role {
-	case entity.UserRoleUser, entity.UserRoleAdmin:
-	default:
-		fatalf("invalid --role %q, use user or admin", *role)
+	normalizedRole, err := entity.NormalizeUserRole(*role)
+	if err != nil {
+		fatalf("invalid --role %q, use user, editor, or admin", *role)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -48,8 +49,8 @@ UPDATE users
 SET role = $1, updated_at = now()
 WHERE email = $2
 RETURNING id, username, email, role, password_hash, created_at, updated_at`,
-		*role,
-		*email,
+		normalizedRole,
+		normalizedEmail,
 	).Scan(&user.ID, &user.Username, &user.Email, &user.Role, &user.PasswordHash, &user.CreatedAt, &user.UpdatedAt)
 	if err != nil {
 		fatalf("set user role: %v", err)

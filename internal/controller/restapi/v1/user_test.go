@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/evrone/go-clean-template/internal/entity"
 	"github.com/evrone/go-clean-template/pkg/logger"
@@ -130,6 +131,54 @@ func TestAuthRoutesEmailVerificationErrors(t *testing.T) {
 			user:       &fakeAuthUser{},
 			wantStatus: http.StatusOK,
 		},
+		{
+			name:       "request email change rate limited",
+			method:     http.MethodPost,
+			path:       "/auth/change-email/request",
+			body:       `{"current_password":"oldpassword123","new_email":"new@example.com"}`,
+			user:       &fakeAuthUser{requestEmailChangeErr: entity.ErrEmailChangeRateLimited},
+			wantStatus: http.StatusTooManyRequests,
+		},
+		{
+			name:       "request email change success",
+			method:     http.MethodPost,
+			path:       "/auth/change-email/request",
+			body:       `{"current_password":"oldpassword123","new_email":"new@example.com"}`,
+			user:       &fakeAuthUser{},
+			wantStatus: http.StatusAccepted,
+		},
+		{
+			name:       "verify email change invalid token",
+			method:     http.MethodPost,
+			path:       "/auth/change-email/verify",
+			body:       `{"token":"invalid"}`,
+			user:       &fakeAuthUser{verifyEmailChangeErr: entity.ErrInvalidEmailChangeToken},
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "verify email change success",
+			method:     http.MethodPost,
+			path:       "/auth/change-email/verify",
+			body:       `{"token":"valid"}`,
+			user:       &fakeAuthUser{},
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "delete account wrong password",
+			method:     http.MethodPost,
+			path:       "/auth/delete-account",
+			body:       `{"current_password":"oldpassword123"}`,
+			user:       &fakeAuthUser{deleteAccountErr: entity.ErrInvalidCredentials},
+			wantStatus: http.StatusUnauthorized,
+		},
+		{
+			name:       "delete account success",
+			method:     http.MethodPost,
+			path:       "/auth/delete-account",
+			body:       `{"current_password":"oldpassword123"}`,
+			user:       &fakeAuthUser{},
+			wantStatus: http.StatusOK,
+		},
 	}
 
 	for _, tt := range tests {
@@ -144,6 +193,93 @@ func TestAuthRoutesEmailVerificationErrors(t *testing.T) {
 
 			require.NoError(t, err)
 			assert.Equal(t, tt.wantStatus, resp.StatusCode)
+		})
+	}
+}
+
+func TestUserProfileAndPreferenceRoutes(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		method     string
+		path       string
+		body       string
+		user       *fakeAuthUser
+		wantStatus int
+		wantBody   string
+	}{
+		{
+			name:       "profile includes default preferences",
+			method:     http.MethodGet,
+			path:       "/user/profile",
+			user:       &fakeAuthUser{},
+			wantStatus: http.StatusOK,
+			wantBody:   `"preferred_content_lang":"id"`,
+		},
+		{
+			name:       "onboarding unsupported language",
+			method:     http.MethodPatch,
+			path:       "/user/onboarding",
+			body:       `{"preferred_content_lang":"fr"}`,
+			user:       &fakeAuthUser{onboardingErr: entity.ErrUnsupportedLanguage},
+			wantStatus: http.StatusBadRequest,
+			wantBody:   `"unsupported language"`,
+		},
+		{
+			name:       "onboarding success",
+			method:     http.MethodPatch,
+			path:       "/user/onboarding",
+			body:       `{"preferred_content_lang":"id","arabic_level":"basic","reader_mode":"arabic_translation"}`,
+			user:       &fakeAuthUser{},
+			wantStatus: http.StatusOK,
+			wantBody:   `"onboarding_required":false`,
+		},
+		{
+			name:       "profile update invalid display name",
+			method:     http.MethodPatch,
+			path:       "/user/profile",
+			body:       `{"display_name":" "}`,
+			user:       &fakeAuthUser{profileErr: entity.ErrInvalidUserPreference},
+			wantStatus: http.StatusBadRequest,
+			wantBody:   `"invalid user preference"`,
+		},
+		{
+			name:       "profile update success",
+			method:     http.MethodPatch,
+			path:       "/user/profile",
+			body:       `{"display_name":"Ahmad","timezone":"Asia/Jakarta","country_code":"ID","personalization_enabled":true}`,
+			user:       &fakeAuthUser{},
+			wantStatus: http.StatusOK,
+			wantBody:   `"profile"`,
+		},
+		{
+			name:       "preferences success",
+			method:     http.MethodPatch,
+			path:       "/user/preferences",
+			body:       `{"preferred_content_lang":"en"}`,
+			user:       &fakeAuthUser{},
+			wantStatus: http.StatusOK,
+			wantBody:   `"preferences"`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			app := newAuthTestApp(tt.user)
+			req := httptest.NewRequest(tt.method, tt.path, bytes.NewBufferString(tt.body))
+			req.Header.Set("Content-Type", "application/json")
+
+			resp, err := app.Test(req)
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantStatus, resp.StatusCode)
+			if tt.wantBody != "" {
+				body := readTestBody(t, resp)
+				assert.Contains(t, body, tt.wantBody)
+			}
 		})
 	}
 }
@@ -166,6 +302,41 @@ func newAuthTestApp(user *fakeAuthUser) *fiber.App {
 
 		return controller.changePassword(ctx)
 	})
+	app.Post("/auth/change-email/request", func(ctx *fiber.Ctx) error {
+		ctx.Locals("userID", "user-id-123")
+
+		return controller.requestEmailChange(ctx)
+	})
+	app.Post("/auth/change-email/verify", func(ctx *fiber.Ctx) error {
+		ctx.Locals("userID", "user-id-123")
+
+		return controller.verifyEmailChange(ctx)
+	})
+	app.Post("/auth/delete-account", func(ctx *fiber.Ctx) error {
+		ctx.Locals("userID", "user-id-123")
+
+		return controller.deleteAccount(ctx)
+	})
+	app.Get("/user/profile", func(ctx *fiber.Ctx) error {
+		ctx.Locals("userID", "user-id-123")
+
+		return controller.profile(ctx)
+	})
+	app.Patch("/user/profile", func(ctx *fiber.Ctx) error {
+		ctx.Locals("userID", "user-id-123")
+
+		return controller.updateProfile(ctx)
+	})
+	app.Patch("/user/onboarding", func(ctx *fiber.Ctx) error {
+		ctx.Locals("userID", "user-id-123")
+
+		return controller.updateOnboarding(ctx)
+	})
+	app.Patch("/user/preferences", func(ctx *fiber.Ctx) error {
+		ctx.Locals("userID", "user-id-123")
+
+		return controller.updatePreferences(ctx)
+	})
 
 	return app
 }
@@ -178,6 +349,19 @@ type fakeAuthUser struct {
 	forgotErr   error
 	resetErr    error
 	changeErr   error
+	accountErr  error
+	profileErr  error
+
+	onboardingErr         error
+	preferencesErr        error
+	roleErr               error
+	requestEmailChangeErr error
+	verifyEmailChangeErr  error
+	deleteAccountErr      error
+
+	roleEmail string
+	role      string
+	roleUser  entity.User
 }
 
 func (f *fakeAuthUser) Register(context.Context, string, string, string) (entity.User, error) {
@@ -196,8 +380,63 @@ func (f *fakeAuthUser) GetUser(context.Context, string) (entity.User, error) {
 	return entity.User{}, nil
 }
 
-func (f *fakeAuthUser) SetRoleByEmail(context.Context, string, string) (entity.User, error) {
-	return entity.User{}, nil
+func (f *fakeAuthUser) GetUserAccount(context.Context, string) (entity.UserAccount, error) {
+	if f.accountErr != nil {
+		return entity.UserAccount{}, f.accountErr
+	}
+
+	return defaultTestAccount(), nil
+}
+
+func (f *fakeAuthUser) CompleteOnboarding(
+	context.Context,
+	string,
+	entity.UserOnboarding,
+) (entity.UserAccount, error) {
+	if f.onboardingErr != nil {
+		return entity.UserAccount{}, f.onboardingErr
+	}
+
+	account := defaultTestAccount()
+	account.OnboardingRequired = false
+	completedAt := timeNowForTest()
+	account.Profile.OnboardingCompletedAt = &completedAt
+
+	return account, nil
+}
+
+func (f *fakeAuthUser) UpdateUserProfile(
+	context.Context,
+	string,
+	entity.UserProfilePatch,
+) (entity.UserAccount, error) {
+	if f.profileErr != nil {
+		return entity.UserAccount{}, f.profileErr
+	}
+
+	return defaultTestAccount(), nil
+}
+
+func (f *fakeAuthUser) UpdateUserPreferences(
+	context.Context,
+	string,
+	entity.UserPreferencesPatch,
+) (entity.UserAccount, error) {
+	if f.preferencesErr != nil {
+		return entity.UserAccount{}, f.preferencesErr
+	}
+
+	return defaultTestAccount(), nil
+}
+
+func (f *fakeAuthUser) SetRoleByEmail(_ context.Context, email, role string) (entity.User, error) {
+	f.roleEmail = email
+	f.role = role
+	if f.roleErr != nil {
+		return entity.User{}, f.roleErr
+	}
+
+	return f.roleUser, nil
 }
 
 func (f *fakeAuthUser) VerifyEmail(context.Context, string) error {
@@ -218,4 +457,45 @@ func (f *fakeAuthUser) ResetPassword(context.Context, string, string) error {
 
 func (f *fakeAuthUser) ChangePassword(context.Context, string, string, string) error {
 	return f.changeErr
+}
+
+func (f *fakeAuthUser) RequestEmailChange(context.Context, string, string, string) error {
+	return f.requestEmailChangeErr
+}
+
+func (f *fakeAuthUser) VerifyEmailChange(context.Context, string, string) error {
+	return f.verifyEmailChangeErr
+}
+
+func (f *fakeAuthUser) DeleteAccount(context.Context, string, string) error {
+	return f.deleteAccountErr
+}
+
+func defaultTestAccount() entity.UserAccount {
+	now := timeNowForTest()
+
+	return entity.UserAccount{
+		User: entity.User{
+			ID:       "user-id-123",
+			Username: "testuser",
+			Email:    "test@example.com",
+		},
+		Profile:            entity.DefaultUserProfile("user-id-123", now),
+		Preferences:        entity.DefaultUserPreferences("user-id-123", now),
+		OnboardingRequired: true,
+	}
+}
+
+func timeNowForTest() time.Time {
+	return time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+}
+
+func readTestBody(t *testing.T, resp *http.Response) string {
+	t.Helper()
+
+	body := new(bytes.Buffer)
+	_, err := body.ReadFrom(resp.Body)
+	require.NoError(t, err)
+
+	return body.String()
 }

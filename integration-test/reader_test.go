@@ -225,7 +225,7 @@ func TestReaderMultilingualKitabContract(t *testing.T) {
 		t.Fatalf("missing en feedback error = %q", errorBody.Error)
 	}
 
-	resp = doJSON(t, http.MethodGet, baseURL()+"/v1/admin/reader/missing-assets?target_lang=en", nil, "")
+	resp = doJSON(t, http.MethodGet, baseURL()+"/v1/editorial/reader/missing-assets?target_lang=en", nil, "")
 	decodeAndClose(t, resp, &errorBody)
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("admin missing queue without auth expected 401, got %d", resp.StatusCode)
@@ -233,7 +233,7 @@ func TestReaderMultilingualKitabContract(t *testing.T) {
 
 	adminToken := adminJWT(t)
 	resp = doJSON(t, http.MethodGet, fmt.Sprintf(
-		"%s/v1/admin/reader/missing-assets?target_lang=en&book_id=%d",
+		"%s/v1/editorial/reader/missing-assets?target_lang=en&book_id=%d",
 		baseURL(),
 		fixtureBookID,
 	), nil, adminToken)
@@ -257,7 +257,7 @@ func TestReaderMultilingualKitabContract(t *testing.T) {
 	}
 
 	resp = doJSON(t, http.MethodGet, fmt.Sprintf(
-		"%s/v1/admin/reader/missing-assets?target_lang=en&asset_type=section_translation&book_id=%d",
+		"%s/v1/editorial/reader/missing-assets?target_lang=en&asset_type=section_translation&book_id=%d",
 		baseURL(),
 		fixtureBookID,
 	), nil, adminToken)
@@ -278,7 +278,7 @@ func TestReaderMultilingualKitabContract(t *testing.T) {
 	}
 	assertHasLang(t, item.AvailableLangs, "id")
 
-	resp = doJSON(t, http.MethodGet, baseURL()+"/v1/admin/reader/missing-assets?target_lang=ar", nil, adminToken)
+	resp = doJSON(t, http.MethodGet, baseURL()+"/v1/editorial/reader/missing-assets?target_lang=ar", nil, adminToken)
 	decodeAndClose(t, resp, &errorBody)
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("admin missing queue target_lang=ar expected 400, got %d", resp.StatusCode)
@@ -287,7 +287,7 @@ func TestReaderMultilingualKitabContract(t *testing.T) {
 		t.Fatalf("admin missing queue ar error = %q", errorBody.Error)
 	}
 
-	resp = doJSON(t, http.MethodGet, baseURL()+"/v1/admin/reader/missing-assets?target_lang=en&asset_type=metadata", nil, adminToken)
+	resp = doJSON(t, http.MethodGet, baseURL()+"/v1/editorial/reader/missing-assets?target_lang=en&asset_type=metadata", nil, adminToken)
 	decodeAndClose(t, resp, &errorBody)
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("admin missing queue invalid asset_type expected 400, got %d", resp.StatusCode)

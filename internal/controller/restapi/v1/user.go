@@ -40,7 +40,7 @@ func (r *V1) register(ctx *fiber.Ctx) error {
 		return errorResponse(ctx, http.StatusBadRequest, "invalid request body")
 	}
 
-	user, err := r.u.Register(restAuthContext(ctx), body.Username, body.Email, body.Password)
+	user, err := r.u.Register(restAuthContext(ctx), registerDisplayName(body), body.Email, body.Password)
 	if err != nil {
 		r.l.Error(err, "restapi - v1 - register")
 
@@ -345,12 +345,173 @@ func (r *V1) changePassword(ctx *fiber.Ctx) error {
 	return ctx.Status(http.StatusOK).JSON(response.PasswordChanged{PasswordChanged: true})
 }
 
+// @Summary     Request email change
+// @Description Send a verification link to a new email address
+// @ID          request-email-change
+// @Tags        auth
+// @Accept      json
+// @Produce     json
+// @Param       request body     request.RequestEmailChange true "Current password and new email"
+// @Success     202     {object} response.Accepted
+// @Failure     400     {object} response.Error
+// @Failure     401     {object} response.Error
+// @Failure     409     {object} response.Error
+// @Failure     429     {object} response.Error
+// @Failure     503     {object} response.Error
+// @Security    BearerAuth
+// @Router      /auth/change-email/request [post]
+func (r *V1) requestEmailChange(ctx *fiber.Ctx) error {
+	userID, ok := ctx.Locals("userID").(string)
+	if !ok || userID == "" {
+		return errorResponse(ctx, http.StatusUnauthorized, "unauthorized")
+	}
+
+	var body request.RequestEmailChange
+	if err := ctx.BodyParser(&body); err != nil {
+		r.l.Error(err, "restapi - v1 - requestEmailChange")
+
+		return errorResponse(ctx, http.StatusBadRequest, "invalid request body")
+	}
+	if err := r.v.Struct(body); err != nil {
+		r.l.Error(err, "restapi - v1 - requestEmailChange")
+
+		return errorResponse(ctx, http.StatusBadRequest, "invalid request body")
+	}
+
+	if err := r.u.RequestEmailChange(restAuthContext(ctx), userID, body.CurrentPassword, body.NewEmail); err != nil {
+		r.l.Error(err, "restapi - v1 - requestEmailChange")
+
+		if errors.Is(err, entity.ErrInvalidAuthInput) {
+			return errorResponse(ctx, http.StatusBadRequest, "invalid request body")
+		}
+		if errors.Is(err, entity.ErrInvalidCredentials) {
+			return errorResponse(ctx, http.StatusUnauthorized, "invalid credentials")
+		}
+		if errors.Is(err, entity.ErrUserAlreadyExists) {
+			return errorResponse(ctx, http.StatusConflict, "user already exists")
+		}
+		if errors.Is(err, entity.ErrEmailChangeRateLimited) || errors.Is(err, entity.ErrAuthRateLimited) {
+			return errorResponse(ctx, http.StatusTooManyRequests, "too many auth attempts")
+		}
+		if errors.Is(err, entity.ErrEmailDeliveryFailed) {
+			return errorResponse(ctx, http.StatusServiceUnavailable, "email delivery failed")
+		}
+
+		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
+	}
+
+	return ctx.Status(http.StatusAccepted).JSON(response.Accepted{Accepted: true})
+}
+
+// @Summary     Verify email change
+// @Description Confirm an email change token for the current user
+// @ID          verify-email-change
+// @Tags        auth
+// @Accept      json
+// @Produce     json
+// @Param       request body     request.VerifyEmailChange true "Email change token"
+// @Success     200     {object} response.EmailChanged
+// @Failure     400     {object} response.Error
+// @Failure     401     {object} response.Error
+// @Failure     409     {object} response.Error
+// @Failure     429     {object} response.Error
+// @Failure     500     {object} response.Error
+// @Security    BearerAuth
+// @Router      /auth/change-email/verify [post]
+func (r *V1) verifyEmailChange(ctx *fiber.Ctx) error {
+	userID, ok := ctx.Locals("userID").(string)
+	if !ok || userID == "" {
+		return errorResponse(ctx, http.StatusUnauthorized, "unauthorized")
+	}
+
+	var body request.VerifyEmailChange
+	if err := ctx.BodyParser(&body); err != nil {
+		r.l.Error(err, "restapi - v1 - verifyEmailChange")
+
+		return errorResponse(ctx, http.StatusBadRequest, "invalid request body")
+	}
+	if err := r.v.Struct(body); err != nil {
+		r.l.Error(err, "restapi - v1 - verifyEmailChange")
+
+		return errorResponse(ctx, http.StatusBadRequest, "invalid request body")
+	}
+
+	if err := r.u.VerifyEmailChange(restAuthContext(ctx), userID, body.Token); err != nil {
+		r.l.Error(err, "restapi - v1 - verifyEmailChange")
+
+		if errors.Is(err, entity.ErrInvalidAuthInput) || errors.Is(err, entity.ErrInvalidEmailChangeToken) {
+			return errorResponse(ctx, http.StatusBadRequest, "invalid request body")
+		}
+		if errors.Is(err, entity.ErrUserAlreadyExists) {
+			return errorResponse(ctx, http.StatusConflict, "user already exists")
+		}
+		if errors.Is(err, entity.ErrAuthRateLimited) {
+			return errorResponse(ctx, http.StatusTooManyRequests, "too many auth attempts")
+		}
+
+		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
+	}
+
+	return ctx.Status(http.StatusOK).JSON(response.EmailChanged{EmailChanged: true})
+}
+
+// @Summary     Delete account
+// @Description Soft-delete and anonymize the current account
+// @ID          delete-account
+// @Tags        auth
+// @Accept      json
+// @Produce     json
+// @Param       request body     request.DeleteAccount true "Current password"
+// @Success     200     {object} response.AccountDeleted
+// @Failure     400     {object} response.Error
+// @Failure     401     {object} response.Error
+// @Failure     429     {object} response.Error
+// @Failure     500     {object} response.Error
+// @Security    BearerAuth
+// @Router      /auth/delete-account [post]
+func (r *V1) deleteAccount(ctx *fiber.Ctx) error {
+	userID, ok := ctx.Locals("userID").(string)
+	if !ok || userID == "" {
+		return errorResponse(ctx, http.StatusUnauthorized, "unauthorized")
+	}
+
+	var body request.DeleteAccount
+	if err := ctx.BodyParser(&body); err != nil {
+		r.l.Error(err, "restapi - v1 - deleteAccount")
+
+		return errorResponse(ctx, http.StatusBadRequest, "invalid request body")
+	}
+	if err := r.v.Struct(body); err != nil {
+		r.l.Error(err, "restapi - v1 - deleteAccount")
+
+		return errorResponse(ctx, http.StatusBadRequest, "invalid request body")
+	}
+
+	if err := r.u.DeleteAccount(restAuthContext(ctx), userID, body.CurrentPassword); err != nil {
+		r.l.Error(err, "restapi - v1 - deleteAccount")
+
+		if errors.Is(err, entity.ErrInvalidAuthInput) {
+			return errorResponse(ctx, http.StatusBadRequest, "invalid request body")
+		}
+		if errors.Is(err, entity.ErrInvalidCredentials) {
+			return errorResponse(ctx, http.StatusUnauthorized, "invalid credentials")
+		}
+		if errors.Is(err, entity.ErrAuthRateLimited) {
+			return errorResponse(ctx, http.StatusTooManyRequests, "too many auth attempts")
+		}
+
+		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
+	}
+
+	return ctx.Status(http.StatusOK).JSON(response.AccountDeleted{AccountDeleted: true})
+}
+
 // @Summary     Get profile
 // @Description Get current user profile
 // @ID          profile
 // @Tags        user
 // @Produce     json
-// @Success     200 {object} entity.User
+// @Success     200 {object} entity.UserAccount
 // @Failure     401 {object} response.Error
 // @Failure     404 {object} response.Error
 // @Failure     500 {object} response.Error
@@ -362,7 +523,7 @@ func (r *V1) profile(ctx *fiber.Ctx) error {
 		return errorResponse(ctx, http.StatusUnauthorized, "unauthorized")
 	}
 
-	user, err := r.u.GetUser(ctx.UserContext(), userID)
+	user, err := r.u.GetUserAccount(ctx.UserContext(), userID)
 	if err != nil {
 		r.l.Error(err, "restapi - v1 - profile")
 
@@ -376,10 +537,203 @@ func (r *V1) profile(ctx *fiber.Ctx) error {
 	return ctx.Status(http.StatusOK).JSON(user)
 }
 
+// @Summary     Update profile
+// @Description Update normal profile fields for the current user
+// @ID          update-profile
+// @Tags        user
+// @Accept      json
+// @Produce     json
+// @Param       request body request.UserProfilePatch true "Profile changes"
+// @Success     200 {object} entity.UserAccount
+// @Failure     400 {object} response.Error
+// @Failure     401 {object} response.Error
+// @Failure     404 {object} response.Error
+// @Failure     500 {object} response.Error
+// @Security    BearerAuth
+// @Router      /user/profile [patch]
+func (r *V1) updateProfile(ctx *fiber.Ctx) error {
+	userID, ok := ctx.Locals("userID").(string)
+	if !ok || userID == "" {
+		return errorResponse(ctx, http.StatusUnauthorized, "unauthorized")
+	}
+
+	var body request.UserProfilePatch
+	if err := ctx.BodyParser(&body); err != nil {
+		r.l.Error(err, "restapi - v1 - updateProfile")
+
+		return errorResponse(ctx, http.StatusBadRequest, "invalid request body")
+	}
+	if err := r.v.Struct(body); err != nil {
+		r.l.Error(err, "restapi - v1 - updateProfile")
+
+		return errorResponse(ctx, http.StatusBadRequest, "invalid request body")
+	}
+
+	account, err := r.u.UpdateUserProfile(ctx.UserContext(), userID, profilePatchRequestToEntity(body))
+	if err != nil {
+		r.l.Error(err, "restapi - v1 - updateProfile")
+
+		return userPreferenceErrorResponse(ctx, err)
+	}
+
+	return ctx.Status(http.StatusOK).JSON(account)
+}
+
+// @Summary     Complete onboarding
+// @Description Store first-run profile and reader preferences for the current user
+// @ID          user-onboarding
+// @Tags        user
+// @Accept      json
+// @Produce     json
+// @Param       request body request.UserOnboarding true "Onboarding answers"
+// @Success     200 {object} entity.UserAccount
+// @Failure     400 {object} response.Error
+// @Failure     401 {object} response.Error
+// @Failure     404 {object} response.Error
+// @Failure     500 {object} response.Error
+// @Security    BearerAuth
+// @Router      /user/onboarding [patch]
+func (r *V1) updateOnboarding(ctx *fiber.Ctx) error {
+	userID, ok := ctx.Locals("userID").(string)
+	if !ok || userID == "" {
+		return errorResponse(ctx, http.StatusUnauthorized, "unauthorized")
+	}
+
+	var body request.UserOnboarding
+	if err := ctx.BodyParser(&body); err != nil {
+		r.l.Error(err, "restapi - v1 - updateOnboarding")
+
+		return errorResponse(ctx, http.StatusBadRequest, "invalid request body")
+	}
+
+	if err := r.v.Struct(body); err != nil {
+		r.l.Error(err, "restapi - v1 - updateOnboarding")
+
+		return errorResponse(ctx, http.StatusBadRequest, "invalid request body")
+	}
+
+	account, err := r.u.CompleteOnboarding(ctx.UserContext(), userID, onboardingRequestToEntity(body))
+	if err != nil {
+		r.l.Error(err, "restapi - v1 - updateOnboarding")
+
+		return userPreferenceErrorResponse(ctx, err)
+	}
+
+	return ctx.Status(http.StatusOK).JSON(account)
+}
+
+// @Summary     Update preferences
+// @Description Update reader and Quran preferences for the current user
+// @ID          user-preferences
+// @Tags        user
+// @Accept      json
+// @Produce     json
+// @Param       request body request.UserPreferencesPatch true "Preference changes"
+// @Success     200 {object} entity.UserAccount
+// @Failure     400 {object} response.Error
+// @Failure     401 {object} response.Error
+// @Failure     404 {object} response.Error
+// @Failure     500 {object} response.Error
+// @Security    BearerAuth
+// @Router      /user/preferences [patch]
+func (r *V1) updatePreferences(ctx *fiber.Ctx) error {
+	userID, ok := ctx.Locals("userID").(string)
+	if !ok || userID == "" {
+		return errorResponse(ctx, http.StatusUnauthorized, "unauthorized")
+	}
+
+	var body request.UserPreferencesPatch
+	if err := ctx.BodyParser(&body); err != nil {
+		r.l.Error(err, "restapi - v1 - updatePreferences")
+
+		return errorResponse(ctx, http.StatusBadRequest, "invalid request body")
+	}
+
+	if err := r.v.Struct(body); err != nil {
+		r.l.Error(err, "restapi - v1 - updatePreferences")
+
+		return errorResponse(ctx, http.StatusBadRequest, "invalid request body")
+	}
+
+	account, err := r.u.UpdateUserPreferences(ctx.UserContext(), userID, preferencesPatchRequestToEntity(body))
+	if err != nil {
+		r.l.Error(err, "restapi - v1 - updatePreferences")
+
+		return userPreferenceErrorResponse(ctx, err)
+	}
+
+	return ctx.Status(http.StatusOK).JSON(account)
+}
+
 func restAuthContext(ctx *fiber.Ctx) context.Context {
 	return authmeta.With(ctx.UserContext(), authmeta.Meta{
 		ClientIP:  ctx.IP(),
 		UserAgent: ctx.Get("User-Agent"),
 		Transport: "rest",
 	})
+}
+
+func registerDisplayName(body request.Register) string {
+	if body.DisplayName != "" {
+		return body.DisplayName
+	}
+	if body.Name != "" {
+		return body.Name
+	}
+
+	return body.Username
+}
+
+func profilePatchRequestToEntity(body request.UserProfilePatch) entity.UserProfilePatch {
+	return entity.UserProfilePatch{
+		DisplayName:            body.DisplayName,
+		Timezone:               body.Timezone,
+		CountryCode:            body.CountryCode,
+		PersonalizationEnabled: body.PersonalizationEnabled,
+	}
+}
+
+func onboardingRequestToEntity(body request.UserOnboarding) entity.UserOnboarding {
+	return entity.UserOnboarding{
+		DisplayName:              body.DisplayName,
+		Timezone:                 body.Timezone,
+		CountryCode:              body.CountryCode,
+		PersonalizationEnabled:   body.PersonalizationEnabled,
+		PreferredUILang:          body.PreferredUILang,
+		PreferredContentLang:     body.PreferredContentLang,
+		FallbackLangs:            body.FallbackLangs,
+		ArabicLevel:              body.ArabicLevel,
+		ReaderMode:               body.ReaderMode,
+		Interests:                body.Interests,
+		DailyGoalMinutes:         body.DailyGoalMinutes,
+		QuranTranslationSourceID: body.QuranTranslationSourceID,
+		QuranRecitationID:        body.QuranRecitationID,
+	}
+}
+
+func preferencesPatchRequestToEntity(body request.UserPreferencesPatch) entity.UserPreferencesPatch {
+	return entity.UserPreferencesPatch{
+		PreferredUILang:          body.PreferredUILang,
+		PreferredContentLang:     body.PreferredContentLang,
+		FallbackLangs:            body.FallbackLangs,
+		ArabicLevel:              body.ArabicLevel,
+		ReaderMode:               body.ReaderMode,
+		Interests:                body.Interests,
+		DailyGoalMinutes:         body.DailyGoalMinutes,
+		QuranTranslationSourceID: body.QuranTranslationSourceID,
+		QuranRecitationID:        body.QuranRecitationID,
+	}
+}
+
+func userPreferenceErrorResponse(ctx *fiber.Ctx, err error) error {
+	switch {
+	case errors.Is(err, entity.ErrUnsupportedLanguage):
+		return errorResponse(ctx, http.StatusBadRequest, "unsupported language")
+	case errors.Is(err, entity.ErrInvalidUserPreference):
+		return errorResponse(ctx, http.StatusBadRequest, "invalid user preference")
+	case errors.Is(err, entity.ErrUserNotFound):
+		return errorResponse(ctx, http.StatusNotFound, "user not found")
+	default:
+		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
+	}
 }

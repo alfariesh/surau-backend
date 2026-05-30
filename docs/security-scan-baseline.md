@@ -1,6 +1,6 @@
 # Security Scan Baseline
 
-Last checked: 2026-05-28
+Last checked: 2026-05-30
 
 ## govulncheck
 
@@ -11,21 +11,21 @@ Last checked: 2026-05-28
 
 ## gosec
 
+Actionable application-code scan:
+
+`go run github.com/securego/gosec/v2/cmd/gosec@latest -exclude-generated ./...`
+
+- Current result: 0 issues.
+- `G115` integer conversion findings were fixed with explicit bounds/type changes.
+- `G304` importer/eval CLI path reads are suppressed inline with `#nosec G304` because those commands intentionally read operator-supplied local files.
+
+Raw generated-code baseline:
+
 `go run github.com/securego/gosec/v2/cmd/gosec@latest ./...`
 
-Current non-auth/generated baseline:
-
-- `G115` integer conversion warnings in importer/book RAG support code:
-  - `internal/importer/importer.go`
-  - `internal/repo/persistent/bookrag_postgres.go`
-- `G304` variable file path reads in importer/eval tooling:
-  - `internal/rageval/rageval.go`
-  - `internal/importer/quran_audio_r2.go`
-  - `internal/importer/quran.go`
-  - `internal/importer/importer.go`
 - `G103` unsafe usage in generated protobuf files:
   - `docs/proto/v1/auth.pb.go`
   - `docs/proto/v1/task.pb.go`
   - `docs/proto/v1/translation.history.pb.go`
 
-These findings are outside the auth email notification implementation. No new finding was reported in the auth notification usecase or repository code.
+Raw `gosec ./...` still reports generated protobuf `G103` unsafe usage from `protoc-gen-go`. Use `-exclude-generated` for actionable application-code scans; do not hand-edit generated protobuf unsafe blocks.

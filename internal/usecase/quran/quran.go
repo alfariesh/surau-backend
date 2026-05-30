@@ -14,6 +14,9 @@ import (
 const (
 	defaultLimit = 50
 	maxLimit     = 200
+
+	navigationKindJuz  = "juz"
+	navigationKindHizb = "hizb"
 )
 
 var allowedReviewStatuses = []string{"approved", "pending", "rejected", "ambiguous", "needs_review", "all"}
@@ -68,6 +71,78 @@ func (uc *UseCase) TranslationSources(ctx context.Context, lang string) ([]entit
 	}
 
 	return uc.repo.ListTranslationSources(ctx, normalizedLang)
+}
+
+// Juz returns imported Quran juz navigation segments.
+func (uc *UseCase) Juz(ctx context.Context, lang string) ([]entity.QuranNavigationSegment, error) {
+	normalizedLang, err := contentlang.Normalize(lang)
+	if err != nil {
+		return nil, err
+	}
+
+	return uc.repo.ListNavigationSegments(ctx, navigationKindJuz, normalizedLang)
+}
+
+// JuzAyahs returns ayahs inside one imported juz segment.
+func (uc *UseCase) JuzAyahs(
+	ctx context.Context,
+	juzNumber int,
+	lang string,
+	translationSource string,
+	includeTranslation bool,
+	includeAudio bool,
+	recitationID string,
+) ([]entity.QuranAyah, error) {
+	if juzNumber < 1 || juzNumber > 30 {
+		return nil, entity.ErrInvalidQuranRange
+	}
+
+	return uc.navigationAyahs(
+		ctx,
+		navigationKindJuz,
+		juzNumber,
+		lang,
+		translationSource,
+		includeTranslation,
+		includeAudio,
+		recitationID,
+	)
+}
+
+// Hizbs returns imported Quran hizb navigation segments.
+func (uc *UseCase) Hizbs(ctx context.Context, lang string) ([]entity.QuranNavigationSegment, error) {
+	normalizedLang, err := contentlang.Normalize(lang)
+	if err != nil {
+		return nil, err
+	}
+
+	return uc.repo.ListNavigationSegments(ctx, navigationKindHizb, normalizedLang)
+}
+
+// HizbAyahs returns ayahs inside one imported hizb segment.
+func (uc *UseCase) HizbAyahs(
+	ctx context.Context,
+	hizbNumber int,
+	lang string,
+	translationSource string,
+	includeTranslation bool,
+	includeAudio bool,
+	recitationID string,
+) ([]entity.QuranAyah, error) {
+	if hizbNumber < 1 || hizbNumber > 60 {
+		return nil, entity.ErrInvalidQuranRange
+	}
+
+	return uc.navigationAyahs(
+		ctx,
+		navigationKindHizb,
+		hizbNumber,
+		lang,
+		translationSource,
+		includeTranslation,
+		includeAudio,
+		recitationID,
+	)
 }
 
 // Ayah returns one ayah by canonical QUL ayah key.
@@ -134,6 +209,33 @@ func (uc *UseCase) SurahAyahs(
 		surahID,
 		fromAyah,
 		toAyah,
+		normalizedLang,
+		normalizeTranslationSource(translationSource),
+		includeTranslation,
+		includeAudio,
+		normalizeRecitationID(recitationID),
+	)
+}
+
+func (uc *UseCase) navigationAyahs(
+	ctx context.Context,
+	kind string,
+	number int,
+	lang string,
+	translationSource string,
+	includeTranslation bool,
+	includeAudio bool,
+	recitationID string,
+) ([]entity.QuranAyah, error) {
+	normalizedLang, err := contentlang.Normalize(lang)
+	if err != nil {
+		return nil, err
+	}
+
+	return uc.repo.ListNavigationAyahs(
+		ctx,
+		kind,
+		number,
 		normalizedLang,
 		normalizeTranslationSource(translationSource),
 		includeTranslation,

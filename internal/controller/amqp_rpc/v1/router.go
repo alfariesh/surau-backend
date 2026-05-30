@@ -19,6 +19,9 @@ func NewRoutes(routes map[string]server.CallHandler, t usecase.Translation, u us
 	routes["v1.auth.forgotPassword"] = r.forgotPassword()
 	routes["v1.auth.resetPassword"] = r.resetPassword()
 	routes["v1.auth.changePassword"] = r.changePassword()
+	routes["v1.auth.requestEmailChange"] = r.requestEmailChange()
+	routes["v1.auth.verifyEmailChange"] = r.verifyEmailChange()
+	routes["v1.auth.deleteAccount"] = r.deleteAccount()
 
 	routes["v1.translation.getHistory"] = r.getHistory()
 	routes["v1.translation.translate"] = r.translate()

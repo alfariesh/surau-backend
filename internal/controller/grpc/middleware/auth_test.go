@@ -36,6 +36,34 @@ func (stubAuthUserUseCase) GetUser(_ context.Context, userID string) (entity.Use
 	return entity.User{ID: userID}, nil
 }
 
+func (stubAuthUserUseCase) GetUserAccount(context.Context, string) (entity.UserAccount, error) {
+	return entity.UserAccount{}, nil
+}
+
+func (stubAuthUserUseCase) CompleteOnboarding(
+	context.Context,
+	string,
+	entity.UserOnboarding,
+) (entity.UserAccount, error) {
+	return entity.UserAccount{}, nil
+}
+
+func (stubAuthUserUseCase) UpdateUserProfile(
+	context.Context,
+	string,
+	entity.UserProfilePatch,
+) (entity.UserAccount, error) {
+	return entity.UserAccount{}, nil
+}
+
+func (stubAuthUserUseCase) UpdateUserPreferences(
+	context.Context,
+	string,
+	entity.UserPreferencesPatch,
+) (entity.UserAccount, error) {
+	return entity.UserAccount{}, nil
+}
+
 func (stubAuthUserUseCase) SetRoleByEmail(context.Context, string, string) (entity.User, error) {
 	return entity.User{}, nil
 }
@@ -57,6 +85,18 @@ func (stubAuthUserUseCase) ResetPassword(context.Context, string, string) error 
 }
 
 func (stubAuthUserUseCase) ChangePassword(context.Context, string, string, string) error {
+	return nil
+}
+
+func (stubAuthUserUseCase) RequestEmailChange(context.Context, string, string, string) error {
+	return nil
+}
+
+func (stubAuthUserUseCase) VerifyEmailChange(context.Context, string, string) error {
+	return nil
+}
+
+func (stubAuthUserUseCase) DeleteAccount(context.Context, string, string) error {
 	return nil
 }
 

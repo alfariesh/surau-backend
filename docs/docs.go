@@ -15,66 +15,36 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
-        "/admin/quran/missing-assets": {
-            "get": {
-                "description": "Admin-only queue of missing Quran surah info, ayah translations, translation sources, and public audio.",
+        "/admin/users/role": {
+            "patch": {
+                "description": "Admin-only user role assignment for user, editor, or admin.",
+                "consumes": [
+                    "application/json"
+                ],
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "admin"
                 ],
-                "summary": "List missing Quran assets",
-                "operationId": "admin-list-missing-quran-assets",
+                "summary": "Set user role",
+                "operationId": "admin-set-user-role",
                 "parameters": [
                     {
-                        "enum": [
-                            "id",
-                            "en"
-                        ],
-                        "type": "string",
-                        "description": "Target language: id or en; empty returns both",
-                        "name": "target_lang",
-                        "in": "query"
-                    },
-                    {
-                        "enum": [
-                            "surah_info",
-                            "ayah_translation",
-                            "translation_source",
-                            "audio_public"
-                        ],
-                        "type": "string",
-                        "description": "Asset type filter",
-                        "name": "asset_type",
-                        "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "description": "Surah ID",
-                        "name": "surah_id",
-                        "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "default": 50,
-                        "description": "Page size",
-                        "name": "limit",
-                        "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "default": 0,
-                        "description": "Page offset",
-                        "name": "offset",
-                        "in": "query"
+                        "description": "User role update",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.SetUserRole"
+                        }
                     }
                 ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/entity.AdminMissingQuranAssets"
+                            "$ref": "#/definitions/entity.User"
                         }
                     },
                     "400": {
@@ -95,77 +65,56 @@ const docTemplate = `{
                             "$ref": "#/definitions/v1.Error"
                         }
                     },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/v1.Error"
                         }
                     }
-                }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
             }
         },
-        "/admin/reader/missing-assets": {
-            "get": {
-                "description": "Admin-only queue of missing kitab metadata, section translations, summaries, and audio for target languages id/en.",
+        "/auth/change-email/request": {
+            "post": {
+                "description": "Send a verification link to a new email address",
+                "consumes": [
+                    "application/json"
+                ],
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "admin"
+                    "auth"
                 ],
-                "summary": "List missing reader assets",
-                "operationId": "admin-list-missing-reader-assets",
+                "summary": "Request email change",
+                "operationId": "request-email-change",
                 "parameters": [
                     {
-                        "enum": [
-                            "id",
-                            "en"
-                        ],
-                        "type": "string",
-                        "description": "Target language: id or en; empty returns both",
-                        "name": "target_lang",
-                        "in": "query"
-                    },
-                    {
-                        "enum": [
-                            "book_metadata",
-                            "category_metadata",
-                            "author_metadata",
-                            "section_translation",
-                            "heading_summary",
-                            "section_audio"
-                        ],
-                        "type": "string",
-                        "description": "Asset type filter",
-                        "name": "asset_type",
-                        "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "description": "Book ID",
-                        "name": "book_id",
-                        "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "default": 50,
-                        "description": "Page size",
-                        "name": "limit",
-                        "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "default": 0,
-                        "description": "Page offset",
-                        "name": "offset",
-                        "in": "query"
+                        "description": "Current password and new email",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.RequestEmailChange"
+                        }
                     }
                 ],
                 "responses": {
-                    "200": {
-                        "description": "OK",
+                    "202": {
+                        "description": "Accepted",
                         "schema": {
-                            "$ref": "#/definitions/entity.AdminMissingReaderAssets"
+                            "$ref": "#/definitions/v1.Accepted"
                         }
                     },
                     "400": {
@@ -180,8 +129,84 @@ const docTemplate = `{
                             "$ref": "#/definitions/v1.Error"
                         }
                     },
-                    "403": {
-                        "description": "Forbidden",
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/auth/change-email/verify": {
+            "post": {
+                "description": "Confirm an email change token for the current user",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Verify email change",
+                "operationId": "verify-email-change",
+                "parameters": [
+                    {
+                        "description": "Email change token",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.VerifyEmailChange"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.EmailChanged"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
                         "schema": {
                             "$ref": "#/definitions/v1.Error"
                         }
@@ -192,7 +217,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/v1.Error"
                         }
                     }
-                }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
             }
         },
         "/auth/change-password": {
@@ -235,6 +265,70 @@ const docTemplate = `{
                     },
                     "401": {
                         "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/auth/delete-account": {
+            "post": {
+                "description": "Soft-delete and anonymize the current account",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Delete account",
+                "operationId": "delete-account",
+                "parameters": [
+                    {
+                        "description": "Current password",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.DeleteAccount"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.AccountDeleted"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
                         "schema": {
                             "$ref": "#/definitions/v1.Error"
                         }
@@ -1457,9 +1551,695 @@ const docTemplate = `{
                 }
             }
         },
+        "/editorial/quran/missing-assets": {
+            "get": {
+                "description": "Editorial queue of missing Quran surah info, ayah translations, translation sources, and app-owned public audio URLs. Source audio_url may still be playable.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "editorial"
+                ],
+                "summary": "List missing Quran assets",
+                "operationId": "editorial-list-missing-quran-assets",
+                "parameters": [
+                    {
+                        "enum": [
+                            "id",
+                            "en"
+                        ],
+                        "type": "string",
+                        "description": "Target language: id or en; empty returns both",
+                        "name": "target_lang",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "surah_info",
+                            "ayah_translation",
+                            "translation_source",
+                            "audio_public"
+                        ],
+                        "type": "string",
+                        "description": "Asset type filter",
+                        "name": "asset_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Surah ID",
+                        "name": "surah_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 50,
+                        "description": "Page size",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Page offset",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.AdminMissingQuranAssets"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/editorial/reader/missing-assets": {
+            "get": {
+                "description": "Editorial queue of missing kitab metadata, section translations, summaries, and audio for target languages id/en.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "editorial"
+                ],
+                "summary": "List missing reader assets",
+                "operationId": "editorial-list-missing-reader-assets",
+                "parameters": [
+                    {
+                        "enum": [
+                            "id",
+                            "en"
+                        ],
+                        "type": "string",
+                        "description": "Target language: id or en; empty returns both",
+                        "name": "target_lang",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "book_metadata",
+                            "category_metadata",
+                            "author_metadata",
+                            "section_translation",
+                            "heading_summary",
+                            "section_audio"
+                        ],
+                        "type": "string",
+                        "description": "Asset type filter",
+                        "name": "asset_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Book ID",
+                        "name": "book_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 50,
+                        "description": "Page size",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Page offset",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.AdminMissingReaderAssets"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/me/quran/progress": {
+            "get": {
+                "description": "Return the authenticated user's latest Quran resume position across surahs.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "me"
+                ],
+                "summary": "Get latest Quran progress",
+                "operationId": "get-quran-progress",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.QuranReadingProgress"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            },
+            "put": {
+                "description": "Upsert one Quran resume position. Older client_observed_at events do not roll back progress.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "me"
+                ],
+                "summary": "Save Quran progress",
+                "operationId": "save-quran-progress",
+                "parameters": [
+                    {
+                        "description": "Quran progress position",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.SaveQuranProgress"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.QuranReadingProgress"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/me/quran/progress/surahs": {
+            "get": {
+                "description": "Return all authenticated user's per-surah Quran resume positions ordered by observed_at descending.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "me"
+                ],
+                "summary": "List Quran surah progress",
+                "operationId": "list-quran-surah-progress",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.QuranProgressList"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/me/quran/progress/surahs/{surah_id}": {
+            "get": {
+                "description": "Return the authenticated user's Quran resume position for one surah.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "me"
+                ],
+                "summary": "Get Quran surah progress",
+                "operationId": "get-quran-surah-progress",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Surah ID",
+                        "name": "surah_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.QuranReadingProgress"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/me/saved-items": {
+            "get": {
+                "description": "List private saved Quran and kitab targets. Responses are reference-only and do not hydrate target content.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "me"
+                ],
+                "summary": "List saved items",
+                "operationId": "list-saved-items",
+                "parameters": [
+                    {
+                        "enum": [
+                            "book_page",
+                            "book_heading",
+                            "quran_ayah",
+                            "quran_range"
+                        ],
+                        "type": "string",
+                        "description": "Filter by item type",
+                        "name": "item_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Filter by kitab book ID",
+                        "name": "book_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Filter by Quran surah ID",
+                        "name": "surah_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by normalized tag",
+                        "name": "tag",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 50,
+                        "description": "Limit",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Offset",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.SavedItemList"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            },
+            "post": {
+                "description": "Save a Quran ayah/range or kitab page/heading. Posting the same target updates label, note, and tags.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "me"
+                ],
+                "summary": "Save or update an item",
+                "operationId": "upsert-saved-item",
+                "parameters": [
+                    {
+                        "description": "Saved item target and metadata",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.UpsertSavedItem"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.SavedItem"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/me/saved-items/tags": {
+            "get": {
+                "description": "List distinct normalized tags used by the authenticated user's saved items.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "me"
+                ],
+                "summary": "List saved item tags",
+                "operationId": "list-saved-item-tags",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.SavedItemTags"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/me/saved-items/{id}": {
+            "delete": {
+                "description": "Delete one private saved item.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "me"
+                ],
+                "summary": "Delete saved item",
+                "operationId": "delete-saved-item",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Saved item ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            },
+            "patch": {
+                "description": "Update label, note, and tags for one private saved item.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "me"
+                ],
+                "summary": "Update saved item metadata",
+                "operationId": "update-saved-item",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Saved item ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Saved item metadata",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.UpdateSavedItem"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.SavedItem"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
         "/quran/ayahs/{ayah_key}": {
             "get": {
-                "description": "Get one ayah by canonical ayah key. When include_audio=true and recitation_id is omitted, the backend uses the default public recitation.",
+                "description": "Get one ayah by canonical ayah key. When include_audio=true and recitation_id is omitted, the backend uses the default playable recitation.",
                 "produces": [
                     "application/json"
                 ],
@@ -1498,7 +2278,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Recitation ID. Defaults to the public default recitation when include_audio=true.",
+                        "description": "Recitation ID. Defaults to the playable default recitation when include_audio=true.",
                         "name": "recitation_id",
                         "in": "query"
                     }
@@ -1531,9 +2311,271 @@ const docTemplate = `{
                 }
             }
         },
+        "/quran/hizbs": {
+            "get": {
+                "description": "List imported Quran hizb segments with lightweight start/end boundaries.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "quran"
+                ],
+                "summary": "List Quran hizbs",
+                "operationId": "list-quran-hizbs",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "default": "id",
+                        "description": "Language code",
+                        "name": "lang",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/entity.QuranNavigationSegment"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/quran/hizbs/{hizb_number}/ayahs": {
+            "get": {
+                "description": "List all ayahs in one imported hizb segment. When include_audio=true and recitation_id is omitted, the backend uses the default playable recitation.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "quran"
+                ],
+                "summary": "List Quran ayahs in a hizb",
+                "operationId": "list-quran-hizb-ayahs",
+                "parameters": [
+                    {
+                        "maximum": 60,
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "Hizb number",
+                        "name": "hizb_number",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "default": "id",
+                        "description": "Language code",
+                        "name": "lang",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Translation source ID. Empty uses language default.",
+                        "name": "translation_source",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "default": true,
+                        "description": "Include selected translation",
+                        "name": "include_translation",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Include audio track and timestamp segments",
+                        "name": "include_audio",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Recitation ID. Defaults to the playable default recitation when include_audio=true.",
+                        "name": "recitation_id",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/entity.QuranAyah"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/quran/juz": {
+            "get": {
+                "description": "List imported Quran juz segments with lightweight start/end boundaries.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "quran"
+                ],
+                "summary": "List Quran juz",
+                "operationId": "list-quran-juz",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "default": "id",
+                        "description": "Language code",
+                        "name": "lang",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/entity.QuranNavigationSegment"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/quran/juz/{juz_number}/ayahs": {
+            "get": {
+                "description": "List all ayahs in one imported juz segment. When include_audio=true and recitation_id is omitted, the backend uses the default playable recitation.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "quran"
+                ],
+                "summary": "List Quran ayahs in a juz",
+                "operationId": "list-quran-juz-ayahs",
+                "parameters": [
+                    {
+                        "maximum": 30,
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "Juz number",
+                        "name": "juz_number",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "default": "id",
+                        "description": "Language code",
+                        "name": "lang",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Translation source ID. Empty uses language default.",
+                        "name": "translation_source",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "default": true,
+                        "description": "Include selected translation",
+                        "name": "include_translation",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Include audio track and timestamp segments",
+                        "name": "include_audio",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Recitation ID. Defaults to the playable default recitation when include_audio=true.",
+                        "name": "recitation_id",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/entity.QuranAyah"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
         "/quran/recitations": {
             "get": {
-                "description": "List imported recitation resources and audio coverage. Exactly one full-public recitation may be marked is_default.",
+                "description": "List imported recitation resources and audio coverage. Exactly one fully playable recitation may be marked is_default. A track is playable when public_url or source audio_url exists.",
                 "produces": [
                     "application/json"
                 ],
@@ -1563,7 +2605,7 @@ const docTemplate = `{
         },
         "/quran/search": {
             "get": {
-                "description": "Search Arabic Quran text and the selected Indonesian translation.",
+                "description": "Search Arabic Quran text, the requested translation, and other imported translations for discoverability. Display translation remains exact requested language only.",
                 "produces": [
                     "application/json"
                 ],
@@ -1607,6 +2649,12 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/v1.QuranSearchList"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
                         }
                     },
                     "500": {
@@ -1729,7 +2777,7 @@ const docTemplate = `{
         },
         "/quran/surahs/{surah_id}/ayahs": {
             "get": {
-                "description": "List all ayahs or an ayah range for one surah. When include_audio=true and recitation_id is omitted, the backend uses the default public recitation.",
+                "description": "List all ayahs or an ayah range for one surah. When include_audio=true and recitation_id is omitted, the backend uses the default playable recitation.",
                 "produces": [
                     "application/json"
                 ],
@@ -1789,7 +2837,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Recitation ID. Defaults to the public default recitation when include_audio=true.",
+                        "description": "Recitation ID. Defaults to the playable default recitation when include_audio=true.",
                         "name": "recitation_id",
                         "in": "query"
                     }
@@ -2343,6 +3391,134 @@ const docTemplate = `{
                 ]
             }
         },
+        "/user/onboarding": {
+            "patch": {
+                "description": "Store first-run profile and reader preferences for the current user",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "user"
+                ],
+                "summary": "Complete onboarding",
+                "operationId": "user-onboarding",
+                "parameters": [
+                    {
+                        "description": "Onboarding answers",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.UserOnboarding"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.UserAccount"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/user/preferences": {
+            "patch": {
+                "description": "Update reader and Quran preferences for the current user",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "user"
+                ],
+                "summary": "Update preferences",
+                "operationId": "user-preferences",
+                "parameters": [
+                    {
+                        "description": "Preference changes",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.UserPreferencesPatch"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.UserAccount"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
         "/user/profile": {
             "get": {
                 "description": "Get current user profile",
@@ -2358,7 +3534,69 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/entity.User"
+                            "$ref": "#/definitions/entity.UserAccount"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            },
+            "patch": {
+                "description": "Update normal profile fields for the current user",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "user"
+                ],
+                "summary": "Update profile",
+                "operationId": "update-profile",
+                "parameters": [
+                    {
+                        "description": "Profile changes",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.UserProfilePatch"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.UserAccount"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
                         }
                     },
                     "401": {
@@ -3796,6 +5034,83 @@ const docTemplate = `{
                 }
             }
         },
+        "entity.QuranNavigationBoundary": {
+            "type": "object",
+            "properties": {
+                "ayah_key": {
+                    "type": "string",
+                    "example": "1:1"
+                },
+                "ayah_number": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "surah_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "surah_name": {
+                    "type": "string",
+                    "example": "Al-Fatihah"
+                }
+            }
+        },
+        "entity.QuranNavigationSegment": {
+            "type": "object",
+            "properties": {
+                "ayah_count": {
+                    "type": "integer",
+                    "example": 148
+                },
+                "end": {
+                    "$ref": "#/definitions/entity.QuranNavigationBoundary"
+                },
+                "kind": {
+                    "type": "string",
+                    "example": "juz"
+                },
+                "number": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "start": {
+                    "$ref": "#/definitions/entity.QuranNavigationBoundary"
+                }
+            }
+        },
+        "entity.QuranReadingProgress": {
+            "type": "object",
+            "properties": {
+                "ayah_key": {
+                    "type": "string",
+                    "example": "73:4"
+                },
+                "ayah_number": {
+                    "type": "integer",
+                    "example": 4
+                },
+                "observed_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "position_percent": {
+                    "type": "number",
+                    "example": 25
+                },
+                "surah_id": {
+                    "type": "integer",
+                    "example": 73
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "user_id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                }
+            }
+        },
         "entity.QuranRecitation": {
             "type": "object",
             "properties": {
@@ -3805,6 +5120,10 @@ const docTemplate = `{
                 "format": {
                     "type": "string",
                     "example": "json"
+                },
+                "has_playable_audio": {
+                    "type": "boolean",
+                    "example": true
                 },
                 "has_public_audio": {
                     "type": "boolean",
@@ -3836,6 +5155,10 @@ const docTemplate = `{
                 "name": {
                     "type": "string",
                     "example": "QUL ayah recitation mishari rashid al afasy murattal hafs 953"
+                },
+                "playable_track_count": {
+                    "type": "integer",
+                    "example": 6236
                 },
                 "public_track_count": {
                     "type": "integer",
@@ -4102,6 +5425,71 @@ const docTemplate = `{
                 }
             }
         },
+        "entity.SavedItem": {
+            "type": "object",
+            "properties": {
+                "ayah_key": {
+                    "type": "string",
+                    "example": "73:4"
+                },
+                "book_id": {
+                    "type": "integer",
+                    "example": 797
+                },
+                "created_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "from_ayah_number": {
+                    "type": "integer",
+                    "example": 4
+                },
+                "heading_id": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "item_type": {
+                    "type": "string",
+                    "example": "quran_ayah"
+                },
+                "label": {
+                    "type": "string"
+                },
+                "note": {
+                    "type": "string"
+                },
+                "page_id": {
+                    "type": "integer",
+                    "example": 12
+                },
+                "surah_id": {
+                    "type": "integer",
+                    "example": 73
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "to_ayah_number": {
+                    "type": "integer",
+                    "example": 6
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "user_id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                }
+            }
+        },
         "entity.SectionAudio": {
             "type": "object",
             "properties": {
@@ -4337,10 +5725,166 @@ const docTemplate = `{
                 }
             }
         },
+        "entity.UserAccount": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "email": {
+                    "type": "string",
+                    "example": "john@example.com"
+                },
+                "email_verified": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "onboarding_required": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "preferences": {
+                    "$ref": "#/definitions/entity.UserPreferences"
+                },
+                "profile": {
+                    "$ref": "#/definitions/entity.UserProfile"
+                },
+                "role": {
+                    "type": "string",
+                    "example": "user"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "username": {
+                    "type": "string",
+                    "example": "johndoe"
+                }
+            }
+        },
+        "entity.UserPreferences": {
+            "type": "object",
+            "properties": {
+                "arabic_level": {
+                    "type": "string",
+                    "example": "basic"
+                },
+                "created_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "daily_goal_minutes": {
+                    "type": "integer",
+                    "example": 15
+                },
+                "fallback_langs": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "id",
+                        "en"
+                    ]
+                },
+                "interests": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "tafsir",
+                        "hadith"
+                    ]
+                },
+                "preferred_content_lang": {
+                    "type": "string",
+                    "example": "id"
+                },
+                "preferred_ui_lang": {
+                    "type": "string",
+                    "example": "id"
+                },
+                "quran_recitation_id": {
+                    "type": "string"
+                },
+                "quran_translation_source_id": {
+                    "type": "string"
+                },
+                "reader_mode": {
+                    "type": "string",
+                    "example": "arabic_translation"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "user_id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                }
+            }
+        },
+        "entity.UserProfile": {
+            "type": "object",
+            "properties": {
+                "country_code": {
+                    "type": "string",
+                    "example": "ID"
+                },
+                "created_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "display_name": {
+                    "type": "string",
+                    "example": "John"
+                },
+                "onboarding_completed_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "onboarding_version": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "personalization_enabled": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "timezone": {
+                    "type": "string",
+                    "example": "Asia/Jakarta"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "user_id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                }
+            }
+        },
         "v1.Accepted": {
             "type": "object",
             "properties": {
                 "accepted": {
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        },
+        "v1.AccountDeleted": {
+            "type": "object",
+            "properties": {
+                "account_deleted": {
                     "type": "boolean",
                     "example": true
                 }
@@ -4493,6 +6037,29 @@ const docTemplate = `{
                 }
             }
         },
+        "v1.DeleteAccount": {
+            "type": "object",
+            "required": [
+                "current_password"
+            ],
+            "properties": {
+                "current_password": {
+                    "type": "string",
+                    "maxLength": 72,
+                    "minLength": 8,
+                    "example": "secret123"
+                }
+            }
+        },
+        "v1.EmailChanged": {
+            "type": "object",
+            "properties": {
+                "email_changed": {
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        },
         "v1.EmailVerification": {
             "type": "object",
             "properties": {
@@ -4575,6 +6142,17 @@ const docTemplate = `{
                 }
             }
         },
+        "v1.QuranProgressList": {
+            "type": "object",
+            "properties": {
+                "surahs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.QuranReadingProgress"
+                    }
+                }
+            }
+        },
         "v1.QuranSearchList": {
             "type": "object",
             "properties": {
@@ -4594,13 +6172,22 @@ const docTemplate = `{
             "type": "object",
             "required": [
                 "email",
-                "password",
-                "username"
+                "password"
             ],
             "properties": {
+                "display_name": {
+                    "type": "string",
+                    "maxLength": 255,
+                    "example": "John Doe"
+                },
                 "email": {
                     "type": "string",
                     "example": "john@example.com"
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 255,
+                    "example": "John Doe"
                 },
                 "password": {
                     "type": "string",
@@ -4611,8 +6198,26 @@ const docTemplate = `{
                 "username": {
                     "type": "string",
                     "maxLength": 255,
-                    "minLength": 3,
-                    "example": "johndoe"
+                    "example": "John Doe"
+                }
+            }
+        },
+        "v1.RequestEmailChange": {
+            "type": "object",
+            "required": [
+                "current_password",
+                "new_email"
+            ],
+            "properties": {
+                "current_password": {
+                    "type": "string",
+                    "maxLength": 72,
+                    "minLength": 8,
+                    "example": "secret123"
+                },
+                "new_email": {
+                    "type": "string",
+                    "example": "new@example.com"
                 }
             }
         },
@@ -4644,6 +6249,66 @@ const docTemplate = `{
                 "token": {
                     "type": "string",
                     "example": "G66NnGZnWg4W88qGz3p9N0-GxjKuxEOHHsvWv3kBaBA"
+                }
+            }
+        },
+        "v1.SaveQuranProgress": {
+            "type": "object",
+            "required": [
+                "ayah_key"
+            ],
+            "properties": {
+                "ayah_key": {
+                    "type": "string",
+                    "maxLength": 16,
+                    "example": "73:4"
+                },
+                "client_observed_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                }
+            }
+        },
+        "v1.SavedItemList": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.SavedItem"
+                    }
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 42
+                }
+            }
+        },
+        "v1.SavedItemTags": {
+            "type": "object",
+            "properties": {
+                "tags": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "v1.SetUserRole": {
+            "type": "object",
+            "required": [
+                "email",
+                "role"
+            ],
+            "properties": {
+                "email": {
+                    "type": "string",
+                    "example": "editor@example.com"
+                },
+                "role": {
+                    "type": "string",
+                    "example": "editor"
                 }
             }
         },
@@ -4710,6 +6375,25 @@ const docTemplate = `{
                 }
             }
         },
+        "v1.UpdateSavedItem": {
+            "type": "object",
+            "properties": {
+                "label": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "note": {
+                    "type": "string",
+                    "maxLength": 2000
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
         "v1.UpdateTask": {
             "type": "object",
             "required": [
@@ -4728,7 +6412,251 @@ const docTemplate = `{
                 }
             }
         },
+        "v1.UpsertSavedItem": {
+            "type": "object",
+            "required": [
+                "item_type"
+            ],
+            "properties": {
+                "ayah_key": {
+                    "type": "string",
+                    "maxLength": 16,
+                    "example": "73:4"
+                },
+                "book_id": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "example": 797
+                },
+                "from_ayah_number": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "example": 4
+                },
+                "heading_id": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "example": 10
+                },
+                "item_type": {
+                    "type": "string",
+                    "enum": [
+                        "book_page",
+                        "book_heading",
+                        "quran_ayah",
+                        "quran_range"
+                    ],
+                    "example": "quran_ayah"
+                },
+                "label": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "note": {
+                    "type": "string",
+                    "maxLength": 2000
+                },
+                "page_id": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "example": 12
+                },
+                "surah_id": {
+                    "type": "integer",
+                    "maximum": 114,
+                    "minimum": 1,
+                    "example": 73
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "to_ayah_number": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "example": 6
+                }
+            }
+        },
+        "v1.UserOnboarding": {
+            "type": "object",
+            "properties": {
+                "arabic_level": {
+                    "type": "string",
+                    "maxLength": 32,
+                    "example": "basic"
+                },
+                "country_code": {
+                    "type": "string",
+                    "example": "ID"
+                },
+                "daily_goal_minutes": {
+                    "type": "integer",
+                    "maximum": 1440,
+                    "minimum": 1,
+                    "example": 15
+                },
+                "display_name": {
+                    "type": "string",
+                    "maxLength": 255,
+                    "example": "John"
+                },
+                "fallback_langs": {
+                    "type": "array",
+                    "maxItems": 3,
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "id",
+                        "en"
+                    ]
+                },
+                "interests": {
+                    "type": "array",
+                    "maxItems": 20,
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "tafsir",
+                        "hadith"
+                    ]
+                },
+                "personalization_enabled": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "preferred_content_lang": {
+                    "type": "string",
+                    "maxLength": 16,
+                    "example": "id"
+                },
+                "preferred_ui_lang": {
+                    "type": "string",
+                    "maxLength": 16,
+                    "example": "id"
+                },
+                "quran_recitation_id": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "quran_translation_source_id": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "reader_mode": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "example": "arabic_translation"
+                },
+                "timezone": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "example": "Asia/Jakarta"
+                }
+            }
+        },
+        "v1.UserPreferencesPatch": {
+            "type": "object",
+            "properties": {
+                "arabic_level": {
+                    "type": "string",
+                    "maxLength": 32,
+                    "example": "basic"
+                },
+                "daily_goal_minutes": {
+                    "type": "integer",
+                    "maximum": 1440,
+                    "minimum": 1,
+                    "example": 15
+                },
+                "fallback_langs": {
+                    "type": "array",
+                    "maxItems": 3,
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "id",
+                        "en"
+                    ]
+                },
+                "interests": {
+                    "type": "array",
+                    "maxItems": 20,
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "tafsir",
+                        "hadith"
+                    ]
+                },
+                "preferred_content_lang": {
+                    "type": "string",
+                    "maxLength": 16,
+                    "example": "id"
+                },
+                "preferred_ui_lang": {
+                    "type": "string",
+                    "maxLength": 16,
+                    "example": "id"
+                },
+                "quran_recitation_id": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "quran_translation_source_id": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "reader_mode": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "example": "arabic_translation"
+                }
+            }
+        },
+        "v1.UserProfilePatch": {
+            "type": "object",
+            "properties": {
+                "country_code": {
+                    "type": "string",
+                    "maxLength": 2,
+                    "example": "ID"
+                },
+                "display_name": {
+                    "type": "string",
+                    "maxLength": 255,
+                    "example": "John Doe"
+                },
+                "personalization_enabled": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "timezone": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "example": "Asia/Jakarta"
+                }
+            }
+        },
         "v1.VerifyEmail": {
+            "type": "object",
+            "required": [
+                "token"
+            ],
+            "properties": {
+                "token": {
+                    "type": "string",
+                    "example": "G66NnGZnWg4W88qGz3p9N0-GxjKuxEOHHsvWv3kBaBA"
+                }
+            }
+        },
+        "v1.VerifyEmailChange": {
             "type": "object",
             "required": [
                 "token"

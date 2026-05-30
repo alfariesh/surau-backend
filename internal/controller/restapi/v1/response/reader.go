@@ -20,11 +20,21 @@ type PageList struct {
 	Total int               `json:"total" example:"42"`
 } // @name v1.PageList
 
-// BookmarkList -.
-type BookmarkList struct {
-	Bookmarks []entity.Bookmark `json:"bookmarks"`
-	Total     int               `json:"total" example:"42"`
-} // @name v1.BookmarkList
+// SavedItemList -.
+type SavedItemList struct {
+	Items []entity.SavedItem `json:"items"`
+	Total int                `json:"total" example:"42"`
+} // @name v1.SavedItemList
+
+// SavedItemTags -.
+type SavedItemTags struct {
+	Tags []string `json:"tags"`
+} // @name v1.SavedItemTags
+
+// QuranProgressList -.
+type QuranProgressList struct {
+	Surahs []entity.QuranReadingProgress `json:"surahs"`
+} // @name v1.QuranProgressList
 
 // TranslationFeedbackList -.
 type TranslationFeedbackList struct {
