@@ -3,6 +3,7 @@ package repo
 
 import (
 	"context"
+	"time"
 
 	"github.com/evrone/go-clean-template/internal/entity"
 )
@@ -65,6 +66,86 @@ type (
 	// EmailSender -.
 	EmailSender interface {
 		Send(ctx context.Context, message entity.EmailMessage) error
+	}
+
+	// EmailRepo stores admin-managed templates, logs, subscriptions, suppressions, and campaigns.
+	EmailRepo interface {
+		CreateEmailTemplate(ctx context.Context, template entity.EmailTemplate) (entity.EmailTemplate, error)
+		ListEmailTemplates(ctx context.Context, filter EmailTemplateFilter) ([]entity.EmailTemplate, int, error)
+		GetEmailTemplateByID(ctx context.Context, id string) (entity.EmailTemplate, error)
+		GetEmailTemplateByKey(ctx context.Context, key string) (entity.EmailTemplate, error)
+		UpdateEmailTemplate(ctx context.Context, id string, patch entity.EmailTemplatePatch) (entity.EmailTemplate, error)
+		DeleteEmailTemplate(ctx context.Context, id string) error
+		CreateEmailTemplateVersion(
+			ctx context.Context,
+			version entity.EmailTemplateVersion,
+		) (entity.EmailTemplateVersion, error)
+		ListEmailTemplateVersions(ctx context.Context, templateID string) ([]entity.EmailTemplateVersion, error)
+		GetEmailTemplateVersionByID(ctx context.Context, id string) (entity.EmailTemplateVersion, error)
+		GetLatestEmailTemplateVersion(ctx context.Context, templateID, lang string) (entity.EmailTemplateVersion, error)
+		GetPublishedEmailTemplateVersion(
+			ctx context.Context,
+			templateKey,
+			lang string,
+		) (entity.EmailTemplateVersion, entity.EmailTemplate, error)
+		UpdateEmailTemplateVersion(
+			ctx context.Context,
+			id string,
+			patch entity.EmailTemplateVersionPatch,
+		) (entity.EmailTemplateVersion, error)
+		PublishEmailTemplateVersion(ctx context.Context, id, actorID string) (entity.EmailTemplateVersion, error)
+		GetEmailEventSetting(ctx context.Context, key string) (entity.EmailEventSetting, error)
+		UpdateEmailEventSetting(
+			ctx context.Context,
+			key string,
+			patch entity.EmailEventSettingPatch,
+		) (entity.EmailEventSetting, error)
+		CreateEmailMessage(ctx context.Context, message entity.EmailMessageLog) (entity.EmailMessageLog, error)
+		UpdateEmailMessageStatus(
+			ctx context.Context,
+			id string,
+			status string,
+			attempts int,
+			providerResponse string,
+			deliveryError string,
+			sentAt *time.Time,
+		) (entity.EmailMessageLog, error)
+		ListEmailMessages(ctx context.Context, filter EmailMessageFilter) ([]entity.EmailMessageLog, int, error)
+		GetEmailSubscription(ctx context.Context, userID string) (entity.EmailSubscription, error)
+		UpsertEmailSubscription(ctx context.Context, subscription entity.EmailSubscription) (entity.EmailSubscription, error)
+		UnsubscribeEmail(ctx context.Context, userID, email, source string) (entity.EmailSubscription, error)
+		ListEmailSuppressions(ctx context.Context, filter EmailSuppressionFilter) ([]entity.EmailSuppression, int, error)
+		CreateEmailSuppression(ctx context.Context, suppression entity.EmailSuppression) (entity.EmailSuppression, error)
+		DeleteEmailSuppression(ctx context.Context, id string) error
+		IsEmailSuppressed(ctx context.Context, email, category string) (bool, error)
+		CreateEmailCampaign(ctx context.Context, campaign entity.EmailCampaign) (entity.EmailCampaign, error)
+		ListEmailCampaigns(ctx context.Context, filter EmailCampaignFilter) ([]entity.EmailCampaign, int, error)
+		GetEmailCampaign(ctx context.Context, id string) (entity.EmailCampaign, error)
+		UpdateEmailCampaign(ctx context.Context, campaign entity.EmailCampaign) (entity.EmailCampaign, error)
+		ListMarketingAudience(
+			ctx context.Context,
+			filter entity.EmailAudienceFilter,
+		) ([]entity.EmailAudienceRecipient, int, error)
+		ReplaceEmailCampaignRecipients(
+			ctx context.Context,
+			campaignID string,
+			recipients []entity.EmailCampaignRecipient,
+		) error
+		ListEmailCampaignRecipients(
+			ctx context.Context,
+			campaignID string,
+			status string,
+			limit int,
+		) ([]entity.EmailCampaignRecipient, error)
+		UpdateEmailCampaignRecipientStatus(
+			ctx context.Context,
+			id,
+			status,
+			messageID,
+			deliveryError string,
+			sentAt *time.Time,
+		) (entity.EmailCampaignRecipient, error)
+		ListDueEmailCampaigns(ctx context.Context, now time.Time, limit int) ([]entity.EmailCampaign, error)
 	}
 
 	// TaskRepo -.
@@ -220,6 +301,39 @@ type (
 		Tag      string
 		Limit    uint64
 		Offset   uint64
+	}
+
+	// EmailTemplateFilter -.
+	EmailTemplateFilter struct {
+		Query           string
+		Category        string
+		IncludeArchived bool
+		Limit           uint64
+		Offset          uint64
+	}
+
+	// EmailMessageFilter -.
+	EmailMessageFilter struct {
+		Category string
+		Status   string
+		Email    string
+		Limit    uint64
+		Offset   uint64
+	}
+
+	// EmailSuppressionFilter -.
+	EmailSuppressionFilter struct {
+		Email  string
+		Scope  string
+		Limit  uint64
+		Offset uint64
+	}
+
+	// EmailCampaignFilter -.
+	EmailCampaignFilter struct {
+		Status string
+		Limit  uint64
+		Offset uint64
 	}
 
 	// EditorialBookFilter -.

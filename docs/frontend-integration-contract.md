@@ -1,11 +1,12 @@
 # Frontend Integration Contract
 
-Last updated: 2026-05-29
+Last updated: 2026-05-31
 
 This is the main FE integration entrypoint for kitab reader and Quran reader.
 Use it together with:
 
 - `docs/user-onboarding-api.md` for profile, onboarding, and saved language preferences.
+- `docs/admin-email-api.md` for admin email templates, campaigns, opt-in, unsubscribe, and delivery logs.
 - `docs/kitab-multilingual-api.md` for kitab API details.
 - `docs/kitab-frontend-contract.md` for kitab TypeScript helpers and UI branching.
 - `docs/quran-api.md` for Quran endpoint details, response shapes, and smoke tests.
@@ -85,6 +86,12 @@ type UserAccount = {
 
 See `docs/user-onboarding-api.md` for full request/response shapes, accepted
 interests, and QA scenarios.
+
+## Email Preferences
+
+Use `GET /v1/user/email-preferences` and `PATCH /v1/user/email-preferences` for the user's marketing opt-in state. Marketing email is strict opt-in only.
+
+Unsubscribe pages can call `GET /v1/email/unsubscribe?token={token}` or `POST /v1/email/unsubscribe` with `{ "token": "..." }`. Admin email CRUD, campaigns, suppressions, and message logs are documented in `docs/admin-email-api.md`.
 
 ## Availability Contract
 

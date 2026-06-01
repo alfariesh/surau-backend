@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/evrone/go-clean-template/internal/entity"
+	"github.com/evrone/go-clean-template/internal/repo"
 )
 
 //go:generate mockgen -source=contracts.go -destination=./mocks_usecase_test.go -package=usecase_test
@@ -47,6 +48,74 @@ type (
 		RequestEmailChange(ctx context.Context, userID, currentPassword, newEmail string) error
 		VerifyEmailChange(ctx context.Context, userID, token string) error
 		DeleteAccount(ctx context.Context, userID, currentPassword string) error
+	}
+
+	// EmailAdmin provides admin-managed email templates, delivery logs, consent, and campaigns.
+	EmailAdmin interface {
+		SendTransactional(ctx context.Context, req entity.TransactionalEmailRequest) error
+		Templates(ctx context.Context, filter repo.EmailTemplateFilter) ([]entity.EmailTemplate, int, error)
+		CreateTemplate(ctx context.Context, template entity.EmailTemplate) (entity.EmailTemplate, error)
+		Template(ctx context.Context, id string) (entity.EmailTemplate, error)
+		UpdateTemplate(ctx context.Context, id string, patch entity.EmailTemplatePatch) (entity.EmailTemplate, error)
+		DeleteTemplate(ctx context.Context, id string) error
+		CreateVersion(ctx context.Context, version entity.EmailTemplateVersion) (entity.EmailTemplateVersion, error)
+		Versions(ctx context.Context, templateID string) ([]entity.EmailTemplateVersion, error)
+		UpdateVersion(
+			ctx context.Context,
+			id string,
+			patch entity.EmailTemplateVersionPatch,
+		) (entity.EmailTemplateVersion, error)
+		PublishVersion(ctx context.Context, id, actorID string) (entity.EmailTemplateVersion, error)
+		PreviewTemplate(
+			ctx context.Context,
+			templateID,
+			lang string,
+			variables map[string]string,
+		) (entity.EmailPreview, error)
+		TestSendTemplate(
+			ctx context.Context,
+			templateID,
+			lang,
+			to string,
+			variables map[string]string,
+		) (entity.EmailMessageLog, error)
+		EventSetting(ctx context.Context, key string) (entity.EmailEventSetting, error)
+		UpdateEventSetting(
+			ctx context.Context,
+			key string,
+			patch entity.EmailEventSettingPatch,
+		) (entity.EmailEventSetting, error)
+		Messages(ctx context.Context, filter repo.EmailMessageFilter) ([]entity.EmailMessageLog, int, error)
+		Subscription(ctx context.Context, userID string) (entity.EmailSubscription, error)
+		UpdateSubscription(
+			ctx context.Context,
+			userID string,
+			marketingOptIn bool,
+			source string,
+		) (entity.EmailSubscription, error)
+		Suppressions(ctx context.Context, filter repo.EmailSuppressionFilter) ([]entity.EmailSuppression, int, error)
+		CreateSuppression(ctx context.Context, suppression entity.EmailSuppression) (entity.EmailSuppression, error)
+		DeleteSuppression(ctx context.Context, id string) error
+		Campaigns(ctx context.Context, filter repo.EmailCampaignFilter) ([]entity.EmailCampaign, int, error)
+		CreateCampaign(ctx context.Context, campaign entity.EmailCampaign) (entity.EmailCampaign, error)
+		Campaign(ctx context.Context, id string) (entity.EmailCampaign, error)
+		UpdateCampaign(ctx context.Context, campaign entity.EmailCampaign) (entity.EmailCampaign, error)
+		PreviewAudience(
+			ctx context.Context,
+			filter entity.EmailAudienceFilter,
+		) ([]entity.EmailAudienceRecipient, int, error)
+		ScheduleCampaign(ctx context.Context, id, actorID string, scheduledAt time.Time) (entity.EmailCampaign, error)
+		SendCampaignNow(ctx context.Context, id, actorID string) (entity.EmailCampaign, error)
+		CancelCampaign(ctx context.Context, id, actorID string) (entity.EmailCampaign, error)
+		TestSendCampaign(
+			ctx context.Context,
+			id,
+			to,
+			lang string,
+			variables map[string]string,
+		) (entity.EmailMessageLog, error)
+		DispatchDueCampaigns(ctx context.Context, limit int) error
+		Unsubscribe(ctx context.Context, token string) (entity.EmailSubscription, error)
 	}
 
 	// Task -.

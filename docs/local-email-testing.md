@@ -28,6 +28,7 @@ EMAIL_REPLY_TO=
 EMAIL_VERIFY_FRONTEND_URL=http://localhost:3005/verify-email
 PASSWORD_RESET_FRONTEND_URL=http://localhost:3005/reset-password
 EMAIL_CHANGE_FRONTEND_URL=http://localhost:3005/change-email
+EMAIL_UNSUBSCRIBE_FRONTEND_URL=http://localhost:3005/unsubscribe
 EMAIL_HTTP_TIMEOUT=10s
 ```
 
@@ -37,6 +38,7 @@ Catatan:
 - Jika backend tidak punya `EMAIL_DELIVERY_MODE`, abaikan variable itu; backend akan langsung pakai Cloudflare.
 - `EMAIL_FROM_ADDRESS` harus memakai domain yang sudah aktif di Cloudflare Email Service.
 - `EMAIL_VERIFY_FRONTEND_URL`, `PASSWORD_RESET_FRONTEND_URL`, dan `EMAIL_CHANGE_FRONTEND_URL` harus mengarah ke port frontend yang sedang dipakai.
+- `EMAIL_UNSUBSCRIBE_FRONTEND_URL` dipakai untuk link unsubscribe campaign marketing. Jika kosong, backend menurunkan URL dari `EMAIL_VERIFY_FRONTEND_URL` dengan path `/unsubscribe`.
 
 ## Restart Backend
 

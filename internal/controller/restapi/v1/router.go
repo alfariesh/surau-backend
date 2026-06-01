@@ -22,6 +22,7 @@ func NewRoutes(
 	u usecase.User,
 	personal usecase.Personal,
 	editorial usecase.Editorial,
+	email usecase.EmailAdmin,
 	jwtManager *jwt.Manager,
 	l logger.Interface,
 ) {
@@ -32,6 +33,7 @@ func NewRoutes(
 		u:         u,
 		personal:  personal,
 		editorial: editorial,
+		email:     email,
 		l:         l,
 		v:         validator.New(validator.WithRequiredStructEnabled()),
 	}
@@ -45,6 +47,12 @@ func NewRoutes(
 		authGroup.Post("/resend-verification", r.resendVerification)
 		authGroup.Post("/forgot-password", r.forgotPassword)
 		authGroup.Post("/reset-password", r.resetPassword)
+	}
+
+	emailPublicGroup := apiV1Group.Group("/email")
+	{
+		emailPublicGroup.Get("/unsubscribe", r.emailUnsubscribe)
+		emailPublicGroup.Post("/unsubscribe", r.emailUnsubscribe)
 	}
 
 	// Public reader routes
@@ -105,6 +113,8 @@ func NewRoutes(
 		userGroup.Patch("/profile", r.updateProfile)
 		userGroup.Patch("/onboarding", r.updateOnboarding)
 		userGroup.Patch("/preferences", r.updatePreferences)
+		userGroup.Get("/email-preferences", r.emailPreferences)
+		userGroup.Patch("/email-preferences", r.updateEmailPreferences)
 	}
 
 	meGroup := protected.Group("/me")
@@ -152,5 +162,34 @@ func NewRoutes(
 	adminGroup := protected.Group("/admin", middleware.RequireRoles(u, entity.UserRoleAdmin))
 	{
 		adminGroup.Patch("/users/role", r.adminSetUserRole)
+		emailGroup := adminGroup.Group("/emails")
+		{
+			emailGroup.Get("/templates", r.adminEmailTemplates)
+			emailGroup.Post("/templates", r.adminEmailCreateTemplate)
+			emailGroup.Get("/templates/:id", r.adminEmailTemplate)
+			emailGroup.Patch("/templates/:id", r.adminEmailUpdateTemplate)
+			emailGroup.Delete("/templates/:id", r.adminEmailDeleteTemplate)
+			emailGroup.Get("/templates/:id/versions", r.adminEmailTemplateVersions)
+			emailGroup.Post("/templates/:id/versions", r.adminEmailCreateTemplateVersion)
+			emailGroup.Patch("/versions/:id", r.adminEmailUpdateTemplateVersion)
+			emailGroup.Post("/versions/:id/publish", r.adminEmailPublishTemplateVersion)
+			emailGroup.Post("/templates/:id/preview", r.adminEmailPreviewTemplate)
+			emailGroup.Post("/templates/:id/test-send", r.adminEmailTestSendTemplate)
+			emailGroup.Get("/events/:key", r.adminEmailEventSetting)
+			emailGroup.Patch("/events/:key", r.adminEmailUpdateEventSetting)
+			emailGroup.Get("/messages", r.adminEmailMessages)
+			emailGroup.Get("/suppressions", r.adminEmailSuppressions)
+			emailGroup.Post("/suppressions", r.adminEmailCreateSuppression)
+			emailGroup.Delete("/suppressions/:id", r.adminEmailDeleteSuppression)
+			emailGroup.Get("/campaigns", r.adminEmailCampaigns)
+			emailGroup.Post("/campaigns", r.adminEmailCreateCampaign)
+			emailGroup.Get("/campaigns/:id", r.adminEmailCampaign)
+			emailGroup.Patch("/campaigns/:id", r.adminEmailUpdateCampaign)
+			emailGroup.Post("/campaigns/:id/preview-audience", r.adminEmailPreviewAudience)
+			emailGroup.Post("/campaigns/:id/test-send", r.adminEmailTestSendCampaign)
+			emailGroup.Post("/campaigns/:id/schedule", r.adminEmailScheduleCampaign)
+			emailGroup.Post("/campaigns/:id/send-now", r.adminEmailSendCampaignNow)
+			emailGroup.Post("/campaigns/:id/cancel", r.adminEmailCancelCampaign)
+		}
 	}
 }

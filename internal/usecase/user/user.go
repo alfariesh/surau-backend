@@ -84,6 +84,7 @@ type UseCase struct {
 	repo                     repo.UserRepo
 	jwt                      *jwt.Manager
 	emailSender              repo.EmailSender
+	emailService             TransactionalEmailService
 	verifyFrontendURL        string
 	verificationTTL          time.Duration
 	resendCooldown           time.Duration
@@ -98,6 +99,11 @@ type UseCase struct {
 	auditLogger              repo.AuthAuditRepo
 	rateLimit                RateLimitOptions
 	emailNotifications       EmailNotificationOptions
+}
+
+// TransactionalEmailService sends admin-managed transactional emails.
+type TransactionalEmailService interface {
+	SendTransactional(ctx context.Context, req entity.TransactionalEmailRequest) error
 }
 
 // RateLimitRule configures one auth rate-limit dimension.
@@ -152,6 +158,7 @@ type Options struct {
 	EmailChangeTTL           time.Duration
 	EmailChangeCooldown      time.Duration
 	SupportEmail             string
+	EmailService             TransactionalEmailService
 	RateLimiter              repo.AuthRateLimitRepo
 	AuditLogger              repo.AuthAuditRepo
 	RateLimit                RateLimitOptions
@@ -189,6 +196,7 @@ func New(r repo.UserRepo, j *jwt.Manager, emailSender repo.EmailSender, opts Opt
 		repo:                     r,
 		jwt:                      j,
 		emailSender:              emailSender,
+		emailService:             opts.EmailService,
 		verifyFrontendURL:        opts.VerifyFrontendURL,
 		verificationTTL:          verificationTTL,
 		resendCooldown:           resendCooldown,
@@ -1536,14 +1544,19 @@ func (uc *UseCase) sendVerificationEmail(ctx context.Context, user entity.User, 
 
 	emailCtx := uc.newAuthEmailContext(ctx, user)
 	content := verificationEmailContent(emailCtx, link, uc.verificationTTL)
-	message := entity.EmailMessage{
-		To:      user.Email,
-		Subject: content.Subject,
-		HTML:    authEmailHTML(content.View),
-		Text:    content.Text,
-	}
-
-	if err = uc.emailSender.Send(ctx, message); err != nil {
+	variables := authEmailVariables(emailCtx)
+	variables["link"] = link
+	variables["duration"] = humanDurationText(uc.verificationTTL, emailCtx.Lang)
+	if err = uc.sendAuthEmail(
+		ctx,
+		user.Email,
+		entity.EmailTemplateKeyVerification,
+		user.ID,
+		emailCtx.Lang,
+		variables,
+		content,
+		true,
+	); err != nil {
 		return fmt.Errorf("%w: %w", entity.ErrEmailDeliveryFailed, err)
 	}
 
@@ -1562,14 +1575,19 @@ func (uc *UseCase) sendPasswordResetEmail(ctx context.Context, user entity.User,
 
 	emailCtx := uc.newAuthEmailContext(ctx, user)
 	content := passwordResetEmailContent(emailCtx, link, uc.passwordResetTTL)
-	message := entity.EmailMessage{
-		To:      user.Email,
-		Subject: content.Subject,
-		HTML:    authEmailHTML(content.View),
-		Text:    content.Text,
-	}
-
-	if err = uc.emailSender.Send(ctx, message); err != nil {
+	variables := authEmailVariables(emailCtx)
+	variables["link"] = link
+	variables["duration"] = humanDurationText(uc.passwordResetTTL, emailCtx.Lang)
+	if err = uc.sendAuthEmail(
+		ctx,
+		user.Email,
+		entity.EmailTemplateKeyPasswordReset,
+		user.ID,
+		emailCtx.Lang,
+		variables,
+		content,
+		true,
+	); err != nil {
 		return fmt.Errorf("%w: %w", entity.ErrEmailDeliveryFailed, err)
 	}
 
@@ -1593,14 +1611,19 @@ func (uc *UseCase) sendEmailChangeVerificationEmail(
 
 	emailCtx := uc.newAuthEmailContext(ctx, user)
 	content := emailChangeVerificationEmailContent(emailCtx, link, uc.emailChangeTTL)
-	message := entity.EmailMessage{
-		To:      newEmail,
-		Subject: content.Subject,
-		HTML:    authEmailHTML(content.View),
-		Text:    content.Text,
-	}
-
-	if err = uc.emailSender.Send(ctx, message); err != nil {
+	variables := authEmailVariables(emailCtx)
+	variables["link"] = link
+	variables["duration"] = humanDurationText(uc.emailChangeTTL, emailCtx.Lang)
+	if err = uc.sendAuthEmail(
+		ctx,
+		newEmail,
+		entity.EmailTemplateKeyEmailChangeVerification,
+		user.ID,
+		emailCtx.Lang,
+		variables,
+		content,
+		true,
+	); err != nil {
 		return fmt.Errorf("%w: %w", entity.ErrEmailDeliveryFailed, err)
 	}
 
@@ -1652,7 +1675,13 @@ func (uc *UseCase) notifyPasswordChanged(ctx context.Context, user entity.User) 
 	}
 
 	emailCtx := uc.newAuthEmailContext(ctx, user)
-	uc.sendSecurityNotification(ctx, user, passwordChangedEmailContent(emailCtx))
+	uc.sendSecurityNotification(
+		ctx,
+		user,
+		entity.EmailTemplateKeyPasswordChanged,
+		authEmailVariables(emailCtx),
+		passwordChangedEmailContent(emailCtx),
+	)
 }
 
 func (uc *UseCase) notifyEmailVerified(ctx context.Context, user entity.User) {
@@ -1661,7 +1690,13 @@ func (uc *UseCase) notifyEmailVerified(ctx context.Context, user entity.User) {
 	}
 
 	emailCtx := uc.newAuthEmailContext(ctx, user)
-	uc.sendSecurityNotification(ctx, user, emailVerifiedEmailContent(emailCtx))
+	uc.sendSecurityNotification(
+		ctx,
+		user,
+		entity.EmailTemplateKeyEmailVerified,
+		authEmailVariables(emailCtx),
+		emailVerifiedEmailContent(emailCtx),
+	)
 }
 
 func (uc *UseCase) notifyRoleChanged(ctx context.Context, user entity.User) {
@@ -1670,7 +1705,15 @@ func (uc *UseCase) notifyRoleChanged(ctx context.Context, user entity.User) {
 	}
 
 	emailCtx := uc.newAuthEmailContext(ctx, user)
-	uc.sendSecurityNotification(ctx, user, roleChangedEmailContent(emailCtx))
+	variables := authEmailVariables(emailCtx)
+	variables["role"] = strings.TrimSpace(user.Role)
+	uc.sendSecurityNotification(
+		ctx,
+		user,
+		entity.EmailTemplateKeyRoleChanged,
+		variables,
+		roleChangedEmailContent(emailCtx),
+	)
 }
 
 func (uc *UseCase) notifyEmailChanged(ctx context.Context, user entity.User, oldEmail string) {
@@ -1680,11 +1723,14 @@ func (uc *UseCase) notifyEmailChanged(ctx context.Context, user entity.User, old
 
 	emailCtx := uc.newAuthEmailContext(ctx, user)
 	content := emailChangedEmailContent(emailCtx, oldEmail, user.Email)
+	variables := authEmailVariables(emailCtx)
+	variables["old_email"] = strings.TrimSpace(oldEmail)
+	variables["new_email"] = strings.TrimSpace(user.Email)
 	if validEmail(oldEmail) {
-		uc.sendSecurityNotificationTo(ctx, oldEmail, content)
+		uc.sendSecurityNotificationTo(ctx, oldEmail, entity.EmailTemplateKeyEmailChanged, user.ID, emailCtx.Lang, variables, content)
 	}
 	if validEmail(user.Email) && !strings.EqualFold(oldEmail, user.Email) {
-		uc.sendSecurityNotificationTo(ctx, user.Email, content)
+		uc.sendSecurityNotificationTo(ctx, user.Email, entity.EmailTemplateKeyEmailChanged, user.ID, emailCtx.Lang, variables, content)
 	}
 }
 
@@ -1693,7 +1739,15 @@ func (uc *UseCase) notifyAccountDeleted(ctx context.Context, user entity.User, e
 		return
 	}
 
-	uc.sendSecurityNotificationTo(ctx, user.Email, accountDeletedEmailContent(emailCtx))
+	uc.sendSecurityNotificationTo(
+		ctx,
+		user.Email,
+		entity.EmailTemplateKeyAccountDeleted,
+		user.ID,
+		emailCtx.Lang,
+		authEmailVariables(emailCtx),
+		accountDeletedEmailContent(emailCtx),
+	)
 }
 
 func (uc *UseCase) notifyNewLogin(ctx context.Context, user entity.User) {
@@ -1725,7 +1779,15 @@ func (uc *UseCase) notifyNewLogin(ctx context.Context, user entity.User) {
 	}
 	emailCtx := uc.newAuthEmailContext(ctx, user)
 	details := localizedLoginDetails(emailCtx, now, clientIP, device)
-	uc.sendSecurityNotification(ctx, user, newLoginEmailContent(emailCtx, details))
+	variables := authEmailVariables(emailCtx)
+	variables["details"] = details
+	uc.sendSecurityNotification(
+		ctx,
+		user,
+		entity.EmailTemplateKeyNewLogin,
+		variables,
+		newLoginEmailContent(emailCtx, details),
+	)
 }
 
 func (uc *UseCase) notifySuspiciousFailedLogin(ctx context.Context, email string) {
@@ -1748,7 +1810,13 @@ func (uc *UseCase) notifySuspiciousFailedLogin(ctx context.Context, email string
 	}
 
 	emailCtx := uc.newAuthEmailContext(ctx, user)
-	uc.sendSecurityNotification(ctx, user, failedLoginEmailContent(emailCtx))
+	uc.sendSecurityNotification(
+		ctx,
+		user,
+		entity.EmailTemplateKeyFailedLogin,
+		authEmailVariables(emailCtx),
+		failedLoginEmailContent(emailCtx),
+	)
 }
 
 func (uc *UseCase) notificationEnabled(flag bool) bool {
@@ -1758,22 +1826,61 @@ func (uc *UseCase) notificationEnabled(flag bool) bool {
 func (uc *UseCase) sendSecurityNotification(
 	ctx context.Context,
 	user entity.User,
+	key string,
+	variables map[string]string,
 	content authEmailContent,
 ) {
-	uc.sendSecurityNotificationTo(ctx, user.Email, content)
+	uc.sendSecurityNotificationTo(ctx, user.Email, key, user.ID, content.View.Lang, variables, content)
 }
 
 func (uc *UseCase) sendSecurityNotificationTo(
 	ctx context.Context,
 	email string,
+	key string,
+	userID string,
+	lang string,
+	variables map[string]string,
 	content authEmailContent,
 ) {
-	_ = uc.emailSender.Send(ctx, entity.EmailMessage{
+	_ = uc.sendAuthEmail(ctx, email, key, userID, lang, variables, content, false)
+}
+
+func (uc *UseCase) sendAuthEmail(
+	ctx context.Context,
+	email string,
+	key string,
+	userID string,
+	lang string,
+	variables map[string]string,
+	content authEmailContent,
+	critical bool,
+) error {
+	message := entity.EmailMessage{
 		To:      email,
 		Subject: content.Subject,
 		HTML:    authEmailHTML(content.View),
 		Text:    content.Text,
-	})
+	}
+	if uc.emailService != nil {
+		return uc.emailService.SendTransactional(ctx, entity.TransactionalEmailRequest{
+			Key:       key,
+			To:        email,
+			UserID:    userID,
+			Lang:      lang,
+			Variables: variables,
+			Fallback:  message,
+			Critical:  critical,
+		})
+	}
+
+	return uc.emailSender.Send(ctx, message)
+}
+
+func authEmailVariables(emailCtx authEmailContext) map[string]string {
+	return map[string]string{
+		"name":          emailCtx.Name,
+		"support_email": emailCtx.SupportEmail,
+	}
 }
 
 func loginFingerprintInputs(meta authmeta.Meta) (string, string, bool) {
@@ -2171,7 +2278,7 @@ func emailChangeVerificationEmailContent(emailCtx authEmailContext, link string,
 		)
 	default:
 		text := fmt.Sprintf(
-			"%s\n\nKonfirmasi email baru untuk akun Surau Anda:\n%s\n\nLink ini berlaku selama %s.\n\nIf you did not request this, ignore this email and keep your current email.",
+			"%s\n\nKonfirmasi email baru untuk akun Surau Anda:\n%s\n\nLink ini berlaku selama %s.\n\nJika Anda tidak meminta ini, abaikan email ini dan email saat ini tetap digunakan.",
 			localizedGreeting(emailCtx.Lang, emailCtx.Name),
 			link,
 			duration,
@@ -2186,7 +2293,7 @@ func emailChangeVerificationEmailContent(emailCtx authEmailContext, link string,
 			"Konfirmasi email",
 			link,
 			"Link ini berlaku selama "+duration+".",
-			"If you did not request this, ignore this email and keep your current email.",
+			"Jika Anda tidak meminta ini, abaikan email ini dan email saat ini tetap digunakan.",
 			text,
 		)
 	}
@@ -2430,7 +2537,7 @@ func emailChangedEmailContent(emailCtx authEmailContext, oldEmail, newEmail stri
 		)
 	default:
 		body := "Email akun Surau Anda sudah berubah."
-		note := fmt.Sprintf("Email lama: %s. Email baru: %s. If this was not you, contact support immediately.", oldEmail, newEmail)
+		note := fmt.Sprintf("Email lama: %s. Email baru: %s. Jika ini bukan Anda, segera hubungi support.", oldEmail, newEmail)
 		text := fmt.Sprintf("%s\n\n%s\n\n%s", localizedGreeting(emailCtx.Lang, emailCtx.Name), body, note)
 
 		return newAuthEmailContent(
@@ -2486,7 +2593,7 @@ func accountDeletedEmailContent(emailCtx authEmailContext) authEmailContent {
 		)
 	default:
 		body := "Akun Surau Anda sudah dihapus."
-		note := "If this was not you, contact support immediately."
+		note := "Jika ini bukan Anda, segera hubungi support."
 		text := fmt.Sprintf("%s\n\n%s\n\n%s", localizedGreeting(emailCtx.Lang, emailCtx.Name), body, note)
 
 		return newAuthEmailContent(

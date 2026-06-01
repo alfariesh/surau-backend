@@ -16,6 +16,7 @@ type V1 struct {
 	quran     usecase.Quran
 	personal  usecase.Personal
 	editorial usecase.Editorial
+	email     usecase.EmailAdmin
 	l         logger.Interface
 	v         *validator.Validate
 }

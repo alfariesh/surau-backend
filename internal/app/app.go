@@ -2,10 +2,13 @@
 package app
 
 import (
+	"context"
 	"fmt"
+	"net/url"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/evrone/go-clean-template/config"
 	"github.com/evrone/go-clean-template/internal/controller/restapi"
@@ -14,6 +17,7 @@ import (
 	"github.com/evrone/go-clean-template/internal/repo/webapi"
 	"github.com/evrone/go-clean-template/internal/usecase/bookrag"
 	"github.com/evrone/go-clean-template/internal/usecase/editorial"
+	emailusecase "github.com/evrone/go-clean-template/internal/usecase/email"
 	"github.com/evrone/go-clean-template/internal/usecase/personal"
 	"github.com/evrone/go-clean-template/internal/usecase/quran"
 	"github.com/evrone/go-clean-template/internal/usecase/reader"
@@ -31,10 +35,12 @@ type useCases struct {
 	quran     *quran.UseCase
 	personal  *personal.UseCase
 	editorial *editorial.UseCase
+	email     *emailusecase.UseCase
 }
 
 type servers struct {
-	http *httpserver.Server
+	http                *httpserver.Server
+	emailDispatcherStop context.CancelFunc
 }
 
 func initUseCases(cfg *config.Config, pg *postgres.Postgres, jwtManager *jwt.Manager) useCases {
@@ -44,6 +50,7 @@ func initUseCases(cfg *config.Config, pg *postgres.Postgres, jwtManager *jwt.Man
 	quranRepo := persistent.NewQuranRepo(pg)
 	personalRepo := persistent.NewPersonalRepo(pg)
 	editorialRepo := persistent.NewEditorialRepo(pg)
+	emailRepo := persistent.NewEmailRepo(pg)
 	llmClient := webapi.NewOpenAICompatibleClient(webapi.OpenAICompatibleOptions{
 		BaseURL:     cfg.RAG.LLMBaseURL,
 		APIKey:      cfg.RAG.LLMAPIKey,
@@ -65,6 +72,11 @@ func initUseCases(cfg *config.Config, pg *postgres.Postgres, jwtManager *jwt.Man
 			Timeout:     cfg.Email.HTTPTimeout,
 		})
 	}
+	emailUC := emailusecase.New(emailRepo, emailSender, emailusecase.Options{
+		SupportEmail:         cfg.Email.ReplyTo,
+		UnsubscribeURL:       unsubscribeFrontendURL(cfg),
+		UnsubscribeTokenSeed: cfg.JWT.Secret,
+	})
 	var rateLimiter repo.AuthRateLimitRepo
 	if cfg.AuthRateLimit.Enabled {
 		rateLimiter = userRepo
@@ -82,6 +94,7 @@ func initUseCases(cfg *config.Config, pg *postgres.Postgres, jwtManager *jwt.Man
 			EmailChangeTTL:           cfg.Email.EmailChangeTTL,
 			EmailChangeCooldown:      cfg.Email.EmailChangeCooldown,
 			SupportEmail:             cfg.Email.ReplyTo,
+			EmailService:             emailUC,
 			RateLimiter:              rateLimiter,
 			AuditLogger:              userRepo,
 			EmailNotifications: user.EmailNotificationOptions{
@@ -178,20 +191,52 @@ func initUseCases(cfg *config.Config, pg *postgres.Postgres, jwtManager *jwt.Man
 		quran:     quran.New(quranRepo),
 		personal:  personal.New(personalRepo),
 		editorial: editorial.New(editorialRepo),
+		email:     emailUC,
 	}
 }
 
 func initServers(cfg *config.Config, pg *postgres.Postgres, uc useCases, jwtManager *jwt.Manager, l logger.Interface) servers {
 	// HTTP Server
 	httpServer := httpserver.New(l, httpserver.Port(cfg.HTTP.Port), httpserver.Prefork(cfg.HTTP.UsePreforkMode))
-	restapi.NewRouter(httpServer.App, cfg, pg, uc.reader, uc.bookRAG, uc.quran, uc.user, uc.personal, uc.editorial, jwtManager, l)
+	restapi.NewRouter(
+		httpServer.App,
+		cfg,
+		pg,
+		uc.reader,
+		uc.bookRAG,
+		uc.quran,
+		uc.user,
+		uc.personal,
+		uc.editorial,
+		uc.email,
+		jwtManager,
+		l,
+	)
 
 	return servers{
 		http: httpServer,
 	}
 }
 
-func (s *servers) startServers() {
+func (s *servers) startServers(emailUC *emailusecase.UseCase, l logger.Interface) {
+	if emailUC != nil {
+		dispatchCtx, cancel := context.WithCancel(context.Background())
+		s.emailDispatcherStop = cancel
+		go func() {
+			ticker := time.NewTicker(time.Minute)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-dispatchCtx.Done():
+					return
+				case <-ticker.C:
+					if err := emailUC.DispatchDueCampaigns(dispatchCtx, 20); err != nil {
+						l.Error(fmt.Errorf("app - email dispatcher: %w", err))
+					}
+				}
+			}
+		}()
+	}
 	s.http.Start()
 }
 
@@ -212,6 +257,9 @@ func (s *servers) waitForShutdown(l logger.Interface) {
 }
 
 func (s *servers) shutdownServers(l logger.Interface) {
+	if s.emailDispatcherStop != nil {
+		s.emailDispatcherStop()
+	}
 	if err := s.http.Shutdown(); err != nil {
 		l.Error(fmt.Errorf("app - Run - httpServer.Shutdown: %w", err))
 	}
@@ -233,6 +281,20 @@ func Run(cfg *config.Config) {
 
 	uc := initUseCases(cfg, pg, jwtManager)
 	s := initServers(cfg, pg, uc, jwtManager, l)
-	s.startServers()
+	s.startServers(uc.email, l)
 	s.waitForShutdown(l)
+}
+
+func unsubscribeFrontendURL(cfg *config.Config) string {
+	if cfg.Email.UnsubscribeFrontendURL != "" {
+		return cfg.Email.UnsubscribeFrontendURL
+	}
+	parsed, err := url.Parse(cfg.Email.VerifyFrontendURL)
+	if err != nil {
+		return ""
+	}
+	parsed.Path = "/unsubscribe"
+	parsed.RawQuery = ""
+
+	return parsed.String()
 }

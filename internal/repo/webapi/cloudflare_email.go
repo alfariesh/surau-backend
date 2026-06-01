@@ -101,7 +101,18 @@ func (c *CloudflareEmailClient) Send(ctx context.Context, message entity.EmailMe
 		return fmt.Errorf("%w: CloudflareEmailClient - Send - missing result", entity.ErrEmailDeliveryFailed)
 	}
 	if containsEmail(parsed.Result.PermanentBounces, message.To) {
-		return fmt.Errorf("%w: CloudflareEmailClient - Send - permanent bounce for %s", entity.ErrEmailDeliveryFailed, message.To)
+		return fmt.Errorf(
+			"%w: %w for %s",
+			entity.ErrEmailDeliveryFailed,
+			entity.ErrEmailPermanentBounce,
+			message.To,
+		)
+	}
+	if !containsEmail(parsed.Result.Delivered, message.To) && !containsEmail(parsed.Result.Queued, message.To) {
+		return fmt.Errorf(
+			"%w: CloudflareEmailClient - Send - recipient was not delivered or queued",
+			entity.ErrEmailDeliveryFailed,
+		)
 	}
 
 	return nil

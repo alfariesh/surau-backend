@@ -1,0 +1,9 @@
+DROP TABLE IF EXISTS email_campaign_recipients;
+DROP TABLE IF EXISTS email_campaigns;
+DROP TABLE IF EXISTS email_suppressions;
+DROP TABLE IF EXISTS email_subscriptions;
+DROP TABLE IF EXISTS email_messages;
+DROP TABLE IF EXISTS email_event_settings;
+DROP INDEX IF EXISTS idx_email_template_versions_one_published_lang;
+DROP TABLE IF EXISTS email_template_versions;
+DROP TABLE IF EXISTS email_templates;

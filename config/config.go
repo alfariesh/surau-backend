@@ -79,6 +79,7 @@ type (
 		EmailChangeFrontendURL   string        `env:"EMAIL_CHANGE_FRONTEND_URL"`
 		EmailChangeTTL           time.Duration `env:"EMAIL_CHANGE_TTL" envDefault:"24h"`
 		EmailChangeCooldown      time.Duration `env:"EMAIL_CHANGE_RESEND_COOLDOWN" envDefault:"1m"`
+		UnsubscribeFrontendURL   string        `env:"EMAIL_UNSUBSCRIBE_FRONTEND_URL"`
 		HTTPTimeout              time.Duration `env:"EMAIL_HTTP_TIMEOUT" envDefault:"10s"`
 	}
 
@@ -184,6 +185,7 @@ func NewConfig() (*Config, error) {
 	cfg.Email.VerifyFrontendURL = strings.TrimSpace(cfg.Email.VerifyFrontendURL)
 	cfg.Email.PasswordResetFrontendURL = strings.TrimSpace(cfg.Email.PasswordResetFrontendURL)
 	cfg.Email.EmailChangeFrontendURL = strings.TrimSpace(cfg.Email.EmailChangeFrontendURL)
+	cfg.Email.UnsubscribeFrontendURL = strings.TrimSpace(cfg.Email.UnsubscribeFrontendURL)
 	switch cfg.Email.DeliveryMode {
 	case EmailDeliveryModeCloudflare:
 		if strings.TrimSpace(cfg.Email.CloudflareAccountID) == "" {
@@ -213,6 +215,9 @@ func NewConfig() (*Config, error) {
 	}
 	if !validAbsoluteHTTPURL(cfg.Email.EmailChangeFrontendURL) {
 		return nil, fmt.Errorf("config error: EMAIL_CHANGE_FRONTEND_URL must be an absolute http(s) URL")
+	}
+	if cfg.Email.UnsubscribeFrontendURL != "" && !validAbsoluteHTTPURL(cfg.Email.UnsubscribeFrontendURL) {
+		return nil, fmt.Errorf("config error: EMAIL_UNSUBSCRIBE_FRONTEND_URL must be an absolute http(s) URL")
 	}
 	if cfg.Email.VerificationTTL <= 0 {
 		return nil, fmt.Errorf("config error: EMAIL_VERIFICATION_TTL must be positive")
