@@ -183,7 +183,7 @@ func TestEditorialTranslationFeedbacksStatusFilter(t *testing.T) {
 				Limit:  50,
 				Offset: 0,
 			}).
-			Return([]entity.AdminTranslationFeedback{{BookID: 1, Status: entity.FeedbackStatusOpen}}, 1, nil)
+			Return([]entity.EditorialTranslationFeedback{{BookID: 1, Status: entity.FeedbackStatusOpen}}, 1, nil)
 
 		feedbacks, total, err := uc.TranslationFeedbacks(context.Background(), &bookID, nil, " ID ", "", "", 0, -1)
 
@@ -203,7 +203,7 @@ func TestEditorialTranslationFeedbacksStatusFilter(t *testing.T) {
 				Limit:  25,
 				Offset: 0,
 			}).
-			Return(entity.AdminTranslationFeedbackSummary{Dislikes: 2}, nil)
+			Return(entity.EditorialTranslationFeedbackSummary{Dislikes: 2}, nil)
 
 		summary, err := uc.TranslationFeedbackSummary(context.Background(), nil, nil, "", " DISLIKE ", " all ", 25)
 
@@ -239,7 +239,7 @@ func TestEditorialMissingReaderAssetsFilter(t *testing.T) {
 				Limit:       200,
 				Offset:      0,
 			}).
-			Return(entity.AdminMissingReaderAssets{Total: 1}, nil)
+			Return(entity.EditorialMissingReaderAssets{Total: 1}, nil)
 
 		got, err := uc.MissingReaderAssets(
 			context.Background(),
@@ -265,7 +265,7 @@ func TestEditorialMissingReaderAssetsFilter(t *testing.T) {
 				Limit:       50,
 				Offset:      0,
 			}).
-			Return(entity.AdminMissingReaderAssets{}, nil)
+			Return(entity.EditorialMissingReaderAssets{}, nil)
 
 		_, err := uc.MissingReaderAssets(context.Background(), "en-US", "", nil, 0, 0)
 
@@ -305,7 +305,7 @@ func TestEditorialResolveTranslationFeedback(t *testing.T) {
 
 		mockRepo.EXPECT().
 			ResolveTranslationFeedback(context.Background(), "actor-id", "feedback-id", &expectedNote).
-			Return(entity.AdminTranslationFeedback{
+			Return(entity.EditorialTranslationFeedback{
 				ID:             "feedback-id",
 				Status:         entity.FeedbackStatusResolved,
 				ResolutionNote: &expectedNote,
@@ -327,4 +327,531 @@ func TestEditorialResolveTranslationFeedback(t *testing.T) {
 
 		require.ErrorIs(t, err, entity.ErrInvalidFeedback)
 	})
+}
+
+func TestEditorialCreateProductionProject(t *testing.T) {
+	t.Parallel()
+
+	uc, mockRepo := newEditorialUseCase(t)
+	notes := "  Initial batch  "
+	expectedNotes := "Initial batch"
+
+	mockRepo.EXPECT().
+		CreateProductionProject(context.Background(), "actor-id", entity.BookProductionProject{
+			BookID:            797,
+			Lang:              "en",
+			WorkflowStatus:    entity.ProductionWorkflowCandidate,
+			PublicationStatus: entity.ProductionPublicationHidden,
+			RequiresReview:    true,
+			RequiresAudio:     true,
+			Priority:          3,
+			Notes:             &expectedNotes,
+		}).
+		Return(entity.BookProductionProject{ID: "project-id", BookID: 797, Lang: "en"}, nil)
+
+	project, err := uc.CreateProductionProject(context.Background(), "actor-id", entity.BookProductionProject{
+		BookID:         797,
+		Lang:           "en-US",
+		RequiresReview: true,
+		RequiresAudio:  true,
+		Priority:       3,
+		Notes:          &notes,
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, "project-id", project.ID)
+}
+
+func TestEditorialProductionCandidates(t *testing.T) {
+	t.Parallel()
+
+	uc, mockRepo := newEditorialUseCase(t)
+	categoryID := 10
+	authorID := 20
+	hasContent := true
+	expected := []entity.BookProductionCandidate{{BookID: 797, Name: "book"}}
+
+	mockRepo.EXPECT().
+		ListProductionCandidates(context.Background(), repo.ProductionCandidateFilter{
+			Lang:       "en",
+			Query:      "kitab",
+			CategoryID: &categoryID,
+			AuthorID:   &authorID,
+			HasContent: &hasContent,
+			Unstarted:  true,
+			Limit:      200,
+			Offset:     0,
+		}).
+		Return(expected, 1, nil)
+
+	got, total, err := uc.ProductionCandidates(
+		context.Background(),
+		"en-US",
+		" kitab ",
+		&categoryID,
+		&authorID,
+		&hasContent,
+		true,
+		999,
+		-1,
+	)
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, total)
+	assert.Equal(t, expected, got)
+}
+
+func TestEditorialProductionDashboard(t *testing.T) {
+	t.Parallel()
+
+	t.Run("normalizes lang and returns operational counts", func(t *testing.T) {
+		t.Parallel()
+
+		uc, mockRepo := newEditorialUseCase(t)
+		hasContent := true
+		expectedEvents := []entity.BookProductionEvent{{
+			ID:        "event-id",
+			ProjectID: "project-id",
+			EventType: entity.ProductionEventDraftSave,
+		}}
+
+		gomock.InOrder(
+			mockRepo.EXPECT().
+				ListProductionCandidates(context.Background(), repo.ProductionCandidateFilter{
+					Lang:       "en",
+					HasContent: &hasContent,
+					Unstarted:  true,
+					Limit:      1,
+					Offset:     0,
+				}).
+				Return(nil, 10, nil),
+			mockRepo.EXPECT().
+				ListProductionProjects(context.Background(), repo.ProductionProjectFilter{
+					Lang:              "en",
+					PublicationStatus: entity.ProductionPublicationHidden,
+					Limit:             1,
+					Offset:            0,
+				}).
+				Return(nil, 4, nil),
+			mockRepo.EXPECT().
+				ListProductionProjects(context.Background(), repo.ProductionProjectFilter{
+					Lang:      "en",
+					NeedsWork: true,
+					Limit:     1,
+					Offset:    0,
+				}).
+				Return(nil, 3, nil),
+			mockRepo.EXPECT().
+				ListProductionProjects(context.Background(), repo.ProductionProjectFilter{
+					Lang:           "en",
+					ReadyToPublish: true,
+					Limit:          1,
+					Offset:         0,
+				}).
+				Return(nil, 1, nil),
+			mockRepo.EXPECT().
+				ListProductionProjects(context.Background(), repo.ProductionProjectFilter{
+					Lang:              "en",
+					PublicationStatus: entity.ProductionPublicationPublished,
+					Limit:             1,
+					Offset:            0,
+				}).
+				Return(nil, 12, nil),
+			mockRepo.EXPECT().
+				ListProductionEventsGlobal(context.Background(), "en", uint64(100), uint64(0)).
+				Return(expectedEvents, 8, nil),
+		)
+
+		got, err := uc.ProductionDashboard(context.Background(), "en-US", 999)
+
+		require.NoError(t, err)
+		assert.Equal(t, "en", got.Lang)
+		assert.Equal(t, 10, got.CandidateCount)
+		assert.Equal(t, 4, got.ActiveProjectCount)
+		assert.Equal(t, 3, got.NeedsWorkCount)
+		assert.Equal(t, 1, got.ReadyToPublishCount)
+		assert.Equal(t, 12, got.PublishedCount)
+		assert.Equal(t, 8, got.RecentEventsTotal)
+		assert.Equal(t, expectedEvents, got.RecentEvents)
+	})
+
+	t.Run("rejects bad lang", func(t *testing.T) {
+		t.Parallel()
+
+		uc, _ := newEditorialUseCase(t)
+
+		_, err := uc.ProductionDashboard(context.Background(), "ar", 20)
+
+		require.ErrorIs(t, err, entity.ErrUnsupportedLanguage)
+	})
+}
+
+func TestEditorialProductionProjects(t *testing.T) {
+	t.Parallel()
+
+	t.Run("passes ready filter", func(t *testing.T) {
+		t.Parallel()
+
+		uc, mockRepo := newEditorialUseCase(t)
+		expected := []entity.BookProductionProject{{ID: "project-id", Lang: "id"}}
+
+		mockRepo.EXPECT().
+			ListProductionProjects(context.Background(), repo.ProductionProjectFilter{
+				Lang:           "id",
+				ReadyToPublish: true,
+				Limit:          50,
+				Offset:         0,
+			}).
+			Return(expected, 1, nil)
+
+		got, total, err := uc.ProductionProjects(context.Background(), nil, "id", "", "", true, false, 0, 0)
+
+		require.NoError(t, err)
+		assert.Equal(t, 1, total)
+		assert.Equal(t, expected, got)
+	})
+
+	t.Run("rejects mutually exclusive queue filters", func(t *testing.T) {
+		t.Parallel()
+
+		uc, _ := newEditorialUseCase(t)
+
+		_, _, err := uc.ProductionProjects(context.Background(), nil, "id", "", "", true, true, 50, 0)
+
+		require.ErrorIs(t, err, entity.ErrInvalidStatus)
+	})
+}
+
+func TestEditorialProductionWorkspace(t *testing.T) {
+	t.Parallel()
+
+	uc, mockRepo := newEditorialUseCase(t)
+	expected := entity.BookProductionWorkspace{
+		Project: entity.BookProductionProject{ID: "project-id", BookID: 797, Lang: "id"},
+		Book:    entity.BookProductionWorkspaceBook{ID: 797, Name: "book", HasContent: true},
+	}
+
+	mockRepo.EXPECT().
+		ProductionWorkspace(context.Background(), "project-id").
+		Return(expected, nil)
+
+	got, err := uc.ProductionWorkspace(context.Background(), " project-id ")
+
+	require.NoError(t, err)
+	assert.Equal(t, expected, got)
+}
+
+func TestEditorialProductionActivity(t *testing.T) {
+	t.Parallel()
+
+	t.Run("normalizes pagination", func(t *testing.T) {
+		t.Parallel()
+
+		uc, mockRepo := newEditorialUseCase(t)
+		expected := []entity.BookProductionEvent{{
+			ID:        "event-id",
+			ProjectID: "project-id",
+			EventType: entity.ProductionEventDraftSave,
+		}}
+
+		mockRepo.EXPECT().
+			ListProductionEvents(context.Background(), "project-id", uint64(100), uint64(0)).
+			Return(expected, 1, nil)
+
+		got, total, err := uc.ProductionActivity(context.Background(), " project-id ", 999, -1)
+
+		require.NoError(t, err)
+		assert.Equal(t, 1, total)
+		assert.Equal(t, expected, got)
+	})
+
+	t.Run("rejects empty project", func(t *testing.T) {
+		t.Parallel()
+
+		uc, _ := newEditorialUseCase(t)
+
+		_, _, err := uc.ProductionActivity(context.Background(), " ", 50, 0)
+
+		require.ErrorIs(t, err, entity.ErrProductionProjectNotFound)
+	})
+}
+
+func TestEditorialGlobalProductionActivity(t *testing.T) {
+	t.Parallel()
+
+	uc, mockRepo := newEditorialUseCase(t)
+	expected := []entity.BookProductionEvent{{
+		ID:        "event-id",
+		ProjectID: "project-id",
+		EventType: entity.ProductionEventProjectUpdate,
+	}}
+
+	mockRepo.EXPECT().
+		ListProductionEventsGlobal(context.Background(), "id", uint64(100), uint64(0)).
+		Return(expected, 1, nil)
+
+	got, total, err := uc.GlobalProductionActivity(context.Background(), " id ", 999, -1)
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, total)
+	assert.Equal(t, expected, got)
+}
+
+func TestEditorialProductionDraftRevisions(t *testing.T) {
+	t.Parallel()
+
+	t.Run("normalizes heading asset target", func(t *testing.T) {
+		t.Parallel()
+
+		uc, mockRepo := newEditorialUseCase(t)
+		headingID := 10
+		expected := []entity.BookProductionDraftRevision{{
+			ID:        "revision-id",
+			ProjectID: "project-id",
+			AssetType: entity.ProductionAssetSectionTranslation,
+			HeadingID: &headingID,
+			Version:   1,
+		}}
+
+		mockRepo.EXPECT().
+			ListProductionDraftRevisions(context.Background(), repo.ProductionDraftRevisionFilter{
+				ProjectID: "project-id",
+				AssetType: entity.ProductionAssetSectionTranslation,
+				HeadingID: &headingID,
+				Limit:     200,
+				Offset:    0,
+			}).
+			Return(expected, 1, nil)
+
+		got, total, err := uc.ProductionDraftRevisions(
+			context.Background(),
+			" project-id ",
+			" SECTION_TRANSLATION ",
+			&headingID,
+			999,
+			-1,
+		)
+
+		require.NoError(t, err)
+		assert.Equal(t, 1, total)
+		assert.Equal(t, expected, got)
+	})
+
+	t.Run("requires heading for heading asset", func(t *testing.T) {
+		t.Parallel()
+
+		uc, _ := newEditorialUseCase(t)
+
+		_, _, err := uc.ProductionDraftRevisions(context.Background(), "project-id", entity.ProductionAssetSectionAudio, nil, 50, 0)
+
+		require.ErrorIs(t, err, entity.ErrHeadingNotFound)
+	})
+
+	t.Run("rejects heading for scalar asset", func(t *testing.T) {
+		t.Parallel()
+
+		uc, _ := newEditorialUseCase(t)
+		headingID := 10
+
+		_, _, err := uc.ProductionDraftRevisions(context.Background(), "project-id", entity.ProductionAssetBookMetadata, &headingID, 50, 0)
+
+		require.ErrorIs(t, err, entity.ErrInvalidProductionDraft)
+	})
+}
+
+func TestEditorialRestoreProductionDraftRevision(t *testing.T) {
+	t.Parallel()
+
+	uc, mockRepo := newEditorialUseCase(t)
+	expected := entity.BookProductionDraftRevision{
+		ID:        "revision-id-2",
+		ProjectID: "project-id",
+		AssetType: entity.ProductionAssetBookMetadata,
+		Version:   2,
+	}
+
+	mockRepo.EXPECT().
+		RestoreProductionDraftRevision(context.Background(), "actor-id", "project-id", "revision-id").
+		Return(expected, nil)
+
+	got, err := uc.RestoreProductionDraftRevision(context.Background(), "actor-id", " project-id ", " revision-id ")
+
+	require.NoError(t, err)
+	assert.Equal(t, expected, got)
+}
+
+func TestEditorialProductionPublishCheck(t *testing.T) {
+	t.Parallel()
+
+	t.Run("returns not ready payload", func(t *testing.T) {
+		t.Parallel()
+
+		uc, mockRepo := newEditorialUseCase(t)
+		expected := entity.BookProductionPublishCheck{
+			Project:    entity.BookProductionProject{ID: "project-id"},
+			Ready:      false,
+			CanPublish: false,
+			BlockingErrors: []entity.BookProductionBlocking{{
+				Code:      "missing_required_asset",
+				AssetType: entity.ProductionAssetBookMetadata,
+				Message:   "metadata translation draft is missing",
+			}},
+		}
+
+		mockRepo.EXPECT().
+			ProductionPublishCheck(context.Background(), "project-id").
+			Return(expected, nil)
+
+		got, err := uc.ProductionPublishCheck(context.Background(), " project-id ")
+
+		require.NoError(t, err)
+		assert.Equal(t, expected, got)
+	})
+
+	t.Run("returns ready payload", func(t *testing.T) {
+		t.Parallel()
+
+		uc, mockRepo := newEditorialUseCase(t)
+		expected := entity.BookProductionPublishCheck{
+			Project:    entity.BookProductionProject{ID: "project-id"},
+			Ready:      true,
+			CanPublish: true,
+		}
+
+		mockRepo.EXPECT().
+			ProductionPublishCheck(context.Background(), "project-id").
+			Return(expected, nil)
+
+		got, err := uc.ProductionPublishCheck(context.Background(), "project-id")
+
+		require.NoError(t, err)
+		assert.True(t, got.CanPublish)
+		assert.Equal(t, expected, got)
+	})
+}
+
+func TestEditorialSaveSectionTranslationDraft(t *testing.T) {
+	t.Parallel()
+
+	t.Run("normalizes draft", func(t *testing.T) {
+		t.Parallel()
+
+		uc, mockRepo := newEditorialUseCase(t)
+		title := "  Title  "
+		source := " manual "
+		expectedTitle := "Title"
+		expectedSource := "manual"
+
+		mockRepo.EXPECT().
+			SaveSectionTranslationDraft(context.Background(), "actor-id", "project-id", entity.SectionTranslationEdit{
+				ProjectID:    "project-id",
+				HeadingID:    10,
+				Title:        &expectedTitle,
+				Content:      "Translated content",
+				Source:       &expectedSource,
+				ReviewStatus: entity.ProductionReviewDraft,
+			}).
+			DoAndReturn(func(_ context.Context, _ string, _ string, edit entity.SectionTranslationEdit) (entity.SectionTranslationEdit, error) {
+				return edit, nil
+			})
+
+		edit, err := uc.SaveSectionTranslationDraft(context.Background(), "actor-id", " project-id ", entity.SectionTranslationEdit{
+			HeadingID: 10,
+			Title:     &title,
+			Content:   "  Translated content  ",
+			Source:    &source,
+		})
+
+		require.NoError(t, err)
+		assert.Equal(t, "Translated content", edit.Content)
+		assert.Equal(t, entity.ProductionReviewDraft, edit.ReviewStatus)
+	})
+
+	t.Run("rejects empty content", func(t *testing.T) {
+		t.Parallel()
+
+		uc, _ := newEditorialUseCase(t)
+
+		_, err := uc.SaveSectionTranslationDraft(context.Background(), "actor-id", "project-id", entity.SectionTranslationEdit{
+			HeadingID: 10,
+			Content:   " ",
+		})
+
+		require.ErrorIs(t, err, entity.ErrInvalidProductionDraft)
+	})
+}
+
+func TestEditorialReviewProductionAsset(t *testing.T) {
+	t.Parallel()
+
+	t.Run("normalizes review request", func(t *testing.T) {
+		t.Parallel()
+
+		uc, mockRepo := newEditorialUseCase(t)
+		headingID := 10
+		note := " approved "
+		expectedNote := "approved"
+
+		mockRepo.EXPECT().
+			ReviewProductionAsset(
+				context.Background(),
+				"actor-id",
+				"project-id",
+				entity.ProductionAssetSectionTranslation,
+				&headingID,
+				entity.ProductionReviewDecisionApprove,
+				&expectedNote,
+			).
+			Return(nil)
+
+		err := uc.ReviewProductionAsset(
+			context.Background(),
+			"actor-id",
+			" project-id ",
+			" SECTION_TRANSLATION ",
+			&headingID,
+			" APPROVE ",
+			&note,
+		)
+
+		require.NoError(t, err)
+	})
+
+	t.Run("requires heading for heading asset", func(t *testing.T) {
+		t.Parallel()
+
+		uc, _ := newEditorialUseCase(t)
+
+		err := uc.ReviewProductionAsset(
+			context.Background(),
+			"actor-id",
+			"project-id",
+			entity.ProductionAssetSectionAudio,
+			nil,
+			entity.ProductionReviewDecisionSubmit,
+			nil,
+		)
+
+		require.ErrorIs(t, err, entity.ErrHeadingNotFound)
+	})
+}
+
+func TestEditorialPublishProductionProject(t *testing.T) {
+	t.Parallel()
+
+	uc, mockRepo := newEditorialUseCase(t)
+	expected := entity.BookProductionProject{
+		ID:                "project-id",
+		PublicationStatus: entity.ProductionPublicationPublished,
+		WorkflowStatus:    entity.ProductionWorkflowPublished,
+	}
+
+	mockRepo.EXPECT().
+		PublishProductionProject(context.Background(), "actor-id", "project-id").
+		Return(expected, nil)
+
+	got, err := uc.PublishProductionProject(context.Background(), "actor-id", " project-id ")
+
+	require.NoError(t, err)
+	assert.Equal(t, expected, got)
 }

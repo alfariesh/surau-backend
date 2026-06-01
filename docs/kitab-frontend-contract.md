@@ -450,6 +450,32 @@ type MissingAssetCount = {
 };
 ```
 
+## Editorial Production Screen
+
+Book production starts with a raw Postgres kitab and a target `lang` (`id` or `en`):
+
+```txt
+GET /v1/editorial/production-candidates?lang=&q=&category_id=&author_id=&has_content=&unstarted=&limit=&offset=
+GET /v1/editorial/production-dashboard?lang=&activity_limit=
+GET /v1/editorial/production-activity?lang=&limit=&offset=
+POST /v1/editorial/production-projects
+GET /v1/editorial/production-projects?lang=&workflow_status=&publication_status=&ready_to_publish=&needs_work=
+GET /v1/editorial/production-projects/{id}/workspace
+GET /v1/editorial/production-projects/{id}/completeness
+GET /v1/editorial/production-projects/{id}/publish-check
+GET /v1/editorial/production-projects/{id}/activity
+GET /v1/editorial/production-projects/{id}/draft-revisions?asset_type=&heading_id=
+POST /v1/editorial/production-projects/{id}/draft-revisions/{revision_id}/restore
+PUT /v1/editorial/production-projects/{id}/metadata-draft
+PUT /v1/editorial/production-projects/{id}/toc/{heading_id}/translation-draft
+PUT /v1/editorial/production-projects/{id}/toc/{heading_id}/summary-draft
+PUT /v1/editorial/production-projects/{id}/toc/{heading_id}/audio-draft
+POST /v1/editorial/production-projects/{id}/review
+POST /v1/editorial/production-projects/{id}/publish
+```
+
+Treat translation, summary, and audio work as per-TOC units. Page editing remains source Arabic/OCR/layout work and is separate from translation production. Each draft save creates revision history; restore rolls a snapshot back into the active draft. Publish is admin-only and should be enabled only after `publish-check.can_publish === true`.
+
 ## Quran Reader Parity
 
 Quran now follows the same language resolver as kitab:

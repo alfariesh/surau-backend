@@ -38,6 +38,6 @@ type QuranProgressList struct {
 
 // TranslationFeedbackList -.
 type TranslationFeedbackList struct {
-	Feedbacks []entity.AdminTranslationFeedback `json:"feedbacks"`
-	Total     int                               `json:"total" example:"42"`
+	Feedbacks []entity.EditorialTranslationFeedback `json:"feedbacks"`
+	Total     int                                   `json:"total" example:"42"`
 } // @name v1.TranslationFeedbackList

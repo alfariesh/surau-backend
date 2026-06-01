@@ -642,7 +642,7 @@ func (r *QuranRepo) ListBookQuranReferences(
 func (r *QuranRepo) ListMissingQuranAssets(
 	ctx context.Context,
 	filter repo.MissingQuranAssetFilter,
-) (entity.AdminMissingQuranAssets, error) {
+) (entity.EditorialMissingQuranAssets, error) {
 	const itemSQL = missingQuranAssetsCTE + `
 SELECT asset_type,
        target_lang,
@@ -672,25 +672,25 @@ LIMIT $4 OFFSET $5`
 		filter.Offset,
 	)
 	if err != nil {
-		return entity.AdminMissingQuranAssets{}, fmt.Errorf("QuranRepo - ListMissingQuranAssets - items: %w", err)
+		return entity.EditorialMissingQuranAssets{}, fmt.Errorf("QuranRepo - ListMissingQuranAssets - items: %w", err)
 	}
 	defer rows.Close()
 
-	result := entity.AdminMissingQuranAssets{
-		Items:  make([]entity.AdminMissingQuranAsset, 0, filter.Limit),
-		Counts: []entity.AdminMissingQuranAssetCount{},
+	result := entity.EditorialMissingQuranAssets{
+		Items:  make([]entity.EditorialMissingQuranAsset, 0, filter.Limit),
+		Counts: []entity.EditorialMissingQuranAssetCount{},
 	}
 	for rows.Next() {
-		item, total, err := scanAdminMissingQuranAsset(rows)
+		item, total, err := scanEditorialMissingQuranAsset(rows)
 		if err != nil {
-			return entity.AdminMissingQuranAssets{}, fmt.Errorf("QuranRepo - ListMissingQuranAssets - scan item: %w", err)
+			return entity.EditorialMissingQuranAssets{}, fmt.Errorf("QuranRepo - ListMissingQuranAssets - scan item: %w", err)
 		}
 
 		result.Total = total
 		result.Items = append(result.Items, item)
 	}
 	if err = rows.Err(); err != nil {
-		return entity.AdminMissingQuranAssets{}, fmt.Errorf("QuranRepo - ListMissingQuranAssets - item rows: %w", err)
+		return entity.EditorialMissingQuranAssets{}, fmt.Errorf("QuranRepo - ListMissingQuranAssets - item rows: %w", err)
 	}
 
 	const countSQL = missingQuranAssetsCTE + `
@@ -701,20 +701,20 @@ ORDER BY asset_type ASC, target_lang ASC`
 
 	countRows, err := r.Pool.Query(ctx, countSQL, filter.TargetLangs, filter.AssetType, filter.SurahID)
 	if err != nil {
-		return entity.AdminMissingQuranAssets{}, fmt.Errorf("QuranRepo - ListMissingQuranAssets - counts: %w", err)
+		return entity.EditorialMissingQuranAssets{}, fmt.Errorf("QuranRepo - ListMissingQuranAssets - counts: %w", err)
 	}
 	defer countRows.Close()
 
 	for countRows.Next() {
-		var count entity.AdminMissingQuranAssetCount
+		var count entity.EditorialMissingQuranAssetCount
 		if err = countRows.Scan(&count.AssetType, &count.TargetLang, &count.Total); err != nil {
-			return entity.AdminMissingQuranAssets{}, fmt.Errorf("QuranRepo - ListMissingQuranAssets - scan count: %w", err)
+			return entity.EditorialMissingQuranAssets{}, fmt.Errorf("QuranRepo - ListMissingQuranAssets - scan count: %w", err)
 		}
 
 		result.Counts = append(result.Counts, count)
 	}
 	if err = countRows.Err(); err != nil {
-		return entity.AdminMissingQuranAssets{}, fmt.Errorf("QuranRepo - ListMissingQuranAssets - count rows: %w", err)
+		return entity.EditorialMissingQuranAssets{}, fmt.Errorf("QuranRepo - ListMissingQuranAssets - count rows: %w", err)
 	}
 
 	return result, nil
@@ -1784,8 +1784,8 @@ func scanQuranAudioTrackRow(row rowScanner) (
 	return track, mapKey, segment, hasSegment, nil
 }
 
-func scanAdminMissingQuranAsset(row rowScanner) (entity.AdminMissingQuranAsset, int, error) {
-	var item entity.AdminMissingQuranAsset
+func scanEditorialMissingQuranAsset(row rowScanner) (entity.EditorialMissingQuranAsset, int, error) {
+	var item entity.EditorialMissingQuranAsset
 	var surahID sql.NullInt64
 	var surahName sql.NullString
 	var ayahNumber sql.NullInt64
@@ -1815,7 +1815,7 @@ func scanAdminMissingQuranAsset(row rowScanner) (entity.AdminMissingQuranAsset, 
 		&total,
 	)
 	if err != nil {
-		return entity.AdminMissingQuranAsset{}, 0, err
+		return entity.EditorialMissingQuranAsset{}, 0, err
 	}
 
 	item.SurahID = nullableInt(surahID)

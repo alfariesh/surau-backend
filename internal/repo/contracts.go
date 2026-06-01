@@ -224,7 +224,7 @@ type (
 		) ([]entity.QuranAyah, error)
 		SearchAyahs(ctx context.Context, filter QuranSearchFilter) ([]entity.QuranSearchResult, int, error)
 		ListBookQuranReferences(ctx context.Context, filter QuranBookReferenceFilter) ([]entity.BookQuranReference, int, error)
-		ListMissingQuranAssets(ctx context.Context, filter MissingQuranAssetFilter) (entity.AdminMissingQuranAssets, error)
+		ListMissingQuranAssets(ctx context.Context, filter MissingQuranAssetFilter) (entity.EditorialMissingQuranAssets, error)
 	}
 
 	// PersonalRepo -.
@@ -245,20 +245,54 @@ type (
 	// EditorialRepo -.
 	EditorialRepo interface {
 		ListBooks(ctx context.Context, filter EditorialBookFilter) ([]entity.Book, int, error)
+		ListProductionCandidates(ctx context.Context, filter ProductionCandidateFilter) ([]entity.BookProductionCandidate, int, error)
 		UpdatePublication(ctx context.Context, actorID string, publication entity.BookPublication) (entity.BookPublication, error)
 		SaveMetadataDraft(ctx context.Context, actorID string, edit entity.BookMetadataEdit) (entity.BookMetadataEdit, error)
 		PublishMetadataDraft(ctx context.Context, actorID string, bookID int) (entity.BookMetadataEdit, error)
-		GetPageEdit(ctx context.Context, bookID, pageID int) (entity.AdminPageEdit, error)
+		GetPageEdit(ctx context.Context, bookID, pageID int) (entity.EditorialPageEdit, error)
 		SavePageDraft(ctx context.Context, actorID string, edit entity.BookPageEdit) (entity.BookPageEdit, error)
 		PublishPageDraft(ctx context.Context, actorID string, bookID, pageID int) (entity.BookPageEdit, error)
 		SaveHeadingDraft(ctx context.Context, actorID string, edit entity.BookHeadingEdit) (entity.BookHeadingEdit, error)
 		PublishHeadingDraft(ctx context.Context, actorID string, bookID, headingID int) (entity.BookHeadingEdit, error)
 		AddCollectionItem(ctx context.Context, actorID, slug string, bookID int, sortOrder *int) (entity.BookCollectionItem, error)
-		ListTranslationFeedbacks(ctx context.Context, filter TranslationFeedbackFilter) ([]entity.AdminTranslationFeedback, int, error)
-		TranslationFeedbackSummary(ctx context.Context, filter TranslationFeedbackFilter) (entity.AdminTranslationFeedbackSummary, error)
-		ListMissingReaderAssets(ctx context.Context, filter MissingReaderAssetFilter) (entity.AdminMissingReaderAssets, error)
-		ResolveTranslationFeedback(ctx context.Context, actorID, feedbackID string, note *string) (entity.AdminTranslationFeedback, error)
-		ReopenTranslationFeedback(ctx context.Context, actorID, feedbackID string) (entity.AdminTranslationFeedback, error)
+		ListTranslationFeedbacks(ctx context.Context, filter TranslationFeedbackFilter) ([]entity.EditorialTranslationFeedback, int, error)
+		TranslationFeedbackSummary(ctx context.Context, filter TranslationFeedbackFilter) (entity.EditorialTranslationFeedbackSummary, error)
+		ListMissingReaderAssets(ctx context.Context, filter MissingReaderAssetFilter) (entity.EditorialMissingReaderAssets, error)
+		ResolveTranslationFeedback(ctx context.Context, actorID, feedbackID string, note *string) (entity.EditorialTranslationFeedback, error)
+		ReopenTranslationFeedback(ctx context.Context, actorID, feedbackID string) (entity.EditorialTranslationFeedback, error)
+		CreateProductionProject(ctx context.Context, actorID string, project entity.BookProductionProject) (entity.BookProductionProject, error)
+		ListProductionProjects(ctx context.Context, filter ProductionProjectFilter) ([]entity.BookProductionProject, int, error)
+		GetProductionProject(ctx context.Context, projectID string) (entity.BookProductionProject, error)
+		ProductionWorkspace(ctx context.Context, projectID string) (entity.BookProductionWorkspace, error)
+		ListProductionEvents(ctx context.Context, projectID string, limit, offset uint64) ([]entity.BookProductionEvent, int, error)
+		ListProductionEventsGlobal(ctx context.Context, lang string, limit, offset uint64) ([]entity.BookProductionEvent, int, error)
+		ListProductionDraftRevisions(ctx context.Context, filter ProductionDraftRevisionFilter) ([]entity.BookProductionDraftRevision, int, error)
+		RestoreProductionDraftRevision(ctx context.Context, actorID, projectID, revisionID string) (entity.BookProductionDraftRevision, error)
+		ProductionPublishCheck(ctx context.Context, projectID string) (entity.BookProductionPublishCheck, error)
+		UpdateProductionProject(ctx context.Context, actorID, projectID string, patch entity.BookProductionProjectPatch) (entity.BookProductionProject, error)
+		ProductionCompleteness(ctx context.Context, projectID string) (entity.BookProductionCompleteness, error)
+		GetMetadataTranslationDraft(ctx context.Context, projectID string) (entity.BookMetadataTranslationEdit, error)
+		SaveMetadataTranslationDraft(ctx context.Context, actorID, projectID string, edit entity.BookMetadataTranslationEdit) (entity.BookMetadataTranslationEdit, error)
+		DeleteMetadataTranslationDraft(ctx context.Context, actorID, projectID string) error
+		GetAuthorTranslationDraft(ctx context.Context, projectID string) (entity.AuthorTranslationEdit, error)
+		SaveAuthorTranslationDraft(ctx context.Context, actorID, projectID string, edit entity.AuthorTranslationEdit) (entity.AuthorTranslationEdit, error)
+		DeleteAuthorTranslationDraft(ctx context.Context, actorID, projectID string) error
+		GetCategoryTranslationDraft(ctx context.Context, projectID string) (entity.CategoryTranslationEdit, error)
+		SaveCategoryTranslationDraft(ctx context.Context, actorID, projectID string, edit entity.CategoryTranslationEdit) (entity.CategoryTranslationEdit, error)
+		DeleteCategoryTranslationDraft(ctx context.Context, actorID, projectID string) error
+		GetSectionTranslationDraft(ctx context.Context, projectID string, headingID int) (entity.SectionTranslationEdit, error)
+		SaveSectionTranslationDraft(ctx context.Context, actorID, projectID string, edit entity.SectionTranslationEdit) (entity.SectionTranslationEdit, error)
+		DeleteSectionTranslationDraft(ctx context.Context, actorID, projectID string, headingID int) error
+		GetHeadingSummaryDraft(ctx context.Context, projectID string, headingID int) (entity.HeadingSummaryEdit, error)
+		SaveHeadingSummaryDraft(ctx context.Context, actorID, projectID string, edit entity.HeadingSummaryEdit) (entity.HeadingSummaryEdit, error)
+		DeleteHeadingSummaryDraft(ctx context.Context, actorID, projectID string, headingID int) error
+		GetSectionAudioDraft(ctx context.Context, projectID string, headingID int) (entity.SectionAudioEdit, error)
+		SaveSectionAudioDraft(ctx context.Context, actorID, projectID string, edit entity.SectionAudioEdit) (entity.SectionAudioEdit, error)
+		DeleteSectionAudioDraft(ctx context.Context, actorID, projectID string, headingID int) error
+		ReviewProductionAsset(ctx context.Context, actorID, projectID, assetType string, headingID *int, decision string, note *string) error
+		PublishProductionProject(ctx context.Context, actorID, projectID string) (entity.BookProductionProject, error)
+		UnpublishProductionProject(ctx context.Context, actorID, projectID string) (entity.BookProductionProject, error)
+		DeleteFinalProductionAsset(ctx context.Context, actorID, projectID, assetType string, headingID *int, reason *string) error
 	}
 
 	// TaskFilter -.
@@ -344,6 +378,39 @@ type (
 		HasContent *bool
 		Limit      uint64
 		Offset     uint64
+	}
+
+	// ProductionCandidateFilter -.
+	ProductionCandidateFilter struct {
+		Lang       string
+		Query      string
+		CategoryID *int
+		AuthorID   *int
+		HasContent *bool
+		Unstarted  bool
+		Limit      uint64
+		Offset     uint64
+	}
+
+	// ProductionProjectFilter -.
+	ProductionProjectFilter struct {
+		BookID            *int
+		Lang              string
+		WorkflowStatus    string
+		PublicationStatus string
+		ReadyToPublish    bool
+		NeedsWork         bool
+		Limit             uint64
+		Offset            uint64
+	}
+
+	// ProductionDraftRevisionFilter -.
+	ProductionDraftRevisionFilter struct {
+		ProjectID string
+		AssetType string
+		HeadingID *int
+		Limit     uint64
+		Offset    uint64
 	}
 
 	// TranslationFeedbackFilter -.

@@ -463,6 +463,7 @@ func seedMultilingualKitabFixture(t *testing.T) {
 		fixtureBookID,
 		fixtureHeadingID,
 	)
+	execFixtureSQL(t, ctx, tx, `DELETE FROM book_production_projects WHERE book_id = $1 AND lang = 'id'`, fixtureBookID)
 
 	execFixtureSQL(t, ctx, tx, `
 INSERT INTO categories (id, name, display_order)
@@ -538,7 +539,12 @@ ON CONFLICT (book_id, heading_id) DO UPDATE SET
 	execFixtureSQL(t, ctx, tx, `
 INSERT INTO category_translations (category_id, lang, name, source)
 VALUES ($1, 'id', 'Kategori Fixture', 'integration-test')
-ON CONFLICT (category_id, lang) DO UPDATE SET name = EXCLUDED.name`,
+ON CONFLICT (category_id, lang) DO UPDATE SET
+    name = EXCLUDED.name,
+    is_deleted = false,
+    deleted_by = NULL,
+    deleted_at = NULL,
+    delete_reason = NULL`,
 		fixtureCategoryID,
 	)
 	execFixtureSQL(t, ctx, tx, `
@@ -547,7 +553,11 @@ VALUES ($1, 'id', 'Penulis Fixture', 'Biografi fixture', '1445 H', 'integration-
 ON CONFLICT (author_id, lang) DO UPDATE SET
     name = EXCLUDED.name,
     biography = EXCLUDED.biography,
-    death_text = EXCLUDED.death_text`,
+    death_text = EXCLUDED.death_text,
+    is_deleted = false,
+    deleted_by = NULL,
+    deleted_at = NULL,
+    delete_reason = NULL`,
 		fixtureAuthorID,
 	)
 	execFixtureSQL(t, ctx, tx, `
@@ -557,7 +567,11 @@ ON CONFLICT (book_id, lang) DO UPDATE SET
     display_title = EXCLUDED.display_title,
     bibliography = EXCLUDED.bibliography,
     hint = EXCLUDED.hint,
-    description = EXCLUDED.description`,
+    description = EXCLUDED.description,
+    is_deleted = false,
+    deleted_by = NULL,
+    deleted_at = NULL,
+    delete_reason = NULL`,
 		fixtureBookID,
 	)
 	execFixtureSQL(t, ctx, tx, `
@@ -565,7 +579,11 @@ INSERT INTO section_translations (book_id, heading_id, lang, title, content, sou
 VALUES ($1, $2, 'id', 'Bab Fixture Indonesia', 'Konten terjemahan Indonesia', 'integration-test')
 ON CONFLICT (book_id, heading_id, lang) DO UPDATE SET
     title = EXCLUDED.title,
-    content = EXCLUDED.content`,
+    content = EXCLUDED.content,
+    is_deleted = false,
+    deleted_by = NULL,
+    deleted_at = NULL,
+    delete_reason = NULL`,
 		fixtureBookID,
 		fixtureHeadingID,
 	)
@@ -576,23 +594,48 @@ ON CONFLICT (book_id, heading_id, lang) DO UPDATE SET
     url = EXCLUDED.url,
     narrator = EXCLUDED.narrator,
     duration_seconds = EXCLUDED.duration_seconds,
-    mime_type = EXCLUDED.mime_type`,
+    mime_type = EXCLUDED.mime_type,
+    is_deleted = false,
+    deleted_by = NULL,
+    deleted_at = NULL,
+    delete_reason = NULL`,
 		fixtureBookID,
 		fixtureHeadingID,
 	)
 	execFixtureSQL(t, ctx, tx, `
 INSERT INTO book_heading_summaries (book_id, heading_id, lang, summary, source)
 VALUES ($1, $2, 'ar', 'ملخص عربي للاختبار', 'integration-test')
-ON CONFLICT (book_id, heading_id, lang) DO UPDATE SET summary = EXCLUDED.summary`,
+ON CONFLICT (book_id, heading_id, lang) DO UPDATE SET
+    summary = EXCLUDED.summary,
+    is_deleted = false,
+    deleted_by = NULL,
+    deleted_at = NULL,
+    delete_reason = NULL`,
 		fixtureBookID,
 		fixtureHeadingID,
 	)
 	execFixtureSQL(t, ctx, tx, `
 INSERT INTO book_heading_summaries (book_id, heading_id, lang, summary, source)
 VALUES ($1, $2, 'id', 'Ringkasan fixture Indonesia', 'integration-test')
-ON CONFLICT (book_id, heading_id, lang) DO UPDATE SET summary = EXCLUDED.summary`,
+ON CONFLICT (book_id, heading_id, lang) DO UPDATE SET
+    summary = EXCLUDED.summary,
+    is_deleted = false,
+    deleted_by = NULL,
+    deleted_at = NULL,
+    delete_reason = NULL`,
 		fixtureBookID,
 		fixtureHeadingID,
+	)
+	execFixtureSQL(t, ctx, tx, `
+INSERT INTO book_production_projects (
+    id, book_id, lang, workflow_status, publication_status, requires_review, requires_audio,
+    priority, created_at, updated_at, published_at
+)
+VALUES (
+    '00000000-0000-0000-0000-000000990001', $1, 'id', 'published', 'published', false, true,
+    0, now(), now(), now()
+)`,
+		fixtureBookID,
 	)
 
 	if err = tx.Commit(ctx); err != nil {

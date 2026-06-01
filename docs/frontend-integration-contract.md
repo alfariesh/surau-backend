@@ -5,6 +5,7 @@ Last updated: 2026-05-31
 This is the main FE integration entrypoint for kitab reader and Quran reader.
 Use it together with:
 
+- `docs/mobile-backend-integration-guide.md` for the mobile app implementation roadmap, screen flows, caching, and FE module guidance.
 - `docs/user-onboarding-api.md` for profile, onboarding, and saved language preferences.
 - `docs/admin-email-api.md` for admin email templates, campaigns, opt-in, unsubscribe, and delivery logs.
 - `docs/kitab-multilingual-api.md` for kitab API details.
@@ -258,6 +259,24 @@ Notes:
 - Empty `target_lang` means `id,en`.
 - `target_lang=ar` returns `400` because Arabic is source content.
 - Quran `audio_public` means tracks missing app-owned `public_url`; they may still be playable from source `audio_url`.
+
+## Editorial Book Production
+
+Use `GET /v1/editorial/production-candidates?lang=id|en&unstarted=true` to let admin/editor pick a raw kitab. Candidate rows include heading/page counts and existing project status for the selected language.
+
+Use `POST /v1/editorial/production-projects` to create a `book_id + lang` project from an existing raw kitab. Editors can manage metadata, author, category, per-TOC translation, per-TOC summary, and optional per-TOC audio drafts, then submit/approve/reject via `POST /v1/editorial/production-projects/{id}/review`.
+
+Use `GET /v1/editorial/production-projects/{id}/workspace` to load the editor screen. It includes the source book, TOC headings, draft status, final asset flags, and completeness in one response.
+
+Use `GET /v1/editorial/production-projects?ready_to_publish=true` or `?needs_work=true` for a lightweight production queue. The two flags are mutually exclusive.
+
+Use `GET /v1/editorial/production-dashboard?lang=id|en` for the small-team operational summary: unstarted candidates, active projects, needs work, ready to publish, published count, and recent production events. Use `GET /v1/editorial/production-activity?lang=&limit=&offset=` when you need a global activity feed outside a single project.
+
+Use `GET /v1/editorial/production-projects/{id}/draft-revisions?asset_type=...&heading_id=...` to show draft history. Use `POST /v1/editorial/production-projects/{id}/draft-revisions/{revision_id}/restore` to roll back; restore creates a new revision and resets the draft review status.
+
+Use `GET /v1/editorial/production-projects/{id}/publish-check` before enabling publish UX. It mirrors backend publish readiness and includes structured blockers. Use `GET /v1/editorial/production-projects/{id}/activity` for the project timeline.
+
+Admin-only actions are publish, unpublish, and final asset soft-delete. Reader pages for `lang=id|en` only expose final assets after the matching project is published, so frontend can rely on public reader responses as the source of truth for what is visible.
 
 ## FE QA Checklist
 

@@ -1,136 +1,5 @@
 basePath: /v1
 definitions:
-  entity.AdminMissingQuranAsset:
-    properties:
-      asset_type:
-        example: ayah_translation
-        type: string
-      available_langs:
-        example:
-        - id
-        items:
-          type: string
-        type: array
-      ayah_key:
-        example: "73:4"
-        type: string
-      ayah_number:
-        example: 4
-        type: integer
-      recitation_id:
-        type: string
-      source_updated_at:
-        example: "2026-01-01T00:00:00Z"
-        type: string
-      surah_id:
-        example: 73
-        type: integer
-      surah_name:
-        type: string
-      target_lang:
-        example: en
-        type: string
-      track_key:
-        example: "73:4"
-        type: string
-      track_type:
-        example: ayah
-        type: string
-      translation_source_id:
-        type: string
-      translation_source_name:
-        type: string
-    type: object
-  entity.AdminMissingQuranAssetCount:
-    properties:
-      asset_type:
-        example: ayah_translation
-        type: string
-      target_lang:
-        example: en
-        type: string
-      total:
-        example: 20
-        type: integer
-    type: object
-  entity.AdminMissingQuranAssets:
-    properties:
-      counts:
-        items:
-          $ref: '#/definitions/entity.AdminMissingQuranAssetCount'
-        type: array
-      items:
-        items:
-          $ref: '#/definitions/entity.AdminMissingQuranAsset'
-        type: array
-      total:
-        example: 42
-        type: integer
-    type: object
-  entity.AdminMissingReaderAsset:
-    properties:
-      asset_type:
-        example: section_translation
-        type: string
-      author_id:
-        example: 2
-        type: integer
-      author_name:
-        type: string
-      available_langs:
-        example:
-        - id
-        items:
-          type: string
-        type: array
-      book_id:
-        example: 797
-        type: integer
-      book_title:
-        type: string
-      category_id:
-        example: 1
-        type: integer
-      category_name:
-        type: string
-      heading_id:
-        example: 10
-        type: integer
-      heading_title:
-        type: string
-      source_updated_at:
-        example: "2026-01-01T00:00:00Z"
-        type: string
-      target_lang:
-        example: en
-        type: string
-    type: object
-  entity.AdminMissingReaderAssetCount:
-    properties:
-      asset_type:
-        example: section_translation
-        type: string
-      target_lang:
-        example: en
-        type: string
-      total:
-        example: 20
-        type: integer
-    type: object
-  entity.AdminMissingReaderAssets:
-    properties:
-      counts:
-        items:
-          $ref: '#/definitions/entity.AdminMissingReaderAssetCount'
-        type: array
-      items:
-        items:
-          $ref: '#/definitions/entity.AdminMissingReaderAsset'
-        type: array
-      total:
-        example: 42
-        type: integer
-    type: object
   entity.Author:
     properties:
       biography:
@@ -163,6 +32,37 @@ definitions:
         type: string
       updated_at:
         example: "2026-01-01T00:00:00Z"
+        type: string
+    type: object
+  entity.AuthorTranslationEdit:
+    properties:
+      biography:
+        type: string
+      death_text:
+        type: string
+      metadata:
+        type: object
+      name:
+        type: string
+      project_id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      review_note:
+        type: string
+      review_status:
+        example: draft
+        type: string
+      reviewed_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      reviewed_by:
+        type: string
+      source:
+        type: string
+      updated_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      updated_by:
         type: string
     type: object
   entity.AvailabilityDecision:
@@ -305,6 +205,39 @@ definitions:
         example: "2026-01-01T00:00:00Z"
         type: string
     type: object
+  entity.BookMetadataTranslationEdit:
+    properties:
+      bibliography:
+        type: string
+      description:
+        type: string
+      display_title:
+        type: string
+      hint:
+        type: string
+      metadata:
+        type: object
+      project_id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      review_note:
+        type: string
+      review_status:
+        example: draft
+        type: string
+      reviewed_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      reviewed_by:
+        type: string
+      source:
+        type: string
+      updated_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      updated_by:
+        type: string
+    type: object
   entity.BookPage:
     properties:
       book_id:
@@ -334,6 +267,318 @@ definitions:
       updated_at:
         example: "2026-01-01T00:00:00Z"
         type: string
+    type: object
+  entity.BookProductionBlocking:
+    properties:
+      asset_type:
+        example: section_translation
+        type: string
+      code:
+        example: missing_required_asset
+        type: string
+      heading_id:
+        example: 10
+        type: integer
+      message:
+        example: section translation draft is missing
+        type: string
+    type: object
+  entity.BookProductionCandidate:
+    properties:
+      author_id:
+        example: 177
+        type: integer
+      author_name:
+        type: string
+      book_id:
+        example: 797
+        type: integer
+      category_id:
+        example: 10
+        type: integer
+      category_name:
+        type: string
+      existing_project_id:
+        type: string
+      existing_project_updated_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      existing_publication_status:
+        type: string
+      existing_workflow_status:
+        type: string
+      has_content:
+        example: true
+        type: boolean
+      heading_count:
+        example: 120
+        type: integer
+      name:
+        type: string
+      page_count:
+        example: 300
+        type: integer
+    type: object
+  entity.BookProductionCompleteness:
+    properties:
+      complete_count:
+        example: 40
+        type: integer
+      missing:
+        items:
+          $ref: '#/definitions/entity.BookProductionMissingAsset'
+        type: array
+      missing_count:
+        example: 2
+        type: integer
+      project:
+        $ref: '#/definitions/entity.BookProductionProject'
+      ready:
+        example: false
+        type: boolean
+      required_count:
+        example: 42
+        type: integer
+    type: object
+  entity.BookProductionDashboard:
+    properties:
+      active_project_count:
+        example: 18
+        type: integer
+      candidate_count:
+        example: 120
+        type: integer
+      lang:
+        example: id
+        type: string
+      needs_work_count:
+        example: 12
+        type: integer
+      published_count:
+        example: 25
+        type: integer
+      ready_to_publish_count:
+        example: 3
+        type: integer
+      recent_events:
+        items:
+          $ref: '#/definitions/entity.BookProductionEvent'
+        type: array
+      recent_events_total:
+        example: 42
+        type: integer
+    type: object
+  entity.BookProductionDraftRevision:
+    properties:
+      actor_id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      asset_type:
+        example: section_translation
+        type: string
+      created_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      heading_id:
+        example: 10
+        type: integer
+      id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      project_id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      snapshot:
+        type: object
+      version:
+        example: 3
+        type: integer
+    type: object
+  entity.BookProductionEvent:
+    properties:
+      actor_id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      asset_type:
+        example: section_translation
+        type: string
+      created_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      event_type:
+        example: production_asset.review
+        type: string
+      heading_id:
+        example: 10
+        type: integer
+      id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      note:
+        type: string
+      payload:
+        type: object
+      project_id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+    type: object
+  entity.BookProductionMissingAsset:
+    properties:
+      asset_type:
+        example: section_translation
+        type: string
+      heading_id:
+        example: 10
+        type: integer
+      message:
+        example: translation draft is missing
+        type: string
+    type: object
+  entity.BookProductionProject:
+    properties:
+      archived_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      book_id:
+        example: 797
+        type: integer
+      created_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      created_by:
+        type: string
+      id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      lang:
+        example: id
+        type: string
+      notes:
+        type: string
+      owner_id:
+        type: string
+      priority:
+        example: 10
+        type: integer
+      publication_status:
+        example: hidden
+        type: string
+      published_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      published_by:
+        type: string
+      requires_audio:
+        example: false
+        type: boolean
+      requires_review:
+        example: true
+        type: boolean
+      updated_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      updated_by:
+        type: string
+      workflow_status:
+        example: drafting
+        type: string
+    type: object
+  entity.BookProductionPublishCheck:
+    properties:
+      blocking_errors:
+        items:
+          $ref: '#/definitions/entity.BookProductionBlocking'
+        type: array
+      can_publish:
+        example: false
+        type: boolean
+      complete_count:
+        example: 40
+        type: integer
+      missing:
+        items:
+          $ref: '#/definitions/entity.BookProductionMissingAsset'
+        type: array
+      missing_count:
+        example: 2
+        type: integer
+      project:
+        $ref: '#/definitions/entity.BookProductionProject'
+      ready:
+        example: false
+        type: boolean
+      required_count:
+        example: 42
+        type: integer
+    type: object
+  entity.BookProductionWorkspace:
+    properties:
+      author:
+        $ref: '#/definitions/entity.ProductionAssetStatus'
+      book:
+        $ref: '#/definitions/entity.BookProductionWorkspaceBook'
+      category:
+        $ref: '#/definitions/entity.ProductionAssetStatus'
+      completeness:
+        $ref: '#/definitions/entity.BookProductionCompleteness'
+      headings:
+        items:
+          $ref: '#/definitions/entity.BookProductionWorkspaceHeading'
+        type: array
+      metadata:
+        $ref: '#/definitions/entity.ProductionAssetStatus'
+      project:
+        $ref: '#/definitions/entity.BookProductionProject'
+    type: object
+  entity.BookProductionWorkspaceBook:
+    properties:
+      author_id:
+        example: 177
+        type: integer
+      author_name:
+        type: string
+      category_id:
+        example: 10
+        type: integer
+      category_name:
+        type: string
+      has_content:
+        example: true
+        type: boolean
+      id:
+        example: 797
+        type: integer
+      name:
+        type: string
+    type: object
+  entity.BookProductionWorkspaceHeading:
+    properties:
+      audio:
+        $ref: '#/definitions/entity.ProductionAssetStatus'
+      book_id:
+        example: 797
+        type: integer
+      depth:
+        example: 0
+        type: integer
+      heading_id:
+        example: 10
+        type: integer
+      ordinal:
+        example: 9
+        type: integer
+      page_id:
+        example: 12
+        type: integer
+      parent_id:
+        example: 1
+        type: integer
+      source_title:
+        type: string
+      summary:
+        $ref: '#/definitions/entity.ProductionAssetStatus'
+      translation:
+        $ref: '#/definitions/entity.ProductionAssetStatus'
     type: object
   entity.BookQuranReference:
     properties:
@@ -840,6 +1085,418 @@ definitions:
         example: "2026-01-01T00:00:00Z"
         type: string
     type: object
+  entity.CategoryTranslationEdit:
+    properties:
+      metadata:
+        type: object
+      name:
+        type: string
+      project_id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      review_note:
+        type: string
+      review_status:
+        example: draft
+        type: string
+      reviewed_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      reviewed_by:
+        type: string
+      source:
+        type: string
+      updated_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      updated_by:
+        type: string
+    type: object
+  entity.EditorialMissingQuranAsset:
+    properties:
+      asset_type:
+        example: ayah_translation
+        type: string
+      available_langs:
+        example:
+        - id
+        items:
+          type: string
+        type: array
+      ayah_key:
+        example: "73:4"
+        type: string
+      ayah_number:
+        example: 4
+        type: integer
+      recitation_id:
+        type: string
+      source_updated_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      surah_id:
+        example: 73
+        type: integer
+      surah_name:
+        type: string
+      target_lang:
+        example: en
+        type: string
+      track_key:
+        example: "73:4"
+        type: string
+      track_type:
+        example: ayah
+        type: string
+      translation_source_id:
+        type: string
+      translation_source_name:
+        type: string
+    type: object
+  entity.EditorialMissingQuranAssetCount:
+    properties:
+      asset_type:
+        example: ayah_translation
+        type: string
+      target_lang:
+        example: en
+        type: string
+      total:
+        example: 20
+        type: integer
+    type: object
+  entity.EditorialMissingQuranAssets:
+    properties:
+      counts:
+        items:
+          $ref: '#/definitions/entity.EditorialMissingQuranAssetCount'
+        type: array
+      items:
+        items:
+          $ref: '#/definitions/entity.EditorialMissingQuranAsset'
+        type: array
+      total:
+        example: 42
+        type: integer
+    type: object
+  entity.EditorialMissingReaderAsset:
+    properties:
+      asset_type:
+        example: section_translation
+        type: string
+      author_id:
+        example: 2
+        type: integer
+      author_name:
+        type: string
+      available_langs:
+        example:
+        - id
+        items:
+          type: string
+        type: array
+      book_id:
+        example: 797
+        type: integer
+      book_title:
+        type: string
+      category_id:
+        example: 1
+        type: integer
+      category_name:
+        type: string
+      heading_id:
+        example: 10
+        type: integer
+      heading_title:
+        type: string
+      source_updated_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      target_lang:
+        example: en
+        type: string
+    type: object
+  entity.EditorialMissingReaderAssetCount:
+    properties:
+      asset_type:
+        example: section_translation
+        type: string
+      target_lang:
+        example: en
+        type: string
+      total:
+        example: 20
+        type: integer
+    type: object
+  entity.EditorialMissingReaderAssets:
+    properties:
+      counts:
+        items:
+          $ref: '#/definitions/entity.EditorialMissingReaderAssetCount'
+        type: array
+      items:
+        items:
+          $ref: '#/definitions/entity.EditorialMissingReaderAsset'
+        type: array
+      total:
+        example: 42
+        type: integer
+    type: object
+  entity.EmailAudienceFilter:
+    properties:
+      created_from:
+        type: string
+      created_to:
+        type: string
+      lang:
+        type: string
+      limit:
+        type: integer
+      role:
+        type: string
+    type: object
+  entity.EmailAudienceRecipient:
+    properties:
+      email:
+        type: string
+      lang:
+        type: string
+      user_id:
+        type: string
+    type: object
+  entity.EmailCampaign:
+    properties:
+      audience:
+        $ref: '#/definitions/entity.EmailAudienceFilter'
+      cancelled_at:
+        type: string
+      created_at:
+        type: string
+      created_by:
+        type: string
+      id:
+        type: string
+      metadata:
+        additionalProperties:
+          type: string
+        type: object
+      name:
+        type: string
+      scheduled_at:
+        type: string
+      sent_at:
+        type: string
+      status:
+        type: string
+      template_id:
+        type: string
+      updated_at:
+        type: string
+      updated_by:
+        type: string
+    type: object
+  entity.EmailEventSetting:
+    properties:
+      cooldown_seconds:
+        type: integer
+      created_at:
+        type: string
+      critical:
+        type: boolean
+      enabled:
+        type: boolean
+      key:
+        type: string
+      template_id:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  entity.EmailMessageLog:
+    properties:
+      attempts:
+        type: integer
+      campaign_id:
+        type: string
+      campaign_recipient_id:
+        type: string
+      category:
+        type: string
+      created_at:
+        type: string
+      error:
+        type: string
+      id:
+        type: string
+      lang:
+        type: string
+      metadata:
+        additionalProperties:
+          type: string
+        type: object
+      provider_response:
+        type: string
+      recipient_email:
+        type: string
+      scheduled_at:
+        type: string
+      sent_at:
+        type: string
+      status:
+        type: string
+      subject:
+        type: string
+      template_key:
+        type: string
+      template_version_id:
+        type: string
+      updated_at:
+        type: string
+      user_id:
+        type: string
+    type: object
+  entity.EmailPreview:
+    properties:
+      html:
+        type: string
+      lang:
+        type: string
+      subject:
+        type: string
+      text:
+        type: string
+    type: object
+  entity.EmailSubscription:
+    properties:
+      created_at:
+        type: string
+      marketing_opt_in:
+        type: boolean
+      opted_in_at:
+        type: string
+      opted_out_at:
+        type: string
+      source:
+        type: string
+      updated_at:
+        type: string
+      user_id:
+        type: string
+    type: object
+  entity.EmailSuppression:
+    properties:
+      created_at:
+        type: string
+      created_by:
+        type: string
+      email:
+        type: string
+      id:
+        type: string
+      reason:
+        type: string
+      scope:
+        type: string
+    type: object
+  entity.EmailTemplate:
+    properties:
+      archived_at:
+        type: string
+      category:
+        type: string
+      created_at:
+        type: string
+      critical:
+        type: boolean
+      deleted_at:
+        type: string
+      enabled:
+        type: boolean
+      id:
+        type: string
+      key:
+        type: string
+      name:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  entity.EmailTemplateVersion:
+    properties:
+      body_template:
+        type: string
+      button_label_template:
+        type: string
+      button_url_template:
+        type: string
+      created_at:
+        type: string
+      created_by:
+        type: string
+      footer_template:
+        type: string
+      id:
+        type: string
+      lang:
+        type: string
+      note_template:
+        type: string
+      preview_template:
+        type: string
+      published:
+        type: boolean
+      published_at:
+        type: string
+      published_by:
+        type: string
+      required_variables:
+        items:
+          type: string
+        type: array
+      subject_template:
+        type: string
+      template_id:
+        type: string
+      text_template:
+        type: string
+      title_template:
+        type: string
+      updated_at:
+        type: string
+      version:
+        type: integer
+    type: object
+  entity.HeadingSummaryEdit:
+    properties:
+      heading_id:
+        example: 10
+        type: integer
+      metadata:
+        type: object
+      project_id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      review_note:
+        type: string
+      review_status:
+        example: draft
+        type: string
+      reviewed_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      reviewed_by:
+        type: string
+      source:
+        type: string
+      summary:
+        type: string
+      updated_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      updated_by:
+        type: string
+    type: object
   entity.LanguageCoverage:
     properties:
       audio_sections:
@@ -875,6 +1532,36 @@ definitions:
         type: boolean
       requested_lang:
         example: en
+        type: string
+    type: object
+  entity.ProductionAssetStatus:
+    properties:
+      asset_type:
+        example: section_translation
+        type: string
+      complete:
+        example: true
+        type: boolean
+      exists:
+        example: true
+        type: boolean
+      final_exists:
+        example: false
+        type: boolean
+      heading_id:
+        example: 10
+        type: integer
+      required:
+        example: true
+        type: boolean
+      review_status:
+        example: approved
+        type: string
+      reviewed_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      updated_at:
+        example: "2026-01-01T00:00:00Z"
         type: string
     type: object
   entity.QuranAudioSegment:
@@ -1350,6 +2037,42 @@ definitions:
         example: https://cdn.example/audio.mp3
         type: string
     type: object
+  entity.SectionAudioEdit:
+    properties:
+      duration_seconds:
+        example: 120
+        type: integer
+      heading_id:
+        example: 10
+        type: integer
+      metadata:
+        type: object
+      mime_type:
+        example: audio/mpeg
+        type: string
+      narrator:
+        type: string
+      project_id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      review_note:
+        type: string
+      review_status:
+        example: draft
+        type: string
+      reviewed_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      reviewed_by:
+        type: string
+      updated_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      updated_by:
+        type: string
+      url:
+        type: string
+    type: object
   entity.SectionTranslation:
     properties:
       book_id:
@@ -1381,6 +2104,38 @@ definitions:
         type: string
       updated_at:
         example: "2026-01-01T00:00:00Z"
+        type: string
+    type: object
+  entity.SectionTranslationEdit:
+    properties:
+      content:
+        type: string
+      heading_id:
+        example: 10
+        type: integer
+      metadata:
+        type: object
+      project_id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      review_note:
+        type: string
+      review_status:
+        example: draft
+        type: string
+      reviewed_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      reviewed_by:
+        type: string
+      source:
+        type: string
+      title:
+        type: string
+      updated_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      updated_by:
         type: string
     type: object
   entity.Task:
@@ -1675,6 +2430,37 @@ definitions:
     - current_password
     - new_password
     type: object
+  v1.CreateProductionProject:
+    properties:
+      book_id:
+        example: 797
+        minimum: 1
+        type: integer
+      lang:
+        enum:
+        - id
+        - en
+        example: id
+        type: string
+      notes:
+        maxLength: 10000
+        type: string
+      owner_id:
+        type: string
+      priority:
+        example: 10
+        minimum: 0
+        type: integer
+      requires_audio:
+        example: false
+        type: boolean
+      requires_review:
+        example: true
+        type: boolean
+    required:
+    - book_id
+    - lang
+    type: object
   v1.CreateTask:
     properties:
       description:
@@ -1724,11 +2510,336 @@ definitions:
     required:
     - current_password
     type: object
+  v1.DeleteFinalProductionAsset:
+    properties:
+      reason:
+        maxLength: 2000
+        type: string
+    type: object
+  v1.EmailAudience:
+    properties:
+      created_from:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      created_to:
+        example: "2026-05-01T00:00:00Z"
+        type: string
+      lang:
+        example: id
+        maxLength: 8
+        type: string
+      limit:
+        example: 1000
+        maximum: 10000
+        minimum: 1
+        type: integer
+      role:
+        example: user
+        maxLength: 32
+        type: string
+    type: object
+  v1.EmailAudienceRecipientList:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/entity.EmailAudienceRecipient'
+        type: array
+      total:
+        type: integer
+    type: object
+  v1.EmailCampaignCreate:
+    properties:
+      audience:
+        $ref: '#/definitions/v1.EmailAudience'
+      metadata:
+        additionalProperties:
+          type: string
+        type: object
+      name:
+        example: Ramadan Digest
+        maxLength: 255
+        type: string
+      template_id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+    required:
+    - name
+    - template_id
+    type: object
+  v1.EmailCampaignList:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/entity.EmailCampaign'
+        type: array
+      total:
+        type: integer
+    type: object
+  v1.EmailCampaignSchedule:
+    properties:
+      scheduled_at:
+        example: "2026-06-01T09:00:00Z"
+        type: string
+    required:
+    - scheduled_at
+    type: object
+  v1.EmailCampaignTestSend:
+    properties:
+      lang:
+        example: id
+        maxLength: 8
+        type: string
+      to:
+        example: admin@example.com
+        type: string
+      variables:
+        additionalProperties:
+          type: string
+        type: object
+    required:
+    - lang
+    - to
+    type: object
+  v1.EmailCampaignUpdate:
+    properties:
+      audience:
+        $ref: '#/definitions/v1.EmailAudience'
+      metadata:
+        additionalProperties:
+          type: string
+        type: object
+      name:
+        example: Ramadan Digest
+        maxLength: 255
+        type: string
+      template_id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+    required:
+    - name
+    - template_id
+    type: object
   v1.EmailChanged:
     properties:
       email_changed:
         example: true
         type: boolean
+    type: object
+  v1.EmailEventSettingUpdate:
+    properties:
+      cooldown_seconds:
+        example: 86400
+        minimum: 1
+        type: integer
+      enabled:
+        example: true
+        type: boolean
+    type: object
+  v1.EmailMessageList:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/entity.EmailMessageLog'
+        type: array
+      total:
+        type: integer
+    type: object
+  v1.EmailPreviewRequest:
+    properties:
+      lang:
+        example: id
+        maxLength: 8
+        type: string
+      variables:
+        additionalProperties:
+          type: string
+        type: object
+    required:
+    - lang
+    type: object
+  v1.EmailSubscriptionUpdate:
+    properties:
+      marketing_opt_in:
+        example: true
+        type: boolean
+    type: object
+  v1.EmailSuppressionCreate:
+    properties:
+      email:
+        example: user@example.com
+        type: string
+      reason:
+        example: manual
+        maxLength: 128
+        type: string
+      scope:
+        enum:
+        - marketing
+        - all
+        example: marketing
+        type: string
+    required:
+    - email
+    - reason
+    - scope
+    type: object
+  v1.EmailSuppressionList:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/entity.EmailSuppression'
+        type: array
+      total:
+        type: integer
+    type: object
+  v1.EmailTemplateCreate:
+    properties:
+      category:
+        enum:
+        - transactional
+        - marketing
+        example: marketing
+        type: string
+      critical:
+        example: false
+        type: boolean
+      enabled:
+        example: true
+        type: boolean
+      key:
+        example: weekly_digest
+        maxLength: 128
+        type: string
+      name:
+        example: Weekly Digest
+        maxLength: 255
+        type: string
+    required:
+    - category
+    - key
+    - name
+    type: object
+  v1.EmailTemplateList:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/entity.EmailTemplate'
+        type: array
+      total:
+        type: integer
+    type: object
+  v1.EmailTemplateUpdate:
+    properties:
+      archived:
+        example: false
+        type: boolean
+      enabled:
+        example: true
+        type: boolean
+      name:
+        example: Weekly Digest
+        maxLength: 255
+        type: string
+    type: object
+  v1.EmailTemplateVersionCreate:
+    properties:
+      body_template:
+        example: Assalamu'alaikum, {{.name}}.
+        type: string
+      button_label_template:
+        example: Buka Surau
+        type: string
+      button_url_template:
+        example: https://surau.org
+        type: string
+      footer_template:
+        type: string
+      lang:
+        example: id
+        maxLength: 8
+        type: string
+      note_template:
+        type: string
+      preview_template:
+        example: Ada bacaan baru untuk Anda.
+        type: string
+      required_variables:
+        example:
+        - name
+        items:
+          type: string
+        type: array
+      subject_template:
+        example: Update dari Surau
+        type: string
+      text_template:
+        example: Assalamu'alaikum, {{.name}}.
+        type: string
+      title_template:
+        example: Update Surau
+        type: string
+    required:
+    - lang
+    - subject_template
+    - text_template
+    type: object
+  v1.EmailTemplateVersionList:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/entity.EmailTemplateVersion'
+        type: array
+      total:
+        type: integer
+    type: object
+  v1.EmailTemplateVersionUpdate:
+    properties:
+      body_template:
+        type: string
+      button_label_template:
+        type: string
+      button_url_template:
+        type: string
+      footer_template:
+        type: string
+      note_template:
+        type: string
+      preview_template:
+        type: string
+      required_variables:
+        items:
+          type: string
+        type: array
+      subject_template:
+        type: string
+      text_template:
+        type: string
+      title_template:
+        type: string
+    type: object
+  v1.EmailTestSendRequest:
+    properties:
+      lang:
+        example: id
+        maxLength: 8
+        type: string
+      to:
+        example: admin@example.com
+        type: string
+      variables:
+        additionalProperties:
+          type: string
+        type: object
+    required:
+    - lang
+    - to
+    type: object
+  v1.EmailUnsubscribe:
+    properties:
+      token:
+        type: string
+    required:
+    - token
     type: object
   v1.EmailVerification:
     properties:
@@ -1785,6 +2896,46 @@ definitions:
       password_reset:
         example: true
         type: boolean
+    type: object
+  v1.ProductionCandidateList:
+    properties:
+      candidates:
+        items:
+          $ref: '#/definitions/entity.BookProductionCandidate'
+        type: array
+      total:
+        example: 42
+        type: integer
+    type: object
+  v1.ProductionDraftRevisionList:
+    properties:
+      revisions:
+        items:
+          $ref: '#/definitions/entity.BookProductionDraftRevision'
+        type: array
+      total:
+        example: 42
+        type: integer
+    type: object
+  v1.ProductionEventList:
+    properties:
+      events:
+        items:
+          $ref: '#/definitions/entity.BookProductionEvent'
+        type: array
+      total:
+        example: 42
+        type: integer
+    type: object
+  v1.ProductionProjectList:
+    properties:
+      projects:
+        items:
+          $ref: '#/definitions/entity.BookProductionProject'
+        type: array
+      total:
+        example: 42
+        type: integer
     type: object
   v1.QuranProgressList:
     properties:
@@ -1865,6 +3016,100 @@ definitions:
     - password
     - token
     type: object
+  v1.ReviewProductionAsset:
+    properties:
+      asset_type:
+        enum:
+        - book_metadata
+        - author_metadata
+        - category_metadata
+        - section_translation
+        - heading_summary
+        - section_audio
+        type: string
+      decision:
+        enum:
+        - submit
+        - approve
+        - reject
+        type: string
+      heading_id:
+        minimum: 1
+        type: integer
+      note:
+        maxLength: 2000
+        type: string
+    required:
+    - asset_type
+    - decision
+    type: object
+  v1.SaveAuthorTranslationDraft:
+    properties:
+      biography:
+        maxLength: 20000
+        type: string
+      death_text:
+        maxLength: 255
+        type: string
+      metadata:
+        type: object
+      name:
+        maxLength: 500
+        type: string
+      source:
+        maxLength: 255
+        type: string
+    required:
+    - name
+    type: object
+  v1.SaveCategoryTranslationDraft:
+    properties:
+      metadata:
+        type: object
+      name:
+        maxLength: 500
+        type: string
+      source:
+        maxLength: 255
+        type: string
+    required:
+    - name
+    type: object
+  v1.SaveHeadingSummaryDraft:
+    properties:
+      metadata:
+        type: object
+      source:
+        maxLength: 255
+        type: string
+      summary:
+        maxLength: 20000
+        type: string
+    required:
+    - summary
+    type: object
+  v1.SaveMetadataTranslationDraft:
+    properties:
+      bibliography:
+        maxLength: 10000
+        type: string
+      description:
+        maxLength: 10000
+        type: string
+      display_title:
+        maxLength: 500
+        type: string
+      hint:
+        maxLength: 10000
+        type: string
+      metadata:
+        type: object
+      source:
+        maxLength: 255
+        type: string
+    required:
+    - display_title
+    type: object
   v1.SaveQuranProgress:
     properties:
       ayah_key:
@@ -1876,6 +3121,40 @@ definitions:
         type: string
     required:
     - ayah_key
+    type: object
+  v1.SaveSectionAudioDraft:
+    properties:
+      duration_seconds:
+        minimum: 0
+        type: integer
+      metadata:
+        type: object
+      mime_type:
+        maxLength: 255
+        type: string
+      narrator:
+        maxLength: 255
+        type: string
+      url:
+        maxLength: 2000
+        type: string
+    required:
+    - url
+    type: object
+  v1.SaveSectionTranslationDraft:
+    properties:
+      content:
+        type: string
+      metadata:
+        type: object
+      source:
+        maxLength: 255
+        type: string
+      title:
+        maxLength: 1000
+        type: string
+    required:
+    - content
     type: object
   v1.SavedItemList:
     properties:
@@ -1949,6 +3228,30 @@ definitions:
     - destination
     - original
     - source
+    type: object
+  v1.UpdateProductionProject:
+    properties:
+      notes:
+        maxLength: 10000
+        type: string
+      owner_id:
+        type: string
+      priority:
+        minimum: 0
+        type: integer
+      requires_audio:
+        type: boolean
+      requires_review:
+        type: boolean
+      workflow_status:
+        enum:
+        - candidate
+        - drafting
+        - in_review
+        - ready
+        - published
+        - archived
+        type: string
     type: object
   v1.UpdateSavedItem:
     properties:
@@ -2175,6 +3478,1153 @@ info:
   title: Go Clean Template API
   version: "1.0"
 paths:
+  /admin/emails/campaigns:
+    get:
+      operationId: admin-email-list-campaigns
+      parameters:
+      - description: Campaign status
+        enum:
+        - draft
+        - scheduled
+        - sending
+        - sent
+        - cancelled
+        in: query
+        name: status
+        type: string
+      - default: 50
+        description: Page size
+        in: query
+        name: limit
+        type: integer
+      - default: 0
+        description: Page offset
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.EmailCampaignList'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: List email campaigns
+      tags:
+      - admin-emails
+    post:
+      consumes:
+      - application/json
+      operationId: admin-email-create-campaign
+      parameters:
+      - description: Campaign draft
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.EmailCampaignCreate'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/entity.EmailCampaign'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Create email campaign
+      tags:
+      - admin-emails
+  /admin/emails/campaigns/{id}:
+    get:
+      operationId: admin-email-get-campaign
+      parameters:
+      - description: Campaign ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.EmailCampaign'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Get email campaign
+      tags:
+      - admin-emails
+    patch:
+      consumes:
+      - application/json
+      operationId: admin-email-update-campaign
+      parameters:
+      - description: Campaign ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Campaign draft
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.EmailCampaignUpdate'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.EmailCampaign'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Update email campaign draft
+      tags:
+      - admin-emails
+  /admin/emails/campaigns/{id}/cancel:
+    post:
+      operationId: admin-email-cancel-campaign
+      parameters:
+      - description: Campaign ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.EmailCampaign'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Cancel email campaign
+      tags:
+      - admin-emails
+  /admin/emails/campaigns/{id}/preview-audience:
+    post:
+      operationId: admin-email-preview-campaign-audience
+      parameters:
+      - description: Campaign ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.EmailAudienceRecipientList'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Preview email campaign audience
+      tags:
+      - admin-emails
+  /admin/emails/campaigns/{id}/schedule:
+    post:
+      consumes:
+      - application/json
+      operationId: admin-email-schedule-campaign
+      parameters:
+      - description: Campaign ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Schedule time
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.EmailCampaignSchedule'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.EmailCampaign'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Schedule email campaign
+      tags:
+      - admin-emails
+  /admin/emails/campaigns/{id}/send-now:
+    post:
+      operationId: admin-email-send-campaign-now
+      parameters:
+      - description: Campaign ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/entity.EmailCampaign'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Send email campaign now
+      tags:
+      - admin-emails
+  /admin/emails/campaigns/{id}/test-send:
+    post:
+      consumes:
+      - application/json
+      operationId: admin-email-test-send-campaign
+      parameters:
+      - description: Campaign ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Recipient and variables
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.EmailCampaignTestSend'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/entity.EmailMessageLog'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Test send email campaign
+      tags:
+      - admin-emails
+  /admin/emails/events/{key}:
+    get:
+      operationId: admin-email-get-event-setting
+      parameters:
+      - description: Transactional event key
+        in: path
+        name: key
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.EmailEventSetting'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Get transactional email event setting
+      tags:
+      - admin-emails
+    patch:
+      consumes:
+      - application/json
+      operationId: admin-email-update-event-setting
+      parameters:
+      - description: Transactional event key
+        in: path
+        name: key
+        required: true
+        type: string
+      - description: Event setting patch
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.EmailEventSettingUpdate'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.EmailEventSetting'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Update transactional email event setting
+      tags:
+      - admin-emails
+  /admin/emails/messages:
+    get:
+      operationId: admin-email-list-messages
+      parameters:
+      - description: Email category
+        enum:
+        - transactional
+        - marketing
+        in: query
+        name: category
+        type: string
+      - description: Message status
+        enum:
+        - queued
+        - sent
+        - failed
+        - skipped
+        in: query
+        name: status
+        type: string
+      - description: Recipient email
+        in: query
+        name: email
+        type: string
+      - default: 50
+        description: Page size
+        in: query
+        name: limit
+        type: integer
+      - default: 0
+        description: Page offset
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.EmailMessageList'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: List email delivery messages
+      tags:
+      - admin-emails
+  /admin/emails/suppressions:
+    get:
+      operationId: admin-email-list-suppressions
+      parameters:
+      - description: Suppressed email
+        in: query
+        name: email
+        type: string
+      - description: Suppression scope
+        enum:
+        - marketing
+        - all
+        in: query
+        name: scope
+        type: string
+      - default: 50
+        description: Page size
+        in: query
+        name: limit
+        type: integer
+      - default: 0
+        description: Page offset
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.EmailSuppressionList'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: List email suppressions
+      tags:
+      - admin-emails
+    post:
+      consumes:
+      - application/json
+      operationId: admin-email-create-suppression
+      parameters:
+      - description: Suppression
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.EmailSuppressionCreate'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/entity.EmailSuppression'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Create email suppression
+      tags:
+      - admin-emails
+  /admin/emails/suppressions/{id}:
+    delete:
+      operationId: admin-email-delete-suppression
+      parameters:
+      - description: Suppression ID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Delete email suppression
+      tags:
+      - admin-emails
+  /admin/emails/templates:
+    get:
+      operationId: admin-email-list-templates
+      parameters:
+      - description: Search key or name
+        in: query
+        name: q
+        type: string
+      - description: Template category
+        enum:
+        - transactional
+        - marketing
+        in: query
+        name: category
+        type: string
+      - description: Include archived templates
+        in: query
+        name: include_archived
+        type: boolean
+      - default: 50
+        description: Page size
+        in: query
+        name: limit
+        type: integer
+      - default: 0
+        description: Page offset
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.EmailTemplateList'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: List email templates
+      tags:
+      - admin-emails
+    post:
+      consumes:
+      - application/json
+      operationId: admin-email-create-template
+      parameters:
+      - description: Template metadata
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.EmailTemplateCreate'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/entity.EmailTemplate'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Create email template
+      tags:
+      - admin-emails
+  /admin/emails/templates/{id}:
+    delete:
+      operationId: admin-email-delete-template
+      parameters:
+      - description: Template ID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Delete email template
+      tags:
+      - admin-emails
+    get:
+      operationId: admin-email-get-template
+      parameters:
+      - description: Template ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.EmailTemplate'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Get email template
+      tags:
+      - admin-emails
+    patch:
+      consumes:
+      - application/json
+      operationId: admin-email-update-template
+      parameters:
+      - description: Template ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Template patch
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.EmailTemplateUpdate'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.EmailTemplate'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Update email template
+      tags:
+      - admin-emails
+  /admin/emails/templates/{id}/preview:
+    post:
+      consumes:
+      - application/json
+      operationId: admin-email-preview-template
+      parameters:
+      - description: Template ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Preview variables
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.EmailPreviewRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.EmailPreview'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Preview email template
+      tags:
+      - admin-emails
+  /admin/emails/templates/{id}/test-send:
+    post:
+      consumes:
+      - application/json
+      operationId: admin-email-test-send-template
+      parameters:
+      - description: Template ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Recipient and variables
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.EmailTestSendRequest'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/entity.EmailMessageLog'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Test send email template
+      tags:
+      - admin-emails
+  /admin/emails/templates/{id}/versions:
+    get:
+      operationId: admin-email-list-template-versions
+      parameters:
+      - description: Template ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.EmailTemplateVersionList'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: List email template versions
+      tags:
+      - admin-emails
+    post:
+      consumes:
+      - application/json
+      operationId: admin-email-create-template-version
+      parameters:
+      - description: Template ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Localized version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.EmailTemplateVersionCreate'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/entity.EmailTemplateVersion'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Create email template version
+      tags:
+      - admin-emails
+  /admin/emails/versions/{id}:
+    patch:
+      consumes:
+      - application/json
+      operationId: admin-email-update-template-version
+      parameters:
+      - description: Version ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Version patch
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.EmailTemplateVersionUpdate'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.EmailTemplateVersion'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Update email template version
+      tags:
+      - admin-emails
+  /admin/emails/versions/{id}/publish:
+    post:
+      operationId: admin-email-publish-template-version
+      parameters:
+      - description: Version ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.EmailTemplateVersion'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Publish email template version
+      tags:
+      - admin-emails
   /admin/users/role:
     patch:
       consumes:
@@ -3216,6 +5666,1727 @@ paths:
       summary: List kitab categories
       tags:
       - kitab
+  /editorial/production-activity:
+    get:
+      description: List recent operational timeline events across production projects.
+        Requires editor or admin role.
+      operationId: editorial-list-global-production-activity
+      parameters:
+      - description: Target language
+        enum:
+        - id
+        - en
+        in: query
+        name: lang
+        type: string
+      - default: 50
+        description: Page size
+        in: query
+        name: limit
+        type: integer
+      - default: 0
+        description: Page offset
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.ProductionEventList'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: List global production activity
+      tags:
+      - editorial-production
+  /editorial/production-candidates:
+    get:
+      description: List raw source books with counts and current production state
+        for one target language. Requires editor or admin role.
+      operationId: editorial-list-production-candidates
+      parameters:
+      - description: Target language
+        enum:
+        - id
+        - en
+        in: query
+        name: lang
+        required: true
+        type: string
+      - description: Search query
+        in: query
+        name: q
+        type: string
+      - description: Category ID
+        in: query
+        name: category_id
+        type: integer
+      - description: Author ID
+        in: query
+        name: author_id
+        type: integer
+      - description: Filter source books that have imported content
+        in: query
+        name: has_content
+        type: boolean
+      - description: Only books without an active production project for lang
+        in: query
+        name: unstarted
+        type: boolean
+      - default: 50
+        description: Page size
+        in: query
+        name: limit
+        type: integer
+      - default: 0
+        description: Page offset
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.ProductionCandidateList'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: List production candidates
+      tags:
+      - editorial-production
+  /editorial/production-dashboard:
+    get:
+      description: Get compact production counts and recent activity for one target
+        language. Requires editor or admin role.
+      operationId: editorial-get-production-dashboard
+      parameters:
+      - description: Target language
+        enum:
+        - id
+        - en
+        in: query
+        name: lang
+        required: true
+        type: string
+      - default: 20
+        description: Recent event count
+        in: query
+        name: activity_limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.BookProductionDashboard'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Get production dashboard
+      tags:
+      - editorial-production
+  /editorial/production-projects:
+    get:
+      description: List translation production workflows. Requires editor or admin
+        role.
+      operationId: editorial-list-production-projects
+      parameters:
+      - description: Book ID
+        in: query
+        name: book_id
+        type: integer
+      - description: Target language
+        enum:
+        - id
+        - en
+        in: query
+        name: lang
+        type: string
+      - description: Workflow status
+        enum:
+        - candidate
+        - drafting
+        - in_review
+        - ready
+        - published
+        - archived
+        in: query
+        name: workflow_status
+        type: string
+      - description: Publication status
+        enum:
+        - hidden
+        - published
+        - archived
+        in: query
+        name: publication_status
+        type: string
+      - description: Only active hidden projects ready to publish
+        in: query
+        name: ready_to_publish
+        type: boolean
+      - description: Only active hidden projects that still need work
+        in: query
+        name: needs_work
+        type: boolean
+      - default: 50
+        description: Page size
+        in: query
+        name: limit
+        type: integer
+      - default: 0
+        description: Page offset
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.ProductionProjectList'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: List production projects
+      tags:
+      - editorial-production
+    post:
+      consumes:
+      - application/json
+      description: Start one book+language translation production workflow. Requires
+        editor or admin role.
+      operationId: editorial-create-production-project
+      parameters:
+      - description: Production project
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.CreateProductionProject'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/entity.BookProductionProject'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Create production project
+      tags:
+      - editorial-production
+  /editorial/production-projects/{id}:
+    get:
+      description: Get one translation production workflow. Requires editor or admin
+        role.
+      operationId: editorial-get-production-project
+      parameters:
+      - description: Production project ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.BookProductionProject'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Get production project
+      tags:
+      - editorial-production
+    patch:
+      consumes:
+      - application/json
+      description: Update production workflow settings. Requires editor or admin role.
+      operationId: editorial-update-production-project
+      parameters:
+      - description: Production project ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Production project patch
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.UpdateProductionProject'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.BookProductionProject'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Update production project
+      tags:
+      - editorial-production
+  /editorial/production-projects/{id}/activity:
+    get:
+      description: List operational timeline events for one production project. Requires
+        editor or admin role.
+      operationId: editorial-get-production-activity
+      parameters:
+      - description: Production project ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - default: 50
+        description: Page size
+        in: query
+        name: limit
+        type: integer
+      - default: 0
+        description: Page offset
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.ProductionEventList'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Get production activity
+      tags:
+      - editorial-production
+  /editorial/production-projects/{id}/author-draft:
+    delete:
+      description: Delete the author translation draft. Requires editor or admin role.
+      operationId: editorial-delete-author-translation-draft
+      parameters:
+      - description: Production project ID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Delete author translation draft
+      tags:
+      - editorial-production
+    get:
+      description: Get the author translation draft for a production project. Requires
+        editor or admin role.
+      operationId: editorial-get-author-translation-draft
+      parameters:
+      - description: Production project ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.AuthorTranslationEdit'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Get author translation draft
+      tags:
+      - editorial-production
+    put:
+      consumes:
+      - application/json
+      description: Create or replace the author translation draft. Requires editor
+        or admin role.
+      operationId: editorial-save-author-translation-draft
+      parameters:
+      - description: Production project ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Author translation draft
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.SaveAuthorTranslationDraft'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.AuthorTranslationEdit'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Save author translation draft
+      tags:
+      - editorial-production
+  /editorial/production-projects/{id}/category-draft:
+    delete:
+      description: Delete the category translation draft. Requires editor or admin
+        role.
+      operationId: editorial-delete-category-translation-draft
+      parameters:
+      - description: Production project ID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Delete category translation draft
+      tags:
+      - editorial-production
+    get:
+      description: Get the category translation draft for a production project. Requires
+        editor or admin role.
+      operationId: editorial-get-category-translation-draft
+      parameters:
+      - description: Production project ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.CategoryTranslationEdit'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Get category translation draft
+      tags:
+      - editorial-production
+    put:
+      consumes:
+      - application/json
+      description: Create or replace the category translation draft. Requires editor
+        or admin role.
+      operationId: editorial-save-category-translation-draft
+      parameters:
+      - description: Production project ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Category translation draft
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.SaveCategoryTranslationDraft'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.CategoryTranslationEdit'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Save category translation draft
+      tags:
+      - editorial-production
+  /editorial/production-projects/{id}/completeness:
+    get:
+      description: Check whether all required translation, summary, metadata, and
+        optional audio drafts are complete enough to publish. Requires editor or admin
+        role.
+      operationId: editorial-production-completeness
+      parameters:
+      - description: Production project ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.BookProductionCompleteness'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Get production completeness
+      tags:
+      - editorial-production
+  /editorial/production-projects/{id}/draft-revisions:
+    get:
+      description: List immutable snapshots for one production draft asset. Requires
+        editor or admin role.
+      operationId: editorial-list-production-draft-revisions
+      parameters:
+      - description: Production project ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Asset type
+        enum:
+        - book_metadata
+        - author_metadata
+        - category_metadata
+        - section_translation
+        - heading_summary
+        - section_audio
+        in: query
+        name: asset_type
+        required: true
+        type: string
+      - description: Heading ID for TOC-scoped assets
+        in: query
+        name: heading_id
+        type: integer
+      - default: 50
+        description: Page size
+        in: query
+        name: limit
+        type: integer
+      - default: 0
+        description: Page offset
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.ProductionDraftRevisionList'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: List production draft revisions
+      tags:
+      - editorial-production
+  /editorial/production-projects/{id}/draft-revisions/{revision_id}/restore:
+    post:
+      description: Restore a previous draft snapshot into the current draft and create
+        a new revision. Requires editor or admin role.
+      operationId: editorial-restore-production-draft-revision
+      parameters:
+      - description: Production project ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Draft revision ID
+        in: path
+        name: revision_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.BookProductionDraftRevision'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Restore production draft revision
+      tags:
+      - editorial-production
+  /editorial/production-projects/{id}/final-assets/{asset_type}:
+    delete:
+      consumes:
+      - application/json
+      description: Soft-delete a project-scoped final asset and hide the publication.
+        Admin role required.
+      operationId: editorial-delete-final-production-asset
+      parameters:
+      - description: Production project ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Asset type
+        enum:
+        - book_metadata
+        - author_metadata
+        - category_metadata
+        in: path
+        name: asset_type
+        required: true
+        type: string
+      - description: Delete reason
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/v1.DeleteFinalProductionAsset'
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Delete final project asset
+      tags:
+      - editorial-production
+  /editorial/production-projects/{id}/metadata-draft:
+    delete:
+      description: Delete the book metadata translation draft. Requires editor or
+        admin role.
+      operationId: editorial-delete-metadata-translation-draft
+      parameters:
+      - description: Production project ID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Delete metadata translation draft
+      tags:
+      - editorial-production
+    get:
+      description: Get the book metadata translation draft for a production project.
+        Requires editor or admin role.
+      operationId: editorial-get-metadata-translation-draft
+      parameters:
+      - description: Production project ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.BookMetadataTranslationEdit'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Get metadata translation draft
+      tags:
+      - editorial-production
+    put:
+      consumes:
+      - application/json
+      description: Create or replace the book metadata translation draft. Requires
+        editor or admin role.
+      operationId: editorial-save-metadata-translation-draft
+      parameters:
+      - description: Production project ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Metadata translation draft
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.SaveMetadataTranslationDraft'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.BookMetadataTranslationEdit'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Save metadata translation draft
+      tags:
+      - editorial-production
+  /editorial/production-projects/{id}/publish:
+    post:
+      description: Publish a complete book+language production project into final
+        reader assets. Admin role required.
+      operationId: editorial-publish-production-project
+      parameters:
+      - description: Production project ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.BookProductionProject'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Publish production project
+      tags:
+      - editorial-production
+  /editorial/production-projects/{id}/publish-check:
+    get:
+      description: Explain whether a production project can be published and which
+        required assets still block it. Requires editor or admin role.
+      operationId: editorial-get-production-publish-check
+      parameters:
+      - description: Production project ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.BookProductionPublishCheck'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Get production publish check
+      tags:
+      - editorial-production
+  /editorial/production-projects/{id}/review:
+    post:
+      consumes:
+      - application/json
+      description: Submit, approve, or reject one production draft asset. Requires
+        editor or admin role.
+      operationId: editorial-review-production-asset
+      parameters:
+      - description: Production project ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Review decision
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.ReviewProductionAsset'
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Review production asset
+      tags:
+      - editorial-production
+  /editorial/production-projects/{id}/toc/{heading_id}/audio-draft:
+    delete:
+      description: Delete a TOC-scoped audio draft. Requires editor or admin role.
+      operationId: editorial-delete-section-audio-draft
+      parameters:
+      - description: Production project ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Heading ID
+        in: path
+        name: heading_id
+        required: true
+        type: integer
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Delete section audio draft
+      tags:
+      - editorial-production
+    get:
+      description: Get a TOC-scoped audio draft. Requires editor or admin role.
+      operationId: editorial-get-section-audio-draft
+      parameters:
+      - description: Production project ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Heading ID
+        in: path
+        name: heading_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.SectionAudioEdit'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Get section audio draft
+      tags:
+      - editorial-production
+    put:
+      consumes:
+      - application/json
+      description: Create or replace a TOC-scoped audio draft. Requires editor or
+        admin role.
+      operationId: editorial-save-section-audio-draft
+      parameters:
+      - description: Production project ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Heading ID
+        in: path
+        name: heading_id
+        required: true
+        type: integer
+      - description: Section audio draft
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.SaveSectionAudioDraft'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.SectionAudioEdit'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Save section audio draft
+      tags:
+      - editorial-production
+  /editorial/production-projects/{id}/toc/{heading_id}/final-assets/{asset_type}:
+    delete:
+      consumes:
+      - application/json
+      description: Soft-delete a TOC-scoped final asset and hide the publication.
+        Admin role required.
+      operationId: editorial-delete-final-heading-production-asset
+      parameters:
+      - description: Production project ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Heading ID
+        in: path
+        name: heading_id
+        required: true
+        type: integer
+      - description: Asset type
+        enum:
+        - section_translation
+        - heading_summary
+        - section_audio
+        in: path
+        name: asset_type
+        required: true
+        type: string
+      - description: Delete reason
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/v1.DeleteFinalProductionAsset'
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Delete final heading asset
+      tags:
+      - editorial-production
+  /editorial/production-projects/{id}/toc/{heading_id}/summary-draft:
+    delete:
+      description: Delete a TOC-scoped summary draft. Requires editor or admin role.
+      operationId: editorial-delete-heading-summary-draft
+      parameters:
+      - description: Production project ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Heading ID
+        in: path
+        name: heading_id
+        required: true
+        type: integer
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Delete heading summary draft
+      tags:
+      - editorial-production
+    get:
+      description: Get a TOC-scoped summary draft. Requires editor or admin role.
+      operationId: editorial-get-heading-summary-draft
+      parameters:
+      - description: Production project ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Heading ID
+        in: path
+        name: heading_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.HeadingSummaryEdit'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Get heading summary draft
+      tags:
+      - editorial-production
+    put:
+      consumes:
+      - application/json
+      description: Create or replace a TOC-scoped summary draft. Requires editor or
+        admin role.
+      operationId: editorial-save-heading-summary-draft
+      parameters:
+      - description: Production project ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Heading ID
+        in: path
+        name: heading_id
+        required: true
+        type: integer
+      - description: Heading summary draft
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.SaveHeadingSummaryDraft'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.HeadingSummaryEdit'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Save heading summary draft
+      tags:
+      - editorial-production
+  /editorial/production-projects/{id}/toc/{heading_id}/translation-draft:
+    delete:
+      description: Delete a TOC-scoped section translation draft. Requires editor
+        or admin role.
+      operationId: editorial-delete-section-translation-draft
+      parameters:
+      - description: Production project ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Heading ID
+        in: path
+        name: heading_id
+        required: true
+        type: integer
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Delete section translation draft
+      tags:
+      - editorial-production
+    get:
+      description: Get a TOC-scoped section translation draft. Requires editor or
+        admin role.
+      operationId: editorial-get-section-translation-draft
+      parameters:
+      - description: Production project ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Heading ID
+        in: path
+        name: heading_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.SectionTranslationEdit'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Get section translation draft
+      tags:
+      - editorial-production
+    put:
+      consumes:
+      - application/json
+      description: Create or replace a TOC-scoped section translation draft. Requires
+        editor or admin role.
+      operationId: editorial-save-section-translation-draft
+      parameters:
+      - description: Production project ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Heading ID
+        in: path
+        name: heading_id
+        required: true
+        type: integer
+      - description: Section translation draft
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.SaveSectionTranslationDraft'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.SectionTranslationEdit'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Save section translation draft
+      tags:
+      - editorial-production
+  /editorial/production-projects/{id}/unpublish:
+    post:
+      description: Hide a book+language publication without deleting final assets.
+        Admin role required.
+      operationId: editorial-unpublish-production-project
+      parameters:
+      - description: Production project ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.BookProductionProject'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Unpublish production project
+      tags:
+      - editorial-production
+  /editorial/production-projects/{id}/workspace:
+    get:
+      description: Get project, source book, TOC draft status, final asset flags,
+        and completeness in one editor payload. Requires editor or admin role.
+      operationId: editorial-get-production-workspace
+      parameters:
+      - description: Production project ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.BookProductionWorkspace'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Get production workspace
+      tags:
+      - editorial-production
   /editorial/quran/missing-assets:
     get:
       description: Editorial queue of missing Quran surah info, ayah translations,
@@ -3259,7 +7430,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/entity.AdminMissingQuranAssets'
+            $ref: '#/definitions/entity.EditorialMissingQuranAssets'
         "400":
           description: Bad Request
           schema:
@@ -3276,6 +7447,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
       summary: List missing Quran assets
       tags:
       - editorial
@@ -3323,7 +7496,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/entity.AdminMissingReaderAssets'
+            $ref: '#/definitions/entity.EditorialMissingReaderAssets'
         "400":
           description: Bad Request
           schema:
@@ -3340,9 +7513,76 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
       summary: List missing reader assets
       tags:
       - editorial
+  /email/unsubscribe:
+    get:
+      consumes:
+      - application/json
+      operationId: email-unsubscribe
+      parameters:
+      - description: Unsubscribe token
+        in: query
+        name: token
+        type: string
+      - description: Unsubscribe token
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/v1.EmailUnsubscribe'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.EmailSubscription'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      summary: Unsubscribe from marketing email
+      tags:
+      - email
+    post:
+      consumes:
+      - application/json
+      operationId: email-unsubscribe
+      parameters:
+      - description: Unsubscribe token
+        in: query
+        name: token
+        type: string
+      - description: Unsubscribe token
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/v1.EmailUnsubscribe'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.EmailSubscription'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      summary: Unsubscribe from marketing email
+      tags:
+      - email
   /me/quran/progress:
     get:
       description: Return the authenticated user's latest Quran resume position across
@@ -4459,6 +8699,64 @@ paths:
       summary: Show history
       tags:
       - translation
+  /user/email-preferences:
+    get:
+      operationId: user-email-preferences
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.EmailSubscription'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Get user email preferences
+      tags:
+      - user
+    patch:
+      consumes:
+      - application/json
+      operationId: update-user-email-preferences
+      parameters:
+      - description: Marketing opt-in
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.EmailSubscriptionUpdate'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.EmailSubscription'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Update user email preferences
+      tags:
+      - user
   /user/onboarding:
     patch:
       consumes:

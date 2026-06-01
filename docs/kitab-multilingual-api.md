@@ -161,6 +161,52 @@ Response:
 }
 ```
 
+## Editorial Book Production Workflow
+
+Translation production is scoped to `book_id + lang` and target languages are `id` and `en` for v1. Runtime editorial flow reads raw kitab data from Postgres tables (`books`, `book_pages`, `book_headings`); SQLite import and CLI tools are not part of the editor/admin user flow.
+
+Core endpoints require editor or admin role:
+
+- `GET /v1/editorial/production-candidates?lang=&q=&category_id=&author_id=&has_content=&unstarted=&limit=&offset=`
+- `GET /v1/editorial/production-dashboard?lang=&activity_limit=`
+- `GET /v1/editorial/production-activity?lang=&limit=&offset=`
+- `POST /v1/editorial/production-projects`
+- `GET /v1/editorial/production-projects?book_id=&lang=&workflow_status=&publication_status=&ready_to_publish=&needs_work=&limit=&offset=`
+- `GET /v1/editorial/production-projects/{id}`
+- `PATCH /v1/editorial/production-projects/{id}`
+- `GET /v1/editorial/production-projects/{id}/workspace`
+- `GET /v1/editorial/production-projects/{id}/completeness`
+- `GET /v1/editorial/production-projects/{id}/publish-check`
+- `GET /v1/editorial/production-projects/{id}/activity?limit=&offset=`
+- `GET /v1/editorial/production-projects/{id}/draft-revisions?asset_type=&heading_id=&limit=&offset=`
+- `POST /v1/editorial/production-projects/{id}/draft-revisions/{revision_id}/restore`
+- `GET|PUT|DELETE /v1/editorial/production-projects/{id}/metadata-draft`
+- `GET|PUT|DELETE /v1/editorial/production-projects/{id}/author-draft`
+- `GET|PUT|DELETE /v1/editorial/production-projects/{id}/category-draft`
+- `GET|PUT|DELETE /v1/editorial/production-projects/{id}/toc/{heading_id}/translation-draft`
+- `GET|PUT|DELETE /v1/editorial/production-projects/{id}/toc/{heading_id}/summary-draft`
+- `GET|PUT|DELETE /v1/editorial/production-projects/{id}/toc/{heading_id}/audio-draft`
+- `POST /v1/editorial/production-projects/{id}/review`
+
+Admin-only endpoints:
+
+- `POST /v1/editorial/production-projects/{id}/publish`
+- `POST /v1/editorial/production-projects/{id}/unpublish`
+- `DELETE /v1/editorial/production-projects/{id}/final-assets/{asset_type}`
+- `DELETE /v1/editorial/production-projects/{id}/toc/{heading_id}/final-assets/{asset_type}`
+
+Completeness is book-level. The backend requires metadata, author/category drafts where the raw book has them, section translation for every active heading, heading summary for every active heading, and audio for every active heading only when `requires_audio=true`. If `requires_review=true`, required draft assets must be approved before publish.
+
+`GET /workspace` is the recommended editor screen bootstrap call. It returns the project, source book, completeness, scalar asset statuses, and per-TOC draft/final flags in one payload.
+
+Use `GET /production-candidates` to choose raw kitab for a target language; `unstarted=true` hides books that already have an active project for that `book_id + lang`. Use `ready_to_publish=true` or `needs_work=true` on the project list for a small production queue.
+
+Every successful production draft save creates an immutable draft revision. Use `GET /draft-revisions` to inspect history for one asset and `POST /restore` to roll back a snapshot into the active draft.
+
+Use `GET /publish-check` for a read-only publish validator that mirrors publish readiness and returns structured blocking errors. Use `GET /activity` to render the project timeline for create/update, draft save/delete/restore, review, publish, unpublish, and final asset soft-delete events.
+
+Public reader behavior for `lang=ar` is unchanged. For `lang=id|en`, final translation/audio/summary data is exposed only when the matching production project has `publication_status=published`; otherwise reader responses safely fall back to Arabic/source content or omit the unpublished asset.
+
 Catalog gaps are computed only from published reader books. Category and author gaps include categories/authors referenced by published books. Section gaps are computed from non-deleted headings in published books.
 
 ## Frontend Guidance

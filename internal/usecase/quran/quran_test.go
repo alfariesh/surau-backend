@@ -250,9 +250,9 @@ func (r *quranRepoStub) ListBookQuranReferences(context.Context, repo.QuranBookR
 	return []entity.BookQuranReference{}, 0, nil
 }
 
-func (r *quranRepoStub) ListMissingQuranAssets(_ context.Context, filter repo.MissingQuranAssetFilter) (entity.AdminMissingQuranAssets, error) {
+func (r *quranRepoStub) ListMissingQuranAssets(_ context.Context, filter repo.MissingQuranAssetFilter) (entity.EditorialMissingQuranAssets, error) {
 	r.missingAssetsFilter = filter
-	return entity.AdminMissingQuranAssets{}, nil
+	return entity.EditorialMissingQuranAssets{}, nil
 }
 
 var _ repo.QuranRepo = (*quranRepoStub)(nil)

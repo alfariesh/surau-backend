@@ -55,6 +55,35 @@ func (uc *UseCase) Books(
 	})
 }
 
+// ProductionCandidates returns source books with current production state for one target language.
+func (uc *UseCase) ProductionCandidates(
+	ctx context.Context,
+	lang,
+	query string,
+	categoryID,
+	authorID *int,
+	hasContent *bool,
+	unstarted bool,
+	limit,
+	offset int,
+) ([]entity.BookProductionCandidate, int, error) {
+	normalizedLang, err := entity.NormalizeProductionLang(lang)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return uc.repo.ListProductionCandidates(ctx, repo.ProductionCandidateFilter{
+		Lang:       normalizedLang,
+		Query:      strings.TrimSpace(query),
+		CategoryID: categoryID,
+		AuthorID:   authorID,
+		HasContent: hasContent,
+		Unstarted:  unstarted,
+		Limit:      clampLimit(limit),
+		Offset:     clampOffset(offset),
+	})
+}
+
 // UpdatePublication changes visibility and ordering.
 func (uc *UseCase) UpdatePublication(
 	ctx context.Context,
@@ -101,7 +130,7 @@ func (uc *UseCase) PublishMetadataDraft(ctx context.Context, actorID string, boo
 }
 
 // GetPageEdit returns raw page plus draft and published overrides.
-func (uc *UseCase) GetPageEdit(ctx context.Context, bookID, pageID int) (entity.AdminPageEdit, error) {
+func (uc *UseCase) GetPageEdit(ctx context.Context, bookID, pageID int) (entity.EditorialPageEdit, error) {
 	return uc.repo.GetPageEdit(ctx, bookID, pageID)
 }
 
@@ -153,7 +182,7 @@ func (uc *UseCase) TranslationFeedbacks(
 	bookID, headingID *int,
 	lang, vote, status string,
 	limit, offset int,
-) ([]entity.AdminTranslationFeedback, int, error) {
+) ([]entity.EditorialTranslationFeedback, int, error) {
 	filter, err := translationFeedbackFilter(bookID, headingID, lang, vote, status, limit, offset)
 	if err != nil {
 		return nil, 0, err
@@ -168,10 +197,10 @@ func (uc *UseCase) TranslationFeedbackSummary(
 	bookID, headingID *int,
 	lang, vote, status string,
 	limit int,
-) (entity.AdminTranslationFeedbackSummary, error) {
+) (entity.EditorialTranslationFeedbackSummary, error) {
 	filter, err := translationFeedbackFilter(bookID, headingID, lang, vote, status, limit, 0)
 	if err != nil {
-		return entity.AdminTranslationFeedbackSummary{}, err
+		return entity.EditorialTranslationFeedbackSummary{}, err
 	}
 
 	return uc.repo.TranslationFeedbackSummary(ctx, filter)
@@ -185,10 +214,10 @@ func (uc *UseCase) MissingReaderAssets(
 	bookID *int,
 	limit,
 	offset int,
-) (entity.AdminMissingReaderAssets, error) {
+) (entity.EditorialMissingReaderAssets, error) {
 	filter, err := missingReaderAssetFilter(targetLang, assetType, bookID, limit, offset)
 	if err != nil {
-		return entity.AdminMissingReaderAssets{}, err
+		return entity.EditorialMissingReaderAssets{}, err
 	}
 
 	return uc.repo.ListMissingReaderAssets(ctx, filter)
@@ -199,10 +228,10 @@ func (uc *UseCase) ResolveTranslationFeedback(
 	ctx context.Context,
 	actorID, feedbackID string,
 	note *string,
-) (entity.AdminTranslationFeedback, error) {
+) (entity.EditorialTranslationFeedback, error) {
 	feedbackID = strings.TrimSpace(feedbackID)
 	if feedbackID == "" {
-		return entity.AdminTranslationFeedback{}, entity.ErrInvalidFeedback
+		return entity.EditorialTranslationFeedback{}, entity.ErrInvalidFeedback
 	}
 
 	return uc.repo.ResolveTranslationFeedback(ctx, actorID, feedbackID, trimStringPtr(note))
@@ -212,10 +241,10 @@ func (uc *UseCase) ResolveTranslationFeedback(
 func (uc *UseCase) ReopenTranslationFeedback(
 	ctx context.Context,
 	actorID, feedbackID string,
-) (entity.AdminTranslationFeedback, error) {
+) (entity.EditorialTranslationFeedback, error) {
 	feedbackID = strings.TrimSpace(feedbackID)
 	if feedbackID == "" {
-		return entity.AdminTranslationFeedback{}, entity.ErrInvalidFeedback
+		return entity.EditorialTranslationFeedback{}, entity.ErrInvalidFeedback
 	}
 
 	return uc.repo.ReopenTranslationFeedback(ctx, actorID, feedbackID)

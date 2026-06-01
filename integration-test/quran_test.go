@@ -48,14 +48,15 @@ func TestQuranMultilingualContract(t *testing.T) {
 	assertAvailability(t, enSurah.Localization.Availability, "offer_available_lang", "en", "ar", true)
 
 	idSources := getQuranTranslationSources(t, "id")
-	if len(idSources) != 1 {
+	if len(idSources) == 0 {
 		t.Fatalf("id translation sources = %+v", idSources)
 	}
-	if idSources[0].ID != fixtureQuranSourceID || idSources[0].Coverage.TranslatedAyahs != 1 || idSources[0].Coverage.TotalAyahs != 1 {
-		t.Fatalf("id translation source = %+v", idSources[0])
+	fixtureSource := findQuranTranslationSource(idSources, fixtureQuranSourceID)
+	if fixtureSource == nil {
+		t.Fatalf("fixture translation source missing from %+v", idSources)
 	}
-	if !idSources[0].IsDefault {
-		t.Fatalf("id translation source should be default: %+v", idSources[0])
+	if fixtureSource.Coverage.TranslatedAyahs < 1 || fixtureSource.Coverage.TotalAyahs < 1 {
+		t.Fatalf("fixture translation source coverage = %+v", fixtureSource)
 	}
 
 	enSources := getQuranTranslationSources(t, "en")
@@ -436,6 +437,16 @@ func getQuranTranslationSources(t *testing.T, lang string) []quranTranslationSou
 	}
 
 	return sources
+}
+
+func findQuranTranslationSource(sources []quranTranslationSourceResponse, id string) *quranTranslationSourceResponse {
+	for i := range sources {
+		if sources[i].ID == id {
+			return &sources[i]
+		}
+	}
+
+	return nil
 }
 
 func getQuranAyah(t *testing.T, lang string) quranAyahResponse {

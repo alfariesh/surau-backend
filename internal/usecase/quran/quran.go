@@ -296,10 +296,10 @@ func (uc *UseCase) MissingAssets(
 	surahID *int,
 	limit int,
 	offset int,
-) (entity.AdminMissingQuranAssets, error) {
+) (entity.EditorialMissingQuranAssets, error) {
 	filter, err := missingQuranAssetFilter(targetLang, assetType, surahID, limit, offset)
 	if err != nil {
-		return entity.AdminMissingQuranAssets{}, err
+		return entity.EditorialMissingQuranAssets{}, err
 	}
 
 	return uc.repo.ListMissingQuranAssets(ctx, filter)

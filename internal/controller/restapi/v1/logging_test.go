@@ -109,8 +109,8 @@ func TestEditorialMissingReaderAssetsPassesFilters(t *testing.T) {
 
 	l := &spyLogger{}
 	editorial := &fakeMissingAssetsEditorial{
-		assets: entity.AdminMissingReaderAssets{
-			Items: []entity.AdminMissingReaderAsset{
+		assets: entity.EditorialMissingReaderAssets{
+			Items: []entity.EditorialMissingReaderAsset{
 				{AssetType: entity.MissingAssetSectionTranslation, TargetLang: "en"},
 			},
 			Total: 1,
@@ -154,7 +154,7 @@ func newEditorialMissingReaderAssetsTestApp(editorial usecase.Editorial, l *spyL
 type fakeMissingAssetsEditorial struct {
 	usecase.Editorial
 
-	assets     entity.AdminMissingReaderAssets
+	assets     entity.EditorialMissingReaderAssets
 	err        error
 	targetLang string
 	assetType  string
@@ -170,7 +170,7 @@ func (f *fakeMissingAssetsEditorial) MissingReaderAssets(
 	bookID *int,
 	limit int,
 	offset int,
-) (entity.AdminMissingReaderAssets, error) {
+) (entity.EditorialMissingReaderAssets, error) {
 	f.targetLang = targetLang
 	f.assetType = assetType
 	f.bookID = bookID

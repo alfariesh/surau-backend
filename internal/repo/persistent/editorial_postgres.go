@@ -57,11 +57,11 @@ missing AS (
            pb.book_updated_at AS source_updated_at
     FROM published_books pb
     CROSS JOIN target_langs tl
-    LEFT JOIN book_metadata_translations bmt ON bmt.book_id = pb.book_id AND bmt.lang = tl.lang
+    LEFT JOIN book_metadata_translations bmt ON bmt.book_id = pb.book_id AND bmt.lang = tl.lang AND bmt.is_deleted = false
     LEFT JOIN LATERAL (
         SELECT array_agg(lang ORDER BY lang) AS available_langs
         FROM book_metadata_translations
-        WHERE book_id = pb.book_id
+        WHERE book_id = pb.book_id AND is_deleted = false
     ) av ON true
     WHERE bmt.book_id IS NULL
 
@@ -81,11 +81,11 @@ missing AS (
            pb.category_updated_at AS source_updated_at
     FROM published_books pb
     CROSS JOIN target_langs tl
-    LEFT JOIN category_translations ct ON ct.category_id = pb.category_id AND ct.lang = tl.lang
+    LEFT JOIN category_translations ct ON ct.category_id = pb.category_id AND ct.lang = tl.lang AND ct.is_deleted = false
     LEFT JOIN LATERAL (
         SELECT array_agg(lang ORDER BY lang) AS available_langs
         FROM category_translations
-        WHERE category_id = pb.category_id
+        WHERE category_id = pb.category_id AND is_deleted = false
     ) av ON true
     WHERE pb.category_id IS NOT NULL AND ct.category_id IS NULL
 
@@ -105,11 +105,11 @@ missing AS (
            pb.author_updated_at AS source_updated_at
     FROM published_books pb
     CROSS JOIN target_langs tl
-    LEFT JOIN author_translations atr ON atr.author_id = pb.author_id AND atr.lang = tl.lang
+    LEFT JOIN author_translations atr ON atr.author_id = pb.author_id AND atr.lang = tl.lang AND atr.is_deleted = false
     LEFT JOIN LATERAL (
         SELECT array_agg(lang ORDER BY lang) AS available_langs
         FROM author_translations
-        WHERE author_id = pb.author_id
+        WHERE author_id = pb.author_id AND is_deleted = false
     ) av ON true
     WHERE pb.author_id IS NOT NULL AND atr.author_id IS NULL
 
@@ -131,11 +131,11 @@ missing AS (
     JOIN book_headings h ON h.book_id = pb.book_id AND h.is_deleted = false
     LEFT JOIN book_heading_edits he ON he.book_id = h.book_id AND he.heading_id = h.heading_id AND he.status = 'published'
     CROSS JOIN target_langs tl
-    LEFT JOIN section_translations st ON st.book_id = h.book_id AND st.heading_id = h.heading_id AND st.lang = tl.lang
+    LEFT JOIN section_translations st ON st.book_id = h.book_id AND st.heading_id = h.heading_id AND st.lang = tl.lang AND st.is_deleted = false
     LEFT JOIN LATERAL (
         SELECT array_agg(lang ORDER BY lang) AS available_langs
         FROM section_translations
-        WHERE book_id = h.book_id AND heading_id = h.heading_id
+        WHERE book_id = h.book_id AND heading_id = h.heading_id AND is_deleted = false
     ) av ON true
     WHERE st.book_id IS NULL
 
@@ -157,11 +157,11 @@ missing AS (
     JOIN book_headings h ON h.book_id = pb.book_id AND h.is_deleted = false
     LEFT JOIN book_heading_edits he ON he.book_id = h.book_id AND he.heading_id = h.heading_id AND he.status = 'published'
     CROSS JOIN target_langs tl
-    LEFT JOIN book_heading_summaries bhs ON bhs.book_id = h.book_id AND bhs.heading_id = h.heading_id AND bhs.lang = tl.lang
+    LEFT JOIN book_heading_summaries bhs ON bhs.book_id = h.book_id AND bhs.heading_id = h.heading_id AND bhs.lang = tl.lang AND bhs.is_deleted = false
     LEFT JOIN LATERAL (
         SELECT array_agg(lang ORDER BY lang) AS available_langs
         FROM book_heading_summaries
-        WHERE book_id = h.book_id AND heading_id = h.heading_id
+        WHERE book_id = h.book_id AND heading_id = h.heading_id AND is_deleted = false
     ) av ON true
     WHERE bhs.book_id IS NULL
 
@@ -183,11 +183,11 @@ missing AS (
     JOIN book_headings h ON h.book_id = pb.book_id AND h.is_deleted = false
     LEFT JOIN book_heading_edits he ON he.book_id = h.book_id AND he.heading_id = h.heading_id AND he.status = 'published'
     CROSS JOIN target_langs tl
-    LEFT JOIN section_audio sa ON sa.book_id = h.book_id AND sa.heading_id = h.heading_id AND sa.lang = tl.lang
+    LEFT JOIN section_audio sa ON sa.book_id = h.book_id AND sa.heading_id = h.heading_id AND sa.lang = tl.lang AND sa.is_deleted = false
     LEFT JOIN LATERAL (
         SELECT array_agg(lang ORDER BY lang) AS available_langs
         FROM section_audio
-        WHERE book_id = h.book_id AND heading_id = h.heading_id
+        WHERE book_id = h.book_id AND heading_id = h.heading_id AND is_deleted = false
     ) av ON true
     WHERE sa.book_id IS NULL
 ),
@@ -254,6 +254,79 @@ func (r *EditorialRepo) ListBooks(ctx context.Context, filter repo.EditorialBook
 	}
 
 	return books, total, nil
+}
+
+// ListProductionCandidates returns raw source books plus production state for one language.
+func (r *EditorialRepo) ListProductionCandidates(
+	ctx context.Context,
+	filter repo.ProductionCandidateFilter,
+) ([]entity.BookProductionCandidate, int, error) {
+	countBuilder := r.Builder.
+		Select("COUNT(*)").
+		From("books b").
+		LeftJoin("book_metadata_edits me ON me.book_id = b.id AND me.status = 'published'").
+		LeftJoin("authors a ON a.id = b.author_id").
+		LeftJoin("categories c ON c.id = COALESCE(me.category_id, b.category_id)").
+		LeftJoin("book_production_projects pp ON pp.book_id = b.id AND pp.lang = ? AND pp.workflow_status <> 'archived'", filter.Lang).
+		Where(sq.Eq{"b.is_deleted": false})
+
+	dataBuilder := r.Builder.
+		Select(
+			"b.id AS book_id",
+			"COALESCE(me.display_title, b.name) AS name",
+			"COALESCE(me.category_id, b.category_id) AS category_id",
+			"c.name AS category_name",
+			"b.author_id",
+			"a.name AS author_name",
+			"b.has_content",
+			"(SELECT COUNT(*) FROM book_headings h WHERE h.book_id = b.id AND h.is_deleted = false) AS heading_count",
+			"(SELECT COUNT(*) FROM book_pages bp WHERE bp.book_id = b.id AND bp.is_deleted = false) AS page_count",
+			"pp.id AS existing_project_id",
+			"pp.workflow_status AS existing_workflow_status",
+			"pp.publication_status AS existing_publication_status",
+			"pp.updated_at AS existing_project_updated_at",
+		).
+		From("books b").
+		LeftJoin("book_metadata_edits me ON me.book_id = b.id AND me.status = 'published'").
+		LeftJoin("authors a ON a.id = b.author_id").
+		LeftJoin("categories c ON c.id = COALESCE(me.category_id, b.category_id)").
+		LeftJoin("book_production_projects pp ON pp.book_id = b.id AND pp.lang = ? AND pp.workflow_status <> 'archived'", filter.Lang).
+		Where(sq.Eq{"b.is_deleted": false}).
+		OrderBy("b.has_content DESC", "heading_count DESC", "b.id ASC").
+		Limit(filter.Limit).
+		Offset(filter.Offset)
+
+	countBuilder, dataBuilder = applyProductionCandidateFilter(countBuilder, dataBuilder, filter)
+
+	total, err := r.count(ctx, countBuilder)
+	if err != nil {
+		return nil, 0, fmt.Errorf("EditorialRepo - ListProductionCandidates - count: %w", err)
+	}
+
+	sqlText, args, err := dataBuilder.ToSql()
+	if err != nil {
+		return nil, 0, fmt.Errorf("EditorialRepo - ListProductionCandidates - builder: %w", err)
+	}
+
+	rows, err := r.Pool.Query(ctx, sqlText, args...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("EditorialRepo - ListProductionCandidates - query: %w", err)
+	}
+	defer rows.Close()
+
+	candidates := make([]entity.BookProductionCandidate, 0, filter.Limit)
+	for rows.Next() {
+		candidate, scanErr := scanProductionCandidate(rows)
+		if scanErr != nil {
+			return nil, 0, fmt.Errorf("EditorialRepo - ListProductionCandidates - scan: %w", scanErr)
+		}
+		candidates = append(candidates, candidate)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("EditorialRepo - ListProductionCandidates - rows: %w", err)
+	}
+
+	return candidates, total, nil
 }
 
 // UpdatePublication upserts visibility settings.
@@ -372,7 +445,7 @@ RETURNING book_id, status, display_title, description, cover_url, category_id, n
 }
 
 // GetPageEdit returns raw page plus draft/published overrides.
-func (r *EditorialRepo) GetPageEdit(ctx context.Context, bookID, pageID int) (entity.AdminPageEdit, error) {
+func (r *EditorialRepo) GetPageEdit(ctx context.Context, bookID, pageID int) (entity.EditorialPageEdit, error) {
 	sqlText := `
 SELECT book_id, page_id, part, printed_page, number, content_html, content_text, services, is_deleted, updated_at
 FROM book_pages
@@ -381,23 +454,23 @@ WHERE book_id = $1 AND page_id = $2`
 	raw, err := scanPage(r.Pool.QueryRow(ctx, sqlText, bookID, pageID))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return entity.AdminPageEdit{}, entity.ErrPageNotFound
+			return entity.EditorialPageEdit{}, entity.ErrPageNotFound
 		}
 
-		return entity.AdminPageEdit{}, fmt.Errorf("EditorialRepo - GetPageEdit - scanPage: %w", err)
+		return entity.EditorialPageEdit{}, fmt.Errorf("EditorialRepo - GetPageEdit - scanPage: %w", err)
 	}
 
 	draft, err := r.getPageEditByStatus(ctx, bookID, pageID, entity.EditStatusDraft)
 	if err != nil {
-		return entity.AdminPageEdit{}, err
+		return entity.EditorialPageEdit{}, err
 	}
 
 	published, err := r.getPageEditByStatus(ctx, bookID, pageID, entity.EditStatusPublished)
 	if err != nil {
-		return entity.AdminPageEdit{}, err
+		return entity.EditorialPageEdit{}, err
 	}
 
-	return entity.AdminPageEdit{Raw: raw, Draft: draft, Published: published}, nil
+	return entity.EditorialPageEdit{Raw: raw, Draft: draft, Published: published}, nil
 }
 
 // SavePageDraft upserts a page content draft.
@@ -553,7 +626,7 @@ RETURNING collection_slug, book_id, sort_order, created_by, created_at`
 func (r *EditorialRepo) ListTranslationFeedbacks(
 	ctx context.Context,
 	filter repo.TranslationFeedbackFilter,
-) ([]entity.AdminTranslationFeedback, int, error) {
+) ([]entity.EditorialTranslationFeedback, int, error) {
 	countBuilder := r.feedbackBaseBuilder("COUNT(*)")
 	dataBuilder := r.feedbackSelectBuilder().
 		OrderBy("tf.updated_at DESC", "tf.created_at DESC").
@@ -578,11 +651,11 @@ func (r *EditorialRepo) ListTranslationFeedbacks(
 	}
 	defer rows.Close()
 
-	feedbacks := make([]entity.AdminTranslationFeedback, 0, filter.Limit)
+	feedbacks := make([]entity.EditorialTranslationFeedback, 0, filter.Limit)
 	for rows.Next() {
-		feedback, err := scanAdminTranslationFeedback(rows)
+		feedback, err := scanEditorialTranslationFeedback(rows)
 		if err != nil {
-			return nil, 0, fmt.Errorf("EditorialRepo - ListTranslationFeedbacks - scanAdminTranslationFeedback: %w", err)
+			return nil, 0, fmt.Errorf("EditorialRepo - ListTranslationFeedbacks - scanEditorialTranslationFeedback: %w", err)
 		}
 
 		feedbacks = append(feedbacks, feedback)
@@ -599,7 +672,7 @@ func (r *EditorialRepo) ListTranslationFeedbacks(
 func (r *EditorialRepo) TranslationFeedbackSummary(
 	ctx context.Context,
 	filter repo.TranslationFeedbackFilter,
-) (entity.AdminTranslationFeedbackSummary, error) {
+) (entity.EditorialTranslationFeedbackSummary, error) {
 	summaryBuilder := r.feedbackBaseBuilder(
 		"COUNT(*)",
 		"COUNT(*) FILTER (WHERE tf.vote = 'like')",
@@ -609,12 +682,12 @@ func (r *EditorialRepo) TranslationFeedbackSummary(
 
 	sqlText, args, err := summaryBuilder.ToSql()
 	if err != nil {
-		return entity.AdminTranslationFeedbackSummary{}, fmt.Errorf("EditorialRepo - TranslationFeedbackSummary - summaryBuilder: %w", err)
+		return entity.EditorialTranslationFeedbackSummary{}, fmt.Errorf("EditorialRepo - TranslationFeedbackSummary - summaryBuilder: %w", err)
 	}
 
-	var summary entity.AdminTranslationFeedbackSummary
+	var summary entity.EditorialTranslationFeedbackSummary
 	if err = r.Pool.QueryRow(ctx, sqlText, args...).Scan(&summary.Total, &summary.Likes, &summary.Dislikes); err != nil {
-		return entity.AdminTranslationFeedbackSummary{}, fmt.Errorf("EditorialRepo - TranslationFeedbackSummary - summary scan: %w", err)
+		return entity.EditorialTranslationFeedbackSummary{}, fmt.Errorf("EditorialRepo - TranslationFeedbackSummary - summary scan: %w", err)
 	}
 
 	topBuilder := r.feedbackBaseBuilder(
@@ -635,12 +708,12 @@ func (r *EditorialRepo) TranslationFeedbackSummary(
 
 	sqlText, args, err = topBuilder.ToSql()
 	if err != nil {
-		return entity.AdminTranslationFeedbackSummary{}, fmt.Errorf("EditorialRepo - TranslationFeedbackSummary - topBuilder: %w", err)
+		return entity.EditorialTranslationFeedbackSummary{}, fmt.Errorf("EditorialRepo - TranslationFeedbackSummary - topBuilder: %w", err)
 	}
 
 	rows, err := r.Pool.Query(ctx, sqlText, args...)
 	if err != nil {
-		return entity.AdminTranslationFeedbackSummary{}, fmt.Errorf("EditorialRepo - TranslationFeedbackSummary - top query: %w", err)
+		return entity.EditorialTranslationFeedbackSummary{}, fmt.Errorf("EditorialRepo - TranslationFeedbackSummary - top query: %w", err)
 	}
 	defer rows.Close()
 
@@ -648,18 +721,18 @@ func (r *EditorialRepo) TranslationFeedbackSummary(
 	for rows.Next() {
 		item, err := scanFeedbackHeadingSummary(rows)
 		if err != nil {
-			return entity.AdminTranslationFeedbackSummary{}, fmt.Errorf("EditorialRepo - TranslationFeedbackSummary - scanFeedbackHeadingSummary: %w", err)
+			return entity.EditorialTranslationFeedbackSummary{}, fmt.Errorf("EditorialRepo - TranslationFeedbackSummary - scanFeedbackHeadingSummary: %w", err)
 		}
 
 		topHeadings = append(topHeadings, item)
 	}
 
 	if err = rows.Err(); err != nil {
-		return entity.AdminTranslationFeedbackSummary{}, fmt.Errorf("EditorialRepo - TranslationFeedbackSummary - rows.Err: %w", err)
+		return entity.EditorialTranslationFeedbackSummary{}, fmt.Errorf("EditorialRepo - TranslationFeedbackSummary - rows.Err: %w", err)
 	}
 
 	if err = r.fillFeedbackReasons(ctx, topHeadings, filter); err != nil {
-		return entity.AdminTranslationFeedbackSummary{}, err
+		return entity.EditorialTranslationFeedbackSummary{}, err
 	}
 
 	summary.TopDislikedHeadings = topHeadings
@@ -671,7 +744,7 @@ func (r *EditorialRepo) TranslationFeedbackSummary(
 func (r *EditorialRepo) ListMissingReaderAssets(
 	ctx context.Context,
 	filter repo.MissingReaderAssetFilter,
-) (entity.AdminMissingReaderAssets, error) {
+) (entity.EditorialMissingReaderAssets, error) {
 	const itemSQL = missingReaderAssetsCTE + `
 SELECT asset_type,
        target_lang,
@@ -700,25 +773,25 @@ LIMIT $4 OFFSET $5`
 		filter.Offset,
 	)
 	if err != nil {
-		return entity.AdminMissingReaderAssets{}, fmt.Errorf("EditorialRepo - ListMissingReaderAssets - items: %w", err)
+		return entity.EditorialMissingReaderAssets{}, fmt.Errorf("EditorialRepo - ListMissingReaderAssets - items: %w", err)
 	}
 	defer rows.Close()
 
-	result := entity.AdminMissingReaderAssets{
-		Items:  make([]entity.AdminMissingReaderAsset, 0, filter.Limit),
-		Counts: []entity.AdminMissingReaderAssetCount{},
+	result := entity.EditorialMissingReaderAssets{
+		Items:  make([]entity.EditorialMissingReaderAsset, 0, filter.Limit),
+		Counts: []entity.EditorialMissingReaderAssetCount{},
 	}
 	for rows.Next() {
-		item, total, err := scanAdminMissingReaderAsset(rows)
+		item, total, err := scanEditorialMissingReaderAsset(rows)
 		if err != nil {
-			return entity.AdminMissingReaderAssets{}, fmt.Errorf("EditorialRepo - ListMissingReaderAssets - scan item: %w", err)
+			return entity.EditorialMissingReaderAssets{}, fmt.Errorf("EditorialRepo - ListMissingReaderAssets - scan item: %w", err)
 		}
 
 		result.Total = total
 		result.Items = append(result.Items, item)
 	}
 	if err = rows.Err(); err != nil {
-		return entity.AdminMissingReaderAssets{}, fmt.Errorf("EditorialRepo - ListMissingReaderAssets - item rows: %w", err)
+		return entity.EditorialMissingReaderAssets{}, fmt.Errorf("EditorialRepo - ListMissingReaderAssets - item rows: %w", err)
 	}
 
 	const countSQL = missingReaderAssetsCTE + `
@@ -729,20 +802,20 @@ ORDER BY asset_type ASC, target_lang ASC`
 
 	countRows, err := r.Pool.Query(ctx, countSQL, filter.TargetLangs, filter.AssetType, filter.BookID)
 	if err != nil {
-		return entity.AdminMissingReaderAssets{}, fmt.Errorf("EditorialRepo - ListMissingReaderAssets - counts: %w", err)
+		return entity.EditorialMissingReaderAssets{}, fmt.Errorf("EditorialRepo - ListMissingReaderAssets - counts: %w", err)
 	}
 	defer countRows.Close()
 
 	for countRows.Next() {
-		var count entity.AdminMissingReaderAssetCount
+		var count entity.EditorialMissingReaderAssetCount
 		if err = countRows.Scan(&count.AssetType, &count.TargetLang, &count.Total); err != nil {
-			return entity.AdminMissingReaderAssets{}, fmt.Errorf("EditorialRepo - ListMissingReaderAssets - scan count: %w", err)
+			return entity.EditorialMissingReaderAssets{}, fmt.Errorf("EditorialRepo - ListMissingReaderAssets - scan count: %w", err)
 		}
 
 		result.Counts = append(result.Counts, count)
 	}
 	if err = countRows.Err(); err != nil {
-		return entity.AdminMissingReaderAssets{}, fmt.Errorf("EditorialRepo - ListMissingReaderAssets - count rows: %w", err)
+		return entity.EditorialMissingReaderAssets{}, fmt.Errorf("EditorialRepo - ListMissingReaderAssets - count rows: %w", err)
 	}
 
 	return result, nil
@@ -753,7 +826,7 @@ func (r *EditorialRepo) ResolveTranslationFeedback(
 	ctx context.Context,
 	actorID, feedbackID string,
 	note *string,
-) (entity.AdminTranslationFeedback, error) {
+) (entity.EditorialTranslationFeedback, error) {
 	result, err := r.Pool.Exec(ctx, `
 UPDATE translation_feedbacks
 SET status = 'resolved',
@@ -763,16 +836,16 @@ SET status = 'resolved',
     updated_at = now()
 WHERE id = $1`, feedbackID, actorID, note)
 	if err != nil {
-		return entity.AdminTranslationFeedback{}, fmt.Errorf("EditorialRepo - ResolveTranslationFeedback - Exec: %w", err)
+		return entity.EditorialTranslationFeedback{}, fmt.Errorf("EditorialRepo - ResolveTranslationFeedback - Exec: %w", err)
 	}
 
 	if result.RowsAffected() == 0 {
-		return entity.AdminTranslationFeedback{}, entity.ErrFeedbackNotFound
+		return entity.EditorialTranslationFeedback{}, entity.ErrFeedbackNotFound
 	}
 
-	feedback, err := r.getAdminTranslationFeedback(ctx, feedbackID)
+	feedback, err := r.getEditorialTranslationFeedback(ctx, feedbackID)
 	if err != nil {
-		return entity.AdminTranslationFeedback{}, err
+		return entity.EditorialTranslationFeedback{}, err
 	}
 
 	_ = r.audit(ctx, actorID, "translation_feedback.resolve", feedback.BookID, nil, &feedback.HeadingID, "", feedback)
@@ -784,7 +857,7 @@ WHERE id = $1`, feedbackID, actorID, note)
 func (r *EditorialRepo) ReopenTranslationFeedback(
 	ctx context.Context,
 	actorID, feedbackID string,
-) (entity.AdminTranslationFeedback, error) {
+) (entity.EditorialTranslationFeedback, error) {
 	result, err := r.Pool.Exec(ctx, `
 UPDATE translation_feedbacks
 SET status = 'open',
@@ -794,16 +867,16 @@ SET status = 'open',
     updated_at = now()
 WHERE id = $1`, feedbackID)
 	if err != nil {
-		return entity.AdminTranslationFeedback{}, fmt.Errorf("EditorialRepo - ReopenTranslationFeedback - Exec: %w", err)
+		return entity.EditorialTranslationFeedback{}, fmt.Errorf("EditorialRepo - ReopenTranslationFeedback - Exec: %w", err)
 	}
 
 	if result.RowsAffected() == 0 {
-		return entity.AdminTranslationFeedback{}, entity.ErrFeedbackNotFound
+		return entity.EditorialTranslationFeedback{}, entity.ErrFeedbackNotFound
 	}
 
-	feedback, err := r.getAdminTranslationFeedback(ctx, feedbackID)
+	feedback, err := r.getEditorialTranslationFeedback(ctx, feedbackID)
 	if err != nil {
-		return entity.AdminTranslationFeedback{}, err
+		return entity.EditorialTranslationFeedback{}, err
 	}
 
 	_ = r.audit(ctx, actorID, "translation_feedback.reopen", feedback.BookID, nil, &feedback.HeadingID, "", feedback)
@@ -897,24 +970,24 @@ func (r *EditorialRepo) feedbackSelectBuilder() sq.SelectBuilder {
 	)
 }
 
-func (r *EditorialRepo) getAdminTranslationFeedback(
+func (r *EditorialRepo) getEditorialTranslationFeedback(
 	ctx context.Context,
 	feedbackID string,
-) (entity.AdminTranslationFeedback, error) {
+) (entity.EditorialTranslationFeedback, error) {
 	sqlText, args, err := r.feedbackSelectBuilder().
 		Where(sq.Eq{"tf.id": feedbackID}).
 		ToSql()
 	if err != nil {
-		return entity.AdminTranslationFeedback{}, fmt.Errorf("EditorialRepo - getAdminTranslationFeedback - Builder: %w", err)
+		return entity.EditorialTranslationFeedback{}, fmt.Errorf("EditorialRepo - getEditorialTranslationFeedback - Builder: %w", err)
 	}
 
-	feedback, err := scanAdminTranslationFeedback(r.Pool.QueryRow(ctx, sqlText, args...))
+	feedback, err := scanEditorialTranslationFeedback(r.Pool.QueryRow(ctx, sqlText, args...))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return entity.AdminTranslationFeedback{}, entity.ErrFeedbackNotFound
+			return entity.EditorialTranslationFeedback{}, entity.ErrFeedbackNotFound
 		}
 
-		return entity.AdminTranslationFeedback{}, fmt.Errorf("EditorialRepo - getAdminTranslationFeedback - scanAdminTranslationFeedback: %w", err)
+		return entity.EditorialTranslationFeedback{}, fmt.Errorf("EditorialRepo - getEditorialTranslationFeedback - scanEditorialTranslationFeedback: %w", err)
 	}
 
 	return feedback, nil
@@ -960,6 +1033,14 @@ func emptyStringNil(value string) any {
 	return value
 }
 
+func positiveIntNil(value int) any {
+	if value <= 0 {
+		return nil
+	}
+
+	return value
+}
+
 func (r *EditorialRepo) audit(
 	ctx context.Context,
 	actorID string,
@@ -985,7 +1066,7 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, nullif($8, '')::jsonb, now())`,
 		uuid.New().String(),
 		actorID,
 		action,
-		bookID,
+		positiveIntNil(bookID),
 		pageID,
 		headingID,
 		emptyStringNil(collectionSlug),
@@ -1019,6 +1100,37 @@ func applyEditorialBookFilter(countBuilder, dataBuilder sq.SelectBuilder, filter
 	if filter.HasContent != nil {
 		countBuilder = countBuilder.Where(sq.Eq{"b.has_content": *filter.HasContent})
 		dataBuilder = dataBuilder.Where(sq.Eq{"b.has_content": *filter.HasContent})
+	}
+
+	return countBuilder, dataBuilder
+}
+
+func applyProductionCandidateFilter(
+	countBuilder,
+	dataBuilder sq.SelectBuilder,
+	filter repo.ProductionCandidateFilter,
+) (sq.SelectBuilder, sq.SelectBuilder) {
+	if filter.Query != "" {
+		like := "%" + filter.Query + "%"
+		condition := "(b.name ILIKE ? OR me.display_title ILIKE ? OR a.name ILIKE ? OR c.name ILIKE ?)"
+		countBuilder = countBuilder.Where(condition, like, like, like, like)
+		dataBuilder = dataBuilder.Where(condition, like, like, like, like)
+	}
+	if filter.CategoryID != nil {
+		countBuilder = countBuilder.Where("COALESCE(me.category_id, b.category_id) = ?", *filter.CategoryID)
+		dataBuilder = dataBuilder.Where("COALESCE(me.category_id, b.category_id) = ?", *filter.CategoryID)
+	}
+	if filter.AuthorID != nil {
+		countBuilder = countBuilder.Where(sq.Eq{"b.author_id": *filter.AuthorID})
+		dataBuilder = dataBuilder.Where(sq.Eq{"b.author_id": *filter.AuthorID})
+	}
+	if filter.HasContent != nil {
+		countBuilder = countBuilder.Where(sq.Eq{"b.has_content": *filter.HasContent})
+		dataBuilder = dataBuilder.Where(sq.Eq{"b.has_content": *filter.HasContent})
+	}
+	if filter.Unstarted {
+		countBuilder = countBuilder.Where("pp.id IS NULL")
+		dataBuilder = dataBuilder.Where("pp.id IS NULL")
 	}
 
 	return countBuilder, dataBuilder
@@ -1258,8 +1370,50 @@ func scanCollectionItem(row rowScanner) (entity.BookCollectionItem, error) {
 	return item, nil
 }
 
-func scanAdminTranslationFeedback(row rowScanner) (entity.AdminTranslationFeedback, error) {
-	var feedback entity.AdminTranslationFeedback
+func scanProductionCandidate(row rowScanner) (entity.BookProductionCandidate, error) {
+	var candidate entity.BookProductionCandidate
+	var categoryID sql.NullInt64
+	var categoryName sql.NullString
+	var authorID sql.NullInt64
+	var authorName sql.NullString
+	var projectID sql.NullString
+	var workflowStatus sql.NullString
+	var publicationStatus sql.NullString
+	var projectUpdatedAt sql.NullTime
+
+	err := row.Scan(
+		&candidate.BookID,
+		&candidate.Name,
+		&categoryID,
+		&categoryName,
+		&authorID,
+		&authorName,
+		&candidate.HasContent,
+		&candidate.HeadingCount,
+		&candidate.PageCount,
+		&projectID,
+		&workflowStatus,
+		&publicationStatus,
+		&projectUpdatedAt,
+	)
+	if err != nil {
+		return entity.BookProductionCandidate{}, err
+	}
+
+	candidate.CategoryID = nullableInt(categoryID)
+	candidate.CategoryName = nullableString(categoryName)
+	candidate.AuthorID = nullableInt(authorID)
+	candidate.AuthorName = nullableString(authorName)
+	candidate.ExistingProjectID = nullableString(projectID)
+	candidate.ExistingWorkflowStatus = nullableString(workflowStatus)
+	candidate.ExistingPublicationStatus = nullableString(publicationStatus)
+	candidate.ExistingProjectUpdatedAt = nullableTime(projectUpdatedAt)
+
+	return candidate, nil
+}
+
+func scanEditorialTranslationFeedback(row rowScanner) (entity.EditorialTranslationFeedback, error) {
+	var feedback entity.EditorialTranslationFeedback
 	var userID sql.NullString
 	var clientID sql.NullString
 	var reason sql.NullString
@@ -1297,7 +1451,7 @@ func scanAdminTranslationFeedback(row rowScanner) (entity.AdminTranslationFeedba
 		&feedback.UpdatedAt,
 	)
 	if err != nil {
-		return entity.AdminTranslationFeedback{}, err
+		return entity.EditorialTranslationFeedback{}, err
 	}
 
 	feedback.UserID = nullableString(userID)
@@ -1315,8 +1469,8 @@ func scanAdminTranslationFeedback(row rowScanner) (entity.AdminTranslationFeedba
 	return feedback, nil
 }
 
-func scanAdminMissingReaderAsset(row rowScanner) (entity.AdminMissingReaderAsset, int, error) {
-	var item entity.AdminMissingReaderAsset
+func scanEditorialMissingReaderAsset(row rowScanner) (entity.EditorialMissingReaderAsset, int, error) {
+	var item entity.EditorialMissingReaderAsset
 	var bookID sql.NullInt64
 	var bookTitle sql.NullString
 	var headingID sql.NullInt64
@@ -1344,7 +1498,7 @@ func scanAdminMissingReaderAsset(row rowScanner) (entity.AdminMissingReaderAsset
 		&total,
 	)
 	if err != nil {
-		return entity.AdminMissingReaderAsset{}, 0, err
+		return entity.EditorialMissingReaderAsset{}, 0, err
 	}
 
 	item.BookID = nullableInt(bookID)

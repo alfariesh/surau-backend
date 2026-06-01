@@ -131,6 +131,33 @@ func TestQuranAssetOptionsRequireSourceIDForNonIDTranslations(t *testing.T) {
 	assert.Contains(t, err.Error(), "translation source id is required")
 }
 
+func TestFillAyahNavigationFromCanonicalBoundaries(t *testing.T) {
+	t.Parallel()
+
+	existingJuz := 99
+	assets := quranAssetSet{
+		ayahs: map[string]*quranAyahImport{
+			"1:1":   {SurahID: 1, AyahNumber: 1},
+			"2:75":  {SurahID: 2, AyahNumber: 75},
+			"2:142": {SurahID: 2, AyahNumber: 142, JuzNumber: &existingJuz},
+			"3:92":  {SurahID: 3, AyahNumber: 92},
+			"3:93":  {SurahID: 3, AyahNumber: 93},
+			"5:82":  {SurahID: 5, AyahNumber: 82},
+			"55:1":  {SurahID: 55, AyahNumber: 1},
+		},
+	}
+
+	fillAyahNavigation(&assets)
+
+	assertNavigation(t, assets.ayahs["1:1"], 1, 1)
+	assertNavigation(t, assets.ayahs["2:75"], 1, 2)
+	assertNavigation(t, assets.ayahs["2:142"], 99, 3)
+	assertNavigation(t, assets.ayahs["3:92"], 3, 6)
+	assertNavigation(t, assets.ayahs["3:93"], 4, 7)
+	assertNavigation(t, assets.ayahs["5:82"], 7, 13)
+	assertNavigation(t, assets.ayahs["55:1"], 27, 54)
+}
+
 func TestResolveQuranMention(t *testing.T) {
 	t.Parallel()
 
@@ -177,6 +204,15 @@ func TestResolveQuranMentionAmbiguousQuote(t *testing.T) {
 	_, ok := resolveQuranMention("الحمد لله", nil, ayahs)
 
 	assert.False(t, ok)
+}
+
+func assertNavigation(t *testing.T, ayah *quranAyahImport, juzNumber, hizbNumber int) {
+	t.Helper()
+
+	require.NotNil(t, ayah.JuzNumber)
+	require.NotNil(t, ayah.HizbNumber)
+	assert.Equal(t, juzNumber, *ayah.JuzNumber)
+	assert.Equal(t, hizbNumber, *ayah.HizbNumber)
 }
 
 func writeQuranFixture(t *testing.T, dir string, name string, content string) string {

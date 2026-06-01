@@ -811,7 +811,7 @@ GET /v1/quran/juz?lang=id
 GET /v1/quran/hizbs?lang=id
 ```
 
-Use these for segmented navigation without downloading ayah text. The data comes from `juz_number` and `hizb_number` imported from QPC Hafs ayah metadata.
+Use these for segmented navigation without downloading ayah text. The data comes from `juz_number` and `hizb_number` when present in imported ayah metadata; if the QUL script export only contains text, the importer fills the same columns from QUL's canonical Juz and Hizb metadata boundaries.
 
 ### Response
 

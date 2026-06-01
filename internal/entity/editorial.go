@@ -84,15 +84,15 @@ type BookCollectionItem struct {
 	CreatedAt      time.Time `json:"created_at"      example:"2026-01-01T00:00:00Z"`
 } // @name entity.BookCollectionItem
 
-// AdminPageEdit shows raw page content alongside editorial overrides.
-type AdminPageEdit struct {
+// EditorialPageEdit shows raw page content alongside editorial overrides.
+type EditorialPageEdit struct {
 	Raw       BookPage      `json:"raw"`
 	Draft     *BookPageEdit `json:"draft"`
 	Published *BookPageEdit `json:"published"`
-} // @name entity.AdminPageEdit
+} // @name entity.EditorialPageEdit
 
-// AdminTranslationFeedback shows one reader feedback row with editorial context.
-type AdminTranslationFeedback struct {
+// EditorialTranslationFeedback shows one reader feedback row with editorial context.
+type EditorialTranslationFeedback struct {
 	ID                    string     `json:"id"         example:"550e8400-e29b-41d4-a716-446655440000"`
 	BookID                int        `json:"book_id"    example:"797"`
 	BookTitle             string     `json:"book_title"`
@@ -115,7 +115,7 @@ type AdminTranslationFeedback struct {
 	TranslationReviewedAt *time.Time `json:"translation_reviewed_at,omitempty"`
 	CreatedAt             time.Time  `json:"created_at" example:"2026-01-01T00:00:00Z"`
 	UpdatedAt             time.Time  `json:"updated_at" example:"2026-01-01T00:00:00Z"`
-} // @name entity.AdminTranslationFeedback
+} // @name entity.EditorialTranslationFeedback
 
 // TranslationFeedbackHeadingSummary aggregates feedback for one translated heading.
 type TranslationFeedbackHeadingSummary struct {
@@ -130,16 +130,16 @@ type TranslationFeedbackHeadingSummary struct {
 	Reasons      map[string]int `json:"reasons"`
 } // @name entity.TranslationFeedbackHeadingSummary
 
-// AdminTranslationFeedbackSummary aggregates reader feedback for admin review.
-type AdminTranslationFeedbackSummary struct {
+// EditorialTranslationFeedbackSummary aggregates reader feedback for admin review.
+type EditorialTranslationFeedbackSummary struct {
 	Total               int                                 `json:"total"    example:"25"`
 	Likes               int                                 `json:"likes"    example:"18"`
 	Dislikes            int                                 `json:"dislikes" example:"7"`
 	TopDislikedHeadings []TranslationFeedbackHeadingSummary `json:"top_disliked_headings"`
-} // @name entity.AdminTranslationFeedbackSummary
+} // @name entity.EditorialTranslationFeedbackSummary
 
-// AdminMissingReaderAsset describes one missing localized reader asset for editorial work.
-type AdminMissingReaderAsset struct {
+// EditorialMissingReaderAsset describes one missing localized reader asset for editorial work.
+type EditorialMissingReaderAsset struct {
 	AssetType       string    `json:"asset_type"        example:"section_translation"`
 	TargetLang      string    `json:"target_lang"       example:"en"`
 	BookID          *int      `json:"book_id"           example:"797"`
@@ -152,24 +152,24 @@ type AdminMissingReaderAsset struct {
 	AuthorName      *string   `json:"author_name"`
 	AvailableLangs  []string  `json:"available_langs"   example:"id"`
 	SourceUpdatedAt time.Time `json:"source_updated_at" example:"2026-01-01T00:00:00Z"`
-} // @name entity.AdminMissingReaderAsset
+} // @name entity.EditorialMissingReaderAsset
 
-// AdminMissingReaderAssetCount aggregates missing reader assets by type and target language.
-type AdminMissingReaderAssetCount struct {
+// EditorialMissingReaderAssetCount aggregates missing reader assets by type and target language.
+type EditorialMissingReaderAssetCount struct {
 	AssetType  string `json:"asset_type"  example:"section_translation"`
 	TargetLang string `json:"target_lang" example:"en"`
 	Total      int    `json:"total"       example:"20"`
-} // @name entity.AdminMissingReaderAssetCount
+} // @name entity.EditorialMissingReaderAssetCount
 
-// AdminMissingReaderAssets groups paginated missing asset items and aggregate counts.
-type AdminMissingReaderAssets struct {
-	Items  []AdminMissingReaderAsset      `json:"items"`
-	Total  int                            `json:"total" example:"42"`
-	Counts []AdminMissingReaderAssetCount `json:"counts"`
-} // @name entity.AdminMissingReaderAssets
+// EditorialMissingReaderAssets groups paginated missing asset items and aggregate counts.
+type EditorialMissingReaderAssets struct {
+	Items  []EditorialMissingReaderAsset      `json:"items"`
+	Total  int                                `json:"total" example:"42"`
+	Counts []EditorialMissingReaderAssetCount `json:"counts"`
+} // @name entity.EditorialMissingReaderAssets
 
-// AdminMissingQuranAsset describes one missing Quran asset for editorial work.
-type AdminMissingQuranAsset struct {
+// EditorialMissingQuranAsset describes one missing Quran asset for editorial work.
+type EditorialMissingQuranAsset struct {
 	AssetType             string    `json:"asset_type"        example:"ayah_translation"`
 	TargetLang            string    `json:"target_lang"       example:"en"`
 	SurahID               *int      `json:"surah_id,omitempty" example:"73"`
@@ -183,18 +183,18 @@ type AdminMissingQuranAsset struct {
 	TrackKey              *string   `json:"track_key,omitempty" example:"73:4"`
 	AvailableLangs        []string  `json:"available_langs"   example:"id"`
 	SourceUpdatedAt       time.Time `json:"source_updated_at" example:"2026-01-01T00:00:00Z"`
-} // @name entity.AdminMissingQuranAsset
+} // @name entity.EditorialMissingQuranAsset
 
-// AdminMissingQuranAssetCount aggregates missing Quran assets by type and target language.
-type AdminMissingQuranAssetCount struct {
+// EditorialMissingQuranAssetCount aggregates missing Quran assets by type and target language.
+type EditorialMissingQuranAssetCount struct {
 	AssetType  string `json:"asset_type"  example:"ayah_translation"`
 	TargetLang string `json:"target_lang" example:"en"`
 	Total      int    `json:"total"       example:"20"`
-} // @name entity.AdminMissingQuranAssetCount
+} // @name entity.EditorialMissingQuranAssetCount
 
-// AdminMissingQuranAssets groups paginated Quran missing asset items and aggregate counts.
-type AdminMissingQuranAssets struct {
-	Items  []AdminMissingQuranAsset      `json:"items"`
-	Total  int                           `json:"total" example:"42"`
-	Counts []AdminMissingQuranAssetCount `json:"counts"`
-} // @name entity.AdminMissingQuranAssets
+// EditorialMissingQuranAssets groups paginated Quran missing asset items and aggregate counts.
+type EditorialMissingQuranAssets struct {
+	Items  []EditorialMissingQuranAsset      `json:"items"`
+	Total  int                               `json:"total" example:"42"`
+	Counts []EditorialMissingQuranAssetCount `json:"counts"`
+} // @name entity.EditorialMissingQuranAssets

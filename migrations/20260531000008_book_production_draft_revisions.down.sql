@@ -1,0 +1,3 @@
+DROP INDEX IF EXISTS idx_book_production_draft_revisions_unique_version;
+DROP INDEX IF EXISTS idx_book_production_draft_revisions_project_asset;
+DROP TABLE IF EXISTS book_production_draft_revisions;

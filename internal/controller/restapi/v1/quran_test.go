@@ -247,8 +247,8 @@ func (f *fakeQuran) MissingAssets(
 	*int,
 	int,
 	int,
-) (entity.AdminMissingQuranAssets, error) {
-	return entity.AdminMissingQuranAssets{}, nil
+) (entity.EditorialMissingQuranAssets, error) {
+	return entity.EditorialMissingQuranAssets{}, nil
 }
 
 func fakeSurahInfo() *entity.QuranSurahInfo {

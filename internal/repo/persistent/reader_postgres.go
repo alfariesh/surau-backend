@@ -47,11 +47,11 @@ SELECT c.id,
        CASE WHEN $1 <> 'ar' AND ct.category_id IS NOT NULL THEN $1 ELSE 'ar' END AS name_lang
 FROM categories c
 LEFT JOIN category_translations ct
-    ON ct.category_id = c.id AND ct.lang = $1 AND $1 <> 'ar'
+    ON ct.category_id = c.id AND ct.lang = $1 AND ct.is_deleted = false AND $1 <> 'ar'
 LEFT JOIN LATERAL (
     SELECT array_agg(lang ORDER BY lang) AS available_langs
     FROM category_translations
-    WHERE category_id = c.id
+    WHERE category_id = c.id AND is_deleted = false
 ) av ON true
 WHERE c.is_deleted = false
 ORDER BY display_order ASC NULLS LAST, id ASC`
@@ -129,6 +129,7 @@ func (r *ReaderRepo) ListAuthors(ctx context.Context, filter repo.AuthorFilter) 
 				SELECT 1
 				FROM author_translations at_any
 				WHERE at_any.author_id = a.id
+				  AND at_any.is_deleted = false
 				  AND (at_any.name ILIKE ? OR COALESCE(at_any.biography, '') ILIKE ?)
 			))`
 		countBuilder = countBuilder.Where(condition, like, like, like, like)
@@ -149,6 +150,7 @@ func (r *ReaderRepo) ListAuthors(ctx context.Context, filter repo.AuthorFilter) 
 				SELECT 1
 				FROM author_translations at_any
 				WHERE at_any.author_id = a.id
+				  AND at_any.is_deleted = false
 				  AND (at_any.name ILIKE $%d OR COALESCE(at_any.biography, '') ILIKE $%d)
 			))`, len(args)+1, len(args)+1, len(args)+1, len(args)+1)
 		args = append(args, like)
@@ -177,11 +179,11 @@ SELECT a.id,
        CASE WHEN $1 <> 'ar' AND at.death_text IS NOT NULL THEN $1 ELSE 'ar' END AS death_text_lang
 FROM authors a
 LEFT JOIN author_translations at
-    ON at.author_id = a.id AND at.lang = $1 AND $1 <> 'ar'
+    ON at.author_id = a.id AND at.lang = $1 AND at.is_deleted = false AND $1 <> 'ar'
 LEFT JOIN LATERAL (
     SELECT array_agg(lang ORDER BY lang) AS available_langs
     FROM author_translations
-    WHERE author_id = a.id
+    WHERE author_id = a.id AND is_deleted = false
 ) av ON true
 %s
 ORDER BY name ASC
@@ -217,11 +219,12 @@ func (r *ReaderRepo) ListBooks(ctx context.Context, filter repo.BookFilter) ([]e
 		From("books b").
 		Join("book_publications p ON p.book_id = b.id AND p.status = 'published'").
 		LeftJoin("book_metadata_edits me ON me.book_id = b.id AND me.status = 'published'").
-		LeftJoin("book_metadata_translations bmt ON bmt.book_id = b.id AND bmt.lang = ? AND ? <> 'ar'", filter.Lang, filter.Lang).
+		LeftJoin("book_production_projects bpp ON bpp.book_id = b.id AND bpp.lang = ? AND bpp.publication_status = 'published' AND bpp.workflow_status <> 'archived' AND ? <> 'ar'", filter.Lang, filter.Lang).
+		LeftJoin("book_metadata_translations bmt ON bmt.book_id = b.id AND bmt.lang = ? AND bmt.is_deleted = false AND bpp.id IS NOT NULL", filter.Lang).
 		LeftJoin("authors a ON a.id = b.author_id").
-		LeftJoin("author_translations at ON at.author_id = a.id AND at.lang = ? AND ? <> 'ar'", filter.Lang, filter.Lang).
+		LeftJoin("author_translations at ON at.author_id = a.id AND at.lang = ? AND at.is_deleted = false AND bpp.id IS NOT NULL", filter.Lang).
 		LeftJoin("categories c ON c.id = COALESCE(me.category_id, b.category_id)").
-		LeftJoin("category_translations ct ON ct.category_id = c.id AND ct.lang = ? AND ? <> 'ar'", filter.Lang, filter.Lang).
+		LeftJoin("category_translations ct ON ct.category_id = c.id AND ct.lang = ? AND ct.is_deleted = false AND bpp.id IS NOT NULL", filter.Lang).
 		Where(sq.Eq{"b.is_deleted": false})
 
 	dataBuilder := r.bookSelectBuilder(filter.Lang).
@@ -452,29 +455,59 @@ SELECT h.book_id,
 FROM book_headings h
 LEFT JOIN book_heading_edits he
     ON he.book_id = h.book_id AND he.heading_id = h.heading_id AND he.status = 'published'
+LEFT JOIN book_production_projects bpp
+    ON bpp.book_id = h.book_id
+   AND bpp.lang = $2
+   AND bpp.publication_status = 'published'
+   AND bpp.workflow_status <> 'archived'
+   AND $2 <> 'ar'
 LEFT JOIN section_translations st
-    ON st.book_id = h.book_id AND st.heading_id = h.heading_id AND st.lang = $2 AND $2 <> 'ar'
+    ON st.book_id = h.book_id AND st.heading_id = h.heading_id AND st.lang = $2 AND st.is_deleted = false AND bpp.id IS NOT NULL
 LEFT JOIN book_heading_summaries bhs_lang
-    ON bhs_lang.book_id = h.book_id AND bhs_lang.heading_id = h.heading_id AND bhs_lang.lang = $2
+    ON bhs_lang.book_id = h.book_id AND bhs_lang.heading_id = h.heading_id AND bhs_lang.lang = $2 AND bhs_lang.is_deleted = false AND ($2 = 'ar' OR bpp.id IS NOT NULL)
 LEFT JOIN book_heading_summaries bhs_ar
-    ON bhs_ar.book_id = h.book_id AND bhs_ar.heading_id = h.heading_id AND bhs_ar.lang = 'ar' AND $2 <> 'ar'
+    ON bhs_ar.book_id = h.book_id AND bhs_ar.heading_id = h.heading_id AND bhs_ar.lang = 'ar' AND bhs_ar.is_deleted = false
 LEFT JOIN LATERAL (
-    SELECT array_agg(lang ORDER BY lang) AS available_langs
-    FROM section_translations
-    WHERE book_id = h.book_id AND heading_id = h.heading_id
+    SELECT array_agg(st_lang.lang ORDER BY st_lang.lang) AS available_langs
+    FROM section_translations st_lang
+    LEFT JOIN book_production_projects bpp_lang
+      ON bpp_lang.book_id = st_lang.book_id
+     AND bpp_lang.lang = st_lang.lang
+     AND bpp_lang.publication_status = 'published'
+     AND bpp_lang.workflow_status <> 'archived'
+    WHERE st_lang.book_id = h.book_id
+      AND st_lang.heading_id = h.heading_id
+      AND st_lang.is_deleted = false
+      AND (st_lang.lang = 'ar' OR bpp_lang.id IS NOT NULL)
 ) st_av ON true
 LEFT JOIN LATERAL (
-    SELECT array_agg(lang ORDER BY lang) AS available_langs
-    FROM book_heading_summaries
-    WHERE book_id = h.book_id AND heading_id = h.heading_id
+    SELECT array_agg(bhs_langs.lang ORDER BY bhs_langs.lang) AS available_langs
+    FROM book_heading_summaries bhs_langs
+    LEFT JOIN book_production_projects bpp_lang
+      ON bpp_lang.book_id = bhs_langs.book_id
+     AND bpp_lang.lang = bhs_langs.lang
+     AND bpp_lang.publication_status = 'published'
+     AND bpp_lang.workflow_status <> 'archived'
+    WHERE bhs_langs.book_id = h.book_id
+      AND bhs_langs.heading_id = h.heading_id
+      AND bhs_langs.is_deleted = false
+      AND (bhs_langs.lang = 'ar' OR bpp_lang.id IS NOT NULL)
 ) bhs_av ON true
 LEFT JOIN LATERAL (
-    SELECT array_agg(lang ORDER BY lang) AS available_langs
-    FROM section_audio
-    WHERE book_id = h.book_id AND heading_id = h.heading_id
+    SELECT array_agg(sa_lang.lang ORDER BY sa_lang.lang) AS available_langs
+    FROM section_audio sa_lang
+    LEFT JOIN book_production_projects bpp_lang
+      ON bpp_lang.book_id = sa_lang.book_id
+     AND bpp_lang.lang = sa_lang.lang
+     AND bpp_lang.publication_status = 'published'
+     AND bpp_lang.workflow_status <> 'archived'
+    WHERE sa_lang.book_id = h.book_id
+      AND sa_lang.heading_id = h.heading_id
+      AND sa_lang.is_deleted = false
+      AND (sa_lang.lang = 'ar' OR bpp_lang.id IS NOT NULL)
 ) sa_av ON true
 LEFT JOIN section_audio sa
-    ON sa.book_id = h.book_id AND sa.heading_id = h.heading_id AND sa.lang = $2
+    ON sa.book_id = h.book_id AND sa.heading_id = h.heading_id AND sa.lang = $2 AND sa.is_deleted = false AND ($2 = 'ar' OR bpp.id IS NOT NULL)
 WHERE h.book_id = $1 AND h.is_deleted = false
 ORDER BY h.ordinal ASC, h.heading_id ASC`
 
@@ -531,26 +564,56 @@ FROM book_headings h
 JOIN book_heading_ranges hr ON hr.book_id = h.book_id AND hr.heading_id = h.heading_id
 JOIN book_publications p ON p.book_id = h.book_id AND p.status = 'published'
 LEFT JOIN book_heading_edits he ON he.book_id = h.book_id AND he.heading_id = h.heading_id AND he.status = 'published'
+LEFT JOIN book_production_projects bpp
+    ON bpp.book_id = h.book_id
+   AND bpp.lang = $3
+   AND bpp.publication_status = 'published'
+   AND bpp.workflow_status <> 'archived'
+   AND $3 <> 'ar'
 LEFT JOIN section_translations st_title
-    ON st_title.book_id = h.book_id AND st_title.heading_id = h.heading_id AND st_title.lang = $3 AND $3 <> 'ar'
+    ON st_title.book_id = h.book_id AND st_title.heading_id = h.heading_id AND st_title.lang = $3 AND st_title.is_deleted = false AND bpp.id IS NOT NULL
 LEFT JOIN book_heading_summaries bhs_lang
-    ON bhs_lang.book_id = h.book_id AND bhs_lang.heading_id = h.heading_id AND bhs_lang.lang = $3
+    ON bhs_lang.book_id = h.book_id AND bhs_lang.heading_id = h.heading_id AND bhs_lang.lang = $3 AND bhs_lang.is_deleted = false AND ($3 = 'ar' OR bpp.id IS NOT NULL)
 LEFT JOIN book_heading_summaries bhs_ar
-    ON bhs_ar.book_id = h.book_id AND bhs_ar.heading_id = h.heading_id AND bhs_ar.lang = 'ar' AND $3 <> 'ar'
+    ON bhs_ar.book_id = h.book_id AND bhs_ar.heading_id = h.heading_id AND bhs_ar.lang = 'ar' AND bhs_ar.is_deleted = false
 LEFT JOIN LATERAL (
-    SELECT array_agg(lang ORDER BY lang) AS available_langs
-    FROM section_translations
-    WHERE book_id = h.book_id AND heading_id = h.heading_id
+    SELECT array_agg(st_lang.lang ORDER BY st_lang.lang) AS available_langs
+    FROM section_translations st_lang
+    LEFT JOIN book_production_projects bpp_lang
+      ON bpp_lang.book_id = st_lang.book_id
+     AND bpp_lang.lang = st_lang.lang
+     AND bpp_lang.publication_status = 'published'
+     AND bpp_lang.workflow_status <> 'archived'
+    WHERE st_lang.book_id = h.book_id
+      AND st_lang.heading_id = h.heading_id
+      AND st_lang.is_deleted = false
+      AND (st_lang.lang = 'ar' OR bpp_lang.id IS NOT NULL)
 ) st_av ON true
 LEFT JOIN LATERAL (
-    SELECT array_agg(lang ORDER BY lang) AS available_langs
-    FROM book_heading_summaries
-    WHERE book_id = h.book_id AND heading_id = h.heading_id
+    SELECT array_agg(bhs_langs.lang ORDER BY bhs_langs.lang) AS available_langs
+    FROM book_heading_summaries bhs_langs
+    LEFT JOIN book_production_projects bpp_lang
+      ON bpp_lang.book_id = bhs_langs.book_id
+     AND bpp_lang.lang = bhs_langs.lang
+     AND bpp_lang.publication_status = 'published'
+     AND bpp_lang.workflow_status <> 'archived'
+    WHERE bhs_langs.book_id = h.book_id
+      AND bhs_langs.heading_id = h.heading_id
+      AND bhs_langs.is_deleted = false
+      AND (bhs_langs.lang = 'ar' OR bpp_lang.id IS NOT NULL)
 ) bhs_av ON true
 LEFT JOIN LATERAL (
-    SELECT array_agg(lang ORDER BY lang) AS available_langs
-    FROM section_audio
-    WHERE book_id = h.book_id AND heading_id = h.heading_id
+    SELECT array_agg(sa_lang.lang ORDER BY sa_lang.lang) AS available_langs
+    FROM section_audio sa_lang
+    LEFT JOIN book_production_projects bpp_lang
+      ON bpp_lang.book_id = sa_lang.book_id
+     AND bpp_lang.lang = sa_lang.lang
+     AND bpp_lang.publication_status = 'published'
+     AND bpp_lang.workflow_status <> 'archived'
+    WHERE sa_lang.book_id = h.book_id
+      AND sa_lang.heading_id = h.heading_id
+      AND sa_lang.is_deleted = false
+      AND (sa_lang.lang = 'ar' OR bpp_lang.id IS NOT NULL)
 ) sa_av ON true
 WHERE h.book_id = $1 AND h.heading_id = $2 AND h.is_deleted = false`
 
@@ -802,7 +865,18 @@ func (r *ReaderRepo) ensureSectionTranslation(ctx context.Context, bookID, headi
 SELECT EXISTS (
     SELECT 1
     FROM section_translations
-    WHERE book_id = $1 AND heading_id = $2 AND lang = $3
+    WHERE book_id = $1
+      AND heading_id = $2
+      AND lang = $3
+      AND is_deleted = false
+      AND EXISTS (
+          SELECT 1
+          FROM book_production_projects p
+          WHERE p.book_id = section_translations.book_id
+            AND p.lang = section_translations.lang
+            AND p.publication_status = 'published'
+            AND p.workflow_status <> 'archived'
+      )
 )`,
 		bookID,
 		headingID,
@@ -885,16 +959,23 @@ func (r *ReaderRepo) bookSelectBuilder(lang string) sq.SelectBuilder {
 		From("books b").
 		Join("book_publications p ON p.book_id = b.id AND p.status = 'published'").
 		LeftJoin("book_metadata_edits me ON me.book_id = b.id AND me.status = 'published'").
-		LeftJoin("book_metadata_translations bmt ON bmt.book_id = b.id AND bmt.lang = ? AND ? <> 'ar'", lang, lang).
+		LeftJoin("book_production_projects bpp ON bpp.book_id = b.id AND bpp.lang = ? AND bpp.publication_status = 'published' AND bpp.workflow_status <> 'archived' AND ? <> 'ar'", lang, lang).
+		LeftJoin("book_metadata_translations bmt ON bmt.book_id = b.id AND bmt.lang = ? AND bmt.is_deleted = false AND bpp.id IS NOT NULL", lang).
 		LeftJoin(`LATERAL (
-			SELECT array_agg(lang ORDER BY lang) AS available_langs
-			FROM book_metadata_translations
-			WHERE book_id = b.id
+			SELECT array_agg(bmt_lang.lang ORDER BY bmt_lang.lang) AS available_langs
+			FROM book_metadata_translations bmt_lang
+			JOIN book_production_projects bpp_lang
+			  ON bpp_lang.book_id = bmt_lang.book_id
+			 AND bpp_lang.lang = bmt_lang.lang
+			 AND bpp_lang.publication_status = 'published'
+			 AND bpp_lang.workflow_status <> 'archived'
+			WHERE bmt_lang.book_id = b.id
+			  AND bmt_lang.is_deleted = false
 		) bmt_av ON true`).
 		LeftJoin("authors a ON a.id = b.author_id").
-		LeftJoin("author_translations at ON at.author_id = a.id AND at.lang = ? AND ? <> 'ar'", lang, lang).
+		LeftJoin("author_translations at ON at.author_id = a.id AND at.lang = ? AND at.is_deleted = false AND bpp.id IS NOT NULL", lang).
 		LeftJoin("categories c ON c.id = COALESCE(me.category_id, b.category_id)").
-		LeftJoin("category_translations ct ON ct.category_id = c.id AND ct.lang = ? AND ? <> 'ar'", lang, lang)
+		LeftJoin("category_translations ct ON ct.category_id = c.id AND ct.lang = ? AND ct.is_deleted = false AND bpp.id IS NOT NULL", lang)
 }
 
 func (r *ReaderRepo) pageSelectBuilder() sq.SelectBuilder {
@@ -971,7 +1052,18 @@ func (r *ReaderRepo) getSectionTranslation(ctx context.Context, bookID, headingI
 	sqlText := `
 SELECT book_id, heading_id, lang, title, content, source, translation_status, reviewed_by, reviewed_at, metadata, updated_at
 FROM section_translations
-WHERE book_id = $1 AND heading_id = $2 AND lang = $3`
+WHERE book_id = $1
+  AND heading_id = $2
+  AND lang = $3
+  AND is_deleted = false
+  AND EXISTS (
+      SELECT 1
+      FROM book_production_projects p
+      WHERE p.book_id = section_translations.book_id
+        AND p.lang = section_translations.lang
+        AND p.publication_status = 'published'
+        AND p.workflow_status <> 'archived'
+  )`
 
 	var translation entity.SectionTranslation
 	var title sql.NullString
@@ -1018,7 +1110,21 @@ func (r *ReaderRepo) getSectionAudio(ctx context.Context, bookID, headingID int,
 	sqlText := `
 SELECT book_id, heading_id, lang, url, narrator, duration_seconds, mime_type, metadata, updated_at
 FROM section_audio
-WHERE book_id = $1 AND heading_id = $2 AND lang = $3`
+WHERE book_id = $1
+  AND heading_id = $2
+  AND lang = $3
+  AND is_deleted = false
+  AND (
+      lang = 'ar'
+      OR EXISTS (
+          SELECT 1
+          FROM book_production_projects p
+          WHERE p.book_id = section_audio.book_id
+            AND p.lang = section_audio.lang
+            AND p.publication_status = 'published'
+            AND p.workflow_status <> 'archived'
+      )
+  )`
 
 	var audio entity.SectionAudio
 	var narrator sql.NullString
@@ -1056,33 +1162,43 @@ WHERE book_id = $1 AND heading_id = $2 AND lang = $3`
 func (r *ReaderRepo) getBookLanguageCoverage(ctx context.Context, bookID int) ([]entity.LanguageCoverage, error) {
 	sqlText := `
 WITH langs AS (
-    SELECT lang FROM section_translations WHERE book_id = $1
+    SELECT lang FROM section_translations WHERE book_id = $1 AND is_deleted = false
     UNION
-    SELECT lang FROM book_heading_summaries WHERE book_id = $1
+    SELECT lang FROM book_heading_summaries WHERE book_id = $1 AND is_deleted = false
     UNION
-    SELECT lang FROM section_audio WHERE book_id = $1
+    SELECT lang FROM section_audio WHERE book_id = $1 AND is_deleted = false
+),
+published_langs AS (
+    SELECT lang
+    FROM book_production_projects
+    WHERE book_id = $1
+      AND publication_status = 'published'
+      AND workflow_status <> 'archived'
+    UNION
+    SELECT 'ar'
 )
 SELECT l.lang,
        COALESCE(st.translated_sections, 0) AS translated_sections,
        COALESCE(bhs.summarized_sections, 0) AS summarized_sections,
        COALESCE(sa.audio_sections, 0) AS audio_sections
 FROM langs l
+JOIN published_langs pl ON pl.lang = l.lang
 LEFT JOIN (
     SELECT lang, COUNT(*)::INT AS translated_sections
     FROM section_translations
-    WHERE book_id = $1
+    WHERE book_id = $1 AND is_deleted = false
     GROUP BY lang
 ) st ON st.lang = l.lang
 LEFT JOIN (
     SELECT lang, COUNT(*)::INT AS summarized_sections
     FROM book_heading_summaries
-    WHERE book_id = $1
+    WHERE book_id = $1 AND is_deleted = false
     GROUP BY lang
 ) bhs ON bhs.lang = l.lang
 LEFT JOIN (
     SELECT lang, COUNT(*)::INT AS audio_sections
     FROM section_audio
-    WHERE book_id = $1
+    WHERE book_id = $1 AND is_deleted = false
     GROUP BY lang
 ) sa ON sa.lang = l.lang
 ORDER BY l.lang`
@@ -1130,6 +1246,15 @@ func applyBookFilter(countBuilder, dataBuilder sq.SelectBuilder, filter repo.Boo
 				SELECT 1
 				FROM book_metadata_translations bmt_any
 				WHERE bmt_any.book_id = b.id
+				  AND bmt_any.is_deleted = false
+				  AND EXISTS (
+					SELECT 1
+					FROM book_production_projects bpp_any
+					WHERE bpp_any.book_id = b.id
+					  AND bpp_any.lang = bmt_any.lang
+					  AND bpp_any.publication_status = 'published'
+					  AND bpp_any.workflow_status <> 'archived'
+				  )
 				  AND (
 					bmt_any.display_title ILIKE ?
 					OR COALESCE(bmt_any.bibliography, '') ILIKE ?
@@ -1141,12 +1266,31 @@ func applyBookFilter(countBuilder, dataBuilder sq.SelectBuilder, filter repo.Boo
 				SELECT 1
 				FROM author_translations at_any
 				WHERE at_any.author_id = a.id
+				  AND at_any.is_deleted = false
+				  AND EXISTS (
+					SELECT 1
+					FROM book_production_projects bpp_any
+					WHERE bpp_any.book_id = b.id
+					  AND bpp_any.lang = at_any.lang
+					  AND bpp_any.publication_status = 'published'
+					  AND bpp_any.workflow_status <> 'archived'
+				  )
 				  AND (at_any.name ILIKE ? OR COALESCE(at_any.biography, '') ILIKE ?)
 			)
 			OR EXISTS (
 				SELECT 1
 				FROM category_translations ct_any
-				WHERE ct_any.category_id = c.id AND ct_any.name ILIKE ?
+				WHERE ct_any.category_id = c.id
+				  AND ct_any.is_deleted = false
+				  AND EXISTS (
+					SELECT 1
+					FROM book_production_projects bpp_any
+					WHERE bpp_any.book_id = b.id
+					  AND bpp_any.lang = ct_any.lang
+					  AND bpp_any.publication_status = 'published'
+					  AND bpp_any.workflow_status <> 'archived'
+				  )
+				  AND ct_any.name ILIKE ?
 			))`
 		args := []any{
 			like,

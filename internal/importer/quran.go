@@ -169,6 +169,110 @@ type quranAudioSegmentImport struct {
 	Metadata        json.RawMessage
 }
 
+type quranDivisionStart struct {
+	Number     int
+	SurahID    int
+	AyahNumber int
+}
+
+// Mirrors QUL quran-metadata Juz resource (quran-metadata/68).
+var quranCanonicalJuzStarts = []quranDivisionStart{
+	{Number: 1, SurahID: 1, AyahNumber: 1},
+	{Number: 2, SurahID: 2, AyahNumber: 142},
+	{Number: 3, SurahID: 2, AyahNumber: 253},
+	{Number: 4, SurahID: 3, AyahNumber: 93},
+	{Number: 5, SurahID: 4, AyahNumber: 24},
+	{Number: 6, SurahID: 4, AyahNumber: 148},
+	{Number: 7, SurahID: 5, AyahNumber: 82},
+	{Number: 8, SurahID: 6, AyahNumber: 111},
+	{Number: 9, SurahID: 7, AyahNumber: 88},
+	{Number: 10, SurahID: 8, AyahNumber: 41},
+	{Number: 11, SurahID: 9, AyahNumber: 93},
+	{Number: 12, SurahID: 11, AyahNumber: 6},
+	{Number: 13, SurahID: 12, AyahNumber: 53},
+	{Number: 14, SurahID: 15, AyahNumber: 1},
+	{Number: 15, SurahID: 17, AyahNumber: 1},
+	{Number: 16, SurahID: 18, AyahNumber: 75},
+	{Number: 17, SurahID: 21, AyahNumber: 1},
+	{Number: 18, SurahID: 23, AyahNumber: 1},
+	{Number: 19, SurahID: 25, AyahNumber: 21},
+	{Number: 20, SurahID: 27, AyahNumber: 56},
+	{Number: 21, SurahID: 29, AyahNumber: 46},
+	{Number: 22, SurahID: 33, AyahNumber: 31},
+	{Number: 23, SurahID: 36, AyahNumber: 28},
+	{Number: 24, SurahID: 39, AyahNumber: 32},
+	{Number: 25, SurahID: 41, AyahNumber: 47},
+	{Number: 26, SurahID: 46, AyahNumber: 1},
+	{Number: 27, SurahID: 51, AyahNumber: 31},
+	{Number: 28, SurahID: 58, AyahNumber: 1},
+	{Number: 29, SurahID: 67, AyahNumber: 1},
+	{Number: 30, SurahID: 78, AyahNumber: 1},
+}
+
+// Mirrors QUL quran-metadata Hizb resource (quran-metadata/67).
+var quranCanonicalHizbStarts = []quranDivisionStart{
+	{Number: 1, SurahID: 1, AyahNumber: 1},
+	{Number: 2, SurahID: 2, AyahNumber: 75},
+	{Number: 3, SurahID: 2, AyahNumber: 142},
+	{Number: 4, SurahID: 2, AyahNumber: 203},
+	{Number: 5, SurahID: 2, AyahNumber: 253},
+	{Number: 6, SurahID: 3, AyahNumber: 15},
+	{Number: 7, SurahID: 3, AyahNumber: 93},
+	{Number: 8, SurahID: 3, AyahNumber: 171},
+	{Number: 9, SurahID: 4, AyahNumber: 24},
+	{Number: 10, SurahID: 4, AyahNumber: 88},
+	{Number: 11, SurahID: 4, AyahNumber: 148},
+	{Number: 12, SurahID: 5, AyahNumber: 27},
+	{Number: 13, SurahID: 5, AyahNumber: 82},
+	{Number: 14, SurahID: 6, AyahNumber: 36},
+	{Number: 15, SurahID: 6, AyahNumber: 111},
+	{Number: 16, SurahID: 7, AyahNumber: 1},
+	{Number: 17, SurahID: 7, AyahNumber: 88},
+	{Number: 18, SurahID: 7, AyahNumber: 171},
+	{Number: 19, SurahID: 8, AyahNumber: 41},
+	{Number: 20, SurahID: 9, AyahNumber: 34},
+	{Number: 21, SurahID: 9, AyahNumber: 93},
+	{Number: 22, SurahID: 10, AyahNumber: 26},
+	{Number: 23, SurahID: 11, AyahNumber: 6},
+	{Number: 24, SurahID: 11, AyahNumber: 84},
+	{Number: 25, SurahID: 12, AyahNumber: 53},
+	{Number: 26, SurahID: 13, AyahNumber: 19},
+	{Number: 27, SurahID: 15, AyahNumber: 1},
+	{Number: 28, SurahID: 16, AyahNumber: 51},
+	{Number: 29, SurahID: 17, AyahNumber: 1},
+	{Number: 30, SurahID: 17, AyahNumber: 99},
+	{Number: 31, SurahID: 18, AyahNumber: 75},
+	{Number: 32, SurahID: 20, AyahNumber: 1},
+	{Number: 33, SurahID: 21, AyahNumber: 1},
+	{Number: 34, SurahID: 22, AyahNumber: 1},
+	{Number: 35, SurahID: 23, AyahNumber: 1},
+	{Number: 36, SurahID: 24, AyahNumber: 21},
+	{Number: 37, SurahID: 25, AyahNumber: 21},
+	{Number: 38, SurahID: 26, AyahNumber: 111},
+	{Number: 39, SurahID: 27, AyahNumber: 56},
+	{Number: 40, SurahID: 28, AyahNumber: 51},
+	{Number: 41, SurahID: 29, AyahNumber: 46},
+	{Number: 42, SurahID: 31, AyahNumber: 22},
+	{Number: 43, SurahID: 33, AyahNumber: 31},
+	{Number: 44, SurahID: 34, AyahNumber: 24},
+	{Number: 45, SurahID: 36, AyahNumber: 28},
+	{Number: 46, SurahID: 37, AyahNumber: 145},
+	{Number: 47, SurahID: 39, AyahNumber: 32},
+	{Number: 48, SurahID: 40, AyahNumber: 41},
+	{Number: 49, SurahID: 41, AyahNumber: 47},
+	{Number: 50, SurahID: 43, AyahNumber: 24},
+	{Number: 51, SurahID: 46, AyahNumber: 1},
+	{Number: 52, SurahID: 48, AyahNumber: 18},
+	{Number: 53, SurahID: 51, AyahNumber: 31},
+	{Number: 54, SurahID: 55, AyahNumber: 1},
+	{Number: 55, SurahID: 58, AyahNumber: 1},
+	{Number: 56, SurahID: 62, AyahNumber: 1},
+	{Number: 57, SurahID: 67, AyahNumber: 1},
+	{Number: 58, SurahID: 72, AyahNumber: 1},
+	{Number: 59, SurahID: 78, AyahNumber: 1},
+	{Number: 60, SurahID: 87, AyahNumber: 1},
+}
+
 // RunQuranAssetImport imports local QUL exports into PostgreSQL.
 func RunQuranAssetImport(ctx context.Context, opts QuranAssetOptions) (QuranAssetStats, error) {
 	if err := opts.validate(); err != nil {
@@ -345,6 +449,7 @@ func parseQuranAssets(opts QuranAssetOptions) (quranAssetSet, error) {
 		}
 	}
 
+	fillAyahNavigation(&assets)
 	fillSurahCounts(&assets)
 
 	return assets, nil
@@ -487,6 +592,48 @@ func parseScriptResource(path string, scriptKind string, assets *quranAssetSet) 
 	}
 
 	return nil
+}
+
+func fillAyahNavigation(assets *quranAssetSet) {
+	for _, ayah := range assets.ayahs {
+		if ayah == nil {
+			continue
+		}
+		if ayah.JuzNumber == nil {
+			if number, ok := quranDivisionNumber(ayah.SurahID, ayah.AyahNumber, quranCanonicalJuzStarts); ok {
+				ayah.JuzNumber = intPtr(number)
+			}
+		}
+		if ayah.HizbNumber == nil {
+			if number, ok := quranDivisionNumber(ayah.SurahID, ayah.AyahNumber, quranCanonicalHizbStarts); ok {
+				ayah.HizbNumber = intPtr(number)
+			}
+		}
+	}
+}
+
+func quranDivisionNumber(surahID, ayahNumber int, starts []quranDivisionStart) (int, bool) {
+	number := 0
+	for _, start := range starts {
+		if compareAyahPosition(surahID, ayahNumber, start.SurahID, start.AyahNumber) < 0 {
+			break
+		}
+		number = start.Number
+	}
+
+	return number, number > 0
+}
+
+func compareAyahPosition(leftSurahID, leftAyahNumber, rightSurahID, rightAyahNumber int) int {
+	if leftSurahID != rightSurahID {
+		return leftSurahID - rightSurahID
+	}
+
+	return leftAyahNumber - rightAyahNumber
+}
+
+func intPtr(value int) *int {
+	return &value
 }
 
 func parseTranslationSimple(path string, assets *quranAssetSet) error {

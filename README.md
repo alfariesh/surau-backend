@@ -52,7 +52,7 @@ Quran `lang` follows the same contract as kitab: supported `ar`, `id`, and `en`;
 
 `/v1/quran/surahs` is lightweight by default and omits `info`; use `include_info=true` or the single-surah endpoint when the UI needs surah background HTML. `/v1/quran/juz` and `/v1/quran/hizbs` expose lightweight navigation boundaries from imported QPC Hafs metadata. `/v1/quran/translation-sources` lists per-language sources with coverage and default markers. `/v1/quran/recitations` marks the deterministic playable default with `is_default=true`; playable means a track has `public_url` or source `audio_url`. If `include_audio=true` is requested without `recitation_id`, ayah endpoints use that default recitation; an unknown explicit `recitation_id` returns `404 quran recitation not found`.
 
-Start FE integration from [docs/frontend-integration-contract.md](docs/frontend-integration-contract.md). See [docs/user-onboarding-api.md](docs/user-onboarding-api.md) for user profile, onboarding, and language preferences. See [docs/quran-api.md](docs/quran-api.md) for the full Quran API contract, response shapes, audio behavior, and integration checklist.
+Start mobile integration from [docs/mobile-backend-integration-guide.md](docs/mobile-backend-integration-guide.md). Start general FE integration from [docs/frontend-integration-contract.md](docs/frontend-integration-contract.md). For the editorial production module, use [docs/editorial-production-frontend-implementation.md](docs/editorial-production-frontend-implementation.md) as the detailed screen-by-screen implementation guide. See [docs/user-onboarding-api.md](docs/user-onboarding-api.md) for user profile, onboarding, and language preferences. See [docs/quran-api.md](docs/quran-api.md) for the full Quran API contract, response shapes, audio behavior, and integration checklist.
 
 Auth and personal reader:
 
@@ -85,6 +85,28 @@ Editorial feedback review:
 - `GET /v1/editorial/translation-feedbacks/summary?book_id=&heading_id=&lang=&vote=&status=&limit=`
 - `POST /v1/editorial/translation-feedbacks/{id}/resolve`
 - `POST /v1/editorial/translation-feedbacks/{id}/reopen`
+
+Editorial book production:
+
+- `GET /v1/editorial/production-dashboard?lang=&activity_limit=`
+- `GET /v1/editorial/production-activity?lang=&limit=&offset=`
+- `GET /v1/editorial/production-candidates?lang=&q=&category_id=&author_id=&has_content=&unstarted=&limit=&offset=`
+- `POST /v1/editorial/production-projects`
+- `GET /v1/editorial/production-projects?book_id=&lang=&workflow_status=&publication_status=&ready_to_publish=&needs_work=&limit=&offset=`
+- `GET /v1/editorial/production-projects/{id}/workspace`
+- `GET /v1/editorial/production-projects/{id}/completeness`
+- `GET /v1/editorial/production-projects/{id}/publish-check`
+- `GET /v1/editorial/production-projects/{id}/activity?limit=&offset=`
+- `GET /v1/editorial/production-projects/{id}/draft-revisions?asset_type=&heading_id=&limit=&offset=`
+- `POST /v1/editorial/production-projects/{id}/draft-revisions/{revision_id}/restore`
+- `GET|PUT|DELETE /v1/editorial/production-projects/{id}/metadata-draft`
+- `GET|PUT|DELETE /v1/editorial/production-projects/{id}/author-draft`
+- `GET|PUT|DELETE /v1/editorial/production-projects/{id}/category-draft`
+- `GET|PUT|DELETE /v1/editorial/production-projects/{id}/toc/{heading_id}/translation-draft`
+- `GET|PUT|DELETE /v1/editorial/production-projects/{id}/toc/{heading_id}/summary-draft`
+- `GET|PUT|DELETE /v1/editorial/production-projects/{id}/toc/{heading_id}/audio-draft`
+- `POST /v1/editorial/production-projects/{id}/review`
+- Admin only: `POST /v1/editorial/production-projects/{id}/publish`, `POST /v1/editorial/production-projects/{id}/unpublish`, and `DELETE /v1/editorial/production-projects/{id}/.../final-assets/...`
 
 Admin user management:
 
@@ -254,7 +276,7 @@ go run ./cmd/import-quran-assets \
   --resolve-references
 ```
 
-Use `--dry-run` to parse and count rows without writing. JSON files may be passed directly or as single-resource QUL `.zip` downloads. `--surah-info-json` is repeatable for multiple languages, and `--surah-info-lang` can override filename inference for a batch. `--translation-lang` defaults to `id` and supports `id` or `en` translation imports with a matching `--translation-source-id`; non-Indonesian translation imports must provide a source ID. `--translation-source-url`, `--translation-resource-id`, `--translation-format`, and `--translation-footnote-format` keep source metadata accurate for each QUL translation resource. V1 imports QPC Hafs display text, Imlaei/simple search text, language-specific surah information, translation source metadata, optional footnote/chunk payloads, and recitation timestamp metadata. Audio files themselves stay outside Postgres; `audio_url` remains a playable source fallback, while `r2_key` and `public_url` are prepared for later Cloudflare R2 ingestion.
+Use `--dry-run` to parse and count rows without writing. JSON files may be passed directly or as single-resource QUL `.zip` downloads. `--surah-info-json` is repeatable for multiple languages, and `--surah-info-lang` can override filename inference for a batch. `--translation-lang` defaults to `id` and supports `id` or `en` translation imports with a matching `--translation-source-id`; non-Indonesian translation imports must provide a source ID. `--translation-source-url`, `--translation-resource-id`, `--translation-format`, and `--translation-footnote-format` keep source metadata accurate for each QUL translation resource. V1 imports QPC Hafs display text, Imlaei/simple search text, language-specific surah information, translation source metadata, optional footnote/chunk payloads, and recitation timestamp metadata. If a QUL script export does not include ayah navigation fields, the importer fills `juz_number` and `hizb_number` from QUL's canonical Juz/Hizb metadata boundaries. Audio files themselves stay outside Postgres; `audio_url` remains a playable source fallback, while `r2_key` and `public_url` are prepared for later Cloudflare R2 ingestion.
 
 After audio files are uploaded to Cloudflare R2, sync the manifest back into Postgres:
 
@@ -324,6 +346,8 @@ Editorial feedback endpoints require an editor or admin JWT. Use the list endpoi
 Editorial reader localization gaps are available at `GET /v1/editorial/reader/missing-assets`. Filter with `target_lang=id|en`, `asset_type=book_metadata|category_metadata|author_metadata|section_translation|heading_summary|section_audio`, `book_id`, `limit`, and `offset`. Empty `target_lang` means both `id,en`; `target_lang=ar` is rejected because Arabic is source content.
 
 Editorial Quran gaps are available at `GET /v1/editorial/quran/missing-assets`. Filter with `target_lang=id|en`, `asset_type=surah_info|ayah_translation|translation_source|audio_public`, `surah_id`, `limit`, and `offset`. Empty `target_lang` means both `id,en`; `target_lang=ar` is rejected because Arabic is source content.
+
+Book translation production is managed through `book_id + lang` projects. Editors create a project from an existing raw Postgres kitab, fill drafts per metadata/author/category and per TOC heading for translation, summary, and optional audio, then submit/approve drafts when review is required. Admins publish only when completeness passes; publish upserts approved drafts into final reader tables and marks the project published. Unpublish hides the non-Arabic reader assets without deleting final rows.
 
 Resolve a handled feedback item:
 
