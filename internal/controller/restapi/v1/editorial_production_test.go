@@ -306,6 +306,87 @@ func TestEditorialPublishProductionProjectBlockedIncludesBlockers(t *testing.T) 
 	assert.Equal(t, entity.ProductionAssetBookMetadata, body.BlockingErrors[0].AssetType)
 }
 
+func TestEditorialProductionProjectResponsesIncludeOwner(t *testing.T) {
+	t.Parallel()
+
+	ownerID := "owner-id"
+	displayName := "Editor Name"
+	project := entity.BookProductionProject{
+		ID:      "project-id",
+		BookID:  797,
+		Lang:    "id",
+		OwnerID: &ownerID,
+		Owner: &entity.ProductionProjectOwner{
+			ID:          ownerID,
+			Email:       "editor@example.com",
+			DisplayName: &displayName,
+		},
+	}
+	app := newProductionTestApp(
+		entity.User{ID: "editor-id", Role: entity.UserRoleEditor},
+		&fakeProductionEditorial{productionProject: project},
+	)
+
+	listResp, err := app.Test(httptest.NewRequestWithContext(
+		t.Context(),
+		http.MethodGet,
+		"/v1/editorial/production-projects",
+		nil,
+	))
+	require.NoError(t, err)
+	defer listResp.Body.Close()
+
+	var listBody struct {
+		Projects []entity.BookProductionProject `json:"projects"`
+	}
+	require.NoError(t, json.NewDecoder(listResp.Body).Decode(&listBody))
+	require.Len(t, listBody.Projects, 1)
+	assertProductionOwner(t, listBody.Projects[0], ownerID, displayName)
+
+	detailResp, err := app.Test(httptest.NewRequestWithContext(
+		t.Context(),
+		http.MethodGet,
+		"/v1/editorial/production-projects/project-id",
+		nil,
+	))
+	require.NoError(t, err)
+	defer detailResp.Body.Close()
+
+	var detailBody entity.BookProductionProject
+	require.NoError(t, json.NewDecoder(detailResp.Body).Decode(&detailBody))
+	assertProductionOwner(t, detailBody, ownerID, displayName)
+
+	workspaceResp, err := app.Test(httptest.NewRequestWithContext(
+		t.Context(),
+		http.MethodGet,
+		"/v1/editorial/production-projects/project-id/workspace",
+		nil,
+	))
+	require.NoError(t, err)
+	defer workspaceResp.Body.Close()
+
+	var workspaceBody entity.BookProductionWorkspace
+	require.NoError(t, json.NewDecoder(workspaceResp.Body).Decode(&workspaceBody))
+	assertProductionOwner(t, workspaceBody.Project, ownerID, displayName)
+}
+
+func assertProductionOwner(
+	t *testing.T,
+	project entity.BookProductionProject,
+	ownerID,
+	displayName string,
+) {
+	t.Helper()
+
+	require.NotNil(t, project.OwnerID)
+	assert.Equal(t, ownerID, *project.OwnerID)
+	require.NotNil(t, project.Owner)
+	assert.Equal(t, ownerID, project.Owner.ID)
+	assert.Equal(t, "editor@example.com", project.Owner.Email)
+	require.NotNil(t, project.Owner.DisplayName)
+	assert.Equal(t, displayName, *project.Owner.DisplayName)
+}
+
 func newProductionPermissionTestApp(actor entity.User) *fiber.App {
 	return newProductionTestApp(actor, &fakeProductionEditorial{})
 }
@@ -341,6 +422,7 @@ func newProductionTestApp(actor entity.User, editorial *fakeProductionEditorial)
 	editorialReview.Get("/production-projects/:id/publish-check", controller.editorialProductionPublishCheck)
 	editorialReview.Get("/production-projects/:id/draft-revisions", controller.editorialListProductionDraftRevisions)
 	editorialReview.Post("/production-projects/:id/draft-revisions/:revision_id/restore", controller.editorialRestoreProductionDraftRevision)
+	editorialReview.Get("/production-projects/:id", controller.editorialGetProductionProject)
 	editorialReview.Get("/books/:book_id/metadata-draft", controller.editorialGetMetadataDraft)
 	editorialReview.Get("/books/:book_id/headings/:heading_id/draft", controller.editorialGetHeadingDraft)
 
@@ -359,6 +441,15 @@ type fakeProductionEditorial struct {
 	createProductionProjectErr  error
 	publishProductionProjectErr error
 	publishCheck                entity.BookProductionPublishCheck
+	productionProject           entity.BookProductionProject
+}
+
+func (f *fakeProductionEditorial) projectResponse() entity.BookProductionProject {
+	if f.productionProject.ID != "" {
+		return f.productionProject
+	}
+
+	return entity.BookProductionProject{ID: "project-id", BookID: 797, Lang: "id"}
 }
 
 func (f *fakeProductionEditorial) ProductionProjects(
@@ -372,7 +463,7 @@ func (f *fakeProductionEditorial) ProductionProjects(
 	int,
 	int,
 ) ([]entity.BookProductionProject, int, error) {
-	return []entity.BookProductionProject{{ID: "project-id", BookID: 797, Lang: "id"}}, 1, nil
+	return []entity.BookProductionProject{f.projectResponse()}, 1, nil
 }
 
 func (f *fakeProductionEditorial) ProductionCandidates(
@@ -426,7 +517,14 @@ func (f *fakeProductionEditorial) CreateProductionProject(
 		return entity.BookProductionProject{}, f.createProductionProjectErr
 	}
 
-	return entity.BookProductionProject{ID: "project-id", BookID: 797, Lang: "id"}, nil
+	return f.projectResponse(), nil
+}
+
+func (f *fakeProductionEditorial) ProductionProject(
+	context.Context,
+	string,
+) (entity.BookProductionProject, error) {
+	return f.projectResponse(), nil
 }
 
 func (f *fakeProductionEditorial) ProductionWorkspace(
@@ -434,7 +532,7 @@ func (f *fakeProductionEditorial) ProductionWorkspace(
 	string,
 ) (entity.BookProductionWorkspace, error) {
 	return entity.BookProductionWorkspace{
-		Project: entity.BookProductionProject{ID: "project-id", BookID: 797, Lang: "id"},
+		Project: f.projectResponse(),
 		Book:    entity.BookProductionWorkspaceBook{ID: 797, Name: "book", HasContent: true},
 	}, nil
 }
@@ -461,7 +559,7 @@ func (f *fakeProductionEditorial) ProductionPublishCheck(
 	}
 
 	return entity.BookProductionPublishCheck{
-		Project:    entity.BookProductionProject{ID: "project-id", BookID: 797, Lang: "id"},
+		Project:    f.projectResponse(),
 		Ready:      true,
 		CanPublish: true,
 	}, nil

@@ -9257,6 +9257,9 @@ const docTemplate = `{
                 "notes": {
                     "type": "string"
                 },
+                "owner": {
+                    "$ref": "#/definitions/entity.ProductionProjectOwner"
+                },
                 "owner_id": {
                     "type": "string"
                 },
@@ -10848,6 +10851,23 @@ const docTemplate = `{
                 "updated_at": {
                     "type": "string",
                     "example": "2026-01-01T00:00:00Z"
+                }
+            }
+        },
+        "entity.ProductionProjectOwner": {
+            "type": "object",
+            "properties": {
+                "display_name": {
+                    "type": "string",
+                    "example": "Editor Name"
+                },
+                "email": {
+                    "type": "string",
+                    "example": "editor@example.com"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
                 }
             }
         },

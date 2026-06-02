@@ -201,6 +201,8 @@ Completeness is book-level. The backend requires metadata, author/category draft
 
 Use `GET /production-candidates` to choose raw kitab for a target language; `unstarted=true` hides books that already have an active project for that `book_id + lang`. Use `ready_to_publish=true` or `needs_work=true` on the project list for a small production queue.
 
+Production project responses expose both `owner_id` and optional `owner` (`id`, `email`, `display_name`) so queues and workspace settings can show human-readable assignees without an admin user lookup.
+
 Every successful production draft save creates an immutable draft revision. Use `GET /draft-revisions` to inspect history for one asset and `POST /restore` to roll back a snapshot into the active draft.
 
 Use `GET /publish-check` for a read-only publish validator that mirrors publish readiness and returns structured blocking errors. Use `GET /activity` to render the project timeline for create/update, draft save/delete/restore, review, publish, unpublish, and final asset soft-delete events.

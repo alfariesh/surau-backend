@@ -474,6 +474,8 @@ POST /v1/editorial/production-projects/{id}/review
 POST /v1/editorial/production-projects/{id}/publish
 ```
 
+Production project rows keep `owner_id` and include optional `owner: { id, email, display_name }` when the assigned owner account is available. Prefer `owner.display_name || owner.email` for queue/workspace display.
+
 Treat translation, summary, and audio work as per-TOC units. Page editing remains source Arabic/OCR/layout work and is separate from translation production. Each draft save creates revision history; restore rolls a snapshot back into the active draft. Publish is admin-only and should be enabled only after `publish-check.can_publish === true`.
 
 ## Quran Reader Parity

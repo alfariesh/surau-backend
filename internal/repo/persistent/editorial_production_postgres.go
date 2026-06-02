@@ -61,6 +61,7 @@ RETURNING id, book_id, lang, workflow_status, publication_status, requires_revie
 
 		return entity.BookProductionProject{}, fmt.Errorf("EditorialRepo - CreateProductionProject - scan: %w", err)
 	}
+	saved = r.attachProductionProjectOwner(ctx, saved)
 
 	_ = r.audit(ctx, actorID, "production_project.create", saved.BookID, nil, nil, saved.Lang, saved)
 	_ = r.recordProductionEvent(ctx, actorID, saved.ID, entity.ProductionEventProjectCreate, nil, nil, nil, saved)
@@ -118,7 +119,7 @@ func (r *EditorialRepo) ListProductionProjects(
 
 	projects := make([]entity.BookProductionProject, 0, filter.Limit)
 	for rows.Next() {
-		project, err := scanProductionProject(rows)
+		project, err := scanProductionProjectWithOwner(rows)
 		if err != nil {
 			return nil, 0, fmt.Errorf("EditorialRepo - ListProductionProjects - scan: %w", err)
 		}
@@ -141,7 +142,7 @@ func (r *EditorialRepo) GetProductionProject(ctx context.Context, projectID stri
 		return entity.BookProductionProject{}, fmt.Errorf("EditorialRepo - GetProductionProject - builder: %w", err)
 	}
 
-	project, err := scanProductionProject(r.Pool.QueryRow(ctx, sqlText, args...))
+	project, err := scanProductionProjectWithOwner(r.Pool.QueryRow(ctx, sqlText, args...))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return entity.BookProductionProject{}, entity.ErrProductionProjectNotFound
@@ -205,6 +206,7 @@ func (r *EditorialRepo) UpdateProductionProject(
 
 		return entity.BookProductionProject{}, fmt.Errorf("EditorialRepo - UpdateProductionProject - scan: %w", err)
 	}
+	project = r.attachProductionProjectOwner(ctx, project)
 
 	_ = r.audit(ctx, actorID, "production_project.update", project.BookID, nil, nil, project.Lang, project)
 	_ = r.recordProductionEvent(ctx, actorID, project.ID, entity.ProductionEventProjectUpdate, nil, nil, nil, project)
@@ -1233,6 +1235,7 @@ RETURNING id, book_id, lang, workflow_status, publication_status, requires_revie
 	if err = tx.Commit(ctx); err != nil {
 		return entity.BookProductionProject{}, fmt.Errorf("EditorialRepo - PublishProductionProject - commit: %w", err)
 	}
+	published = r.attachProductionProjectOwner(ctx, published)
 
 	_ = r.audit(ctx, actorID, "production_project.publish", published.BookID, nil, nil, published.Lang, published)
 	_ = r.recordProductionEvent(ctx, actorID, published.ID, entity.ProductionEventProjectPublish, nil, nil, nil, published)
@@ -1263,6 +1266,7 @@ RETURNING id, book_id, lang, workflow_status, publication_status, requires_revie
 
 		return entity.BookProductionProject{}, fmt.Errorf("EditorialRepo - UnpublishProductionProject - scan: %w", err)
 	}
+	project = r.attachProductionProjectOwner(ctx, project)
 
 	_ = r.audit(ctx, actorID, "production_project.unpublish", project.BookID, nil, nil, project.Lang, project)
 	_ = r.recordProductionEvent(ctx, actorID, project.ID, entity.ProductionEventProjectUnpublish, nil, nil, nil, project)
@@ -1743,8 +1747,29 @@ func productionProjectSelectBuilder(builder sq.StatementBuilderType) sq.SelectBu
 			"p.updated_at",
 			"p.published_at",
 			"p.archived_at",
+			"owner_user.id",
+			"owner_user.email",
+			"owner_profile.display_name",
 		).
-		From("book_production_projects p")
+		From("book_production_projects p").
+		LeftJoin("users owner_user ON owner_user.id = p.owner_id AND owner_user.deleted_at IS NULL").
+		LeftJoin("user_profiles owner_profile ON owner_profile.user_id = owner_user.id")
+}
+
+func (r *EditorialRepo) attachProductionProjectOwner(
+	ctx context.Context,
+	project entity.BookProductionProject,
+) entity.BookProductionProject {
+	if project.ID == "" {
+		return project
+	}
+
+	hydrated, err := r.GetProductionProject(ctx, project.ID)
+	if err != nil {
+		return project
+	}
+
+	return hydrated
 }
 
 func applyProductionProjectFilter(
@@ -2812,6 +2837,63 @@ func scanProductionProject(row rowScanner) (entity.BookProductionProject, error)
 	project.PublishedBy = nullableString(publishedBy)
 	project.PublishedAt = nullableTime(publishedAt)
 	project.ArchivedAt = nullableTime(archivedAt)
+
+	return project, nil
+}
+
+func scanProductionProjectWithOwner(row rowScanner) (entity.BookProductionProject, error) {
+	var project entity.BookProductionProject
+	var ownerID sql.NullString
+	var notes sql.NullString
+	var createdBy sql.NullString
+	var updatedBy sql.NullString
+	var publishedBy sql.NullString
+	var publishedAt sql.NullTime
+	var archivedAt sql.NullTime
+	var ownerUserID sql.NullString
+	var ownerEmail sql.NullString
+	var ownerDisplayName sql.NullString
+
+	err := row.Scan(
+		&project.ID,
+		&project.BookID,
+		&project.Lang,
+		&project.WorkflowStatus,
+		&project.PublicationStatus,
+		&project.RequiresReview,
+		&project.RequiresAudio,
+		&project.Priority,
+		&ownerID,
+		&notes,
+		&createdBy,
+		&updatedBy,
+		&publishedBy,
+		&project.CreatedAt,
+		&project.UpdatedAt,
+		&publishedAt,
+		&archivedAt,
+		&ownerUserID,
+		&ownerEmail,
+		&ownerDisplayName,
+	)
+	if err != nil {
+		return entity.BookProductionProject{}, err
+	}
+
+	project.OwnerID = nullableString(ownerID)
+	project.Notes = nullableString(notes)
+	project.CreatedBy = nullableString(createdBy)
+	project.UpdatedBy = nullableString(updatedBy)
+	project.PublishedBy = nullableString(publishedBy)
+	project.PublishedAt = nullableTime(publishedAt)
+	project.ArchivedAt = nullableTime(archivedAt)
+	if ownerUserID.Valid && ownerEmail.Valid {
+		project.Owner = &entity.ProductionProjectOwner{
+			ID:          ownerUserID.String,
+			Email:       ownerEmail.String,
+			DisplayName: nullableString(ownerDisplayName),
+		}
+	}
 
 	return project, nil
 }
