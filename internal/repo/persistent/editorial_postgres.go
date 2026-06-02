@@ -369,6 +369,25 @@ RETURNING book_id, status, featured, sort_order, published_at, updated_by, updat
 	return saved, nil
 }
 
+// GetMetadataDraft returns the current source metadata draft.
+func (r *EditorialRepo) GetMetadataDraft(ctx context.Context, bookID int) (entity.BookMetadataEdit, error) {
+	sqlText := `
+SELECT book_id, status, display_title, description, cover_url, category_id, notes, updated_by, updated_at, published_at
+FROM book_metadata_edits
+WHERE book_id = $1 AND status = 'draft'`
+
+	edit, err := scanMetadataEdit(r.Pool.QueryRow(ctx, sqlText, bookID))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return entity.BookMetadataEdit{}, entity.ErrDraftNotFound
+		}
+
+		return entity.BookMetadataEdit{}, fmt.Errorf("EditorialRepo - GetMetadataDraft - scanMetadataEdit: %w", err)
+	}
+
+	return edit, nil
+}
+
 // SaveMetadataDraft upserts metadata draft.
 func (r *EditorialRepo) SaveMetadataDraft(
 	ctx context.Context,
@@ -522,6 +541,25 @@ RETURNING book_id, page_id, status, content_html, content_text, updated_by, upda
 	_ = r.audit(ctx, actorID, "page.draft.publish", bookID, &pageID, nil, "", nil)
 
 	return saved, nil
+}
+
+// GetHeadingDraft returns the current source heading draft.
+func (r *EditorialRepo) GetHeadingDraft(ctx context.Context, bookID, headingID int) (entity.BookHeadingEdit, error) {
+	sqlText := `
+SELECT book_id, heading_id, status, content, updated_by, updated_at, published_at
+FROM book_heading_edits
+WHERE book_id = $1 AND heading_id = $2 AND status = 'draft'`
+
+	edit, err := scanHeadingEdit(r.Pool.QueryRow(ctx, sqlText, bookID, headingID))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return entity.BookHeadingEdit{}, entity.ErrDraftNotFound
+		}
+
+		return entity.BookHeadingEdit{}, fmt.Errorf("EditorialRepo - GetHeadingDraft - scanHeadingEdit: %w", err)
+	}
+
+	return edit, nil
 }
 
 // SaveHeadingDraft upserts a heading draft.

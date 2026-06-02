@@ -68,3 +68,25 @@ var (
 	ErrInvalidQuranRange              = errors.New("invalid quran range")
 	ErrInvalidQuranProgress           = errors.New("invalid quran progress")
 )
+
+// ProductionProjectExistsError carries the active project that blocks a duplicate create.
+type ProductionProjectExistsError struct {
+	ExistingProjectID string
+}
+
+func (e *ProductionProjectExistsError) Error() string {
+	return ErrProductionProjectExists.Error()
+}
+
+func (e *ProductionProjectExistsError) Unwrap() error {
+	return ErrProductionProjectExists
+}
+
+// NewProductionProjectExistsError keeps generic conflict behavior when the ID cannot be resolved.
+func NewProductionProjectExistsError(existingProjectID string) error {
+	if existingProjectID == "" {
+		return ErrProductionProjectExists
+	}
+
+	return &ProductionProjectExistsError{ExistingProjectID: existingProjectID}
+}

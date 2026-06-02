@@ -106,6 +106,15 @@ func (uc *UseCase) UpdatePublication(
 	})
 }
 
+// GetMetadataDraft returns one source metadata draft.
+func (uc *UseCase) GetMetadataDraft(ctx context.Context, bookID int) (entity.BookMetadataEdit, error) {
+	if bookID <= 0 {
+		return entity.BookMetadataEdit{}, entity.ErrBookNotFound
+	}
+
+	return uc.repo.GetMetadataDraft(ctx, bookID)
+}
+
 // SaveMetadataDraft stores metadata override as draft.
 func (uc *UseCase) SaveMetadataDraft(
 	ctx context.Context,
@@ -147,6 +156,18 @@ func (uc *UseCase) SavePageDraft(ctx context.Context, actorID string, edit entit
 // PublishPageDraft promotes page draft to published.
 func (uc *UseCase) PublishPageDraft(ctx context.Context, actorID string, bookID, pageID int) (entity.BookPageEdit, error) {
 	return uc.repo.PublishPageDraft(ctx, actorID, bookID, pageID)
+}
+
+// GetHeadingDraft returns one source heading draft.
+func (uc *UseCase) GetHeadingDraft(ctx context.Context, bookID, headingID int) (entity.BookHeadingEdit, error) {
+	if bookID <= 0 {
+		return entity.BookHeadingEdit{}, entity.ErrBookNotFound
+	}
+	if headingID <= 0 {
+		return entity.BookHeadingEdit{}, entity.ErrHeadingNotFound
+	}
+
+	return uc.repo.GetHeadingDraft(ctx, bookID, headingID)
 }
 
 // SaveHeadingDraft stores heading title override as draft.

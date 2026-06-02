@@ -3321,6 +3321,143 @@
                 }
             }
         },
+        "/editorial/books/{book_id}/headings/{heading_id}/draft": {
+            "get": {
+                "description": "Get the current source kitab heading title draft. Requires editor or admin role.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "editorial"
+                ],
+                "summary": "Get source heading draft",
+                "operationId": "editorial-get-source-heading-draft",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Book ID",
+                        "name": "book_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Heading ID",
+                        "name": "heading_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.BookHeadingEdit"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/editorial/books/{book_id}/metadata-draft": {
+            "get": {
+                "description": "Get the current source kitab metadata draft. Requires editor or admin role.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "editorial"
+                ],
+                "summary": "Get source metadata draft",
+                "operationId": "editorial-get-source-metadata-draft",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Book ID",
+                        "name": "book_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.BookMetadataEdit"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
         "/editorial/production-activity": {
             "get": {
                 "description": "List recent operational timeline events across production projects. Requires editor or admin role.",
@@ -3750,7 +3887,7 @@
                     "409": {
                         "description": "Conflict",
                         "schema": {
-                            "$ref": "#/definitions/v1.Error"
+                            "$ref": "#/definitions/v1.ProductionProjectConflict"
                         }
                     },
                     "500": {
@@ -4891,6 +5028,12 @@
                         "description": "Not Found",
                         "schema": {
                             "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ProductionPublishBlocked"
                         }
                     },
                     "500": {
@@ -8462,6 +8605,76 @@
                 "updated_at": {
                     "type": "string",
                     "example": "2026-01-01T00:00:00Z"
+                }
+            }
+        },
+        "entity.BookHeadingEdit": {
+            "type": "object",
+            "properties": {
+                "book_id": {
+                    "type": "integer",
+                    "example": 797
+                },
+                "content": {
+                    "type": "string"
+                },
+                "heading_id": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "published_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "status": {
+                    "type": "string",
+                    "example": "draft"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "updated_by": {
+                    "type": "string"
+                }
+            }
+        },
+        "entity.BookMetadataEdit": {
+            "type": "object",
+            "properties": {
+                "book_id": {
+                    "type": "integer",
+                    "example": 797
+                },
+                "category_id": {
+                    "type": "integer"
+                },
+                "cover_url": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "display_title": {
+                    "type": "string"
+                },
+                "notes": {
+                    "type": "string"
+                },
+                "published_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "status": {
+                    "type": "string",
+                    "example": "draft"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "updated_by": {
+                    "type": "string"
                 }
             }
         },
@@ -12342,6 +12555,19 @@
                 }
             }
         },
+        "v1.ProductionProjectConflict": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string",
+                    "example": "production project already exists"
+                },
+                "existing_project_id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                }
+            }
+        },
         "v1.ProductionProjectList": {
             "type": "object",
             "properties": {
@@ -12352,6 +12578,50 @@
                     }
                 },
                 "total": {
+                    "type": "integer",
+                    "example": 42
+                }
+            }
+        },
+        "v1.ProductionPublishBlocked": {
+            "type": "object",
+            "properties": {
+                "blocking_errors": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.BookProductionBlocking"
+                    }
+                },
+                "can_publish": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "complete_count": {
+                    "type": "integer",
+                    "example": 40
+                },
+                "error": {
+                    "type": "string",
+                    "example": "production project is not ready"
+                },
+                "missing": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.BookProductionMissingAsset"
+                    }
+                },
+                "missing_count": {
+                    "type": "integer",
+                    "example": 2
+                },
+                "project": {
+                    "$ref": "#/definitions/entity.BookProductionProject"
+                },
+                "ready": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "required_count": {
                     "type": "integer",
                     "example": 42
                 }

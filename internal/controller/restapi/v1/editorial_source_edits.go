@@ -4,9 +4,40 @@ import (
 	"net/http"
 
 	"github.com/evrone/go-clean-template/internal/controller/restapi/v1/request"
+	_ "github.com/evrone/go-clean-template/internal/controller/restapi/v1/response" // for swaggo
 	"github.com/evrone/go-clean-template/internal/entity"
 	"github.com/gofiber/fiber/v2"
 )
+
+// @Summary     Get source metadata draft
+// @Description Get the current source kitab metadata draft. Requires editor or admin role.
+// @ID          editorial-get-source-metadata-draft
+// @Tags        editorial
+// @Produce     json
+// @Param       book_id path     int true "Book ID"
+// @Success     200     {object} entity.BookMetadataEdit
+// @Failure     400     {object} response.Error
+// @Failure     401     {object} response.Error
+// @Failure     403     {object} response.Error
+// @Failure     404     {object} response.Error
+// @Failure     500     {object} response.Error
+// @Security    BearerAuth
+// @Router      /editorial/books/{book_id}/metadata-draft [get]
+func (r *V1) editorialGetMetadataDraft(ctx *fiber.Ctx) error {
+	bookID, err := pathInt(ctx, "book_id")
+	if err != nil {
+		return errorResponse(ctx, http.StatusBadRequest, "invalid book_id")
+	}
+
+	edit, err := r.editorial.GetMetadataDraft(ctx.UserContext(), bookID)
+	if err != nil {
+		r.logEditorialError(err, "restapi - v1 - editorialGetMetadataDraft")
+
+		return r.editorialError(ctx, err)
+	}
+
+	return ctx.Status(http.StatusOK).JSON(edit)
+}
 
 func (r *V1) editorialSaveMetadataDraft(ctx *fiber.Ctx) error {
 	actorID, ok := ctx.Locals("userID").(string)
@@ -130,6 +161,37 @@ func (r *V1) editorialPublishPageDraft(ctx *fiber.Ctx) error {
 	edit, err := r.editorial.PublishPageDraft(ctx.UserContext(), actorID, bookID, pageID)
 	if err != nil {
 		r.logEditorialError(err, "restapi - v1 - editorialPublishPageDraft")
+
+		return r.editorialError(ctx, err)
+	}
+
+	return ctx.Status(http.StatusOK).JSON(edit)
+}
+
+// @Summary     Get source heading draft
+// @Description Get the current source kitab heading title draft. Requires editor or admin role.
+// @ID          editorial-get-source-heading-draft
+// @Tags        editorial
+// @Produce     json
+// @Param       book_id    path     int true "Book ID"
+// @Param       heading_id path     int true "Heading ID"
+// @Success     200        {object} entity.BookHeadingEdit
+// @Failure     400        {object} response.Error
+// @Failure     401        {object} response.Error
+// @Failure     403        {object} response.Error
+// @Failure     404        {object} response.Error
+// @Failure     500        {object} response.Error
+// @Security    BearerAuth
+// @Router      /editorial/books/{book_id}/headings/{heading_id}/draft [get]
+func (r *V1) editorialGetHeadingDraft(ctx *fiber.Ctx) error {
+	bookID, headingID, err := headingPath(ctx)
+	if err != nil {
+		return errorResponse(ctx, http.StatusBadRequest, err.Error())
+	}
+
+	edit, err := r.editorial.GetHeadingDraft(ctx.UserContext(), bookID, headingID)
+	if err != nil {
+		r.logEditorialError(err, "restapi - v1 - editorialGetHeadingDraft")
 
 		return r.editorialError(ctx, err)
 	}

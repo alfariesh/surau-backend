@@ -266,6 +266,8 @@ Use `GET /v1/editorial/production-candidates?lang=id|en&unstarted=true` to let a
 
 Use `POST /v1/editorial/production-projects` to create a `book_id + lang` project from an existing raw kitab. Editors can manage metadata, author, category, per-TOC translation, per-TOC summary, and optional per-TOC audio drafts, then submit/approve/reject via `POST /v1/editorial/production-projects/{id}/review`.
 
+Duplicate active `book_id + lang` creates return `409` with `existing_project_id` when available, so route the editor to that project instead of asking them to search manually.
+
 Use `GET /v1/editorial/production-projects/{id}/workspace` to load the editor screen. It includes the source book, TOC headings, draft status, final asset flags, and completeness in one response.
 
 Use `GET /v1/editorial/production-projects?ready_to_publish=true` or `?needs_work=true` for a lightweight production queue. The two flags are mutually exclusive.
@@ -274,7 +276,7 @@ Use `GET /v1/editorial/production-dashboard?lang=id|en` for the small-team opera
 
 Use `GET /v1/editorial/production-projects/{id}/draft-revisions?asset_type=...&heading_id=...` to show draft history. Use `POST /v1/editorial/production-projects/{id}/draft-revisions/{revision_id}/restore` to roll back; restore creates a new revision and resets the draft review status.
 
-Use `GET /v1/editorial/production-projects/{id}/publish-check` before enabling publish UX. It mirrors backend publish readiness and includes structured blockers. Use `GET /v1/editorial/production-projects/{id}/activity` for the project timeline.
+Use `GET /v1/editorial/production-projects/{id}/publish-check` before enabling publish UX. It mirrors backend publish readiness and includes structured blockers. If publish is still blocked, the `409` publish response includes the same `blocking_errors` payload. Use `GET /v1/editorial/production-projects/{id}/activity` for the project timeline.
 
 Admin-only actions are publish, unpublish, and final asset soft-delete. Reader pages for `lang=id|en` only expose final assets after the matching project is published, so frontend can rely on public reader responses as the source of truth for what is visible.
 

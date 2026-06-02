@@ -2,6 +2,7 @@ package v1
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -85,6 +86,20 @@ func TestEditorialProductionPermissionMatrix(t *testing.T) {
 			expectedStatus: http.StatusForbidden,
 		},
 		{
+			name:           "user forbidden from source metadata draft",
+			method:         http.MethodGet,
+			path:           "/v1/editorial/books/797/metadata-draft",
+			actor:          entity.User{ID: "user-id", Role: entity.UserRoleUser},
+			expectedStatus: http.StatusForbidden,
+		},
+		{
+			name:           "user forbidden from source heading draft",
+			method:         http.MethodGet,
+			path:           "/v1/editorial/books/797/headings/10/draft",
+			actor:          entity.User{ID: "user-id", Role: entity.UserRoleUser},
+			expectedStatus: http.StatusForbidden,
+		},
+		{
 			name:           "editor allowed project list",
 			method:         http.MethodGet,
 			path:           "/v1/editorial/production-projects",
@@ -148,6 +163,20 @@ func TestEditorialProductionPermissionMatrix(t *testing.T) {
 			expectedStatus: http.StatusOK,
 		},
 		{
+			name:           "editor allowed source metadata draft",
+			method:         http.MethodGet,
+			path:           "/v1/editorial/books/797/metadata-draft",
+			actor:          entity.User{ID: "editor-id", Role: entity.UserRoleEditor},
+			expectedStatus: http.StatusOK,
+		},
+		{
+			name:           "editor allowed source heading draft",
+			method:         http.MethodGet,
+			path:           "/v1/editorial/books/797/headings/10/draft",
+			actor:          entity.User{ID: "editor-id", Role: entity.UserRoleEditor},
+			expectedStatus: http.StatusOK,
+		},
+		{
 			name:           "editor forbidden publish",
 			method:         http.MethodPost,
 			path:           "/v1/editorial/production-projects/project-id/publish",
@@ -200,10 +229,90 @@ func TestEditorialCreateProductionProjectRejectsBadLang(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 }
 
+func TestEditorialCreateProductionProjectConflictIncludesExistingProjectID(t *testing.T) {
+	t.Parallel()
+
+	existingProjectID := "existing-project-id"
+	app := newProductionTestApp(
+		entity.User{ID: "editor-id", Role: entity.UserRoleEditor},
+		&fakeProductionEditorial{createProductionProjectErr: entity.NewProductionProjectExistsError(existingProjectID)},
+	)
+	req := httptest.NewRequestWithContext(
+		t.Context(),
+		http.MethodPost,
+		"/v1/editorial/production-projects",
+		strings.NewReader(`{"book_id":797,"lang":"id"}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := app.Test(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	var body struct {
+		Error             string `json:"error"`
+		ExistingProjectID string `json:"existing_project_id"`
+	}
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
+
+	assert.Equal(t, http.StatusConflict, resp.StatusCode)
+	assert.Equal(t, "production project already exists", body.Error)
+	assert.Equal(t, existingProjectID, body.ExistingProjectID)
+}
+
+func TestEditorialPublishProductionProjectBlockedIncludesBlockers(t *testing.T) {
+	t.Parallel()
+
+	app := newProductionTestApp(
+		entity.User{ID: "admin-id", Role: entity.UserRoleAdmin},
+		&fakeProductionEditorial{
+			publishProductionProjectErr: entity.ErrProductionNotReady,
+			publishCheck: entity.BookProductionPublishCheck{
+				Project:    entity.BookProductionProject{ID: "project-id", BookID: 797, Lang: "id"},
+				Ready:      false,
+				CanPublish: false,
+				BlockingErrors: []entity.BookProductionBlocking{{
+					Code:      "missing_required_asset",
+					AssetType: entity.ProductionAssetBookMetadata,
+					Message:   "metadata translation draft is missing",
+				}},
+			},
+		},
+	)
+	req := httptest.NewRequestWithContext(
+		t.Context(),
+		http.MethodPost,
+		"/v1/editorial/production-projects/project-id/publish",
+		nil,
+	)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := app.Test(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	var body struct {
+		Error          string                              `json:"error"`
+		CanPublish     bool                                `json:"can_publish"`
+		BlockingErrors []entity.BookProductionBlocking     `json:"blocking_errors"`
+		Missing        []entity.BookProductionMissingAsset `json:"missing"`
+	}
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
+
+	assert.Equal(t, http.StatusConflict, resp.StatusCode)
+	assert.Equal(t, "production project is not ready", body.Error)
+	assert.False(t, body.CanPublish)
+	require.Len(t, body.BlockingErrors, 1)
+	assert.Equal(t, entity.ProductionAssetBookMetadata, body.BlockingErrors[0].AssetType)
+}
+
 func newProductionPermissionTestApp(actor entity.User) *fiber.App {
+	return newProductionTestApp(actor, &fakeProductionEditorial{})
+}
+
+func newProductionTestApp(actor entity.User, editorial *fakeProductionEditorial) *fiber.App {
 	app := fiber.New()
 	user := &fakeAuthUser{}
-	editorial := &fakeProductionEditorial{}
 	controller := &V1{
 		u:         user,
 		editorial: editorial,
@@ -232,6 +341,8 @@ func newProductionPermissionTestApp(actor entity.User) *fiber.App {
 	editorialReview.Get("/production-projects/:id/publish-check", controller.editorialProductionPublishCheck)
 	editorialReview.Get("/production-projects/:id/draft-revisions", controller.editorialListProductionDraftRevisions)
 	editorialReview.Post("/production-projects/:id/draft-revisions/:revision_id/restore", controller.editorialRestoreProductionDraftRevision)
+	editorialReview.Get("/books/:book_id/metadata-draft", controller.editorialGetMetadataDraft)
+	editorialReview.Get("/books/:book_id/headings/:heading_id/draft", controller.editorialGetHeadingDraft)
 
 	editorialAdmin := app.Group(
 		"/v1/editorial",
@@ -245,6 +356,9 @@ func newProductionPermissionTestApp(actor entity.User) *fiber.App {
 
 type fakeProductionEditorial struct {
 	usecase.Editorial
+	createProductionProjectErr  error
+	publishProductionProjectErr error
+	publishCheck                entity.BookProductionPublishCheck
 }
 
 func (f *fakeProductionEditorial) ProductionProjects(
@@ -308,6 +422,10 @@ func (f *fakeProductionEditorial) CreateProductionProject(
 	string,
 	entity.BookProductionProject,
 ) (entity.BookProductionProject, error) {
+	if f.createProductionProjectErr != nil {
+		return entity.BookProductionProject{}, f.createProductionProjectErr
+	}
+
 	return entity.BookProductionProject{ID: "project-id", BookID: 797, Lang: "id"}, nil
 }
 
@@ -338,6 +456,10 @@ func (f *fakeProductionEditorial) ProductionPublishCheck(
 	context.Context,
 	string,
 ) (entity.BookProductionPublishCheck, error) {
+	if f.publishCheck.Project.ID != "" || len(f.publishCheck.BlockingErrors) > 0 {
+		return f.publishCheck, nil
+	}
+
 	return entity.BookProductionPublishCheck{
 		Project:    entity.BookProductionProject{ID: "project-id", BookID: 797, Lang: "id"},
 		Ready:      true,
@@ -380,9 +502,28 @@ func (f *fakeProductionEditorial) PublishProductionProject(
 	string,
 	string,
 ) (entity.BookProductionProject, error) {
+	if f.publishProductionProjectErr != nil {
+		return entity.BookProductionProject{}, f.publishProductionProjectErr
+	}
+
 	return entity.BookProductionProject{
 		ID:                "project-id",
 		WorkflowStatus:    entity.ProductionWorkflowPublished,
 		PublicationStatus: entity.ProductionPublicationPublished,
 	}, nil
+}
+
+func (f *fakeProductionEditorial) GetMetadataDraft(
+	context.Context,
+	int,
+) (entity.BookMetadataEdit, error) {
+	return entity.BookMetadataEdit{BookID: 797, Status: entity.EditStatusDraft}, nil
+}
+
+func (f *fakeProductionEditorial) GetHeadingDraft(
+	context.Context,
+	int,
+	int,
+) (entity.BookHeadingEdit, error) {
+	return entity.BookHeadingEdit{BookID: 797, HeadingID: 10, Status: entity.EditStatusDraft}, nil
 }

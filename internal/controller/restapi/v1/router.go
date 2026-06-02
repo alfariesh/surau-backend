@@ -178,9 +178,11 @@ func NewRoutes(
 		editorialReviewGroup.Put("/production-projects/:id/toc/:heading_id/audio-draft", r.editorialSaveSectionAudioDraft)
 		editorialReviewGroup.Delete("/production-projects/:id/toc/:heading_id/audio-draft", r.editorialDeleteSectionAudioDraft)
 		editorialReviewGroup.Post("/production-projects/:id/review", r.editorialReviewProductionAsset)
+		editorialReviewGroup.Get("/books/:book_id/metadata-draft", r.editorialGetMetadataDraft)
 		editorialReviewGroup.Put("/books/:book_id/metadata-draft", r.editorialSaveMetadataDraft)
 		editorialReviewGroup.Get("/books/:book_id/pages/:page_id", r.editorialGetPageEdit)
 		editorialReviewGroup.Put("/books/:book_id/pages/:page_id/draft", r.editorialSavePageDraft)
+		editorialReviewGroup.Get("/books/:book_id/headings/:heading_id/draft", r.editorialGetHeadingDraft)
 		editorialReviewGroup.Put("/books/:book_id/headings/:heading_id/draft", r.editorialSaveHeadingDraft)
 
 		editorialAdminGroup := editorialGroup.Group("", middleware.RequireRoles(u, entity.UserRoleAdmin))

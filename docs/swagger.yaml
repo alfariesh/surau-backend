@@ -205,6 +205,55 @@ definitions:
         example: "2026-01-01T00:00:00Z"
         type: string
     type: object
+  entity.BookHeadingEdit:
+    properties:
+      book_id:
+        example: 797
+        type: integer
+      content:
+        type: string
+      heading_id:
+        example: 10
+        type: integer
+      published_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      status:
+        example: draft
+        type: string
+      updated_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      updated_by:
+        type: string
+    type: object
+  entity.BookMetadataEdit:
+    properties:
+      book_id:
+        example: 797
+        type: integer
+      category_id:
+        type: integer
+      cover_url:
+        type: string
+      description:
+        type: string
+      display_title:
+        type: string
+      notes:
+        type: string
+      published_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      status:
+        example: draft
+        type: string
+      updated_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      updated_by:
+        type: string
+    type: object
   entity.BookMetadataTranslationEdit:
     properties:
       bibliography:
@@ -2927,6 +2976,15 @@ definitions:
         example: 42
         type: integer
     type: object
+  v1.ProductionProjectConflict:
+    properties:
+      error:
+        example: production project already exists
+        type: string
+      existing_project_id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+    type: object
   v1.ProductionProjectList:
     properties:
       projects:
@@ -2934,6 +2992,37 @@ definitions:
           $ref: '#/definitions/entity.BookProductionProject'
         type: array
       total:
+        example: 42
+        type: integer
+    type: object
+  v1.ProductionPublishBlocked:
+    properties:
+      blocking_errors:
+        items:
+          $ref: '#/definitions/entity.BookProductionBlocking'
+        type: array
+      can_publish:
+        example: false
+        type: boolean
+      complete_count:
+        example: 40
+        type: integer
+      error:
+        example: production project is not ready
+        type: string
+      missing:
+        items:
+          $ref: '#/definitions/entity.BookProductionMissingAsset'
+        type: array
+      missing_count:
+        example: 2
+        type: integer
+      project:
+        $ref: '#/definitions/entity.BookProductionProject'
+      ready:
+        example: false
+        type: boolean
+      required_count:
         example: 42
         type: integer
     type: object
@@ -5666,6 +5755,97 @@ paths:
       summary: List kitab categories
       tags:
       - kitab
+  /editorial/books/{book_id}/headings/{heading_id}/draft:
+    get:
+      description: Get the current source kitab heading title draft. Requires editor
+        or admin role.
+      operationId: editorial-get-source-heading-draft
+      parameters:
+      - description: Book ID
+        in: path
+        name: book_id
+        required: true
+        type: integer
+      - description: Heading ID
+        in: path
+        name: heading_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.BookHeadingEdit'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Get source heading draft
+      tags:
+      - editorial
+  /editorial/books/{book_id}/metadata-draft:
+    get:
+      description: Get the current source kitab metadata draft. Requires editor or
+        admin role.
+      operationId: editorial-get-source-metadata-draft
+      parameters:
+      - description: Book ID
+        in: path
+        name: book_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.BookMetadataEdit'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Get source metadata draft
+      tags:
+      - editorial
   /editorial/production-activity:
     get:
       description: List recent operational timeline events across production projects.
@@ -5957,7 +6137,7 @@ paths:
         "409":
           description: Conflict
           schema:
-            $ref: '#/definitions/v1.Error'
+            $ref: '#/definitions/v1.ProductionProjectConflict'
         "500":
           description: Internal Server Error
           schema:
@@ -6718,6 +6898,10 @@ paths:
           description: Not Found
           schema:
             $ref: '#/definitions/v1.Error'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/v1.ProductionPublishBlocked'
         "500":
           description: Internal Server Error
           schema:
