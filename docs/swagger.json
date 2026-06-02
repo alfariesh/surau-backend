@@ -7233,6 +7233,16 @@
                         "description": "Recitation ID. Defaults to the playable default recitation when include_audio=true.",
                         "name": "recitation_id",
                         "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "full",
+                            "reader_minimal"
+                        ],
+                        "type": "string",
+                        "description": "Response view. Empty/full returns the existing QuranAyah shape; reader_minimal returns v1.QuranReaderAyah.",
+                        "name": "view",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -7363,6 +7373,16 @@
                         "type": "string",
                         "description": "Recitation ID. Defaults to the playable default recitation when include_audio=true.",
                         "name": "recitation_id",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "full",
+                            "reader_minimal"
+                        ],
+                        "type": "string",
+                        "description": "Response view. Empty/full returns the existing QuranAyah shape; reader_minimal returns v1.QuranReaderAyah.",
+                        "name": "view",
                         "in": "query"
                     }
                 ],
@@ -7663,6 +7683,16 @@
                         "type": "string",
                         "description": "Recitation ID. Defaults to the playable default recitation when include_audio=true.",
                         "name": "recitation_id",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "full",
+                            "reader_minimal"
+                        ],
+                        "type": "string",
+                        "description": "Response view. Empty/full returns the existing QuranAyah shape; reader_minimal returns v1.QuranReaderAyah.",
+                        "name": "view",
                         "in": "query"
                     }
                 ],
@@ -12961,6 +12991,102 @@
                     "items": {
                         "$ref": "#/definitions/entity.QuranReadingProgress"
                     }
+                }
+            }
+        },
+        "v1.QuranReaderAyah": {
+            "type": "object",
+            "properties": {
+                "audio": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/v1.QuranReaderAyahAudioTrack"
+                    }
+                },
+                "ayah_key": {
+                    "type": "string",
+                    "example": "73:4"
+                },
+                "ayah_number": {
+                    "type": "integer",
+                    "example": 4
+                },
+                "juz_number": {
+                    "type": "integer",
+                    "example": 29
+                },
+                "page_number": {
+                    "type": "integer",
+                    "example": 574
+                },
+                "surah_id": {
+                    "type": "integer",
+                    "example": 73
+                },
+                "text_qpc_hafs": {
+                    "type": "string"
+                },
+                "translation": {
+                    "$ref": "#/definitions/v1.QuranReaderAyahTranslation"
+                }
+            }
+        },
+        "v1.QuranReaderAyahAudioSegment": {
+            "type": "object",
+            "properties": {
+                "ayah_key": {
+                    "type": "string",
+                    "example": "73:4"
+                },
+                "duration_ms": {
+                    "type": "integer",
+                    "example": 3000
+                },
+                "segment_index": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "timestamp_from_ms": {
+                    "type": "integer",
+                    "example": 1200
+                },
+                "timestamp_to_ms": {
+                    "type": "integer",
+                    "example": 4200
+                }
+            }
+        },
+        "v1.QuranReaderAyahAudioTrack": {
+            "type": "object",
+            "properties": {
+                "recitation_id": {
+                    "type": "string",
+                    "example": "qul-recitation"
+                },
+                "segments": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/v1.QuranReaderAyahAudioSegment"
+                    }
+                },
+                "track_key": {
+                    "type": "string",
+                    "example": "73:4"
+                },
+                "track_type": {
+                    "type": "string",
+                    "example": "ayah"
+                },
+                "url": {
+                    "type": "string"
+                }
+            }
+        },
+        "v1.QuranReaderAyahTranslation": {
+            "type": "object",
+            "properties": {
+                "text": {
+                    "type": "string"
                 }
             }
         },

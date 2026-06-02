@@ -35,6 +35,7 @@ func TestQuranRoutes(t *testing.T) {
 		{name: "juz navigation", path: "/v1/quran/juz?lang=id", wantStatus: http.StatusOK, wantBody: `"kind":"juz"`},
 		{name: "juz ayahs", path: "/v1/quran/juz/29/ayahs?include_translation=false&include_audio=true&recitation_id=rec-1", wantStatus: http.StatusOK, wantBody: `"recitation_id":"rec-1"`},
 		{name: "juz invalid include audio", path: "/v1/quran/juz/29/ayahs?include_audio=wat", wantStatus: http.StatusBadRequest, wantBody: `"invalid include_audio"`},
+		{name: "juz invalid view", path: "/v1/quran/juz/29/ayahs?view=compact", wantStatus: http.StatusBadRequest, wantBody: `"invalid view"`},
 		{name: "juz invalid number", path: "/v1/quran/juz/bad/ayahs", wantStatus: http.StatusBadRequest, wantBody: `"invalid juz_number"`},
 		{name: "hizb navigation", path: "/v1/quran/hizbs?lang=id", wantStatus: http.StatusOK, wantBody: `"kind":"hizb"`},
 		{name: "hizb ayahs", path: "/v1/quran/hizbs/57/ayahs", wantStatus: http.StatusOK, wantBody: `"hizb_number":57`},
@@ -44,6 +45,7 @@ func TestQuranRoutes(t *testing.T) {
 		{name: "ayah invalid include audio", path: "/v1/quran/ayahs/73:1?include_audio=wat", wantStatus: http.StatusBadRequest, wantBody: `"invalid include_audio"`},
 		{name: "surahs invalid include info", path: "/v1/quran/surahs?include_info=wat", wantStatus: http.StatusBadRequest, wantBody: `"invalid include_info"`},
 		{name: "surah ayahs", path: "/v1/quran/surahs/73/ayahs?from=1&to=1&recitation_id=rec-1", wantStatus: http.StatusOK, wantBody: `"text_qpc_hafs"`},
+		{name: "surah ayahs invalid view", path: "/v1/quran/surahs/73/ayahs?view=compact", wantStatus: http.StatusBadRequest, wantBody: `"invalid view"`},
 		{name: "search", path: "/v1/quran/search?q=muzammil", wantStatus: http.StatusOK, wantBody: `"results"`},
 		{name: "book refs", path: "/v1/books/797/quran-references", wantStatus: http.StatusOK, wantBody: `"references"`},
 		{name: "unsupported lang", path: "/v1/quran/ayahs/73:1?lang=fr", wantStatus: http.StatusBadRequest, wantBody: `"unsupported language"`},
@@ -63,6 +65,116 @@ func TestQuranRoutes(t *testing.T) {
 			assert.Contains(t, string(body), tt.wantBody)
 			if tt.wantNotBody != "" {
 				assert.NotContains(t, string(body), tt.wantNotBody)
+			}
+		})
+	}
+}
+
+func TestQuranReaderMinimalView(t *testing.T) {
+	t.Parallel()
+
+	app := newQuranTestApp(&fakeQuran{})
+
+	tests := []struct {
+		name         string
+		path         string
+		wantBody     []string
+		wantNotBody  []string
+		wantHTTPCode int
+	}{
+		{
+			name: "surah ayahs include compact reader fields",
+			path: "/v1/quran/surahs/73/ayahs?view=reader_minimal&include_audio=true&recitation_id=rec-1",
+			wantBody: []string{
+				`"surah_id":73`,
+				`"ayah_number":1`,
+				`"ayah_key":"73:1"`,
+				`"text_qpc_hafs"`,
+				`"juz_number":29`,
+				`"page_number":574`,
+				`"translation":{"text":"Wahai orang yang berselimut!"}`,
+				`"recitation_id":"rec-1"`,
+				`"url":"https://cdn.example/73-1.mp3"`,
+				`"segment_index":1`,
+				`"timestamp_from_ms":1000`,
+				`"duration_ms":3000`,
+			},
+			wantNotBody: []string{
+				`"text_imlaei_simple"`,
+				`"search_text"`,
+				`"script_type"`,
+				`"font_family"`,
+				`"hizb_number"`,
+				`"source_id"`,
+				`"available_translation_langs"`,
+				`"translation_missing"`,
+				`"availability"`,
+				`"metadata"`,
+				`"updated_at"`,
+				`"audio_url"`,
+				`"public_url"`,
+				`"r2_key"`,
+			},
+			wantHTTPCode: http.StatusOK,
+		},
+		{
+			name: "juz ayahs support compact view",
+			path: "/v1/quran/juz/29/ayahs?view=reader_minimal&include_audio=true&recitation_id=rec-1",
+			wantBody: []string{
+				`"juz_number":29`,
+				`"url":"https://cdn.example/73-1.mp3"`,
+			},
+			wantNotBody: []string{
+				`"hizb_number"`,
+				`"metadata"`,
+				`"updated_at"`,
+			},
+			wantHTTPCode: http.StatusOK,
+		},
+		{
+			name: "hizb ayahs support compact view",
+			path: "/v1/quran/hizbs/57/ayahs?view=reader_minimal",
+			wantBody: []string{
+				`"surah_id":73`,
+				`"translation":{"text":"Wahai orang yang berselimut!"}`,
+			},
+			wantNotBody: []string{
+				`"hizb_number"`,
+				`"audio"`,
+				`"metadata"`,
+				`"updated_at"`,
+			},
+			wantHTTPCode: http.StatusOK,
+		},
+		{
+			name: "translation follows include translation",
+			path: "/v1/quran/surahs/73/ayahs?view=reader_minimal&include_translation=false",
+			wantBody: []string{
+				`"text_qpc_hafs"`,
+			},
+			wantNotBody: []string{
+				`"translation"`,
+			},
+			wantHTTPCode: http.StatusOK,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			resp, err := app.Test(httptest.NewRequest(http.MethodGet, tt.path, nil))
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantHTTPCode, resp.StatusCode)
+
+			body, err := io.ReadAll(resp.Body)
+			require.NoError(t, err)
+			bodyText := string(body)
+			for _, want := range tt.wantBody {
+				assert.Contains(t, bodyText, want)
+			}
+			for _, notWant := range tt.wantNotBody {
+				assert.NotContains(t, bodyText, notWant)
 			}
 		})
 	}
@@ -191,14 +303,8 @@ func (f *fakeQuran) Ayah(
 		return entity.QuranAyah{}, entity.ErrQuranRecitationNotFound
 	}
 
-	text := "يَـٰٓأَيُّهَا ٱلْمُزَّمِّلُ"
-	ayah := entity.QuranAyah{SurahID: 73, AyahNumber: 1, AyahKey: ayahKey, TextQPCHafs: &text}
-	if includeAudio {
-		if recitationID == "" {
-			recitationID = "rec-default"
-		}
-		ayah.Audio = []entity.QuranAudioTrack{{RecitationID: recitationID, TrackType: "ayah", TrackKey: ayahKey, SurahID: 73}}
-	}
+	ayah := fakeQuranAyah(73, true, includeAudio, recitationID)
+	ayah.AyahKey = ayahKey
 
 	return ayah, nil
 }
@@ -210,13 +316,11 @@ func (f *fakeQuran) SurahAyahs(
 	_ int,
 	_ string,
 	_ string,
-	_ bool,
-	_ bool,
-	_ string,
+	includeTranslation bool,
+	includeAudio bool,
+	recitationID string,
 ) ([]entity.QuranAyah, error) {
-	text := "يَـٰٓأَيُّهَا ٱلْمُزَّمِّلُ"
-
-	return []entity.QuranAyah{{SurahID: surahID, AyahNumber: 1, AyahKey: "73:1", TextQPCHafs: &text}}, nil
+	return []entity.QuranAyah{fakeQuranAyah(surahID, includeTranslation, includeAudio, recitationID)}, nil
 }
 
 func (f *fakeQuran) Search(
@@ -274,16 +378,88 @@ func fakeNavigationSegment(kind string, number int) entity.QuranNavigationSegmen
 }
 
 func fakeNavigationAyahs(kind string, number int, includeAudio bool, recitationID string) ([]entity.QuranAyah, error) {
-	text := "يَـٰٓأَيُّهَا ٱلْمُزَّمِّلُ"
-	ayah := entity.QuranAyah{SurahID: 73, AyahNumber: 1, AyahKey: "73:1", TextQPCHafs: &text}
+	ayah := fakeQuranAyah(73, true, includeAudio, recitationID)
 	if kind == "juz" {
 		ayah.JuzNumber = &number
 	} else {
 		ayah.HizbNumber = &number
 	}
-	if includeAudio {
-		ayah.Audio = []entity.QuranAudioTrack{{RecitationID: recitationID, TrackType: "ayah", TrackKey: "73:1", SurahID: 73}}
-	}
 
 	return []entity.QuranAyah{ayah}, nil
+}
+
+func fakeQuranAyah(surahID int, includeTranslation bool, includeAudio bool, recitationID string) entity.QuranAyah {
+	text := "يَـٰٓأَيُّهَا ٱلْمُزَّمِّلُ"
+	imlaei := "يا أيها المزمل"
+	searchText := "يا ايها المزمل"
+	scriptType := "qpc"
+	fontFamily := "qpc-hafs"
+	ayahNumber := 1
+	pageNumber := 574
+	juzNumber := 29
+	hizbNumber := 57
+	ayah := entity.QuranAyah{
+		SurahID:          surahID,
+		AyahNumber:       ayahNumber,
+		AyahKey:          "73:1",
+		TextQPCHafs:      &text,
+		TextImlaeiSimple: &imlaei,
+		SearchText:       &searchText,
+		ScriptType:       &scriptType,
+		FontFamily:       &fontFamily,
+		PageNumber:       &pageNumber,
+		JuzNumber:        &juzNumber,
+		HizbNumber:       &hizbNumber,
+		Metadata:         entity.RawJSON(`{"debug":true}`),
+	}
+	if includeTranslation {
+		ayah.Translation = &entity.QuranTranslation{
+			SourceID:  "qul-kfgqpc-id-simple",
+			Lang:      "id",
+			Text:      "Wahai orang yang berselimut!",
+			Footnotes: entity.RawJSON(`[]`),
+			Metadata:  entity.RawJSON(`{"debug":true}`),
+		}
+	}
+	if includeAudio {
+		ayah.Audio = []entity.QuranAudioTrack{fakeQuranAudioTrack(surahID, ayahNumber, recitationID)}
+	}
+
+	return ayah
+}
+
+func fakeQuranAudioTrack(surahID int, ayahNumber int, recitationID string) entity.QuranAudioTrack {
+	if recitationID == "" {
+		recitationID = "rec-default"
+	}
+
+	audioURL := "https://source.example/73-1.mp3"
+	publicURL := "https://cdn.example/73-1.mp3"
+	r2Key := "quran/73-1.mp3"
+	durationMS := 3000
+	mimeType := "audio/mpeg"
+
+	return entity.QuranAudioTrack{
+		RecitationID: recitationID,
+		TrackType:    "ayah",
+		TrackKey:     "73:1",
+		SurahID:      surahID,
+		AyahNumber:   &ayahNumber,
+		AudioURL:     &audioURL,
+		R2Key:        &r2Key,
+		PublicURL:    &publicURL,
+		DurationMS:   &durationMS,
+		MIMEType:     &mimeType,
+		Segments: []entity.QuranAudioSegment{
+			{
+				SegmentIndex:    1,
+				AyahKey:         "73:1",
+				TimestampFromMS: 1000,
+				TimestampToMS:   4000,
+				DurationMS:      &durationMS,
+				Metadata:        entity.RawJSON(`{"debug":true}`),
+			},
+		},
+		Metadata: entity.RawJSON(`{"debug":true}`),
+	}
 }

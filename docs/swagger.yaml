@@ -3107,6 +3107,73 @@ definitions:
           $ref: '#/definitions/entity.QuranReadingProgress'
         type: array
     type: object
+  v1.QuranReaderAyah:
+    properties:
+      audio:
+        items:
+          $ref: '#/definitions/v1.QuranReaderAyahAudioTrack'
+        type: array
+      ayah_key:
+        example: "73:4"
+        type: string
+      ayah_number:
+        example: 4
+        type: integer
+      juz_number:
+        example: 29
+        type: integer
+      page_number:
+        example: 574
+        type: integer
+      surah_id:
+        example: 73
+        type: integer
+      text_qpc_hafs:
+        type: string
+      translation:
+        $ref: '#/definitions/v1.QuranReaderAyahTranslation'
+    type: object
+  v1.QuranReaderAyahAudioSegment:
+    properties:
+      ayah_key:
+        example: "73:4"
+        type: string
+      duration_ms:
+        example: 3000
+        type: integer
+      segment_index:
+        example: 1
+        type: integer
+      timestamp_from_ms:
+        example: 1200
+        type: integer
+      timestamp_to_ms:
+        example: 4200
+        type: integer
+    type: object
+  v1.QuranReaderAyahAudioTrack:
+    properties:
+      recitation_id:
+        example: qul-recitation
+        type: string
+      segments:
+        items:
+          $ref: '#/definitions/v1.QuranReaderAyahAudioSegment'
+        type: array
+      track_key:
+        example: "73:4"
+        type: string
+      track_type:
+        example: ayah
+        type: string
+      url:
+        type: string
+    type: object
+  v1.QuranReaderAyahTranslation:
+    properties:
+      text:
+        type: string
+    type: object
   v1.QuranSearchList:
     properties:
       results:
@@ -8439,6 +8506,14 @@ paths:
         in: query
         name: recitation_id
         type: string
+      - description: Response view. Empty/full returns the existing QuranAyah shape;
+          reader_minimal returns v1.QuranReaderAyah.
+        enum:
+        - full
+        - reader_minimal
+        in: query
+        name: view
+        type: string
       produces:
       - application/json
       responses:
@@ -8529,6 +8604,14 @@ paths:
           include_audio=true.
         in: query
         name: recitation_id
+        type: string
+      - description: Response view. Empty/full returns the existing QuranAyah shape;
+          reader_minimal returns v1.QuranReaderAyah.
+        enum:
+        - full
+        - reader_minimal
+        in: query
+        name: view
         type: string
       produces:
       - application/json
@@ -8740,6 +8823,14 @@ paths:
           include_audio=true.
         in: query
         name: recitation_id
+        type: string
+      - description: Response view. Empty/full returns the existing QuranAyah shape;
+          reader_minimal returns v1.QuranReaderAyah.
+        enum:
+        - full
+        - reader_minimal
+        in: query
+        name: view
         type: string
       produces:
       - application/json

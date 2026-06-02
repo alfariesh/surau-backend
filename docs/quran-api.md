@@ -742,10 +742,10 @@ If the selected/default recitation is `mode="surah"`, the audio item can be a fu
 ### 6. List Ayahs In A Surah
 
 ```http
-GET /v1/quran/surahs/{surah_id}/ayahs?from=&to=&lang=id&include_translation=true&include_audio=false&recitation_id=
+GET /v1/quran/surahs/{surah_id}/ayahs?from=&to=&lang=id&include_translation=true&include_audio=false&recitation_id=&view=
 ```
 
-Use this for the main Quran reader screen.
+Use this for the main Quran reader screen. The default response stays the full `QuranAyah[]` shape. Pass `view=reader_minimal` for the compact reader payload.
 
 ### Query Params
 
@@ -758,6 +758,7 @@ Use this for the main Quran reader screen.
 | `include_translation` | boolean | `true` | Set false for Arabic-only views. |
 | `include_audio` | boolean | `false` | Adds audio tracks when true. |
 | `recitation_id` | string | empty | If empty and audio is requested, backend uses default recitation. |
+| `view` | string | `full` | `full` or empty returns the existing `QuranAyah[]`; `reader_minimal` returns compact reader fields only. |
 
 ### Range Behavior
 
@@ -791,6 +792,45 @@ Status: `200`
 ]
 ```
 
+### Reader Minimal Response
+
+When `view=reader_minimal`, each ayah omits import/debug/localization/search fields and returns only reader-display data:
+
+```json
+[
+  {
+    "surah_id": 73,
+    "ayah_number": 1,
+    "ayah_key": "73:1",
+    "text_qpc_hafs": "يَٰٓأَيُّهَا ٱلْمُزَّمِّلُ",
+    "juz_number": 29,
+    "page_number": 574,
+    "translation": {
+      "text": "Wahai orang yang berselimut!"
+    },
+    "audio": [
+      {
+        "recitation_id": "qul-ayah-recitation-mishari-rashid-al-afasy-murattal-hafs-953",
+        "track_type": "ayah",
+        "track_key": "73:1",
+        "url": "https://cdn.example/quran/73-1.mp3",
+        "segments": [
+          {
+            "segment_index": 1,
+            "ayah_key": "73:1",
+            "timestamp_from_ms": 1200,
+            "timestamp_to_ms": 4200,
+            "duration_ms": 3000
+          }
+        ]
+      }
+    ]
+  }
+]
+```
+
+`translation` is omitted when translation is not requested or not available. `audio` is omitted when `include_audio=false` or no playable URL exists. Audio `url` is already resolved from `public_url` fallback to source `audio_url`.
+
 ### Errors
 
 | Status | Body | Cause |
@@ -800,6 +840,7 @@ Status: `200`
 | `400` | `{"error":"invalid to"}` | `to` is not a positive integer. |
 | `400` | `{"error":"invalid include_translation"}` | Boolean query value cannot be parsed. |
 | `400` | `{"error":"invalid include_audio"}` | Boolean query value cannot be parsed. |
+| `400` | `{"error":"invalid view"}` | `view` is not empty, `full`, or `reader_minimal`. |
 | `400` | `{"error":"invalid quran range"}` | Range is logically invalid. |
 | `404` | `{"error":"quran surah not found"}` | Surah is outside `1..114` or not imported. |
 | `404` | `{"error":"quran recitation not found"}` | Explicit `recitation_id` does not exist. |
@@ -844,11 +885,11 @@ Status: `200`
 ### Navigation Ayahs
 
 ```http
-GET /v1/quran/juz/{juz_number}/ayahs?lang=id&translation_source=&include_translation=true&include_audio=false&recitation_id=
-GET /v1/quran/hizbs/{hizb_number}/ayahs?lang=id&translation_source=&include_translation=true&include_audio=false&recitation_id=
+GET /v1/quran/juz/{juz_number}/ayahs?lang=id&translation_source=&include_translation=true&include_audio=false&recitation_id=&view=
+GET /v1/quran/hizbs/{hizb_number}/ayahs?lang=id&translation_source=&include_translation=true&include_audio=false&recitation_id=&view=
 ```
 
-These endpoints return the same `QuranAyah[]` shape and audio behavior as `/v1/quran/surahs/{surah_id}/ayahs`.
+These endpoints return the same full or `reader_minimal` ayah shape and audio behavior as `/v1/quran/surahs/{surah_id}/ayahs`.
 
 ### Query Params
 
@@ -859,6 +900,7 @@ These endpoints return the same `QuranAyah[]` shape and audio behavior as `/v1/q
 | `include_translation` | boolean | `true` | Set false for Arabic-only views. |
 | `include_audio` | boolean | `false` | Adds audio tracks when true. |
 | `recitation_id` | string | empty | If empty and audio is requested, backend uses default recitation. |
+| `view` | string | `full` | `full` or empty returns the existing `QuranAyah[]`; `reader_minimal` returns compact reader fields only. |
 
 ### Errors
 
@@ -868,6 +910,7 @@ These endpoints return the same `QuranAyah[]` shape and audio behavior as `/v1/q
 | `400` | `{"error":"invalid hizb_number"}` | Hizb path value is not an integer. |
 | `400` | `{"error":"invalid include_translation"}` | Boolean query value cannot be parsed. |
 | `400` | `{"error":"invalid include_audio"}` | Boolean query value cannot be parsed. |
+| `400` | `{"error":"invalid view"}` | `view` is not empty, `full`, or `reader_minimal`. |
 | `400` | `{"error":"invalid quran range"}` | Juz is outside `1..30` or hizb is outside `1..60`. |
 | `404` | `{"error":"quran navigation not found"}` | Number is valid but imported ayah metadata has no rows for that segment. |
 | `404` | `{"error":"quran recitation not found"}` | Explicit `recitation_id` does not exist. |
@@ -1146,6 +1189,41 @@ type QuranAyah = {
 
 `audio` is omitted when `include_audio=false` or no playable track is available. FE should read it as `ayah.audio ?? []`.
 
+### QuranReaderAyah
+
+Returned only by ayah list endpoints when `view=reader_minimal`.
+
+```ts
+type QuranReaderAyah = {
+  surah_id: number;
+  ayah_number: number;
+  ayah_key: string;
+  text_qpc_hafs?: string;
+  juz_number?: number;
+  page_number?: number;
+  translation?: {
+    text: string;
+  };
+  audio?: QuranReaderAyahAudioTrack[];
+};
+
+type QuranReaderAyahAudioTrack = {
+  recitation_id: string;
+  track_type: "ayah" | "surah" | string;
+  track_key: string;
+  url: string;
+  segments?: QuranReaderAyahAudioSegment[];
+};
+
+type QuranReaderAyahAudioSegment = {
+  segment_index: number;
+  ayah_key: string;
+  timestamp_from_ms: number;
+  timestamp_to_ms: number;
+  duration_ms?: number;
+};
+```
+
 ### AvailabilityDecision
 
 ```ts
@@ -1323,7 +1401,7 @@ type BookQuranReference = {
 
 1. Fetch `GET /v1/quran/surahs/{surah_id}?lang=id` for header/info.
 2. Fetch `GET /v1/quran/translation-sources?lang=id` if the UI lets users choose translation sources.
-3. Fetch `GET /v1/quran/surahs/{surah_id}/ayahs?lang=id&include_translation=true`.
+3. Fetch `GET /v1/quran/surahs/{surah_id}/ayahs?lang=id&include_translation=true&view=reader_minimal`.
 4. If audio is enabled, call the ayah list with `include_audio=true&recitation_id={selectedRecitationID}`.
 5. Render Arabic from `text_qpc_hafs`, translation from `translation.text` only when `translation` is not null.
 6. Use `availability.translation.action` for translation tabs, empty states, and language offers.
@@ -1332,7 +1410,7 @@ type BookQuranReference = {
 ### Juz / Hizb Reader Page
 
 1. Fetch `GET /v1/quran/juz?lang=id` or `GET /v1/quran/hizbs?lang=id` for the navigation picker.
-2. Fetch `GET /v1/quran/juz/{juz_number}/ayahs?lang=id&include_translation=true` or the hizb equivalent for the reader body.
+2. Fetch `GET /v1/quran/juz/{juz_number}/ayahs?lang=id&include_translation=true&view=reader_minimal` or the hizb equivalent for the reader body.
 3. Reuse the same translation and audio controls as the surah reader page.
 4. If a valid segment returns `404 quran navigation not found`, show a data-missing state; it means the QPC Hafs import did not include that navigation metadata.
 

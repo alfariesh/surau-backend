@@ -463,13 +463,13 @@ Endpoint ringkas:
 | --- | --- | --- | --- |
 | `GET` | `/v1/quran/surahs?lang=id` | Public | Surah index. |
 | `GET` | `/v1/quran/surahs/{surah_id}?lang=id` | Public | Detail/header surah. |
-| `GET` | `/v1/quran/surahs/{surah_id}/ayahs?lang=id&include_translation=true&include_audio=false` | Public | Ayah list untuk reader. |
+| `GET` | `/v1/quran/surahs/{surah_id}/ayahs?lang=id&include_translation=true&include_audio=false&view=reader_minimal` | Public | Ayah list compact untuk reader. |
 | `GET` | `/v1/quran/ayahs/{ayah_key}?lang=id&include_audio=true` | Public | Detail satu ayah. |
 | `GET` | `/v1/quran/search?q=rahmat&lang=id&limit=20&offset=0` | Public | Search Quran. |
 | `GET` | `/v1/quran/juz` | Public | List juz. |
-| `GET` | `/v1/quran/juz/{juz_number}/ayahs?lang=id` | Public | Reader by juz. |
+| `GET` | `/v1/quran/juz/{juz_number}/ayahs?lang=id&view=reader_minimal` | Public | Reader by juz. |
 | `GET` | `/v1/quran/hizbs` | Public | List hizb. |
-| `GET` | `/v1/quran/hizbs/{hizb_number}/ayahs?lang=id` | Public | Reader by hizb. |
+| `GET` | `/v1/quran/hizbs/{hizb_number}/ayahs?lang=id&view=reader_minimal` | Public | Reader by hizb. |
 | `GET` | `/v1/quran/recitations` | Public | Pilihan audio/reciter. |
 | `GET` | `/v1/quran/translation-sources?lang=id` | Public | Pilihan sumber terjemahan. |
 
@@ -484,6 +484,7 @@ Quran query params penting:
 | `include_translation` | Ayah list, juz/hizb ayahs | `true` | Single ayah endpoint tidak memakai param ini. |
 | `include_audio` | Ayah list, single ayah, juz/hizb ayahs | `false` | `true` menambahkan `audio[]` jika tersedia. |
 | `recitation_id` | Endpoint dengan `include_audio=true` | playable default | Unknown explicit ID menghasilkan `404 quran recitation not found`. |
+| `view` | Ayah list, juz/hizb ayahs | `full` | Gunakan `reader_minimal` untuk payload reader compact; default tetap response lama. |
 | `q` | `/quran/search` | required | Trim dan encode query. |
 
 Recommended Quran screen bootstrap:
@@ -491,13 +492,14 @@ Recommended Quran screen bootstrap:
 1. `GET /v1/quran/surahs?lang={lang}` untuk index.
 2. `GET /v1/quran/translation-sources?lang={lang}` jika user bisa memilih sumber terjemahan.
 3. `GET /v1/quran/recitations` jika audio enabled.
-4. `GET /v1/quran/surahs/{surah_id}/ayahs?lang={lang}&translation_source={optional}&include_translation=true&include_audio={boolean}&recitation_id={optional}` untuk reader.
+4. `GET /v1/quran/surahs/{surah_id}/ayahs?lang={lang}&translation_source={optional}&include_translation=true&include_audio={boolean}&recitation_id={optional}&view=reader_minimal` untuk reader.
 
 Display rules:
 
 - Selalu render Arabic Quran text dari `text_qpc_hafs`.
 - Jika `text_qpc_hafs` kosong, pakai `text_imlaei_simple`.
 - Render `translation.text` hanya jika `translation !== null`.
+- Untuk ayah list reader baru, prefer `view=reader_minimal`; `translation` dan `audio` akan omitted ketika tidak diminta atau tidak tersedia.
 - Untuk `lang=ar`, backend mengembalikan Arabic-only mode: translation `null`, dan translation tab sebaiknya disembunyikan.
 - Jangan render Indonesian sebagai fallback English. Gunakan `available_translation_langs` untuk menawarkan switch bahasa.
 - Search result response adalah `{results,total}`; setiap `result.ayah` tetap mengikuti exact requested-language display rules.
@@ -506,6 +508,7 @@ Display rules:
 Audio rules:
 
 - Gunakan `public_url ?? audio_url` sebagai playable URL.
+- Pada `view=reader_minimal`, gunakan langsung `audio[].url`.
 - `public_url` lebih disukai karena app-owned CDN.
 - `audio_url` tetap valid untuk local/dev fallback.
 - `r2_key` adalah storage metadata, bukan URL browser/player.
@@ -1047,7 +1050,7 @@ Recommended data:
 
 1. Ambil selected lang.
 2. Ambil user recitation preference dari profile.
-3. `GET /v1/quran/surahs/{surah_id}/ayahs?lang={lang}&translation_source={source_id}&include_translation=true&include_audio=true&recitation_id={recitation_id}`.
+3. `GET /v1/quran/surahs/{surah_id}/ayahs?lang={lang}&translation_source={source_id}&include_translation=true&include_audio=true&recitation_id={recitation_id}&view=reader_minimal`.
 4. Jika logged-in, `GET /v1/me/quran/progress/surahs/{surah_id}`; jika `404`, mulai dari ayah pertama.
 5. Render Arabic, translation, audio.
 6. Debounced `PUT /v1/me/quran/progress`.
@@ -1266,7 +1269,7 @@ MVP mobile paling kecil:
 2. `GET /v1/user/profile`
 3. `PATCH /v1/user/onboarding`
 4. `GET /v1/quran/surahs`
-5. `GET /v1/quran/surahs/{surah_id}/ayahs`
+5. `GET /v1/quran/surahs/{surah_id}/ayahs?view=reader_minimal`
 6. `GET /v1/books`
 7. `GET /v1/books/{book_id}`
 8. `GET /v1/books/{book_id}/toc`

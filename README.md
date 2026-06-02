@@ -41,11 +41,11 @@ Public Quran:
 - `GET /v1/quran/recitations`
 - `GET /v1/quran/translation-sources?lang=id`
 - `GET /v1/quran/juz?lang=id`
-- `GET /v1/quran/juz/{juz_number}/ayahs?lang=id&translation_source=&include_translation=true&include_audio=false&recitation_id=`
+- `GET /v1/quran/juz/{juz_number}/ayahs?lang=id&translation_source=&include_translation=true&include_audio=false&recitation_id=&view=reader_minimal`
 - `GET /v1/quran/hizbs?lang=id`
-- `GET /v1/quran/hizbs/{hizb_number}/ayahs?lang=id&translation_source=&include_translation=true&include_audio=false&recitation_id=`
+- `GET /v1/quran/hizbs/{hizb_number}/ayahs?lang=id&translation_source=&include_translation=true&include_audio=false&recitation_id=&view=reader_minimal`
 - `GET /v1/quran/ayahs/{ayah_key}?lang=id&translation_source=qul-kfgqpc-id-simple&include_audio=false&recitation_id=`
-- `GET /v1/quran/surahs/{surah_id}/ayahs?from=&to=&lang=id&include_translation=true&include_audio=false&recitation_id=`
+- `GET /v1/quran/surahs/{surah_id}/ayahs?from=&to=&lang=id&include_translation=true&include_audio=false&recitation_id=&view=reader_minimal`
 - `GET /v1/quran/search?q=&lang=id&limit=&offset=`
 
 Quran `lang` follows the same contract as kitab: supported `ar`, `id`, and `en`; empty defaults to `id`; region tags normalize to the primary language; unsupported explicit languages return `400 {"error":"unsupported language"}`. Quran Arabic text is always canonical source content. Translation and surah info are exact-language only; if `lang=en` is missing but `id` exists, the response keeps `translation`/`info` empty and exposes availability metadata for FE language offers.
