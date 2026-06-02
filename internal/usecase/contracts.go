@@ -24,6 +24,8 @@ type (
 		Login(ctx context.Context, email, password string) (string, error)
 		GetUser(ctx context.Context, userID string) (entity.User, error)
 		GetUserAccount(ctx context.Context, userID string) (entity.UserAccount, error)
+		AdminUsers(ctx context.Context, query, role string, emailVerified *bool, limit, offset int) ([]entity.UserAccount, int, error)
+		AdminUserActivity(ctx context.Context, userID string, limit, offset int) ([]entity.UserActivity, int, error)
 		CompleteOnboarding(
 			ctx context.Context,
 			userID string,
@@ -39,7 +41,7 @@ type (
 			userID string,
 			patch entity.UserPreferencesPatch,
 		) (entity.UserAccount, error)
-		SetRoleByEmail(ctx context.Context, email, role string) (entity.User, error)
+		SetRoleByEmail(ctx context.Context, actorID, actorEmail, email, role string) (entity.User, error)
 		VerifyEmail(ctx context.Context, token string) error
 		ResendEmailVerification(ctx context.Context, email string) error
 		ForgotPassword(ctx context.Context, email string) error

@@ -329,6 +329,38 @@ func (mr *MockUserRepoMockRecorder) GetVerificationTokenByHash(ctx, tokenHash an
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetVerificationTokenByHash", reflect.TypeOf((*MockUserRepo)(nil).GetVerificationTokenByHash), ctx, tokenHash)
 }
 
+// ListAccounts mocks base method.
+func (m *MockUserRepo) ListAccounts(ctx context.Context, filter repo.UserFilter) ([]entity.UserAccount, int, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListAccounts", ctx, filter)
+	ret0, _ := ret[0].([]entity.UserAccount)
+	ret1, _ := ret[1].(int)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
+}
+
+// ListAccounts indicates an expected call of ListAccounts.
+func (mr *MockUserRepoMockRecorder) ListAccounts(ctx, filter any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListAccounts", reflect.TypeOf((*MockUserRepo)(nil).ListAccounts), ctx, filter)
+}
+
+// ListUserActivity mocks base method.
+func (m *MockUserRepo) ListUserActivity(ctx context.Context, filter repo.UserActivityFilter) ([]entity.UserActivity, int, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListUserActivity", ctx, filter)
+	ret0, _ := ret[0].([]entity.UserActivity)
+	ret1, _ := ret[1].(int)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
+}
+
+// ListUserActivity indicates an expected call of ListUserActivity.
+func (mr *MockUserRepoMockRecorder) ListUserActivity(ctx, filter any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListUserActivity", reflect.TypeOf((*MockUserRepo)(nil).ListUserActivity), ctx, filter)
+}
+
 // RecordAuthLoginFingerprint mocks base method.
 func (m *MockUserRepo) RecordAuthLoginFingerprint(ctx context.Context, fingerprint entity.AuthLoginFingerprint) (bool, error) {
 	m.ctrl.T.Helper()
@@ -444,10 +476,10 @@ func (mr *MockUserRepoMockRecorder) RevokeUnusedVerificationTokens(ctx, userID a
 }
 
 // SetRoleByEmail mocks base method.
-func (m *MockUserRepo) SetRoleByEmail(ctx context.Context, email, role string) (entity.User, error) {
+func (m *MockUserRepo) SetRoleByEmail(ctx context.Context, email, role string) (entity.UserRoleChange, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "SetRoleByEmail", ctx, email, role)
-	ret0, _ := ret[0].(entity.User)
+	ret0, _ := ret[0].(entity.UserRoleChange)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }

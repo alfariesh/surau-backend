@@ -355,13 +355,17 @@ type fakeAuthUser struct {
 	onboardingErr         error
 	preferencesErr        error
 	roleErr               error
+	adminUsersErr         error
+	adminActivityErr      error
 	requestEmailChangeErr error
 	verifyEmailChangeErr  error
 	deleteAccountErr      error
 
-	roleEmail string
-	role      string
-	roleUser  entity.User
+	roleActorID    string
+	roleActorEmail string
+	roleEmail      string
+	role           string
+	roleUser       entity.User
 }
 
 func (f *fakeAuthUser) Register(context.Context, string, string, string) (entity.User, error) {
@@ -386,6 +390,57 @@ func (f *fakeAuthUser) GetUserAccount(context.Context, string) (entity.UserAccou
 	}
 
 	return defaultTestAccount(), nil
+}
+
+func (f *fakeAuthUser) AdminUsers(
+	context.Context,
+	string,
+	string,
+	*bool,
+	int,
+	int,
+) ([]entity.UserAccount, int, error) {
+	if f.adminUsersErr != nil {
+		return nil, 0, f.adminUsersErr
+	}
+
+	account := defaultTestAccount()
+	account.ID = "editor-id"
+	account.Username = "editor"
+	account.Email = "editor@example.com"
+	account.Role = entity.UserRoleEditor
+	account.EmailVerified = true
+
+	return []entity.UserAccount{account}, 1, nil
+}
+
+func (f *fakeAuthUser) AdminUserActivity(
+	context.Context,
+	string,
+	int,
+	int,
+) ([]entity.UserActivity, int, error) {
+	if f.adminActivityErr != nil {
+		return nil, 0, f.adminActivityErr
+	}
+
+	oldRole := entity.UserRoleUser
+	newRole := entity.UserRoleEditor
+	actorID := "admin-id"
+	actorEmail := "admin@example.com"
+
+	return []entity.UserActivity{{
+		ID:         "activity-id",
+		UserID:     "editor-id",
+		Email:      "editor@example.com",
+		Event:      "role_change",
+		Status:     "success",
+		ActorID:    &actorID,
+		ActorEmail: &actorEmail,
+		OldRole:    &oldRole,
+		NewRole:    &newRole,
+		CreatedAt:  timeNowForTest(),
+	}}, 1, nil
 }
 
 func (f *fakeAuthUser) CompleteOnboarding(
@@ -429,7 +484,9 @@ func (f *fakeAuthUser) UpdateUserPreferences(
 	return defaultTestAccount(), nil
 }
 
-func (f *fakeAuthUser) SetRoleByEmail(_ context.Context, email, role string) (entity.User, error) {
+func (f *fakeAuthUser) SetRoleByEmail(_ context.Context, actorID, actorEmail, email, role string) (entity.User, error) {
+	f.roleActorID = actorID
+	f.roleActorEmail = actorEmail
 	f.roleEmail = email
 	f.role = role
 	if f.roleErr != nil {

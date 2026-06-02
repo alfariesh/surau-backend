@@ -1866,6 +1866,10 @@ POST   /v1/editorial/production-projects/{id}/publish
 POST   /v1/editorial/production-projects/{id}/unpublish
 DELETE /v1/editorial/production-projects/{id}/final-assets/{asset_type}
 DELETE /v1/editorial/production-projects/{id}/toc/{heading_id}/final-assets/{asset_type}
+GET    /v1/admin/users
+GET    /v1/admin/users?role=editor
+GET    /v1/admin/users/{id}
+GET    /v1/admin/users/{id}/activity
 PATCH  /v1/admin/users/role
 ```
 

@@ -29,9 +29,11 @@ type (
 		GetByID(ctx context.Context, id string) (entity.User, error)
 		GetByEmail(ctx context.Context, email string) (entity.User, error)
 		GetAccount(ctx context.Context, userID string) (entity.UserAccount, error)
+		ListAccounts(ctx context.Context, filter UserFilter) ([]entity.UserAccount, int, error)
+		ListUserActivity(ctx context.Context, filter UserActivityFilter) ([]entity.UserActivity, int, error)
 		UpsertProfile(ctx context.Context, profile entity.UserProfile) error
 		UpsertPreferences(ctx context.Context, preferences entity.UserPreferences) error
-		SetRoleByEmail(ctx context.Context, email, role string) (entity.User, error)
+		SetRoleByEmail(ctx context.Context, email, role string) (entity.UserRoleChange, error)
 		ChangePassword(ctx context.Context, userID, passwordHash string) (entity.User, error)
 		ReplaceVerificationToken(ctx context.Context, token *entity.EmailVerificationToken) error
 		RevokeUnusedVerificationTokens(ctx context.Context, userID string) error
@@ -295,6 +297,21 @@ type (
 		PublishProductionProject(ctx context.Context, actorID, projectID string) (entity.BookProductionProject, error)
 		UnpublishProductionProject(ctx context.Context, actorID, projectID string) (entity.BookProductionProject, error)
 		DeleteFinalProductionAsset(ctx context.Context, actorID, projectID, assetType string, headingID *int, reason *string) error
+	}
+
+	// TaskFilter -.
+	UserFilter struct {
+		Query         string
+		Role          string
+		EmailVerified *bool
+		Limit         uint64
+		Offset        uint64
+	}
+
+	UserActivityFilter struct {
+		UserID string
+		Limit  uint64
+		Offset uint64
 	}
 
 	// TaskFilter -.

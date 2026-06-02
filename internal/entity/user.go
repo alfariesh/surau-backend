@@ -110,6 +110,30 @@ type UserAccount struct {
 	OnboardingRequired bool            `json:"onboarding_required" example:"true"`
 } // @name entity.UserAccount
 
+// UserRoleChange reports one role assignment mutation.
+type UserRoleChange struct {
+	User         User
+	PreviousRole string
+	NewRole      string
+} // @name entity.UserRoleChange
+
+// UserActivity shows admin-visible user account audit history.
+type UserActivity struct {
+	ID         string    `json:"id" example:"550e8400-e29b-41d4-a716-446655440000"`
+	UserID     string    `json:"user_id" example:"550e8400-e29b-41d4-a716-446655440000"`
+	Email      string    `json:"email" example:"editor@example.com"`
+	Event      string    `json:"event" example:"role_change"`
+	Status     string    `json:"status" example:"success"`
+	ActorID    *string   `json:"actor_id,omitempty" example:"550e8400-e29b-41d4-a716-446655440000"`
+	ActorEmail *string   `json:"actor_email,omitempty" example:"admin@example.com"`
+	OldRole    *string   `json:"old_role,omitempty" example:"user"`
+	NewRole    *string   `json:"new_role,omitempty" example:"editor"`
+	ErrorCode  *string   `json:"error_code,omitempty" example:"invalid_role"`
+	ClientIP   *string   `json:"client_ip,omitempty"`
+	UserAgent  *string   `json:"user_agent,omitempty"`
+	CreatedAt  time.Time `json:"created_at" example:"2026-01-01T00:00:00Z"`
+} // @name entity.UserActivity
+
 // UserOnboarding stores the normalized onboarding form submitted by the client.
 type UserOnboarding struct {
 	DisplayName              *string

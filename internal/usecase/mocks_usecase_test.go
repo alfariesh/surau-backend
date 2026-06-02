@@ -97,6 +97,38 @@ func (m *MockUser) EXPECT() *MockUserMockRecorder {
 	return m.recorder
 }
 
+// AdminUserActivity mocks base method.
+func (m *MockUser) AdminUserActivity(ctx context.Context, userID string, limit, offset int) ([]entity.UserActivity, int, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AdminUserActivity", ctx, userID, limit, offset)
+	ret0, _ := ret[0].([]entity.UserActivity)
+	ret1, _ := ret[1].(int)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
+}
+
+// AdminUserActivity indicates an expected call of AdminUserActivity.
+func (mr *MockUserMockRecorder) AdminUserActivity(ctx, userID, limit, offset any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AdminUserActivity", reflect.TypeOf((*MockUser)(nil).AdminUserActivity), ctx, userID, limit, offset)
+}
+
+// AdminUsers mocks base method.
+func (m *MockUser) AdminUsers(ctx context.Context, query, role string, emailVerified *bool, limit, offset int) ([]entity.UserAccount, int, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AdminUsers", ctx, query, role, emailVerified, limit, offset)
+	ret0, _ := ret[0].([]entity.UserAccount)
+	ret1, _ := ret[1].(int)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
+}
+
+// AdminUsers indicates an expected call of AdminUsers.
+func (mr *MockUserMockRecorder) AdminUsers(ctx, query, role, emailVerified, limit, offset any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AdminUsers", reflect.TypeOf((*MockUser)(nil).AdminUsers), ctx, query, role, emailVerified, limit, offset)
+}
+
 // ChangePassword mocks base method.
 func (m *MockUser) ChangePassword(ctx context.Context, userID, currentPassword, newPassword string) error {
 	m.ctrl.T.Helper()
@@ -257,18 +289,18 @@ func (mr *MockUserMockRecorder) ResetPassword(ctx, token, password any) *gomock.
 }
 
 // SetRoleByEmail mocks base method.
-func (m *MockUser) SetRoleByEmail(ctx context.Context, email, role string) (entity.User, error) {
+func (m *MockUser) SetRoleByEmail(ctx context.Context, actorID, actorEmail, email, role string) (entity.User, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "SetRoleByEmail", ctx, email, role)
+	ret := m.ctrl.Call(m, "SetRoleByEmail", ctx, actorID, actorEmail, email, role)
 	ret0, _ := ret[0].(entity.User)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // SetRoleByEmail indicates an expected call of SetRoleByEmail.
-func (mr *MockUserMockRecorder) SetRoleByEmail(ctx, email, role any) *gomock.Call {
+func (mr *MockUserMockRecorder) SetRoleByEmail(ctx, actorID, actorEmail, email, role any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetRoleByEmail", reflect.TypeOf((*MockUser)(nil).SetRoleByEmail), ctx, email, role)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetRoleByEmail", reflect.TypeOf((*MockUser)(nil).SetRoleByEmail), ctx, actorID, actorEmail, email, role)
 }
 
 // UpdateUserPreferences mocks base method.

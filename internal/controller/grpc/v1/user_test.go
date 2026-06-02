@@ -42,6 +42,14 @@ func (s stubAuthUser) GetUserAccount(context.Context, string) (entity.UserAccoun
 	return entity.UserAccount{}, nil
 }
 
+func (s stubAuthUser) AdminUsers(context.Context, string, string, *bool, int, int) ([]entity.UserAccount, int, error) {
+	return nil, 0, nil
+}
+
+func (s stubAuthUser) AdminUserActivity(context.Context, string, int, int) ([]entity.UserActivity, int, error) {
+	return nil, 0, nil
+}
+
 func (s stubAuthUser) CompleteOnboarding(
 	context.Context,
 	string,
@@ -66,7 +74,7 @@ func (s stubAuthUser) UpdateUserPreferences(
 	return entity.UserAccount{}, nil
 }
 
-func (s stubAuthUser) SetRoleByEmail(context.Context, string, string) (entity.User, error) {
+func (s stubAuthUser) SetRoleByEmail(context.Context, string, string, string, string) (entity.User, error) {
 	return entity.User{}, nil
 }
 
