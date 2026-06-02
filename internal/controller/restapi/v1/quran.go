@@ -4,10 +4,16 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/evrone/go-clean-template/internal/controller/restapi/v1/response"
 	"github.com/evrone/go-clean-template/internal/entity"
 	"github.com/gofiber/fiber/v2"
+)
+
+const (
+	quranAyahViewFull          = "full"
+	quranAyahViewReaderMinimal = "reader_minimal"
 )
 
 // @Summary     List Quran surahs
@@ -138,6 +144,8 @@ func (r *V1) listQuranJuz(ctx *fiber.Ctx) error {
 // @Param       include_translation query    bool   false "Include selected translation" default(true)
 // @Param       include_audio       query    bool   false "Include audio track and timestamp segments" default(false)
 // @Param       recitation_id       query    string false "Recitation ID. Defaults to the playable default recitation when include_audio=true."
+// @Param       view                query    string false "Response view. Empty/full returns the existing QuranAyah shape; reader_minimal returns v1.QuranReaderAyah." Enums(full,reader_minimal)
+// @Success     200                 {array}  response.QuranReaderAyah
 // @Success     200                 {array}  entity.QuranAyah
 // @Failure     400                 {object} response.Error
 // @Failure     404                 {object} response.Error
@@ -149,12 +157,12 @@ func (r *V1) listQuranJuzAyahs(ctx *fiber.Ctx) error {
 		return errorResponse(ctx, http.StatusBadRequest, "invalid juz_number")
 	}
 
-	ayahs, ok, err := r.quranNavigationAyahs(ctx, juzNumber, "restapi - v1 - listQuranJuzAyahs", r.quran.JuzAyahs)
+	ayahs, view, ok, err := r.quranNavigationAyahs(ctx, juzNumber, "restapi - v1 - listQuranJuzAyahs", r.quran.JuzAyahs)
 	if err != nil || !ok {
 		return err
 	}
 
-	return ctx.Status(http.StatusOK).JSON(ayahs)
+	return quranAyahListResponse(ctx, ayahs, view)
 }
 
 // @Summary     List Quran hizbs
@@ -189,6 +197,8 @@ func (r *V1) listQuranHizbs(ctx *fiber.Ctx) error {
 // @Param       include_translation query    bool   false "Include selected translation" default(true)
 // @Param       include_audio       query    bool   false "Include audio track and timestamp segments" default(false)
 // @Param       recitation_id       query    string false "Recitation ID. Defaults to the playable default recitation when include_audio=true."
+// @Param       view                query    string false "Response view. Empty/full returns the existing QuranAyah shape; reader_minimal returns v1.QuranReaderAyah." Enums(full,reader_minimal)
+// @Success     200                 {array}  response.QuranReaderAyah
 // @Success     200                 {array}  entity.QuranAyah
 // @Failure     400                 {object} response.Error
 // @Failure     404                 {object} response.Error
@@ -200,12 +210,12 @@ func (r *V1) listQuranHizbAyahs(ctx *fiber.Ctx) error {
 		return errorResponse(ctx, http.StatusBadRequest, "invalid hizb_number")
 	}
 
-	ayahs, ok, err := r.quranNavigationAyahs(ctx, hizbNumber, "restapi - v1 - listQuranHizbAyahs", r.quran.HizbAyahs)
+	ayahs, view, ok, err := r.quranNavigationAyahs(ctx, hizbNumber, "restapi - v1 - listQuranHizbAyahs", r.quran.HizbAyahs)
 	if err != nil || !ok {
 		return err
 	}
 
-	return ctx.Status(http.StatusOK).JSON(ayahs)
+	return quranAyahListResponse(ctx, ayahs, view)
 }
 
 // @Summary     Get Quran ayah
@@ -260,6 +270,8 @@ func (r *V1) getQuranAyah(ctx *fiber.Ctx) error {
 // @Param       include_translation query   bool   false "Include selected translation" default(true)
 // @Param       include_audio      query    bool   false "Include audio track and timestamp segments" default(false)
 // @Param       recitation_id      query    string false "Recitation ID. Defaults to the playable default recitation when include_audio=true."
+// @Param       view               query    string false "Response view. Empty/full returns the existing QuranAyah shape; reader_minimal returns v1.QuranReaderAyah." Enums(full,reader_minimal)
+// @Success     200                {array}  response.QuranReaderAyah
 // @Success     200                {array}  entity.QuranAyah
 // @Failure     400                {object} response.Error
 // @Failure     404                {object} response.Error
@@ -286,6 +298,10 @@ func (r *V1) listQuranSurahAyahs(ctx *fiber.Ctx) error {
 	includeAudioValue, err := optionalQueryBool(ctx, "include_audio")
 	if err != nil {
 		return errorResponse(ctx, http.StatusBadRequest, "invalid include_audio")
+	}
+	view, err := quranAyahListView(ctx)
+	if err != nil {
+		return errorResponse(ctx, http.StatusBadRequest, "invalid view")
 	}
 
 	from := 0
@@ -319,7 +335,7 @@ func (r *V1) listQuranSurahAyahs(ctx *fiber.Ctx) error {
 		return r.quranErrorResponse(ctx, err)
 	}
 
-	return ctx.Status(http.StatusOK).JSON(ayahs)
+	return quranAyahListResponse(ctx, ayahs, view)
 }
 
 // @Summary     Search Quran
@@ -405,14 +421,18 @@ func (r *V1) quranNavigationAyahs(
 	number int,
 	operation string,
 	load quranNavigationAyahLoader,
-) ([]entity.QuranAyah, bool, error) {
+) ([]entity.QuranAyah, string, bool, error) {
 	includeTranslationValue, err := optionalQueryBool(ctx, "include_translation")
 	if err != nil {
-		return nil, false, errorResponse(ctx, http.StatusBadRequest, "invalid include_translation")
+		return nil, "", false, errorResponse(ctx, http.StatusBadRequest, "invalid include_translation")
 	}
 	includeAudioValue, err := optionalQueryBool(ctx, "include_audio")
 	if err != nil {
-		return nil, false, errorResponse(ctx, http.StatusBadRequest, "invalid include_audio")
+		return nil, "", false, errorResponse(ctx, http.StatusBadRequest, "invalid include_audio")
+	}
+	view, err := quranAyahListView(ctx)
+	if err != nil {
+		return nil, "", false, errorResponse(ctx, http.StatusBadRequest, "invalid view")
 	}
 
 	includeTranslation := true
@@ -433,10 +453,30 @@ func (r *V1) quranNavigationAyahs(
 	if err != nil {
 		r.logQuranError(err, operation)
 
-		return nil, false, r.quranErrorResponse(ctx, err)
+		return nil, "", false, r.quranErrorResponse(ctx, err)
 	}
 
-	return ayahs, true, nil
+	return ayahs, view, true, nil
+}
+
+func quranAyahListView(ctx *fiber.Ctx) (string, error) {
+	view := strings.TrimSpace(ctx.Query("view"))
+	switch view {
+	case "", quranAyahViewFull:
+		return quranAyahViewFull, nil
+	case quranAyahViewReaderMinimal:
+		return quranAyahViewReaderMinimal, nil
+	default:
+		return "", errors.New("invalid view")
+	}
+}
+
+func quranAyahListResponse(ctx *fiber.Ctx, ayahs []entity.QuranAyah, view string) error {
+	if view == quranAyahViewReaderMinimal {
+		return ctx.Status(http.StatusOK).JSON(response.QuranReaderAyahs(ayahs))
+	}
+
+	return ctx.Status(http.StatusOK).JSON(ayahs)
 }
 
 func (r *V1) quranErrorResponse(ctx *fiber.Ctx, err error) error {

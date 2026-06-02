@@ -158,12 +158,13 @@ Use this order for a Quran reader screen:
 2. `GET /v1/quran/surahs/{surah_id}?lang={lang}` when the header/info panel needs background HTML.
 3. `GET /v1/quran/translation-sources?lang={lang}` if the UI exposes translation source selection.
 4. `GET /v1/quran/recitations` if audio is enabled or the UI exposes reciter selection.
-5. `GET /v1/quran/surahs/{surah_id}/ayahs?lang={lang}&include_translation=true&include_audio={boolean}&recitation_id={optional}` for the main reader.
+5. `GET /v1/quran/surahs/{surah_id}/ayahs?lang={lang}&include_translation=true&include_audio={boolean}&recitation_id={optional}&view=reader_minimal` for the main reader.
 
 Quran display rules:
 
 - Always render Arabic Quran text from `text_qpc_hafs`, with `text_imlaei_simple` as fallback.
 - Render `translation.text` only when `translation !== null`.
+- Prefer `view=reader_minimal` for ayah list reader bodies; it omits search/import/debug fields and exposes audio as one playable `audio[].url`.
 - `lang=ar` returns Arabic-only mode: translation is `null` and `availability.translation.action` is `hide_translation_tab`.
 - Missing `lang=en` translation returns `translation: null` and `available_translation_langs` tells FE whether to offer `id`.
 - `BookQuranReference.ayahs[]` uses the same `QuranAyah` metadata contract.
