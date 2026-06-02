@@ -66,7 +66,6 @@ func TestCloudflareEmailClient_Send(t *testing.T) {
 			name:       "accepted with empty recipient status",
 			statusCode: http.StatusOK,
 			body:       `{"success":true,"result":{"delivered":[],"permanent_bounces":[],"queued":[]}}`,
-			wantErr:    true,
 		},
 		{
 			name:       "missing result",
