@@ -1,0 +1,162 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+ENV_FILE="${BACKUP_ENV_FILE:-/etc/surau-backup/env}"
+if [[ -f "$ENV_FILE" ]]; then
+  # shellcheck disable=SC1090
+  source "$ENV_FILE"
+fi
+
+BACKUP_DIR="${BACKUP_DIR:-/var/backups/surau/postgres}"
+R2_ACCOUNT_ID="${R2_ACCOUNT_ID:-}"
+R2_BUCKET="${R2_BUCKET:-surau-backend-backups}"
+R2_PREFIX="${R2_PREFIX:-postgres}"
+R2_ENDPOINT="${R2_ENDPOINT:-}"
+R2_ACCESS_KEY_ID="${R2_ACCESS_KEY_ID:-}"
+R2_SECRET_ACCESS_KEY="${R2_SECRET_ACCESS_KEY:-}"
+RESTORE_IMAGE="${RESTORE_IMAGE:-postgres:18.4-alpine}"
+RESTORE_WORKDIR=""
+RESTORE_CONTAINER=""
+
+if [[ -z "$R2_ENDPOINT" && -n "$R2_ACCOUNT_ID" ]]; then
+  R2_ENDPOINT="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+fi
+
+require() {
+  local name="$1"
+  local value="${!name:-}"
+  if [[ -z "$value" ]]; then
+    echo "missing required config: $name" >&2
+    exit 2
+  fi
+}
+
+write_rclone_config() {
+  require R2_ENDPOINT
+  require R2_ACCESS_KEY_ID
+  require R2_SECRET_ACCESS_KEY
+
+  mkdir -p /run/surau-backup
+  local config
+  config="$(mktemp /run/surau-backup/rclone.XXXXXX.conf)"
+  chmod 600 "$config"
+  {
+    echo "[r2]"
+    echo "type = s3"
+    echo "provider = Cloudflare"
+    echo "access_key_id = ${R2_ACCESS_KEY_ID}"
+    echo "secret_access_key = ${R2_SECRET_ACCESS_KEY}"
+    echo "endpoint = ${R2_ENDPOINT}"
+    echo "region = auto"
+    echo "acl = private"
+    echo "no_check_bucket = true"
+  } >"$config"
+  echo "$config"
+}
+
+download_latest_from_r2() {
+  require R2_BUCKET
+
+  local workdir="$1"
+  local object_prefix="${R2_PREFIX%/}"
+  local rclone_config latest
+  rclone_config="$(write_rclone_config)"
+  trap 'rm -f "$rclone_config"' RETURN
+
+  latest="$(
+    rclone --config "$rclone_config" lsf "r2:${R2_BUCKET}/${object_prefix}/" --files-only \
+      | grep -E '^surau-postgres-[0-9TZ]+-[A-Za-z0-9._-]+\.dump\.zst$' \
+      | sort \
+      | tail -n 1
+  )"
+
+  if [[ -z "$latest" ]]; then
+    echo "no remote backup found in r2://${R2_BUCKET}/${object_prefix}/" >&2
+    exit 3
+  fi
+
+  rclone --config "$rclone_config" copyto "r2:${R2_BUCKET}/${object_prefix}/${latest}" "${workdir}/${latest}"
+  if rclone --config "$rclone_config" lsf "r2:${R2_BUCKET}/${object_prefix}/" --files-only | grep -Fx "${latest}.sha256" >/dev/null; then
+    rclone --config "$rclone_config" copyto "r2:${R2_BUCKET}/${object_prefix}/${latest}.sha256" "${workdir}/${latest}.sha256"
+  fi
+
+  echo "${workdir}/${latest}"
+}
+
+latest_local_backup() {
+  find "$BACKUP_DIR" -maxdepth 1 -type f -name 'surau-postgres-*.dump.zst' -print | sort | tail -n 1
+}
+
+main() {
+  local source_arg="${1:-r2-latest}"
+  local archive checksum books pages ayahs
+  RESTORE_WORKDIR="$(mktemp -d /tmp/surau-restore-check.XXXXXX)"
+  RESTORE_CONTAINER="surau-restore-check-$(date -u +%Y%m%d%H%M%S)"
+
+  cleanup() {
+    if [[ -n "${RESTORE_CONTAINER:-}" ]]; then
+      sudo docker rm -f "$RESTORE_CONTAINER" >/dev/null 2>&1 || true
+    fi
+    if [[ -n "${RESTORE_WORKDIR:-}" ]]; then
+      rm -rf "$RESTORE_WORKDIR"
+    fi
+  }
+  trap cleanup EXIT
+
+  case "$source_arg" in
+    r2-latest)
+      archive="$(download_latest_from_r2 "$RESTORE_WORKDIR")"
+      ;;
+    local-latest)
+      archive="$(latest_local_backup)"
+      ;;
+    *)
+      archive="$source_arg"
+      ;;
+  esac
+
+  if [[ -z "$archive" || ! -f "$archive" ]]; then
+    echo "backup archive not found: ${archive:-none}" >&2
+    exit 3
+  fi
+
+  mkdir -p "${RESTORE_WORKDIR}/pgdata"
+
+  checksum="${archive}.sha256"
+  if [[ -f "$checksum" ]]; then
+    (cd "$(dirname "$archive")" && sha256sum -c "$(basename "$checksum")")
+  fi
+
+  echo "starting temporary restore database: ${RESTORE_CONTAINER}"
+  sudo docker run -d --rm --name "$RESTORE_CONTAINER" \
+    -e POSTGRES_USER=surau \
+    -e POSTGRES_PASSWORD=restorecheck \
+    -e POSTGRES_DB=surau_restore \
+    -v "${RESTORE_WORKDIR}/pgdata:/var/lib/postgresql/data" \
+    "$RESTORE_IMAGE" >/dev/null
+
+  for _ in $(seq 1 60); do
+    if sudo docker exec "$RESTORE_CONTAINER" pg_isready -U surau -d surau_restore >/dev/null 2>&1; then
+      break
+    fi
+    sleep 1
+  done
+
+  zstd -dc "$archive" | sudo docker exec -i "$RESTORE_CONTAINER" \
+    pg_restore -U surau -d surau_restore --no-owner --no-privileges
+
+  books="$(sudo docker exec "$RESTORE_CONTAINER" psql -U surau -d surau_restore -Atc "select count(*) from books where has_content = true")"
+  pages="$(sudo docker exec "$RESTORE_CONTAINER" psql -U surau -d surau_restore -Atc "select count(*) from book_pages")"
+  ayahs="$(sudo docker exec "$RESTORE_CONTAINER" psql -U surau -d surau_restore -Atc "select count(*) from quran_ayahs")"
+
+  echo "restore check counts: books_with_content=${books} book_pages=${pages} quran_ayahs=${ayahs}"
+
+  if [[ "$books" -lt 1 || "$pages" -lt 1 || "$ayahs" -ne 6236 ]]; then
+    echo "restore check failed: unexpected counts" >&2
+    exit 4
+  fi
+
+  echo "restore check passed"
+}
+
+main "$@"

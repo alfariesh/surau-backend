@@ -1,0 +1,116 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+ENV_FILE="${BACKUP_ENV_FILE:-/etc/surau-backup/env}"
+if [[ -f "$ENV_FILE" ]]; then
+  # shellcheck disable=SC1090
+  source "$ENV_FILE"
+fi
+
+DEPLOY_PATH="${DEPLOY_PATH:-/srv/surau/backend}"
+COMPOSE_ENV_FILE="${COMPOSE_ENV_FILE:-.env.production}"
+COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.prod.yml}"
+BACKUP_DIR="${BACKUP_DIR:-/var/backups/surau/postgres}"
+LOCAL_RETENTION_DAYS="${LOCAL_RETENTION_DAYS:-7}"
+R2_ACCOUNT_ID="${R2_ACCOUNT_ID:-}"
+R2_BUCKET="${R2_BUCKET:-surau-backend-backups}"
+R2_PREFIX="${R2_PREFIX:-postgres}"
+R2_ENDPOINT="${R2_ENDPOINT:-}"
+R2_ACCESS_KEY_ID="${R2_ACCESS_KEY_ID:-}"
+R2_SECRET_ACCESS_KEY="${R2_SECRET_ACCESS_KEY:-}"
+R2_UPLOAD_REQUIRED="${R2_UPLOAD_REQUIRED:-1}"
+
+if [[ -z "$R2_ENDPOINT" && -n "$R2_ACCOUNT_ID" ]]; then
+  R2_ENDPOINT="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+fi
+
+require() {
+  local name="$1"
+  local value="${!name:-}"
+  if [[ -z "$value" ]]; then
+    echo "missing required config: $name" >&2
+    exit 2
+  fi
+}
+
+write_rclone_config() {
+  require R2_ENDPOINT
+  require R2_ACCESS_KEY_ID
+  require R2_SECRET_ACCESS_KEY
+
+  mkdir -p /run/surau-backup
+  local config
+  config="$(mktemp /run/surau-backup/rclone.XXXXXX.conf)"
+  chmod 600 "$config"
+  {
+    echo "[r2]"
+    echo "type = s3"
+    echo "provider = Cloudflare"
+    echo "access_key_id = ${R2_ACCESS_KEY_ID}"
+    echo "secret_access_key = ${R2_SECRET_ACCESS_KEY}"
+    echo "endpoint = ${R2_ENDPOINT}"
+    echo "region = auto"
+    echo "acl = private"
+    echo "no_check_bucket = true"
+  } >"$config"
+  echo "$config"
+}
+
+main() {
+  require DEPLOY_PATH
+  require R2_BUCKET
+
+  umask 077
+  mkdir -p "$BACKUP_DIR"
+
+  local started_at stamp git_sha base archive tmp_archive checksum tmp_checksum rclone_config object_prefix
+  started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+  git_sha="$(git -C "$DEPLOY_PATH" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+  base="surau-postgres-${stamp}-${git_sha}.dump.zst"
+  archive="${BACKUP_DIR}/${base}"
+  tmp_archive="${archive}.tmp"
+  checksum="${archive}.sha256"
+  tmp_checksum="${checksum}.tmp"
+  object_prefix="${R2_PREFIX%/}"
+
+  cd "$DEPLOY_PATH"
+
+  echo "starting postgres backup at ${started_at}"
+  echo "writing ${archive}"
+
+  sudo docker compose --env-file "$COMPOSE_ENV_FILE" -f "$COMPOSE_FILE" exec -T db \
+    sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" --format=custom --no-owner --no-privileges' \
+    | zstd -T0 -10 -q -o "$tmp_archive"
+
+  mv "$tmp_archive" "$archive"
+  (cd "$BACKUP_DIR" && sha256sum "$base") >"$tmp_checksum"
+  mv "$tmp_checksum" "$checksum"
+
+  if [[ -z "$R2_ENDPOINT" || -z "$R2_ACCESS_KEY_ID" || -z "$R2_SECRET_ACCESS_KEY" ]]; then
+    if [[ "$R2_UPLOAD_REQUIRED" == "1" ]]; then
+      echo "R2 upload credentials are incomplete" >&2
+      echo "set R2_ENDPOINT, R2_ACCESS_KEY_ID, and R2_SECRET_ACCESS_KEY in ${ENV_FILE}" >&2
+      exit 2
+    fi
+
+    echo "R2 upload skipped because R2_UPLOAD_REQUIRED=${R2_UPLOAD_REQUIRED}"
+    find "$BACKUP_DIR" -type f \( -name '*.dump.zst' -o -name '*.dump.zst.sha256' \) -mtime +"$LOCAL_RETENTION_DAYS" -delete
+    echo "local backup created: ${archive}"
+    return
+  fi
+
+  rclone_config="$(write_rclone_config)"
+  trap 'rm -f "$rclone_config"' RETURN
+
+  echo "uploading ${base} to r2://${R2_BUCKET}/${object_prefix}/"
+  rclone --config "$rclone_config" copyto "$archive" "r2:${R2_BUCKET}/${object_prefix}/${base}"
+  rclone --config "$rclone_config" copyto "$checksum" "r2:${R2_BUCKET}/${object_prefix}/${base}.sha256"
+  rclone --config "$rclone_config" lsf "r2:${R2_BUCKET}/${object_prefix}/" --files-only | grep -Fx "${base}" >/dev/null
+
+  find "$BACKUP_DIR" -type f \( -name '*.dump.zst' -o -name '*.dump.zst.sha256' \) -mtime +"$LOCAL_RETENTION_DAYS" -delete
+
+  echo "backup uploaded: r2://${R2_BUCKET}/${object_prefix}/${base}"
+}
+
+main "$@"
