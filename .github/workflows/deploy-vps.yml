@@ -1,0 +1,53 @@
+name: Deploy VPS
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-vps
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy backend to VPS
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      VPS_HOST: ${{ secrets.VPS_HOST }}
+      VPS_USER: ${{ secrets.VPS_USER }}
+      VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+      VPS_SSH_PRIVATE_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+      DEPLOY_BRANCH: main
+    steps:
+      - name: Deploy over SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          : "${VPS_HOST:?Set the VPS_HOST repository secret}"
+          : "${VPS_USER:?Set the VPS_USER repository secret}"
+          : "${VPS_DEPLOY_PATH:?Set the VPS_DEPLOY_PATH repository secret}"
+          : "${VPS_SSH_PRIVATE_KEY:?Set the VPS_SSH_PRIVATE_KEY repository secret}"
+
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$VPS_SSH_PRIVATE_KEY" > ~/.ssh/surau_deploy_key
+          chmod 600 ~/.ssh/surau_deploy_key
+          ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
+
+          ssh -i ~/.ssh/surau_deploy_key -o IdentitiesOnly=yes "$VPS_USER@$VPS_HOST" \
+            "DEPLOY_BRANCH='$DEPLOY_BRANCH' DEPLOY_PATH='$VPS_DEPLOY_PATH' bash -s" <<'REMOTE'
+          set -euo pipefail
+
+          cd "$DEPLOY_PATH"
+          git fetch origin "$DEPLOY_BRANCH"
+          git checkout "$DEPLOY_BRANCH"
+          git reset --hard "origin/$DEPLOY_BRANCH"
+          sudo docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build app
+          sudo docker image prune -f
+          curl -fsS http://127.0.0.1:8080/healthz >/dev/null
+          curl -fsS http://127.0.0.1:8080/readyz >/dev/null
+          REMOTE

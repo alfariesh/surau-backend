@@ -1,0 +1,12 @@
+[Unit]
+Description=Surau PostgreSQL backup to Cloudflare R2
+Wants=docker.service
+After=docker.service network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/surau-backup/env
+ExecStart=/usr/local/sbin/surau-pg-backup
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
