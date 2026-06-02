@@ -27,9 +27,11 @@ vendor/
 __pycache__/
 scripts/__pycache__/
 tmp/
+.wrangler/
 
 coverage.txt
 
 # Temporary directories
 temp-pageIndex/
 temp-langextract/
+temp-pageIndex-condb/

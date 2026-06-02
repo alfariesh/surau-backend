@@ -26,11 +26,17 @@ PASS = "PASS"
 
 MIN_CONTENT_CHARS_FAIL = 120
 MIN_CONTENT_CHARS_WARN = 300
+MIN_SUMMARY_CHARS_FAIL = 30
+MIN_SUMMARY_CHARS_WARN = 70
+MAX_SUMMARY_CHARS_WARN = 900
+MAX_SUMMARY_CHARS_FAIL = 1600
 MANY_FOOTNOTE_THRESHOLD = 2
 VALID_TRANSLATION_STATUSES = {"generated", "reviewed"}
+VALID_SUMMARY_STATUSES = {"generated", "reviewed"}
 SCRIPT_DIR = Path(__file__).resolve().parent
 DEFAULT_PROFILE_MAP = SCRIPT_DIR / "translation_profiles.json"
 STYLE_VERSION = "reader-profile-v1"
+SUMMARY_STYLE_VERSION = "reader-summary-v1"
 TECHNICAL_ITALIC_CHECK_CHARS = 1200
 
 RAW_BRACKET_RE = re.compile(
@@ -106,6 +112,10 @@ class AssetRow:
         return str(self.raw.get("content", "")).strip()
 
     @property
+    def summary(self) -> str:
+        return str(self.raw.get("summary", "")).strip()
+
+    @property
     def metadata(self) -> Any:
         return self.raw.get("metadata")
 
@@ -116,6 +126,14 @@ class AssetRow:
     @property
     def translation_reviewed_by(self) -> str:
         return str(self.raw.get("translation_reviewed_by") or "").strip()
+
+    @property
+    def summary_status(self) -> str:
+        return str(self.raw.get("summary_status") or self.raw.get("translation_status") or "generated").strip().lower()
+
+    @property
+    def summary_reviewed_by(self) -> str:
+        return str(self.raw.get("summary_reviewed_by") or self.raw.get("translation_reviewed_by") or "").strip()
 
 
 def main() -> int:
@@ -141,7 +159,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--base-url", default="http://127.0.0.1:8080", help="Surau backend base URL")
     parser.add_argument("--book-id", type=int, default=0, help="Expected book ID")
     parser.add_argument("--lang", default="", help="Expected language code")
-    parser.add_argument("--all-toc", action="store_true", help="Require all TOC headings to have translation rows")
+    parser.add_argument("--all-toc", action="store_true", help="Require all TOC headings to have rows for the selected kind")
+    parser.add_argument(
+        "--kind",
+        choices=["auto", "translation", "heading_summary"],
+        default="auto",
+        help="Asset kind used for TOC completeness; auto chooses summaries when the file only has summary rows",
+    )
     parser.add_argument("--report", default="", help="Write machine-readable JSON report")
     parser.add_argument("--strict", action="store_true", help="Treat warnings as failures")
     parser.add_argument("--profile-map", default=str(DEFAULT_PROFILE_MAP), help="Translation profile JSON config")
@@ -162,19 +186,22 @@ def run_qa(args: argparse.Namespace) -> dict[str, Any]:
         issues.append(Issue(FAIL, "ALL_TOC_REQUIRES_BOOK_ID", "--all-toc requires --book-id"))
 
     translation_rows = [row for row in rows if row.kind == "translation"]
+    summary_rows = [row for row in rows if row.kind == "heading_summary"]
     audio_rows = [row for row in rows if row.kind == "audio"]
-    ignored_rows = [row for row in rows if row.kind not in {"translation", "audio"}]
+    ignored_rows = [row for row in rows if row.kind not in {"translation", "heading_summary", "audio"}]
+    selected_kind = select_asset_kind(args.kind, translation_rows, summary_rows)
+    selected_rows = summary_rows if selected_kind == "heading_summary" else translation_rows
 
-    for row in translation_rows:
+    for row in [*translation_rows, *summary_rows]:
         issues.extend(validate_common_shape(row, expected_book_id, expected_lang))
 
-    seen: dict[tuple[int, int, str], AssetRow] = {}
+    seen_translations: dict[tuple[int, int, str], AssetRow] = {}
     for row in translation_rows:
         issues.extend(validate_translation_row(row, profile_map))
         key = (row.book_id or 0, row.heading_id or 0, row.lang)
         if all(key):
-            if key in seen:
-                first = seen[key]
+            if key in seen_translations:
+                first = seen_translations[key]
                 issues.append(
                     row_issue(
                         FAIL,
@@ -184,16 +211,35 @@ def run_qa(args: argparse.Namespace) -> dict[str, Any]:
                     )
                 )
             else:
-                seen[key] = row
+                seen_translations[key] = row
 
-    inferred_lang = expected_lang or infer_single_lang(translation_rows, issues)
+    seen_summaries: dict[tuple[int, int, str], AssetRow] = {}
+    for row in summary_rows:
+        issues.extend(validate_summary_row(row))
+        key = (row.book_id or 0, row.heading_id or 0, row.lang)
+        if all(key):
+            if key in seen_summaries:
+                first = seen_summaries[key]
+                issues.append(
+                    row_issue(
+                        FAIL,
+                        "DUPLICATE_SUMMARY",
+                        f"duplicate summary key first seen at line {first.line}",
+                        row,
+                    )
+                )
+            else:
+                seen_summaries[key] = row
+
+    inferred_lang = expected_lang or infer_single_lang(selected_rows, issues, selected_kind)
     toc_summary: dict[str, Any] | None = None
     if args.all_toc and expected_book_id is not None and inferred_lang:
         toc_summary = check_toc_completeness(
             args.base_url,
             expected_book_id,
             inferred_lang,
-            translation_rows,
+            selected_rows,
+            selected_kind,
             issues,
         )
 
@@ -211,11 +257,12 @@ def run_qa(args: argparse.Namespace) -> dict[str, Any]:
             for issue in issues
         ]
 
-    summary = summarize(rows, translation_rows, audio_rows, ignored_rows, issues)
+    summary = summarize(rows, translation_rows, summary_rows, audio_rows, ignored_rows, issues)
     report: dict[str, Any] = {
         "file": str(file_path),
         "book_id": expected_book_id,
         "lang": inferred_lang,
+        "kind": selected_kind,
         "all_toc": bool(args.all_toc),
         "strict": bool(args.strict),
         "summary": summary,
@@ -356,6 +403,69 @@ def validate_translation_row(row: AssetRow, profile_map: dict[str, Any]) -> list
     return issues
 
 
+def validate_summary_row(row: AssetRow) -> list[Issue]:
+    issues: list[Issue] = []
+    summary = row.summary
+
+    if not summary:
+        issues.append(row_issue(FAIL, "MISSING_SUMMARY", "summary is required", row))
+        return issues
+
+    if row.summary_status not in VALID_SUMMARY_STATUSES:
+        issues.append(
+            row_issue(
+                FAIL,
+                "INVALID_SUMMARY_STATUS",
+                "summary_status must be generated or reviewed",
+                row,
+            )
+        )
+    if row.summary_status == "reviewed" and not row.summary_reviewed_by:
+        issues.append(row_issue(FAIL, "MISSING_SUMMARY_REVIEWED_BY", "reviewed summaries require summary_reviewed_by", row))
+
+    metadata = row.metadata
+    if metadata is None:
+        issues.append(row_issue(WARN, "MISSING_SUMMARY_METADATA", "metadata is missing", row))
+    elif isinstance(metadata, dict):
+        if metadata.get("truncated_source") is True:
+            issues.append(row_issue(FAIL, "TRUNCATED_SUMMARY_SOURCE", "metadata.truncated_source must not be true", row))
+        unit = str(metadata.get("unit") or "").strip()
+        if unit != "toc_summary":
+            issues.append(row_issue(WARN, "SUMMARY_UNIT_MISMATCH", "metadata.unit should be toc_summary", row))
+        style_version = str(metadata.get("style_version") or "").strip()
+        if style_version != SUMMARY_STYLE_VERSION:
+            issues.append(
+                row_issue(
+                    WARN,
+                    "SUMMARY_STYLE_VERSION_MISMATCH",
+                    f"metadata.style_version should be {SUMMARY_STYLE_VERSION}",
+                    row,
+                )
+            )
+
+    if "[DRY RUN]" in summary:
+        issues.append(row_issue(FAIL, "DRY_RUN_SUMMARY_PLACEHOLDER", "dry-run summary placeholder found", row))
+
+    summary_len = len(summary)
+    if summary_len < MIN_SUMMARY_CHARS_FAIL:
+        issues.append(row_issue(FAIL, "SUMMARY_TOO_SHORT", f"summary has only {summary_len} characters", row))
+    elif summary_len < MIN_SUMMARY_CHARS_WARN:
+        issues.append(row_issue(WARN, "SUMMARY_SHORT", f"summary has only {summary_len} characters", row))
+    if summary_len > MAX_SUMMARY_CHARS_FAIL:
+        issues.append(row_issue(FAIL, "SUMMARY_TOO_LONG", f"summary has {summary_len} characters", row))
+    elif summary_len > MAX_SUMMARY_CHARS_WARN:
+        issues.append(row_issue(WARN, "SUMMARY_LONG", f"summary has {summary_len} characters", row))
+
+    if summary.count("```") % 2 != 0:
+        issues.append(row_issue(FAIL, "UNCLOSED_SUMMARY_CODE_FENCE", "summary Markdown code fence is not closed", row))
+    if EMPTY_HEADING_RE.search(summary):
+        issues.append(row_issue(WARN, "EMPTY_SUMMARY_MARKDOWN_HEADING", "empty Markdown heading found in summary", row))
+    if "\n\n" in summary:
+        issues.append(row_issue(WARN, "SUMMARY_MULTIPLE_PARAGRAPHS", "summary should usually be one compact paragraph", row))
+
+    return issues
+
+
 def validate_profile_metadata(row: AssetRow, metadata: dict[str, Any], profile_map: dict[str, Any]) -> list[Issue]:
     issues: list[Issue] = []
     profiles = profile_map.get("profiles")
@@ -396,12 +506,20 @@ def validate_profile_metadata(row: AssetRow, metadata: dict[str, Any], profile_m
     return issues
 
 
-def infer_single_lang(rows: list[AssetRow], issues: list[Issue]) -> str | None:
+def select_asset_kind(kind: str, translation_rows: list[AssetRow], summary_rows: list[AssetRow]) -> str:
+    if kind != "auto":
+        return kind
+    if summary_rows and not translation_rows:
+        return "heading_summary"
+    return "translation"
+
+
+def infer_single_lang(rows: list[AssetRow], issues: list[Issue], kind: str) -> str | None:
     langs = {row.lang for row in rows if row.lang}
     if len(langs) == 1:
         return next(iter(langs))
     if len(langs) > 1:
-        issues.append(Issue(FAIL, "LANG_AMBIGUOUS", "multiple translation languages found; pass --lang"))
+        issues.append(Issue(FAIL, "LANG_AMBIGUOUS", f"multiple {kind} languages found; pass --lang"))
     return None
 
 
@@ -409,11 +527,12 @@ def check_toc_completeness(
     base_url: str,
     book_id: int,
     lang: str,
-    translation_rows: list[AssetRow],
+    asset_rows: list[AssetRow],
+    kind: str,
     issues: list[Issue],
 ) -> dict[str, Any]:
     expected_ids: list[int] = []
-    translated_ids = {row.heading_id for row in translation_rows if row.book_id == book_id and row.lang == lang and row.heading_id}
+    present_ids = {row.heading_id for row in asset_rows if row.book_id == book_id and row.lang == lang and row.heading_id}
 
     try:
         toc = fetch_toc(base_url, book_id, lang)
@@ -421,22 +540,26 @@ def check_toc_completeness(
         issues.append(Issue(FAIL, "TOC_FETCH_FAILED", str(err), book_id=book_id, lang=lang))
         return {
             "expected_count": 0,
-            "translated_count": len(translated_ids),
+            "translated_count": len(present_ids),
+            "present_count": len(present_ids),
             "missing_heading_ids": [],
-            "extra_heading_ids": sorted(translated_ids),
+            "extra_heading_ids": sorted(present_ids),
         }
 
     expected_ids = flatten_toc_heading_ids(toc)
     expected_set = set(expected_ids)
-    missing = [heading_id for heading_id in expected_ids if heading_id not in translated_ids]
-    extra = sorted(heading_id for heading_id in translated_ids if heading_id not in expected_set)
+    missing = [heading_id for heading_id in expected_ids if heading_id not in present_ids]
+    extra = sorted(heading_id for heading_id in present_ids if heading_id not in expected_set)
+    missing_code = "MISSING_TOC_SUMMARY" if kind == "heading_summary" else "MISSING_TOC_TRANSLATION"
+    extra_code = "EXTRA_SUMMARY" if kind == "heading_summary" else "EXTRA_TRANSLATION"
+    noun = "summary" if kind == "heading_summary" else "translation"
 
     for heading_id in missing:
         issues.append(
             Issue(
                 FAIL,
-                "MISSING_TOC_TRANSLATION",
-                "TOC heading has no translation row",
+                missing_code,
+                f"TOC heading has no {noun} row",
                 book_id=book_id,
                 heading_id=heading_id,
                 lang=lang,
@@ -446,8 +569,8 @@ def check_toc_completeness(
         issues.append(
             Issue(
                 WARN,
-                "EXTRA_TRANSLATION",
-                "translation row is not present in current TOC",
+                extra_code,
+                f"{noun} row is not present in current TOC",
                 book_id=book_id,
                 heading_id=heading_id,
                 lang=lang,
@@ -456,7 +579,8 @@ def check_toc_completeness(
 
     return {
         "expected_count": len(expected_ids),
-        "translated_count": len(translated_ids & expected_set),
+        "translated_count": len(present_ids & expected_set),
+        "present_count": len(present_ids & expected_set),
         "missing_heading_ids": missing,
         "extra_heading_ids": extra,
     }
@@ -498,11 +622,13 @@ def flatten_toc_heading_ids(nodes: list[dict[str, Any]]) -> list[int]:
 def summarize(
     rows: list[AssetRow],
     translation_rows: list[AssetRow],
+    summary_rows: list[AssetRow],
     audio_rows: list[AssetRow],
     ignored_rows: list[AssetRow],
     issues: list[Issue],
 ) -> dict[str, int]:
-    row_state: dict[int, str] = {row.line: PASS for row in translation_rows}
+    checked_rows = [*translation_rows, *summary_rows]
+    row_state: dict[int, str] = {row.line: PASS for row in checked_rows}
 
     for issue in issues:
         if issue.line is None:
@@ -523,10 +649,13 @@ def summarize(
     return {
         "total_rows": len(rows),
         "translations": len(translation_rows),
+        "summaries": len(summary_rows),
         "audio_ignored": len(audio_rows),
         "other_ignored": len(ignored_rows),
-        "generated_rows": sum(1 for row in translation_rows if row.translation_status == "generated"),
-        "reviewed_rows": sum(1 for row in translation_rows if row.translation_status == "reviewed"),
+        "generated_rows": sum(1 for row in translation_rows if row.translation_status == "generated")
+        + sum(1 for row in summary_rows if row.summary_status == "generated"),
+        "reviewed_rows": sum(1 for row in translation_rows if row.translation_status == "reviewed")
+        + sum(1 for row in summary_rows if row.summary_status == "reviewed"),
         "pass_rows": pass_rows,
         "warn_rows": warn_rows,
         "fail_rows": fail_rows,
@@ -540,7 +669,7 @@ def print_report(report: dict[str, Any]) -> None:
     status = FAIL if summary["failures"] > 0 else WARN if summary["warnings"] > 0 else PASS
     print(f"{status} {report['file']}")
     print(
-        "rows={total_rows} translations={translations} audio_ignored={audio_ignored} "
+        "rows={total_rows} translations={translations} summaries={summaries} audio_ignored={audio_ignored} "
         "other_ignored={other_ignored} "
         "generated={generated_rows} reviewed={reviewed_rows} "
         "pass_rows={pass_rows} warn_rows={warn_rows} fail_rows={fail_rows} "
@@ -550,10 +679,10 @@ def print_report(report: dict[str, Any]) -> None:
     toc = report.get("toc")
     if toc:
         print(
-            "toc_expected={expected_count} toc_translated={translated_count} "
+            "toc_expected={expected_count} toc_present={present_count} "
             "toc_missing={missing}".format(
                 expected_count=toc["expected_count"],
-                translated_count=toc["translated_count"],
+                present_count=toc.get("present_count", toc.get("translated_count", 0)),
                 missing=len(toc["missing_heading_ids"]),
             )
         )

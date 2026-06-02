@@ -31,6 +31,7 @@ def make_args(path: Path, **kwargs: object):
         "book_id": 0,
         "lang": "",
         "all_toc": False,
+        "kind": "auto",
         "report": "",
         "strict": False,
         "profile_map": str(SCRIPT_DIR / "translation_profiles.json"),
@@ -80,6 +81,38 @@ def translation(
     return row
 
 
+def heading_summary(
+    *,
+    book_id: int = 10,
+    heading_id: int = 1,
+    lang: str = "ar",
+    summary: str = "يتناول هذا القسم معنى الحمد لله وبيان الثناء على الله تعالى بأنه مالك الحمد ومستحقه.",
+    metadata: dict[str, object] | None = None,
+    summary_status: str = "generated",
+    reviewed_by: str = "",
+) -> dict[str, object]:
+    row: dict[str, object] = {
+        "kind": "heading_summary",
+        "book_id": book_id,
+        "heading_id": heading_id,
+        "lang": lang,
+        "summary": summary,
+        "summary_status": summary_status,
+        "metadata": metadata
+        if metadata is not None
+        else {
+            "unit": "toc_summary",
+            "style_version": "reader-summary-v1",
+            "source_lang": "ar",
+            "summary_lang": lang,
+            "truncated_source": False,
+        },
+    }
+    if reviewed_by:
+        row["summary_reviewed_by"] = reviewed_by
+    return row
+
+
 class QATest(unittest.TestCase):
     def run_qa_for_rows(self, rows: list[object], **kwargs: object) -> dict[str, object]:
         with tempfile.TemporaryDirectory() as tmp:
@@ -96,6 +129,14 @@ class QATest(unittest.TestCase):
         self.assertEqual(report["summary"]["failures"], 0)  # type: ignore[index]
         self.assertEqual(report["summary"]["warnings"], 0)  # type: ignore[index]
 
+    def test_valid_summary_passes(self) -> None:
+        report = self.run_qa_for_rows([heading_summary()])
+
+        self.assertEqual(report["kind"], "heading_summary")
+        self.assertEqual(report["summary"]["summaries"], 1)  # type: ignore[index]
+        self.assertEqual(report["summary"]["failures"], 0)  # type: ignore[index]
+        self.assertEqual(report["summary"]["warnings"], 0)  # type: ignore[index]
+
     def test_invalid_json_fails(self) -> None:
         report = self.run_qa_for_rows(["{not-json"])
 
@@ -106,6 +147,11 @@ class QATest(unittest.TestCase):
         report = self.run_qa_for_rows([translation(), translation()])
 
         self.assertIn("DUPLICATE_TRANSLATION", self.issue_codes(report))
+
+    def test_duplicate_summary_fails(self) -> None:
+        report = self.run_qa_for_rows([heading_summary(), heading_summary()])
+
+        self.assertIn("DUPLICATE_SUMMARY", self.issue_codes(report))
 
     def test_truncated_source_fails(self) -> None:
         report = self.run_qa_for_rows(
@@ -182,10 +228,20 @@ class QATest(unittest.TestCase):
 
         self.assertIn("DRY_RUN_PLACEHOLDER", self.issue_codes(report))
 
+    def test_dry_run_summary_fails(self) -> None:
+        report = self.run_qa_for_rows([heading_summary(summary="[DRY RUN] ringkasan placeholder yang cukup panjang")])
+
+        self.assertIn("DRY_RUN_SUMMARY_PLACEHOLDER", self.issue_codes(report))
+
     def test_reviewed_without_reviewer_fails(self) -> None:
         report = self.run_qa_for_rows([translation(translation_status="reviewed")])
 
         self.assertIn("MISSING_REVIEWED_BY", self.issue_codes(report))
+
+    def test_reviewed_summary_without_reviewer_fails(self) -> None:
+        report = self.run_qa_for_rows([heading_summary(summary_status="reviewed")])
+
+        self.assertIn("MISSING_SUMMARY_REVIEWED_BY", self.issue_codes(report))
 
     def test_raw_bracket_question_fails(self) -> None:
         content = (
@@ -222,6 +278,18 @@ class QATest(unittest.TestCase):
             )
 
         self.assertIn("MISSING_TOC_TRANSLATION", self.issue_codes(report))
+
+    def test_all_toc_missing_summary_fails(self) -> None:
+        with toc_server([1, 2]) as base_url:
+            report = self.run_qa_for_rows(
+                [heading_summary(book_id=10, heading_id=1, lang="ar")],
+                base_url=base_url,
+                book_id=10,
+                lang="ar",
+                all_toc=True,
+            )
+
+        self.assertIn("MISSING_TOC_SUMMARY", self.issue_codes(report))
 
 
 class toc_server:

@@ -149,6 +149,16 @@ func (c *Client) RemoteCall(handler string, request, response any) error {
 		return nil
 	case rmqrpc.ErrBadHandler.Error():
 		return rmqrpc.ErrBadHandler
+	case rmqrpc.ErrBadRequest.Error():
+		return rmqrpc.ErrBadRequest
+	case rmqrpc.ErrUnauthenticated.Error():
+		return rmqrpc.ErrUnauthenticated
+	case rmqrpc.ErrFailedPrecondition.Error():
+		return rmqrpc.ErrFailedPrecondition
+	case rmqrpc.ErrUnavailable.Error():
+		return rmqrpc.ErrUnavailable
+	case rmqrpc.ErrRateLimited.Error():
+		return rmqrpc.ErrRateLimited
 	case rmqrpc.ErrInternalServer.Error():
 		return rmqrpc.ErrInternalServer
 	}

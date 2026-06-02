@@ -2,7 +2,10 @@ package middleware
 
 import (
 	"context"
+	"strings"
 
+	"github.com/evrone/go-clean-template/internal/controller/authutil"
+	"github.com/evrone/go-clean-template/internal/usecase"
 	"github.com/evrone/go-clean-template/pkg/jwt"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -22,10 +25,14 @@ func UserIDFromContext(ctx context.Context) (string, bool) {
 }
 
 // AuthInterceptor returns a gRPC unary interceptor for JWT authentication.
-func AuthInterceptor(jwtManager *jwt.Manager) grpc.UnaryServerInterceptor {
+func AuthInterceptor(jwtManager *jwt.Manager, users usecase.User) grpc.UnaryServerInterceptor {
 	skipAuthMethods := map[string]bool{
-		"/grpc.v1.AuthService/Register": true,
-		"/grpc.v1.AuthService/Login":    true,
+		"/grpc.v1.AuthService/Register":                true,
+		"/grpc.v1.AuthService/Login":                   true,
+		"/grpc.v1.AuthService/VerifyEmail":             true,
+		"/grpc.v1.AuthService/ResendEmailVerification": true,
+		"/grpc.v1.AuthService/ForgotPassword":          true,
+		"/grpc.v1.AuthService/ResetPassword":           true,
 	}
 
 	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
@@ -43,7 +50,12 @@ func AuthInterceptor(jwtManager *jwt.Manager) grpc.UnaryServerInterceptor {
 			return nil, status.Error(codes.Unauthenticated, "missing authorization token")
 		}
 
-		userID, err := jwtManager.ParseToken(values[0])
+		tokenString := normalizeAuthorization(values[0])
+		if tokenString == "" {
+			return nil, status.Error(codes.Unauthenticated, "missing authorization token")
+		}
+
+		userID, err := authutil.Authenticate(ctx, jwtManager, users, tokenString)
 		if err != nil {
 			return nil, status.Error(codes.Unauthenticated, "invalid or expired token")
 		}
@@ -52,4 +64,14 @@ func AuthInterceptor(jwtManager *jwt.Manager) grpc.UnaryServerInterceptor {
 
 		return handler(ctx, req)
 	}
+}
+
+func normalizeAuthorization(value string) string {
+	value = strings.TrimSpace(value)
+	parts := strings.SplitN(value, " ", 2)
+	if len(parts) == 2 && strings.EqualFold(parts[0], "Bearer") {
+		return strings.TrimSpace(parts[1])
+	}
+
+	return value
 }

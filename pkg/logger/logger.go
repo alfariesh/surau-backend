@@ -94,10 +94,30 @@ func (l *Logger) log(level zerolog.Level, message string, args ...any) {
 func (l *Logger) msg(level zerolog.Level, message any, args ...any) {
 	switch msg := message.(type) {
 	case error:
-		l.log(level, msg.Error(), args...)
+		l.log(level, "%s", errorMessage(msg, args...))
 	case string:
 		l.log(level, msg, args...)
 	default:
 		l.log(level, fmt.Sprintf("%s message %v has unknown type %v", level, message, msg), args...)
 	}
+}
+
+func errorMessage(err error, args ...any) string {
+	if len(args) == 0 {
+		return err.Error()
+	}
+
+	context := fmt.Sprint(args...)
+	if format, ok := args[0].(string); ok {
+		context = format
+		if len(args) > 1 && strings.Contains(format, "%") {
+			context = fmt.Sprintf(format, args[1:]...)
+		}
+	}
+
+	if strings.TrimSpace(context) == "" {
+		return err.Error()
+	}
+
+	return fmt.Sprintf("%s: %s", context, err)
 }

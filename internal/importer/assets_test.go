@@ -30,6 +30,27 @@ func TestReaderAssetValidate(t *testing.T) {
 			},
 		},
 		{
+			name: "english region language",
+			asset: importer.ReaderAsset{
+				Kind:      "translation",
+				BookID:    797,
+				HeadingID: 10,
+				Lang:      "en-US",
+				Content:   "Translation",
+			},
+		},
+		{
+			name: "unsupported language",
+			asset: importer.ReaderAsset{
+				Kind:      "translation",
+				BookID:    797,
+				HeadingID: 10,
+				Lang:      "fr",
+				Content:   "Traduction",
+			},
+			wantErr: true,
+		},
+		{
 			name: "audio",
 			asset: importer.ReaderAsset{
 				Kind:      "audio",
@@ -37,6 +58,16 @@ func TestReaderAssetValidate(t *testing.T) {
 				HeadingID: 10,
 				Lang:      "id",
 				URL:       "https://cdn.example/audio.mp3",
+			},
+		},
+		{
+			name: "heading summary",
+			asset: importer.ReaderAsset{
+				Kind:      "heading_summary",
+				BookID:    797,
+				HeadingID: 10,
+				Lang:      "ar",
+				Summary:   "يتناول الباب تعريف الحديث الصحيح.",
 			},
 		},
 		{
@@ -50,12 +81,46 @@ func TestReaderAssetValidate(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name: "heading summary missing summary",
+			asset: importer.ReaderAsset{
+				Kind:      "heading_summary",
+				BookID:    797,
+				HeadingID: 10,
+				Lang:      "ar",
+			},
+			wantErr: true,
+		},
+		{
 			name: "unsupported kind",
 			asset: importer.ReaderAsset{
 				Kind:      "pdf",
 				BookID:    797,
 				HeadingID: 10,
 				Lang:      "id",
+			},
+			wantErr: true,
+		},
+		{
+			name: "reviewed heading summary",
+			asset: importer.ReaderAsset{
+				Kind:              "heading_summary",
+				BookID:            797,
+				HeadingID:         10,
+				Lang:              "id",
+				Summary:           "Bab ini menjelaskan hadis sahih.",
+				SummaryStatus:     "reviewed",
+				SummaryReviewedBy: stringPtr("Editor A"),
+			},
+		},
+		{
+			name: "reviewed heading summary missing reviewer",
+			asset: importer.ReaderAsset{
+				Kind:          "heading_summary",
+				BookID:        797,
+				HeadingID:     10,
+				Lang:          "id",
+				Summary:       "Bab ini menjelaskan hadis sahih.",
+				SummaryStatus: "reviewed",
 			},
 			wantErr: true,
 		},

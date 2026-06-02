@@ -2,6 +2,12 @@
 .git
 .github
 nginx
+tmp
+temp-*
+.wrangler
+.playwright-mcp
+app
+web-reader
 
 .dockerignore
 .env

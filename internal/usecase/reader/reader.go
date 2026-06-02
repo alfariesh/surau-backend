@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/evrone/go-clean-template/internal/entity"
+	"github.com/evrone/go-clean-template/internal/readerlang"
 	"github.com/evrone/go-clean-template/internal/repo"
 )
 
@@ -25,14 +26,24 @@ func New(r repo.ReaderRepo) *UseCase {
 
 // Categories returns catalog categories.
 func (uc *UseCase) Categories(ctx context.Context, lang string) ([]entity.Category, error) {
-	return uc.repo.ListCategories(ctx, normalizeOptionalLang(lang))
+	lang, err := readerlang.Normalize(lang)
+	if err != nil {
+		return nil, err
+	}
+
+	return uc.repo.ListCategories(ctx, lang)
 }
 
 // Authors returns paginated authors.
 func (uc *UseCase) Authors(ctx context.Context, query string, limit, offset int, lang string) ([]entity.Author, int, error) {
+	lang, err := readerlang.Normalize(lang)
+	if err != nil {
+		return nil, 0, err
+	}
+
 	return uc.repo.ListAuthors(ctx, repo.AuthorFilter{
 		Query:  strings.TrimSpace(query),
-		Lang:   normalizeOptionalLang(lang),
+		Lang:   lang,
 		Limit:  clampLimit(limit),
 		Offset: clampOffset(offset),
 	})
@@ -47,9 +58,14 @@ func (uc *UseCase) Books(
 	limit, offset int,
 	lang string,
 ) ([]entity.Book, int, error) {
+	lang, err := readerlang.Normalize(lang)
+	if err != nil {
+		return nil, 0, err
+	}
+
 	return uc.repo.ListBooks(ctx, repo.BookFilter{
 		Query:      strings.TrimSpace(query),
-		Lang:       normalizeOptionalLang(lang),
+		Lang:       lang,
 		CategoryID: categoryID,
 		AuthorID:   authorID,
 		HasContent: hasContent,
@@ -60,7 +76,12 @@ func (uc *UseCase) Books(
 
 // Book returns one book.
 func (uc *UseCase) Book(ctx context.Context, bookID int, lang string) (entity.Book, error) {
-	return uc.repo.GetBook(ctx, bookID, normalizeOptionalLang(lang))
+	lang, err := readerlang.Normalize(lang)
+	if err != nil {
+		return entity.Book{}, err
+	}
+
+	return uc.repo.GetBook(ctx, bookID, lang)
 }
 
 // Pages returns paginated pages for a book.
@@ -83,7 +104,12 @@ func (uc *UseCase) Headings(ctx context.Context, bookID int, query string) ([]en
 
 // Section returns one section in Arabic plus optional requested language assets.
 func (uc *UseCase) Section(ctx context.Context, bookID, headingID int, lang string) (entity.BookSection, error) {
-	return uc.repo.GetSection(ctx, bookID, headingID, normalizeLang(lang))
+	lang, err := readerlang.Normalize(lang)
+	if err != nil {
+		return entity.BookSection{}, err
+	}
+
+	return uc.repo.GetSection(ctx, bookID, headingID, lang)
 }
 
 func clampLimit(limit int) uint64 {
@@ -104,13 +130,4 @@ func clampOffset(offset int) uint64 {
 	}
 
 	return uint64(offset)
-}
-
-func normalizeOptionalLang(lang string) string {
-	lang = strings.ToLower(strings.TrimSpace(lang))
-	if lang == "ar" {
-		return ""
-	}
-
-	return lang
 }

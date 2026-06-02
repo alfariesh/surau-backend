@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/evrone/go-clean-template/internal/controller/authutil"
+	"github.com/evrone/go-clean-template/internal/usecase"
 	"github.com/evrone/go-clean-template/pkg/jwt"
 	"github.com/gofiber/fiber/v2"
 )
@@ -15,7 +17,7 @@ type errorResponse struct {
 }
 
 // Auth returns a JWT authentication middleware for Fiber.
-func Auth(jwtManager *jwt.Manager) func(*fiber.Ctx) error {
+func Auth(jwtManager *jwt.Manager, users usecase.User) func(*fiber.Ctx) error {
 	return func(ctx *fiber.Ctx) error {
 		header := ctx.Get("Authorization")
 		if header == "" {
@@ -23,16 +25,22 @@ func Auth(jwtManager *jwt.Manager) func(*fiber.Ctx) error {
 		}
 
 		parts := strings.SplitN(header, " ", _bearerParts)
-		if len(parts) != _bearerParts || parts[0] != "Bearer" {
+		if len(parts) != _bearerParts || !strings.EqualFold(parts[0], "Bearer") {
 			return ctx.Status(http.StatusUnauthorized).JSON(errorResponse{Error: "invalid authorization header format"})
 		}
 
-		userID, err := jwtManager.ParseToken(parts[1])
+		token := strings.TrimSpace(parts[1])
+		if token == "" {
+			return ctx.Status(http.StatusUnauthorized).JSON(errorResponse{Error: "invalid authorization header format"})
+		}
+
+		user, err := authutil.AuthenticateUser(ctx.UserContext(), jwtManager, users, token)
 		if err != nil {
 			return ctx.Status(http.StatusUnauthorized).JSON(errorResponse{Error: "invalid or expired token"})
 		}
 
-		ctx.Locals("userID", userID)
+		ctx.Locals("user", user)
+		ctx.Locals("userID", user.ID)
 
 		return ctx.Next()
 	}

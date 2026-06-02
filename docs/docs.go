@@ -15,6 +15,2167 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/admin/emails/campaigns": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-emails"
+                ],
+                "summary": "List email campaigns",
+                "operationId": "admin-email-list-campaigns",
+                "parameters": [
+                    {
+                        "enum": [
+                            "draft",
+                            "scheduled",
+                            "sending",
+                            "sent",
+                            "cancelled"
+                        ],
+                        "type": "string",
+                        "description": "Campaign status",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 50,
+                        "description": "Page size",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Page offset",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.EmailCampaignList"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            },
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-emails"
+                ],
+                "summary": "Create email campaign",
+                "operationId": "admin-email-create-campaign",
+                "parameters": [
+                    {
+                        "description": "Campaign draft",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.EmailCampaignCreate"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/entity.EmailCampaign"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/admin/emails/campaigns/{id}": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-emails"
+                ],
+                "summary": "Get email campaign",
+                "operationId": "admin-email-get-campaign",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Campaign ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.EmailCampaign"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            },
+            "patch": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-emails"
+                ],
+                "summary": "Update email campaign draft",
+                "operationId": "admin-email-update-campaign",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Campaign ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Campaign draft",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.EmailCampaignUpdate"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.EmailCampaign"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/admin/emails/campaigns/{id}/cancel": {
+            "post": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-emails"
+                ],
+                "summary": "Cancel email campaign",
+                "operationId": "admin-email-cancel-campaign",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Campaign ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.EmailCampaign"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/admin/emails/campaigns/{id}/preview-audience": {
+            "post": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-emails"
+                ],
+                "summary": "Preview email campaign audience",
+                "operationId": "admin-email-preview-campaign-audience",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Campaign ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.EmailAudienceRecipientList"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/admin/emails/campaigns/{id}/schedule": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-emails"
+                ],
+                "summary": "Schedule email campaign",
+                "operationId": "admin-email-schedule-campaign",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Campaign ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Schedule time",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.EmailCampaignSchedule"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.EmailCampaign"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/admin/emails/campaigns/{id}/send-now": {
+            "post": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-emails"
+                ],
+                "summary": "Send email campaign now",
+                "operationId": "admin-email-send-campaign-now",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Campaign ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/entity.EmailCampaign"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/admin/emails/campaigns/{id}/test-send": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-emails"
+                ],
+                "summary": "Test send email campaign",
+                "operationId": "admin-email-test-send-campaign",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Campaign ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Recipient and variables",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.EmailCampaignTestSend"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/entity.EmailMessageLog"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/admin/emails/events/{key}": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-emails"
+                ],
+                "summary": "Get transactional email event setting",
+                "operationId": "admin-email-get-event-setting",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Transactional event key",
+                        "name": "key",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.EmailEventSetting"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            },
+            "patch": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-emails"
+                ],
+                "summary": "Update transactional email event setting",
+                "operationId": "admin-email-update-event-setting",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Transactional event key",
+                        "name": "key",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Event setting patch",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.EmailEventSettingUpdate"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.EmailEventSetting"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/admin/emails/messages": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-emails"
+                ],
+                "summary": "List email delivery messages",
+                "operationId": "admin-email-list-messages",
+                "parameters": [
+                    {
+                        "enum": [
+                            "transactional",
+                            "marketing"
+                        ],
+                        "type": "string",
+                        "description": "Email category",
+                        "name": "category",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "queued",
+                            "sent",
+                            "failed",
+                            "skipped"
+                        ],
+                        "type": "string",
+                        "description": "Message status",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Recipient email",
+                        "name": "email",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 50,
+                        "description": "Page size",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Page offset",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.EmailMessageList"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/admin/emails/suppressions": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-emails"
+                ],
+                "summary": "List email suppressions",
+                "operationId": "admin-email-list-suppressions",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Suppressed email",
+                        "name": "email",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "marketing",
+                            "all"
+                        ],
+                        "type": "string",
+                        "description": "Suppression scope",
+                        "name": "scope",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 50,
+                        "description": "Page size",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Page offset",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.EmailSuppressionList"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            },
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-emails"
+                ],
+                "summary": "Create email suppression",
+                "operationId": "admin-email-create-suppression",
+                "parameters": [
+                    {
+                        "description": "Suppression",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.EmailSuppressionCreate"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/entity.EmailSuppression"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/admin/emails/suppressions/{id}": {
+            "delete": {
+                "tags": [
+                    "admin-emails"
+                ],
+                "summary": "Delete email suppression",
+                "operationId": "admin-email-delete-suppression",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Suppression ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/admin/emails/templates": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-emails"
+                ],
+                "summary": "List email templates",
+                "operationId": "admin-email-list-templates",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Search key or name",
+                        "name": "q",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "transactional",
+                            "marketing"
+                        ],
+                        "type": "string",
+                        "description": "Template category",
+                        "name": "category",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Include archived templates",
+                        "name": "include_archived",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 50,
+                        "description": "Page size",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Page offset",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.EmailTemplateList"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            },
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-emails"
+                ],
+                "summary": "Create email template",
+                "operationId": "admin-email-create-template",
+                "parameters": [
+                    {
+                        "description": "Template metadata",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.EmailTemplateCreate"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/entity.EmailTemplate"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/admin/emails/templates/{id}": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-emails"
+                ],
+                "summary": "Get email template",
+                "operationId": "admin-email-get-template",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Template ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.EmailTemplate"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            },
+            "delete": {
+                "tags": [
+                    "admin-emails"
+                ],
+                "summary": "Delete email template",
+                "operationId": "admin-email-delete-template",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Template ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            },
+            "patch": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-emails"
+                ],
+                "summary": "Update email template",
+                "operationId": "admin-email-update-template",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Template ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Template patch",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.EmailTemplateUpdate"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.EmailTemplate"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/admin/emails/templates/{id}/preview": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-emails"
+                ],
+                "summary": "Preview email template",
+                "operationId": "admin-email-preview-template",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Template ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Preview variables",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.EmailPreviewRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.EmailPreview"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/admin/emails/templates/{id}/test-send": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-emails"
+                ],
+                "summary": "Test send email template",
+                "operationId": "admin-email-test-send-template",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Template ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Recipient and variables",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.EmailTestSendRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/entity.EmailMessageLog"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/admin/emails/templates/{id}/versions": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-emails"
+                ],
+                "summary": "List email template versions",
+                "operationId": "admin-email-list-template-versions",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Template ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.EmailTemplateVersionList"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            },
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-emails"
+                ],
+                "summary": "Create email template version",
+                "operationId": "admin-email-create-template-version",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Template ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Localized version",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.EmailTemplateVersionCreate"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/entity.EmailTemplateVersion"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/admin/emails/versions/{id}": {
+            "patch": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-emails"
+                ],
+                "summary": "Update email template version",
+                "operationId": "admin-email-update-template-version",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Version ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Version patch",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.EmailTemplateVersionUpdate"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.EmailTemplateVersion"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/admin/emails/versions/{id}/publish": {
+            "post": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-emails"
+                ],
+                "summary": "Publish email template version",
+                "operationId": "admin-email-publish-template-version",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Version ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.EmailTemplateVersion"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/admin/users/role": {
+            "patch": {
+                "description": "Admin-only user role assignment for user, editor, or admin.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Set user role",
+                "operationId": "admin-set-user-role",
+                "parameters": [
+                    {
+                        "description": "User role update",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.SetUserRole"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.User"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/auth/change-email/request": {
+            "post": {
+                "description": "Send a verification link to a new email address",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Request email change",
+                "operationId": "request-email-change",
+                "parameters": [
+                    {
+                        "description": "Current password and new email",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.RequestEmailChange"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Accepted"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/auth/change-email/verify": {
+            "post": {
+                "description": "Confirm an email change token for the current user",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Verify email change",
+                "operationId": "verify-email-change",
+                "parameters": [
+                    {
+                        "description": "Email change token",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.VerifyEmailChange"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.EmailChanged"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/auth/change-password": {
+            "post": {
+                "description": "Change the current user's password and revoke older JWTs",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Change password",
+                "operationId": "change-password",
+                "parameters": [
+                    {
+                        "description": "Current and new password",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.ChangePassword"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.PasswordChanged"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/auth/delete-account": {
+            "post": {
+                "description": "Soft-delete and anonymize the current account",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Delete account",
+                "operationId": "delete-account",
+                "parameters": [
+                    {
+                        "description": "Current password",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.DeleteAccount"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.AccountDeleted"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/auth/forgot-password": {
+            "post": {
+                "description": "Send a password reset email when the account exists",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Forgot password",
+                "operationId": "forgot-password",
+                "parameters": [
+                    {
+                        "description": "Email address",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.ForgotPassword"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Accepted"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
         "/auth/login": {
             "post": {
                 "description": "Authenticate user and get JWT token",
@@ -55,6 +2216,12 @@ const docTemplate = `{
                     },
                     "401": {
                         "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
                         "schema": {
                             "$ref": "#/definitions/v1.Error"
                         }
@@ -108,6 +2275,5102 @@ const docTemplate = `{
                     },
                     "409": {
                         "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/resend-verification": {
+            "post": {
+                "description": "Resend email verification for an existing unverified user",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Resend verification email",
+                "operationId": "resend-verification",
+                "parameters": [
+                    {
+                        "description": "Email address",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.ResendVerification"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Accepted"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/reset-password": {
+            "post": {
+                "description": "Reset password using a one-time token",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Reset password",
+                "operationId": "reset-password",
+                "parameters": [
+                    {
+                        "description": "Password reset token and new password",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.ResetPassword"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.PasswordReset"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/verify-email": {
+            "post": {
+                "description": "Verify a user's email address using a one-time token",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Verify email",
+                "operationId": "verify-email",
+                "parameters": [
+                    {
+                        "description": "Email verification token",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.VerifyEmail"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.EmailVerification"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/authors": {
+            "get": {
+                "description": "List authors with requested-language display metadata. Search matches Arabic and any catalog translation; display remains requested language or Arabic fallback.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "kitab"
+                ],
+                "summary": "List kitab authors",
+                "operationId": "list-kitab-authors",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Search query",
+                        "name": "q",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 50,
+                        "description": "Page size",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Page offset",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "default": "id",
+                        "description": "Language code: ar, id, or en",
+                        "name": "lang",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.AuthorList"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/books": {
+            "get": {
+                "description": "List published kitab catalog books. Book list responses keep existing fields, add localization metadata, and omit language_coverage; missing requested catalog translation falls back to Arabic metadata.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "kitab"
+                ],
+                "summary": "List kitab books",
+                "operationId": "list-kitab-books",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Search query",
+                        "name": "q",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Category ID",
+                        "name": "category_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Author ID",
+                        "name": "author_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Filter books that have imported content",
+                        "name": "has_content",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 50,
+                        "description": "Page size",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Page offset",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "default": "id",
+                        "description": "Language code: ar, id, or en",
+                        "name": "lang",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.BookList"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/books/{book_id}": {
+            "get": {
+                "description": "Get one published kitab book. Detail responses include language_coverage with translated, summarized, and audio section counts by language.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "kitab"
+                ],
+                "summary": "Get kitab book",
+                "operationId": "get-kitab-book",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Book ID",
+                        "name": "book_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "default": "id",
+                        "description": "Language code: ar, id, or en",
+                        "name": "lang",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.Book"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/books/{book_id}/headings": {
+            "get": {
+                "description": "List raw Arabic heading tree rows for one published kitab.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "kitab"
+                ],
+                "summary": "List kitab headings",
+                "operationId": "list-kitab-headings",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Book ID",
+                        "name": "book_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Search heading title",
+                        "name": "q",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/entity.BookHeading"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/books/{book_id}/pages": {
+            "get": {
+                "description": "List imported source pages for one published kitab.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "kitab"
+                ],
+                "summary": "List kitab pages",
+                "operationId": "list-kitab-pages",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Book ID",
+                        "name": "book_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "default": 50,
+                        "description": "Page size",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Page offset",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.PageList"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/books/{book_id}/pages/{page_id}": {
+            "get": {
+                "description": "Get one imported source page for a published kitab.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "kitab"
+                ],
+                "summary": "Get kitab page",
+                "operationId": "get-kitab-page",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Book ID",
+                        "name": "book_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page ID",
+                        "name": "page_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.BookPage"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/books/{book_id}/quran-references": {
+            "get": {
+                "description": "List Quran references linked to a public kitab. Defaults to approved references.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "quran"
+                ],
+                "summary": "List book Quran references",
+                "operationId": "list-book-quran-references",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Book ID",
+                        "name": "book_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "default": "id",
+                        "description": "Language code",
+                        "name": "lang",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "approved",
+                            "pending",
+                            "rejected",
+                            "ambiguous",
+                            "needs_review",
+                            "all"
+                        ],
+                        "type": "string",
+                        "default": "approved",
+                        "description": "Review status",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 50,
+                        "description": "Limit",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Offset",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.BookQuranReferenceList"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/books/{book_id}/rag": {
+            "post": {
+                "description": "Ask a question against one kitab. Sources include requested translation text only when exact requested-language translation exists; response includes requested_lang.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "kitab"
+                ],
+                "summary": "Ask kitab RAG",
+                "operationId": "ask-kitab-rag",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Book ID",
+                        "name": "book_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "default": "id",
+                        "description": "Language code: ar, id, or en",
+                        "name": "lang",
+                        "in": "query"
+                    },
+                    {
+                        "description": "Question payload",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.BookRAG"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.BookRAGResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/books/{book_id}/sections/{heading_id}": {
+            "get": {
+                "description": "Get source section content plus exact requested-language translation. If lang=en is missing while id exists, translation stays null and available_translation_langs lists alternatives.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "kitab"
+                ],
+                "summary": "Get kitab section",
+                "operationId": "get-kitab-section",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Book ID",
+                        "name": "book_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Heading ID",
+                        "name": "heading_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "default": "id",
+                        "description": "Language code: ar, id, or en",
+                        "name": "lang",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.BookSection"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/books/{book_id}/toc": {
+            "get": {
+                "description": "List nested TOC nodes. Titles use exact requested translation when available, otherwise Arabic; metadata exposes requested_lang, title_lang, is_title_fallback, translation_missing, and available language arrays.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "kitab"
+                ],
+                "summary": "List kitab TOC",
+                "operationId": "list-kitab-toc",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Book ID",
+                        "name": "book_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "default": "id",
+                        "description": "Language code: ar, id, or en",
+                        "name": "lang",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Include audio metadata",
+                        "name": "include_audio",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/entity.BookTOCNode"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/books/{book_id}/toc/{heading_id}/playlist": {
+            "get": {
+                "description": "Get a continuous audiobook manifest for one TOC subtree in the exact requested language.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "kitab"
+                ],
+                "summary": "Get kitab TOC audio playlist",
+                "operationId": "get-kitab-toc-playlist",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Book ID",
+                        "name": "book_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Heading ID",
+                        "name": "heading_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "default": "id",
+                        "description": "Language code: ar, id, or en",
+                        "name": "lang",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.BookTOCPlaylist"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/books/{book_id}/toc/{heading_id}/read": {
+            "get": {
+                "description": "Article-style section response with breadcrumb and sibling navigation. Translation content is exact-language only; missing requested translation returns translation=null with translation_missing=true.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "kitab"
+                ],
+                "summary": "Read kitab TOC section",
+                "operationId": "read-kitab-toc-section",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Book ID",
+                        "name": "book_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Heading ID",
+                        "name": "heading_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "default": "id",
+                        "description": "Language code: ar, id, or en",
+                        "name": "lang",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.BookTOCRead"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/books/{book_id}/toc/{heading_id}/translation-feedback": {
+            "post": {
+                "description": "Store feedback for an exact section translation language. Posting feedback for missing lang=en still returns 404 translation not found.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "kitab"
+                ],
+                "summary": "Create kitab translation feedback",
+                "operationId": "create-kitab-translation-feedback",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Book ID",
+                        "name": "book_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Heading ID",
+                        "name": "heading_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "default": "id",
+                        "description": "Language code: ar, id, or en",
+                        "name": "lang",
+                        "in": "query"
+                    },
+                    {
+                        "description": "Feedback payload",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.CreateTranslationFeedback"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/entity.TranslationFeedback"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/categories": {
+            "get": {
+                "description": "List non-deleted kitab categories. Supported lang values are ar, id, and en; empty defaults to id. Catalog metadata falls back to Arabic and exposes localization metadata when the requested translation is missing.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "kitab"
+                ],
+                "summary": "List kitab categories",
+                "operationId": "list-kitab-categories",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "default": "id",
+                        "description": "Language code: ar, id, or en",
+                        "name": "lang",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/entity.Category"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/editorial/production-activity": {
+            "get": {
+                "description": "List recent operational timeline events across production projects. Requires editor or admin role.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "editorial-production"
+                ],
+                "summary": "List global production activity",
+                "operationId": "editorial-list-global-production-activity",
+                "parameters": [
+                    {
+                        "enum": [
+                            "id",
+                            "en"
+                        ],
+                        "type": "string",
+                        "description": "Target language",
+                        "name": "lang",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 50,
+                        "description": "Page size",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Page offset",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ProductionEventList"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/editorial/production-candidates": {
+            "get": {
+                "description": "List raw source books with counts and current production state for one target language. Requires editor or admin role.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "editorial-production"
+                ],
+                "summary": "List production candidates",
+                "operationId": "editorial-list-production-candidates",
+                "parameters": [
+                    {
+                        "enum": [
+                            "id",
+                            "en"
+                        ],
+                        "type": "string",
+                        "description": "Target language",
+                        "name": "lang",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Search query",
+                        "name": "q",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Category ID",
+                        "name": "category_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Author ID",
+                        "name": "author_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Filter source books that have imported content",
+                        "name": "has_content",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Only books without an active production project for lang",
+                        "name": "unstarted",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 50,
+                        "description": "Page size",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Page offset",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ProductionCandidateList"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/editorial/production-dashboard": {
+            "get": {
+                "description": "Get compact production counts and recent activity for one target language. Requires editor or admin role.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "editorial-production"
+                ],
+                "summary": "Get production dashboard",
+                "operationId": "editorial-get-production-dashboard",
+                "parameters": [
+                    {
+                        "enum": [
+                            "id",
+                            "en"
+                        ],
+                        "type": "string",
+                        "description": "Target language",
+                        "name": "lang",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "Recent event count",
+                        "name": "activity_limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.BookProductionDashboard"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/editorial/production-projects": {
+            "get": {
+                "description": "List translation production workflows. Requires editor or admin role.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "editorial-production"
+                ],
+                "summary": "List production projects",
+                "operationId": "editorial-list-production-projects",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Book ID",
+                        "name": "book_id",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "id",
+                            "en"
+                        ],
+                        "type": "string",
+                        "description": "Target language",
+                        "name": "lang",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "candidate",
+                            "drafting",
+                            "in_review",
+                            "ready",
+                            "published",
+                            "archived"
+                        ],
+                        "type": "string",
+                        "description": "Workflow status",
+                        "name": "workflow_status",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "hidden",
+                            "published",
+                            "archived"
+                        ],
+                        "type": "string",
+                        "description": "Publication status",
+                        "name": "publication_status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Only active hidden projects ready to publish",
+                        "name": "ready_to_publish",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Only active hidden projects that still need work",
+                        "name": "needs_work",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 50,
+                        "description": "Page size",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Page offset",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ProductionProjectList"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            },
+            "post": {
+                "description": "Start one book+language translation production workflow. Requires editor or admin role.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "editorial-production"
+                ],
+                "summary": "Create production project",
+                "operationId": "editorial-create-production-project",
+                "parameters": [
+                    {
+                        "description": "Production project",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.CreateProductionProject"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/entity.BookProductionProject"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/editorial/production-projects/{id}": {
+            "get": {
+                "description": "Get one translation production workflow. Requires editor or admin role.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "editorial-production"
+                ],
+                "summary": "Get production project",
+                "operationId": "editorial-get-production-project",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Production project ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.BookProductionProject"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            },
+            "patch": {
+                "description": "Update production workflow settings. Requires editor or admin role.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "editorial-production"
+                ],
+                "summary": "Update production project",
+                "operationId": "editorial-update-production-project",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Production project ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Production project patch",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.UpdateProductionProject"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.BookProductionProject"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/editorial/production-projects/{id}/activity": {
+            "get": {
+                "description": "List operational timeline events for one production project. Requires editor or admin role.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "editorial-production"
+                ],
+                "summary": "Get production activity",
+                "operationId": "editorial-get-production-activity",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Production project ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "default": 50,
+                        "description": "Page size",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Page offset",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ProductionEventList"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/editorial/production-projects/{id}/author-draft": {
+            "get": {
+                "description": "Get the author translation draft for a production project. Requires editor or admin role.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "editorial-production"
+                ],
+                "summary": "Get author translation draft",
+                "operationId": "editorial-get-author-translation-draft",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Production project ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.AuthorTranslationEdit"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            },
+            "put": {
+                "description": "Create or replace the author translation draft. Requires editor or admin role.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "editorial-production"
+                ],
+                "summary": "Save author translation draft",
+                "operationId": "editorial-save-author-translation-draft",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Production project ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Author translation draft",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.SaveAuthorTranslationDraft"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.AuthorTranslationEdit"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            },
+            "delete": {
+                "description": "Delete the author translation draft. Requires editor or admin role.",
+                "tags": [
+                    "editorial-production"
+                ],
+                "summary": "Delete author translation draft",
+                "operationId": "editorial-delete-author-translation-draft",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Production project ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/editorial/production-projects/{id}/category-draft": {
+            "get": {
+                "description": "Get the category translation draft for a production project. Requires editor or admin role.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "editorial-production"
+                ],
+                "summary": "Get category translation draft",
+                "operationId": "editorial-get-category-translation-draft",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Production project ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.CategoryTranslationEdit"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            },
+            "put": {
+                "description": "Create or replace the category translation draft. Requires editor or admin role.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "editorial-production"
+                ],
+                "summary": "Save category translation draft",
+                "operationId": "editorial-save-category-translation-draft",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Production project ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Category translation draft",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.SaveCategoryTranslationDraft"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.CategoryTranslationEdit"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            },
+            "delete": {
+                "description": "Delete the category translation draft. Requires editor or admin role.",
+                "tags": [
+                    "editorial-production"
+                ],
+                "summary": "Delete category translation draft",
+                "operationId": "editorial-delete-category-translation-draft",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Production project ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/editorial/production-projects/{id}/completeness": {
+            "get": {
+                "description": "Check whether all required translation, summary, metadata, and optional audio drafts are complete enough to publish. Requires editor or admin role.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "editorial-production"
+                ],
+                "summary": "Get production completeness",
+                "operationId": "editorial-production-completeness",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Production project ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.BookProductionCompleteness"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/editorial/production-projects/{id}/draft-revisions": {
+            "get": {
+                "description": "List immutable snapshots for one production draft asset. Requires editor or admin role.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "editorial-production"
+                ],
+                "summary": "List production draft revisions",
+                "operationId": "editorial-list-production-draft-revisions",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Production project ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "enum": [
+                            "book_metadata",
+                            "author_metadata",
+                            "category_metadata",
+                            "section_translation",
+                            "heading_summary",
+                            "section_audio"
+                        ],
+                        "type": "string",
+                        "description": "Asset type",
+                        "name": "asset_type",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Heading ID for TOC-scoped assets",
+                        "name": "heading_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 50,
+                        "description": "Page size",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Page offset",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ProductionDraftRevisionList"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/editorial/production-projects/{id}/draft-revisions/{revision_id}/restore": {
+            "post": {
+                "description": "Restore a previous draft snapshot into the current draft and create a new revision. Requires editor or admin role.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "editorial-production"
+                ],
+                "summary": "Restore production draft revision",
+                "operationId": "editorial-restore-production-draft-revision",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Production project ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Draft revision ID",
+                        "name": "revision_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.BookProductionDraftRevision"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/editorial/production-projects/{id}/final-assets/{asset_type}": {
+            "delete": {
+                "description": "Soft-delete a project-scoped final asset and hide the publication. Admin role required.",
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "editorial-production"
+                ],
+                "summary": "Delete final project asset",
+                "operationId": "editorial-delete-final-production-asset",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Production project ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "enum": [
+                            "book_metadata",
+                            "author_metadata",
+                            "category_metadata"
+                        ],
+                        "type": "string",
+                        "description": "Asset type",
+                        "name": "asset_type",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Delete reason",
+                        "name": "request",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/v1.DeleteFinalProductionAsset"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/editorial/production-projects/{id}/metadata-draft": {
+            "get": {
+                "description": "Get the book metadata translation draft for a production project. Requires editor or admin role.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "editorial-production"
+                ],
+                "summary": "Get metadata translation draft",
+                "operationId": "editorial-get-metadata-translation-draft",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Production project ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.BookMetadataTranslationEdit"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            },
+            "put": {
+                "description": "Create or replace the book metadata translation draft. Requires editor or admin role.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "editorial-production"
+                ],
+                "summary": "Save metadata translation draft",
+                "operationId": "editorial-save-metadata-translation-draft",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Production project ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Metadata translation draft",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.SaveMetadataTranslationDraft"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.BookMetadataTranslationEdit"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            },
+            "delete": {
+                "description": "Delete the book metadata translation draft. Requires editor or admin role.",
+                "tags": [
+                    "editorial-production"
+                ],
+                "summary": "Delete metadata translation draft",
+                "operationId": "editorial-delete-metadata-translation-draft",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Production project ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/editorial/production-projects/{id}/publish": {
+            "post": {
+                "description": "Publish a complete book+language production project into final reader assets. Admin role required.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "editorial-production"
+                ],
+                "summary": "Publish production project",
+                "operationId": "editorial-publish-production-project",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Production project ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.BookProductionProject"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/editorial/production-projects/{id}/publish-check": {
+            "get": {
+                "description": "Explain whether a production project can be published and which required assets still block it. Requires editor or admin role.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "editorial-production"
+                ],
+                "summary": "Get production publish check",
+                "operationId": "editorial-get-production-publish-check",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Production project ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.BookProductionPublishCheck"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/editorial/production-projects/{id}/review": {
+            "post": {
+                "description": "Submit, approve, or reject one production draft asset. Requires editor or admin role.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "editorial-production"
+                ],
+                "summary": "Review production asset",
+                "operationId": "editorial-review-production-asset",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Production project ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Review decision",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.ReviewProductionAsset"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/editorial/production-projects/{id}/toc/{heading_id}/audio-draft": {
+            "get": {
+                "description": "Get a TOC-scoped audio draft. Requires editor or admin role.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "editorial-production"
+                ],
+                "summary": "Get section audio draft",
+                "operationId": "editorial-get-section-audio-draft",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Production project ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Heading ID",
+                        "name": "heading_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.SectionAudioEdit"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            },
+            "put": {
+                "description": "Create or replace a TOC-scoped audio draft. Requires editor or admin role.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "editorial-production"
+                ],
+                "summary": "Save section audio draft",
+                "operationId": "editorial-save-section-audio-draft",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Production project ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Heading ID",
+                        "name": "heading_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Section audio draft",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.SaveSectionAudioDraft"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.SectionAudioEdit"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            },
+            "delete": {
+                "description": "Delete a TOC-scoped audio draft. Requires editor or admin role.",
+                "tags": [
+                    "editorial-production"
+                ],
+                "summary": "Delete section audio draft",
+                "operationId": "editorial-delete-section-audio-draft",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Production project ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Heading ID",
+                        "name": "heading_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/editorial/production-projects/{id}/toc/{heading_id}/final-assets/{asset_type}": {
+            "delete": {
+                "description": "Soft-delete a TOC-scoped final asset and hide the publication. Admin role required.",
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "editorial-production"
+                ],
+                "summary": "Delete final heading asset",
+                "operationId": "editorial-delete-final-heading-production-asset",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Production project ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Heading ID",
+                        "name": "heading_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "enum": [
+                            "section_translation",
+                            "heading_summary",
+                            "section_audio"
+                        ],
+                        "type": "string",
+                        "description": "Asset type",
+                        "name": "asset_type",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Delete reason",
+                        "name": "request",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/v1.DeleteFinalProductionAsset"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/editorial/production-projects/{id}/toc/{heading_id}/summary-draft": {
+            "get": {
+                "description": "Get a TOC-scoped summary draft. Requires editor or admin role.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "editorial-production"
+                ],
+                "summary": "Get heading summary draft",
+                "operationId": "editorial-get-heading-summary-draft",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Production project ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Heading ID",
+                        "name": "heading_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.HeadingSummaryEdit"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            },
+            "put": {
+                "description": "Create or replace a TOC-scoped summary draft. Requires editor or admin role.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "editorial-production"
+                ],
+                "summary": "Save heading summary draft",
+                "operationId": "editorial-save-heading-summary-draft",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Production project ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Heading ID",
+                        "name": "heading_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Heading summary draft",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.SaveHeadingSummaryDraft"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.HeadingSummaryEdit"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            },
+            "delete": {
+                "description": "Delete a TOC-scoped summary draft. Requires editor or admin role.",
+                "tags": [
+                    "editorial-production"
+                ],
+                "summary": "Delete heading summary draft",
+                "operationId": "editorial-delete-heading-summary-draft",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Production project ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Heading ID",
+                        "name": "heading_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/editorial/production-projects/{id}/toc/{heading_id}/translation-draft": {
+            "get": {
+                "description": "Get a TOC-scoped section translation draft. Requires editor or admin role.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "editorial-production"
+                ],
+                "summary": "Get section translation draft",
+                "operationId": "editorial-get-section-translation-draft",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Production project ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Heading ID",
+                        "name": "heading_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.SectionTranslationEdit"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            },
+            "put": {
+                "description": "Create or replace a TOC-scoped section translation draft. Requires editor or admin role.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "editorial-production"
+                ],
+                "summary": "Save section translation draft",
+                "operationId": "editorial-save-section-translation-draft",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Production project ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Heading ID",
+                        "name": "heading_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Section translation draft",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.SaveSectionTranslationDraft"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.SectionTranslationEdit"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            },
+            "delete": {
+                "description": "Delete a TOC-scoped section translation draft. Requires editor or admin role.",
+                "tags": [
+                    "editorial-production"
+                ],
+                "summary": "Delete section translation draft",
+                "operationId": "editorial-delete-section-translation-draft",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Production project ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Heading ID",
+                        "name": "heading_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/editorial/production-projects/{id}/unpublish": {
+            "post": {
+                "description": "Hide a book+language publication without deleting final assets. Admin role required.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "editorial-production"
+                ],
+                "summary": "Unpublish production project",
+                "operationId": "editorial-unpublish-production-project",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Production project ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.BookProductionProject"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/editorial/production-projects/{id}/workspace": {
+            "get": {
+                "description": "Get project, source book, TOC draft status, final asset flags, and completeness in one editor payload. Requires editor or admin role.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "editorial-production"
+                ],
+                "summary": "Get production workspace",
+                "operationId": "editorial-get-production-workspace",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Production project ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.BookProductionWorkspace"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/editorial/quran/missing-assets": {
+            "get": {
+                "description": "Editorial queue of missing Quran surah info, ayah translations, translation sources, and app-owned public audio URLs. Source audio_url may still be playable.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "editorial"
+                ],
+                "summary": "List missing Quran assets",
+                "operationId": "editorial-list-missing-quran-assets",
+                "parameters": [
+                    {
+                        "enum": [
+                            "id",
+                            "en"
+                        ],
+                        "type": "string",
+                        "description": "Target language: id or en; empty returns both",
+                        "name": "target_lang",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "surah_info",
+                            "ayah_translation",
+                            "translation_source",
+                            "audio_public"
+                        ],
+                        "type": "string",
+                        "description": "Asset type filter",
+                        "name": "asset_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Surah ID",
+                        "name": "surah_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 50,
+                        "description": "Page size",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Page offset",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.EditorialMissingQuranAssets"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/editorial/reader/missing-assets": {
+            "get": {
+                "description": "Editorial queue of missing kitab metadata, section translations, summaries, and audio for target languages id/en.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "editorial"
+                ],
+                "summary": "List missing reader assets",
+                "operationId": "editorial-list-missing-reader-assets",
+                "parameters": [
+                    {
+                        "enum": [
+                            "id",
+                            "en"
+                        ],
+                        "type": "string",
+                        "description": "Target language: id or en; empty returns both",
+                        "name": "target_lang",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "book_metadata",
+                            "category_metadata",
+                            "author_metadata",
+                            "section_translation",
+                            "heading_summary",
+                            "section_audio"
+                        ],
+                        "type": "string",
+                        "description": "Asset type filter",
+                        "name": "asset_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Book ID",
+                        "name": "book_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 50,
+                        "description": "Page size",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Page offset",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.EditorialMissingReaderAssets"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/email/unsubscribe": {
+            "get": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "email"
+                ],
+                "summary": "Unsubscribe from marketing email",
+                "operationId": "email-unsubscribe",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Unsubscribe token",
+                        "name": "token",
+                        "in": "query"
+                    },
+                    {
+                        "description": "Unsubscribe token",
+                        "name": "request",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/v1.EmailUnsubscribe"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.EmailSubscription"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "email"
+                ],
+                "summary": "Unsubscribe from marketing email",
+                "operationId": "email-unsubscribe",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Unsubscribe token",
+                        "name": "token",
+                        "in": "query"
+                    },
+                    {
+                        "description": "Unsubscribe token",
+                        "name": "request",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/v1.EmailUnsubscribe"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.EmailSubscription"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/me/quran/progress": {
+            "get": {
+                "description": "Return the authenticated user's latest Quran resume position across surahs.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "me"
+                ],
+                "summary": "Get latest Quran progress",
+                "operationId": "get-quran-progress",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.QuranReadingProgress"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            },
+            "put": {
+                "description": "Upsert one Quran resume position. Older client_observed_at events do not roll back progress.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "me"
+                ],
+                "summary": "Save Quran progress",
+                "operationId": "save-quran-progress",
+                "parameters": [
+                    {
+                        "description": "Quran progress position",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.SaveQuranProgress"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.QuranReadingProgress"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/me/quran/progress/surahs": {
+            "get": {
+                "description": "Return all authenticated user's per-surah Quran resume positions ordered by observed_at descending.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "me"
+                ],
+                "summary": "List Quran surah progress",
+                "operationId": "list-quran-surah-progress",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.QuranProgressList"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/me/quran/progress/surahs/{surah_id}": {
+            "get": {
+                "description": "Return the authenticated user's Quran resume position for one surah.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "me"
+                ],
+                "summary": "Get Quran surah progress",
+                "operationId": "get-quran-surah-progress",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Surah ID",
+                        "name": "surah_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.QuranReadingProgress"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/me/saved-items": {
+            "get": {
+                "description": "List private saved Quran and kitab targets. Responses are reference-only and do not hydrate target content.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "me"
+                ],
+                "summary": "List saved items",
+                "operationId": "list-saved-items",
+                "parameters": [
+                    {
+                        "enum": [
+                            "book_page",
+                            "book_heading",
+                            "quran_ayah",
+                            "quran_range"
+                        ],
+                        "type": "string",
+                        "description": "Filter by item type",
+                        "name": "item_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Filter by kitab book ID",
+                        "name": "book_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Filter by Quran surah ID",
+                        "name": "surah_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by normalized tag",
+                        "name": "tag",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 50,
+                        "description": "Limit",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Offset",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.SavedItemList"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            },
+            "post": {
+                "description": "Save a Quran ayah/range or kitab page/heading. Posting the same target updates label, note, and tags.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "me"
+                ],
+                "summary": "Save or update an item",
+                "operationId": "upsert-saved-item",
+                "parameters": [
+                    {
+                        "description": "Saved item target and metadata",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.UpsertSavedItem"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.SavedItem"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/me/saved-items/tags": {
+            "get": {
+                "description": "List distinct normalized tags used by the authenticated user's saved items.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "me"
+                ],
+                "summary": "List saved item tags",
+                "operationId": "list-saved-item-tags",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.SavedItemTags"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/me/saved-items/{id}": {
+            "delete": {
+                "description": "Delete one private saved item.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "me"
+                ],
+                "summary": "Delete saved item",
+                "operationId": "delete-saved-item",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Saved item ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            },
+            "patch": {
+                "description": "Update label, note, and tags for one private saved item.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "me"
+                ],
+                "summary": "Update saved item metadata",
+                "operationId": "update-saved-item",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Saved item ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Saved item metadata",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.UpdateSavedItem"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.SavedItem"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/quran/ayahs/{ayah_key}": {
+            "get": {
+                "description": "Get one ayah by canonical ayah key. When include_audio=true and recitation_id is omitted, the backend uses the default playable recitation.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "quran"
+                ],
+                "summary": "Get Quran ayah",
+                "operationId": "get-quran-ayah",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Canonical ayah key, for example 73:4",
+                        "name": "ayah_key",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "default": "id",
+                        "description": "Language code",
+                        "name": "lang",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Translation source ID. Empty uses language default.",
+                        "name": "translation_source",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Include audio track and timestamp segments",
+                        "name": "include_audio",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Recitation ID. Defaults to the playable default recitation when include_audio=true.",
+                        "name": "recitation_id",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.QuranAyah"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/quran/hizbs": {
+            "get": {
+                "description": "List imported Quran hizb segments with lightweight start/end boundaries.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "quran"
+                ],
+                "summary": "List Quran hizbs",
+                "operationId": "list-quran-hizbs",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "default": "id",
+                        "description": "Language code",
+                        "name": "lang",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/entity.QuranNavigationSegment"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/quran/hizbs/{hizb_number}/ayahs": {
+            "get": {
+                "description": "List all ayahs in one imported hizb segment. When include_audio=true and recitation_id is omitted, the backend uses the default playable recitation.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "quran"
+                ],
+                "summary": "List Quran ayahs in a hizb",
+                "operationId": "list-quran-hizb-ayahs",
+                "parameters": [
+                    {
+                        "maximum": 60,
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "Hizb number",
+                        "name": "hizb_number",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "default": "id",
+                        "description": "Language code",
+                        "name": "lang",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Translation source ID. Empty uses language default.",
+                        "name": "translation_source",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "default": true,
+                        "description": "Include selected translation",
+                        "name": "include_translation",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Include audio track and timestamp segments",
+                        "name": "include_audio",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Recitation ID. Defaults to the playable default recitation when include_audio=true.",
+                        "name": "recitation_id",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/entity.QuranAyah"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/quran/juz": {
+            "get": {
+                "description": "List imported Quran juz segments with lightweight start/end boundaries.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "quran"
+                ],
+                "summary": "List Quran juz",
+                "operationId": "list-quran-juz",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "default": "id",
+                        "description": "Language code",
+                        "name": "lang",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/entity.QuranNavigationSegment"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/quran/juz/{juz_number}/ayahs": {
+            "get": {
+                "description": "List all ayahs in one imported juz segment. When include_audio=true and recitation_id is omitted, the backend uses the default playable recitation.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "quran"
+                ],
+                "summary": "List Quran ayahs in a juz",
+                "operationId": "list-quran-juz-ayahs",
+                "parameters": [
+                    {
+                        "maximum": 30,
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "Juz number",
+                        "name": "juz_number",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "default": "id",
+                        "description": "Language code",
+                        "name": "lang",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Translation source ID. Empty uses language default.",
+                        "name": "translation_source",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "default": true,
+                        "description": "Include selected translation",
+                        "name": "include_translation",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Include audio track and timestamp segments",
+                        "name": "include_audio",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Recitation ID. Defaults to the playable default recitation when include_audio=true.",
+                        "name": "recitation_id",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/entity.QuranAyah"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/quran/recitations": {
+            "get": {
+                "description": "List imported recitation resources and audio coverage. Exactly one fully playable recitation may be marked is_default. A track is playable when public_url or source audio_url exists.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "quran"
+                ],
+                "summary": "List Quran recitations",
+                "operationId": "list-quran-recitations",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/entity.QuranRecitation"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/quran/search": {
+            "get": {
+                "description": "Search Arabic Quran text, the requested translation, and other imported translations for discoverability. Display translation remains exact requested language only.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "quran"
+                ],
+                "summary": "Search Quran",
+                "operationId": "search-quran",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Search query",
+                        "name": "q",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "default": "id",
+                        "description": "Language code",
+                        "name": "lang",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 50,
+                        "description": "Limit",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Offset",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.QuranSearchList"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/quran/surahs": {
+            "get": {
+                "description": "List Quran surahs in mushaf order. Surah info is omitted by default; pass include_info=true for language-specific info HTML.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "quran"
+                ],
+                "summary": "List Quran surahs",
+                "operationId": "list-quran-surahs",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "default": "id",
+                        "description": "Language code",
+                        "name": "lang",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Include surah info HTML",
+                        "name": "include_info",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/entity.QuranSurah"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/quran/surahs/{surah_id}": {
+            "get": {
+                "description": "Get one Quran surah with language-specific info.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "quran"
+                ],
+                "summary": "Get Quran surah",
+                "operationId": "get-quran-surah",
+                "parameters": [
+                    {
+                        "maximum": 114,
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "Surah ID",
+                        "name": "surah_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "default": "id",
+                        "description": "Language code",
+                        "name": "lang",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.QuranSurah"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/quran/surahs/{surah_id}/ayahs": {
+            "get": {
+                "description": "List all ayahs or an ayah range for one surah. When include_audio=true and recitation_id is omitted, the backend uses the default playable recitation.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "quran"
+                ],
+                "summary": "List Quran ayahs for a surah",
+                "operationId": "list-quran-surah-ayahs",
+                "parameters": [
+                    {
+                        "maximum": 114,
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "Surah ID",
+                        "name": "surah_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Starting ayah number",
+                        "name": "from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Ending ayah number",
+                        "name": "to",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "default": "id",
+                        "description": "Language code",
+                        "name": "lang",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Translation source ID. Empty uses language default.",
+                        "name": "translation_source",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "default": true,
+                        "description": "Include selected translation",
+                        "name": "include_translation",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Include audio track and timestamp segments",
+                        "name": "include_audio",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Recitation ID. Defaults to the playable default recitation when include_audio=true.",
+                        "name": "recitation_id",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/entity.QuranAyah"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/quran/translation-sources": {
+            "get": {
+                "description": "List imported Quran translation sources for the requested language, with coverage and default marker.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "quran"
+                ],
+                "summary": "List Quran translation sources",
+                "operationId": "list-quran-translation-sources",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "default": "id",
+                        "description": "Language code: ar, id, or en",
+                        "name": "lang",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/entity.QuranTranslationSource"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
                         "schema": {
                             "$ref": "#/definitions/v1.Error"
                         }
@@ -594,6 +7857,226 @@ const docTemplate = `{
                 ]
             }
         },
+        "/user/email-preferences": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "user"
+                ],
+                "summary": "Get user email preferences",
+                "operationId": "user-email-preferences",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.EmailSubscription"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            },
+            "patch": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "user"
+                ],
+                "summary": "Update user email preferences",
+                "operationId": "update-user-email-preferences",
+                "parameters": [
+                    {
+                        "description": "Marketing opt-in",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.EmailSubscriptionUpdate"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.EmailSubscription"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/user/onboarding": {
+            "patch": {
+                "description": "Store first-run profile and reader preferences for the current user",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "user"
+                ],
+                "summary": "Complete onboarding",
+                "operationId": "user-onboarding",
+                "parameters": [
+                    {
+                        "description": "Onboarding answers",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.UserOnboarding"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.UserAccount"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/user/preferences": {
+            "patch": {
+                "description": "Update reader and Quran preferences for the current user",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "user"
+                ],
+                "summary": "Update preferences",
+                "operationId": "user-preferences",
+                "parameters": [
+                    {
+                        "description": "Preference changes",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.UserPreferencesPatch"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.UserAccount"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
         "/user/profile": {
             "get": {
                 "description": "Get current user profile",
@@ -609,7 +8092,69 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/entity.User"
+                            "$ref": "#/definitions/entity.UserAccount"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            },
+            "patch": {
+                "description": "Update normal profile fields for the current user",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "user"
+                ],
+                "summary": "Update profile",
+                "operationId": "update-profile",
+                "parameters": [
+                    {
+                        "description": "Profile changes",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.UserProfilePatch"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.UserAccount"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
                         }
                     },
                     "401": {
@@ -640,6 +8185,3049 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "entity.Author": {
+            "type": "object",
+            "properties": {
+                "biography": {
+                    "type": "string"
+                },
+                "death_number": {
+                    "type": "integer",
+                    "example": 1442
+                },
+                "death_text": {
+                    "type": "string",
+                    "example": "1442"
+                },
+                "id": {
+                    "type": "integer",
+                    "example": 177
+                },
+                "is_deleted": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "localization": {
+                    "$ref": "#/definitions/entity.LocalizationMeta"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "فضل الرحمن صافي"
+                },
+                "translation_reviewed_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "translation_reviewed_by": {
+                    "type": "string",
+                    "example": "Editor A"
+                },
+                "translation_status": {
+                    "type": "string",
+                    "example": "generated"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                }
+            }
+        },
+        "entity.AuthorTranslationEdit": {
+            "type": "object",
+            "properties": {
+                "biography": {
+                    "type": "string"
+                },
+                "death_text": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "type": "object"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "project_id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "review_note": {
+                    "type": "string"
+                },
+                "review_status": {
+                    "type": "string",
+                    "example": "draft"
+                },
+                "reviewed_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "reviewed_by": {
+                    "type": "string"
+                },
+                "source": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "updated_by": {
+                    "type": "string"
+                }
+            }
+        },
+        "entity.AvailabilityDecision": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "example": "offer_available_lang"
+                },
+                "available_langs": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "id"
+                    ]
+                },
+                "display_lang": {
+                    "type": "string",
+                    "example": "ar"
+                },
+                "is_fallback": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "missing": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "reason": {
+                    "type": "string",
+                    "example": "alternative_langs_available"
+                },
+                "requested_lang": {
+                    "type": "string",
+                    "example": "en"
+                }
+            }
+        },
+        "entity.Book": {
+            "type": "object",
+            "properties": {
+                "author_id": {
+                    "type": "integer",
+                    "example": 177
+                },
+                "author_name": {
+                    "type": "string",
+                    "example": "فضل الرحمن صافي"
+                },
+                "bibliography": {
+                    "type": "string"
+                },
+                "category_id": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "category_name": {
+                    "type": "string",
+                    "example": "علوم الحديث"
+                },
+                "cover_url": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "editorial_notes": {
+                    "type": "string"
+                },
+                "featured": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "has_content": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "hint": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer",
+                    "example": 797
+                },
+                "is_deleted": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "language_coverage": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.LanguageCoverage"
+                    }
+                },
+                "localization": {
+                    "$ref": "#/definitions/entity.LocalizationMeta"
+                },
+                "major_release": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "metadata": {
+                    "type": "object"
+                },
+                "minor_release": {
+                    "type": "integer",
+                    "example": 0
+                },
+                "name": {
+                    "type": "string",
+                    "example": "الزبد في مصطلح الحديث"
+                },
+                "pdf_links": {
+                    "type": "object"
+                },
+                "printed": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "publication_status": {
+                    "type": "string",
+                    "example": "published"
+                },
+                "sort_order": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "source_date": {
+                    "type": "string",
+                    "example": "02091443"
+                },
+                "translation_reviewed_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "translation_reviewed_by": {
+                    "type": "string",
+                    "example": "Editor A"
+                },
+                "translation_status": {
+                    "type": "string",
+                    "example": "generated"
+                },
+                "type": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                }
+            }
+        },
+        "entity.BookHeading": {
+            "type": "object",
+            "properties": {
+                "book_id": {
+                    "type": "integer",
+                    "example": 797
+                },
+                "content": {
+                    "type": "string",
+                    "example": "النوع الأول: الصحيح"
+                },
+                "depth": {
+                    "type": "integer",
+                    "example": 0
+                },
+                "heading_id": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "is_deleted": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "ordinal": {
+                    "type": "integer",
+                    "example": 9
+                },
+                "page_id": {
+                    "type": "integer",
+                    "example": 12
+                },
+                "parent_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                }
+            }
+        },
+        "entity.BookMetadataTranslationEdit": {
+            "type": "object",
+            "properties": {
+                "bibliography": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "display_title": {
+                    "type": "string"
+                },
+                "hint": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "type": "object"
+                },
+                "project_id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "review_note": {
+                    "type": "string"
+                },
+                "review_status": {
+                    "type": "string",
+                    "example": "draft"
+                },
+                "reviewed_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "reviewed_by": {
+                    "type": "string"
+                },
+                "source": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "updated_by": {
+                    "type": "string"
+                }
+            }
+        },
+        "entity.BookPage": {
+            "type": "object",
+            "properties": {
+                "book_id": {
+                    "type": "integer",
+                    "example": 797
+                },
+                "content_html": {
+                    "type": "string"
+                },
+                "content_text": {
+                    "type": "string"
+                },
+                "is_deleted": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "number": {
+                    "type": "string",
+                    "example": "42"
+                },
+                "page_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "part": {
+                    "type": "string",
+                    "example": "1"
+                },
+                "printed_page": {
+                    "type": "string",
+                    "example": "3"
+                },
+                "services": {
+                    "type": "object"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                }
+            }
+        },
+        "entity.BookProductionBlocking": {
+            "type": "object",
+            "properties": {
+                "asset_type": {
+                    "type": "string",
+                    "example": "section_translation"
+                },
+                "code": {
+                    "type": "string",
+                    "example": "missing_required_asset"
+                },
+                "heading_id": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "message": {
+                    "type": "string",
+                    "example": "section translation draft is missing"
+                }
+            }
+        },
+        "entity.BookProductionCandidate": {
+            "type": "object",
+            "properties": {
+                "author_id": {
+                    "type": "integer",
+                    "example": 177
+                },
+                "author_name": {
+                    "type": "string"
+                },
+                "book_id": {
+                    "type": "integer",
+                    "example": 797
+                },
+                "category_id": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "category_name": {
+                    "type": "string"
+                },
+                "existing_project_id": {
+                    "type": "string"
+                },
+                "existing_project_updated_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "existing_publication_status": {
+                    "type": "string"
+                },
+                "existing_workflow_status": {
+                    "type": "string"
+                },
+                "has_content": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "heading_count": {
+                    "type": "integer",
+                    "example": 120
+                },
+                "name": {
+                    "type": "string"
+                },
+                "page_count": {
+                    "type": "integer",
+                    "example": 300
+                }
+            }
+        },
+        "entity.BookProductionCompleteness": {
+            "type": "object",
+            "properties": {
+                "complete_count": {
+                    "type": "integer",
+                    "example": 40
+                },
+                "missing": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.BookProductionMissingAsset"
+                    }
+                },
+                "missing_count": {
+                    "type": "integer",
+                    "example": 2
+                },
+                "project": {
+                    "$ref": "#/definitions/entity.BookProductionProject"
+                },
+                "ready": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "required_count": {
+                    "type": "integer",
+                    "example": 42
+                }
+            }
+        },
+        "entity.BookProductionDashboard": {
+            "type": "object",
+            "properties": {
+                "active_project_count": {
+                    "type": "integer",
+                    "example": 18
+                },
+                "candidate_count": {
+                    "type": "integer",
+                    "example": 120
+                },
+                "lang": {
+                    "type": "string",
+                    "example": "id"
+                },
+                "needs_work_count": {
+                    "type": "integer",
+                    "example": 12
+                },
+                "published_count": {
+                    "type": "integer",
+                    "example": 25
+                },
+                "ready_to_publish_count": {
+                    "type": "integer",
+                    "example": 3
+                },
+                "recent_events": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.BookProductionEvent"
+                    }
+                },
+                "recent_events_total": {
+                    "type": "integer",
+                    "example": 42
+                }
+            }
+        },
+        "entity.BookProductionDraftRevision": {
+            "type": "object",
+            "properties": {
+                "actor_id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "asset_type": {
+                    "type": "string",
+                    "example": "section_translation"
+                },
+                "created_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "heading_id": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "project_id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "snapshot": {
+                    "type": "object"
+                },
+                "version": {
+                    "type": "integer",
+                    "example": 3
+                }
+            }
+        },
+        "entity.BookProductionEvent": {
+            "type": "object",
+            "properties": {
+                "actor_id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "asset_type": {
+                    "type": "string",
+                    "example": "section_translation"
+                },
+                "created_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "event_type": {
+                    "type": "string",
+                    "example": "production_asset.review"
+                },
+                "heading_id": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "note": {
+                    "type": "string"
+                },
+                "payload": {
+                    "type": "object"
+                },
+                "project_id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                }
+            }
+        },
+        "entity.BookProductionMissingAsset": {
+            "type": "object",
+            "properties": {
+                "asset_type": {
+                    "type": "string",
+                    "example": "section_translation"
+                },
+                "heading_id": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "message": {
+                    "type": "string",
+                    "example": "translation draft is missing"
+                }
+            }
+        },
+        "entity.BookProductionProject": {
+            "type": "object",
+            "properties": {
+                "archived_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "book_id": {
+                    "type": "integer",
+                    "example": 797
+                },
+                "created_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "lang": {
+                    "type": "string",
+                    "example": "id"
+                },
+                "notes": {
+                    "type": "string"
+                },
+                "owner_id": {
+                    "type": "string"
+                },
+                "priority": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "publication_status": {
+                    "type": "string",
+                    "example": "hidden"
+                },
+                "published_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "published_by": {
+                    "type": "string"
+                },
+                "requires_audio": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "requires_review": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "updated_by": {
+                    "type": "string"
+                },
+                "workflow_status": {
+                    "type": "string",
+                    "example": "drafting"
+                }
+            }
+        },
+        "entity.BookProductionPublishCheck": {
+            "type": "object",
+            "properties": {
+                "blocking_errors": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.BookProductionBlocking"
+                    }
+                },
+                "can_publish": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "complete_count": {
+                    "type": "integer",
+                    "example": 40
+                },
+                "missing": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.BookProductionMissingAsset"
+                    }
+                },
+                "missing_count": {
+                    "type": "integer",
+                    "example": 2
+                },
+                "project": {
+                    "$ref": "#/definitions/entity.BookProductionProject"
+                },
+                "ready": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "required_count": {
+                    "type": "integer",
+                    "example": 42
+                }
+            }
+        },
+        "entity.BookProductionWorkspace": {
+            "type": "object",
+            "properties": {
+                "author": {
+                    "$ref": "#/definitions/entity.ProductionAssetStatus"
+                },
+                "book": {
+                    "$ref": "#/definitions/entity.BookProductionWorkspaceBook"
+                },
+                "category": {
+                    "$ref": "#/definitions/entity.ProductionAssetStatus"
+                },
+                "completeness": {
+                    "$ref": "#/definitions/entity.BookProductionCompleteness"
+                },
+                "headings": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.BookProductionWorkspaceHeading"
+                    }
+                },
+                "metadata": {
+                    "$ref": "#/definitions/entity.ProductionAssetStatus"
+                },
+                "project": {
+                    "$ref": "#/definitions/entity.BookProductionProject"
+                }
+            }
+        },
+        "entity.BookProductionWorkspaceBook": {
+            "type": "object",
+            "properties": {
+                "author_id": {
+                    "type": "integer",
+                    "example": 177
+                },
+                "author_name": {
+                    "type": "string"
+                },
+                "category_id": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "category_name": {
+                    "type": "string"
+                },
+                "has_content": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "id": {
+                    "type": "integer",
+                    "example": 797
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "entity.BookProductionWorkspaceHeading": {
+            "type": "object",
+            "properties": {
+                "audio": {
+                    "$ref": "#/definitions/entity.ProductionAssetStatus"
+                },
+                "book_id": {
+                    "type": "integer",
+                    "example": 797
+                },
+                "depth": {
+                    "type": "integer",
+                    "example": 0
+                },
+                "heading_id": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "ordinal": {
+                    "type": "integer",
+                    "example": 9
+                },
+                "page_id": {
+                    "type": "integer",
+                    "example": 12
+                },
+                "parent_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "source_title": {
+                    "type": "string"
+                },
+                "summary": {
+                    "$ref": "#/definitions/entity.ProductionAssetStatus"
+                },
+                "translation": {
+                    "$ref": "#/definitions/entity.ProductionAssetStatus"
+                }
+            }
+        },
+        "entity.BookQuranReference": {
+            "type": "object",
+            "properties": {
+                "ayahs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.QuranAyah"
+                    }
+                },
+                "book_id": {
+                    "type": "integer",
+                    "example": 797
+                },
+                "confidence": {
+                    "type": "number",
+                    "example": 1
+                },
+                "created_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "from_ayah_key": {
+                    "type": "string",
+                    "example": "73:4"
+                },
+                "from_ayah_number": {
+                    "type": "integer",
+                    "example": 4
+                },
+                "heading_id": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "knowledge_mention_id": {
+                    "type": "string"
+                },
+                "match_strategy": {
+                    "type": "string",
+                    "example": "explicit_surah_ayah"
+                },
+                "metadata": {
+                    "type": "object"
+                },
+                "normalized_text": {
+                    "type": "string"
+                },
+                "page_id": {
+                    "type": "integer",
+                    "example": 12
+                },
+                "reference_kind": {
+                    "type": "string",
+                    "example": "surah_ayah"
+                },
+                "review_status": {
+                    "type": "string",
+                    "example": "approved"
+                },
+                "source_text": {
+                    "type": "string"
+                },
+                "surah_id": {
+                    "type": "integer",
+                    "example": 73
+                },
+                "to_ayah_key": {
+                    "type": "string",
+                    "example": "73:4"
+                },
+                "to_ayah_number": {
+                    "type": "integer",
+                    "example": 4
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                }
+            }
+        },
+        "entity.BookRAGCitation": {
+            "type": "object",
+            "properties": {
+                "anchor": {
+                    "type": "string",
+                    "example": "toc-11"
+                },
+                "book_id": {
+                    "type": "integer",
+                    "example": 797
+                },
+                "heading_id": {
+                    "type": "integer",
+                    "example": 11
+                },
+                "heading_title": {
+                    "type": "string",
+                    "example": "النوع الأول: الصحيح"
+                },
+                "page_id": {
+                    "type": "integer",
+                    "example": 12
+                },
+                "part": {
+                    "type": "string",
+                    "example": "1"
+                },
+                "printed_page": {
+                    "type": "string",
+                    "example": "12"
+                },
+                "quote": {
+                    "type": "string",
+                    "example": "الحديث الصحيح هو..."
+                },
+                "ref": {
+                    "type": "string",
+                    "example": "1"
+                },
+                "url": {
+                    "type": "string",
+                    "example": "/v1/books/797/toc/11/read?lang=id"
+                }
+            }
+        },
+        "entity.BookRAGResponse": {
+            "type": "object",
+            "properties": {
+                "answer": {
+                    "type": "string"
+                },
+                "book_id": {
+                    "type": "integer",
+                    "example": 797
+                },
+                "citations": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.BookRAGCitation"
+                    }
+                },
+                "question": {
+                    "type": "string",
+                    "example": "Apa definisi hadis sahih?"
+                },
+                "requested_lang": {
+                    "type": "string",
+                    "example": "id"
+                },
+                "trace": {
+                    "$ref": "#/definitions/entity.BookRAGTrace"
+                }
+            }
+        },
+        "entity.BookRAGTrace": {
+            "type": "object",
+            "properties": {
+                "focus_page_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "lexical_heading_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "repaired": {
+                    "type": "boolean"
+                },
+                "retrieval_mode": {
+                    "type": "string"
+                },
+                "selected_heading_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "source_refs": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "tree_blocks": {
+                    "type": "integer"
+                },
+                "tree_candidate_count": {
+                    "type": "integer"
+                },
+                "tree_llm_calls": {
+                    "type": "integer"
+                },
+                "tree_reasoning": {
+                    "type": "string"
+                }
+            }
+        },
+        "entity.BookSection": {
+            "type": "object",
+            "properties": {
+                "audio": {
+                    "$ref": "#/definitions/entity.SectionAudio"
+                },
+                "availability": {
+                    "$ref": "#/definitions/entity.ReaderAvailability"
+                },
+                "available_summary_langs": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "id"
+                    ]
+                },
+                "available_translation_langs": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "id"
+                    ]
+                },
+                "book_id": {
+                    "type": "integer",
+                    "example": 797
+                },
+                "end_page_id": {
+                    "type": "integer",
+                    "example": 15
+                },
+                "heading": {
+                    "$ref": "#/definitions/entity.BookHeading"
+                },
+                "heading_id": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "is_title_fallback": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "original_html": {
+                    "type": "string"
+                },
+                "original_text": {
+                    "type": "string"
+                },
+                "requested_lang": {
+                    "type": "string",
+                    "example": "en"
+                },
+                "start_page_id": {
+                    "type": "integer",
+                    "example": 12
+                },
+                "title_lang": {
+                    "type": "string",
+                    "example": "ar"
+                },
+                "translation": {
+                    "$ref": "#/definitions/entity.SectionTranslation"
+                },
+                "translation_missing": {
+                    "type": "boolean",
+                    "example": false
+                }
+            }
+        },
+        "entity.BookTOCLink": {
+            "type": "object",
+            "properties": {
+                "availability": {
+                    "$ref": "#/definitions/entity.ReaderAvailability"
+                },
+                "available_summary_langs": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "id"
+                    ]
+                },
+                "available_translation_langs": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "id"
+                    ]
+                },
+                "depth": {
+                    "type": "integer",
+                    "example": 0
+                },
+                "has_audio": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "has_summary": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "has_translation": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "heading_id": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "is_title_fallback": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "ordinal": {
+                    "type": "integer",
+                    "example": 9
+                },
+                "page_id": {
+                    "type": "integer",
+                    "example": 12
+                },
+                "parent_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "requested_lang": {
+                    "type": "string",
+                    "example": "en"
+                },
+                "summary": {
+                    "type": "string"
+                },
+                "summary_lang": {
+                    "type": "string",
+                    "example": "id"
+                },
+                "summary_reviewed_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "summary_reviewed_by": {
+                    "type": "string",
+                    "example": "Editor A"
+                },
+                "summary_status": {
+                    "type": "string",
+                    "example": "generated"
+                },
+                "title": {
+                    "type": "string",
+                    "example": "النوع الأول: الصحيح"
+                },
+                "title_lang": {
+                    "type": "string",
+                    "example": "ar"
+                },
+                "translation_missing": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "translation_reviewed_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "translation_reviewed_by": {
+                    "type": "string",
+                    "example": "Editor A"
+                },
+                "translation_status": {
+                    "type": "string",
+                    "example": "generated"
+                }
+            }
+        },
+        "entity.BookTOCNode": {
+            "type": "object",
+            "properties": {
+                "audio": {
+                    "$ref": "#/definitions/entity.SectionAudio"
+                },
+                "availability": {
+                    "$ref": "#/definitions/entity.ReaderAvailability"
+                },
+                "available_summary_langs": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "id"
+                    ]
+                },
+                "available_translation_langs": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "id"
+                    ]
+                },
+                "book_id": {
+                    "type": "integer",
+                    "example": 797
+                },
+                "children": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.BookTOCNode"
+                    }
+                },
+                "depth": {
+                    "type": "integer",
+                    "example": 0
+                },
+                "has_audio": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "has_summary": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "has_translation": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "heading_id": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "is_title_fallback": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "ordinal": {
+                    "type": "integer",
+                    "example": 9
+                },
+                "page_id": {
+                    "type": "integer",
+                    "example": 12
+                },
+                "parent_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "requested_lang": {
+                    "type": "string",
+                    "example": "en"
+                },
+                "summary": {
+                    "type": "string"
+                },
+                "summary_lang": {
+                    "type": "string",
+                    "example": "id"
+                },
+                "summary_reviewed_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "summary_reviewed_by": {
+                    "type": "string",
+                    "example": "Editor A"
+                },
+                "summary_status": {
+                    "type": "string",
+                    "example": "generated"
+                },
+                "title": {
+                    "type": "string",
+                    "example": "النوع الأول: الصحيح"
+                },
+                "title_lang": {
+                    "type": "string",
+                    "example": "ar"
+                },
+                "translation_missing": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "translation_reviewed_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "translation_reviewed_by": {
+                    "type": "string",
+                    "example": "Editor A"
+                },
+                "translation_status": {
+                    "type": "string",
+                    "example": "generated"
+                }
+            }
+        },
+        "entity.BookTOCPlaylist": {
+            "type": "object",
+            "properties": {
+                "book_id": {
+                    "type": "integer",
+                    "example": 797
+                },
+                "heading_id": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.BookTOCPlaylistItem"
+                    }
+                },
+                "lang": {
+                    "type": "string",
+                    "example": "id"
+                },
+                "missing_count": {
+                    "type": "integer",
+                    "example": 0
+                },
+                "total_duration_seconds": {
+                    "type": "integer",
+                    "example": 320
+                }
+            }
+        },
+        "entity.BookTOCPlaylistItem": {
+            "type": "object",
+            "properties": {
+                "duration_seconds": {
+                    "type": "integer",
+                    "example": 320
+                },
+                "heading_id": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "mime_type": {
+                    "type": "string",
+                    "example": "audio/mpeg"
+                },
+                "narrator": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string",
+                    "example": "باب النية"
+                },
+                "url": {
+                    "type": "string",
+                    "example": "https://cdn.example/audio.mp3"
+                }
+            }
+        },
+        "entity.BookTOCRead": {
+            "type": "object",
+            "properties": {
+                "audio": {
+                    "$ref": "#/definitions/entity.SectionAudio"
+                },
+                "availability": {
+                    "$ref": "#/definitions/entity.ReaderAvailability"
+                },
+                "available_summary_langs": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "id"
+                    ]
+                },
+                "available_translation_langs": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "id"
+                    ]
+                },
+                "book_id": {
+                    "type": "integer",
+                    "example": 797
+                },
+                "breadcrumb": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.BookTOCLink"
+                    }
+                },
+                "children": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.BookTOCLink"
+                    }
+                },
+                "end_page_id": {
+                    "type": "integer",
+                    "example": 15
+                },
+                "has_summary": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "heading_id": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "is_title_fallback": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "next": {
+                    "$ref": "#/definitions/entity.BookTOCLink"
+                },
+                "original_html": {
+                    "type": "string"
+                },
+                "original_text": {
+                    "type": "string"
+                },
+                "previous": {
+                    "$ref": "#/definitions/entity.BookTOCLink"
+                },
+                "requested_lang": {
+                    "type": "string",
+                    "example": "en"
+                },
+                "start_page_id": {
+                    "type": "integer",
+                    "example": 12
+                },
+                "summary": {
+                    "type": "string"
+                },
+                "summary_lang": {
+                    "type": "string",
+                    "example": "id"
+                },
+                "title": {
+                    "type": "string",
+                    "example": "باب النية"
+                },
+                "title_lang": {
+                    "type": "string",
+                    "example": "ar"
+                },
+                "translation": {
+                    "$ref": "#/definitions/entity.SectionTranslation"
+                },
+                "translation_missing": {
+                    "type": "boolean",
+                    "example": false
+                }
+            }
+        },
+        "entity.Category": {
+            "type": "object",
+            "properties": {
+                "display_order": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "id": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "is_deleted": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "localization": {
+                    "$ref": "#/definitions/entity.LocalizationMeta"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "علوم الحديث"
+                },
+                "translation_reviewed_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "translation_reviewed_by": {
+                    "type": "string",
+                    "example": "Editor A"
+                },
+                "translation_status": {
+                    "type": "string",
+                    "example": "generated"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                }
+            }
+        },
+        "entity.CategoryTranslationEdit": {
+            "type": "object",
+            "properties": {
+                "metadata": {
+                    "type": "object"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "project_id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "review_note": {
+                    "type": "string"
+                },
+                "review_status": {
+                    "type": "string",
+                    "example": "draft"
+                },
+                "reviewed_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "reviewed_by": {
+                    "type": "string"
+                },
+                "source": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "updated_by": {
+                    "type": "string"
+                }
+            }
+        },
+        "entity.EditorialMissingQuranAsset": {
+            "type": "object",
+            "properties": {
+                "asset_type": {
+                    "type": "string",
+                    "example": "ayah_translation"
+                },
+                "available_langs": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "id"
+                    ]
+                },
+                "ayah_key": {
+                    "type": "string",
+                    "example": "73:4"
+                },
+                "ayah_number": {
+                    "type": "integer",
+                    "example": 4
+                },
+                "recitation_id": {
+                    "type": "string"
+                },
+                "source_updated_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "surah_id": {
+                    "type": "integer",
+                    "example": 73
+                },
+                "surah_name": {
+                    "type": "string"
+                },
+                "target_lang": {
+                    "type": "string",
+                    "example": "en"
+                },
+                "track_key": {
+                    "type": "string",
+                    "example": "73:4"
+                },
+                "track_type": {
+                    "type": "string",
+                    "example": "ayah"
+                },
+                "translation_source_id": {
+                    "type": "string"
+                },
+                "translation_source_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "entity.EditorialMissingQuranAssetCount": {
+            "type": "object",
+            "properties": {
+                "asset_type": {
+                    "type": "string",
+                    "example": "ayah_translation"
+                },
+                "target_lang": {
+                    "type": "string",
+                    "example": "en"
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 20
+                }
+            }
+        },
+        "entity.EditorialMissingQuranAssets": {
+            "type": "object",
+            "properties": {
+                "counts": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.EditorialMissingQuranAssetCount"
+                    }
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.EditorialMissingQuranAsset"
+                    }
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 42
+                }
+            }
+        },
+        "entity.EditorialMissingReaderAsset": {
+            "type": "object",
+            "properties": {
+                "asset_type": {
+                    "type": "string",
+                    "example": "section_translation"
+                },
+                "author_id": {
+                    "type": "integer",
+                    "example": 2
+                },
+                "author_name": {
+                    "type": "string"
+                },
+                "available_langs": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "id"
+                    ]
+                },
+                "book_id": {
+                    "type": "integer",
+                    "example": 797
+                },
+                "book_title": {
+                    "type": "string"
+                },
+                "category_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "category_name": {
+                    "type": "string"
+                },
+                "heading_id": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "heading_title": {
+                    "type": "string"
+                },
+                "source_updated_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "target_lang": {
+                    "type": "string",
+                    "example": "en"
+                }
+            }
+        },
+        "entity.EditorialMissingReaderAssetCount": {
+            "type": "object",
+            "properties": {
+                "asset_type": {
+                    "type": "string",
+                    "example": "section_translation"
+                },
+                "target_lang": {
+                    "type": "string",
+                    "example": "en"
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 20
+                }
+            }
+        },
+        "entity.EditorialMissingReaderAssets": {
+            "type": "object",
+            "properties": {
+                "counts": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.EditorialMissingReaderAssetCount"
+                    }
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.EditorialMissingReaderAsset"
+                    }
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 42
+                }
+            }
+        },
+        "entity.EmailAudienceFilter": {
+            "type": "object",
+            "properties": {
+                "created_from": {
+                    "type": "string"
+                },
+                "created_to": {
+                    "type": "string"
+                },
+                "lang": {
+                    "type": "string"
+                },
+                "limit": {
+                    "type": "integer"
+                },
+                "role": {
+                    "type": "string"
+                }
+            }
+        },
+        "entity.EmailAudienceRecipient": {
+            "type": "object",
+            "properties": {
+                "email": {
+                    "type": "string"
+                },
+                "lang": {
+                    "type": "string"
+                },
+                "user_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "entity.EmailCampaign": {
+            "type": "object",
+            "properties": {
+                "audience": {
+                    "$ref": "#/definitions/entity.EmailAudienceFilter"
+                },
+                "cancelled_at": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "scheduled_at": {
+                    "type": "string"
+                },
+                "sent_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "template_id": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
+                    "type": "string"
+                }
+            }
+        },
+        "entity.EmailEventSetting": {
+            "type": "object",
+            "properties": {
+                "cooldown_seconds": {
+                    "type": "integer"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "critical": {
+                    "type": "boolean"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "key": {
+                    "type": "string"
+                },
+                "template_id": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "entity.EmailMessageLog": {
+            "type": "object",
+            "properties": {
+                "attempts": {
+                    "type": "integer"
+                },
+                "campaign_id": {
+                    "type": "string"
+                },
+                "campaign_recipient_id": {
+                    "type": "string"
+                },
+                "category": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "error": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "lang": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "provider_response": {
+                    "type": "string"
+                },
+                "recipient_email": {
+                    "type": "string"
+                },
+                "scheduled_at": {
+                    "type": "string"
+                },
+                "sent_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "subject": {
+                    "type": "string"
+                },
+                "template_key": {
+                    "type": "string"
+                },
+                "template_version_id": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "user_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "entity.EmailPreview": {
+            "type": "object",
+            "properties": {
+                "html": {
+                    "type": "string"
+                },
+                "lang": {
+                    "type": "string"
+                },
+                "subject": {
+                    "type": "string"
+                },
+                "text": {
+                    "type": "string"
+                }
+            }
+        },
+        "entity.EmailSubscription": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "marketing_opt_in": {
+                    "type": "boolean"
+                },
+                "opted_in_at": {
+                    "type": "string"
+                },
+                "opted_out_at": {
+                    "type": "string"
+                },
+                "source": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "user_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "entity.EmailSuppression": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "email": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "scope": {
+                    "type": "string"
+                }
+            }
+        },
+        "entity.EmailTemplate": {
+            "type": "object",
+            "properties": {
+                "archived_at": {
+                    "type": "string"
+                },
+                "category": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "critical": {
+                    "type": "boolean"
+                },
+                "deleted_at": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "key": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "entity.EmailTemplateVersion": {
+            "type": "object",
+            "properties": {
+                "body_template": {
+                    "type": "string"
+                },
+                "button_label_template": {
+                    "type": "string"
+                },
+                "button_url_template": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "footer_template": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "lang": {
+                    "type": "string"
+                },
+                "note_template": {
+                    "type": "string"
+                },
+                "preview_template": {
+                    "type": "string"
+                },
+                "published": {
+                    "type": "boolean"
+                },
+                "published_at": {
+                    "type": "string"
+                },
+                "published_by": {
+                    "type": "string"
+                },
+                "required_variables": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "subject_template": {
+                    "type": "string"
+                },
+                "template_id": {
+                    "type": "string"
+                },
+                "text_template": {
+                    "type": "string"
+                },
+                "title_template": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "entity.HeadingSummaryEdit": {
+            "type": "object",
+            "properties": {
+                "heading_id": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "metadata": {
+                    "type": "object"
+                },
+                "project_id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "review_note": {
+                    "type": "string"
+                },
+                "review_status": {
+                    "type": "string",
+                    "example": "draft"
+                },
+                "reviewed_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "reviewed_by": {
+                    "type": "string"
+                },
+                "source": {
+                    "type": "string"
+                },
+                "summary": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "updated_by": {
+                    "type": "string"
+                }
+            }
+        },
+        "entity.LanguageCoverage": {
+            "type": "object",
+            "properties": {
+                "audio_sections": {
+                    "type": "integer",
+                    "example": 40
+                },
+                "lang": {
+                    "type": "string",
+                    "example": "id"
+                },
+                "summarized_sections": {
+                    "type": "integer",
+                    "example": 80
+                },
+                "translated_sections": {
+                    "type": "integer",
+                    "example": 120
+                }
+            }
+        },
+        "entity.LocalizationMeta": {
+            "type": "object",
+            "properties": {
+                "availability": {
+                    "$ref": "#/definitions/entity.AvailabilityDecision"
+                },
+                "available_langs": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "id"
+                    ]
+                },
+                "display_lang": {
+                    "type": "string",
+                    "example": "ar"
+                },
+                "field_langs": {
+                    "type": "object"
+                },
+                "is_fallback": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "requested_lang": {
+                    "type": "string",
+                    "example": "en"
+                }
+            }
+        },
+        "entity.ProductionAssetStatus": {
+            "type": "object",
+            "properties": {
+                "asset_type": {
+                    "type": "string",
+                    "example": "section_translation"
+                },
+                "complete": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "exists": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "final_exists": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "heading_id": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "required": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "review_status": {
+                    "type": "string",
+                    "example": "approved"
+                },
+                "reviewed_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                }
+            }
+        },
+        "entity.QuranAudioSegment": {
+            "type": "object",
+            "properties": {
+                "ayah_key": {
+                    "type": "string",
+                    "example": "73:4"
+                },
+                "duration_ms": {
+                    "type": "integer",
+                    "example": 3000
+                },
+                "metadata": {
+                    "type": "object"
+                },
+                "segment_index": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "timestamp_from_ms": {
+                    "type": "integer",
+                    "example": 1200
+                },
+                "timestamp_to_ms": {
+                    "type": "integer",
+                    "example": 4200
+                }
+            }
+        },
+        "entity.QuranAudioTrack": {
+            "type": "object",
+            "properties": {
+                "audio_url": {
+                    "type": "string"
+                },
+                "ayah_number": {
+                    "type": "integer",
+                    "example": 4
+                },
+                "duration_ms": {
+                    "type": "integer"
+                },
+                "duration_seconds": {
+                    "type": "integer"
+                },
+                "metadata": {
+                    "type": "object"
+                },
+                "mime_type": {
+                    "type": "string",
+                    "example": "audio/mpeg"
+                },
+                "public_url": {
+                    "type": "string"
+                },
+                "r2_key": {
+                    "type": "string"
+                },
+                "recitation_id": {
+                    "type": "string",
+                    "example": "qul-recitation"
+                },
+                "segments": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.QuranAudioSegment"
+                    }
+                },
+                "surah_id": {
+                    "type": "integer",
+                    "example": 73
+                },
+                "track_key": {
+                    "type": "string",
+                    "example": "73:4"
+                },
+                "track_type": {
+                    "type": "string",
+                    "example": "ayah"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                }
+            }
+        },
+        "entity.QuranAyah": {
+            "type": "object",
+            "properties": {
+                "audio": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.QuranAudioTrack"
+                    }
+                },
+                "availability": {
+                    "$ref": "#/definitions/entity.QuranAyahAvailability"
+                },
+                "available_translation_langs": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "id"
+                    ]
+                },
+                "ayah_key": {
+                    "type": "string",
+                    "example": "73:4"
+                },
+                "ayah_number": {
+                    "type": "integer",
+                    "example": 4
+                },
+                "font_family": {
+                    "type": "string"
+                },
+                "hizb_number": {
+                    "type": "integer"
+                },
+                "juz_number": {
+                    "type": "integer"
+                },
+                "metadata": {
+                    "type": "object"
+                },
+                "page_number": {
+                    "type": "integer"
+                },
+                "requested_lang": {
+                    "type": "string",
+                    "example": "en"
+                },
+                "script_type": {
+                    "type": "string"
+                },
+                "search_text": {
+                    "type": "string"
+                },
+                "surah_id": {
+                    "type": "integer",
+                    "example": 73
+                },
+                "text_imlaei_simple": {
+                    "type": "string"
+                },
+                "text_qpc_hafs": {
+                    "type": "string"
+                },
+                "translation": {
+                    "$ref": "#/definitions/entity.QuranTranslation"
+                },
+                "translation_missing": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                }
+            }
+        },
+        "entity.QuranAyahAvailability": {
+            "type": "object",
+            "properties": {
+                "audio": {
+                    "$ref": "#/definitions/entity.AvailabilityDecision"
+                },
+                "translation": {
+                    "$ref": "#/definitions/entity.AvailabilityDecision"
+                }
+            }
+        },
+        "entity.QuranNavigationBoundary": {
+            "type": "object",
+            "properties": {
+                "ayah_key": {
+                    "type": "string",
+                    "example": "1:1"
+                },
+                "ayah_number": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "surah_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "surah_name": {
+                    "type": "string",
+                    "example": "Al-Fatihah"
+                }
+            }
+        },
+        "entity.QuranNavigationSegment": {
+            "type": "object",
+            "properties": {
+                "ayah_count": {
+                    "type": "integer",
+                    "example": 148
+                },
+                "end": {
+                    "$ref": "#/definitions/entity.QuranNavigationBoundary"
+                },
+                "kind": {
+                    "type": "string",
+                    "example": "juz"
+                },
+                "number": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "start": {
+                    "$ref": "#/definitions/entity.QuranNavigationBoundary"
+                }
+            }
+        },
+        "entity.QuranReadingProgress": {
+            "type": "object",
+            "properties": {
+                "ayah_key": {
+                    "type": "string",
+                    "example": "73:4"
+                },
+                "ayah_number": {
+                    "type": "integer",
+                    "example": 4
+                },
+                "observed_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "position_percent": {
+                    "type": "number",
+                    "example": 25
+                },
+                "surah_id": {
+                    "type": "integer",
+                    "example": 73
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "user_id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                }
+            }
+        },
+        "entity.QuranRecitation": {
+            "type": "object",
+            "properties": {
+                "checksum": {
+                    "type": "string"
+                },
+                "format": {
+                    "type": "string",
+                    "example": "json"
+                },
+                "has_playable_audio": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "has_public_audio": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "id": {
+                    "type": "string",
+                    "example": "qul-ayah-recitation-mishari-rashid-al-afasy-murattal-hafs-953"
+                },
+                "imported_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "is_default": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "license_status": {
+                    "type": "string",
+                    "example": "needs_review"
+                },
+                "metadata": {
+                    "type": "object"
+                },
+                "mode": {
+                    "type": "string",
+                    "example": "ayah"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "QUL ayah recitation mishari rashid al afasy murattal hafs 953"
+                },
+                "playable_track_count": {
+                    "type": "integer",
+                    "example": 6236
+                },
+                "public_track_count": {
+                    "type": "integer",
+                    "example": 0
+                },
+                "qul_resource_id": {
+                    "type": "string",
+                    "example": "953"
+                },
+                "reciter_name": {
+                    "type": "string",
+                    "example": "Mishari Rashid Al-Afasy"
+                },
+                "source_url": {
+                    "type": "string"
+                },
+                "style": {
+                    "type": "string",
+                    "example": "murattal"
+                },
+                "track_count": {
+                    "type": "integer",
+                    "example": 6236
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                }
+            }
+        },
+        "entity.QuranSearchResult": {
+            "type": "object",
+            "properties": {
+                "ayah": {
+                    "$ref": "#/definitions/entity.QuranAyah"
+                },
+                "matched_field": {
+                    "type": "string",
+                    "example": "translation"
+                },
+                "matched_lang": {
+                    "type": "string",
+                    "example": "ar"
+                },
+                "matched_source_id": {
+                    "type": "string",
+                    "example": "qul-kfgqpc-id-simple"
+                },
+                "score": {
+                    "type": "number",
+                    "example": 0.82
+                }
+            }
+        },
+        "entity.QuranSurah": {
+            "type": "object",
+            "properties": {
+                "ayah_count": {
+                    "type": "integer",
+                    "example": 20
+                },
+                "info": {
+                    "$ref": "#/definitions/entity.QuranSurahInfo"
+                },
+                "localization": {
+                    "$ref": "#/definitions/entity.LocalizationMeta"
+                },
+                "metadata": {
+                    "type": "object"
+                },
+                "name_arabic": {
+                    "type": "string",
+                    "example": "المزمل"
+                },
+                "name_latin": {
+                    "type": "string",
+                    "example": "Al-Muzzammil"
+                },
+                "name_translation": {
+                    "type": "string",
+                    "example": "Orang yang Berselimut"
+                },
+                "revelation_type": {
+                    "type": "string",
+                    "example": "makkiyah"
+                },
+                "surah_id": {
+                    "type": "integer",
+                    "example": 73
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                }
+            }
+        },
+        "entity.QuranSurahInfo": {
+            "type": "object",
+            "properties": {
+                "checksum": {
+                    "type": "string"
+                },
+                "format": {
+                    "type": "string",
+                    "example": "json"
+                },
+                "imported_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "lang": {
+                    "type": "string",
+                    "example": "id"
+                },
+                "license_status": {
+                    "type": "string",
+                    "example": "needs_review"
+                },
+                "metadata": {
+                    "type": "object"
+                },
+                "qul_resource_id": {
+                    "type": "string"
+                },
+                "short_text": {
+                    "type": "string"
+                },
+                "source_name": {
+                    "type": "string",
+                    "example": "QUL Surah information"
+                },
+                "source_url": {
+                    "type": "string"
+                },
+                "surah_name": {
+                    "type": "string",
+                    "example": "Al-Fatihah"
+                },
+                "text_html": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                }
+            }
+        },
+        "entity.QuranTranslation": {
+            "type": "object",
+            "properties": {
+                "chunks": {
+                    "type": "object"
+                },
+                "footnotes": {
+                    "type": "object"
+                },
+                "lang": {
+                    "type": "string",
+                    "example": "id"
+                },
+                "metadata": {
+                    "type": "object"
+                },
+                "source_id": {
+                    "type": "string",
+                    "example": "qul-kfgqpc-id-simple"
+                },
+                "text": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                }
+            }
+        },
+        "entity.QuranTranslationCoverage": {
+            "type": "object",
+            "properties": {
+                "percent": {
+                    "type": "number",
+                    "example": 100
+                },
+                "total_ayahs": {
+                    "type": "integer",
+                    "example": 6236
+                },
+                "translated_ayahs": {
+                    "type": "integer",
+                    "example": 6236
+                }
+            }
+        },
+        "entity.QuranTranslationSource": {
+            "type": "object",
+            "properties": {
+                "checksum": {
+                    "type": "string"
+                },
+                "coverage": {
+                    "$ref": "#/definitions/entity.QuranTranslationCoverage"
+                },
+                "format": {
+                    "type": "string",
+                    "example": "simple.json"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "qul-kfgqpc-id-simple"
+                },
+                "imported_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "is_default": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "lang": {
+                    "type": "string",
+                    "example": "id"
+                },
+                "license_status": {
+                    "type": "string",
+                    "example": "needs_review"
+                },
+                "metadata": {
+                    "type": "object"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "King Fahad Quran Complex"
+                },
+                "qul_resource_id": {
+                    "type": "string",
+                    "example": "173"
+                },
+                "source_url": {
+                    "type": "string"
+                },
+                "translator": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                }
+            }
+        },
+        "entity.ReaderAvailability": {
+            "type": "object",
+            "properties": {
+                "audio": {
+                    "$ref": "#/definitions/entity.AvailabilityDecision"
+                },
+                "summary": {
+                    "$ref": "#/definitions/entity.AvailabilityDecision"
+                },
+                "title": {
+                    "$ref": "#/definitions/entity.AvailabilityDecision"
+                },
+                "translation": {
+                    "$ref": "#/definitions/entity.AvailabilityDecision"
+                }
+            }
+        },
+        "entity.SavedItem": {
+            "type": "object",
+            "properties": {
+                "ayah_key": {
+                    "type": "string",
+                    "example": "73:4"
+                },
+                "book_id": {
+                    "type": "integer",
+                    "example": 797
+                },
+                "created_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "from_ayah_number": {
+                    "type": "integer",
+                    "example": 4
+                },
+                "heading_id": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "item_type": {
+                    "type": "string",
+                    "example": "quran_ayah"
+                },
+                "label": {
+                    "type": "string"
+                },
+                "note": {
+                    "type": "string"
+                },
+                "page_id": {
+                    "type": "integer",
+                    "example": 12
+                },
+                "surah_id": {
+                    "type": "integer",
+                    "example": 73
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "to_ayah_number": {
+                    "type": "integer",
+                    "example": 6
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "user_id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                }
+            }
+        },
+        "entity.SectionAudio": {
+            "type": "object",
+            "properties": {
+                "book_id": {
+                    "type": "integer",
+                    "example": 797
+                },
+                "duration_seconds": {
+                    "type": "integer",
+                    "example": 120
+                },
+                "heading_id": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "lang": {
+                    "type": "string",
+                    "example": "id"
+                },
+                "metadata": {
+                    "type": "object"
+                },
+                "mime_type": {
+                    "type": "string",
+                    "example": "audio/mpeg"
+                },
+                "narrator": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "url": {
+                    "type": "string",
+                    "example": "https://cdn.example/audio.mp3"
+                }
+            }
+        },
+        "entity.SectionAudioEdit": {
+            "type": "object",
+            "properties": {
+                "duration_seconds": {
+                    "type": "integer",
+                    "example": 120
+                },
+                "heading_id": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "metadata": {
+                    "type": "object"
+                },
+                "mime_type": {
+                    "type": "string",
+                    "example": "audio/mpeg"
+                },
+                "narrator": {
+                    "type": "string"
+                },
+                "project_id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "review_note": {
+                    "type": "string"
+                },
+                "review_status": {
+                    "type": "string",
+                    "example": "draft"
+                },
+                "reviewed_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "reviewed_by": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "updated_by": {
+                    "type": "string"
+                },
+                "url": {
+                    "type": "string"
+                }
+            }
+        },
+        "entity.SectionTranslation": {
+            "type": "object",
+            "properties": {
+                "book_id": {
+                    "type": "integer",
+                    "example": 797
+                },
+                "content": {
+                    "type": "string"
+                },
+                "heading_id": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "lang": {
+                    "type": "string",
+                    "example": "id"
+                },
+                "metadata": {
+                    "type": "object"
+                },
+                "source": {
+                    "type": "string",
+                    "example": "manual"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "translation_reviewed_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "translation_reviewed_by": {
+                    "type": "string",
+                    "example": "Editor A"
+                },
+                "translation_status": {
+                    "type": "string",
+                    "example": "generated"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                }
+            }
+        },
+        "entity.SectionTranslationEdit": {
+            "type": "object",
+            "properties": {
+                "content": {
+                    "type": "string"
+                },
+                "heading_id": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "metadata": {
+                    "type": "object"
+                },
+                "project_id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "review_note": {
+                    "type": "string"
+                },
+                "review_status": {
+                    "type": "string",
+                    "example": "draft"
+                },
+                "reviewed_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "reviewed_by": {
+                    "type": "string"
+                },
+                "source": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "updated_by": {
+                    "type": "string"
+                }
+            }
+        },
         "entity.Task": {
             "type": "object",
             "properties": {
@@ -656,11 +11244,7 @@ const docTemplate = `{
                     "example": "550e8400-e29b-41d4-a716-446655440000"
                 },
                 "status": {
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/entity.TaskStatus"
-                        }
-                    ],
+                    "type": "string",
                     "example": "todo"
                 },
                 "title": {
@@ -676,19 +11260,6 @@ const docTemplate = `{
                     "example": "550e8400-e29b-41d4-a716-446655440000"
                 }
             }
-        },
-        "entity.TaskStatus": {
-            "type": "string",
-            "enum": [
-                "todo",
-                "in_progress",
-                "done"
-            ],
-            "x-enum-varnames": [
-                "TaskStatusTodo",
-                "TaskStatusInProgress",
-                "TaskStatusDone"
-            ]
         },
         "entity.Translation": {
             "type": "object",
@@ -708,6 +11279,58 @@ const docTemplate = `{
                 "translation": {
                     "type": "string",
                     "example": "text for translation"
+                }
+            }
+        },
+        "entity.TranslationFeedback": {
+            "type": "object",
+            "properties": {
+                "book_id": {
+                    "type": "integer",
+                    "example": 797
+                },
+                "client_id": {
+                    "type": "string"
+                },
+                "client_ip": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "heading_id": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "lang": {
+                    "type": "string",
+                    "example": "id"
+                },
+                "note": {
+                    "type": "string"
+                },
+                "reason": {
+                    "type": "string",
+                    "example": "style"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "user_agent": {
+                    "type": "string"
+                },
+                "user_id": {
+                    "type": "string"
+                },
+                "vote": {
+                    "type": "string",
+                    "example": "dislike"
                 }
             }
         },
@@ -733,9 +11356,17 @@ const docTemplate = `{
                     "type": "string",
                     "example": "john@example.com"
                 },
+                "email_verified": {
+                    "type": "boolean",
+                    "example": true
+                },
                 "id": {
                     "type": "string",
                     "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "role": {
+                    "type": "string",
+                    "example": "user"
                 },
                 "updated_at": {
                     "type": "string",
@@ -744,6 +11375,307 @@ const docTemplate = `{
                 "username": {
                     "type": "string",
                     "example": "johndoe"
+                }
+            }
+        },
+        "entity.UserAccount": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "email": {
+                    "type": "string",
+                    "example": "john@example.com"
+                },
+                "email_verified": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "onboarding_required": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "preferences": {
+                    "$ref": "#/definitions/entity.UserPreferences"
+                },
+                "profile": {
+                    "$ref": "#/definitions/entity.UserProfile"
+                },
+                "role": {
+                    "type": "string",
+                    "example": "user"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "username": {
+                    "type": "string",
+                    "example": "johndoe"
+                }
+            }
+        },
+        "entity.UserPreferences": {
+            "type": "object",
+            "properties": {
+                "arabic_level": {
+                    "type": "string",
+                    "example": "basic"
+                },
+                "created_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "daily_goal_minutes": {
+                    "type": "integer",
+                    "example": 15
+                },
+                "fallback_langs": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "id",
+                        "en"
+                    ]
+                },
+                "interests": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "tafsir",
+                        "hadith"
+                    ]
+                },
+                "preferred_content_lang": {
+                    "type": "string",
+                    "example": "id"
+                },
+                "preferred_ui_lang": {
+                    "type": "string",
+                    "example": "id"
+                },
+                "quran_recitation_id": {
+                    "type": "string"
+                },
+                "quran_translation_source_id": {
+                    "type": "string"
+                },
+                "reader_mode": {
+                    "type": "string",
+                    "example": "arabic_translation"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "user_id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                }
+            }
+        },
+        "entity.UserProfile": {
+            "type": "object",
+            "properties": {
+                "country_code": {
+                    "type": "string",
+                    "example": "ID"
+                },
+                "created_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "display_name": {
+                    "type": "string",
+                    "example": "John"
+                },
+                "onboarding_completed_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "onboarding_version": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "personalization_enabled": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "timezone": {
+                    "type": "string",
+                    "example": "Asia/Jakarta"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "user_id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                }
+            }
+        },
+        "v1.Accepted": {
+            "type": "object",
+            "properties": {
+                "accepted": {
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        },
+        "v1.AccountDeleted": {
+            "type": "object",
+            "properties": {
+                "account_deleted": {
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        },
+        "v1.AuthorList": {
+            "type": "object",
+            "properties": {
+                "authors": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.Author"
+                    }
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 42
+                }
+            }
+        },
+        "v1.BookList": {
+            "type": "object",
+            "properties": {
+                "books": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.Book"
+                    }
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 42
+                }
+            }
+        },
+        "v1.BookQuranReferenceList": {
+            "type": "object",
+            "properties": {
+                "references": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.BookQuranReference"
+                    }
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 42
+                }
+            }
+        },
+        "v1.BookRAG": {
+            "type": "object",
+            "required": [
+                "question"
+            ],
+            "properties": {
+                "include_trace": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "max_citations": {
+                    "type": "integer",
+                    "maximum": 10,
+                    "minimum": 1,
+                    "example": 5
+                },
+                "question": {
+                    "type": "string",
+                    "maxLength": 4000,
+                    "minLength": 2,
+                    "example": "Apa definisi hadis sahih?"
+                },
+                "stream": {
+                    "type": "boolean",
+                    "example": false
+                }
+            }
+        },
+        "v1.ChangePassword": {
+            "type": "object",
+            "required": [
+                "current_password",
+                "new_password"
+            ],
+            "properties": {
+                "current_password": {
+                    "type": "string",
+                    "maxLength": 72,
+                    "minLength": 8,
+                    "example": "oldsecret123"
+                },
+                "new_password": {
+                    "type": "string",
+                    "maxLength": 72,
+                    "minLength": 8,
+                    "example": "newsecret123"
+                }
+            }
+        },
+        "v1.CreateProductionProject": {
+            "type": "object",
+            "required": [
+                "book_id",
+                "lang"
+            ],
+            "properties": {
+                "book_id": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "example": 797
+                },
+                "lang": {
+                    "type": "string",
+                    "enum": [
+                        "id",
+                        "en"
+                    ],
+                    "example": "id"
+                },
+                "notes": {
+                    "type": "string",
+                    "maxLength": 10000
+                },
+                "owner_id": {
+                    "type": "string"
+                },
+                "priority": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "example": 10
+                },
+                "requires_audio": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "requires_review": {
+                    "type": "boolean",
+                    "example": true
                 }
             }
         },
@@ -765,12 +11697,557 @@ const docTemplate = `{
                 }
             }
         },
+        "v1.CreateTranslationFeedback": {
+            "type": "object",
+            "required": [
+                "vote"
+            ],
+            "properties": {
+                "client_id": {
+                    "type": "string",
+                    "maxLength": 128
+                },
+                "note": {
+                    "type": "string",
+                    "maxLength": 2000
+                },
+                "reason": {
+                    "type": "string",
+                    "enum": [
+                        "inaccurate",
+                        "unclear",
+                        "style",
+                        "typo",
+                        "formatting",
+                        "other"
+                    ]
+                },
+                "vote": {
+                    "type": "string",
+                    "enum": [
+                        "like",
+                        "dislike"
+                    ],
+                    "example": "dislike"
+                }
+            }
+        },
+        "v1.DeleteAccount": {
+            "type": "object",
+            "required": [
+                "current_password"
+            ],
+            "properties": {
+                "current_password": {
+                    "type": "string",
+                    "maxLength": 72,
+                    "minLength": 8,
+                    "example": "secret123"
+                }
+            }
+        },
+        "v1.DeleteFinalProductionAsset": {
+            "type": "object",
+            "properties": {
+                "reason": {
+                    "type": "string",
+                    "maxLength": 2000
+                }
+            }
+        },
+        "v1.EmailAudience": {
+            "type": "object",
+            "properties": {
+                "created_from": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "created_to": {
+                    "type": "string",
+                    "example": "2026-05-01T00:00:00Z"
+                },
+                "lang": {
+                    "type": "string",
+                    "maxLength": 8,
+                    "example": "id"
+                },
+                "limit": {
+                    "type": "integer",
+                    "maximum": 10000,
+                    "minimum": 1,
+                    "example": 1000
+                },
+                "role": {
+                    "type": "string",
+                    "maxLength": 32,
+                    "example": "user"
+                }
+            }
+        },
+        "v1.EmailAudienceRecipientList": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.EmailAudienceRecipient"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "v1.EmailCampaignCreate": {
+            "type": "object",
+            "required": [
+                "name",
+                "template_id"
+            ],
+            "properties": {
+                "audience": {
+                    "$ref": "#/definitions/v1.EmailAudience"
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 255,
+                    "example": "Ramadan Digest"
+                },
+                "template_id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                }
+            }
+        },
+        "v1.EmailCampaignList": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.EmailCampaign"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "v1.EmailCampaignSchedule": {
+            "type": "object",
+            "required": [
+                "scheduled_at"
+            ],
+            "properties": {
+                "scheduled_at": {
+                    "type": "string",
+                    "example": "2026-06-01T09:00:00Z"
+                }
+            }
+        },
+        "v1.EmailCampaignTestSend": {
+            "type": "object",
+            "required": [
+                "lang",
+                "to"
+            ],
+            "properties": {
+                "lang": {
+                    "type": "string",
+                    "maxLength": 8,
+                    "example": "id"
+                },
+                "to": {
+                    "type": "string",
+                    "example": "admin@example.com"
+                },
+                "variables": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "v1.EmailCampaignUpdate": {
+            "type": "object",
+            "required": [
+                "name",
+                "template_id"
+            ],
+            "properties": {
+                "audience": {
+                    "$ref": "#/definitions/v1.EmailAudience"
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 255,
+                    "example": "Ramadan Digest"
+                },
+                "template_id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                }
+            }
+        },
+        "v1.EmailChanged": {
+            "type": "object",
+            "properties": {
+                "email_changed": {
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        },
+        "v1.EmailEventSettingUpdate": {
+            "type": "object",
+            "properties": {
+                "cooldown_seconds": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "example": 86400
+                },
+                "enabled": {
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        },
+        "v1.EmailMessageList": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.EmailMessageLog"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "v1.EmailPreviewRequest": {
+            "type": "object",
+            "required": [
+                "lang"
+            ],
+            "properties": {
+                "lang": {
+                    "type": "string",
+                    "maxLength": 8,
+                    "example": "id"
+                },
+                "variables": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "v1.EmailSubscriptionUpdate": {
+            "type": "object",
+            "properties": {
+                "marketing_opt_in": {
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        },
+        "v1.EmailSuppressionCreate": {
+            "type": "object",
+            "required": [
+                "email",
+                "reason",
+                "scope"
+            ],
+            "properties": {
+                "email": {
+                    "type": "string",
+                    "example": "user@example.com"
+                },
+                "reason": {
+                    "type": "string",
+                    "maxLength": 128,
+                    "example": "manual"
+                },
+                "scope": {
+                    "type": "string",
+                    "enum": [
+                        "marketing",
+                        "all"
+                    ],
+                    "example": "marketing"
+                }
+            }
+        },
+        "v1.EmailSuppressionList": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.EmailSuppression"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "v1.EmailTemplateCreate": {
+            "type": "object",
+            "required": [
+                "category",
+                "key",
+                "name"
+            ],
+            "properties": {
+                "category": {
+                    "type": "string",
+                    "enum": [
+                        "transactional",
+                        "marketing"
+                    ],
+                    "example": "marketing"
+                },
+                "critical": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "enabled": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "key": {
+                    "type": "string",
+                    "maxLength": 128,
+                    "example": "weekly_digest"
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 255,
+                    "example": "Weekly Digest"
+                }
+            }
+        },
+        "v1.EmailTemplateList": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.EmailTemplate"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "v1.EmailTemplateUpdate": {
+            "type": "object",
+            "properties": {
+                "archived": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "enabled": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 255,
+                    "example": "Weekly Digest"
+                }
+            }
+        },
+        "v1.EmailTemplateVersionCreate": {
+            "type": "object",
+            "required": [
+                "lang",
+                "subject_template",
+                "text_template"
+            ],
+            "properties": {
+                "body_template": {
+                    "type": "string",
+                    "example": "Assalamu'alaikum, {{.name}}."
+                },
+                "button_label_template": {
+                    "type": "string",
+                    "example": "Buka Surau"
+                },
+                "button_url_template": {
+                    "type": "string",
+                    "example": "https://surau.org"
+                },
+                "footer_template": {
+                    "type": "string"
+                },
+                "lang": {
+                    "type": "string",
+                    "maxLength": 8,
+                    "example": "id"
+                },
+                "note_template": {
+                    "type": "string"
+                },
+                "preview_template": {
+                    "type": "string",
+                    "example": "Ada bacaan baru untuk Anda."
+                },
+                "required_variables": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "name"
+                    ]
+                },
+                "subject_template": {
+                    "type": "string",
+                    "example": "Update dari Surau"
+                },
+                "text_template": {
+                    "type": "string",
+                    "example": "Assalamu'alaikum, {{.name}}."
+                },
+                "title_template": {
+                    "type": "string",
+                    "example": "Update Surau"
+                }
+            }
+        },
+        "v1.EmailTemplateVersionList": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.EmailTemplateVersion"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "v1.EmailTemplateVersionUpdate": {
+            "type": "object",
+            "properties": {
+                "body_template": {
+                    "type": "string"
+                },
+                "button_label_template": {
+                    "type": "string"
+                },
+                "button_url_template": {
+                    "type": "string"
+                },
+                "footer_template": {
+                    "type": "string"
+                },
+                "note_template": {
+                    "type": "string"
+                },
+                "preview_template": {
+                    "type": "string"
+                },
+                "required_variables": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "subject_template": {
+                    "type": "string"
+                },
+                "text_template": {
+                    "type": "string"
+                },
+                "title_template": {
+                    "type": "string"
+                }
+            }
+        },
+        "v1.EmailTestSendRequest": {
+            "type": "object",
+            "required": [
+                "lang",
+                "to"
+            ],
+            "properties": {
+                "lang": {
+                    "type": "string",
+                    "maxLength": 8,
+                    "example": "id"
+                },
+                "to": {
+                    "type": "string",
+                    "example": "admin@example.com"
+                },
+                "variables": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "v1.EmailUnsubscribe": {
+            "type": "object",
+            "required": [
+                "token"
+            ],
+            "properties": {
+                "token": {
+                    "type": "string"
+                }
+            }
+        },
+        "v1.EmailVerification": {
+            "type": "object",
+            "properties": {
+                "email_verified": {
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        },
         "v1.Error": {
             "type": "object",
             "properties": {
                 "error": {
                     "type": "string",
                     "example": "message"
+                }
+            }
+        },
+        "v1.ForgotPassword": {
+            "type": "object",
+            "required": [
+                "email"
+            ],
+            "properties": {
+                "email": {
+                    "type": "string",
+                    "example": "john@example.com"
                 }
             }
         },
@@ -787,7 +12264,128 @@ const docTemplate = `{
                 },
                 "password": {
                     "type": "string",
+                    "maxLength": 72,
+                    "minLength": 8,
                     "example": "secret123"
+                }
+            }
+        },
+        "v1.PageList": {
+            "type": "object",
+            "properties": {
+                "pages": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.BookPage"
+                    }
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 42
+                }
+            }
+        },
+        "v1.PasswordChanged": {
+            "type": "object",
+            "properties": {
+                "password_changed": {
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        },
+        "v1.PasswordReset": {
+            "type": "object",
+            "properties": {
+                "password_reset": {
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        },
+        "v1.ProductionCandidateList": {
+            "type": "object",
+            "properties": {
+                "candidates": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.BookProductionCandidate"
+                    }
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 42
+                }
+            }
+        },
+        "v1.ProductionDraftRevisionList": {
+            "type": "object",
+            "properties": {
+                "revisions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.BookProductionDraftRevision"
+                    }
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 42
+                }
+            }
+        },
+        "v1.ProductionEventList": {
+            "type": "object",
+            "properties": {
+                "events": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.BookProductionEvent"
+                    }
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 42
+                }
+            }
+        },
+        "v1.ProductionProjectList": {
+            "type": "object",
+            "properties": {
+                "projects": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.BookProductionProject"
+                    }
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 42
+                }
+            }
+        },
+        "v1.QuranProgressList": {
+            "type": "object",
+            "properties": {
+                "surahs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.QuranReadingProgress"
+                    }
+                }
+            }
+        },
+        "v1.QuranSearchList": {
+            "type": "object",
+            "properties": {
+                "results": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.QuranSearchResult"
+                    }
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 42
                 }
             }
         },
@@ -795,24 +12393,324 @@ const docTemplate = `{
             "type": "object",
             "required": [
                 "email",
-                "password",
-                "username"
+                "password"
             ],
             "properties": {
+                "display_name": {
+                    "type": "string",
+                    "maxLength": 255,
+                    "example": "John Doe"
+                },
                 "email": {
                     "type": "string",
                     "example": "john@example.com"
                 },
+                "name": {
+                    "type": "string",
+                    "maxLength": 255,
+                    "example": "John Doe"
+                },
                 "password": {
                     "type": "string",
-                    "minLength": 6,
+                    "maxLength": 72,
+                    "minLength": 8,
                     "example": "secret123"
                 },
                 "username": {
                     "type": "string",
                     "maxLength": 255,
-                    "minLength": 3,
-                    "example": "johndoe"
+                    "example": "John Doe"
+                }
+            }
+        },
+        "v1.RequestEmailChange": {
+            "type": "object",
+            "required": [
+                "current_password",
+                "new_email"
+            ],
+            "properties": {
+                "current_password": {
+                    "type": "string",
+                    "maxLength": 72,
+                    "minLength": 8,
+                    "example": "secret123"
+                },
+                "new_email": {
+                    "type": "string",
+                    "example": "new@example.com"
+                }
+            }
+        },
+        "v1.ResendVerification": {
+            "type": "object",
+            "required": [
+                "email"
+            ],
+            "properties": {
+                "email": {
+                    "type": "string",
+                    "example": "john@example.com"
+                }
+            }
+        },
+        "v1.ResetPassword": {
+            "type": "object",
+            "required": [
+                "password",
+                "token"
+            ],
+            "properties": {
+                "password": {
+                    "type": "string",
+                    "maxLength": 72,
+                    "minLength": 8,
+                    "example": "newsecret123"
+                },
+                "token": {
+                    "type": "string",
+                    "example": "G66NnGZnWg4W88qGz3p9N0-GxjKuxEOHHsvWv3kBaBA"
+                }
+            }
+        },
+        "v1.ReviewProductionAsset": {
+            "type": "object",
+            "required": [
+                "asset_type",
+                "decision"
+            ],
+            "properties": {
+                "asset_type": {
+                    "type": "string",
+                    "enum": [
+                        "book_metadata",
+                        "author_metadata",
+                        "category_metadata",
+                        "section_translation",
+                        "heading_summary",
+                        "section_audio"
+                    ]
+                },
+                "decision": {
+                    "type": "string",
+                    "enum": [
+                        "submit",
+                        "approve",
+                        "reject"
+                    ]
+                },
+                "heading_id": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "note": {
+                    "type": "string",
+                    "maxLength": 2000
+                }
+            }
+        },
+        "v1.SaveAuthorTranslationDraft": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "biography": {
+                    "type": "string",
+                    "maxLength": 20000
+                },
+                "death_text": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "metadata": {
+                    "type": "object"
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 500
+                },
+                "source": {
+                    "type": "string",
+                    "maxLength": 255
+                }
+            }
+        },
+        "v1.SaveCategoryTranslationDraft": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "metadata": {
+                    "type": "object"
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 500
+                },
+                "source": {
+                    "type": "string",
+                    "maxLength": 255
+                }
+            }
+        },
+        "v1.SaveHeadingSummaryDraft": {
+            "type": "object",
+            "required": [
+                "summary"
+            ],
+            "properties": {
+                "metadata": {
+                    "type": "object"
+                },
+                "source": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "summary": {
+                    "type": "string",
+                    "maxLength": 20000
+                }
+            }
+        },
+        "v1.SaveMetadataTranslationDraft": {
+            "type": "object",
+            "required": [
+                "display_title"
+            ],
+            "properties": {
+                "bibliography": {
+                    "type": "string",
+                    "maxLength": 10000
+                },
+                "description": {
+                    "type": "string",
+                    "maxLength": 10000
+                },
+                "display_title": {
+                    "type": "string",
+                    "maxLength": 500
+                },
+                "hint": {
+                    "type": "string",
+                    "maxLength": 10000
+                },
+                "metadata": {
+                    "type": "object"
+                },
+                "source": {
+                    "type": "string",
+                    "maxLength": 255
+                }
+            }
+        },
+        "v1.SaveQuranProgress": {
+            "type": "object",
+            "required": [
+                "ayah_key"
+            ],
+            "properties": {
+                "ayah_key": {
+                    "type": "string",
+                    "maxLength": 16,
+                    "example": "73:4"
+                },
+                "client_observed_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                }
+            }
+        },
+        "v1.SaveSectionAudioDraft": {
+            "type": "object",
+            "required": [
+                "url"
+            ],
+            "properties": {
+                "duration_seconds": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "metadata": {
+                    "type": "object"
+                },
+                "mime_type": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "narrator": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "url": {
+                    "type": "string",
+                    "maxLength": 2000
+                }
+            }
+        },
+        "v1.SaveSectionTranslationDraft": {
+            "type": "object",
+            "required": [
+                "content"
+            ],
+            "properties": {
+                "content": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "type": "object"
+                },
+                "source": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "title": {
+                    "type": "string",
+                    "maxLength": 1000
+                }
+            }
+        },
+        "v1.SavedItemList": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.SavedItem"
+                    }
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 42
+                }
+            }
+        },
+        "v1.SavedItemTags": {
+            "type": "object",
+            "properties": {
+                "tags": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "v1.SetUserRole": {
+            "type": "object",
+            "required": [
+                "email",
+                "role"
+            ],
+            "properties": {
+                "email": {
+                    "type": "string",
+                    "example": "editor@example.com"
+                },
+                "role": {
+                    "type": "string",
+                    "example": "editor"
                 }
             }
         },
@@ -847,15 +12745,11 @@ const docTemplate = `{
             ],
             "properties": {
                 "status": {
+                    "type": "string",
                     "enum": [
                         "todo",
                         "in_progress",
                         "done"
-                    ],
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/entity.TaskStatus"
-                        }
                     ],
                     "example": "in_progress"
                 }
@@ -883,6 +12777,58 @@ const docTemplate = `{
                 }
             }
         },
+        "v1.UpdateProductionProject": {
+            "type": "object",
+            "properties": {
+                "notes": {
+                    "type": "string",
+                    "maxLength": 10000
+                },
+                "owner_id": {
+                    "type": "string"
+                },
+                "priority": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "requires_audio": {
+                    "type": "boolean"
+                },
+                "requires_review": {
+                    "type": "boolean"
+                },
+                "workflow_status": {
+                    "type": "string",
+                    "enum": [
+                        "candidate",
+                        "drafting",
+                        "in_review",
+                        "ready",
+                        "published",
+                        "archived"
+                    ]
+                }
+            }
+        },
+        "v1.UpdateSavedItem": {
+            "type": "object",
+            "properties": {
+                "label": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "note": {
+                    "type": "string",
+                    "maxLength": 2000
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
         "v1.UpdateTask": {
             "type": "object",
             "required": [
@@ -898,6 +12844,262 @@ const docTemplate = `{
                     "type": "string",
                     "maxLength": 255,
                     "example": "Updated task"
+                }
+            }
+        },
+        "v1.UpsertSavedItem": {
+            "type": "object",
+            "required": [
+                "item_type"
+            ],
+            "properties": {
+                "ayah_key": {
+                    "type": "string",
+                    "maxLength": 16,
+                    "example": "73:4"
+                },
+                "book_id": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "example": 797
+                },
+                "from_ayah_number": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "example": 4
+                },
+                "heading_id": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "example": 10
+                },
+                "item_type": {
+                    "type": "string",
+                    "enum": [
+                        "book_page",
+                        "book_heading",
+                        "quran_ayah",
+                        "quran_range"
+                    ],
+                    "example": "quran_ayah"
+                },
+                "label": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "note": {
+                    "type": "string",
+                    "maxLength": 2000
+                },
+                "page_id": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "example": 12
+                },
+                "surah_id": {
+                    "type": "integer",
+                    "maximum": 114,
+                    "minimum": 1,
+                    "example": 73
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "to_ayah_number": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "example": 6
+                }
+            }
+        },
+        "v1.UserOnboarding": {
+            "type": "object",
+            "properties": {
+                "arabic_level": {
+                    "type": "string",
+                    "maxLength": 32,
+                    "example": "basic"
+                },
+                "country_code": {
+                    "type": "string",
+                    "example": "ID"
+                },
+                "daily_goal_minutes": {
+                    "type": "integer",
+                    "maximum": 1440,
+                    "minimum": 1,
+                    "example": 15
+                },
+                "display_name": {
+                    "type": "string",
+                    "maxLength": 255,
+                    "example": "John"
+                },
+                "fallback_langs": {
+                    "type": "array",
+                    "maxItems": 3,
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "id",
+                        "en"
+                    ]
+                },
+                "interests": {
+                    "type": "array",
+                    "maxItems": 20,
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "tafsir",
+                        "hadith"
+                    ]
+                },
+                "personalization_enabled": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "preferred_content_lang": {
+                    "type": "string",
+                    "maxLength": 16,
+                    "example": "id"
+                },
+                "preferred_ui_lang": {
+                    "type": "string",
+                    "maxLength": 16,
+                    "example": "id"
+                },
+                "quran_recitation_id": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "quran_translation_source_id": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "reader_mode": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "example": "arabic_translation"
+                },
+                "timezone": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "example": "Asia/Jakarta"
+                }
+            }
+        },
+        "v1.UserPreferencesPatch": {
+            "type": "object",
+            "properties": {
+                "arabic_level": {
+                    "type": "string",
+                    "maxLength": 32,
+                    "example": "basic"
+                },
+                "daily_goal_minutes": {
+                    "type": "integer",
+                    "maximum": 1440,
+                    "minimum": 1,
+                    "example": 15
+                },
+                "fallback_langs": {
+                    "type": "array",
+                    "maxItems": 3,
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "id",
+                        "en"
+                    ]
+                },
+                "interests": {
+                    "type": "array",
+                    "maxItems": 20,
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "tafsir",
+                        "hadith"
+                    ]
+                },
+                "preferred_content_lang": {
+                    "type": "string",
+                    "maxLength": 16,
+                    "example": "id"
+                },
+                "preferred_ui_lang": {
+                    "type": "string",
+                    "maxLength": 16,
+                    "example": "id"
+                },
+                "quran_recitation_id": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "quran_translation_source_id": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "reader_mode": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "example": "arabic_translation"
+                }
+            }
+        },
+        "v1.UserProfilePatch": {
+            "type": "object",
+            "properties": {
+                "country_code": {
+                    "type": "string",
+                    "maxLength": 2,
+                    "example": "ID"
+                },
+                "display_name": {
+                    "type": "string",
+                    "maxLength": 255,
+                    "example": "John Doe"
+                },
+                "personalization_enabled": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "timezone": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "example": "Asia/Jakarta"
+                }
+            }
+        },
+        "v1.VerifyEmail": {
+            "type": "object",
+            "required": [
+                "token"
+            ],
+            "properties": {
+                "token": {
+                    "type": "string",
+                    "example": "G66NnGZnWg4W88qGz3p9N0-GxjKuxEOHHsvWv3kBaBA"
+                }
+            }
+        },
+        "v1.VerifyEmailChange": {
+            "type": "object",
+            "required": [
+                "token"
+            ],
+            "properties": {
+                "token": {
+                    "type": "string",
+                    "example": "G66NnGZnWg4W88qGz3p9N0-GxjKuxEOHHsvWv3kBaBA"
                 }
             }
         }
@@ -918,7 +13120,7 @@ var SwaggerInfo = &swag.Spec{
 	BasePath:         "/v1",
 	Schemes:          []string{},
 	Title:            "Go Clean Template API",
-	Description:      "Multi-domain clean architecture template with translation, user, and task management",
+	Description:      "Surau classical book reader API",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 	LeftDelim:        "{{",

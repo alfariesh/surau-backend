@@ -27,8 +27,6 @@ func newBufferedLogger(level string) (*Logger, *bytes.Buffer) {
 }
 
 func TestNewSetsGlobalLevel(t *testing.T) {
-	t.Parallel()
-
 	cases := []struct {
 		in   string
 		want zerolog.Level
@@ -54,8 +52,6 @@ func TestNewSetsGlobalLevel(t *testing.T) {
 }
 
 func TestInfoAndWarn_LogMessageWithAndWithoutArgs(t *testing.T) {
-	t.Parallel()
-
 	l, buf := newBufferedLogger("info")
 
 	l.Info("hello")
@@ -79,8 +75,6 @@ func TestInfoAndWarn_LogMessageWithAndWithoutArgs(t *testing.T) {
 }
 
 func TestDebug_RespectsLevel(t *testing.T) {
-	t.Parallel()
-
 	// when level is info, debug should not emit
 	l, buf := newBufferedLogger("info")
 	l.Debug("dbg %d", 1)
@@ -104,8 +98,6 @@ func TestDebug_RespectsLevel(t *testing.T) {
 }
 
 func TestError_LogsErrorAndDebugWhenDebugLevel(t *testing.T) {
-	t.Parallel()
-
 	// info mode => only error
 	l, buf := newBufferedLogger("info")
 	l.Error("boom")
@@ -136,8 +128,6 @@ func TestError_LogsErrorAndDebugWhenDebugLevel(t *testing.T) {
 }
 
 func TestMsg_TypeSwitch(t *testing.T) {
-	t.Parallel()
-
 	l, buf := newBufferedLogger("debug")
 
 	// string
@@ -167,9 +157,29 @@ func TestMsg_TypeSwitch(t *testing.T) {
 	}
 }
 
-func TestFatal_ExitsAndLogs(t *testing.T) {
-	t.Parallel()
+func TestError_WithContext(t *testing.T) {
+	l, buf := newBufferedLogger("info")
 
+	l.Error(errTest, "restapi - v1 - getBook")
+
+	out := buf.String()
+	if !strings.Contains(out, "restapi - v1 - getBook: test error") {
+		t.Fatalf("contextual error not found in output: %s", out)
+	}
+	if strings.Contains(out, "%!(EXTRA") {
+		t.Fatalf("error context was treated as fmt extra args: %s", out)
+	}
+}
+
+func TestError_WithFormattedContext(t *testing.T) {
+	format := "restapi - " + "%s - %s"
+	got := errorMessage(errTest, format, "v1", "getBook")
+	if got != "restapi - v1 - getBook: test error" {
+		t.Fatalf("formatted contextual error = %q", got)
+	}
+}
+
+func TestFatal_ExitsAndLogs(t *testing.T) {
 	if os.Getenv("LOGGER_FATAL_SUBPROC") == "1" {
 		// child process: run Fatal and exit
 		l, _ := newBufferedLogger("debug")

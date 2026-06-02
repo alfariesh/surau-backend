@@ -1,0 +1,24 @@
+DROP INDEX IF EXISTS idx_knowledge_claims_type_status;
+DROP INDEX IF EXISTS idx_knowledge_relations_predicate;
+DROP INDEX IF EXISTS idx_knowledge_entity_candidates_entity;
+DROP INDEX IF EXISTS idx_knowledge_entity_aliases_normalized_trgm;
+DROP INDEX IF EXISTS idx_knowledge_entity_aliases_normalized;
+DROP INDEX IF EXISTS idx_knowledge_entity_labels_lang_trgm;
+DROP INDEX IF EXISTS idx_knowledge_entities_normalized_trgm;
+DROP INDEX IF EXISTS idx_knowledge_entities_type_review;
+DROP INDEX IF EXISTS idx_knowledge_mentions_run_span_unique;
+DROP INDEX IF EXISTS idx_knowledge_mentions_normalized_trgm;
+DROP INDEX IF EXISTS idx_knowledge_mentions_review;
+DROP INDEX IF EXISTS idx_knowledge_mentions_class;
+DROP INDEX IF EXISTS idx_knowledge_mentions_source;
+DROP INDEX IF EXISTS idx_knowledge_mentions_run;
+DROP INDEX IF EXISTS idx_knowledge_extraction_runs_task;
+
+DROP TABLE IF EXISTS knowledge_claims;
+DROP TABLE IF EXISTS knowledge_relations;
+DROP TABLE IF EXISTS knowledge_entity_candidates;
+DROP TABLE IF EXISTS knowledge_entity_aliases;
+DROP TABLE IF EXISTS knowledge_entity_labels;
+DROP TABLE IF EXISTS knowledge_entities;
+DROP TABLE IF EXISTS knowledge_mentions;
+DROP TABLE IF EXISTS knowledge_extraction_runs;

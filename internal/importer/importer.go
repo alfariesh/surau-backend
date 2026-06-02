@@ -24,7 +24,8 @@ import (
 )
 
 const (
-	defaultFullImportMinFreeGB = 30
+	defaultFullImportMinFreeGB uint64 = 30
+	bytesPerGiB                uint64 = 1024 * 1024 * 1024
 )
 
 // Options configure the raw database importer.
@@ -35,7 +36,7 @@ type Options struct {
 	BookIDs       []int
 	Limit         int
 	SkipDiskCheck bool
-	MinFreeGB     int
+	MinFreeGB     uint64
 }
 
 // Stats describe an import run.
@@ -208,8 +209,12 @@ func preflightDisk(opts Options) error {
 		return fmt.Errorf("checking disk space: %w", err)
 	}
 
+	if opts.MinFreeGB > ^uint64(0)/bytesPerGiB {
+		return fmt.Errorf("min free GiB is too large: %d", opts.MinFreeGB)
+	}
+
 	freeBytes := stat.Bavail * uint64(stat.Bsize)
-	minBytes := uint64(opts.MinFreeGB) * 1024 * 1024 * 1024
+	minBytes := opts.MinFreeGB * bytesPerGiB
 	if freeBytes < minBytes {
 		return fmt.Errorf("free disk is %.1fGiB, need at least %dGiB for full import; use --limit/--book-ids for sample or --skip-disk-check", float64(freeBytes)/(1024*1024*1024), opts.MinFreeGB)
 	}
@@ -847,7 +852,7 @@ func masterChecksum(sourceDir string) (string, error) {
 	hash := sha256.New()
 	for _, name := range []string{"author.sqlite", "book.sqlite", "category.sqlite"} {
 		path := filepath.Join(sourceDir, "update", "master", name)
-		file, err := os.Open(path)
+		file, err := os.Open(path) // #nosec G304 -- import CLI reads known DB filenames under an operator-supplied source directory.
 		if err != nil {
 			return "", fmt.Errorf("open %s: %w", path, err)
 		}

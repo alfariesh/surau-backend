@@ -30,40 +30,126 @@ func (s stubUserUseCase) GetUser(context.Context, string) (entity.User, error) {
 	return s.user, s.err
 }
 
+func (s stubUserUseCase) GetUserAccount(context.Context, string) (entity.UserAccount, error) {
+	return entity.UserAccount{}, nil
+}
+
+func (s stubUserUseCase) CompleteOnboarding(
+	context.Context,
+	string,
+	entity.UserOnboarding,
+) (entity.UserAccount, error) {
+	return entity.UserAccount{}, nil
+}
+
+func (s stubUserUseCase) UpdateUserProfile(
+	context.Context,
+	string,
+	entity.UserProfilePatch,
+) (entity.UserAccount, error) {
+	return entity.UserAccount{}, nil
+}
+
+func (s stubUserUseCase) UpdateUserPreferences(
+	context.Context,
+	string,
+	entity.UserPreferencesPatch,
+) (entity.UserAccount, error) {
+	return entity.UserAccount{}, nil
+}
+
 func (s stubUserUseCase) SetRoleByEmail(context.Context, string, string) (entity.User, error) {
 	return entity.User{}, nil
 }
 
-func TestAdminMiddleware(t *testing.T) {
+func (s stubUserUseCase) VerifyEmail(context.Context, string) error {
+	return nil
+}
+
+func (s stubUserUseCase) ResendEmailVerification(context.Context, string) error {
+	return nil
+}
+
+func (s stubUserUseCase) ForgotPassword(context.Context, string) error {
+	return nil
+}
+
+func (s stubUserUseCase) ResetPassword(context.Context, string, string) error {
+	return nil
+}
+
+func (s stubUserUseCase) ChangePassword(context.Context, string, string, string) error {
+	return nil
+}
+
+func (s stubUserUseCase) RequestEmailChange(context.Context, string, string, string) error {
+	return nil
+}
+
+func (s stubUserUseCase) VerifyEmailChange(context.Context, string, string) error {
+	return nil
+}
+
+func (s stubUserUseCase) DeleteAccount(context.Context, string, string) error {
+	return nil
+}
+
+func TestRequireRoles(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
 		name           string
 		userID         string
+		localUser      entity.User
 		user           entity.User
 		err            error
+		roles          []string
 		expectedStatus int
 	}{
 		{
-			name:           "admin allowed",
+			name:           "editor allowed for editorial review",
 			userID:         "user-id-123",
-			user:           entity.User{ID: "user-id-123", Role: entity.UserRoleAdmin},
+			user:           entity.User{ID: "user-id-123", Role: entity.UserRoleEditor},
+			roles:          []string{entity.UserRoleEditor, entity.UserRoleAdmin},
 			expectedStatus: http.StatusOK,
 		},
 		{
-			name:           "normal user forbidden",
+			name:           "cached admin user allowed",
+			localUser:      entity.User{ID: "user-id-123", Role: entity.UserRoleAdmin},
+			roles:          []string{entity.UserRoleEditor, entity.UserRoleAdmin},
+			expectedStatus: http.StatusOK,
+		},
+		{
+			name:           "normal user forbidden for editorial review",
 			userID:         "user-id-123",
 			user:           entity.User{ID: "user-id-123", Role: entity.UserRoleUser},
+			roles:          []string{entity.UserRoleEditor, entity.UserRoleAdmin},
 			expectedStatus: http.StatusForbidden,
 		},
 		{
+			name:           "editor forbidden for publish",
+			userID:         "user-id-123",
+			user:           entity.User{ID: "user-id-123", Role: entity.UserRoleEditor},
+			roles:          []string{entity.UserRoleAdmin},
+			expectedStatus: http.StatusForbidden,
+		},
+		{
+			name:           "admin allowed for publish",
+			userID:         "user-id-123",
+			user:           entity.User{ID: "user-id-123", Role: entity.UserRoleAdmin},
+			roles:          []string{entity.UserRoleAdmin},
+			expectedStatus: http.StatusOK,
+		},
+		{
 			name:           "missing user id unauthorized",
+			roles:          []string{entity.UserRoleAdmin},
 			expectedStatus: http.StatusUnauthorized,
 		},
 		{
 			name:           "lookup error unauthorized",
 			userID:         "user-id-123",
 			err:            entity.ErrUserNotFound,
+			roles:          []string{entity.UserRoleAdmin},
 			expectedStatus: http.StatusUnauthorized,
 		},
 	}
@@ -76,13 +162,16 @@ func TestAdminMiddleware(t *testing.T) {
 
 			app := fiber.New()
 			app.Use(func(ctx *fiber.Ctx) error {
+				if localTc.localUser.ID != "" {
+					ctx.Locals("user", localTc.localUser)
+				}
 				if localTc.userID != "" {
 					ctx.Locals("userID", localTc.userID)
 				}
 
 				return ctx.Next()
 			})
-			app.Use(middleware.Admin(stubUserUseCase{user: localTc.user, err: localTc.err}))
+			app.Use(middleware.RequireRoles(stubUserUseCase{user: localTc.user, err: localTc.err}, localTc.roles...))
 			app.Get("/admin", func(ctx *fiber.Ctx) error {
 				return ctx.SendStatus(http.StatusOK)
 			})

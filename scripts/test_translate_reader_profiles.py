@@ -123,6 +123,49 @@ class TranslationProfileTest(unittest.TestCase):
         self.assertEqual(metadata["profile_source"], "manual")
         self.assertEqual(metadata["category_id"], 2)
 
+    def test_summary_only_asset_translates_source_summary(self) -> None:
+        original_fetch = tr.fetch_toc_section
+        original_translate_summary = tr.translate_summary
+
+        def fake_fetch(base_url: str, book_id: int, heading_id: int, lang: str) -> dict[str, object]:
+            return {"title": "باب", "summary": "يتناول الباب معنى التقوى.", "summary_lang": "ar"}
+
+        def fake_translate_summary(**kwargs: object) -> str:
+            self.assertEqual(kwargs["source_summary"], "يتناول الباب معنى التقوى.")
+            return "Bab ini menjelaskan makna takwa."
+
+        tr.fetch_toc_section = fake_fetch
+        tr.translate_summary = fake_translate_summary
+        try:
+            args = argparse.Namespace(
+                base_url="http://127.0.0.1:8080",
+                book_id=10,
+                source_lang="ar",
+                target_lang="id",
+                model="glm-5.1",
+                deepseek_base_url="https://example.test",
+                max_source_chars=0,
+                max_tokens=500,
+                timeout_seconds=1,
+                retries=0,
+                dry_run=False,
+                include_summary=False,
+                summary_only=True,
+                book_metadata={"category_id": 2, "category_name": "تزكية"},
+                selected_profile="general",
+                selected_profile_source="manual",
+                selected_profile_config=self.profile_map["profiles"]["general"],
+            )
+            assets = tr.translate_heading_assets(args, "test-key", 5, 1, 1)
+        finally:
+            tr.fetch_toc_section = original_fetch
+            tr.translate_summary = original_translate_summary
+
+        self.assertEqual(len(assets), 1)
+        self.assertEqual(assets[0]["kind"], "heading_summary")
+        self.assertEqual(assets[0]["summary"], "Bab ini menjelaskan makna takwa.")
+        self.assertEqual(assets[0]["metadata"]["source_lang"], "ar")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/evrone/go-clean-template/internal/entity"
+	"github.com/evrone/go-clean-template/internal/readerlang"
 	"github.com/evrone/go-clean-template/internal/readerutil"
 	"github.com/evrone/go-clean-template/internal/repo"
 )
@@ -14,7 +15,7 @@ const (
 	maxLimit     = 200
 )
 
-// UseCase provides admin editorial operations.
+// UseCase provides editorial operations.
 type UseCase struct {
 	repo repo.EditorialRepo
 }
@@ -49,6 +50,35 @@ func (uc *UseCase) Books(
 		Status:     status,
 		CategoryID: categoryID,
 		HasContent: hasContent,
+		Limit:      clampLimit(limit),
+		Offset:     clampOffset(offset),
+	})
+}
+
+// ProductionCandidates returns source books with current production state for one target language.
+func (uc *UseCase) ProductionCandidates(
+	ctx context.Context,
+	lang,
+	query string,
+	categoryID,
+	authorID *int,
+	hasContent *bool,
+	unstarted bool,
+	limit,
+	offset int,
+) ([]entity.BookProductionCandidate, int, error) {
+	normalizedLang, err := entity.NormalizeProductionLang(lang)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return uc.repo.ListProductionCandidates(ctx, repo.ProductionCandidateFilter{
+		Lang:       normalizedLang,
+		Query:      strings.TrimSpace(query),
+		CategoryID: categoryID,
+		AuthorID:   authorID,
+		HasContent: hasContent,
+		Unstarted:  unstarted,
 		Limit:      clampLimit(limit),
 		Offset:     clampOffset(offset),
 	})
@@ -100,7 +130,7 @@ func (uc *UseCase) PublishMetadataDraft(ctx context.Context, actorID string, boo
 }
 
 // GetPageEdit returns raw page plus draft and published overrides.
-func (uc *UseCase) GetPageEdit(ctx context.Context, bookID, pageID int) (entity.AdminPageEdit, error) {
+func (uc *UseCase) GetPageEdit(ctx context.Context, bookID, pageID int) (entity.EditorialPageEdit, error) {
 	return uc.repo.GetPageEdit(ctx, bookID, pageID)
 }
 
@@ -152,7 +182,7 @@ func (uc *UseCase) TranslationFeedbacks(
 	bookID, headingID *int,
 	lang, vote, status string,
 	limit, offset int,
-) ([]entity.AdminTranslationFeedback, int, error) {
+) ([]entity.EditorialTranslationFeedback, int, error) {
 	filter, err := translationFeedbackFilter(bookID, headingID, lang, vote, status, limit, offset)
 	if err != nil {
 		return nil, 0, err
@@ -167,13 +197,30 @@ func (uc *UseCase) TranslationFeedbackSummary(
 	bookID, headingID *int,
 	lang, vote, status string,
 	limit int,
-) (entity.AdminTranslationFeedbackSummary, error) {
+) (entity.EditorialTranslationFeedbackSummary, error) {
 	filter, err := translationFeedbackFilter(bookID, headingID, lang, vote, status, limit, 0)
 	if err != nil {
-		return entity.AdminTranslationFeedbackSummary{}, err
+		return entity.EditorialTranslationFeedbackSummary{}, err
 	}
 
 	return uc.repo.TranslationFeedbackSummary(ctx, filter)
+}
+
+// MissingReaderAssets returns admin queue items for missing localized reader assets.
+func (uc *UseCase) MissingReaderAssets(
+	ctx context.Context,
+	targetLang string,
+	assetType string,
+	bookID *int,
+	limit,
+	offset int,
+) (entity.EditorialMissingReaderAssets, error) {
+	filter, err := missingReaderAssetFilter(targetLang, assetType, bookID, limit, offset)
+	if err != nil {
+		return entity.EditorialMissingReaderAssets{}, err
+	}
+
+	return uc.repo.ListMissingReaderAssets(ctx, filter)
 }
 
 // ResolveTranslationFeedback marks reader feedback as handled by an admin.
@@ -181,10 +228,10 @@ func (uc *UseCase) ResolveTranslationFeedback(
 	ctx context.Context,
 	actorID, feedbackID string,
 	note *string,
-) (entity.AdminTranslationFeedback, error) {
+) (entity.EditorialTranslationFeedback, error) {
 	feedbackID = strings.TrimSpace(feedbackID)
 	if feedbackID == "" {
-		return entity.AdminTranslationFeedback{}, entity.ErrInvalidFeedback
+		return entity.EditorialTranslationFeedback{}, entity.ErrInvalidFeedback
 	}
 
 	return uc.repo.ResolveTranslationFeedback(ctx, actorID, feedbackID, trimStringPtr(note))
@@ -194,10 +241,10 @@ func (uc *UseCase) ResolveTranslationFeedback(
 func (uc *UseCase) ReopenTranslationFeedback(
 	ctx context.Context,
 	actorID, feedbackID string,
-) (entity.AdminTranslationFeedback, error) {
+) (entity.EditorialTranslationFeedback, error) {
 	feedbackID = strings.TrimSpace(feedbackID)
 	if feedbackID == "" {
-		return entity.AdminTranslationFeedback{}, entity.ErrInvalidFeedback
+		return entity.EditorialTranslationFeedback{}, entity.ErrInvalidFeedback
 	}
 
 	return uc.repo.ReopenTranslationFeedback(ctx, actorID, feedbackID)
@@ -245,6 +292,52 @@ func translationFeedbackFilter(
 		Limit:     clampLimit(limit),
 		Offset:    clampOffset(offset),
 	}, nil
+}
+
+func missingReaderAssetFilter(
+	targetLang string,
+	assetType string,
+	bookID *int,
+	limit,
+	offset int,
+) (repo.MissingReaderAssetFilter, error) {
+	targetLang = strings.TrimSpace(targetLang)
+	targetLangs := []string{readerlang.Default, readerlang.English}
+	if targetLang != "" {
+		normalized, err := readerlang.Normalize(targetLang)
+		if err != nil || normalized == readerlang.Arabic {
+			return repo.MissingReaderAssetFilter{}, entity.ErrUnsupportedLanguage
+		}
+
+		targetLangs = []string{normalized}
+	}
+
+	assetType = strings.ToLower(strings.TrimSpace(assetType))
+	if assetType != "" && !isMissingReaderAssetType(assetType) {
+		return repo.MissingReaderAssetFilter{}, entity.ErrInvalidAssetType
+	}
+
+	return repo.MissingReaderAssetFilter{
+		TargetLangs: targetLangs,
+		AssetType:   assetType,
+		BookID:      bookID,
+		Limit:       clampLimit(limit),
+		Offset:      clampOffset(offset),
+	}, nil
+}
+
+func isMissingReaderAssetType(assetType string) bool {
+	switch assetType {
+	case entity.MissingAssetBookMetadata,
+		entity.MissingAssetCategoryMetadata,
+		entity.MissingAssetAuthorMetadata,
+		entity.MissingAssetSectionTranslation,
+		entity.MissingAssetHeadingSummary,
+		entity.MissingAssetSectionAudio:
+		return true
+	default:
+		return false
+	}
 }
 
 func trimStringPtr(value *string) *string {

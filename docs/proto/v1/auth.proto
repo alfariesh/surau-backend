@@ -7,6 +7,14 @@ option go_package = "docs/proto/v1";
 service AuthService {
   rpc Register (RegisterRequest) returns (RegisterResponse);
   rpc Login (LoginRequest) returns (LoginResponse);
+  rpc VerifyEmail (VerifyEmailRequest) returns (VerifyEmailResponse);
+  rpc ResendEmailVerification (ResendEmailVerificationRequest) returns (ResendEmailVerificationResponse);
+  rpc ForgotPassword (ForgotPasswordRequest) returns (ForgotPasswordResponse);
+  rpc ResetPassword (ResetPasswordRequest) returns (ResetPasswordResponse);
+  rpc ChangePassword (ChangePasswordRequest) returns (ChangePasswordResponse);
+  rpc RequestEmailChange (RequestEmailChangeRequest) returns (RequestEmailChangeResponse);
+  rpc VerifyEmailChange (VerifyEmailChangeRequest) returns (VerifyEmailChangeResponse);
+  rpc DeleteAccount (DeleteAccountRequest) returns (DeleteAccountResponse);
   rpc GetProfile (GetProfileRequest) returns (GetProfileResponse);
 }
 
@@ -14,6 +22,8 @@ message RegisterRequest {
   string username = 1;
   string email = 2;
   string password = 3;
+  string display_name = 4;
+  string name = 5;
 }
 
 message RegisterResponse {
@@ -22,6 +32,7 @@ message RegisterResponse {
   string email = 3;
   string created_at = 4;
   string updated_at = 5;
+  bool email_verified = 6;
 }
 
 message LoginRequest {
@@ -33,6 +44,73 @@ message LoginResponse {
   string token = 1;
 }
 
+message VerifyEmailRequest {
+  string token = 1;
+}
+
+message VerifyEmailResponse {
+  bool email_verified = 1;
+}
+
+message ResendEmailVerificationRequest {
+  string email = 1;
+}
+
+message ResendEmailVerificationResponse {
+  bool accepted = 1;
+}
+
+message ForgotPasswordRequest {
+  string email = 1;
+}
+
+message ForgotPasswordResponse {
+  bool accepted = 1;
+}
+
+message ResetPasswordRequest {
+  string token = 1;
+  string password = 2;
+}
+
+message ResetPasswordResponse {
+  bool password_reset = 1;
+}
+
+message ChangePasswordRequest {
+  string current_password = 1;
+  string new_password = 2;
+}
+
+message ChangePasswordResponse {
+  bool password_changed = 1;
+}
+
+message RequestEmailChangeRequest {
+  string current_password = 1;
+  string new_email = 2;
+}
+
+message RequestEmailChangeResponse {
+  bool accepted = 1;
+}
+
+message VerifyEmailChangeRequest {
+  string token = 1;
+}
+
+message VerifyEmailChangeResponse {
+  bool email_changed = 1;
+}
+
+message DeleteAccountRequest {
+  string current_password = 1;
+}
+
+message DeleteAccountResponse {
+  bool account_deleted = 1;
+}
+
 message GetProfileRequest {}
 
 message GetProfileResponse {
@@ -41,4 +119,5 @@ message GetProfileResponse {
   string email = 3;
   string created_at = 4;
   string updated_at = 5;
+  bool email_verified = 6;
 }

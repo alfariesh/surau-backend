@@ -39,7 +39,18 @@ Optional:
 ```env
 DEEPSEEK_MODEL=deepseek-v4-flash
 DEEPSEEK_BASE_URL=https://api.deepseek.com
+RAG_LLM_API_KEY=sk-...
+RAG_LLM_MODEL=glm-5.1
+RAG_LLM_BASE_URL=https://ai.sumopod.com/v1
+SUMMARY_LLM_API_KEY=sk-...
+SUMMARY_LLM_MODEL=glm-5.1
+SUMMARY_LLM_BASE_URL=https://ai.sumopod.com/v1
+LLM_PROVIDER_NAME=sumopod
 ```
+
+`translate_reader_assets.py` still accepts the historical DeepSeek flag names,
+but it can call any OpenAI-compatible `/chat/completions` provider. Metadata
+provider labels are inferred from the base URL or `LLM_PROVIDER_NAME`.
 
 ### Smoke Test Without LLM
 
@@ -101,6 +112,10 @@ Notes:
   metadata. Use `--profile fiqh`, `--profile history`, etc. to override.
 - `--eval-report` writes a compact JSON report for generated rows with detected
   profile, content length, QA status, and warning/failure counts.
+- `--include-summary` also translates existing source TOC summaries into
+  `heading_summary` JSONL rows.
+- `--summary-only` translates existing source summaries without translating the
+  whole section content again.
 
 Import a generated JSONL file. For the full-book example above:
 
@@ -113,6 +128,62 @@ Check the reader:
 
 ```sh
 curl 'http://127.0.0.1:8080/v1/books/1/toc/5/read?lang=id'
+```
+
+## `generate_reader_summaries.py`
+
+Generates reader-facing TOC summaries keyed by `(book_id, heading_id, lang)`.
+This is PageIndex-like node summary data, but it uses Surau's existing
+`book_headings`, `book_heading_ranges`, and reader endpoints instead of
+rebuilding a PDF tree.
+
+Default output language is Arabic (`--summary-lang ar`). For long books, run all
+TOC summaries bottom-up: child sections are summarized first, then parent
+summaries can be generated from child summaries to reduce cost.
+
+### Smoke Test Without LLM
+
+```sh
+python3 scripts/generate_reader_summaries.py \
+  --base-url http://127.0.0.1:8080 \
+  --book-id 12876 \
+  --all-toc \
+  --limit 3 \
+  --out /tmp/surau-jalalain-summary-ar-dryrun.jsonl \
+  --dry-run
+```
+
+### Live Summary Sample
+
+```sh
+python3 scripts/generate_reader_summaries.py \
+  --base-url http://127.0.0.1:8080 \
+  --book-id 12876 \
+  --all-toc \
+  --limit 3 \
+  --summary-lang ar \
+  --out /tmp/surau-jalalain-summary-ar.jsonl
+```
+
+Import generated summaries:
+
+```sh
+PG_URL='postgres://user:myAwEsOm3pa55%40w0rd@localhost:5432/db?sslmode=disable' \
+go run ./cmd/import-reader-assets --file=/tmp/surau-jalalain-summary-ar.jsonl
+```
+
+Translate imported Arabic summaries after they are visible from the reader API:
+
+```sh
+python3 scripts/translate_reader_assets.py \
+  --base-url http://127.0.0.1:8080 \
+  --book-id 12876 \
+  --all-toc \
+  --limit 3 \
+  --source-lang ar \
+  --target-lang id \
+  --summary-only \
+  --out /tmp/surau-jalalain-summary-id.jsonl
 ```
 
 ### Translation Strategy
@@ -283,24 +354,43 @@ The script prints a compact `PASS`, `WARN`, or `FAIL` summary. It exits with
 code `1` only when a fatal issue is found. Warnings do not block import unless
 `--strict` is used.
 
+For summary batches, QA auto-detects files that only contain
+`heading_summary` rows:
+
+```sh
+python3 scripts/qa_reader_assets.py \
+  --file /tmp/surau-jalalain-summary-ar.jsonl \
+  --base-url http://127.0.0.1:8080 \
+  --book-id 12876 \
+  --lang ar \
+  --all-toc \
+  --kind heading_summary \
+  --report /tmp/surau-jalalain-summary-ar.qa.json
+```
+
 Common fatal checks:
 
 - invalid JSONL rows
 - duplicate `(book_id, heading_id, lang)` translation rows
+- duplicate `(book_id, heading_id, lang)` summary rows
 - mismatched `book_id` or `lang`
-- missing TOC translations when `--all-toc` is used
+- missing TOC translations or summaries when `--all-toc` is used
 - dry-run placeholders
 - invalid `translation_status`
+- invalid `summary_status`
 - invalid `metadata.translation_profile`
 - `translation_status=reviewed` without `translation_reviewed_by`
+- `summary_status=reviewed` without `summary_reviewed_by`
 - `metadata.truncated_source=true`
 - raw translated-source brackets such as `[Mereka berkata: ...]`
 
 Common warnings:
 
 - short content
+- short or unusually long summary
 - missing `metadata.translation_profile`
 - outdated `metadata.style_version`
+- outdated `metadata.style_version` for summary rows
 - technical profile sections with no italicized technical terms on long content
 - many Markdown footnotes
 - possible Qur'an/hadith references without blockquotes

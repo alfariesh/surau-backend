@@ -28,7 +28,7 @@ compose-up-all: ### Run docker compose (with backend and reverse proxy)
 .PHONY: compose-up-all
 
 compose-up-integration-test: ### Run docker compose with integration test
-	$(INTEGRATION_TEST_STACK) up --build --abort-on-container-exit --exit-code-from integration-test; exit_code=$$?; \
+	$(INTEGRATION_TEST_STACK) up --build --abort-on-container-exit --exit-code-from integration-test db app integration-test; exit_code=$$?; \
 	$(INTEGRATION_TEST_STACK) down --remove-orphans; exit $$exit_code
 .PHONY: compose-up-integration-test
 
@@ -78,6 +78,14 @@ import-books-sample: ### Import a small reader sample from raw database
 import-reader-assets: ### Import translation/audio JSONL: make import-reader-assets FILE=assets.jsonl
 	go run ./cmd/import-reader-assets --file='$(FILE)'
 .PHONY: import-reader-assets
+
+import-quran-assets: ### Import local QUL Quran exports: make import-quran-assets QUL_ARGS='--dry-run ...'
+	go run ./cmd/import-quran-assets $(QUL_ARGS)
+.PHONY: import-quran-assets
+
+sync-quran-audio-r2: ### Sync Quran audio R2 manifest into Postgres: make sync-quran-audio-r2 QURAN_AUDIO_R2_ARGS='--dry-run ...'
+	go run ./cmd/sync-quran-audio-r2 $(QURAN_AUDIO_R2_ARGS)
+.PHONY: sync-quran-audio-r2
 
 docker-rm-volume: ### remove docker volume
 	docker volume rm go-clean-template_pg-data

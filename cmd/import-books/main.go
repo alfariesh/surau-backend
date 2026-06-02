@@ -22,7 +22,7 @@ func main() {
 	flag.StringVar(&bookIDs, "book-ids", "", "comma-separated book IDs for sample import")
 	flag.IntVar(&opts.Limit, "limit", 0, "limit imported content books for sample import")
 	flag.BoolVar(&opts.SkipDiskCheck, "skip-disk-check", false, "skip full import disk preflight")
-	flag.IntVar(&opts.MinFreeGB, "min-free-gb", 30, "minimum free GiB required for full import")
+	flag.Uint64Var(&opts.MinFreeGB, "min-free-gb", 30, "minimum free GiB required for full import")
 	flag.Parse()
 
 	ids, err := parseBookIDs(bookIDs)

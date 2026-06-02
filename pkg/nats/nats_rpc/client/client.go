@@ -103,6 +103,16 @@ func (c *Client) RemoteCall(handler string, request, response any) error {
 		}
 	case natsrpc.ErrBadHandler.Error():
 		return natsrpc.ErrBadHandler
+	case natsrpc.ErrBadRequest.Error():
+		return natsrpc.ErrBadRequest
+	case natsrpc.ErrUnauthenticated.Error():
+		return natsrpc.ErrUnauthenticated
+	case natsrpc.ErrFailedPrecondition.Error():
+		return natsrpc.ErrFailedPrecondition
+	case natsrpc.ErrUnavailable.Error():
+		return natsrpc.ErrUnavailable
+	case natsrpc.ErrRateLimited.Error():
+		return natsrpc.ErrRateLimited
 	case natsrpc.ErrInternalServer.Error():
 		return natsrpc.ErrInternalServer
 	}

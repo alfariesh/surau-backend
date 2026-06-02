@@ -2,9 +2,10 @@ const apiBase = "/api";
 const pageLimit = 120;
 const requestTimeoutMs = 15000;
 const feedbackClientIDKey = "surau.feedback.client_id";
+const preferredLangKey = "surau.reader.lang";
 
 const state = {
-  lang: "id",
+  lang: defaultLanguage(),
   mode: "toc",
   books: [],
   activeBook: null,
@@ -64,6 +65,7 @@ init();
 function init() {
   bindEvents();
   restoreHashState();
+  syncLanguageButtons();
   loadBooks();
 }
 
@@ -75,9 +77,8 @@ function bindEvents() {
   document.querySelectorAll(".lang-button").forEach((button) => {
     button.addEventListener("click", () => {
       state.lang = button.dataset.lang || "id";
-      document.querySelectorAll(".lang-button").forEach((item) => {
-        item.classList.toggle("is-active", item === button);
-      });
+      window.localStorage.setItem(preferredLangKey, state.lang);
+      syncLanguageButtons();
       loadBooks({ keepActiveBook: true });
     });
   });
@@ -647,14 +648,30 @@ function restoreHashState() {
   const lang = getHashValue("lang");
   if (lang && ["id", "en", "ar"].includes(lang)) {
     state.lang = lang;
-    document.querySelectorAll(".lang-button").forEach((button) => {
-      button.classList.toggle("is-active", button.dataset.lang === lang);
-    });
   }
+  syncLanguageButtons();
   document.querySelectorAll(".mode-button").forEach((button) => {
     button.classList.toggle("is-active", button.dataset.mode === state.mode);
   });
   applyModeVisibility();
+}
+
+function defaultLanguage() {
+  const stored = window.localStorage.getItem(preferredLangKey);
+  if (["id", "en", "ar"].includes(stored)) return stored;
+
+  const candidates = [navigator.language, ...(navigator.languages || [])].filter(Boolean);
+  for (const candidate of candidates) {
+    const lang = String(candidate).trim().toLowerCase().replace("_", "-").split("-")[0];
+    if (["id", "en", "ar"].includes(lang)) return lang;
+  }
+  return "id";
+}
+
+function syncLanguageButtons() {
+  document.querySelectorAll(".lang-button").forEach((button) => {
+    button.classList.toggle("is-active", button.dataset.lang === state.lang);
+  });
 }
 
 function handleHashChange() {

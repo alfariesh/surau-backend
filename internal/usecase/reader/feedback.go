@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/evrone/go-clean-template/internal/entity"
+	"github.com/evrone/go-clean-template/internal/readerlang"
 	"github.com/google/uuid"
 )
 
@@ -35,11 +36,16 @@ func (uc *UseCase) CreateTranslationFeedback(
 	userAgent *string,
 	clientIP *string,
 ) (entity.TranslationFeedback, error) {
+	lang, err := readerlang.Normalize(lang)
+	if err != nil {
+		return entity.TranslationFeedback{}, err
+	}
+
 	feedback := entity.TranslationFeedback{
 		ID:        uuid.New().String(),
 		BookID:    bookID,
 		HeadingID: headingID,
-		Lang:      normalizeLang(lang),
+		Lang:      lang,
 		Vote:      strings.ToLower(strings.TrimSpace(vote)),
 		ClientID:  trimOptional(clientID),
 		UserAgent: trimOptional(userAgent),

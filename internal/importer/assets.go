@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/evrone/go-clean-template/internal/readerlang"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -24,6 +25,7 @@ type AssetOptions struct {
 // AssetStats describes imported JSONL assets.
 type AssetStats struct {
 	Translations             int
+	Summaries                int
 	Audio                    int
 	BookMetadataTranslations int
 	AuthorTranslations       int
@@ -33,30 +35,34 @@ type AssetStats struct {
 
 // ReaderAsset is one JSONL record for future translation/audio pipelines.
 type ReaderAsset struct {
-	Kind            string          `json:"kind"`
-	BookID          int             `json:"book_id"`
-	AuthorID        int             `json:"author_id,omitempty"`
-	CategoryID      int             `json:"category_id,omitempty"`
-	HeadingID       int             `json:"heading_id"`
-	Lang            string          `json:"lang"`
-	Title           *string         `json:"title,omitempty"`
-	DisplayTitle    *string         `json:"display_title,omitempty"`
-	Name            *string         `json:"name,omitempty"`
-	Biography       *string         `json:"biography,omitempty"`
-	DeathText       *string         `json:"death_text,omitempty"`
-	Bibliography    *string         `json:"bibliography,omitempty"`
-	Hint            *string         `json:"hint,omitempty"`
-	Description     *string         `json:"description,omitempty"`
-	Content         string          `json:"content,omitempty"`
-	Source          *string         `json:"source,omitempty"`
-	URL             string          `json:"url,omitempty"`
-	Narrator        *string         `json:"narrator,omitempty"`
-	DurationSeconds *int            `json:"duration_seconds,omitempty"`
-	MIMEType        *string         `json:"mime_type,omitempty"`
-	Status          string          `json:"translation_status,omitempty"`
-	ReviewedBy      *string         `json:"translation_reviewed_by,omitempty"`
-	ReviewedAt      *time.Time      `json:"translation_reviewed_at,omitempty"`
-	Metadata        json.RawMessage `json:"metadata,omitempty"`
+	Kind              string          `json:"kind"`
+	BookID            int             `json:"book_id"`
+	AuthorID          int             `json:"author_id,omitempty"`
+	CategoryID        int             `json:"category_id,omitempty"`
+	HeadingID         int             `json:"heading_id"`
+	Lang              string          `json:"lang"`
+	Title             *string         `json:"title,omitempty"`
+	DisplayTitle      *string         `json:"display_title,omitempty"`
+	Name              *string         `json:"name,omitempty"`
+	Summary           string          `json:"summary,omitempty"`
+	Biography         *string         `json:"biography,omitempty"`
+	DeathText         *string         `json:"death_text,omitempty"`
+	Bibliography      *string         `json:"bibliography,omitempty"`
+	Hint              *string         `json:"hint,omitempty"`
+	Description       *string         `json:"description,omitempty"`
+	Content           string          `json:"content,omitempty"`
+	Source            *string         `json:"source,omitempty"`
+	URL               string          `json:"url,omitempty"`
+	Narrator          *string         `json:"narrator,omitempty"`
+	DurationSeconds   *int            `json:"duration_seconds,omitempty"`
+	MIMEType          *string         `json:"mime_type,omitempty"`
+	Status            string          `json:"translation_status,omitempty"`
+	SummaryStatus     string          `json:"summary_status,omitempty"`
+	ReviewedBy        *string         `json:"translation_reviewed_by,omitempty"`
+	ReviewedAt        *time.Time      `json:"translation_reviewed_at,omitempty"`
+	SummaryReviewedBy *string         `json:"summary_reviewed_by,omitempty"`
+	SummaryReviewedAt *time.Time      `json:"summary_reviewed_at,omitempty"`
+	Metadata          json.RawMessage `json:"metadata,omitempty"`
 }
 
 // Validate checks the minimum shape of one asset record.
@@ -64,7 +70,14 @@ func (a ReaderAsset) Validate() error {
 	if strings.TrimSpace(a.Lang) == "" {
 		return errors.New("lang is required")
 	}
-	if err := validateTranslationStatus(a.Status, a.ReviewedBy); err != nil {
+	if _, err := readerlang.Normalize(a.Lang); err != nil {
+		return err
+	}
+	if a.Kind == "heading_summary" {
+		if err := validateSummaryStatus(a.SummaryStatus, a.SummaryReviewedBy, a.Status, a.ReviewedBy); err != nil {
+			return err
+		}
+	} else if err := validateTranslationStatus(a.Status, a.ReviewedBy); err != nil {
 		return err
 	}
 
@@ -78,6 +91,16 @@ func (a ReaderAsset) Validate() error {
 		}
 		if strings.TrimSpace(a.Content) == "" {
 			return errors.New("content is required for translation")
+		}
+	case "heading_summary":
+		if a.BookID <= 0 {
+			return errors.New("book_id is required")
+		}
+		if a.HeadingID <= 0 {
+			return errors.New("heading_id is required")
+		}
+		if strings.TrimSpace(a.Summary) == "" {
+			return errors.New("summary is required for heading summary")
 		}
 	case "audio":
 		if a.BookID <= 0 {
@@ -165,7 +188,12 @@ func importAssets(ctx context.Context, pool *pgxpool.Pool, reader io.Reader) (As
 			continue
 		}
 
-		asset.Lang = strings.ToLower(strings.TrimSpace(asset.Lang))
+		lang, err := readerlang.Normalize(asset.Lang)
+		if err != nil {
+			stats.Skipped++
+			continue
+		}
+		asset.Lang = lang
 		if err := asset.Validate(); err != nil {
 			stats.Skipped++
 			continue
@@ -204,6 +232,35 @@ ON CONFLICT (book_id, heading_id, lang) DO UPDATE SET
 				asset.Source,
 				status,
 				asset.ReviewedBy,
+				reviewedAt,
+				metadata,
+			)
+		case "heading_summary":
+			stats.Summaries++
+			status := normalizeSummaryStatus(asset.SummaryStatus, asset.Status)
+			reviewedBy := firstNonBlankPtr(asset.SummaryReviewedBy, asset.ReviewedBy)
+			reviewedAt := reviewedAtOrNow(status, firstNonNilTime(asset.SummaryReviewedAt, asset.ReviewedAt))
+			batch.Queue(`
+INSERT INTO book_heading_summaries (
+    book_id, heading_id, lang, summary, source, summary_status,
+    reviewed_by, reviewed_at, metadata, updated_at
+)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, nullif($9, '')::jsonb, now())
+ON CONFLICT (book_id, heading_id, lang) DO UPDATE SET
+    summary = EXCLUDED.summary,
+    source = EXCLUDED.source,
+    summary_status = EXCLUDED.summary_status,
+    reviewed_by = EXCLUDED.reviewed_by,
+    reviewed_at = EXCLUDED.reviewed_at,
+    metadata = EXCLUDED.metadata,
+    updated_at = now()`,
+				asset.BookID,
+				asset.HeadingID,
+				asset.Lang,
+				asset.Summary,
+				asset.Source,
+				status,
+				reviewedBy,
 				reviewedAt,
 				metadata,
 			)
@@ -358,6 +415,31 @@ func normalizeTranslationStatus(status string) string {
 	return status
 }
 
+func validateSummaryStatus(summaryStatus string, summaryReviewedBy *string, legacyStatus string, legacyReviewedBy *string) error {
+	status := normalizeSummaryStatus(summaryStatus, legacyStatus)
+	reviewedBy := firstNonBlankPtr(summaryReviewedBy, legacyReviewedBy)
+	switch status {
+	case "generated":
+		return nil
+	case "reviewed":
+		if stringPtrBlank(reviewedBy) {
+			return errors.New("summary_reviewed_by is required when summary_status is reviewed")
+		}
+		return nil
+	default:
+		return fmt.Errorf("unsupported summary_status %q", status)
+	}
+}
+
+func normalizeSummaryStatus(summaryStatus string, legacyStatus string) string {
+	summaryStatus = strings.ToLower(strings.TrimSpace(summaryStatus))
+	if summaryStatus != "" {
+		return summaryStatus
+	}
+
+	return normalizeTranslationStatus(legacyStatus)
+}
+
 func reviewedAtOrNow(status string, reviewedAt *time.Time) *time.Time {
 	if status != "reviewed" || reviewedAt != nil {
 		return reviewedAt
@@ -366,6 +448,16 @@ func reviewedAtOrNow(status string, reviewedAt *time.Time) *time.Time {
 	now := time.Now().UTC()
 
 	return &now
+}
+
+func firstNonNilTime(values ...*time.Time) *time.Time {
+	for _, value := range values {
+		if value != nil {
+			return value
+		}
+	}
+
+	return nil
 }
 
 func stringPtrBlank(value *string) bool {

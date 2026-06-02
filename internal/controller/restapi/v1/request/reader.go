@@ -1,5 +1,7 @@
 package request
 
+import "time"
+
 // SaveProgress -.
 type SaveProgress struct {
 	PageID          *int     `json:"page_id"           validate:"omitempty,min=1"        example:"12"`
@@ -12,20 +14,33 @@ type SaveTOCProgress struct {
 	ProgressPercent *float64 `json:"progress_percent" validate:"omitempty,min=0,max=100" example:"32.5"`
 } // @name v1.SaveTOCProgress
 
-// CreateBookmark -.
-type CreateBookmark struct {
-	BookID    int     `json:"book_id"    validate:"required,min=1" example:"797"`
-	PageID    *int    `json:"page_id"    validate:"omitempty,min=1" example:"12"`
-	HeadingID *int    `json:"heading_id" validate:"omitempty,min=1" example:"10"`
-	Label     *string `json:"label"      validate:"omitempty,max=255"`
-	Note      *string `json:"note"       validate:"omitempty,max=2000"`
-} // @name v1.CreateBookmark
+// SaveQuranProgress -.
+type SaveQuranProgress struct {
+	AyahKey          string     `json:"ayah_key"            validate:"required,max=16" example:"73:4"`
+	ClientObservedAt *time.Time `json:"client_observed_at" validate:"omitempty"       example:"2026-01-01T00:00:00Z"`
+} // @name v1.SaveQuranProgress
 
-// CreateTOCBookmark -.
-type CreateTOCBookmark struct {
-	Label *string `json:"label" validate:"omitempty,max=255"`
-	Note  *string `json:"note"  validate:"omitempty,max=2000"`
-} // @name v1.CreateTOCBookmark
+// UpsertSavedItem -.
+type UpsertSavedItem struct {
+	ItemType       string   `json:"item_type"        validate:"required,oneof=book_page book_heading quran_ayah quran_range" example:"quran_ayah"`
+	BookID         *int     `json:"book_id"          validate:"omitempty,min=1" example:"797"`
+	PageID         *int     `json:"page_id"          validate:"omitempty,min=1" example:"12"`
+	HeadingID      *int     `json:"heading_id"       validate:"omitempty,min=1" example:"10"`
+	SurahID        *int     `json:"surah_id"         validate:"omitempty,min=1,max=114" example:"73"`
+	AyahKey        *string  `json:"ayah_key"         validate:"omitempty,max=16" example:"73:4"`
+	FromAyahNumber *int     `json:"from_ayah_number" validate:"omitempty,min=1" example:"4"`
+	ToAyahNumber   *int     `json:"to_ayah_number"   validate:"omitempty,min=1" example:"6"`
+	Label          *string  `json:"label"            validate:"omitempty,max=255"`
+	Note           *string  `json:"note"             validate:"omitempty,max=2000"`
+	Tags           []string `json:"tags"             validate:"omitempty"`
+} // @name v1.UpsertSavedItem
+
+// UpdateSavedItem -.
+type UpdateSavedItem struct {
+	Label *string  `json:"label" validate:"omitempty,max=255"`
+	Note  *string  `json:"note"  validate:"omitempty,max=2000"`
+	Tags  []string `json:"tags"  validate:"omitempty"`
+} // @name v1.UpdateSavedItem
 
 // CreateTranslationFeedback -.
 type CreateTranslationFeedback struct {

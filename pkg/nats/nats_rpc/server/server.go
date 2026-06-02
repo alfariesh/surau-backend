@@ -162,7 +162,7 @@ func (s *Server) handleMessage(msg *nats.Msg) {
 
 	response, err := callHandler(msg)
 	if err != nil {
-		s.publish(msg, nil, natsrpc.ErrInternalServer.Error())
+		s.publish(msg, nil, statusForError(err))
 
 		s.logger.Error(err, "nats_rpc server - Server - handleMessage - callHandler")
 
@@ -179,6 +179,23 @@ func (s *Server) handleMessage(msg *nats.Msg) {
 	}
 
 	s.publish(msg, body, natsrpc.Success)
+}
+
+func statusForError(err error) string {
+	switch {
+	case errors.Is(err, natsrpc.ErrBadRequest):
+		return natsrpc.ErrBadRequest.Error()
+	case errors.Is(err, natsrpc.ErrUnauthenticated):
+		return natsrpc.ErrUnauthenticated.Error()
+	case errors.Is(err, natsrpc.ErrFailedPrecondition):
+		return natsrpc.ErrFailedPrecondition.Error()
+	case errors.Is(err, natsrpc.ErrUnavailable):
+		return natsrpc.ErrUnavailable.Error()
+	case errors.Is(err, natsrpc.ErrRateLimited):
+		return natsrpc.ErrRateLimited.Error()
+	default:
+		return natsrpc.ErrInternalServer.Error()
+	}
 }
 
 func (s *Server) publish(msg *nats.Msg, body []byte, status string) {
