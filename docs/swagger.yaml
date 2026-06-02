@@ -504,6 +504,8 @@ definitions:
         type: string
       notes:
         type: string
+      owner:
+        $ref: '#/definitions/entity.ProductionProjectOwner'
       owner_id:
         type: string
       priority:
@@ -1611,6 +1613,18 @@ definitions:
         type: string
       updated_at:
         example: "2026-01-01T00:00:00Z"
+        type: string
+    type: object
+  entity.ProductionProjectOwner:
+    properties:
+      display_name:
+        example: Editor Name
+        type: string
+      email:
+        example: editor@example.com
+        type: string
+      id:
+        example: 550e8400-e29b-41d4-a716-446655440000
         type: string
     type: object
   entity.QuranAudioSegment:

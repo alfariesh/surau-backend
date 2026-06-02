@@ -272,6 +272,8 @@ Use `GET /v1/editorial/production-projects/{id}/workspace` to load the editor sc
 
 Use `GET /v1/editorial/production-projects?ready_to_publish=true` or `?needs_work=true` for a lightweight production queue. The two flags are mutually exclusive.
 
+Production project payloads keep `owner_id` and also include `owner` when the assigned owner still exists: `{ "id", "email", "display_name" }`. Use it for queue and workspace display labels instead of showing raw UUIDs.
+
 Use `GET /v1/editorial/production-dashboard?lang=id|en` for the small-team operational summary: unstarted candidates, active projects, needs work, ready to publish, published count, and recent production events. Use `GET /v1/editorial/production-activity?lang=&limit=&offset=` when you need a global activity feed outside a single project.
 
 Use `GET /v1/editorial/production-projects/{id}/draft-revisions?asset_type=...&heading_id=...` to show draft history. Use `POST /v1/editorial/production-projects/{id}/draft-revisions/{revision_id}/restore` to roll back; restore creates a new revision and resets the draft review status.

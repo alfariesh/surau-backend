@@ -46,24 +46,32 @@ const (
 
 // BookProductionProject tracks one translation production workflow for a book and target language.
 type BookProductionProject struct {
-	ID                string     `json:"id"                 example:"550e8400-e29b-41d4-a716-446655440000"`
-	BookID            int        `json:"book_id"            example:"797"`
-	Lang              string     `json:"lang"               example:"id"`
-	WorkflowStatus    string     `json:"workflow_status"    example:"drafting"`
-	PublicationStatus string     `json:"publication_status" example:"hidden"`
-	RequiresReview    bool       `json:"requires_review"    example:"true"`
-	RequiresAudio     bool       `json:"requires_audio"     example:"false"`
-	Priority          int        `json:"priority"           example:"10"`
-	OwnerID           *string    `json:"owner_id,omitempty"`
-	Notes             *string    `json:"notes,omitempty"`
-	CreatedBy         *string    `json:"created_by,omitempty"`
-	UpdatedBy         *string    `json:"updated_by,omitempty"`
-	PublishedBy       *string    `json:"published_by,omitempty"`
-	CreatedAt         time.Time  `json:"created_at"         example:"2026-01-01T00:00:00Z"`
-	UpdatedAt         time.Time  `json:"updated_at"         example:"2026-01-01T00:00:00Z"`
-	PublishedAt       *time.Time `json:"published_at,omitempty" example:"2026-01-01T00:00:00Z"`
-	ArchivedAt        *time.Time `json:"archived_at,omitempty"  example:"2026-01-01T00:00:00Z"`
+	ID                string                  `json:"id"                 example:"550e8400-e29b-41d4-a716-446655440000"`
+	BookID            int                     `json:"book_id"            example:"797"`
+	Lang              string                  `json:"lang"               example:"id"`
+	WorkflowStatus    string                  `json:"workflow_status"    example:"drafting"`
+	PublicationStatus string                  `json:"publication_status" example:"hidden"`
+	RequiresReview    bool                    `json:"requires_review"    example:"true"`
+	RequiresAudio     bool                    `json:"requires_audio"     example:"false"`
+	Priority          int                     `json:"priority"           example:"10"`
+	OwnerID           *string                 `json:"owner_id,omitempty"`
+	Owner             *ProductionProjectOwner `json:"owner,omitempty"`
+	Notes             *string                 `json:"notes,omitempty"`
+	CreatedBy         *string                 `json:"created_by,omitempty"`
+	UpdatedBy         *string                 `json:"updated_by,omitempty"`
+	PublishedBy       *string                 `json:"published_by,omitempty"`
+	CreatedAt         time.Time               `json:"created_at"         example:"2026-01-01T00:00:00Z"`
+	UpdatedAt         time.Time               `json:"updated_at"         example:"2026-01-01T00:00:00Z"`
+	PublishedAt       *time.Time              `json:"published_at,omitempty" example:"2026-01-01T00:00:00Z"`
+	ArchivedAt        *time.Time              `json:"archived_at,omitempty"  example:"2026-01-01T00:00:00Z"`
 } // @name entity.BookProductionProject
+
+// ProductionProjectOwner is a lightweight owner summary for production UI displays.
+type ProductionProjectOwner struct {
+	ID          string  `json:"id"           example:"550e8400-e29b-41d4-a716-446655440000"`
+	Email       string  `json:"email"        example:"editor@example.com"`
+	DisplayName *string `json:"display_name,omitempty" example:"Editor Name"`
+} // @name entity.ProductionProjectOwner
 
 // BookProductionProjectPatch updates mutable project workflow settings.
 type BookProductionProjectPatch struct {
