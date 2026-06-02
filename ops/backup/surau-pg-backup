@@ -50,7 +50,6 @@ write_rclone_config() {
     echo "secret_access_key = ${R2_SECRET_ACCESS_KEY}"
     echo "endpoint = ${R2_ENDPOINT}"
     echo "region = auto"
-    echo "acl = private"
     echo "no_check_bucket = true"
   } >"$config"
   echo "$config"
@@ -66,7 +65,7 @@ main() {
   local started_at stamp git_sha base archive tmp_archive checksum tmp_checksum rclone_config object_prefix
   started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   stamp="$(date -u +%Y%m%dT%H%M%SZ)"
-  git_sha="$(git -C "$DEPLOY_PATH" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+  git_sha="$(git -c safe.directory="$DEPLOY_PATH" -C "$DEPLOY_PATH" rev-parse --short HEAD 2>/dev/null || echo unknown)"
   base="surau-postgres-${stamp}-${git_sha}.dump.zst"
   archive="${BACKUP_DIR}/${base}"
   tmp_archive="${archive}.tmp"
