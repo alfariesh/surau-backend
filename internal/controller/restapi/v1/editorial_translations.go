@@ -2,6 +2,7 @@ package v1
 
 import (
 	"context"
+	"errors"
 	"net/http"
 
 	"github.com/evrone/go-clean-template/internal/controller/restapi/v1/request"
@@ -141,7 +142,7 @@ func (r *V1) editorialGlobalProductionActivity(ctx *fiber.Ctx) error {
 // @Failure     401 {object} response.Error
 // @Failure     403 {object} response.Error
 // @Failure     404 {object} response.Error
-// @Failure     409 {object} response.Error
+// @Failure     409 {object} response.ProductionProjectConflict
 // @Failure     500 {object} response.Error
 // @Security    BearerAuth
 // @Router      /editorial/production-projects [post]
@@ -1059,6 +1060,7 @@ func (r *V1) editorialReviewProductionAsset(ctx *fiber.Ctx) error {
 // @Failure     401 {object} response.Error
 // @Failure     403 {object} response.Error
 // @Failure     404 {object} response.Error
+// @Failure     409 {object} response.ProductionPublishBlocked
 // @Failure     500 {object} response.Error
 // @Security    BearerAuth
 // @Router      /editorial/production-projects/{id}/publish [post]
@@ -1071,6 +1073,16 @@ func (r *V1) editorialPublishProductionProject(ctx *fiber.Ctx) error {
 	project, err := r.editorial.PublishProductionProject(ctx.UserContext(), actorID, ctx.Params("id"))
 	if err != nil {
 		r.logEditorialError(err, "restapi - v1 - editorialPublishProductionProject")
+		if errors.Is(err, entity.ErrProductionNotReady) {
+			check, checkErr := r.editorial.ProductionPublishCheck(ctx.UserContext(), ctx.Params("id"))
+			if checkErr == nil {
+				return ctx.Status(http.StatusConflict).JSON(
+					response.ProductionPublishBlockedFromCheck("production project is not ready", check),
+				)
+			}
+
+			r.logEditorialError(checkErr, "restapi - v1 - editorialPublishProductionProject - publishCheck")
+		}
 
 		return r.editorialError(ctx, err)
 	}

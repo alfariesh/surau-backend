@@ -543,8 +543,8 @@ Common backend errors:
 | 404 | `{"error":"production project not found"}` | project deleted/invalid id | Return to queue |
 | 404 | `{"error":"draft not found"}` | GET/delete/review draft before save | Show empty draft state |
 | 404 | `{"error":"heading not found"}` | invalid heading for project | Refresh workspace |
-| 409 | `{"error":"production project already exists"}` | duplicate active `book_id + lang` | Link existing project |
-| 409 | `{"error":"production project is not ready"}` | publish blocked | Fetch publish-check |
+| 409 | `{"error":"production project already exists","existing_project_id":"..."}` | duplicate active `book_id + lang` | Link existing project |
+| 409 | `{"error":"production project is not ready","blocking_errors":[...]}` | publish blocked | Show returned blockers |
 | 500 | `{"error":"internal server error"}` | server/db issue | Toast and retry option |
 
 ## Endpoints By Screen
@@ -728,7 +728,7 @@ Defaults and validation:
 - `requires_audio` defaults to `false` if omitted.
 - `priority` minimum is `0`.
 - `book_id` must have imported content/headings, otherwise backend returns `409 production project is not ready`.
-- Duplicate active `book_id + lang` returns `409 production project already exists`.
+- Duplicate active `book_id + lang` returns `409 production project already exists` with `existing_project_id` when the active project can be resolved.
 
 After success:
 
@@ -1291,7 +1291,7 @@ Publish behavior:
 - Public reader starts exposing `lang=id|en` final assets for this book+lang.
 - Activity event `production_project.publish` is recorded.
 
-If publish fails with `409 production project is not ready`, fetch publish-check and show blockers.
+If publish fails with `409 production project is not ready`, the response mirrors publish-check fields and includes `blocking_errors`, so show those blockers directly. A separate publish-check fetch is only needed if the UI wants to refresh state again.
 
 Unpublish:
 
@@ -1409,9 +1409,11 @@ Editor/admin:
 
 ```http
 GET /v1/editorial/books?q=&status=&category_id=&has_content=&limit=&offset=
+GET /v1/editorial/books/{book_id}/metadata-draft
 PUT /v1/editorial/books/{book_id}/metadata-draft
 GET /v1/editorial/books/{book_id}/pages/{page_id}
 PUT /v1/editorial/books/{book_id}/pages/{page_id}/draft
+GET /v1/editorial/books/{book_id}/headings/{heading_id}/draft
 PUT /v1/editorial/books/{book_id}/headings/{heading_id}/draft
 ```
 
@@ -1477,7 +1479,7 @@ Create modal fields:
 Edge cases:
 
 - Existing project shown in candidate row when `unstarted=false`.
-- Duplicate create returns `409`; show link to existing project if known from candidate row.
+- Duplicate create returns `409`; use `existing_project_id` from the response to link to the active project.
 - `heading_count=0` or `has_content=false` should disable create even before backend rejects.
 
 ### Queue

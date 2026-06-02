@@ -4,11 +4,19 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/evrone/go-clean-template/internal/controller/restapi/v1/response"
 	"github.com/evrone/go-clean-template/internal/entity"
 	"github.com/gofiber/fiber/v2"
 )
 
 func (r *V1) editorialError(ctx *fiber.Ctx, err error) error {
+	if existingProjectID := productionProjectExistsWithID(err); existingProjectID != "" {
+		return ctx.Status(http.StatusConflict).JSON(response.ProductionProjectConflict{
+			Error:             "production project already exists",
+			ExistingProjectID: existingProjectID,
+		})
+	}
+
 	switch {
 	case errors.Is(err, entity.ErrUnsupportedLanguage):
 		return errorResponse(ctx, http.StatusBadRequest, "unsupported language")
@@ -47,6 +55,15 @@ func (r *V1) editorialError(ctx *fiber.Ctx, err error) error {
 	default:
 		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
 	}
+}
+
+func productionProjectExistsWithID(err error) string {
+	var exists *entity.ProductionProjectExistsError
+	if errors.As(err, &exists) {
+		return exists.ExistingProjectID
+	}
+
+	return ""
 }
 
 func pagePath(ctx *fiber.Ctx) (int, int, error) {

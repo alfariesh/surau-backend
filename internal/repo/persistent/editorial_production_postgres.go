@@ -56,7 +56,7 @@ RETURNING id, book_id, lang, workflow_status, publication_status, requires_revie
 	))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return entity.BookProductionProject{}, entity.ErrProductionProjectExists
+			return entity.BookProductionProject{}, r.productionProjectExistsError(ctx, project.BookID, project.Lang)
 		}
 
 		return entity.BookProductionProject{}, fmt.Errorf("EditorialRepo - CreateProductionProject - scan: %w", err)
@@ -66,6 +66,25 @@ RETURNING id, book_id, lang, workflow_status, publication_status, requires_revie
 	_ = r.recordProductionEvent(ctx, actorID, saved.ID, entity.ProductionEventProjectCreate, nil, nil, nil, saved)
 
 	return saved, nil
+}
+
+func (r *EditorialRepo) productionProjectExistsError(ctx context.Context, bookID int, lang string) error {
+	var existingProjectID string
+	err := r.Pool.QueryRow(ctx, `
+SELECT id
+FROM book_production_projects
+WHERE book_id = $1 AND lang = $2 AND workflow_status <> 'archived'
+ORDER BY updated_at DESC
+LIMIT 1`, bookID, lang).Scan(&existingProjectID)
+	if err != nil {
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("EditorialRepo - productionProjectExistsError - lookup: %w", err)
+		}
+
+		return entity.ErrProductionProjectExists
+	}
+
+	return entity.NewProductionProjectExistsError(existingProjectID)
 }
 
 // ListProductionProjects returns paginated production workflows.
