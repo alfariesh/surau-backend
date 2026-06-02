@@ -319,9 +319,13 @@ func TestSetRoleByEmail(t *testing.T) {
 
 		repo.EXPECT().
 			SetRoleByEmail(context.Background(), "admin@example.com", entity.UserRoleAdmin).
-			Return(expectedUser, nil)
+			Return(entity.UserRoleChange{
+				User:         expectedUser,
+				PreviousRole: entity.UserRoleUser,
+				NewRole:      entity.UserRoleAdmin,
+			}, nil)
 
-		u, err := uc.SetRoleByEmail(context.Background(), "admin@example.com", entity.UserRoleAdmin)
+		u, err := uc.SetRoleByEmail(context.Background(), "actor-id", "owner@example.com", "admin@example.com", entity.UserRoleAdmin)
 
 		require.NoError(t, err)
 		assert.Equal(t, expectedUser, u)
@@ -340,9 +344,13 @@ func TestSetRoleByEmail(t *testing.T) {
 
 		repo.EXPECT().
 			SetRoleByEmail(context.Background(), "editor@example.com", entity.UserRoleEditor).
-			Return(expectedUser, nil)
+			Return(entity.UserRoleChange{
+				User:         expectedUser,
+				PreviousRole: entity.UserRoleUser,
+				NewRole:      entity.UserRoleEditor,
+			}, nil)
 
-		u, err := uc.SetRoleByEmail(context.Background(), " Editor@Example.com ", " EDITOR ")
+		u, err := uc.SetRoleByEmail(context.Background(), "actor-id", "owner@example.com", " Editor@Example.com ", " EDITOR ")
 
 		require.NoError(t, err)
 		assert.Equal(t, expectedUser, u)
@@ -353,10 +361,111 @@ func TestSetRoleByEmail(t *testing.T) {
 
 		uc, _, _ := newUserUseCase(t)
 
-		_, err := uc.SetRoleByEmail(context.Background(), "admin@example.com", "owner")
+		_, err := uc.SetRoleByEmail(context.Background(), "actor-id", "owner@example.com", "admin@example.com", "owner")
 
 		require.ErrorIs(t, err, entity.ErrInvalidRole)
 	})
+
+	t.Run("audit includes actor and old/new role", func(t *testing.T) {
+		t.Parallel()
+
+		auditLogger := NewMockAuthAuditRepo(gomock.NewController(t))
+		uc, repo, _ := newUserUseCaseWithAuthDeps(t, nil, auditLogger)
+		updatedUser := entity.User{
+			ID:       "user-id-123",
+			Username: "editor",
+			Email:    "editor@example.com",
+			Role:     entity.UserRoleEditor,
+		}
+		repo.EXPECT().
+			SetRoleByEmail(context.Background(), "editor@example.com", entity.UserRoleEditor).
+			Return(entity.UserRoleChange{
+				User:         updatedUser,
+				PreviousRole: entity.UserRoleUser,
+				NewRole:      entity.UserRoleEditor,
+			}, nil)
+		auditLogger.EXPECT().
+			StoreAuthAuditLog(context.Background(), gomock.Cond(func(log entity.AuthAuditLog) bool {
+				return log.Event == "role_change" &&
+					log.Status == "success" &&
+					log.UserID == "user-id-123" &&
+					log.Email == "editor@example.com" &&
+					log.Metadata["actor_id"] == "admin-id" &&
+					log.Metadata["actor_email"] == "admin@example.com" &&
+					log.Metadata["old_role"] == entity.UserRoleUser &&
+					log.Metadata["new_role"] == entity.UserRoleEditor
+			})).
+			Return(nil)
+
+		got, err := uc.SetRoleByEmail(
+			context.Background(),
+			"admin-id",
+			"admin@example.com",
+			"editor@example.com",
+			entity.UserRoleEditor,
+		)
+
+		require.NoError(t, err)
+		assert.Equal(t, updatedUser, got)
+	})
+}
+
+func TestAdminUsers(t *testing.T) {
+	t.Parallel()
+
+	t.Run("normalizes role filter", func(t *testing.T) {
+		t.Parallel()
+
+		uc, repo, _ := newUserUseCase(t)
+		expected := []entity.UserAccount{testUserAccount(entity.User{ID: "editor-id", Role: entity.UserRoleEditor})}
+		verified := true
+		repo.EXPECT().
+			ListAccounts(context.Background(), repoContract.UserFilter{
+				Query:         "editor",
+				Role:          entity.UserRoleEditor,
+				EmailVerified: &verified,
+				Limit:         25,
+				Offset:        5,
+			}).
+			Return(expected, 1, nil)
+
+		got, total, err := uc.AdminUsers(context.Background(), " editor ", " EDITOR ", &verified, 25, 5)
+
+		require.NoError(t, err)
+		assert.Equal(t, expected, got)
+		assert.Equal(t, 1, total)
+	})
+
+	t.Run("rejects invalid role filter", func(t *testing.T) {
+		t.Parallel()
+
+		uc, _, _ := newUserUseCase(t)
+
+		_, _, err := uc.AdminUsers(context.Background(), "", "owner", nil, 50, 0)
+
+		require.ErrorIs(t, err, entity.ErrInvalidRole)
+	})
+}
+
+func TestAdminUserActivity(t *testing.T) {
+	t.Parallel()
+
+	uc, repo, _ := newUserUseCase(t)
+	expected := []entity.UserActivity{{ID: "activity-id", Event: "role_change"}}
+	repo.EXPECT().GetByID(context.Background(), "user-id-123").Return(entity.User{ID: "user-id-123"}, nil)
+	repo.EXPECT().
+		ListUserActivity(context.Background(), repoContract.UserActivityFilter{
+			UserID: "user-id-123",
+			Limit:  50,
+			Offset: 0,
+		}).
+		Return(expected, 1, nil)
+
+	got, total, err := uc.AdminUserActivity(context.Background(), " user-id-123 ", 0, -10)
+
+	require.NoError(t, err)
+	assert.Equal(t, expected, got)
+	assert.Equal(t, 1, total)
 }
 
 func TestLogin(t *testing.T) {
@@ -1275,7 +1384,16 @@ func TestAuthEmailNotifications(t *testing.T) {
 
 		uc, repo, emailSender := newUserUseCaseWithNotifications(t, notifications, nil)
 		repo.EXPECT().SetRoleByEmail(context.Background(), "admin@example.com", entity.UserRoleAdmin).
-			Return(entity.User{ID: "user-id-123", Username: "admin", Email: "admin@example.com", Role: entity.UserRoleAdmin}, nil)
+			Return(entity.UserRoleChange{
+				User: entity.User{
+					ID:       "user-id-123",
+					Username: "admin",
+					Email:    "admin@example.com",
+					Role:     entity.UserRoleAdmin,
+				},
+				PreviousRole: entity.UserRoleUser,
+				NewRole:      entity.UserRoleAdmin,
+			}, nil)
 		expectUserAccount(repo, context.Background(), entity.User{
 			ID:       "user-id-123",
 			Username: "admin",
@@ -1291,7 +1409,7 @@ func TestAuthEmailNotifications(t *testing.T) {
 			},
 		)
 
-		_, err := uc.SetRoleByEmail(context.Background(), "admin@example.com", entity.UserRoleAdmin)
+		_, err := uc.SetRoleByEmail(context.Background(), "actor-id", "owner@example.com", "admin@example.com", entity.UserRoleAdmin)
 
 		require.NoError(t, err)
 	})

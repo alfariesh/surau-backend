@@ -176,6 +176,23 @@ Jangan lakukan `.trim()` pada password sebelum dikirim.
 | `PATCH` | `/v1/user/profile` | Bearer | `200 UserAccount` |
 | `PATCH` | `/v1/user/onboarding` | Bearer | `200 UserAccount` |
 | `PATCH` | `/v1/user/preferences` | Bearer | `200 UserAccount` |
+| `GET` | `/v1/admin/users?q=&role=&email_verified=&limit=&offset=` | Admin | `200 { users: UserAccount[], total: number }` |
+| `GET` | `/v1/admin/users/{id}` | Admin | `200 UserAccount` |
+| `GET` | `/v1/admin/users/{id}/activity` | Admin | `200 { activity: UserActivity[], total: number }` |
+| `PATCH` | `/v1/admin/users/role` | Admin | `200 User` |
+
+## Admin User Management
+
+Admin user management can use:
+
+```http
+GET /v1/admin/users?q=&role=&email_verified=&limit=&offset=
+GET /v1/admin/users/{id}
+GET /v1/admin/users/{id}/activity?limit=&offset=
+PATCH /v1/admin/users/role
+```
+
+Use `GET /v1/admin/users?role=editor` as the editor lookup for assigning production project `owner_id`. Role changes are recorded in activity with `actor_id`, `actor_email`, `old_role`, `new_role`, and `created_at`.
 
 ## Flow Register dan Verify Email
 

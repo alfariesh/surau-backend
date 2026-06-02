@@ -11,6 +11,7 @@ import (
 
 	sq "github.com/Masterminds/squirrel"
 	"github.com/evrone/go-clean-template/internal/entity"
+	"github.com/evrone/go-clean-template/internal/repo"
 	"github.com/evrone/go-clean-template/pkg/postgres"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -22,6 +23,35 @@ type UserRepo struct {
 }
 
 const userReturningColumns = "id, username, email, role, password_hash, email_verified, token_version, created_at, updated_at"
+const userAccountSelectColumns = `
+    u.id,
+    u.username,
+    u.email,
+    u.role,
+    u.password_hash,
+    u.email_verified,
+    u.token_version,
+    u.created_at,
+    u.updated_at,
+    p.display_name,
+    p.timezone,
+    p.country_code,
+    COALESCE(p.onboarding_version, 1),
+    p.onboarding_completed_at,
+    COALESCE(p.personalization_enabled, TRUE),
+    COALESCE(p.created_at, u.created_at),
+    COALESCE(p.updated_at, u.updated_at),
+    COALESCE(pref.preferred_ui_lang, 'id'),
+    COALESCE(pref.preferred_content_lang, 'id'),
+    COALESCE(pref.fallback_langs, ARRAY['id']::TEXT[]),
+    COALESCE(pref.arabic_level, 'none'),
+    COALESCE(pref.reader_mode, 'arabic_translation'),
+    COALESCE(pref.interests, ARRAY[]::TEXT[]),
+    pref.daily_goal_minutes,
+    pref.quran_translation_source_id,
+    pref.quran_recitation_id,
+    COALESCE(pref.created_at, u.created_at),
+    COALESCE(pref.updated_at, u.updated_at)`
 
 // NewUserRepo -.
 func NewUserRepo(pg *postgres.Postgres) *UserRepo {
@@ -150,34 +180,7 @@ func (r *UserRepo) GetByEmail(ctx context.Context, email string) (entity.User, e
 func (r *UserRepo) GetAccount(ctx context.Context, userID string) (entity.UserAccount, error) {
 	const query = `
 SELECT
-    u.id,
-    u.username,
-    u.email,
-    u.role,
-    u.password_hash,
-    u.email_verified,
-    u.token_version,
-    u.created_at,
-    u.updated_at,
-    p.display_name,
-    p.timezone,
-    p.country_code,
-    COALESCE(p.onboarding_version, 1),
-    p.onboarding_completed_at,
-    COALESCE(p.personalization_enabled, TRUE),
-    COALESCE(p.created_at, u.created_at),
-    COALESCE(p.updated_at, u.updated_at),
-    COALESCE(pref.preferred_ui_lang, 'id'),
-    COALESCE(pref.preferred_content_lang, 'id'),
-    COALESCE(pref.fallback_langs, ARRAY['id']::TEXT[]),
-    COALESCE(pref.arabic_level, 'none'),
-    COALESCE(pref.reader_mode, 'arabic_translation'),
-    COALESCE(pref.interests, ARRAY[]::TEXT[]),
-    pref.daily_goal_minutes,
-    pref.quran_translation_source_id,
-    pref.quran_recitation_id,
-    COALESCE(pref.created_at, u.created_at),
-    COALESCE(pref.updated_at, u.updated_at)
+` + userAccountSelectColumns + `
 FROM users u
 LEFT JOIN user_profiles p ON p.user_id = u.id
 LEFT JOIN user_preferences pref ON pref.user_id = u.id
@@ -190,6 +193,120 @@ WHERE u.id = $1
 	}
 
 	return account, nil
+}
+
+// ListAccounts returns admin-visible accounts.
+func (r *UserRepo) ListAccounts(
+	ctx context.Context,
+	filter repo.UserFilter,
+) ([]entity.UserAccount, int, error) {
+	countBuilder := r.Builder.
+		Select("COUNT(*)").
+		From("users u").
+		LeftJoin("user_profiles p ON p.user_id = u.id").
+		Where("u.deleted_at IS NULL")
+	dataBuilder := r.Builder.
+		Select(userAccountSelectColumns).
+		From("users u").
+		LeftJoin("user_profiles p ON p.user_id = u.id").
+		LeftJoin("user_preferences pref ON pref.user_id = u.id").
+		Where("u.deleted_at IS NULL").
+		OrderBy("u.updated_at DESC", "u.created_at DESC").
+		Limit(filter.Limit).
+		Offset(filter.Offset)
+
+	if filter.Query != "" {
+		pattern := "%" + filter.Query + "%"
+		condition := "(u.email ILIKE ? OR u.username ILIKE ? OR p.display_name ILIKE ?)"
+		countBuilder = countBuilder.Where(condition, pattern, pattern, pattern)
+		dataBuilder = dataBuilder.Where(condition, pattern, pattern, pattern)
+	}
+	if filter.Role != "" {
+		countBuilder = countBuilder.Where(sq.Eq{"u.role": filter.Role})
+		dataBuilder = dataBuilder.Where(sq.Eq{"u.role": filter.Role})
+	}
+	if filter.EmailVerified != nil {
+		countBuilder = countBuilder.Where(sq.Eq{"u.email_verified": *filter.EmailVerified})
+		dataBuilder = dataBuilder.Where(sq.Eq{"u.email_verified": *filter.EmailVerified})
+	}
+
+	total, err := r.count(ctx, countBuilder)
+	if err != nil {
+		return nil, 0, fmt.Errorf("UserRepo - ListAccounts - count: %w", err)
+	}
+
+	sqlText, args, err := dataBuilder.ToSql()
+	if err != nil {
+		return nil, 0, fmt.Errorf("UserRepo - ListAccounts - Builder: %w", err)
+	}
+
+	rows, err := r.Pool.Query(ctx, sqlText, args...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("UserRepo - ListAccounts - Query: %w", err)
+	}
+	defer rows.Close()
+
+	accounts := make([]entity.UserAccount, 0)
+	for rows.Next() {
+		account, scanErr := scanUserAccountRow(rows)
+		if scanErr != nil {
+			return nil, 0, fmt.Errorf("UserRepo - ListAccounts - scanUserAccountRow: %w", scanErr)
+		}
+		accounts = append(accounts, account)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("UserRepo - ListAccounts - rows.Err: %w", err)
+	}
+
+	return accounts, total, nil
+}
+
+// ListUserActivity returns role-change audit history for one user.
+func (r *UserRepo) ListUserActivity(
+	ctx context.Context,
+	filter repo.UserActivityFilter,
+) ([]entity.UserActivity, int, error) {
+	countBuilder := r.Builder.
+		Select("COUNT(*)").
+		From("auth_audit_logs").
+		Where(sq.Eq{"user_id": filter.UserID, "event": "role_change"})
+	dataBuilder := r.Builder.
+		Select("id, event, status, user_id, email, client_ip, user_agent, error_code, metadata, created_at").
+		From("auth_audit_logs").
+		Where(sq.Eq{"user_id": filter.UserID, "event": "role_change"}).
+		OrderBy("created_at DESC").
+		Limit(filter.Limit).
+		Offset(filter.Offset)
+
+	total, err := r.count(ctx, countBuilder)
+	if err != nil {
+		return nil, 0, fmt.Errorf("UserRepo - ListUserActivity - count: %w", err)
+	}
+
+	sqlText, args, err := dataBuilder.ToSql()
+	if err != nil {
+		return nil, 0, fmt.Errorf("UserRepo - ListUserActivity - Builder: %w", err)
+	}
+
+	rows, err := r.Pool.Query(ctx, sqlText, args...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("UserRepo - ListUserActivity - Query: %w", err)
+	}
+	defer rows.Close()
+
+	activity := make([]entity.UserActivity, 0)
+	for rows.Next() {
+		item, scanErr := scanUserActivity(rows)
+		if scanErr != nil {
+			return nil, 0, fmt.Errorf("UserRepo - ListUserActivity - scanUserActivity: %w", scanErr)
+		}
+		activity = append(activity, item)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("UserRepo - ListUserActivity - rows.Err: %w", err)
+	}
+
+	return activity, total, nil
 }
 
 // UpsertProfile stores product profile fields for one user.
@@ -284,41 +401,50 @@ ON CONFLICT (user_id) DO UPDATE SET
 }
 
 // SetRoleByEmail updates one user's role by email.
-func (r *UserRepo) SetRoleByEmail(ctx context.Context, email, role string) (entity.User, error) {
-	sqlText, args, err := r.Builder.
-		Update("users").
-		Set("role", role).
-		Set("updated_at", sq.Expr("now()")).
-		Where(sq.Eq{"email": email}).
-		Where("deleted_at IS NULL").
-		Suffix("RETURNING " + userReturningColumns).
-		ToSql()
-	if err != nil {
-		return entity.User{}, fmt.Errorf("UserRepo - SetRoleByEmail - r.Builder: %w", err)
-	}
+func (r *UserRepo) SetRoleByEmail(ctx context.Context, email, role string) (entity.UserRoleChange, error) {
+	const query = `
+WITH existing AS (
+    SELECT id, role AS previous_role
+    FROM users
+    WHERE email = $1 AND deleted_at IS NULL
+    FOR UPDATE
+),
+updated AS (
+    UPDATE users u
+    SET role = $2,
+        updated_at = now()
+    FROM existing e
+    WHERE u.id = e.id
+    RETURNING u.id, u.username, u.email, u.role, u.password_hash, u.email_verified,
+              u.token_version, u.created_at, u.updated_at, e.previous_role
+)
+SELECT id, username, email, role, password_hash, email_verified, token_version, created_at, updated_at, previous_role
+FROM updated`
 
-	var user entity.User
-	err = r.Pool.QueryRow(ctx, sqlText, args...).
+	var change entity.UserRoleChange
+	err := r.Pool.QueryRow(ctx, query, email, role).
 		Scan(
-			&user.ID,
-			&user.Username,
-			&user.Email,
-			&user.Role,
-			&user.PasswordHash,
-			&user.EmailVerified,
-			&user.TokenVersion,
-			&user.CreatedAt,
-			&user.UpdatedAt,
+			&change.User.ID,
+			&change.User.Username,
+			&change.User.Email,
+			&change.User.Role,
+			&change.User.PasswordHash,
+			&change.User.EmailVerified,
+			&change.User.TokenVersion,
+			&change.User.CreatedAt,
+			&change.User.UpdatedAt,
+			&change.PreviousRole,
 		)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return entity.User{}, entity.ErrUserNotFound
+			return entity.UserRoleChange{}, entity.ErrUserNotFound
 		}
 
-		return entity.User{}, fmt.Errorf("UserRepo - SetRoleByEmail - r.Pool.QueryRow: %w", err)
+		return entity.UserRoleChange{}, fmt.Errorf("UserRepo - SetRoleByEmail - r.Pool.QueryRow: %w", err)
 	}
+	change.NewRole = change.User.Role
 
-	return user, nil
+	return change, nil
 }
 
 // ChangePassword updates a password and increments token_version atomically.
@@ -1204,6 +1330,19 @@ func (r *UserRepo) getUser(ctx context.Context, column, value string) (entity.Us
 }
 
 func (r *UserRepo) scanUserAccount(ctx context.Context, sqlText string, args ...any) (entity.UserAccount, error) {
+	account, err := scanUserAccountRow(r.Pool.QueryRow(ctx, sqlText, args...))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return entity.UserAccount{}, entity.ErrUserNotFound
+		}
+
+		return entity.UserAccount{}, fmt.Errorf("UserRepo - scanUserAccount - QueryRow: %w", err)
+	}
+
+	return account, nil
+}
+
+func scanUserAccountRow(row rowScanner) (entity.UserAccount, error) {
 	var (
 		account                  entity.UserAccount
 		displayName              sql.NullString
@@ -1215,7 +1354,7 @@ func (r *UserRepo) scanUserAccount(ctx context.Context, sqlText string, args ...
 		quranRecitationID        sql.NullString
 	)
 
-	err := r.Pool.QueryRow(ctx, sqlText, args...).Scan(
+	err := row.Scan(
 		&account.ID,
 		&account.Username,
 		&account.Email,
@@ -1246,11 +1385,7 @@ func (r *UserRepo) scanUserAccount(ctx context.Context, sqlText string, args ...
 		&account.Preferences.UpdatedAt,
 	)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return entity.UserAccount{}, entity.ErrUserNotFound
-		}
-
-		return entity.UserAccount{}, fmt.Errorf("UserRepo - scanUserAccount - QueryRow: %w", err)
+		return entity.UserAccount{}, err
 	}
 
 	account.Profile.UserID = account.ID
@@ -1280,6 +1415,81 @@ func (r *UserRepo) scanUserAccount(ctx context.Context, sqlText string, args ...
 	account.OnboardingRequired = account.Profile.OnboardingCompletedAt == nil
 
 	return account, nil
+}
+
+func scanUserActivity(row rowScanner) (entity.UserActivity, error) {
+	var item entity.UserActivity
+	var userID sql.NullString
+	var email sql.NullString
+	var clientIP sql.NullString
+	var userAgent sql.NullString
+	var errorCode sql.NullString
+	var metadataBytes []byte
+
+	err := row.Scan(
+		&item.ID,
+		&item.Event,
+		&item.Status,
+		&userID,
+		&email,
+		&clientIP,
+		&userAgent,
+		&errorCode,
+		&metadataBytes,
+		&item.CreatedAt,
+	)
+	if err != nil {
+		return entity.UserActivity{}, err
+	}
+
+	if userID.Valid {
+		item.UserID = userID.String
+	}
+	if email.Valid {
+		item.Email = email.String
+	}
+	item.ClientIP = nullableString(clientIP)
+	item.UserAgent = nullableString(userAgent)
+	item.ErrorCode = nullableString(errorCode)
+
+	var metadata map[string]string
+	if len(metadataBytes) > 0 {
+		if err = json.Unmarshal(metadataBytes, &metadata); err != nil {
+			return entity.UserActivity{}, err
+		}
+	}
+	item.ActorID = stringPtrFromMap(metadata, "actor_id")
+	item.ActorEmail = stringPtrFromMap(metadata, "actor_email")
+	item.OldRole = stringPtrFromMap(metadata, "old_role")
+	item.NewRole = stringPtrFromMap(metadata, "new_role")
+	if item.NewRole == nil {
+		item.NewRole = stringPtrFromMap(metadata, "role")
+	}
+
+	return item, nil
+}
+
+func stringPtrFromMap(values map[string]string, key string) *string {
+	value := strings.TrimSpace(values[key])
+	if value == "" {
+		return nil
+	}
+
+	return &value
+}
+
+func (r *UserRepo) count(ctx context.Context, builder sq.SelectBuilder) (int, error) {
+	sqlText, args, err := builder.ToSql()
+	if err != nil {
+		return 0, fmt.Errorf("building count query: %w", err)
+	}
+
+	var total int
+	if err = r.Pool.QueryRow(ctx, sqlText, args...).Scan(&total); err != nil {
+		return 0, fmt.Errorf("executing count query: %w", err)
+	}
+
+	return total, nil
 }
 
 func (r *UserRepo) insertDefaultProfileAndPreferences(

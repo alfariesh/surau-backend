@@ -280,6 +280,12 @@ Use `GET /v1/editorial/production-projects/{id}/publish-check` before enabling p
 
 Admin-only actions are publish, unpublish, and final asset soft-delete. Reader pages for `lang=id|en` only expose final assets after the matching project is published, so frontend can rely on public reader responses as the source of truth for what is visible.
 
+## Admin User Management
+
+Use `GET /v1/admin/users?q=&role=&email_verified=&limit=&offset=` for the admin user list. The response is `{ "users": UserAccount[], "total": number }`. `GET /v1/admin/users?role=editor` doubles as the editor lookup for production project owner assignment.
+
+Use `GET /v1/admin/users/{id}` for detail and `GET /v1/admin/users/{id}/activity` for role-change audit history. Activity rows include who changed the role (`actor_id`, `actor_email`), the previous role, the new role, and the timestamp.
+
 ## FE QA Checklist
 
 - `lang=id` complete kitab section shows requested title/body/summary/audio and feedback.

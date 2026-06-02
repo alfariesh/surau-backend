@@ -29,6 +29,8 @@ const (
 	maxUsernameRunes        = 255
 	minPasswordBytes        = 8
 	maxPasswordBytes        = 72
+	defaultAdminLimit       = 50
+	maxAdminLimit           = 200
 	verificationTokenBytes  = 32
 	passwordResetTokenBytes = 32
 	emailChangeTokenBytes   = 32
@@ -273,15 +275,78 @@ func (uc *UseCase) Register(ctx context.Context, username, email, password strin
 	return user, nil
 }
 
+// AdminUsers returns admin-managed account rows with lightweight filters.
+func (uc *UseCase) AdminUsers(
+	ctx context.Context,
+	query,
+	role string,
+	emailVerified *bool,
+	limit,
+	offset int,
+) ([]entity.UserAccount, int, error) {
+	var err error
+	role = strings.TrimSpace(role)
+	if role != "" {
+		role, err = entity.NormalizeUserRole(role)
+		if err != nil {
+			return nil, 0, entity.ErrInvalidRole
+		}
+	}
+
+	return uc.repo.ListAccounts(ctx, repo.UserFilter{
+		Query:         strings.TrimSpace(query),
+		Role:          role,
+		EmailVerified: emailVerified,
+		Limit:         clampAdminLimit(limit),
+		Offset:        clampAdminOffset(offset),
+	})
+}
+
+// AdminUserActivity returns admin-visible audit events for one user.
+func (uc *UseCase) AdminUserActivity(
+	ctx context.Context,
+	userID string,
+	limit,
+	offset int,
+) ([]entity.UserActivity, int, error) {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return nil, 0, entity.ErrUserNotFound
+	}
+
+	if _, err := uc.repo.GetByID(ctx, userID); err != nil {
+		return nil, 0, err
+	}
+
+	return uc.repo.ListUserActivity(ctx, repo.UserActivityFilter{
+		UserID: userID,
+		Limit:  clampAdminLimit(limit),
+		Offset: clampAdminOffset(offset),
+	})
+}
+
 // SetRoleByEmail updates a user role.
-func (uc *UseCase) SetRoleByEmail(ctx context.Context, email, role string) (updated entity.User, err error) {
+func (uc *UseCase) SetRoleByEmail(
+	ctx context.Context,
+	actorID,
+	actorEmail,
+	email,
+	role string,
+) (updated entity.User, err error) {
+	actorID = strings.TrimSpace(actorID)
+	actorEmail = strings.ToLower(strings.TrimSpace(actorEmail))
 	email = strings.ToLower(strings.TrimSpace(email))
 	role = strings.ToLower(strings.TrimSpace(role))
 	auditEmail := email
 	auditUserID := ""
+	oldRole := ""
 	defer func() {
 		uc.auditAuth(ctx, authEventRoleChange, auditStatus(err), auditUserID, auditEmail, auditErrorCode(err), map[string]string{
-			"role": role,
+			"actor_id":    actorID,
+			"actor_email": actorEmail,
+			"old_role":    oldRole,
+			"new_role":    role,
+			"role":        role,
 		})
 	}()
 
@@ -290,8 +355,10 @@ func (uc *UseCase) SetRoleByEmail(ctx context.Context, email, role string) (upda
 		return entity.User{}, entity.ErrInvalidRole
 	}
 
-	updated, err = uc.repo.SetRoleByEmail(ctx, email, role)
+	change, err := uc.repo.SetRoleByEmail(ctx, email, role)
 	if err == nil {
+		updated = change.User
+		oldRole = change.PreviousRole
 		auditUserID = updated.ID
 		auditEmail = updated.Email
 		uc.notifyRoleChanged(ctx, updated)
@@ -1472,6 +1539,25 @@ func auditErrorCode(err error) string {
 	default:
 		return "internal_error"
 	}
+}
+
+func clampAdminLimit(limit int) uint64 {
+	if limit <= 0 {
+		return defaultAdminLimit
+	}
+	if limit > maxAdminLimit {
+		return maxAdminLimit
+	}
+
+	return uint64(limit)
+}
+
+func clampAdminOffset(offset int) uint64 {
+	if offset < 0 {
+		return 0
+	}
+
+	return uint64(offset)
 }
 
 func (uc *UseCase) newVerificationToken(userID string, now time.Time) (string, entity.EmailVerificationToken, error) {

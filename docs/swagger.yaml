@@ -2325,6 +2325,46 @@ definitions:
         example: johndoe
         type: string
     type: object
+  entity.UserActivity:
+    properties:
+      actor_email:
+        example: admin@example.com
+        type: string
+      actor_id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      client_ip:
+        type: string
+      created_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      email:
+        example: editor@example.com
+        type: string
+      error_code:
+        example: invalid_role
+        type: string
+      event:
+        example: role_change
+        type: string
+      id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      new_role:
+        example: editor
+        type: string
+      old_role:
+        example: user
+        type: string
+      status:
+        example: success
+        type: string
+      user_agent:
+        type: string
+      user_id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+    type: object
   entity.UserPreferences:
     properties:
       arabic_level:
@@ -2411,6 +2451,26 @@ definitions:
       account_deleted:
         example: true
         type: boolean
+    type: object
+  v1.AdminUserActivityList:
+    properties:
+      activity:
+        items:
+          $ref: '#/definitions/entity.UserActivity'
+        type: array
+      total:
+        example: 42
+        type: integer
+    type: object
+  v1.AdminUserList:
+    properties:
+      total:
+        example: 42
+        type: integer
+      users:
+        items:
+          $ref: '#/definitions/entity.UserAccount'
+        type: array
     type: object
   v1.AuthorList:
     properties:
@@ -4714,6 +4774,152 @@ paths:
       summary: Publish email template version
       tags:
       - admin-emails
+  /admin/users:
+    get:
+      description: Admin-only paginated user management list. Supports q, role, and
+        email_verified filters.
+      operationId: admin-list-users
+      parameters:
+      - description: Search username, email, or display name
+        in: query
+        name: q
+        type: string
+      - description: Role filter
+        enum:
+        - user
+        - editor
+        - admin
+        in: query
+        name: role
+        type: string
+      - description: Email verification status
+        in: query
+        name: email_verified
+        type: boolean
+      - default: 50
+        description: Page size
+        in: query
+        name: limit
+        type: integer
+      - default: 0
+        description: Page offset
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.AdminUserList'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: List admin users
+      tags:
+      - admin
+  /admin/users/{id}:
+    get:
+      description: Admin-only user account detail by user ID.
+      operationId: admin-get-user
+      parameters:
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.UserAccount'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Get admin user detail
+      tags:
+      - admin
+  /admin/users/{id}/activity:
+    get:
+      description: Admin-only role-change audit history for one user.
+      operationId: admin-get-user-activity
+      parameters:
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - default: 50
+        description: Page size
+        in: query
+        name: limit
+        type: integer
+      - default: 0
+        description: Page offset
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.AdminUserActivityList'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Get admin user activity
+      tags:
+      - admin
   /admin/users/role:
     patch:
       consumes:

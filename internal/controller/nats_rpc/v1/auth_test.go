@@ -150,6 +150,14 @@ func (f *fakeAuthUser) GetUserAccount(context.Context, string) (entity.UserAccou
 	return entity.UserAccount{}, nil
 }
 
+func (f *fakeAuthUser) AdminUsers(context.Context, string, string, *bool, int, int) ([]entity.UserAccount, int, error) {
+	return nil, 0, nil
+}
+
+func (f *fakeAuthUser) AdminUserActivity(context.Context, string, int, int) ([]entity.UserActivity, int, error) {
+	return nil, 0, nil
+}
+
 func (f *fakeAuthUser) CompleteOnboarding(
 	context.Context,
 	string,
@@ -174,7 +182,7 @@ func (f *fakeAuthUser) UpdateUserPreferences(
 	return entity.UserAccount{}, nil
 }
 
-func (f *fakeAuthUser) SetRoleByEmail(context.Context, string, string) (entity.User, error) {
+func (f *fakeAuthUser) SetRoleByEmail(context.Context, string, string, string, string) (entity.User, error) {
 	return entity.User{}, nil
 }
 

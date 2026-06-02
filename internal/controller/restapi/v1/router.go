@@ -199,6 +199,9 @@ func NewRoutes(
 
 	adminGroup := protected.Group("/admin", middleware.RequireRoles(u, entity.UserRoleAdmin))
 	{
+		adminGroup.Get("/users", r.adminUsers)
+		adminGroup.Get("/users/:id/activity", r.adminUserActivity)
+		adminGroup.Get("/users/:id", r.adminUserDetail)
 		adminGroup.Patch("/users/role", r.adminSetUserRole)
 		emailGroup := adminGroup.Group("/emails")
 		{
