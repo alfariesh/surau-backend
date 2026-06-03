@@ -24,12 +24,23 @@ import (
 )
 
 const (
-	defaultQuranTranslationSourceID       = "qul-kfgqpc-id-simple"
-	defaultQuranTranslationSourceName     = "King Fahad Quran Complex"
-	defaultQuranTranslationSourceURL      = "https://qul.tarteel.ai/resources/translation/173"
-	defaultQuranTranslationResourceID     = "173"
-	defaultQuranTranslationFormat         = "simple.json"
-	defaultQuranTranslationFootnoteFormat = "translation-with-footnote-tags.json"
+	defaultKemenagQuranSourceURL            = "https://quran.kemenag.go.id"
+	defaultQuranTranslationSourceID         = "kemenag-id-translation"
+	defaultQuranTranslationSourceName       = "Kemenag Quran translation"
+	defaultQuranTranslationSourceURL        = defaultKemenagQuranSourceURL
+	defaultQuranTranslationResourceID       = ""
+	defaultQuranTranslationFormat           = "kemenag-translation-id.json"
+	defaultQuranTranslationFootnoteFormat   = "kemenag-translation-id.json"
+	legacyQULTranslationSourceID            = "qul-kfgqpc-id-simple"
+	legacyQULTranslationSourceName          = "King Fahad Quran Complex"
+	legacyQULTranslationSourceURL           = "https://qul.tarteel.ai/resources/translation/173"
+	legacyQULTranslationResourceID          = "173"
+	legacyQULTranslationFormat              = "simple.json"
+	legacyQULTranslationFootnoteFormat      = "translation-with-footnote-tags.json"
+	defaultKemenagTransliterationSourceID   = "kemenag-id-latin"
+	defaultEnglishTransliterationSourceID   = "local-en-syllables-transliteration"
+	defaultKemenagTransliterationSourceName = "Kemenag Quran Latin transliteration"
+	defaultEnglishTransliterationSourceName = "Local English syllables transliteration"
 )
 
 // QuranAssetOptions configure local QUL export import.
@@ -43,6 +54,7 @@ type QuranAssetOptions struct {
 	TranslationFootnoteTagsPath string
 	RecitationPath              string
 	RecitationPaths             []string
+	TransliterationPaths        []QuranTransliterationPath
 	TranslationLang             string
 	SurahInfoLang               string
 	DryRun                      bool
@@ -56,12 +68,23 @@ type QuranAssetOptions struct {
 	LicenseStatus               string
 }
 
+// QuranTransliterationPath configures one local transliteration JSON import.
+type QuranTransliterationPath struct {
+	Lang      string
+	Path      string
+	SourceID  string
+	Name      string
+	SourceURL string
+	Format    string
+}
+
 // QuranAssetStats describes parsed/imported Quran assets.
 type QuranAssetStats struct {
 	Surahs            int
 	SurahInfos        int
 	Ayahs             int
 	Translations      int
+	Transliterations  int
 	Recitations       int
 	AudioTracks       int
 	AudioSegments     int
@@ -71,14 +94,16 @@ type QuranAssetStats struct {
 }
 
 type quranAssetSet struct {
-	surahs        map[int]*quranSurahImport
-	surahInfos    map[string]*quranSurahInfoImport
-	ayahs         map[string]*quranAyahImport
-	translations  map[string]*quranTranslationImport
-	recitations   map[string]*quranRecitationImport
-	audioTracks   map[string]*quranAudioTrackImport
-	audioSegments []quranAudioSegmentImport
-	checksums     map[string]string
+	surahs                 map[int]*quranSurahImport
+	surahInfos             map[string]*quranSurahInfoImport
+	ayahs                  map[string]*quranAyahImport
+	translations           map[string]*quranTranslationImport
+	transliterationSources map[string]*quranTransliterationSourceImport
+	transliterations       map[string]*quranTransliterationImport
+	recitations            map[string]*quranRecitationImport
+	audioTracks            map[string]*quranAudioTrackImport
+	audioSegments          []quranAudioSegmentImport
+	checksums              map[string]string
 }
 
 type quranSurahImport struct {
@@ -127,6 +152,26 @@ type quranTranslationImport struct {
 	Text       string
 	Footnotes  json.RawMessage
 	Chunks     json.RawMessage
+	Metadata   json.RawMessage
+}
+
+type quranTransliterationSourceImport struct {
+	ID        string
+	Lang      string
+	Name      string
+	SourceURL string
+	Format    string
+	Checksum  string
+	Metadata  json.RawMessage
+}
+
+type quranTransliterationImport struct {
+	SourceID   string
+	Lang       string
+	SurahID    int
+	AyahNumber int
+	AyahKey    string
+	Text       string
 	Metadata   json.RawMessage
 }
 
@@ -285,14 +330,15 @@ func RunQuranAssetImport(ctx context.Context, opts QuranAssetOptions) (QuranAsse
 	}
 
 	stats := QuranAssetStats{
-		Surahs:        len(assets.surahs),
-		SurahInfos:    len(assets.surahInfos),
-		Ayahs:         len(assets.ayahs),
-		Translations:  len(assets.translations),
-		Recitations:   len(assets.recitations),
-		AudioTracks:   len(assets.audioTracks),
-		AudioSegments: len(assets.audioSegments),
-		DryRun:        opts.DryRun,
+		Surahs:           len(assets.surahs),
+		SurahInfos:       len(assets.surahInfos),
+		Ayahs:            len(assets.ayahs),
+		Translations:     len(assets.translations),
+		Transliterations: len(assets.transliterations),
+		Recitations:      len(assets.recitations),
+		AudioTracks:      len(assets.audioTracks),
+		AudioSegments:    len(assets.audioSegments),
+		DryRun:           opts.DryRun,
 	}
 	if opts.DryRun {
 		return stats, nil
@@ -333,8 +379,9 @@ func (opts QuranAssetOptions) validate() error {
 	if strings.TrimSpace(opts.ScriptImlaeiSimplePath) == "" {
 		return errors.New("Imlaei simple script JSON path is required")
 	}
-	if strings.TrimSpace(opts.TranslationSimplePath) == "" {
-		return errors.New("translation simple JSON path is required")
+	if strings.TrimSpace(opts.TranslationSimplePath) == "" &&
+		strings.TrimSpace(opts.TranslationFootnoteTagsPath) == "" {
+		return errors.New("translation JSON path is required")
 	}
 	if _, err := contentlang.Normalize(opts.TranslationLang); err != nil {
 		return fmt.Errorf("translation lang: %w", err)
@@ -346,6 +393,18 @@ func (opts QuranAssetOptions) validate() error {
 	if strings.TrimSpace(opts.SurahInfoLang) != "" {
 		if _, err := contentlang.Normalize(opts.SurahInfoLang); err != nil {
 			return fmt.Errorf("surah info lang: %w", err)
+		}
+	}
+	for _, spec := range opts.TransliterationPaths {
+		if strings.TrimSpace(spec.Path) == "" {
+			return errors.New("transliteration JSON path is required")
+		}
+		lang, err := contentlang.Normalize(spec.Lang)
+		if err != nil {
+			return fmt.Errorf("transliteration lang: %w", err)
+		}
+		if contentlang.IsArabic(lang) {
+			return errors.New("transliteration lang must be id or en")
 		}
 	}
 
@@ -364,24 +423,38 @@ func (opts QuranAssetOptions) withDefaults() QuranAssetOptions {
 		opts.TranslationSourceID = defaultQuranTranslationSourceID
 	}
 	if opts.TranslationSourceName == "" {
-		if opts.isDefaultKingFahadTranslation() {
+		if opts.isDefaultKemenagTranslation() {
 			opts.TranslationSourceName = defaultQuranTranslationSourceName
+		} else if opts.isLegacyQULTranslation() {
+			opts.TranslationSourceName = legacyQULTranslationSourceName
 		} else {
 			opts.TranslationSourceName = opts.TranslationSourceID
 		}
 	}
 	if opts.TranslationFormat == "" {
-		opts.TranslationFormat = defaultQuranTranslationFormat
+		if opts.isDefaultKemenagTranslation() {
+			opts.TranslationFormat = defaultQuranTranslationFormat
+		} else {
+			opts.TranslationFormat = legacyQULTranslationFormat
+		}
 	}
 	if opts.TranslationFootnoteFormat == "" {
-		opts.TranslationFootnoteFormat = defaultQuranTranslationFootnoteFormat
+		if opts.isDefaultKemenagTranslation() {
+			opts.TranslationFootnoteFormat = defaultQuranTranslationFootnoteFormat
+		} else {
+			opts.TranslationFootnoteFormat = legacyQULTranslationFootnoteFormat
+		}
 	}
-	if opts.isDefaultKingFahadTranslation() {
+	if opts.isDefaultKemenagTranslation() {
 		if opts.TranslationSourceURL == "" {
 			opts.TranslationSourceURL = defaultQuranTranslationSourceURL
 		}
+	} else if opts.isLegacyQULTranslation() {
+		if opts.TranslationSourceURL == "" {
+			opts.TranslationSourceURL = legacyQULTranslationSourceURL
+		}
 		if opts.TranslationResourceID == "" {
-			opts.TranslationResourceID = defaultQuranTranslationResourceID
+			opts.TranslationResourceID = legacyQULTranslationResourceID
 		}
 	}
 	if strings.TrimSpace(opts.SurahInfoLang) != "" {
@@ -394,21 +467,59 @@ func (opts QuranAssetOptions) withDefaults() QuranAssetOptions {
 	return opts
 }
 
-func (opts QuranAssetOptions) isDefaultKingFahadTranslation() bool {
+func (spec QuranTransliterationPath) withDefaults() QuranTransliterationPath {
+	spec.Lang = contentlang.MustNormalize(spec.Lang)
+	spec.Path = strings.TrimSpace(spec.Path)
+	spec.SourceID = strings.TrimSpace(spec.SourceID)
+	spec.Name = strings.TrimSpace(spec.Name)
+	spec.SourceURL = strings.TrimSpace(spec.SourceURL)
+	spec.Format = strings.TrimSpace(spec.Format)
+	if spec.SourceID == "" {
+		if spec.Lang == contentlang.English {
+			spec.SourceID = defaultEnglishTransliterationSourceID
+		} else {
+			spec.SourceID = defaultKemenagTransliterationSourceID
+		}
+	}
+	if spec.Name == "" {
+		if spec.Lang == contentlang.English {
+			spec.Name = defaultEnglishTransliterationSourceName
+		} else {
+			spec.Name = defaultKemenagTransliterationSourceName
+		}
+	}
+	if spec.SourceURL == "" && spec.Lang == contentlang.Default && spec.SourceID == defaultKemenagTransliterationSourceID {
+		spec.SourceURL = defaultKemenagQuranSourceURL
+	}
+	if spec.Format == "" {
+		spec.Format = "ayah-key-map.json"
+	}
+
+	return spec
+}
+
+func (opts QuranAssetOptions) isDefaultKemenagTranslation() bool {
 	return opts.TranslationLang == contentlang.Default &&
 		opts.TranslationSourceID == defaultQuranTranslationSourceID
+}
+
+func (opts QuranAssetOptions) isLegacyQULTranslation() bool {
+	return opts.TranslationLang == contentlang.Default &&
+		opts.TranslationSourceID == legacyQULTranslationSourceID
 }
 
 func parseQuranAssets(opts QuranAssetOptions) (quranAssetSet, error) {
 	opts = opts.withDefaults()
 	assets := quranAssetSet{
-		surahs:       make(map[int]*quranSurahImport),
-		surahInfos:   make(map[string]*quranSurahInfoImport),
-		ayahs:        make(map[string]*quranAyahImport),
-		translations: make(map[string]*quranTranslationImport),
-		recitations:  make(map[string]*quranRecitationImport),
-		audioTracks:  make(map[string]*quranAudioTrackImport),
-		checksums:    make(map[string]string),
+		surahs:                 make(map[int]*quranSurahImport),
+		surahInfos:             make(map[string]*quranSurahInfoImport),
+		ayahs:                  make(map[string]*quranAyahImport),
+		translations:           make(map[string]*quranTranslationImport),
+		transliterationSources: make(map[string]*quranTransliterationSourceImport),
+		transliterations:       make(map[string]*quranTransliterationImport),
+		recitations:            make(map[string]*quranRecitationImport),
+		audioTracks:            make(map[string]*quranAudioTrackImport),
+		checksums:              make(map[string]string),
 	}
 
 	if err := parseSurahNames(opts.SurahNamesPath, &assets); err != nil {
@@ -428,11 +539,21 @@ func parseQuranAssets(opts QuranAssetOptions) (quranAssetSet, error) {
 	if err := parseScriptResource(opts.ScriptImlaeiSimplePath, "imlaei_simple", &assets); err != nil {
 		return quranAssetSet{}, err
 	}
-	if err := parseTranslationSimple(opts.TranslationSimplePath, &assets); err != nil {
-		return quranAssetSet{}, err
+	if strings.TrimSpace(opts.TranslationSimplePath) != "" {
+		if err := parseTranslationSimple(opts.TranslationSimplePath, &assets); err != nil {
+			return quranAssetSet{}, err
+		}
 	}
 	if opts.TranslationFootnoteTagsPath != "" {
 		if err := parseTranslationFootnoteTags(opts.TranslationFootnoteTagsPath, &assets); err != nil {
+			return quranAssetSet{}, err
+		}
+	}
+	for _, spec := range opts.TransliterationPaths {
+		if strings.TrimSpace(spec.Path) == "" {
+			continue
+		}
+		if err := parseTransliteration(spec, &assets); err != nil {
 			return quranAssetSet{}, err
 		}
 	}
@@ -650,6 +771,25 @@ func parseTranslationSimple(path string, assets *quranAssetSet) error {
 		return nil
 	}
 
+	if rows, err := jsonRows(raw); err == nil {
+		imported := 0
+		for key, row := range rows {
+			ayahKey := firstStringValue(row, "verse_key", "ayah_key", "key")
+			if ayahKey == "" && strings.Contains(key, ":") {
+				ayahKey = key
+			}
+			text := firstStringValue(row, "t", "text", "translation")
+			if ayahKey == "" || text == "" {
+				continue
+			}
+			addTranslation(assets, ayahKey, text, rawField(row, "f", "footnotes"), rawField(row, "chunks"), cloneRaw(row))
+			imported++
+		}
+		if imported > 0 {
+			return nil
+		}
+	}
+
 	var nested [][]string
 	if err := json.Unmarshal(raw, &nested); err != nil {
 		return fmt.Errorf("parse simple translation: %w", err)
@@ -686,6 +826,51 @@ func parseTranslationFootnoteTags(path string, assets *quranAssetSet) error {
 		footnotes := rawField(row, "f", "footnotes")
 		chunks := rawField(row, "chunks")
 		addTranslation(assets, ayahKey, text, footnotes, chunks, cloneRaw(row))
+	}
+
+	return nil
+}
+
+func parseTransliteration(spec QuranTransliterationPath, assets *quranAssetSet) error {
+	spec = spec.withDefaults()
+	raw, checksum, err := readAssetFile(spec.Path)
+	if err != nil {
+		return fmt.Errorf("read transliteration: %w", err)
+	}
+
+	checksumKey := "transliteration:" + spec.Lang + ":" + spec.SourceID
+	assets.checksums[checksumKey] = checksum
+	assets.transliterationSources[spec.SourceID] = &quranTransliterationSourceImport{
+		ID:        spec.SourceID,
+		Lang:      spec.Lang,
+		Name:      spec.Name,
+		SourceURL: spec.SourceURL,
+		Format:    spec.Format,
+		Checksum:  checksum,
+		Metadata:  mustRaw(map[string]string{"checksum_key": checksumKey}),
+	}
+
+	if rows, err := stringByAyahKey(raw); err == nil {
+		for ayahKey, text := range rows {
+			addTransliteration(assets, spec, ayahKey, text, nil)
+		}
+		return nil
+	}
+
+	rows, err := jsonRows(raw)
+	if err != nil {
+		return fmt.Errorf("parse transliteration: %w", err)
+	}
+	for key, row := range rows {
+		ayahKey := firstStringValue(row, "verse_key", "ayah_key", "key")
+		if ayahKey == "" && strings.Contains(key, ":") {
+			ayahKey = key
+		}
+		text := firstStringValue(row, "latin", "transliteration", "text", "t")
+		if ayahKey == "" || text == "" {
+			continue
+		}
+		addTransliteration(assets, spec, ayahKey, text, cloneRaw(row))
 	}
 
 	return nil
@@ -941,6 +1126,9 @@ ON CONFLICT (surah_id, ayah_number) DO UPDATE SET
 	if err := upsertQuranTranslations(ctx, pool, opts, assets); err != nil {
 		return err
 	}
+	if err := upsertQuranTransliterations(ctx, pool, opts, assets); err != nil {
+		return err
+	}
 	if err := upsertQuranAudio(ctx, pool, opts, assets); err != nil {
 		return err
 	}
@@ -1052,6 +1240,23 @@ func insertQuranImportRuns(ctx context.Context, pool *pgxpool.Pool, opts QuranAs
 			format:       "json",
 		})
 	}
+	for _, source := range assets.transliterationSources {
+		resources = append(resources, struct {
+			key          string
+			name         string
+			sourceURL    string
+			resourceID   string
+			resourceType string
+			format       string
+		}{
+			key:          "transliteration:" + source.Lang + ":" + source.ID,
+			name:         source.Name,
+			sourceURL:    source.SourceURL,
+			resourceID:   source.ID,
+			resourceType: "transliteration",
+			format:       source.Format,
+		})
+	}
 
 	batch := &pgx.Batch{}
 	for _, resource := range resources {
@@ -1091,6 +1296,9 @@ func upsertQuranTranslationSource(
 ) error {
 	footnoteChecksum := assets.checksums["translation_footnote_tags"]
 	checksum := assets.checksums["translation_simple"]
+	if checksum == "" {
+		checksum = footnoteChecksum
+	}
 	metadata := map[string]string{}
 	if footnoteChecksum != "" {
 		metadata["footnote_checksum"] = footnoteChecksum
@@ -1166,6 +1374,75 @@ ON CONFLICT (source_id, surah_id, ayah_number) DO UPDATE SET
 
 	if err := execBatch(ctx, pool, batch); err != nil {
 		return fmt.Errorf("upsert quran translations: %w", err)
+	}
+
+	return nil
+}
+
+func upsertQuranTransliterations(
+	ctx context.Context,
+	pool *pgxpool.Pool,
+	opts QuranAssetOptions,
+	assets quranAssetSet,
+) error {
+	if len(assets.transliterationSources) == 0 {
+		return nil
+	}
+
+	sourceBatch := &pgx.Batch{}
+	for _, source := range assets.transliterationSources {
+		sourceBatch.Queue(`
+INSERT INTO quran_transliteration_sources (
+    id, lang, name, source_url, format, license_status, checksum, metadata, imported_at, updated_at
+)
+VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE(nullif($8, '')::jsonb, '{}'::jsonb), now(), now())
+ON CONFLICT (id) DO UPDATE SET
+    lang = EXCLUDED.lang,
+    name = EXCLUDED.name,
+    source_url = EXCLUDED.source_url,
+    format = EXCLUDED.format,
+    license_status = EXCLUDED.license_status,
+    checksum = EXCLUDED.checksum,
+    metadata = EXCLUDED.metadata,
+    imported_at = EXCLUDED.imported_at,
+    updated_at = now()`,
+			source.ID,
+			source.Lang,
+			source.Name,
+			source.SourceURL,
+			source.Format,
+			opts.LicenseStatus,
+			source.Checksum,
+			stringOrEmpty(source.Metadata),
+		)
+	}
+	if err := execBatch(ctx, pool, sourceBatch); err != nil {
+		return fmt.Errorf("upsert quran transliteration sources: %w", err)
+	}
+
+	transliterationBatch := &pgx.Batch{}
+	for _, transliteration := range assets.transliterations {
+		transliterationBatch.Queue(`
+INSERT INTO quran_ayah_transliterations (
+    source_id, surah_id, ayah_number, ayah_key, lang, text, metadata, updated_at
+)
+VALUES ($1, $2, $3, $4, $5, $6, COALESCE(nullif($7, '')::jsonb, '{}'::jsonb), now())
+ON CONFLICT (source_id, surah_id, ayah_number) DO UPDATE SET
+    lang = EXCLUDED.lang,
+    text = EXCLUDED.text,
+    metadata = EXCLUDED.metadata,
+    updated_at = now()`,
+			transliteration.SourceID,
+			transliteration.SurahID,
+			transliteration.AyahNumber,
+			transliteration.AyahKey,
+			transliteration.Lang,
+			transliteration.Text,
+			stringOrEmpty(transliteration.Metadata),
+		)
+	}
+	if err := execBatch(ctx, pool, transliterationBatch); err != nil {
+		return fmt.Errorf("upsert quran transliterations: %w", err)
 	}
 
 	return nil
@@ -1316,6 +1593,33 @@ func addTranslation(
 	}
 	if len(metadata) > 0 {
 		existing.Metadata = metadata
+	}
+}
+
+func addTransliteration(
+	assets *quranAssetSet,
+	spec QuranTransliterationPath,
+	ayahKey string,
+	text string,
+	metadata json.RawMessage,
+) {
+	surahID, ayahNumber, err := quranutil.ParseAyahKey(ayahKey)
+	if err != nil || strings.TrimSpace(text) == "" {
+		return
+	}
+	spec = spec.withDefaults()
+	ensureAyah(assets, surahID, ayahNumber)
+	if len(metadata) == 0 {
+		metadata = json.RawMessage(`{}`)
+	}
+	assets.transliterations[spec.SourceID+":"+ayahKey] = &quranTransliterationImport{
+		SourceID:   spec.SourceID,
+		Lang:       spec.Lang,
+		SurahID:    surahID,
+		AyahNumber: ayahNumber,
+		AyahKey:    ayahKey,
+		Text:       strings.TrimSpace(text),
+		Metadata:   metadata,
 	}
 }
 

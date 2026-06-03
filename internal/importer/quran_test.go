@@ -22,6 +22,9 @@ func TestRunQuranAssetImportDryRun(t *testing.T) {
 		ScriptImlaeiSimplePath:      writeQuranFixture(t, dir, "simple.json", `{"73:1":"يا ايها المزمل","73:2":"قم الليل الا قليلا"}`),
 		TranslationSimplePath:       writeQuranFixture(t, dir, "translation.json", `{"73:1":{"t":"Wahai orang yang berselimut!"},"73:2":{"t":"Bangunlah pada malam hari, kecuali sebagian kecil."}}`),
 		TranslationFootnoteTagsPath: writeQuranFixture(t, dir, "footnotes.json", `[{"verse_key":"73:1","text":"Wahai orang yang berselimut!","footnotes":[{"n":1,"t":"Catatan"}]}]`),
+		TransliterationPaths: []QuranTransliterationPath{
+			{Lang: "id", Path: writeQuranFixture(t, dir, "latin.json", `{"73:1":"Yā ayyuhal-muzzammil(u).","73:2":"Qumil-laila illā qalīlā(n)."}`)},
+		},
 		RecitationPath: writeQuranZipFixture(
 			t,
 			dir,
@@ -42,9 +45,60 @@ func TestRunQuranAssetImportDryRun(t *testing.T) {
 	assert.Equal(t, 1, stats.SurahInfos)
 	assert.Equal(t, 2, stats.Ayahs)
 	assert.Equal(t, 2, stats.Translations)
+	assert.Equal(t, 2, stats.Transliterations)
 	assert.Equal(t, 1, stats.Recitations)
 	assert.Equal(t, 1, stats.AudioTracks)
 	assert.Equal(t, 1, stats.AudioSegments)
+}
+
+func TestParseTransliterationMapSkipsInvalidAyahKeys(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	assets := quranAssetSet{
+		surahs:                 make(map[int]*quranSurahImport),
+		ayahs:                  make(map[string]*quranAyahImport),
+		transliterationSources: make(map[string]*quranTransliterationSourceImport),
+		transliterations:       make(map[string]*quranTransliterationImport),
+		checksums:              make(map[string]string),
+	}
+
+	err := parseTransliteration(QuranTransliterationPath{
+		Lang: "en",
+		Path: writeQuranFixture(t, dir, "en-transliteration.json", `{"73:1":"yaayyuha al-muzammilu","bad-key":"skip me"}`),
+	}, &assets)
+
+	require.NoError(t, err)
+	require.Len(t, assets.transliterations, 1)
+	assert.Contains(t, assets.transliterations, defaultEnglishTransliterationSourceID+":73:1")
+	assert.Contains(t, assets.transliterationSources, defaultEnglishTransliterationSourceID)
+	assert.Contains(t, assets.ayahs, "73:1")
+	assert.NotContains(t, assets.ayahs, "bad-key")
+}
+
+func TestParseKemenagTranslationWithStructuredFootnotes(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	opts := QuranAssetOptions{
+		SurahNamesPath:         writeQuranFixture(t, dir, "surahs.json", `[{"surah_id":1,"name_arabic":"الفاتحة","ayah_count":1}]`),
+		ScriptQPCHafsPath:      writeQuranFixture(t, dir, "qpc.json", `[{"verse_key":"1:1","text":"بِسْمِ اللّٰهِ الرَّحْمٰنِ الرَّحِيْمِ"}]`),
+		ScriptImlaeiSimplePath: writeQuranFixture(t, dir, "simple.json", `{"1:1":"بسم الله الرحمن الرحيم"}`),
+		TranslationFootnoteTagsPath: writeQuranFixture(t, dir, "kemenag-translation.json", `[{
+			"verse_key":"1:1",
+			"text":"Dengan nama Allah1)",
+			"footnotes":[{"number":1,"marker":"1)","text":"Catatan resmi Kemenag"}],
+			"metadata":{"source":"kemenag-quran-ayah","kemenag_id":1}
+		}]`),
+		DryRun: true,
+	}
+
+	assets, err := parseQuranAssets(opts)
+
+	require.NoError(t, err)
+	require.Contains(t, assets.translations, "1:1")
+	assert.JSONEq(t, `[{"number":1,"marker":"1)","text":"Catatan resmi Kemenag"}]`, string(assets.translations["1:1"].Footnotes))
+	assert.Contains(t, string(assets.translations["1:1"].Metadata), "kemenag-quran-ayah")
 }
 
 func TestQuranAssetImportLangOptions(t *testing.T) {
@@ -96,8 +150,15 @@ func TestQuranAssetOptionsTranslationSourceDefaults(t *testing.T) {
 	}.withDefaults()
 	assert.Empty(t, customEN.TranslationSourceURL)
 	assert.Empty(t, customEN.TranslationResourceID)
-	assert.Equal(t, defaultQuranTranslationFormat, customEN.TranslationFormat)
-	assert.Equal(t, defaultQuranTranslationFootnoteFormat, customEN.TranslationFootnoteFormat)
+	assert.Equal(t, legacyQULTranslationFormat, customEN.TranslationFormat)
+	assert.Equal(t, legacyQULTranslationFootnoteFormat, customEN.TranslationFootnoteFormat)
+
+	legacyID := QuranAssetOptions{
+		TranslationSourceID: legacyQULTranslationSourceID,
+	}.withDefaults()
+	assert.Equal(t, legacyQULTranslationSourceName, legacyID.TranslationSourceName)
+	assert.Equal(t, legacyQULTranslationSourceURL, legacyID.TranslationSourceURL)
+	assert.Equal(t, legacyQULTranslationResourceID, legacyID.TranslationResourceID)
 
 	customExplicit := QuranAssetOptions{
 		TranslationLang:           "en",

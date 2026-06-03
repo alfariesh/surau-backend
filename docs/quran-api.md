@@ -42,6 +42,7 @@ For the shared kitab + Quran FE integration guide, see `docs/frontend-integratio
 | `text_imlaei_simple` | Imlaei/simple script | Search-friendly plain Arabic display/fallback. |
 | `search_text` | Backend search normalization helper | Usually not needed for visual UI. |
 | `translation.text` | Exact requested-language translation from selected/default source | Translation body. |
+| `transliteration.text` | Exact requested-language transliteration, when imported for `id` or `en` | Latin/romanized reading aid. Hidden for `lang=ar`. |
 
 Use `text_qpc_hafs` for Quran display when present. Use `text_imlaei_simple` as fallback if display text is missing.
 
@@ -1177,6 +1178,7 @@ type QuranAyah = {
   juz_number?: number;
   hizb_number?: number;
   translation: QuranTranslation | null;
+  transliteration: QuranTransliteration | null;
   audio?: QuranAudioTrack[];
   requested_lang: "ar" | "id" | "en";
   available_translation_langs: string[];
@@ -1202,6 +1204,9 @@ type QuranReaderAyah = {
   juz_number?: number;
   page_number?: number;
   translation?: {
+    text: string;
+  };
+  transliteration?: {
     text: string;
   };
   audio?: QuranReaderAyahAudioTrack[];
@@ -1271,6 +1276,18 @@ type QuranTranslation = {
   text: string;
   footnotes?: unknown;
   chunks?: unknown;
+  metadata?: Record<string, unknown>;
+  updated_at: string;
+};
+```
+
+### QuranTransliteration
+
+```ts
+type QuranTransliteration = {
+  source_id: string;
+  lang: "id" | "en";
+  text: string;
   metadata?: Record<string, unknown>;
   updated_at: string;
 };
