@@ -33,9 +33,9 @@ type QuranSurahInfo struct {
 	UpdatedAt     time.Time  `json:"updated_at" example:"2026-01-01T00:00:00Z"`
 } // @name entity.QuranSurahInfo
 
-// QuranTranslation is one ayah translation from an imported QUL source.
+// QuranTranslation is one ayah translation from an imported source.
 type QuranTranslation struct {
-	SourceID  string    `json:"source_id" example:"qul-kfgqpc-id-simple"`
+	SourceID  string    `json:"source_id" example:"kemenag-id-translation"`
 	Lang      string    `json:"lang" example:"id"`
 	Text      string    `json:"text"`
 	Footnotes RawJSON   `json:"footnotes,omitempty" swaggertype:"object"`
@@ -43,6 +43,15 @@ type QuranTranslation struct {
 	Metadata  RawJSON   `json:"metadata,omitempty" swaggertype:"object"`
 	UpdatedAt time.Time `json:"updated_at" example:"2026-01-01T00:00:00Z"`
 } // @name entity.QuranTranslation
+
+// QuranTransliteration is one ayah transliteration from an imported source.
+type QuranTransliteration struct {
+	SourceID  string    `json:"source_id" example:"kemenag-id-latin"`
+	Lang      string    `json:"lang" example:"id"`
+	Text      string    `json:"text"`
+	Metadata  RawJSON   `json:"metadata,omitempty" swaggertype:"object"`
+	UpdatedAt time.Time `json:"updated_at" example:"2026-01-01T00:00:00Z"`
+} // @name entity.QuranTransliteration
 
 // QuranTranslationCoverage summarizes source coverage against imported ayahs.
 type QuranTranslationCoverage struct {
@@ -153,6 +162,7 @@ type QuranAyah struct {
 	JuzNumber                 *int                  `json:"juz_number,omitempty"`
 	HizbNumber                *int                  `json:"hizb_number,omitempty"`
 	Translation               *QuranTranslation     `json:"translation"`
+	Transliteration           *QuranTransliteration `json:"transliteration"`
 	Audio                     []QuranAudioTrack     `json:"audio,omitempty"`
 	RequestedLang             string                `json:"requested_lang" example:"en"`
 	AvailableTranslationLangs []string              `json:"available_translation_langs" example:"id"`

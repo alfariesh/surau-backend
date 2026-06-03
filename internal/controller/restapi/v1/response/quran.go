@@ -4,20 +4,26 @@ import "github.com/evrone/go-clean-template/internal/entity"
 
 // QuranReaderAyah is a compact ayah payload for Quran reader list screens.
 type QuranReaderAyah struct {
-	SurahID     int                         `json:"surah_id" example:"73"`
-	AyahNumber  int                         `json:"ayah_number" example:"4"`
-	AyahKey     string                      `json:"ayah_key" example:"73:4"`
-	TextQPCHafs *string                     `json:"text_qpc_hafs,omitempty"`
-	JuzNumber   *int                        `json:"juz_number,omitempty" example:"29"`
-	PageNumber  *int                        `json:"page_number,omitempty" example:"574"`
-	Translation *QuranReaderAyahTranslation `json:"translation,omitempty"`
-	Audio       []QuranReaderAyahAudioTrack `json:"audio,omitempty"`
+	SurahID         int                             `json:"surah_id" example:"73"`
+	AyahNumber      int                             `json:"ayah_number" example:"4"`
+	AyahKey         string                          `json:"ayah_key" example:"73:4"`
+	TextQPCHafs     *string                         `json:"text_qpc_hafs,omitempty"`
+	JuzNumber       *int                            `json:"juz_number,omitempty" example:"29"`
+	PageNumber      *int                            `json:"page_number,omitempty" example:"574"`
+	Translation     *QuranReaderAyahTranslation     `json:"translation,omitempty"`
+	Transliteration *QuranReaderAyahTransliteration `json:"transliteration,omitempty"`
+	Audio           []QuranReaderAyahAudioTrack     `json:"audio,omitempty"`
 } // @name v1.QuranReaderAyah
 
 // QuranReaderAyahTranslation contains only reader-visible translation text.
 type QuranReaderAyahTranslation struct {
 	Text string `json:"text"`
 } // @name v1.QuranReaderAyahTranslation
+
+// QuranReaderAyahTransliteration contains reader-visible transliteration text.
+type QuranReaderAyahTransliteration struct {
+	Text string `json:"text"`
+} // @name v1.QuranReaderAyahTransliteration
 
 // QuranReaderAyahAudioTrack contains only playback data needed by the reader.
 type QuranReaderAyahAudioTrack struct {
@@ -60,6 +66,9 @@ func QuranReaderAyahFromEntity(ayah entity.QuranAyah) QuranReaderAyah {
 	}
 	if ayah.Translation != nil {
 		item.Translation = &QuranReaderAyahTranslation{Text: ayah.Translation.Text}
+	}
+	if ayah.Transliteration != nil {
+		item.Transliteration = &QuranReaderAyahTransliteration{Text: ayah.Transliteration.Text}
 	}
 
 	return item

@@ -18,7 +18,11 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-const defaultQuranTranslationSourceID = "qul-kfgqpc-id-simple"
+const (
+	defaultQuranTranslationSourceID  = "kemenag-id-translation"
+	defaultIDTransliterationSourceID = "kemenag-id-latin"
+	defaultENTransliterationSourceID = "local-en-syllables-transliteration"
+)
 
 // QuranRepo provides Quran browse/search queries.
 type QuranRepo struct {
@@ -302,9 +306,14 @@ func (r *QuranRepo) GetAyah(
 		return entity.QuranAyah{}, err
 	}
 	includeTranslation := !contentlang.IsArabic(lang) && resolvedSourceID != ""
+	resolvedTransliterationSourceID, err := r.defaultTransliterationSourceID(ctx, lang)
+	if err != nil {
+		return entity.QuranAyah{}, err
+	}
+	includeTransliteration := !contentlang.IsArabic(lang) && resolvedTransliterationSourceID != ""
 
 	ayah, err := scanQuranAyah(r.Pool.QueryRow(ctx, quranAyahSelectSQL(`
-WHERE a.ayah_key = $1`, includeTranslation), ayahKey, lang, resolvedSourceID))
+WHERE a.ayah_key = $1`, includeTranslation, includeTransliteration), ayahKey, lang, resolvedSourceID, resolvedTransliterationSourceID))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return entity.QuranAyah{}, entity.ErrQuranAyahNotFound
@@ -350,8 +359,13 @@ func (r *QuranRepo) ListSurahAyahs(
 		resolvedSourceID = sourceID
 	}
 	includeSelectedTranslation := includeTranslation && !contentlang.IsArabic(lang) && resolvedSourceID != ""
+	resolvedTransliterationSourceID, err := r.defaultTransliterationSourceID(ctx, lang)
+	if err != nil {
+		return nil, err
+	}
+	includeTransliteration := !contentlang.IsArabic(lang) && resolvedTransliterationSourceID != ""
 
-	args := []any{surahID, lang, resolvedSourceID}
+	args := []any{surahID, lang, resolvedSourceID, resolvedTransliterationSourceID}
 	conditions := []string{"a.surah_id = $1"}
 	if fromAyah > 0 {
 		args = append(args, fromAyah)
@@ -363,7 +377,7 @@ func (r *QuranRepo) ListSurahAyahs(
 	}
 	where := "\nWHERE " + strings.Join(conditions, " AND ") + "\nORDER BY a.ayah_number ASC"
 
-	rows, err := r.Pool.Query(ctx, quranAyahSelectSQL(where, includeSelectedTranslation), args...)
+	rows, err := r.Pool.Query(ctx, quranAyahSelectSQL(where, includeSelectedTranslation, includeTransliteration), args...)
 	if err != nil {
 		return nil, fmt.Errorf("QuranRepo - ListSurahAyahs - Query: %w", err)
 	}
@@ -425,15 +439,21 @@ func (r *QuranRepo) ListNavigationAyahs(
 		resolvedSourceID = sourceID
 	}
 	includeSelectedTranslation := includeTranslation && !contentlang.IsArabic(lang) && resolvedSourceID != ""
+	resolvedTransliterationSourceID, err := r.defaultTransliterationSourceID(ctx, lang)
+	if err != nil {
+		return nil, err
+	}
+	includeTransliteration := !contentlang.IsArabic(lang) && resolvedTransliterationSourceID != ""
 
 	rows, err := r.Pool.Query(
 		ctx,
 		quranAyahSelectSQL(fmt.Sprintf(`
 WHERE a.%s = $1
-ORDER BY a.surah_id ASC, a.ayah_number ASC`, column), includeSelectedTranslation),
+ORDER BY a.surah_id ASC, a.ayah_number ASC`, column), includeSelectedTranslation, includeTransliteration),
 		number,
 		lang,
 		resolvedSourceID,
+		resolvedTransliterationSourceID,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("QuranRepo - ListNavigationAyahs - Query: %w", err)
@@ -474,7 +494,7 @@ ORDER BY a.surah_id ASC, a.ayah_number ASC`, column), includeSelectedTranslation
 	return ayahs, nil
 }
 
-// SearchAyahs searches Arabic Quran text and selected translation text.
+// SearchAyahs searches Arabic Quran text, selected translation text, and requested transliteration text.
 func (r *QuranRepo) SearchAyahs(
 	ctx context.Context,
 	filter repo.QuranSearchFilter,
@@ -492,6 +512,10 @@ func (r *QuranRepo) SearchAyahs(
 	if err != nil {
 		return nil, 0, err
 	}
+	resolvedTransliterationSourceID, err := r.defaultTransliterationSourceID(ctx, filter.Lang)
+	if err != nil {
+		return nil, 0, err
+	}
 
 	like := "%" + searchQuery + "%"
 	countSQL := `
@@ -502,6 +526,11 @@ LEFT JOIN quran_ayah_translations t
       AND t.ayah_number = a.ayah_number
       AND t.lang = $2
       AND t.source_id = $3
+LEFT JOIN quran_ayah_transliterations tn
+       ON tn.surah_id = a.surah_id
+      AND tn.ayah_number = a.ayah_number
+      AND tn.lang = $2
+      AND tn.source_id = $4
 LEFT JOIN LATERAL (
     SELECT mt.source_id,
            mt.lang,
@@ -510,7 +539,7 @@ LEFT JOIN LATERAL (
     WHERE mt.surah_id = a.surah_id
       AND mt.ayah_number = a.ayah_number
       AND (
-          COALESCE(mt.text, '') ILIKE $4
+          COALESCE(mt.text, '') ILIKE $5
           OR similarity(COALESCE(mt.text, ''), $1) > 0.18
       )
     ORDER BY similarity(COALESCE(mt.text, ''), $1) DESC,
@@ -518,20 +547,22 @@ LEFT JOIN LATERAL (
              mt.source_id ASC
     LIMIT 1
 ) mt ON true
-WHERE COALESCE(a.search_text, '') ILIKE $4
-   OR COALESCE(a.text_qpc_hafs, '') ILIKE $4
-   OR COALESCE(t.text, '') ILIKE $4
+WHERE COALESCE(a.search_text, '') ILIKE $5
+   OR COALESCE(a.text_qpc_hafs, '') ILIKE $5
+   OR COALESCE(t.text, '') ILIKE $5
+   OR COALESCE(tn.text, '') ILIKE $5
    OR mt.source_id IS NOT NULL
    OR similarity(COALESCE(a.search_text, ''), $1) > 0.18
    OR similarity(COALESCE(a.text_qpc_hafs, ''), $1) > 0.18
-   OR similarity(COALESCE(t.text, ''), $1) > 0.18`
+   OR similarity(COALESCE(t.text, ''), $1) > 0.18
+   OR similarity(COALESCE(tn.text, ''), $1) > 0.18`
 
 	var total int
-	if err := r.Pool.QueryRow(ctx, countSQL, searchQuery, filter.Lang, resolvedSourceID, like).Scan(&total); err != nil {
+	if err := r.Pool.QueryRow(ctx, countSQL, searchQuery, filter.Lang, resolvedSourceID, resolvedTransliterationSourceID, like).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("QuranRepo - SearchAyahs - count: %w", err)
 	}
 
-	rows, err := r.Pool.Query(ctx, quranSearchSQL, searchQuery, filter.Lang, resolvedSourceID, like, filter.Limit, filter.Offset)
+	rows, err := r.Pool.Query(ctx, quranSearchSQL, searchQuery, filter.Lang, resolvedSourceID, resolvedTransliterationSourceID, like, filter.Limit, filter.Offset)
 	if err != nil {
 		return nil, 0, fmt.Errorf("QuranRepo - SearchAyahs - Query: %w", err)
 	}
@@ -915,10 +946,16 @@ SELECT a.surah_id,
        t.chunks,
        t.metadata AS translation_metadata,
        t.updated_at AS translation_updated_at,
+       tn.source_id AS transliteration_source_id,
+       tn.lang AS transliteration_lang,
+       tn.text AS transliteration_text,
+       tn.metadata AS transliteration_metadata,
+       tn.updated_at AS transliteration_updated_at,
        COALESCE(ta.available_langs, ARRAY[]::TEXT[]) AS available_translation_langs,
        similarity(COALESCE(a.search_text, ''), $1)::float8 AS search_score,
        similarity(COALESCE(a.text_qpc_hafs, ''), $1)::float8 AS arabic_score,
        similarity(COALESCE(t.text, ''), $1)::float8 AS selected_translation_score,
+       similarity(COALESCE(tn.text, ''), $1)::float8 AS transliteration_score,
        COALESCE(mt.match_score, 0)::float8 AS any_translation_score,
        mt.lang AS any_translation_lang,
        mt.source_id AS any_translation_source_id
@@ -928,6 +965,11 @@ LEFT JOIN quran_ayah_translations t
       AND t.ayah_number = a.ayah_number
       AND t.lang = $2
       AND t.source_id = $3
+LEFT JOIN quran_ayah_transliterations tn
+       ON tn.surah_id = a.surah_id
+      AND tn.ayah_number = a.ayah_number
+      AND tn.lang = $2
+      AND tn.source_id = $4
 LEFT JOIN LATERAL (
     SELECT array_agg(DISTINCT lang ORDER BY lang) AS available_langs
     FROM quran_ayah_translations
@@ -942,19 +984,21 @@ LEFT JOIN LATERAL (
     WHERE mt.surah_id = a.surah_id
       AND mt.ayah_number = a.ayah_number
       AND (
-          COALESCE(mt.text, '') ILIKE $4
+          COALESCE(mt.text, '') ILIKE $5
           OR similarity(COALESCE(mt.text, ''), $1) > 0.18
       )
     ORDER BY match_score DESC, mt.lang ASC, mt.source_id ASC
     LIMIT 1
 ) mt ON true
-WHERE COALESCE(a.search_text, '') ILIKE $4
-   OR COALESCE(a.text_qpc_hafs, '') ILIKE $4
-   OR COALESCE(t.text, '') ILIKE $4
+WHERE COALESCE(a.search_text, '') ILIKE $5
+   OR COALESCE(a.text_qpc_hafs, '') ILIKE $5
+   OR COALESCE(t.text, '') ILIKE $5
+   OR COALESCE(tn.text, '') ILIKE $5
    OR mt.source_id IS NOT NULL
    OR similarity(COALESCE(a.search_text, ''), $1) > 0.18
    OR similarity(COALESCE(a.text_qpc_hafs, ''), $1) > 0.18
    OR similarity(COALESCE(t.text, ''), $1) > 0.18
+   OR similarity(COALESCE(tn.text, ''), $1) > 0.18
 )
 SELECT surah_id,
        ayah_number,
@@ -976,27 +1020,35 @@ SELECT surah_id,
        chunks,
        translation_metadata,
        translation_updated_at,
+       transliteration_source_id,
+       transliteration_lang,
+       transliteration_text,
+       transliteration_metadata,
+       transliteration_updated_at,
        available_translation_langs,
-       GREATEST(search_score, arabic_score, selected_translation_score, any_translation_score)::float8 AS score,
+       GREATEST(search_score, arabic_score, selected_translation_score, transliteration_score, any_translation_score)::float8 AS score,
        CASE
-           WHEN GREATEST(search_score, arabic_score) >= GREATEST(selected_translation_score, any_translation_score) THEN 'ar'
+           WHEN GREATEST(search_score, arabic_score) >= GREATEST(selected_translation_score, transliteration_score, any_translation_score) THEN 'ar'
+           WHEN transliteration_score >= GREATEST(selected_translation_score, any_translation_score) AND transliteration_lang IS NOT NULL THEN transliteration_lang
            WHEN selected_translation_score >= any_translation_score AND lang IS NOT NULL THEN lang
            ELSE any_translation_lang
        END AS matched_lang,
        CASE
-           WHEN GREATEST(search_score, arabic_score) >= GREATEST(selected_translation_score, any_translation_score) THEN NULL::text
+           WHEN GREATEST(search_score, arabic_score) >= GREATEST(selected_translation_score, transliteration_score, any_translation_score) THEN NULL::text
+           WHEN transliteration_score >= GREATEST(selected_translation_score, any_translation_score) AND transliteration_source_id IS NOT NULL THEN transliteration_source_id
            WHEN selected_translation_score >= any_translation_score AND source_id IS NOT NULL THEN source_id
            ELSE any_translation_source_id
        END AS matched_source_id,
        CASE
-           WHEN GREATEST(search_score, arabic_score) >= GREATEST(selected_translation_score, any_translation_score) THEN 'arabic'
+           WHEN GREATEST(search_score, arabic_score) >= GREATEST(selected_translation_score, transliteration_score, any_translation_score) THEN 'arabic'
+           WHEN transliteration_score >= GREATEST(selected_translation_score, any_translation_score) AND transliteration_source_id IS NOT NULL THEN 'transliteration'
            ELSE 'translation'
        END AS matched_field
 FROM scored
 ORDER BY score DESC, surah_id ASC, ayah_number ASC
-LIMIT $5 OFFSET $6`
+LIMIT $6 OFFSET $7`
 
-func quranAyahSelectSQL(where string, includeTranslation bool) string {
+func quranAyahSelectSQL(where string, includeTranslation bool, includeTransliteration bool) string {
 	translationColumns := `
        t.source_id,
        t.lang,
@@ -1026,6 +1078,31 @@ LEFT JOIN quran_ayah_translations t
       AND t.lang = $2
       AND t.source_id = $3`
 	}
+	transliterationColumns := `
+       tn.source_id AS transliteration_source_id,
+       tn.lang AS transliteration_lang,
+       tn.text AS transliteration_text,
+       tn.metadata AS transliteration_metadata,
+       tn.updated_at AS transliteration_updated_at`
+	transliterationJoin := `
+LEFT JOIN quran_ayah_transliterations tn
+       ON tn.surah_id = a.surah_id
+      AND tn.ayah_number = a.ayah_number
+      AND tn.lang = $2
+      AND tn.source_id = $4`
+	if !includeTransliteration {
+		transliterationColumns = `
+       NULL::text AS transliteration_source_id,
+       NULL::text AS transliteration_lang,
+       NULL::text AS transliteration_text,
+       NULL::jsonb AS transliteration_metadata,
+       NULL::timestamptz AS transliteration_updated_at`
+		transliterationJoin = `
+LEFT JOIN quran_ayah_transliterations tn
+       ON false
+      AND tn.lang = $2
+      AND tn.source_id = $4`
+	}
 
 	return `
 SELECT a.surah_id,
@@ -1041,8 +1118,9 @@ SELECT a.surah_id,
        a.hizb_number,
        a.metadata,
        a.updated_at,` + translationColumns + `,
+       ` + transliterationColumns + `,
        COALESCE(ta.available_langs, ARRAY[]::TEXT[]) AS available_translation_langs
-FROM quran_ayahs a` + translationJoin + `
+FROM quran_ayahs a` + translationJoin + transliterationJoin + `
 LEFT JOIN LATERAL (
     SELECT array_agg(DISTINCT lang ORDER BY lang) AS available_langs
     FROM quran_ayah_translations
@@ -1212,6 +1290,41 @@ LIMIT 1`, lang, defaultQuranTranslationSourceID).Scan(&sourceID)
 		}
 
 		return "", fmt.Errorf("QuranRepo - defaultTranslationSourceID - QueryRow: %w", err)
+	}
+
+	return sourceID, nil
+}
+
+func (r *QuranRepo) defaultTransliterationSourceID(ctx context.Context, lang string) (string, error) {
+	if contentlang.IsArabic(lang) {
+		return "", nil
+	}
+
+	var sourceID string
+	err := r.Pool.QueryRow(ctx, `
+SELECT s.id
+FROM quran_transliteration_sources s
+LEFT JOIN (
+    SELECT source_id, COUNT(*)::int AS transliterated_ayahs
+    FROM quran_ayah_transliterations
+    GROUP BY source_id
+) sc ON sc.source_id = s.id
+WHERE s.lang = $1
+ORDER BY CASE
+             WHEN s.lang = 'id' AND s.id = $2 THEN 0
+             WHEN s.lang = 'en' AND s.id = $3 THEN 0
+             ELSE 1
+         END,
+         COALESCE(sc.transliterated_ayahs, 0) DESC,
+         s.name ASC,
+         s.id ASC
+LIMIT 1`, lang, defaultIDTransliterationSourceID, defaultENTransliterationSourceID).Scan(&sourceID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", nil
+		}
+
+		return "", fmt.Errorf("QuranRepo - defaultTransliterationSourceID - QueryRow: %w", err)
 	}
 
 	return sourceID, nil
@@ -1644,6 +1757,11 @@ func scanQuranAyahInternal(row rowScanner, withScore bool) (entity.QuranAyah, fl
 	var chunks []byte
 	var translationMetadata []byte
 	var translationUpdatedAt sql.NullTime
+	var transliterationSourceID sql.NullString
+	var transliterationLang sql.NullString
+	var transliterationText sql.NullString
+	var transliterationMetadata []byte
+	var transliterationUpdatedAt sql.NullTime
 	var availableTranslationLangs []string
 	var score sql.NullFloat64
 	var matchedLang sql.NullString
@@ -1671,6 +1789,11 @@ func scanQuranAyahInternal(row rowScanner, withScore bool) (entity.QuranAyah, fl
 		&chunks,
 		&translationMetadata,
 		&translationUpdatedAt,
+		&transliterationSourceID,
+		&transliterationLang,
+		&transliterationText,
+		&transliterationMetadata,
+		&transliterationUpdatedAt,
 		&availableTranslationLangs,
 	}
 	if withScore {
@@ -1703,6 +1826,18 @@ func scanQuranAyahInternal(row rowScanner, withScore bool) (entity.QuranAyah, fl
 			translation.UpdatedAt = translationUpdatedAt.Time
 		}
 		ayah.Translation = translation
+	}
+	if transliterationSourceID.Valid {
+		transliteration := &entity.QuranTransliteration{
+			SourceID: transliterationSourceID.String,
+			Lang:     transliterationLang.String,
+			Text:     transliterationText.String,
+			Metadata: entity.RawJSON(transliterationMetadata),
+		}
+		if transliterationUpdatedAt.Valid {
+			transliteration.UpdatedAt = transliterationUpdatedAt.Time
+		}
+		ayah.Transliteration = transliteration
 	}
 	ayah.AvailableTranslationLangs = emptyStringSlice(availableTranslationLangs)
 

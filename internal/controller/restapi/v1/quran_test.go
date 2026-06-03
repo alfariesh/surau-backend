@@ -93,6 +93,7 @@ func TestQuranReaderMinimalView(t *testing.T) {
 				`"juz_number":29`,
 				`"page_number":574`,
 				`"translation":{"text":"Wahai orang yang berselimut!"}`,
+				`"transliteration":{"text":"Yā ayyuhal-muzzammil(u)."}`,
 				`"recitation_id":"rec-1"`,
 				`"url":"https://cdn.example/73-1.mp3"`,
 				`"segment_index":1`,
@@ -420,6 +421,12 @@ func fakeQuranAyah(surahID int, includeTranslation bool, includeAudio bool, reci
 			Footnotes: entity.RawJSON(`[]`),
 			Metadata:  entity.RawJSON(`{"debug":true}`),
 		}
+	}
+	ayah.Transliteration = &entity.QuranTransliteration{
+		SourceID: "kemenag-id-latin",
+		Lang:     "id",
+		Text:     "Yā ayyuhal-muzzammil(u).",
+		Metadata: entity.RawJSON(`{"debug":true}`),
 	}
 	if includeAudio {
 		ayah.Audio = []entity.QuranAudioTrack{fakeQuranAudioTrack(surahID, ayahNumber, recitationID)}
