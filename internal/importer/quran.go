@@ -14,7 +14,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/evrone/go-clean-template/internal/contentlang"
 	"github.com/evrone/go-clean-template/internal/quranutil"
@@ -1970,9 +1969,4 @@ func stringOrEmpty(value json.RawMessage) string {
 	}
 
 	return string(value)
-}
-
-// quranImportNow is isolated for tests that need deterministic timestamps later.
-func quranImportNow() time.Time {
-	return time.Now().UTC()
 }
