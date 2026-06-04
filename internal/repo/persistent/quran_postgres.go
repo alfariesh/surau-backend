@@ -611,6 +611,10 @@ func (r *QuranRepo) ListBookQuranReferences(
 		OrderBy("qbr.page_id ASC", "qbr.created_at ASC").
 		Limit(filter.Limit).
 		Offset(filter.Offset)
+	if filter.HeadingID != nil {
+		countBuilder = countBuilder.Where(sq.Eq{"qbr.heading_id": *filter.HeadingID})
+		dataBuilder = dataBuilder.Where(sq.Eq{"qbr.heading_id": *filter.HeadingID})
+	}
 	if filter.Status != "" && filter.Status != "all" {
 		countBuilder = countBuilder.Where(sq.Eq{"qbr.review_status": filter.Status})
 		dataBuilder = dataBuilder.Where(sq.Eq{"qbr.review_status": filter.Status})

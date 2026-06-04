@@ -24,6 +24,12 @@ type ReaderRepo struct {
 	*postgres.Postgres
 }
 
+const (
+	readerArabicSearchMarks = "\u064b\u064c\u064d\u064e\u064f\u0650\u0651\u0652\u0653\u0654\u0655\u0670\u0640"
+	readerArabicVariantFrom = "أإآٱؤئءىة"
+	readerArabicVariantTo   = "ااااويايه"
+)
+
 // NewReaderRepo creates a reader repository.
 func NewReaderRepo(pg *postgres.Postgres) *ReaderRepo {
 	return &ReaderRepo{pg}
@@ -272,6 +278,105 @@ func (r *ReaderRepo) ListBooks(ctx context.Context, filter repo.BookFilter) ([]e
 	}
 
 	return books, total, nil
+}
+
+// GetBookCatalogStats returns full published catalog aggregate counts.
+func (r *ReaderRepo) GetBookCatalogStats(ctx context.Context, lang string) (entity.BookCatalogStats, error) {
+	const totalsSQL = `
+WITH published_books AS (
+    SELECT b.id AS book_id,
+           b.author_id,
+           COALESCE(me.category_id, b.category_id) AS category_id,
+           b.has_content
+    FROM books b
+    JOIN book_publications p ON p.book_id = b.id AND p.status = 'published'
+    LEFT JOIN book_metadata_edits me ON me.book_id = b.id AND me.status = 'published'
+    WHERE b.is_deleted = false
+),
+covered_books AS (
+    SELECT DISTINCT book_id
+    FROM book_production_projects
+    WHERE publication_status = 'published'
+      AND workflow_status <> 'archived'
+)
+SELECT COUNT(*)::INT AS total_books,
+       COUNT(*)::INT AS published_count,
+       COUNT(DISTINCT author_id)::INT AS author_count,
+       COUNT(DISTINCT category_id)::INT AS category_count,
+       COUNT(*) FILTER (WHERE has_content)::INT AS with_content_count,
+       COUNT(DISTINCT cb.book_id)::INT AS coverage_count
+FROM published_books pb
+LEFT JOIN covered_books cb ON cb.book_id = pb.book_id`
+
+	stats := entity.BookCatalogStats{ByCategory: []entity.BookCategoryStat{}}
+	err := r.Pool.QueryRow(ctx, totalsSQL).Scan(
+		&stats.TotalBooks,
+		&stats.PublishedCount,
+		&stats.AuthorCount,
+		&stats.CategoryCount,
+		&stats.WithContentCount,
+		&stats.CoverageCount,
+	)
+	if err != nil {
+		return entity.BookCatalogStats{}, fmt.Errorf("ReaderRepo - GetBookCatalogStats - totals: %w", err)
+	}
+
+	const categorySQL = `
+WITH published_books AS (
+    SELECT b.id AS book_id,
+           COALESCE(me.category_id, b.category_id) AS category_id
+    FROM books b
+    JOIN book_publications p ON p.book_id = b.id AND p.status = 'published'
+    LEFT JOIN book_metadata_edits me ON me.book_id = b.id AND me.status = 'published'
+    WHERE b.is_deleted = false
+),
+covered_books AS (
+    SELECT DISTINCT book_id
+    FROM book_production_projects
+    WHERE publication_status = 'published'
+      AND workflow_status <> 'archived'
+)
+SELECT pb.category_id,
+       CASE WHEN $1 <> 'ar' AND ct.category_id IS NOT NULL THEN ct.name ELSE c.name END AS category_name,
+       COUNT(*)::INT AS total,
+       COUNT(*)::INT AS published_count,
+       COUNT(DISTINCT cb.book_id)::INT AS coverage_count
+FROM published_books pb
+LEFT JOIN categories c ON c.id = pb.category_id
+LEFT JOIN category_translations ct ON ct.category_id = c.id AND ct.lang = $1 AND ct.is_deleted = false AND $1 <> 'ar'
+LEFT JOIN covered_books cb ON cb.book_id = pb.book_id
+GROUP BY pb.category_id, category_name
+ORDER BY total DESC, category_name ASC NULLS LAST`
+
+	rows, err := r.Pool.Query(ctx, categorySQL, lang)
+	if err != nil {
+		return entity.BookCatalogStats{}, fmt.Errorf("ReaderRepo - GetBookCatalogStats - categories: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var item entity.BookCategoryStat
+		var categoryID sql.NullInt64
+		var categoryName sql.NullString
+		if err = rows.Scan(
+			&categoryID,
+			&categoryName,
+			&item.Total,
+			&item.PublishedCount,
+			&item.CoverageCount,
+		); err != nil {
+			return entity.BookCatalogStats{}, fmt.Errorf("ReaderRepo - GetBookCatalogStats - scan category: %w", err)
+		}
+
+		item.CategoryID = nullableInt(categoryID)
+		item.CategoryName = nullableString(categoryName)
+		stats.ByCategory = append(stats.ByCategory, item)
+	}
+	if err = rows.Err(); err != nil {
+		return entity.BookCatalogStats{}, fmt.Errorf("ReaderRepo - GetBookCatalogStats - rows.Err: %w", err)
+	}
+
+	return stats, nil
 }
 
 func (r *ReaderRepo) GetBook(ctx context.Context, bookID int, lang string) (entity.Book, error) {
@@ -1233,82 +1338,7 @@ ORDER BY l.lang`
 
 func applyBookFilter(countBuilder, dataBuilder sq.SelectBuilder, filter repo.BookFilter) (sq.SelectBuilder, sq.SelectBuilder) {
 	if filter.Query != "" {
-		like := "%" + filter.Query + "%"
-		condition := `(COALESCE(bmt.display_title, me.display_title, b.name) ILIKE ?
-			OR b.name ILIKE ?
-			OR COALESCE(at.name, a.name) ILIKE ?
-			OR a.name ILIKE ?
-			OR COALESCE(ct.name, c.name) ILIKE ?
-			OR c.name ILIKE ?
-			OR COALESCE(bmt.bibliography, b.bibliography) ILIKE ?
-			OR COALESCE(bmt.hint, b.hint) ILIKE ?
-			OR EXISTS (
-				SELECT 1
-				FROM book_metadata_translations bmt_any
-				WHERE bmt_any.book_id = b.id
-				  AND bmt_any.is_deleted = false
-				  AND EXISTS (
-					SELECT 1
-					FROM book_production_projects bpp_any
-					WHERE bpp_any.book_id = b.id
-					  AND bpp_any.lang = bmt_any.lang
-					  AND bpp_any.publication_status = 'published'
-					  AND bpp_any.workflow_status <> 'archived'
-				  )
-				  AND (
-					bmt_any.display_title ILIKE ?
-					OR COALESCE(bmt_any.bibliography, '') ILIKE ?
-					OR COALESCE(bmt_any.hint, '') ILIKE ?
-					OR COALESCE(bmt_any.description, '') ILIKE ?
-				  )
-			)
-			OR EXISTS (
-				SELECT 1
-				FROM author_translations at_any
-				WHERE at_any.author_id = a.id
-				  AND at_any.is_deleted = false
-				  AND EXISTS (
-					SELECT 1
-					FROM book_production_projects bpp_any
-					WHERE bpp_any.book_id = b.id
-					  AND bpp_any.lang = at_any.lang
-					  AND bpp_any.publication_status = 'published'
-					  AND bpp_any.workflow_status <> 'archived'
-				  )
-				  AND (at_any.name ILIKE ? OR COALESCE(at_any.biography, '') ILIKE ?)
-			)
-			OR EXISTS (
-				SELECT 1
-				FROM category_translations ct_any
-				WHERE ct_any.category_id = c.id
-				  AND ct_any.is_deleted = false
-				  AND EXISTS (
-					SELECT 1
-					FROM book_production_projects bpp_any
-					WHERE bpp_any.book_id = b.id
-					  AND bpp_any.lang = ct_any.lang
-					  AND bpp_any.publication_status = 'published'
-					  AND bpp_any.workflow_status <> 'archived'
-				  )
-				  AND ct_any.name ILIKE ?
-			))`
-		args := []any{
-			like,
-			like,
-			like,
-			like,
-			like,
-			like,
-			like,
-			like,
-			like,
-			like,
-			like,
-			like,
-			like,
-			like,
-			like,
-		}
+		condition, args := bookSearchCondition(filter.Query)
 		countBuilder = countBuilder.Where(condition, args...)
 		dataBuilder = dataBuilder.Where(condition, args...)
 	}
@@ -1329,6 +1359,138 @@ func applyBookFilter(countBuilder, dataBuilder sq.SelectBuilder, filter repo.Boo
 	}
 
 	return countBuilder, dataBuilder
+}
+
+func bookSearchCondition(query string) (string, []any) {
+	like := "%" + query + "%"
+	condition := `(COALESCE(bmt.display_title, me.display_title, b.name) ILIKE ?
+		OR b.name ILIKE ?
+		OR COALESCE(at.name, a.name) ILIKE ?
+		OR a.name ILIKE ?
+		OR COALESCE(ct.name, c.name) ILIKE ?
+		OR c.name ILIKE ?
+		OR COALESCE(bmt.bibliography, b.bibliography) ILIKE ?
+		OR COALESCE(bmt.hint, b.hint) ILIKE ?
+		OR EXISTS (
+			SELECT 1
+			FROM book_metadata_translations bmt_any
+			WHERE bmt_any.book_id = b.id
+			  AND bmt_any.is_deleted = false
+			  AND EXISTS (
+				SELECT 1
+				FROM book_production_projects bpp_any
+				WHERE bpp_any.book_id = b.id
+				  AND bpp_any.lang = bmt_any.lang
+				  AND bpp_any.publication_status = 'published'
+				  AND bpp_any.workflow_status <> 'archived'
+			  )
+			  AND (
+				bmt_any.display_title ILIKE ?
+				OR COALESCE(bmt_any.bibliography, '') ILIKE ?
+				OR COALESCE(bmt_any.hint, '') ILIKE ?
+				OR COALESCE(bmt_any.description, '') ILIKE ?
+			  )
+		)
+		OR EXISTS (
+			SELECT 1
+			FROM author_translations at_any
+			WHERE at_any.author_id = a.id
+			  AND at_any.is_deleted = false
+			  AND EXISTS (
+				SELECT 1
+				FROM book_production_projects bpp_any
+				WHERE bpp_any.book_id = b.id
+				  AND bpp_any.lang = at_any.lang
+				  AND bpp_any.publication_status = 'published'
+				  AND bpp_any.workflow_status <> 'archived'
+			  )
+			  AND (at_any.name ILIKE ? OR COALESCE(at_any.biography, '') ILIKE ?)
+		)
+		OR EXISTS (
+			SELECT 1
+			FROM category_translations ct_any
+			WHERE ct_any.category_id = c.id
+			  AND ct_any.is_deleted = false
+			  AND EXISTS (
+				SELECT 1
+				FROM book_production_projects bpp_any
+				WHERE bpp_any.book_id = b.id
+				  AND bpp_any.lang = ct_any.lang
+				  AND bpp_any.publication_status = 'published'
+				  AND bpp_any.workflow_status <> 'archived'
+			  )
+			  AND ct_any.name ILIKE ?
+		))`
+	args := []any{
+		like,
+		like,
+		like,
+		like,
+		like,
+		like,
+		like,
+		like,
+		like,
+		like,
+		like,
+		like,
+		like,
+		like,
+		like,
+	}
+	if !containsArabic(query) {
+		return condition, args
+	}
+
+	normalizedLike := "%" + normalizeReaderArabicSearchText(query) + "%"
+	condition += ` OR (` + normalizedArabicSQL("COALESCE(bmt.display_title, me.display_title, b.name)") + ` ILIKE ?
+		OR ` + normalizedArabicSQL("b.name") + ` ILIKE ?
+		OR ` + normalizedArabicSQL("COALESCE(at.name, a.name)") + ` ILIKE ?
+		OR ` + normalizedArabicSQL("a.name") + ` ILIKE ?
+		OR ` + normalizedArabicSQL("COALESCE(ct.name, c.name)") + ` ILIKE ?
+		OR ` + normalizedArabicSQL("c.name") + ` ILIKE ?)`
+	for i := 0; i < 6; i++ {
+		args = append(args, readerArabicSearchMarks, readerArabicVariantFrom, readerArabicVariantTo, normalizedLike)
+	}
+
+	return "(" + condition + ")", args
+}
+
+func normalizedArabicSQL(expr string) string {
+	return "translate(translate(COALESCE(" + expr + ", ''), ?, ''), ?, ?)"
+}
+
+func containsArabic(value string) bool {
+	for _, r := range value {
+		if r >= '\u0600' && r <= '\u06ff' {
+			return true
+		}
+	}
+
+	return false
+}
+
+func normalizeReaderArabicSearchText(value string) string {
+	var out strings.Builder
+	replacer := strings.NewReplacer(
+		"أ", "ا",
+		"إ", "ا",
+		"آ", "ا",
+		"ٱ", "ا",
+		"ؤ", "و",
+		"ئ", "ي",
+		"ء", "ا",
+		"ى", "ي",
+		"ة", "ه",
+	)
+	for _, r := range replacer.Replace(value) {
+		if strings.ContainsRune(readerArabicSearchMarks, r) {
+			continue
+		}
+		out.WriteRune(r)
+	}
+
+	return out.String()
 }
 
 func scanAuthor(row rowScanner) (entity.Author, error) {

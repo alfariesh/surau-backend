@@ -2,6 +2,7 @@ package v1
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/evrone/go-clean-template/internal/controller/restapi/v1/request"
 	_ "github.com/evrone/go-clean-template/internal/controller/restapi/v1/response" // for swaggo
@@ -36,7 +37,7 @@ func (r *V1) editorialGetMetadataDraft(ctx *fiber.Ctx) error {
 		return r.editorialError(ctx, err)
 	}
 
-	return ctx.Status(http.StatusOK).JSON(edit)
+	return jsonWithUpdatedAtETag(ctx, http.StatusOK, edit, edit.UpdatedAt)
 }
 
 func (r *V1) editorialSaveMetadataDraft(ctx *fiber.Ctx) error {
@@ -59,6 +60,13 @@ func (r *V1) editorialSaveMetadataDraft(ctx *fiber.Ctx) error {
 		return errorResponse(ctx, http.StatusBadRequest, "invalid request body")
 	}
 
+	if ok, preconditionErr := r.checkEditorialDraftIfMatch(ctx, "restapi - v1 - editorialSaveMetadataDraft - precondition", func() (time.Time, error) {
+		current, currentErr := r.editorial.GetMetadataDraft(ctx.UserContext(), bookID)
+		return current.UpdatedAt, currentErr
+	}); !ok || preconditionErr != nil {
+		return preconditionErr
+	}
+
 	edit, err := r.editorial.SaveMetadataDraft(ctx.UserContext(), actorID, entity.BookMetadataEdit{
 		BookID:       bookID,
 		DisplayTitle: body.DisplayTitle,
@@ -73,7 +81,7 @@ func (r *V1) editorialSaveMetadataDraft(ctx *fiber.Ctx) error {
 		return r.editorialError(ctx, err)
 	}
 
-	return ctx.Status(http.StatusOK).JSON(edit)
+	return jsonWithUpdatedAtETag(ctx, http.StatusOK, edit, edit.UpdatedAt)
 }
 
 func (r *V1) editorialPublishMetadataDraft(ctx *fiber.Ctx) error {
@@ -87,6 +95,13 @@ func (r *V1) editorialPublishMetadataDraft(ctx *fiber.Ctx) error {
 		return errorResponse(ctx, http.StatusBadRequest, "invalid book_id")
 	}
 
+	if ok, preconditionErr := r.checkEditorialDraftIfMatch(ctx, "restapi - v1 - editorialPublishMetadataDraft - precondition", func() (time.Time, error) {
+		current, currentErr := r.editorial.GetMetadataDraft(ctx.UserContext(), bookID)
+		return current.UpdatedAt, currentErr
+	}); !ok || preconditionErr != nil {
+		return preconditionErr
+	}
+
 	edit, err := r.editorial.PublishMetadataDraft(ctx.UserContext(), actorID, bookID)
 	if err != nil {
 		r.logEditorialError(err, "restapi - v1 - editorialPublishMetadataDraft")
@@ -94,7 +109,7 @@ func (r *V1) editorialPublishMetadataDraft(ctx *fiber.Ctx) error {
 		return r.editorialError(ctx, err)
 	}
 
-	return ctx.Status(http.StatusOK).JSON(edit)
+	return jsonWithUpdatedAtETag(ctx, http.StatusOK, edit, edit.UpdatedAt)
 }
 
 func (r *V1) editorialGetPageEdit(ctx *fiber.Ctx) error {
@@ -110,7 +125,7 @@ func (r *V1) editorialGetPageEdit(ctx *fiber.Ctx) error {
 		return r.editorialError(ctx, err)
 	}
 
-	return ctx.Status(http.StatusOK).JSON(edit)
+	return jsonWithUpdatedAtETag(ctx, http.StatusOK, edit, pageEditCurrentUpdatedAt(edit))
 }
 
 func (r *V1) editorialSavePageDraft(ctx *fiber.Ctx) error {
@@ -133,6 +148,17 @@ func (r *V1) editorialSavePageDraft(ctx *fiber.Ctx) error {
 		return errorResponse(ctx, http.StatusBadRequest, "invalid request body")
 	}
 
+	if ok, preconditionErr := r.checkEditorialResourceIfMatch(ctx, "restapi - v1 - editorialSavePageDraft - precondition", func() (time.Time, error) {
+		current, currentErr := r.editorial.GetPageEdit(ctx.UserContext(), bookID, pageID)
+		if currentErr != nil {
+			return time.Time{}, currentErr
+		}
+
+		return pageEditCurrentUpdatedAt(current), nil
+	}); !ok || preconditionErr != nil {
+		return preconditionErr
+	}
+
 	edit, err := r.editorial.SavePageDraft(ctx.UserContext(), actorID, entity.BookPageEdit{
 		BookID:      bookID,
 		PageID:      pageID,
@@ -144,7 +170,7 @@ func (r *V1) editorialSavePageDraft(ctx *fiber.Ctx) error {
 		return r.editorialError(ctx, err)
 	}
 
-	return ctx.Status(http.StatusOK).JSON(edit)
+	return jsonWithUpdatedAtETag(ctx, http.StatusOK, edit, edit.UpdatedAt)
 }
 
 func (r *V1) editorialPublishPageDraft(ctx *fiber.Ctx) error {
@@ -158,6 +184,17 @@ func (r *V1) editorialPublishPageDraft(ctx *fiber.Ctx) error {
 		return errorResponse(ctx, http.StatusBadRequest, err.Error())
 	}
 
+	if ok, preconditionErr := r.checkEditorialResourceIfMatch(ctx, "restapi - v1 - editorialPublishPageDraft - precondition", func() (time.Time, error) {
+		current, currentErr := r.editorial.GetPageEdit(ctx.UserContext(), bookID, pageID)
+		if currentErr != nil {
+			return time.Time{}, currentErr
+		}
+
+		return pageDraftUpdatedAt(current), nil
+	}); !ok || preconditionErr != nil {
+		return preconditionErr
+	}
+
 	edit, err := r.editorial.PublishPageDraft(ctx.UserContext(), actorID, bookID, pageID)
 	if err != nil {
 		r.logEditorialError(err, "restapi - v1 - editorialPublishPageDraft")
@@ -165,7 +202,7 @@ func (r *V1) editorialPublishPageDraft(ctx *fiber.Ctx) error {
 		return r.editorialError(ctx, err)
 	}
 
-	return ctx.Status(http.StatusOK).JSON(edit)
+	return jsonWithUpdatedAtETag(ctx, http.StatusOK, edit, edit.UpdatedAt)
 }
 
 // @Summary     Get source heading draft
@@ -196,7 +233,7 @@ func (r *V1) editorialGetHeadingDraft(ctx *fiber.Ctx) error {
 		return r.editorialError(ctx, err)
 	}
 
-	return ctx.Status(http.StatusOK).JSON(edit)
+	return jsonWithUpdatedAtETag(ctx, http.StatusOK, edit, edit.UpdatedAt)
 }
 
 func (r *V1) editorialSaveHeadingDraft(ctx *fiber.Ctx) error {
@@ -219,6 +256,13 @@ func (r *V1) editorialSaveHeadingDraft(ctx *fiber.Ctx) error {
 		return errorResponse(ctx, http.StatusBadRequest, "invalid request body")
 	}
 
+	if ok, preconditionErr := r.checkEditorialDraftIfMatch(ctx, "restapi - v1 - editorialSaveHeadingDraft - precondition", func() (time.Time, error) {
+		current, currentErr := r.editorial.GetHeadingDraft(ctx.UserContext(), bookID, headingID)
+		return current.UpdatedAt, currentErr
+	}); !ok || preconditionErr != nil {
+		return preconditionErr
+	}
+
 	edit, err := r.editorial.SaveHeadingDraft(ctx.UserContext(), actorID, entity.BookHeadingEdit{
 		BookID:    bookID,
 		HeadingID: headingID,
@@ -230,7 +274,7 @@ func (r *V1) editorialSaveHeadingDraft(ctx *fiber.Ctx) error {
 		return r.editorialError(ctx, err)
 	}
 
-	return ctx.Status(http.StatusOK).JSON(edit)
+	return jsonWithUpdatedAtETag(ctx, http.StatusOK, edit, edit.UpdatedAt)
 }
 
 func (r *V1) editorialPublishHeadingDraft(ctx *fiber.Ctx) error {
@@ -244,6 +288,13 @@ func (r *V1) editorialPublishHeadingDraft(ctx *fiber.Ctx) error {
 		return errorResponse(ctx, http.StatusBadRequest, err.Error())
 	}
 
+	if ok, preconditionErr := r.checkEditorialDraftIfMatch(ctx, "restapi - v1 - editorialPublishHeadingDraft - precondition", func() (time.Time, error) {
+		current, currentErr := r.editorial.GetHeadingDraft(ctx.UserContext(), bookID, headingID)
+		return current.UpdatedAt, currentErr
+	}); !ok || preconditionErr != nil {
+		return preconditionErr
+	}
+
 	edit, err := r.editorial.PublishHeadingDraft(ctx.UserContext(), actorID, bookID, headingID)
 	if err != nil {
 		r.logEditorialError(err, "restapi - v1 - editorialPublishHeadingDraft")
@@ -251,5 +302,21 @@ func (r *V1) editorialPublishHeadingDraft(ctx *fiber.Ctx) error {
 		return r.editorialError(ctx, err)
 	}
 
-	return ctx.Status(http.StatusOK).JSON(edit)
+	return jsonWithUpdatedAtETag(ctx, http.StatusOK, edit, edit.UpdatedAt)
+}
+
+func pageEditCurrentUpdatedAt(edit entity.EditorialPageEdit) time.Time {
+	if edit.Draft != nil {
+		return edit.Draft.UpdatedAt
+	}
+
+	return edit.Raw.UpdatedAt
+}
+
+func pageDraftUpdatedAt(edit entity.EditorialPageEdit) time.Time {
+	if edit.Draft == nil {
+		return time.Time{}
+	}
+
+	return edit.Draft.UpdatedAt
 }

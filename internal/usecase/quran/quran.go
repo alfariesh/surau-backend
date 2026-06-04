@@ -264,6 +264,7 @@ func (uc *UseCase) Search(ctx context.Context, query, lang string, limit, offset
 func (uc *UseCase) BookReferences(
 	ctx context.Context,
 	bookID int,
+	headingID *int,
 	lang string,
 	status string,
 	limit int,
@@ -271,6 +272,9 @@ func (uc *UseCase) BookReferences(
 ) ([]entity.BookQuranReference, int, error) {
 	if bookID <= 0 {
 		return nil, 0, entity.ErrBookNotFound
+	}
+	if headingID != nil && *headingID <= 0 {
+		return nil, 0, entity.ErrHeadingNotFound
 	}
 
 	normalizedLang, err := contentlang.Normalize(lang)
@@ -280,6 +284,7 @@ func (uc *UseCase) BookReferences(
 
 	return uc.repo.ListBookQuranReferences(ctx, repo.QuranBookReferenceFilter{
 		BookID:            bookID,
+		HeadingID:         headingID,
 		Lang:              normalizedLang,
 		TranslationSource: "",
 		Status:            normalizeStatus(status),

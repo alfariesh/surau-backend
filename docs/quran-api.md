@@ -1,6 +1,6 @@
 # Quran API Contract
 
-Last updated: 2026-05-30
+Last updated: 2026-06-04
 
 This document is the FE-facing contract for the Quran backend. It covers the public Quran read APIs, response shapes, audio behavior, errors, and the recommended fetch flow. The Quran domain is standalone: Quran rows live in dedicated Quran tables and are linked to kitab data only through Quran reference records.
 
@@ -975,10 +975,12 @@ Status: `200`
 ### 9. Book Quran References
 
 ```http
-GET /v1/books/{book_id}/quran-references?lang=id&status=approved&limit=50&offset=0
+GET /v1/books/{book_id}/quran-references?lang=id&heading_id=10&status=approved&limit=50&offset=0
 ```
 
-Returns Quran references linked to a public kitab. This is additive to reader endpoints: existing kitab reader responses are unchanged.
+Returns Quran references linked to a public kitab. Use `heading_id` for section-scoped reads; do not fetch a broad page and filter on the client.
+
+`GET /v1/books/{book_id}/toc/{heading_id}/read?include_quran_references=true` can embed the same approved heading-scoped references under `quran_references` in the reader payload.
 
 ### Path Params
 
@@ -991,6 +993,7 @@ Returns Quran references linked to a public kitab. This is additive to reader en
 | Param | Type | Default | Notes |
 | --- | --- | --- | --- |
 | `lang` | string | `id` | Translation language for attached ayahs. |
+| `heading_id` | integer | none | Optional positive heading filter. |
 | `status` | string | `approved` | One of `approved`, `pending`, `rejected`, `ambiguous`, `needs_review`, `all`. Invalid values become `approved`. |
 | `limit` | integer | `50` | Clamped to max `200`. |
 | `offset` | integer | `0` | Negative becomes `0`. |
@@ -1465,10 +1468,11 @@ For an ayah-mode recitation, each returned track normally maps to the requested 
 
 ### Kitab Quran References
 
-1. On kitab detail or reader screens, call `GET /v1/books/{book_id}/quran-references?lang=id&status=approved`.
-2. Use `page_id` and `heading_id` to group references near kitab content.
-3. Use `ayahs` when available for preview.
-4. For surah-only references without `ayahs`, link to `/quran/surahs/{surah_id}` or the FE equivalent.
+1. On a reader section screen, prefer `GET /v1/books/{book_id}/toc/{heading_id}/read?lang=id&include_quran_references=true`.
+2. If references are lazy-loaded separately, call `GET /v1/books/{book_id}/quran-references?lang=id&heading_id={headingId}&status=approved`.
+3. Use `page_id` and `heading_id` to group references near kitab content.
+4. Use `ayahs` when available for preview.
+5. For surah-only references without `ayahs`, link to `/quran/surahs/{surah_id}` or the FE equivalent.
 
 ## Error Contract
 
@@ -1476,9 +1480,14 @@ All Quran errors use:
 
 ```json
 {
-  "error": "message"
+  "error": "message",
+  "code": "message",
+  "message": "message",
+  "request_id": "..."
 }
 ```
+
+`error` remains for backward compatibility. New clients should log `request_id` and may use `code` for stable branching.
 
 Common Quran errors:
 

@@ -135,6 +135,7 @@ type (
 		Categories(ctx context.Context, lang string) ([]entity.Category, error)
 		Authors(ctx context.Context, query string, limit, offset int, lang string) ([]entity.Author, int, error)
 		Books(ctx context.Context, query string, categoryID, authorID *int, hasContent *bool, limit, offset int, lang string) ([]entity.Book, int, error)
+		BookStats(ctx context.Context, lang string) (entity.BookCatalogStats, error)
 		Book(ctx context.Context, bookID int, lang string) (entity.Book, error)
 		Pages(ctx context.Context, bookID int, limit, offset int) ([]entity.BookPage, int, error)
 		Page(ctx context.Context, bookID, pageID int) (entity.BookPage, error)
@@ -224,7 +225,7 @@ type (
 			recitationID string,
 		) ([]entity.QuranAyah, error)
 		Search(ctx context.Context, query, lang string, limit, offset int) ([]entity.QuranSearchResult, int, error)
-		BookReferences(ctx context.Context, bookID int, lang, status string, limit, offset int) ([]entity.BookQuranReference, int, error)
+		BookReferences(ctx context.Context, bookID int, headingID *int, lang, status string, limit, offset int) ([]entity.BookQuranReference, int, error)
 		MissingAssets(ctx context.Context, targetLang, assetType string, surahID *int, limit, offset int) (entity.EditorialMissingQuranAssets, error)
 	}
 

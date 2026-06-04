@@ -4,7 +4,11 @@ import "github.com/evrone/go-clean-template/internal/entity"
 
 // Error -.
 type Error struct {
-	Error string `json:"error" example:"message"`
+	Error     string `json:"error" example:"message"`
+	Code      string `json:"code" example:"invalid_request_body"`
+	Message   string `json:"message" example:"message"`
+	Details   any    `json:"details,omitempty"`
+	RequestID string `json:"request_id,omitempty" example:"550e8400-e29b-41d4-a716-446655440000"`
 } // @name v1.Error
 
 type ProductionProjectConflict struct {

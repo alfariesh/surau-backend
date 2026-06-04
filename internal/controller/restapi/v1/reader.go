@@ -14,6 +14,8 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
+const maxEmbeddedQuranReferences = 200
+
 // @Summary     List kitab categories
 // @Description List non-deleted kitab categories. Supported lang values are ar, id, and en; empty defaults to id. Catalog metadata falls back to Arabic and exposes localization metadata when the requested translation is missing.
 // @ID          list-kitab-categories
@@ -124,8 +126,18 @@ func (r *V1) listBooks(ctx *fiber.Ctx) error {
 
 		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
 	}
+	stats, err := r.reader.BookStats(ctx.UserContext(), ctx.Query("lang"))
+	if err != nil {
+		r.logReaderError(err, "restapi - v1 - listBooks - stats")
 
-	return ctx.Status(http.StatusOK).JSON(response.BookList{Books: books, Total: total})
+		if errors.Is(err, entity.ErrUnsupportedLanguage) {
+			return errorResponse(ctx, http.StatusBadRequest, "unsupported language")
+		}
+
+		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
+	}
+
+	return ctx.Status(http.StatusOK).JSON(response.BookList{Books: books, Total: total, Stats: stats})
 }
 
 // @Summary     Get kitab book
@@ -473,6 +485,7 @@ func (r *V1) listBookTOC(ctx *fiber.Ctx) error {
 // @Param       book_id    path     int    true  "Book ID"
 // @Param       heading_id path     int    true  "Heading ID"
 // @Param       lang       query    string false "Language code: ar, id, or en" default(id)
+// @Param       include_quran_references query bool false "Include approved Quran references for this heading" default(false)
 // @Success     200        {object} entity.BookTOCRead
 // @Failure     400        {object} response.Error
 // @Failure     404        {object} response.Error
@@ -487,6 +500,10 @@ func (r *V1) readBookTOCSection(ctx *fiber.Ctx) error {
 	headingID, err := pathInt(ctx, "heading_id")
 	if err != nil {
 		return errorResponse(ctx, http.StatusBadRequest, "invalid heading_id")
+	}
+	includeQuranReferences, err := optionalQueryBool(ctx, "include_quran_references")
+	if err != nil {
+		return errorResponse(ctx, http.StatusBadRequest, "invalid include_quran_references")
 	}
 
 	section, err := r.reader.TOCRead(ctx.UserContext(), bookID, headingID, ctx.Query("lang"))
@@ -506,6 +523,29 @@ func (r *V1) readBookTOCSection(ctx *fiber.Ctx) error {
 		}
 
 		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
+	}
+	if includeQuranReferences != nil && *includeQuranReferences {
+		if r.quran == nil {
+			return errorResponse(ctx, http.StatusServiceUnavailable, "quran is not configured")
+		}
+		references, _, err := r.quran.BookReferences(
+			ctx.UserContext(),
+			bookID,
+			&headingID,
+			ctx.Query("lang"),
+			"approved",
+			maxEmbeddedQuranReferences,
+			0,
+		)
+		if err != nil {
+			r.logQuranError(err, "restapi - v1 - readBookTOCSection - quranReferences")
+
+			return r.quranErrorResponse(ctx, err)
+		}
+		section.QuranReferences = references
+		if section.QuranReferences == nil {
+			section.QuranReferences = []entity.BookQuranReference{}
+		}
 	}
 
 	return ctx.Status(http.StatusOK).JSON(section)

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/evrone/go-clean-template/internal/entity"
+	"github.com/evrone/go-clean-template/internal/usecase"
 	"github.com/evrone/go-clean-template/pkg/logger"
 	"github.com/go-playground/validator/v10"
 	"github.com/gofiber/fiber/v2"
@@ -181,7 +182,25 @@ func TestQuranReaderMinimalView(t *testing.T) {
 	}
 }
 
-func newQuranTestApp(quran *fakeQuran) *fiber.App {
+func TestBookQuranReferencesPassHeadingID(t *testing.T) {
+	t.Parallel()
+
+	quran := &captureBookReferencesQuran{fakeQuran: &fakeQuran{}}
+	app := newQuranTestApp(quran)
+	resp, err := app.Test(httptest.NewRequest(
+		http.MethodGet,
+		"/v1/books/797/quran-references?heading_id=42",
+		nil,
+	))
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	require.NotNil(t, quran.headingID)
+	assert.Equal(t, 42, *quran.headingID)
+}
+
+func newQuranTestApp(quran usecase.Quran) *fiber.App {
 	app := fiber.New()
 	controller := &V1{
 		quran: quran,
@@ -205,6 +224,11 @@ func newQuranTestApp(quran *fakeQuran) *fiber.App {
 }
 
 type fakeQuran struct{}
+
+type captureBookReferencesQuran struct {
+	*fakeQuran
+	headingID *int
+}
 
 func (f *fakeQuran) Surahs(_ context.Context, _ string, includeInfo bool) ([]entity.QuranSurah, error) {
 	name := "المزمل"
@@ -337,12 +361,30 @@ func (f *fakeQuran) Search(
 func (f *fakeQuran) BookReferences(
 	_ context.Context,
 	bookID int,
+	_ *int,
 	_ string,
 	_ string,
 	_ int,
 	_ int,
 ) ([]entity.BookQuranReference, int, error) {
 	return []entity.BookQuranReference{{ID: "ref-1", BookID: bookID, PageID: 1, SourceText: "سورة المزمل: 1", ReferenceKind: "surah_ayah", MatchStrategy: "explicit_surah_ayah", ReviewStatus: "approved"}}, 1, nil
+}
+
+func (f *captureBookReferencesQuran) BookReferences(
+	ctx context.Context,
+	bookID int,
+	headingID *int,
+	lang string,
+	status string,
+	limit int,
+	offset int,
+) ([]entity.BookQuranReference, int, error) {
+	if headingID != nil {
+		copied := *headingID
+		f.headingID = &copied
+	}
+
+	return f.fakeQuran.BookReferences(ctx, bookID, headingID, lang, status, limit, offset)
 }
 
 func (f *fakeQuran) MissingAssets(

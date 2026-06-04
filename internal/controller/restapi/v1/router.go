@@ -56,7 +56,7 @@ func NewRoutes(
 	}
 
 	// Public reader routes
-	bookGroup := apiV1Group.Group("/books")
+	bookGroup := apiV1Group.Group("/books", middleware.PublicCache())
 	{
 		bookGroup.Get("/", r.listBooks)
 		bookGroup.Get("/:book_id", r.getBook)
@@ -78,10 +78,10 @@ func NewRoutes(
 		}), r.createTranslationFeedback)
 	}
 
-	apiV1Group.Get("/categories", r.listCategories)
-	apiV1Group.Get("/authors", r.listAuthors)
+	apiV1Group.Get("/categories", middleware.PublicCache(), r.listCategories)
+	apiV1Group.Get("/authors", middleware.PublicCache(), r.listAuthors)
 
-	quranGroup := apiV1Group.Group("/quran")
+	quranGroup := apiV1Group.Group("/quran", middleware.PublicCache())
 	{
 		quranGroup.Get("/recitations", r.listQuranRecitations)
 		quranGroup.Get("/translation-sources", r.listQuranTranslationSources)

@@ -74,6 +74,16 @@ func (uc *UseCase) Books(
 	})
 }
 
+// BookStats returns full published catalog aggregate counts.
+func (uc *UseCase) BookStats(ctx context.Context, lang string) (entity.BookCatalogStats, error) {
+	lang, err := readerlang.Normalize(lang)
+	if err != nil {
+		return entity.BookCatalogStats{}, err
+	}
+
+	return uc.repo.GetBookCatalogStats(ctx, lang)
+}
+
 // Book returns one book.
 func (uc *UseCase) Book(ctx context.Context, bookID int, lang string) (entity.Book, error) {
 	lang, err := readerlang.Normalize(lang)

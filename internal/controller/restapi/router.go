@@ -47,6 +47,7 @@ func NewRouter(
 	l logger.Interface,
 ) {
 	// Options
+	app.Use(middleware.RequestID())
 	app.Use(middleware.Logger(l))
 	app.Use(middleware.Recovery(l))
 

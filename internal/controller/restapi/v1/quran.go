@@ -374,6 +374,7 @@ func (r *V1) searchQuran(ctx *fiber.Ctx) error {
 // @Tags        quran
 // @Produce     json
 // @Param       book_id path     int    true  "Book ID"
+// @Param       heading_id query int    false "Heading ID"
 // @Param       lang    query    string false "Language code" default(id)
 // @Param       status  query    string false "Review status" Enums(approved,pending,rejected,ambiguous,needs_review,all) default(approved)
 // @Param       limit   query    int    false "Limit" default(50)
@@ -388,10 +389,15 @@ func (r *V1) listBookQuranReferences(ctx *fiber.Ctx) error {
 	if err != nil {
 		return errorResponse(ctx, http.StatusBadRequest, "invalid book_id")
 	}
+	headingID, err := optionalQueryInt(ctx, "heading_id")
+	if err != nil {
+		return errorResponse(ctx, http.StatusBadRequest, "invalid heading_id")
+	}
 
 	references, total, err := r.quran.BookReferences(
 		ctx.UserContext(),
 		bookID,
+		headingID,
 		ctx.Query("lang"),
 		ctx.Query("status", "approved"),
 		queryInt(ctx, "limit", 50),

@@ -157,5 +157,5 @@ func adminUsecaseError(ctx *fiber.Ctx, err error) error {
 }
 
 func adminErrorResponse(ctx *fiber.Ctx, code int, msg string) error {
-	return ctx.Status(code).JSON(response.Error{Error: msg})
+	return errorResponse(ctx, code, msg)
 }

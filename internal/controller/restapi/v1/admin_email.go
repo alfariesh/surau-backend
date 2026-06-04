@@ -862,17 +862,17 @@ func adminEmailError(ctx *fiber.Ctx, err error) error {
 		errors.Is(err, entity.ErrEmailEventSettingNotFound),
 		errors.Is(err, entity.ErrEmailCampaignNotFound),
 		errors.Is(err, entity.ErrEmailSuppressionNotFound):
-		return ctx.Status(http.StatusNotFound).JSON(response.Error{Error: "not found"})
+		return errorResponse(ctx, http.StatusNotFound, "not found")
 	case errors.Is(err, entity.ErrInvalidEmailTemplate),
 		errors.Is(err, entity.ErrInvalidEmailCampaign),
 		errors.Is(err, entity.ErrInvalidAuthInput),
 		errors.Is(err, entity.ErrUnsupportedLanguage),
 		errors.Is(err, entity.ErrInvalidUnsubscribeToken):
-		return ctx.Status(http.StatusBadRequest).JSON(response.Error{Error: err.Error()})
+		return errorResponse(ctx, http.StatusBadRequest, err.Error())
 	case errors.Is(err, entity.ErrEmailDeliveryFailed):
-		return ctx.Status(http.StatusServiceUnavailable).JSON(response.Error{Error: "email delivery failed"})
+		return errorResponse(ctx, http.StatusServiceUnavailable, "email delivery failed")
 	default:
-		return ctx.Status(http.StatusInternalServerError).JSON(response.Error{Error: "internal server error"})
+		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
 	}
 }
 
