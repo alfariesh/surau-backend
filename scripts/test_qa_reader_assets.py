@@ -168,6 +168,21 @@ class QATest(unittest.TestCase):
 
         self.assertIn("TRUNCATED_SOURCE", self.issue_codes(report))
 
+    def test_truncated_summary_source_fails(self) -> None:
+        report = self.run_qa_for_rows(
+            [
+                heading_summary(
+                    metadata={
+                        "unit": "toc_summary",
+                        "style_version": "reader-summary-v1",
+                        "truncated_source": True,
+                    }
+                )
+            ]
+        )
+
+        self.assertIn("TRUNCATED_SUMMARY_SOURCE", self.issue_codes(report))
+
     def test_missing_translation_profile_warns(self) -> None:
         report = self.run_qa_for_rows([translation(metadata={"truncated_source": False})])
 

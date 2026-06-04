@@ -26,6 +26,7 @@ func TestPublicCacheSetsValidatorsAndSupportsNotModified(t *testing.T) {
 
 	resp, err := app.Test(httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/books", nil))
 	require.NoError(t, err)
+
 	defer resp.Body.Close()
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
@@ -37,6 +38,7 @@ func TestPublicCacheSetsValidatorsAndSupportsNotModified(t *testing.T) {
 	req.Header.Set("If-None-Match", resp.Header.Get("ETag"))
 	notModifiedResp, err := app.Test(req)
 	require.NoError(t, err)
+
 	defer notModifiedResp.Body.Close()
 
 	body, err := io.ReadAll(notModifiedResp.Body)

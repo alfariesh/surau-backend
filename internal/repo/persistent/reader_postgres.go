@@ -309,6 +309,7 @@ FROM published_books pb
 LEFT JOIN covered_books cb ON cb.book_id = pb.book_id`
 
 	stats := entity.BookCatalogStats{ByCategory: []entity.BookCategoryStat{}}
+
 	err := r.Pool.QueryRow(ctx, totalsSQL).Scan(
 		&stats.TotalBooks,
 		&stats.PublishedCount,
@@ -355,9 +356,11 @@ ORDER BY total DESC, category_name ASC NULLS LAST`
 	defer rows.Close()
 
 	for rows.Next() {
-		var item entity.BookCategoryStat
-		var categoryID sql.NullInt64
-		var categoryName sql.NullString
+		var (
+			item         entity.BookCategoryStat
+			categoryID   sql.NullInt64
+			categoryName sql.NullString
+		)
 		if err = rows.Scan(
 			&categoryID,
 			&categoryName,
@@ -372,6 +375,7 @@ ORDER BY total DESC, category_name ASC NULLS LAST`
 		item.CategoryName = nullableString(categoryName)
 		stats.ByCategory = append(stats.ByCategory, item)
 	}
+
 	if err = rows.Err(); err != nil {
 		return entity.BookCatalogStats{}, fmt.Errorf("ReaderRepo - GetBookCatalogStats - rows.Err: %w", err)
 	}
@@ -926,7 +930,8 @@ func (r *ReaderRepo) count(ctx context.Context, builder sq.SelectBuilder) (int, 
 
 func (r *ReaderRepo) ensurePublishedBook(ctx context.Context, bookID int) error {
 	var exists int
-	err := r.Pool.QueryRow(ctx, `
+	err := r.Pool.QueryRow(
+		ctx, `
 SELECT 1
 FROM books b
 JOIN book_publications p ON p.book_id = b.id AND p.status = 'published'
@@ -946,7 +951,8 @@ WHERE b.id = $1 AND b.is_deleted = false`,
 
 func (r *ReaderRepo) ensurePublishedHeading(ctx context.Context, bookID, headingID int) error {
 	var exists bool
-	if err := r.Pool.QueryRow(ctx, `
+	if err := r.Pool.QueryRow(
+		ctx, `
 SELECT EXISTS (
     SELECT 1
     FROM book_headings
@@ -966,7 +972,8 @@ SELECT EXISTS (
 
 func (r *ReaderRepo) ensureSectionTranslation(ctx context.Context, bookID, headingID int, lang string) error {
 	var exists bool
-	if err := r.Pool.QueryRow(ctx, `
+	if err := r.Pool.QueryRow(
+		ctx, `
 SELECT EXISTS (
     SELECT 1
     FROM section_translations
@@ -1421,6 +1428,7 @@ func bookSearchCondition(query string) (string, []any) {
 			  )
 			  AND ct_any.name ILIKE ?
 		))`
+
 	args := []any{
 		like,
 		like,
@@ -1449,6 +1457,7 @@ func bookSearchCondition(query string) (string, []any) {
 		OR ` + normalizedArabicSQL("a.name") + ` ILIKE ?
 		OR ` + normalizedArabicSQL("COALESCE(ct.name, c.name)") + ` ILIKE ?
 		OR ` + normalizedArabicSQL("c.name") + ` ILIKE ?)`
+
 	for i := 0; i < 6; i++ {
 		args = append(args, readerArabicSearchMarks, readerArabicVariantFrom, readerArabicVariantTo, normalizedLike)
 	}
@@ -1472,6 +1481,7 @@ func containsArabic(value string) bool {
 
 func normalizeReaderArabicSearchText(value string) string {
 	var out strings.Builder
+
 	replacer := strings.NewReplacer(
 		"أ", "ا",
 		"إ", "ا",
@@ -1487,6 +1497,7 @@ func normalizeReaderArabicSearchText(value string) string {
 		if strings.ContainsRune(readerArabicSearchMarks, r) {
 			continue
 		}
+
 		out.WriteRune(r)
 	}
 

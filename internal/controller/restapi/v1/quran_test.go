@@ -59,7 +59,7 @@ func TestQuranRoutes(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			resp, err := app.Test(httptest.NewRequest(http.MethodGet, tt.path, nil))
+			resp, err := app.Test(httptest.NewRequestWithContext(t.Context(), http.MethodGet, tt.path, http.NoBody))
 
 			require.NoError(t, err)
 			assert.Equal(t, tt.wantStatus, resp.StatusCode)
@@ -167,7 +167,7 @@ func TestQuranReaderMinimalView(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			resp, err := app.Test(httptest.NewRequest(http.MethodGet, tt.path, nil))
+			resp, err := app.Test(httptest.NewRequestWithContext(t.Context(), http.MethodGet, tt.path, http.NoBody))
 			require.NoError(t, err)
 			assert.Equal(t, tt.wantHTTPCode, resp.StatusCode)
 
@@ -189,12 +189,14 @@ func TestBookQuranReferencesPassHeadingID(t *testing.T) {
 
 	quran := &captureBookReferencesQuran{fakeQuran: &fakeQuran{}}
 	app := newQuranTestApp(quran)
-	resp, err := app.Test(httptest.NewRequest(
+	resp, err := app.Test(httptest.NewRequestWithContext(
+		t.Context(),
 		http.MethodGet,
 		"/v1/books/797/quran-references?heading_id=42",
-		nil,
+		http.NoBody,
 	))
 	require.NoError(t, err)
+
 	defer resp.Body.Close()
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
@@ -276,6 +278,7 @@ func (f *fakeQuran) SurahAudio(_ context.Context, surahID int, recitationID stri
 	if surahID == 0 {
 		return entity.QuranSurahAudioManifest{}, entity.ErrQuranSurahNotFound
 	}
+
 	if recitationID == "bad-id" {
 		return entity.QuranSurahAudioManifest{}, entity.ErrQuranRecitationNotFound
 	}
@@ -284,6 +287,7 @@ func (f *fakeQuran) SurahAudio(_ context.Context, surahID int, recitationID stri
 	mimeType := "audio/mpeg"
 	duration := 3000
 	ayahNumber := 1
+
 	return entity.QuranSurahAudioManifest{
 		SurahID: surahID,
 		Recitation: entity.QuranRecitation{
@@ -489,7 +493,7 @@ func fakeNavigationAyahs(kind string, number int, includeAudio bool, recitationI
 	return []entity.QuranAyah{ayah}, nil
 }
 
-func fakeQuranAyah(surahID int, includeTranslation bool, includeAudio bool, recitationID string) entity.QuranAyah {
+func fakeQuranAyah(surahID int, includeTranslation, includeAudio bool, recitationID string) entity.QuranAyah {
 	text := "يَـٰٓأَيُّهَا ٱلْمُزَّمِّلُ"
 	imlaei := "يا أيها المزمل"
 	searchText := "يا ايها المزمل"
@@ -539,7 +543,7 @@ func stringPtr(value string) *string {
 	return &value
 }
 
-func fakeQuranAudioTrack(surahID int, ayahNumber int, recitationID string) entity.QuranAudioTrack {
+func fakeQuranAudioTrack(surahID, ayahNumber int, recitationID string) entity.QuranAudioTrack {
 	if recitationID == "" {
 		recitationID = "rec-default"
 	}

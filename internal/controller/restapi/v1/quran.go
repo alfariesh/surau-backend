@@ -116,7 +116,7 @@ func (r *V1) getQuranSurahAudio(ctx *fiber.Ctx) error {
 		return r.quranErrorResponse(ctx, err)
 	}
 
-	return ctx.Status(http.StatusOK).JSON(response.QuranSurahAudioManifestFromEntity(manifest))
+	return ctx.Status(http.StatusOK).JSON(response.QuranSurahAudioManifestFromEntity(&manifest))
 }
 
 // @Summary     List Quran translation sources
@@ -417,6 +417,7 @@ func (r *V1) listBookQuranReferences(ctx *fiber.Ctx) error {
 	if err != nil {
 		return errorResponse(ctx, http.StatusBadRequest, "invalid book_id")
 	}
+
 	headingID, err := optionalQueryInt(ctx, "heading_id")
 	if err != nil {
 		return errorResponse(ctx, http.StatusBadRequest, "invalid heading_id")

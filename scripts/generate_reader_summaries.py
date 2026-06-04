@@ -16,6 +16,7 @@ import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any
 
 
@@ -51,6 +52,7 @@ Output strict JSON only, with key "summary".
 
 def main() -> int:
     args = parse_args()
+    validate_summary_language(args)
     load_env_file(Path(args.env_file).expanduser())
     resolve_llm_config(args)
 
@@ -82,8 +84,10 @@ def main() -> int:
 
     out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
+    generated_by_heading: dict[int, str] = {}
     if args.resume and out_path.exists():
-        completed = read_completed_summary_ids(out_path, args.book_id, args.summary_lang)
+        generated_by_heading = read_completed_summaries(out_path, args.book_id, args.summary_lang)
+        completed = set(generated_by_heading)
         before = len(heading_ids)
         heading_ids = [heading_id for heading_id in heading_ids if heading_id not in completed]
         skipped = before - len(heading_ids)
@@ -97,8 +101,8 @@ def main() -> int:
     failure_path.parent.mkdir(parents=True, exist_ok=True)
     selected_nodes = [node_by_id[heading_id] for heading_id in heading_ids]
     depth_groups = group_by_depth_desc(selected_nodes)
-    generated_by_heading: dict[int, str] = {}
     failures: list[dict[str, Any]] = []
+    generated_assets: list[dict[str, Any]] = []
     success_count = 0
     total = len(heading_ids)
     progress_index = 0
@@ -139,6 +143,7 @@ def main() -> int:
 
                     write_jsonl(out_file, asset)
                     generated_by_heading[heading_id] = str(asset["summary"])
+                    generated_assets.append(asset)
                     success_count += 1
                     print(
                         f"[{index}/{total}] done book={args.book_id} "
@@ -147,6 +152,8 @@ def main() -> int:
                     )
 
     print(f"wrote {success_count} summary JSONL records to {out_path}", file=sys.stderr)
+    if args.eval_report:
+        write_eval_report(Path(args.eval_report), args, generated_assets, failures)
     if failures:
         print(f"failed {len(failures)} headings; see {failure_path}", file=sys.stderr)
         return 1
@@ -169,16 +176,28 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--api-key-env", default="SUMMARY_LLM_API_KEY", help="Environment variable containing the LLM API key")
     parser.add_argument("--env-file", default=str(DEFAULT_ENV_FILE), help="Local dotenv file loaded before reading env")
     parser.add_argument("--max-tokens", type=int, default=900)
-    parser.add_argument("--max-source-chars", type=int, default=12000, help="Trim long source text; 0 disables trimming")
+    parser.add_argument("--max-source-chars", type=int, default=0, help="Trim long source text for sampling; 0 disables trimming")
     parser.add_argument("--timeout-seconds", type=int, default=90)
     parser.add_argument("--retries", type=int, default=2)
     parser.add_argument("--sleep-seconds", type=float, default=0.3)
     parser.add_argument("--concurrency", type=int, default=1, help="Number of summary workers per depth level")
     parser.add_argument("--resume", action="store_true", help="Append to --out and skip summaries already present")
     parser.add_argument("--failure-out", default="", help="Failure JSONL path; defaults to OUT.failures.jsonl")
+    parser.add_argument("--eval-report", default="", help="Write a compact JSON QA report for generated summary rows")
     parser.add_argument("--fail-fast", action="store_true", help="Stop on the first failed heading")
     parser.add_argument("--dry-run", action="store_true", help="Fetch sections and write placeholder rows without calling LLM")
     return parser.parse_args()
+
+
+def validate_summary_language(args: argparse.Namespace) -> None:
+    if args.summary_lang == "ar":
+        return
+
+    raise SystemExit(
+        "generate_reader_summaries.py only generates canonical Arabic summaries. "
+        "Use --summary-lang ar, import that JSONL, then run "
+        "scripts/translate_reader_assets.py --summary-only for id/en summaries."
+    )
 
 
 def resolve_llm_config(args: argparse.Namespace) -> None:
@@ -277,12 +296,15 @@ def source_text_for_node(
     generated_by_heading: dict[int, str],
 ) -> tuple[str, str]:
     heading_id = int(node["heading_id"])
+    children = children_by_parent.get(heading_id, [])
     child_parts: list[str] = []
-    for child in children_by_parent.get(heading_id, []):
+    for child in children:
         child_id = int(child["heading_id"])
         child_summary = generated_by_heading.get(child_id)
-        if child_summary:
-            child_parts.append(f"- {child.get('title') or child_id}: {child_summary}")
+        if not child_summary:
+            child_parts = []
+            break
+        child_parts.append(f"- {child.get('title') or child_id}: {child_summary}")
     if child_parts:
         return "\n".join(child_parts), "child_summaries"
 
@@ -409,8 +431,8 @@ def dedupe_preserve_order(values: list[int]) -> list[int]:
     return result
 
 
-def read_completed_summary_ids(out_path: Path, book_id: int, lang: str) -> set[int]:
-    completed: set[int] = set()
+def read_completed_summaries(out_path: Path, book_id: int, lang: str) -> dict[int, str]:
+    completed: dict[int, str] = {}
     with out_path.open("r", encoding="utf-8") as out_file:
         for line_number, line in enumerate(out_file, start=1):
             line = line.strip()
@@ -422,9 +444,65 @@ def read_completed_summary_ids(out_path: Path, book_id: int, lang: str) -> set[i
                 raise RuntimeError(f"Invalid JSONL in {out_path}:{line_number}: {err}") from err
             if row.get("kind") != "heading_summary":
                 continue
-            if int(row.get("book_id", 0)) == book_id and row.get("lang") == lang:
-                completed.add(int(row["heading_id"]))
+            if int(row.get("book_id", 0)) != book_id or row.get("lang") != lang:
+                continue
+            summary = str(row.get("summary") or "").strip()
+            if summary:
+                completed[int(row["heading_id"])] = summary
     return completed
+
+
+def read_completed_summary_ids(out_path: Path, book_id: int, lang: str) -> set[int]:
+    return set(read_completed_summaries(out_path, book_id, lang))
+
+
+def write_eval_report(
+    report_path: Path,
+    args: argparse.Namespace,
+    generated_assets: list[dict[str, Any]],
+    failures: list[dict[str, Any]],
+) -> None:
+    with TemporaryDirectory() as tmp_dir:
+        tmp_path = Path(tmp_dir) / "generated-summaries.jsonl"
+        with tmp_path.open("w", encoding="utf-8") as tmp_file:
+            for asset in generated_assets:
+                write_jsonl(tmp_file, asset)
+
+        import qa_reader_assets
+
+        qa_args = type(
+            "QAArgs",
+            (),
+            {
+                "file": str(tmp_path),
+                "base_url": args.base_url,
+                "book_id": args.book_id,
+                "lang": args.summary_lang,
+                "all_toc": False,
+                "kind": "heading_summary",
+                "report": "",
+                "strict": False,
+                "profile_map": str(SCRIPT_DIR / "translation_profiles.json"),
+            },
+        )()
+        qa_report = qa_reader_assets.run_qa(qa_args)
+
+    report = {
+        "book_id": args.book_id,
+        "lang": args.summary_lang,
+        "generated_count": len(generated_assets),
+        "failure_count": len(failures),
+        "qa_status": "FAIL"
+        if qa_report["summary"]["failures"]
+        else "WARN"
+        if qa_report["summary"]["warnings"]
+        else "PASS",
+        "qa": qa_report,
+        "failures": failures,
+    }
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    print(f"eval_report={report_path}", file=sys.stderr)
 
 
 def record_failure(

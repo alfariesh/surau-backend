@@ -74,6 +74,7 @@ func TestReaderBookListIncludesCatalogStats(t *testing.T) {
 
 	resp, err := app.Test(req)
 	require.NoError(t, err)
+
 	defer resp.Body.Close()
 
 	var body struct {

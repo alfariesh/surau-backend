@@ -62,6 +62,7 @@ func (r *V1) editorialSaveMetadataDraft(ctx *fiber.Ctx) error {
 
 	if ok, preconditionErr := r.checkEditorialDraftIfMatch(ctx, "restapi - v1 - editorialSaveMetadataDraft - precondition", func() (time.Time, error) {
 		current, currentErr := r.editorial.GetMetadataDraft(ctx.UserContext(), bookID)
+
 		return current.UpdatedAt, currentErr
 	}); !ok || preconditionErr != nil {
 		return preconditionErr
@@ -97,6 +98,7 @@ func (r *V1) editorialPublishMetadataDraft(ctx *fiber.Ctx) error {
 
 	if ok, preconditionErr := r.checkEditorialDraftIfMatch(ctx, "restapi - v1 - editorialPublishMetadataDraft - precondition", func() (time.Time, error) {
 		current, currentErr := r.editorial.GetMetadataDraft(ctx.UserContext(), bookID)
+
 		return current.UpdatedAt, currentErr
 	}); !ok || preconditionErr != nil {
 		return preconditionErr
@@ -125,7 +127,7 @@ func (r *V1) editorialGetPageEdit(ctx *fiber.Ctx) error {
 		return r.editorialError(ctx, err)
 	}
 
-	return jsonWithUpdatedAtETag(ctx, http.StatusOK, edit, pageEditCurrentUpdatedAt(edit))
+	return jsonWithUpdatedAtETag(ctx, http.StatusOK, edit, pageEditCurrentUpdatedAt(&edit))
 }
 
 func (r *V1) editorialSavePageDraft(ctx *fiber.Ctx) error {
@@ -154,7 +156,7 @@ func (r *V1) editorialSavePageDraft(ctx *fiber.Ctx) error {
 			return time.Time{}, currentErr
 		}
 
-		return pageEditCurrentUpdatedAt(current), nil
+		return pageEditCurrentUpdatedAt(&current), nil
 	}); !ok || preconditionErr != nil {
 		return preconditionErr
 	}
@@ -190,7 +192,7 @@ func (r *V1) editorialPublishPageDraft(ctx *fiber.Ctx) error {
 			return time.Time{}, currentErr
 		}
 
-		return pageDraftUpdatedAt(current), nil
+		return pageDraftUpdatedAt(&current), nil
 	}); !ok || preconditionErr != nil {
 		return preconditionErr
 	}
@@ -258,6 +260,7 @@ func (r *V1) editorialSaveHeadingDraft(ctx *fiber.Ctx) error {
 
 	if ok, preconditionErr := r.checkEditorialDraftIfMatch(ctx, "restapi - v1 - editorialSaveHeadingDraft - precondition", func() (time.Time, error) {
 		current, currentErr := r.editorial.GetHeadingDraft(ctx.UserContext(), bookID, headingID)
+
 		return current.UpdatedAt, currentErr
 	}); !ok || preconditionErr != nil {
 		return preconditionErr
@@ -290,6 +293,7 @@ func (r *V1) editorialPublishHeadingDraft(ctx *fiber.Ctx) error {
 
 	if ok, preconditionErr := r.checkEditorialDraftIfMatch(ctx, "restapi - v1 - editorialPublishHeadingDraft - precondition", func() (time.Time, error) {
 		current, currentErr := r.editorial.GetHeadingDraft(ctx.UserContext(), bookID, headingID)
+
 		return current.UpdatedAt, currentErr
 	}); !ok || preconditionErr != nil {
 		return preconditionErr
@@ -305,7 +309,11 @@ func (r *V1) editorialPublishHeadingDraft(ctx *fiber.Ctx) error {
 	return jsonWithUpdatedAtETag(ctx, http.StatusOK, edit, edit.UpdatedAt)
 }
 
-func pageEditCurrentUpdatedAt(edit entity.EditorialPageEdit) time.Time {
+func pageEditCurrentUpdatedAt(edit *entity.EditorialPageEdit) time.Time {
+	if edit == nil {
+		return time.Time{}
+	}
+
 	if edit.Draft != nil {
 		return edit.Draft.UpdatedAt
 	}
@@ -313,8 +321,8 @@ func pageEditCurrentUpdatedAt(edit entity.EditorialPageEdit) time.Time {
 	return edit.Raw.UpdatedAt
 }
 
-func pageDraftUpdatedAt(edit entity.EditorialPageEdit) time.Time {
-	if edit.Draft == nil {
+func pageDraftUpdatedAt(edit *entity.EditorialPageEdit) time.Time {
+	if edit == nil || edit.Draft == nil {
 		return time.Time{}
 	}
 

@@ -27,11 +27,15 @@ func checkUpdatedAtIfMatch(ctx *fiber.Ctx, updatedAt time.Time) bool {
 	if !hasIfMatch(ctx) {
 		return true
 	}
+
 	if updatedAtETagMatches(requestHeader(ctx, fiber.HeaderIfMatch), updatedAt) {
 		return true
 	}
 
-	_ = errorResponse(ctx, http.StatusPreconditionFailed, "precondition failed")
+	if err := errorResponse(ctx, http.StatusPreconditionFailed, "precondition failed"); err != nil {
+		return false
+	}
+
 	return false
 }
 
@@ -48,6 +52,7 @@ func requestHeader(ctx *fiber.Ctx, key string) string {
 		if !strings.EqualFold(headerKey, key) {
 			continue
 		}
+
 		if len(values) == 0 {
 			return ""
 		}
@@ -64,6 +69,7 @@ func updatedAtETagMatches(header string, updatedAt time.Time) bool {
 		if candidate == "*" {
 			return true
 		}
+
 		candidate = strings.TrimSpace(strings.TrimPrefix(candidate, "W/"))
 		if !updatedAt.IsZero() && candidate == updatedAtETag(updatedAt) {
 			return true

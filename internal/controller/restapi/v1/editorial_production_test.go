@@ -391,6 +391,7 @@ func TestEditorialMetadataTranslationDraftETagPrecondition(t *testing.T) {
 		nil,
 	))
 	require.NoError(t, err)
+
 	defer getResp.Body.Close()
 
 	require.Equal(t, http.StatusOK, getResp.StatusCode)
@@ -407,6 +408,7 @@ func TestEditorialMetadataTranslationDraftETagPrecondition(t *testing.T) {
 
 	staleResp, err := app.Test(staleReq)
 	require.NoError(t, err)
+
 	defer staleResp.Body.Close()
 
 	assert.Equal(t, http.StatusPreconditionFailed, staleResp.StatusCode)
@@ -423,6 +425,7 @@ func TestEditorialMetadataTranslationDraftETagPrecondition(t *testing.T) {
 
 	matchResp, err := app.Test(matchReq)
 	require.NoError(t, err)
+
 	defer matchResp.Body.Close()
 
 	assert.Equal(t, http.StatusOK, matchResp.StatusCode)
@@ -452,6 +455,7 @@ func TestEditorialPublishProductionProjectRejectsStaleIfMatch(t *testing.T) {
 
 	resp, err := app.Test(req)
 	require.NoError(t, err)
+
 	defer resp.Body.Close()
 
 	assert.Equal(t, http.StatusPreconditionFailed, resp.StatusCode)

@@ -23,6 +23,7 @@ func PublicCache() fiber.Handler {
 		if err := ctx.Next(); err != nil {
 			return err
 		}
+
 		if ctx.Response().StatusCode() != http.StatusOK {
 			return nil
 		}
@@ -34,12 +35,14 @@ func PublicCache() fiber.Handler {
 
 		hash := sha256.Sum256(body)
 		etag := `W/"` + hex.EncodeToString(hash[:]) + `"`
+
 		ctx.Set("Cache-Control", publicCacheControl)
 		ctx.Set("ETag", etag)
 
 		if lastModified, ok := latestUpdatedAt(body); ok {
 			ctx.Set("Last-Modified", lastModified.UTC().Format(http.TimeFormat))
 		}
+
 		if strings.TrimSpace(ctx.Get("If-None-Match")) == etag {
 			ctx.Status(http.StatusNotModified)
 			ctx.Response().SetBody(nil)
@@ -57,6 +60,7 @@ func latestUpdatedAt(body []byte) (time.Time, bool) {
 
 	var latest time.Time
 	walkUpdatedAt(payload, &latest)
+
 	if latest.IsZero() {
 		return time.Time{}, false
 	}
@@ -72,8 +76,10 @@ func walkUpdatedAt(value any, latest *time.Time) {
 				if parsed, ok := parseJSONTime(nested); ok && parsed.After(*latest) {
 					*latest = parsed
 				}
+
 				continue
 			}
+
 			walkUpdatedAt(nested, latest)
 		}
 	case []any:

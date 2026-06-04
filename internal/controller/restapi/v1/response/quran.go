@@ -111,7 +111,11 @@ func QuranReaderAyahFromEntity(ayah entity.QuranAyah) QuranReaderAyah {
 }
 
 // QuranSurahAudioManifestFromEntity maps a domain manifest to the compact API payload.
-func QuranSurahAudioManifestFromEntity(manifest entity.QuranSurahAudioManifest) QuranSurahAudioManifest {
+func QuranSurahAudioManifestFromEntity(manifest *entity.QuranSurahAudioManifest) QuranSurahAudioManifest {
+	if manifest == nil {
+		return QuranSurahAudioManifest{}
+	}
+
 	return QuranSurahAudioManifest{
 		SurahID: manifest.SurahID,
 		Recitation: QuranSurahAudioRecitation{
@@ -133,7 +137,8 @@ func QuranSurahAudioManifestFromEntity(manifest entity.QuranSurahAudioManifest) 
 
 func readerAudioTracks(tracks []entity.QuranAudioTrack) []QuranReaderAyahAudioTrack {
 	items := make([]QuranReaderAyahAudioTrack, 0, len(tracks))
-	for _, track := range tracks {
+	for i := range tracks {
+		track := &tracks[i]
 		url := readerAudioURL(track)
 		if url == "" {
 			continue
@@ -153,7 +158,8 @@ func readerAudioTracks(tracks []entity.QuranAudioTrack) []QuranReaderAyahAudioTr
 
 func surahAudioTracks(tracks []entity.QuranAudioTrack) []QuranSurahAudioTrack {
 	items := make([]QuranSurahAudioTrack, 0, len(tracks))
-	for _, track := range tracks {
+	for i := range tracks {
+		track := &tracks[i]
 		url := readerAudioURL(track)
 		if url == "" {
 			continue
@@ -176,7 +182,11 @@ func surahAudioTracks(tracks []entity.QuranAudioTrack) []QuranSurahAudioTrack {
 	return items
 }
 
-func readerAudioURL(track entity.QuranAudioTrack) string {
+func readerAudioURL(track *entity.QuranAudioTrack) string {
+	if track == nil {
+		return ""
+	}
+
 	if track.PublicURL != nil && *track.PublicURL != "" {
 		return *track.PublicURL
 	}

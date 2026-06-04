@@ -545,6 +545,7 @@ func (r *V1) editorialSaveMetadataTranslationDraft(ctx *fiber.Ctx) error {
 
 	if ok, preconditionErr := r.checkEditorialDraftIfMatch(ctx, "restapi - v1 - editorialSaveMetadataTranslationDraft - precondition", func() (time.Time, error) {
 		current, currentErr := r.editorial.GetMetadataTranslationDraft(ctx.UserContext(), ctx.Params("id"))
+
 		return current.UpdatedAt, currentErr
 	}); !ok || preconditionErr != nil {
 		return preconditionErr
@@ -585,6 +586,7 @@ func (r *V1) editorialDeleteMetadataTranslationDraft(ctx *fiber.Ctx) error {
 		r.editorial.DeleteMetadataTranslationDraft,
 		func(ctx context.Context, projectID string) (time.Time, error) {
 			draft, err := r.editorial.GetMetadataTranslationDraft(ctx, projectID)
+
 			return draft.UpdatedAt, err
 		},
 	)
@@ -641,6 +643,7 @@ func (r *V1) editorialSaveAuthorTranslationDraft(ctx *fiber.Ctx) error {
 
 	if ok, preconditionErr := r.checkEditorialDraftIfMatch(ctx, "restapi - v1 - editorialSaveAuthorTranslationDraft - precondition", func() (time.Time, error) {
 		current, currentErr := r.editorial.GetAuthorTranslationDraft(ctx.UserContext(), ctx.Params("id"))
+
 		return current.UpdatedAt, currentErr
 	}); !ok || preconditionErr != nil {
 		return preconditionErr
@@ -680,6 +683,7 @@ func (r *V1) editorialDeleteAuthorTranslationDraft(ctx *fiber.Ctx) error {
 		r.editorial.DeleteAuthorTranslationDraft,
 		func(ctx context.Context, projectID string) (time.Time, error) {
 			draft, err := r.editorial.GetAuthorTranslationDraft(ctx, projectID)
+
 			return draft.UpdatedAt, err
 		},
 	)
@@ -736,6 +740,7 @@ func (r *V1) editorialSaveCategoryTranslationDraft(ctx *fiber.Ctx) error {
 
 	if ok, preconditionErr := r.checkEditorialDraftIfMatch(ctx, "restapi - v1 - editorialSaveCategoryTranslationDraft - precondition", func() (time.Time, error) {
 		current, currentErr := r.editorial.GetCategoryTranslationDraft(ctx.UserContext(), ctx.Params("id"))
+
 		return current.UpdatedAt, currentErr
 	}); !ok || preconditionErr != nil {
 		return preconditionErr
@@ -773,6 +778,7 @@ func (r *V1) editorialDeleteCategoryTranslationDraft(ctx *fiber.Ctx) error {
 		r.editorial.DeleteCategoryTranslationDraft,
 		func(ctx context.Context, projectID string) (time.Time, error) {
 			draft, err := r.editorial.GetCategoryTranslationDraft(ctx, projectID)
+
 			return draft.UpdatedAt, err
 		},
 	)
@@ -837,6 +843,7 @@ func (r *V1) editorialSaveSectionTranslationDraft(ctx *fiber.Ctx) error {
 
 	if ok, preconditionErr := r.checkEditorialDraftIfMatch(ctx, "restapi - v1 - editorialSaveSectionTranslationDraft - precondition", func() (time.Time, error) {
 		current, currentErr := r.editorial.GetSectionTranslationDraft(ctx.UserContext(), ctx.Params("id"), headingID)
+
 		return current.UpdatedAt, currentErr
 	}); !ok || preconditionErr != nil {
 		return preconditionErr
@@ -878,6 +885,7 @@ func (r *V1) editorialDeleteSectionTranslationDraft(ctx *fiber.Ctx) error {
 		r.editorial.DeleteSectionTranslationDraft,
 		func(ctx context.Context, projectID string, headingID int) (time.Time, error) {
 			draft, err := r.editorial.GetSectionTranslationDraft(ctx, projectID, headingID)
+
 			return draft.UpdatedAt, err
 		},
 	)
@@ -942,6 +950,7 @@ func (r *V1) editorialSaveHeadingSummaryDraft(ctx *fiber.Ctx) error {
 
 	if ok, preconditionErr := r.checkEditorialDraftIfMatch(ctx, "restapi - v1 - editorialSaveHeadingSummaryDraft - precondition", func() (time.Time, error) {
 		current, currentErr := r.editorial.GetHeadingSummaryDraft(ctx.UserContext(), ctx.Params("id"), headingID)
+
 		return current.UpdatedAt, currentErr
 	}); !ok || preconditionErr != nil {
 		return preconditionErr
@@ -982,6 +991,7 @@ func (r *V1) editorialDeleteHeadingSummaryDraft(ctx *fiber.Ctx) error {
 		r.editorial.DeleteHeadingSummaryDraft,
 		func(ctx context.Context, projectID string, headingID int) (time.Time, error) {
 			draft, err := r.editorial.GetHeadingSummaryDraft(ctx, projectID, headingID)
+
 			return draft.UpdatedAt, err
 		},
 	)
@@ -1046,6 +1056,7 @@ func (r *V1) editorialSaveSectionAudioDraft(ctx *fiber.Ctx) error {
 
 	if ok, preconditionErr := r.checkEditorialDraftIfMatch(ctx, "restapi - v1 - editorialSaveSectionAudioDraft - precondition", func() (time.Time, error) {
 		current, currentErr := r.editorial.GetSectionAudioDraft(ctx.UserContext(), ctx.Params("id"), headingID)
+
 		return current.UpdatedAt, currentErr
 	}); !ok || preconditionErr != nil {
 		return preconditionErr
@@ -1088,6 +1099,7 @@ func (r *V1) editorialDeleteSectionAudioDraft(ctx *fiber.Ctx) error {
 		r.editorial.DeleteSectionAudioDraft,
 		func(ctx context.Context, projectID string, headingID int) (time.Time, error) {
 			draft, err := r.editorial.GetSectionAudioDraft(ctx, projectID, headingID)
+
 			return draft.UpdatedAt, err
 		},
 	)

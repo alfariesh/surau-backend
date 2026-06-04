@@ -282,6 +282,7 @@ func (uc *UseCase) BookReferences(
 	if bookID <= 0 {
 		return nil, 0, entity.ErrBookNotFound
 	}
+
 	if headingID != nil && *headingID <= 0 {
 		return nil, 0, entity.ErrHeadingNotFound
 	}

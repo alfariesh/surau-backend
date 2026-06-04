@@ -24,6 +24,7 @@ func (r *V1) checkEditorialDraftIfMatch(
 		}
 
 		r.logEditorialError(err, operation)
+
 		return false, r.editorialError(ctx, err)
 	}
 
@@ -42,6 +43,7 @@ func (r *V1) checkEditorialResourceIfMatch(
 	updatedAt, err := loadUpdatedAt()
 	if err != nil {
 		r.logEditorialError(err, operation)
+
 		return false, r.editorialError(ctx, err)
 	}
 

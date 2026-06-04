@@ -88,7 +88,8 @@ func TestMissingManifestAyahKeys(t *testing.T) {
 
 	publicURL := "https://cdn.example/1.mp3"
 	ayahNumber := 1
-	assert.Equal(t,
+	assert.Equal(
+		t,
 		[]string{"1:2"},
 		missingManifestAyahKeys([]string{"1:1", "1:2"}, "ayah", []entity.QuranAudioTrack{{
 			TrackType:  "ayah",
@@ -98,7 +99,8 @@ func TestMissingManifestAyahKeys(t *testing.T) {
 		}}),
 	)
 
-	assert.Equal(t,
+	assert.Equal(
+		t,
 		[]string{"1:2"},
 		missingManifestAyahKeys([]string{"1:1", "1:2"}, "surah", []entity.QuranAudioTrack{{
 			TrackType: "surah",

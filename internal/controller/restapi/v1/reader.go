@@ -126,6 +126,7 @@ func (r *V1) listBooks(ctx *fiber.Ctx) error {
 
 		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
 	}
+
 	stats, err := r.reader.BookStats(ctx.UserContext(), ctx.Query("lang"))
 	if err != nil {
 		r.logReaderError(err, "restapi - v1 - listBooks - stats")
@@ -501,6 +502,7 @@ func (r *V1) readBookTOCSection(ctx *fiber.Ctx) error {
 	if err != nil {
 		return errorResponse(ctx, http.StatusBadRequest, "invalid heading_id")
 	}
+
 	includeQuranReferences, err := optionalQueryBool(ctx, "include_quran_references")
 	if err != nil {
 		return errorResponse(ctx, http.StatusBadRequest, "invalid include_quran_references")
@@ -524,10 +526,12 @@ func (r *V1) readBookTOCSection(ctx *fiber.Ctx) error {
 
 		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
 	}
+
 	if includeQuranReferences != nil && *includeQuranReferences {
 		if r.quran == nil {
 			return errorResponse(ctx, http.StatusServiceUnavailable, "quran is not configured")
 		}
+
 		references, _, err := r.quran.BookReferences(
 			ctx.UserContext(),
 			bookID,
@@ -542,6 +546,7 @@ func (r *V1) readBookTOCSection(ctx *fiber.Ctx) error {
 
 			return r.quranErrorResponse(ctx, err)
 		}
+
 		section.QuranReferences = references
 		if section.QuranReferences == nil {
 			section.QuranReferences = []entity.BookQuranReference{}

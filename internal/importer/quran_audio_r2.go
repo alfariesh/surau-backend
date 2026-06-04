@@ -18,6 +18,28 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+const (
+	quranAudioR2TrackTypeAyah  = "ayah"
+	quranAudioR2TrackTypeSurah = "surah"
+
+	quranAudioR2DefaultFormat        = "jsonl"
+	quranAudioR2DefaultLicenseStatus = "needs_review"
+)
+
+var (
+	errQuranAudioR2PGURLRequired              = errors.New("pg-url is required")
+	errQuranAudioR2ManifestPathRequired       = errors.New("manifest-jsonl is required")
+	errQuranAudioR2RecitationMetadataID       = errors.New("recitation metadata item missing id")
+	errQuranAudioR2ManifestMissingRecitation  = errors.New("missing recitation_id")
+	errQuranAudioR2ManifestMissingTrackType   = errors.New("missing track_type")
+	errQuranAudioR2ManifestMissingTrackKey    = errors.New("missing track_key")
+	errQuranAudioR2ManifestMissingR2Key       = errors.New("missing r2_key")
+	errQuranAudioR2ManifestInvalidAyahKey     = errors.New("invalid ayah track_key")
+	errQuranAudioR2ManifestInvalidSurahKey    = errors.New("invalid surah track_key")
+	errQuranAudioR2ManifestTrackKeyMismatch   = errors.New("track_key does not match surah_id/ayah_number")
+	errQuranAudioR2ManifestInvalidTrackType   = errors.New("invalid track_type")
+)
+
 // QuranAudioR2SyncOptions configure R2 audio metadata sync.
 type QuranAudioR2SyncOptions struct {
 	PostgresURL            string
@@ -82,14 +104,16 @@ func RunQuranAudioR2Sync(ctx context.Context, opts QuranAudioR2SyncOptions) (Qur
 	if err != nil {
 		return stats, err
 	}
+
 	stats.PublicURLs = applyQuranAudioR2PublicURLPolicy(entries, metadata)
 	stats.DryRun = opts.DryRun
+
 	stats.Recitations = len(recitationsFromManifest(entries, metadata))
 	if opts.DryRun {
 		return stats, nil
 	}
 	if strings.TrimSpace(opts.PostgresURL) == "" {
-		return stats, errors.New("pg-url is required")
+		return stats, errQuranAudioR2PGURLRequired
 	}
 
 	pool, err := pgxpool.New(ctx, opts.PostgresURL)
@@ -107,12 +131,14 @@ func RunQuranAudioR2Sync(ctx context.Context, opts QuranAudioR2SyncOptions) (Qur
 	}()
 
 	recitations := recitationsFromManifest(entries, metadata)
-	if err = upsertQuranAudioR2Recitations(ctx, tx, recitations); err != nil {
+	if err := upsertQuranAudioR2Recitations(ctx, tx, recitations); err != nil {
 		return stats, err
 	}
-	if err = upsertQuranAudioR2Tracks(ctx, tx, entries); err != nil {
+
+	if err := upsertQuranAudioR2Tracks(ctx, tx, entries); err != nil {
 		return stats, err
 	}
+
 	stats.Updated = len(entries)
 
 	if err = tx.Commit(ctx); err != nil {
@@ -121,10 +147,10 @@ func RunQuranAudioR2Sync(ctx context.Context, opts QuranAudioR2SyncOptions) (Qur
 	return stats, nil
 }
 
-func loadQuranAudioR2Manifest(path string, publicBaseURL string) ([]quranAudioR2ManifestEntry, QuranAudioR2SyncStats, error) {
+func loadQuranAudioR2Manifest(path, publicBaseURL string) ([]quranAudioR2ManifestEntry, QuranAudioR2SyncStats, error) {
 	var stats QuranAudioR2SyncStats
 	if strings.TrimSpace(path) == "" {
-		return nil, stats, errors.New("manifest-jsonl is required")
+		return nil, stats, errQuranAudioR2ManifestPathRequired
 	}
 
 	file, err := os.Open(path) // #nosec G304 -- sync CLI intentionally reads an operator-supplied manifest file.
@@ -149,6 +175,7 @@ func loadQuranAudioR2Manifest(path string, publicBaseURL string) ([]quranAudioR2
 		if err := json.Unmarshal([]byte(line), &entry); err != nil {
 			return nil, stats, fmt.Errorf("decode manifest line %d: %w", lineNumber, err)
 		}
+
 		if err := normalizeQuranAudioR2ManifestEntry(&entry, lineNumber); err != nil {
 			return nil, stats, err
 		}
@@ -176,38 +203,55 @@ func loadQuranAudioR2RecitationMetadata(path string) (map[string]quranAudioR2Rec
 	if err != nil {
 		return nil, fmt.Errorf("open recitation metadata: %w", err)
 	}
+
 	raw = bytes.TrimSpace(raw)
 	if len(raw) == 0 {
 		return map[string]quranAudioR2RecitationMetadata{}, nil
 	}
 
-	items := make(map[string]quranAudioR2RecitationMetadata)
 	if raw[0] == '[' {
-		var list []quranAudioR2RecitationMetadata
-		if err = json.Unmarshal(raw, &list); err != nil {
-			return nil, fmt.Errorf("decode recitation metadata: %w", err)
-		}
-		for _, item := range list {
-			if strings.TrimSpace(item.ID) == "" {
-				return nil, errors.New("recitation metadata item missing id")
-			}
-			items[item.ID] = item
-		}
-
-		return items, nil
+		return decodeQuranAudioR2RecitationMetadataList(raw)
 	}
 
-	var keyed map[string]quranAudioR2RecitationMetadata
-	if err = json.Unmarshal(raw, &keyed); err != nil {
+	return decodeQuranAudioR2RecitationMetadataObject(raw)
+}
+
+func decodeQuranAudioR2RecitationMetadataList(raw []byte) (map[string]quranAudioR2RecitationMetadata, error) {
+	var list []quranAudioR2RecitationMetadata
+	if err := json.Unmarshal(raw, &list); err != nil {
 		return nil, fmt.Errorf("decode recitation metadata: %w", err)
 	}
-	for id, item := range keyed {
+
+	items := make(map[string]quranAudioR2RecitationMetadata, len(list))
+	for i := range list {
+		item := &list[i]
+		if strings.TrimSpace(item.ID) == "" {
+			return nil, errQuranAudioR2RecitationMetadataID
+		}
+
+		items[item.ID] = *item
+	}
+
+	return items, nil
+}
+
+func decodeQuranAudioR2RecitationMetadataObject(raw []byte) (map[string]quranAudioR2RecitationMetadata, error) {
+	var keyed map[string]quranAudioR2RecitationMetadata
+	if err := json.Unmarshal(raw, &keyed); err != nil {
+		return nil, fmt.Errorf("decode recitation metadata: %w", err)
+	}
+
+	items := make(map[string]quranAudioR2RecitationMetadata, len(keyed))
+	for id := range keyed {
+		item := keyed[id]
 		if strings.TrimSpace(item.ID) == "" {
 			item.ID = id
 		}
+
 		if strings.TrimSpace(item.ID) == "" {
-			return nil, errors.New("recitation metadata item missing id")
+			return nil, errQuranAudioR2RecitationMetadataID
 		}
+
 		items[item.ID] = item
 	}
 
@@ -220,53 +264,81 @@ func normalizeQuranAudioR2ManifestEntry(entry *quranAudioR2ManifestEntry, lineNu
 	entry.TrackKey = strings.TrimSpace(entry.TrackKey)
 	entry.R2Key = strings.TrimSpace(entry.R2Key)
 	entry.AudioURL = strings.TrimSpace(entry.AudioURL)
+
 	entry.MIMEType = strings.TrimSpace(entry.MIMEType)
 	if len(entry.Metadata) == 0 {
 		entry.Metadata = json.RawMessage(`{}`)
 	}
 
-	switch {
-	case entry.RecitationID == "":
-		return fmt.Errorf("manifest line %d missing recitation_id", lineNumber)
-	case entry.TrackType == "":
-		return fmt.Errorf("manifest line %d missing track_type", lineNumber)
-	case entry.TrackKey == "":
-		return fmt.Errorf("manifest line %d missing track_key", lineNumber)
-	case entry.R2Key == "":
-		return fmt.Errorf("manifest line %d missing r2_key", lineNumber)
+	if err := validateQuranAudioR2ManifestRequired(entry); err != nil {
+		return quranAudioR2ManifestLineError(lineNumber, err)
 	}
 
 	switch entry.TrackType {
-	case "ayah":
-		surahID, ayahNumber, err := quranutil.ParseAyahKey(entry.TrackKey)
-		if err != nil {
-			return fmt.Errorf("manifest line %d invalid ayah track_key", lineNumber)
-		}
-		if entry.SurahID == 0 {
-			entry.SurahID = surahID
-		}
-		if entry.AyahNumber == 0 {
-			entry.AyahNumber = ayahNumber
-		}
-		if entry.SurahID != surahID || entry.AyahNumber != ayahNumber {
-			return fmt.Errorf("manifest line %d track_key does not match surah_id/ayah_number", lineNumber)
-		}
-	case "surah":
-		surahID, err := strconv.Atoi(entry.TrackKey)
-		if err != nil || surahID <= 0 {
-			return fmt.Errorf("manifest line %d invalid surah track_key", lineNumber)
-		}
-		if entry.SurahID == 0 {
-			entry.SurahID = surahID
-		}
-		if entry.SurahID != surahID || entry.AyahNumber != 0 {
-			return fmt.Errorf("manifest line %d track_key does not match surah_id/ayah_number", lineNumber)
-		}
+	case quranAudioR2TrackTypeAyah:
+		return normalizeQuranAudioR2AyahManifestEntry(entry, lineNumber)
+	case quranAudioR2TrackTypeSurah:
+		return normalizeQuranAudioR2SurahManifestEntry(entry, lineNumber)
 	default:
-		return fmt.Errorf("manifest line %d invalid track_type", lineNumber)
+		return quranAudioR2ManifestLineError(lineNumber, errQuranAudioR2ManifestInvalidTrackType)
+	}
+}
+
+func validateQuranAudioR2ManifestRequired(entry *quranAudioR2ManifestEntry) error {
+	switch {
+	case entry.RecitationID == "":
+		return errQuranAudioR2ManifestMissingRecitation
+	case entry.TrackType == "":
+		return errQuranAudioR2ManifestMissingTrackType
+	case entry.TrackKey == "":
+		return errQuranAudioR2ManifestMissingTrackKey
+	case entry.R2Key == "":
+		return errQuranAudioR2ManifestMissingR2Key
 	}
 
 	return nil
+}
+
+func normalizeQuranAudioR2AyahManifestEntry(entry *quranAudioR2ManifestEntry, lineNumber int) error {
+	surahID, ayahNumber, err := quranutil.ParseAyahKey(entry.TrackKey)
+	if err != nil {
+		return quranAudioR2ManifestLineError(lineNumber, errQuranAudioR2ManifestInvalidAyahKey)
+	}
+
+	if entry.SurahID == 0 {
+		entry.SurahID = surahID
+	}
+
+	if entry.AyahNumber == 0 {
+		entry.AyahNumber = ayahNumber
+	}
+
+	if entry.SurahID != surahID || entry.AyahNumber != ayahNumber {
+		return quranAudioR2ManifestLineError(lineNumber, errQuranAudioR2ManifestTrackKeyMismatch)
+	}
+
+	return nil
+}
+
+func normalizeQuranAudioR2SurahManifestEntry(entry *quranAudioR2ManifestEntry, lineNumber int) error {
+	surahID, err := strconv.Atoi(entry.TrackKey)
+	if err != nil || surahID <= 0 {
+		return quranAudioR2ManifestLineError(lineNumber, errQuranAudioR2ManifestInvalidSurahKey)
+	}
+
+	if entry.SurahID == 0 {
+		entry.SurahID = surahID
+	}
+
+	if entry.SurahID != surahID || entry.AyahNumber != 0 {
+		return quranAudioR2ManifestLineError(lineNumber, errQuranAudioR2ManifestTrackKeyMismatch)
+	}
+
+	return nil
+}
+
+func quranAudioR2ManifestLineError(lineNumber int, err error) error {
+	return fmt.Errorf("manifest line %d: %w", lineNumber, err)
 }
 
 func recitationsFromManifest(
@@ -274,33 +346,10 @@ func recitationsFromManifest(
 	metadata map[string]quranAudioR2RecitationMetadata,
 ) []quranAudioR2RecitationMetadata {
 	byID := make(map[string]quranAudioR2RecitationMetadata)
-	for _, entry := range entries {
-		item := metadata[entry.RecitationID]
-		if strings.TrimSpace(item.ID) == "" {
-			item.ID = entry.RecitationID
-		}
-		if strings.TrimSpace(item.Mode) == "" {
-			item.Mode = entry.TrackType
-		}
-		if strings.TrimSpace(item.Name) == "" {
-			item.Name = "QUL " + humanizeRecitationID(entry.RecitationID)
-		}
-		if strings.TrimSpace(item.DisplayName) == "" {
-			item.DisplayName = humanizeRecitationID(entry.RecitationID)
-		}
-		if strings.TrimSpace(item.Format) == "" {
-			item.Format = "jsonl"
-		}
-		if strings.TrimSpace(item.LicenseStatus) == "" {
-			item.LicenseStatus = "needs_review"
-		}
-		if item.IsVisible == nil {
-			visible := true
-			item.IsVisible = &visible
-		}
-		if len(item.Metadata) == 0 {
-			item.Metadata = json.RawMessage(`{}`)
-		}
+
+	for i := range entries {
+		entry := &entries[i]
+		item := quranAudioR2RecitationFromManifestEntry(entry, metadata[entry.RecitationID])
 		byID[item.ID] = item
 	}
 
@@ -308,6 +357,7 @@ func recitationsFromManifest(
 	for id := range byID {
 		ids = append(ids, id)
 	}
+
 	sort.Strings(ids)
 
 	items := make([]quranAudioR2RecitationMetadata, 0, len(ids))
@@ -318,18 +368,61 @@ func recitationsFromManifest(
 	return items
 }
 
+func quranAudioR2RecitationFromManifestEntry(
+	entry *quranAudioR2ManifestEntry,
+	item quranAudioR2RecitationMetadata,
+) quranAudioR2RecitationMetadata {
+	if strings.TrimSpace(item.ID) == "" {
+		item.ID = entry.RecitationID
+	}
+
+	if strings.TrimSpace(item.Mode) == "" {
+		item.Mode = entry.TrackType
+	}
+
+	if strings.TrimSpace(item.Name) == "" {
+		item.Name = "QUL " + humanizeRecitationID(entry.RecitationID)
+	}
+
+	if strings.TrimSpace(item.DisplayName) == "" {
+		item.DisplayName = humanizeRecitationID(entry.RecitationID)
+	}
+
+	if strings.TrimSpace(item.Format) == "" {
+		item.Format = quranAudioR2DefaultFormat
+	}
+
+	if strings.TrimSpace(item.LicenseStatus) == "" {
+		item.LicenseStatus = quranAudioR2DefaultLicenseStatus
+	}
+
+	if item.IsVisible == nil {
+		visible := true
+		item.IsVisible = &visible
+	}
+
+	if len(item.Metadata) == 0 {
+		item.Metadata = json.RawMessage(`{}`)
+	}
+
+	return item
+}
+
 func applyQuranAudioR2PublicURLPolicy(
 	entries []quranAudioR2ManifestEntry,
 	metadata map[string]quranAudioR2RecitationMetadata,
 ) int {
 	publicURLs := 0
+
 	for i := range entries {
 		item := metadata[entries[i].RecitationID]
 		if item.UsePublicURL != nil && !*item.UsePublicURL {
 			entries[i].PublicURL = ""
 			entries[i].ClearPublicURL = true
+
 			continue
 		}
+
 		if entries[i].PublicURL != "" {
 			publicURLs++
 		}
@@ -344,8 +437,10 @@ func upsertQuranAudioR2Recitations(
 	recitations []quranAudioR2RecitationMetadata,
 ) error {
 	batch := &pgx.Batch{}
-	for _, recitation := range recitations {
-		batch.Queue(`
+	for i := range recitations {
+		recitation := &recitations[i]
+		batch.Queue(
+			`
 INSERT INTO quran_recitations (
     id, name, display_name, reciter_name, style, mode, source_url, qul_resource_id,
     format, license_status, metadata, sort_order, default_priority, is_visible, imported_at, updated_at
@@ -382,6 +477,7 @@ ON CONFLICT (id) DO UPDATE SET
 			*recitation.IsVisible,
 		)
 	}
+
 	if err := execTxBatch(ctx, tx, batch); err != nil {
 		return fmt.Errorf("upsert quran r2 recitations: %w", err)
 	}
@@ -395,13 +491,16 @@ func upsertQuranAudioR2Tracks(
 	entries []quranAudioR2ManifestEntry,
 ) error {
 	batch := &pgx.Batch{}
-	for _, entry := range entries {
+
+	for i := range entries {
+		entry := &entries[i]
 		var ayahNumber *int
-		if entry.TrackType == "ayah" {
+		if entry.TrackType == quranAudioR2TrackTypeAyah {
 			ayahNumber = &entry.AyahNumber
 		}
 
-		batch.Queue(`
+		batch.Queue(
+			`
 INSERT INTO quran_audio_tracks (
     recitation_id, track_type, track_key, surah_id, ayah_number, audio_url,
     r2_key, public_url, duration_ms, duration_seconds, mime_type, metadata, updated_at
@@ -434,6 +533,7 @@ ON CONFLICT (recitation_id, track_type, track_key) DO UPDATE SET
 			entry.ClearPublicURL,
 		)
 	}
+
 	if err := execTxBatch(ctx, tx, batch); err != nil {
 		return fmt.Errorf("upsert quran r2 tracks: %w", err)
 	}
@@ -441,7 +541,7 @@ ON CONFLICT (recitation_id, track_type, track_key) DO UPDATE SET
 	return nil
 }
 
-func quranAudioPublicURL(publicBaseURL string, r2Key string) string {
+func quranAudioPublicURL(publicBaseURL, r2Key string) string {
 	publicBaseURL = strings.TrimSpace(publicBaseURL)
 	if publicBaseURL == "" {
 		return ""
@@ -463,8 +563,10 @@ func humanizeRecitationID(recitationID string) string {
 	for _, prefix := range []string{"qul-ayah-recitation-", "qul-surah-recitation-", "qul-recitation-"} {
 		name = strings.TrimPrefix(name, prefix)
 	}
+
 	name = regexp.MustCompile(`-\d+$`).ReplaceAllString(name, "")
 	name = strings.ReplaceAll(name, "-", " ")
+
 	name = strings.Join(strings.Fields(name), " ")
 	if name == "" {
 		return "Quran Recitation"
@@ -474,8 +576,10 @@ func humanizeRecitationID(recitationID string) string {
 	for i, word := range words {
 		if word == "al" {
 			words[i] = "Al"
+
 			continue
 		}
+
 		words[i] = strings.ToUpper(word[:1]) + word[1:]
 	}
 

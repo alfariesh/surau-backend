@@ -25,6 +25,7 @@ func TestErrorResponseIncludesStructuredFields(t *testing.T) {
 	req.Header.Set("X-Request-ID", "req-test")
 	resp, err := app.Test(req)
 	require.NoError(t, err)
+
 	defer resp.Body.Close()
 
 	var body struct {

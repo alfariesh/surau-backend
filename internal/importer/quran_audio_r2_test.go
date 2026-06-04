@@ -8,6 +8,8 @@ import (
 )
 
 func TestLoadQuranAudioR2Manifest(t *testing.T) {
+	t.Parallel()
+
 	path := writeQuranFixture(t, t.TempDir(), "manifest.jsonl", `{"r2_key":"quran/audio/recitation/ayah/001001.mp3","track_key":"1:1","track_type":"ayah","recitation_id":"recitation","audio_url":"https://source/001001.mp3"}
 
 {"r2_key":"quran/audio/recitation/surah/001.mp3","track_key":"1","track_type":"surah","recitation_id":"recitation"}`)
@@ -26,6 +28,8 @@ func TestLoadQuranAudioR2Manifest(t *testing.T) {
 }
 
 func TestLoadQuranAudioR2ManifestRequiresJoinFields(t *testing.T) {
+	t.Parallel()
+
 	path := writeQuranFixture(t, t.TempDir(), "manifest.jsonl", `{"r2_key":"quran/audio/recitation/ayah/001001.mp3","track_key":"1:1","track_type":"ayah"}`)
 
 	_, _, err := loadQuranAudioR2Manifest(path, "https://example.com")
@@ -35,10 +39,14 @@ func TestLoadQuranAudioR2ManifestRequiresJoinFields(t *testing.T) {
 }
 
 func TestQuranAudioPublicURLWithoutBase(t *testing.T) {
+	t.Parallel()
+
 	assert.Empty(t, quranAudioPublicURL("", "quran/audio/a.mp3"))
 }
 
 func TestRunQuranAudioR2SyncDryRunCountsRecitations(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 	manifestPath := writeQuranFixture(t, dir, "manifest.jsonl", `{"r2_key":"quran/audio/rec-1/ayah/001001.mp3","track_key":"1:1","track_type":"ayah","recitation_id":"rec-1"}
 {"r2_key":"quran/audio/rec-2/ayah/001001.mp3","track_key":"1:1","track_type":"ayah","recitation_id":"rec-2"}`)
@@ -67,6 +75,8 @@ func TestRunQuranAudioR2SyncDryRunCountsRecitations(t *testing.T) {
 }
 
 func TestLoadQuranAudioR2RecitationMetadataSupportsKeyedObject(t *testing.T) {
+	t.Parallel()
+
 	path := writeQuranFixture(t, t.TempDir(), "metadata.json", `{
 		"rec-1": {"display_name":"Reciter One", "mode":"ayah", "is_visible":false}
 	}`)
@@ -82,6 +92,8 @@ func TestLoadQuranAudioR2RecitationMetadataSupportsKeyedObject(t *testing.T) {
 }
 
 func TestApplyQuranAudioR2PublicURLPolicy(t *testing.T) {
+	t.Parallel()
+
 	disabled := false
 	entries := []quranAudioR2ManifestEntry{
 		{RecitationID: "rec-disabled", PublicURL: "https://cdn.example/a.mp3"},

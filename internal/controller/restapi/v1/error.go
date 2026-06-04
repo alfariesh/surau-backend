@@ -18,7 +18,11 @@ func errorResponse(ctx *fiber.Ctx, code int, msg string) error {
 }
 
 func requestID(ctx *fiber.Ctx) string {
-	requestID, _ := ctx.Locals("requestID").(string)
+	requestID, ok := ctx.Locals("requestID").(string)
+	if !ok {
+		return ""
+	}
+
 	return requestID
 }
 
@@ -29,15 +33,21 @@ func errorCode(msg string) string {
 	}
 
 	var out strings.Builder
+
 	lastUnderscore := false
+
 	for _, r := range msg {
 		if unicode.IsLetter(r) || unicode.IsDigit(r) {
 			out.WriteRune(r)
+
 			lastUnderscore = false
+
 			continue
 		}
+
 		if !lastUnderscore {
 			out.WriteByte('_')
+
 			lastUnderscore = true
 		}
 	}
