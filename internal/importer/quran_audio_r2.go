@@ -27,17 +27,17 @@ const (
 )
 
 var (
-	errQuranAudioR2PGURLRequired              = errors.New("pg-url is required")
-	errQuranAudioR2ManifestPathRequired       = errors.New("manifest-jsonl is required")
-	errQuranAudioR2RecitationMetadataID       = errors.New("recitation metadata item missing id")
-	errQuranAudioR2ManifestMissingRecitation  = errors.New("missing recitation_id")
-	errQuranAudioR2ManifestMissingTrackType   = errors.New("missing track_type")
-	errQuranAudioR2ManifestMissingTrackKey    = errors.New("missing track_key")
-	errQuranAudioR2ManifestMissingR2Key       = errors.New("missing r2_key")
-	errQuranAudioR2ManifestInvalidAyahKey     = errors.New("invalid ayah track_key")
-	errQuranAudioR2ManifestInvalidSurahKey    = errors.New("invalid surah track_key")
-	errQuranAudioR2ManifestTrackKeyMismatch   = errors.New("track_key does not match surah_id/ayah_number")
-	errQuranAudioR2ManifestInvalidTrackType   = errors.New("invalid track_type")
+	errQuranAudioR2PGURLRequired             = errors.New("pg-url is required")
+	errQuranAudioR2ManifestPathRequired      = errors.New("manifest-jsonl is required")
+	errQuranAudioR2RecitationMetadataID      = errors.New("recitation metadata item missing id")
+	errQuranAudioR2ManifestMissingRecitation = errors.New("missing recitation_id")
+	errQuranAudioR2ManifestMissingTrackType  = errors.New("missing track_type")
+	errQuranAudioR2ManifestMissingTrackKey   = errors.New("missing track_key")
+	errQuranAudioR2ManifestMissingR2Key      = errors.New("missing r2_key")
+	errQuranAudioR2ManifestInvalidAyahKey    = errors.New("invalid ayah track_key")
+	errQuranAudioR2ManifestInvalidSurahKey   = errors.New("invalid surah track_key")
+	errQuranAudioR2ManifestTrackKeyMismatch  = errors.New("track_key does not match surah_id/ayah_number")
+	errQuranAudioR2ManifestInvalidTrackType  = errors.New("invalid track_type")
 )
 
 // QuranAudioR2SyncOptions configure R2 audio metadata sync.
@@ -349,7 +349,8 @@ func recitationsFromManifest(
 
 	for i := range entries {
 		entry := &entries[i]
-		item := quranAudioR2RecitationFromManifestEntry(entry, metadata[entry.RecitationID])
+		metadataItem := metadata[entry.RecitationID]
+		item := quranAudioR2RecitationFromManifestEntry(entry, &metadataItem)
 		byID[item.ID] = item
 	}
 
@@ -370,8 +371,13 @@ func recitationsFromManifest(
 
 func quranAudioR2RecitationFromManifestEntry(
 	entry *quranAudioR2ManifestEntry,
-	item quranAudioR2RecitationMetadata,
+	metadataItem *quranAudioR2RecitationMetadata,
 ) quranAudioR2RecitationMetadata {
+	item := quranAudioR2RecitationMetadata{}
+	if metadataItem != nil {
+		item = *metadataItem
+	}
+
 	if strings.TrimSpace(item.ID) == "" {
 		item.ID = entry.RecitationID
 	}
@@ -437,6 +443,7 @@ func upsertQuranAudioR2Recitations(
 	recitations []quranAudioR2RecitationMetadata,
 ) error {
 	batch := &pgx.Batch{}
+
 	for i := range recitations {
 		recitation := &recitations[i]
 		batch.Queue(
@@ -494,6 +501,7 @@ func upsertQuranAudioR2Tracks(
 
 	for i := range entries {
 		entry := &entries[i]
+
 		var ayahNumber *int
 		if entry.TrackType == quranAudioR2TrackTypeAyah {
 			ayahNumber = &entry.AyahNumber

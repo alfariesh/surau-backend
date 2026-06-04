@@ -62,6 +62,9 @@ func TestQuranRoutes(t *testing.T) {
 			resp, err := app.Test(httptest.NewRequestWithContext(t.Context(), http.MethodGet, tt.path, http.NoBody))
 
 			require.NoError(t, err)
+
+			defer resp.Body.Close()
+
 			assert.Equal(t, tt.wantStatus, resp.StatusCode)
 			body, err := io.ReadAll(resp.Body)
 			require.NoError(t, err)
@@ -169,6 +172,9 @@ func TestQuranReaderMinimalView(t *testing.T) {
 
 			resp, err := app.Test(httptest.NewRequestWithContext(t.Context(), http.MethodGet, tt.path, http.NoBody))
 			require.NoError(t, err)
+
+			defer resp.Body.Close()
+
 			assert.Equal(t, tt.wantHTTPCode, resp.StatusCode)
 
 			body, err := io.ReadAll(resp.Body)

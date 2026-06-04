@@ -160,6 +160,7 @@ func surahAudioTracks(tracks []entity.QuranAudioTrack) []QuranSurahAudioTrack {
 	items := make([]QuranSurahAudioTrack, 0, len(tracks))
 	for i := range tracks {
 		track := &tracks[i]
+
 		url := readerAudioURL(track)
 		if url == "" {
 			continue

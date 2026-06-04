@@ -56,7 +56,91 @@ WHERE t.recitation_id = $1
   AND t.surah_id = $2
   AND t.track_type = $3
 ORDER BY t.track_type ASC, t.track_key ASC, s.segment_index ASC`
-)
+
+const quranAyahSelectHeadSQL = `
+SELECT a.surah_id,
+       a.ayah_number,
+       a.ayah_key,
+       a.text_qpc_hafs,
+       a.text_imlaei_simple,
+       a.search_text,
+       a.script_type,
+       a.font_family,
+       a.page_number,
+       a.juz_number,
+       a.hizb_number,
+       a.metadata,
+       a.updated_at,`
+
+const quranAyahTranslationColumnsSQL = `
+       t.source_id,
+       t.lang,
+       t.text,
+       t.footnotes,
+       t.chunks,
+       t.metadata,
+       t.updated_at`
+
+const quranAyahTranslationNullColumnsSQL = `
+       NULL::text AS source_id,
+       NULL::text AS lang,
+       NULL::text AS text,
+       NULL::jsonb AS footnotes,
+       NULL::jsonb AS chunks,
+       NULL::jsonb AS translation_metadata,
+       NULL::timestamptz AS translation_updated_at`
+
+const quranAyahTranslationJoinSQL = `
+LEFT JOIN quran_ayah_translations t
+       ON t.surah_id = a.surah_id
+      AND t.ayah_number = a.ayah_number
+      AND t.lang = $2
+      AND t.source_id = $3`
+
+const quranAyahTranslationDisabledJoinSQL = `
+LEFT JOIN quran_ayah_translations t
+       ON false
+      AND t.lang = $2
+      AND t.source_id = $3`
+
+const quranAyahTransliterationColumnsSQL = `
+       tn.source_id AS transliteration_source_id,
+       tn.lang AS transliteration_lang,
+       tn.text AS transliteration_text,
+       tn.metadata AS transliteration_metadata,
+       tn.updated_at AS transliteration_updated_at`
+
+const quranAyahTransliterationNullColumnsSQL = `
+       NULL::text AS transliteration_source_id,
+       NULL::text AS transliteration_lang,
+       NULL::text AS transliteration_text,
+       NULL::jsonb AS transliteration_metadata,
+       NULL::timestamptz AS transliteration_updated_at`
+
+const quranAyahTransliterationJoinSQL = `
+LEFT JOIN quran_ayah_transliterations tn
+       ON tn.surah_id = a.surah_id
+      AND tn.ayah_number = a.ayah_number
+      AND tn.lang = $2
+      AND tn.source_id = $4`
+
+const quranAyahTransliterationDisabledJoinSQL = `
+LEFT JOIN quran_ayah_transliterations tn
+       ON false
+      AND tn.lang = $2
+      AND tn.source_id = $4`
+
+const quranAyahAvailabilityColumnsSQL = `,
+       COALESCE(ta.available_langs, ARRAY[]::TEXT[]) AS available_translation_langs
+FROM quran_ayahs a`
+
+const quranAyahAvailableLangsJoinSQL = `
+LEFT JOIN LATERAL (
+    SELECT array_agg(DISTINCT lang ORDER BY lang) AS available_langs
+    FROM quran_ayah_translations
+    WHERE surah_id = a.surah_id
+      AND ayah_number = a.ayah_number
+) ta ON true`
 
 // QuranRepo provides Quran browse/search queries.
 type QuranRepo struct {
@@ -1148,84 +1232,29 @@ ORDER BY score DESC, surah_id ASC, ayah_number ASC
 LIMIT $6 OFFSET $7`
 
 func quranAyahSelectSQL(where string, includeTranslation, includeTransliteration bool) string {
-	translationColumns := `
-       t.source_id,
-       t.lang,
-       t.text,
-       t.footnotes,
-       t.chunks,
-       t.metadata,
-       t.updated_at`
-	translationJoin := `
-LEFT JOIN quran_ayah_translations t
-       ON t.surah_id = a.surah_id
-      AND t.ayah_number = a.ayah_number
-      AND t.lang = $2
-      AND t.source_id = $3`
+	translationColumns := quranAyahTranslationColumnsSQL
+	translationJoin := quranAyahTranslationJoinSQL
 	if !includeTranslation {
-		translationColumns = `
-       NULL::text AS source_id,
-       NULL::text AS lang,
-       NULL::text AS text,
-       NULL::jsonb AS footnotes,
-       NULL::jsonb AS chunks,
-       NULL::jsonb AS translation_metadata,
-       NULL::timestamptz AS translation_updated_at`
-		translationJoin = `
-LEFT JOIN quran_ayah_translations t
-       ON false
-      AND t.lang = $2
-      AND t.source_id = $3`
-	}
-	transliterationColumns := `
-       tn.source_id AS transliteration_source_id,
-       tn.lang AS transliteration_lang,
-       tn.text AS transliteration_text,
-       tn.metadata AS transliteration_metadata,
-       tn.updated_at AS transliteration_updated_at`
-	transliterationJoin := `
-LEFT JOIN quran_ayah_transliterations tn
-       ON tn.surah_id = a.surah_id
-      AND tn.ayah_number = a.ayah_number
-      AND tn.lang = $2
-      AND tn.source_id = $4`
-	if !includeTransliteration {
-		transliterationColumns = `
-       NULL::text AS transliteration_source_id,
-       NULL::text AS transliteration_lang,
-       NULL::text AS transliteration_text,
-       NULL::jsonb AS transliteration_metadata,
-       NULL::timestamptz AS transliteration_updated_at`
-		transliterationJoin = `
-LEFT JOIN quran_ayah_transliterations tn
-       ON false
-      AND tn.lang = $2
-      AND tn.source_id = $4`
+		translationColumns = quranAyahTranslationNullColumnsSQL
+		translationJoin = quranAyahTranslationDisabledJoinSQL
 	}
 
-	return `
-SELECT a.surah_id,
-       a.ayah_number,
-       a.ayah_key,
-       a.text_qpc_hafs,
-       a.text_imlaei_simple,
-       a.search_text,
-       a.script_type,
-       a.font_family,
-       a.page_number,
-       a.juz_number,
-       a.hizb_number,
-       a.metadata,
-       a.updated_at,` + translationColumns + `,
-       ` + transliterationColumns + `,
-       COALESCE(ta.available_langs, ARRAY[]::TEXT[]) AS available_translation_langs
-FROM quran_ayahs a` + translationJoin + transliterationJoin + `
-LEFT JOIN LATERAL (
-    SELECT array_agg(DISTINCT lang ORDER BY lang) AS available_langs
-    FROM quran_ayah_translations
-    WHERE surah_id = a.surah_id
-      AND ayah_number = a.ayah_number
-) ta ON true` + where
+	transliterationColumns := quranAyahTransliterationColumnsSQL
+	transliterationJoin := quranAyahTransliterationJoinSQL
+
+	if !includeTransliteration {
+		transliterationColumns = quranAyahTransliterationNullColumnsSQL
+		transliterationJoin = quranAyahTransliterationDisabledJoinSQL
+	}
+
+	return quranAyahSelectHeadSQL +
+		translationColumns + `,
+       ` + transliterationColumns +
+		quranAyahAvailabilityColumnsSQL +
+		translationJoin +
+		transliterationJoin +
+		quranAyahAvailableLangsJoinSQL +
+		where
 }
 
 func (r *QuranRepo) audioTracksForAyahs(
@@ -1374,7 +1403,8 @@ GROUP BY r.id, sc.segment_count`,
 }
 
 func (r *QuranRepo) surahAyahKeys(ctx context.Context, surahID int) ([]string, error) {
-	rows, err := r.Pool.Query(ctx, `
+	rows, err := r.Pool.Query(
+		ctx, `
 SELECT surah_id::text || ':' || ayah_number::text AS ayah_key
 FROM quran_ayahs
 WHERE surah_id = $1
@@ -1399,7 +1429,9 @@ func (r *QuranRepo) audioTracksForSurah(
 	surahID int,
 	recitation *entity.QuranRecitation,
 ) ([]entity.QuranAudioTrack, error) {
-	rows, err := r.Pool.Query(ctx, quranAudioTracksForSurahSQL,
+	rows, err := r.Pool.Query(
+		ctx,
+		quranAudioTracksForSurahSQL,
 		recitation.ID,
 		surahID,
 		quranAudioTrackTypeForRecitation(recitation),
@@ -1427,6 +1459,7 @@ func quranAudioTrackTypeForRecitation(recitation *entity.QuranRecitation) string
 
 func scanQuranAudioTrackGroups(rows pgx.Rows, location string) (map[string]*entity.QuranAudioTrack, error) {
 	grouped := make(map[string]*entity.QuranAudioTrack)
+
 	for rows.Next() {
 		track, _, segment, hasSegment, err := scanQuranAudioTrackRow(rows)
 		if err != nil {
@@ -1713,25 +1746,27 @@ func (r *QuranRepo) countQuran(ctx context.Context, builder sq.SelectBuilder) (i
 }
 
 func markDefaultRecitation(recitations []entity.QuranRecitation) {
-	defaultIndex := -1
+	var defaultRecitation *entity.QuranRecitation
+
 	for i := range recitations {
-		if !recitations[i].HasPlayableAudio {
+		recitation := &recitations[i]
+		if !recitation.HasPlayableAudio {
 			continue
 		}
 
-		if defaultIndex < 0 {
-			defaultIndex = i
+		if defaultRecitation == nil {
+			defaultRecitation = recitation
 
 			continue
 		}
 
-		if quranDefaultRecitationLess(&recitations[i], &recitations[defaultIndex]) {
-			defaultIndex = i
+		if quranDefaultRecitationLess(recitation, defaultRecitation) {
+			defaultRecitation = recitation
 		}
 	}
 
-	if defaultIndex >= 0 {
-		recitations[defaultIndex].IsDefault = true
+	if defaultRecitation != nil {
+		defaultRecitation.IsDefault = true
 	}
 }
 

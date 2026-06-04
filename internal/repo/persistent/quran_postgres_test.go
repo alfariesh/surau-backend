@@ -79,8 +79,8 @@ func TestQuranAudioTrackLessPrefersAyahTrack(t *testing.T) {
 	ayahTrack := entity.QuranAudioTrack{RecitationID: "rec", TrackType: "ayah", TrackKey: "73:1"}
 	surahTrack := entity.QuranAudioTrack{RecitationID: "rec", TrackType: "surah", TrackKey: "73"}
 
-	assert.True(t, quranAudioTrackLess(ayahTrack, surahTrack))
-	assert.False(t, quranAudioTrackLess(surahTrack, ayahTrack))
+	assert.True(t, quranAudioTrackLess(&ayahTrack, &surahTrack))
+	assert.False(t, quranAudioTrackLess(&surahTrack, &ayahTrack))
 }
 
 func TestMissingManifestAyahKeys(t *testing.T) {
