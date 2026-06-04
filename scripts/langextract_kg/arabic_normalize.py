@@ -70,6 +70,19 @@ THEONYM_KEYS = {
     "تعالي",
 }
 
+DEVOTIONAL_FORMULA_KEYS = {
+    "بسم الله الرحمن الرحيم",
+    "الحمد لله",
+    "الحمد لله رب العالمين",
+    "سبحان الله",
+    "سبحانه وتعالي",
+    "صلي الله عليه وسلم",
+    "صلي الله عليه وسل م",
+    "عليه الصلاة والسلام",
+    "لا اله الا الله",
+    "استغفر الله",
+}
+
 PERSON_REFERENCE_KEYS = {
     "النبي",
     "النبي صلي الله عليه وسلم",
@@ -101,6 +114,23 @@ def normalize_arabic(value: str) -> str:
     return value.strip()
 
 
+def normalize_grounding_char(value: str) -> str:
+    """Normalize one character for evidence matching while preserving mappability."""
+    if not value or ARABIC_MARKS_RE.fullmatch(value) or value == TATWEEL:
+        return ""
+    value = value.translate(ALEF_TRANSLATION)
+    value = value.replace("ؤ", "و").replace("ئ", "ي")
+    if value.isspace():
+        return " "
+    return value
+
+
+def normalized_grounding_key(value: str) -> str:
+    """Normalize Arabic for source-span fallback matching."""
+    normalized = "".join(normalize_grounding_char(char) for char in value)
+    return SPACE_RE.sub(" ", normalized).strip()
+
+
 def normalized_key(value: str) -> str:
     """Normalize spacing, selected punctuation, and Arabic orthography."""
     value = normalize_arabic(value)
@@ -127,6 +157,11 @@ def is_ambiguous_person_name(value: str) -> bool:
 def is_theonym(value: str) -> bool:
     """Return true for divine names that must not be typed as person."""
     return normalized_key(value) in THEONYM_KEYS
+
+
+def is_devotional_formula(value: str) -> bool:
+    """Return true for formulaic devotional phrases that are citation noise."""
+    return normalized_key(value) in DEVOTIONAL_FORMULA_KEYS
 
 
 def is_person_reference(value: str) -> bool:

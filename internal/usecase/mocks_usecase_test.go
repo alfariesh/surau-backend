@@ -1385,6 +1385,21 @@ func (mr *MockQuranMockRecorder) Recitations(ctx any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Recitations", reflect.TypeOf((*MockQuran)(nil).Recitations), ctx)
 }
 
+// SurahAudio mocks base method.
+func (m *MockQuran) SurahAudio(ctx context.Context, surahID int, recitationID string) (entity.QuranSurahAudioManifest, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SurahAudio", ctx, surahID, recitationID)
+	ret0, _ := ret[0].(entity.QuranSurahAudioManifest)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// SurahAudio indicates an expected call of SurahAudio.
+func (mr *MockQuranMockRecorder) SurahAudio(ctx, surahID, recitationID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SurahAudio", reflect.TypeOf((*MockQuran)(nil).SurahAudio), ctx, surahID, recitationID)
+}
+
 // Search mocks base method.
 func (m *MockQuran) Search(ctx context.Context, query, lang string, limit, offset int) ([]entity.QuranSearchResult, int, error) {
 	m.ctrl.T.Helper()

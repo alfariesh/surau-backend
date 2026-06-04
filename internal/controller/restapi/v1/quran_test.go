@@ -32,6 +32,8 @@ func TestQuranRoutes(t *testing.T) {
 		{name: "surahs include info when requested", path: "/v1/quran/surahs?lang=id&include_info=true", wantStatus: http.StatusOK, wantBody: `"info"`},
 		{name: "surah detail includes info", path: "/v1/quran/surahs/73?lang=id", wantStatus: http.StatusOK, wantBody: `"text_html"`},
 		{name: "recitations include default flag", path: "/v1/quran/recitations", wantStatus: http.StatusOK, wantBody: `"is_default":true`},
+		{name: "surah audio manifest", path: "/v1/quran/surahs/73/audio", wantStatus: http.StatusOK, wantBody: `"missing_ayah_keys":["73:2"]`},
+		{name: "surah audio invalid recitation", path: "/v1/quran/surahs/73/audio?recitation_id=bad-id", wantStatus: http.StatusNotFound, wantBody: `"quran recitation not found"`},
 		{name: "translation sources", path: "/v1/quran/translation-sources?lang=id", wantStatus: http.StatusOK, wantBody: `"coverage"`},
 		{name: "juz navigation", path: "/v1/quran/juz?lang=id", wantStatus: http.StatusOK, wantBody: `"kind":"juz"`},
 		{name: "juz ayahs", path: "/v1/quran/juz/29/ayahs?include_translation=false&include_audio=true&recitation_id=rec-1", wantStatus: http.StatusOK, wantBody: `"recitation_id":"rec-1"`},
@@ -216,6 +218,7 @@ func newQuranTestApp(quran usecase.Quran) *fiber.App {
 	app.Get("/v1/quran/hizbs/:hizb_number/ayahs", controller.listQuranHizbAyahs)
 	app.Get("/v1/quran/ayahs/:ayah_key", controller.getQuranAyah)
 	app.Get("/v1/quran/surahs/:surah_id", controller.getQuranSurah)
+	app.Get("/v1/quran/surahs/:surah_id/audio", controller.getQuranSurahAudio)
 	app.Get("/v1/quran/surahs/:surah_id/ayahs", controller.listQuranSurahAyahs)
 	app.Get("/v1/quran/search", controller.searchQuran)
 	app.Get("/v1/books/:book_id/quran-references", controller.listBookQuranReferences)
@@ -247,18 +250,73 @@ func (f *fakeQuran) Surah(_ context.Context, surahID int, _ string) (entity.Qura
 }
 
 func (f *fakeQuran) Recitations(_ context.Context) ([]entity.QuranRecitation, error) {
+	defaultPriority := 0
+	displayName := "Mishari Rashid Al-Afasy"
 	return []entity.QuranRecitation{
 		{
 			ID:                 "rec-default",
 			Name:               "Reciter",
+			DisplayName:        displayName,
 			Mode:               "ayah",
 			TrackCount:         6236,
 			PublicTrackCount:   6236,
 			PlayableTrackCount: 6236,
+			SegmentCount:       77796,
 			HasPublicAudio:     true,
 			HasPlayableAudio:   true,
 			IsDefault:          true,
+			SortOrder:          10,
+			DefaultPriority:    &defaultPriority,
+			IsVisible:          true,
 		},
+	}, nil
+}
+
+func (f *fakeQuran) SurahAudio(_ context.Context, surahID int, recitationID string) (entity.QuranSurahAudioManifest, error) {
+	if surahID == 0 {
+		return entity.QuranSurahAudioManifest{}, entity.ErrQuranSurahNotFound
+	}
+	if recitationID == "bad-id" {
+		return entity.QuranSurahAudioManifest{}, entity.ErrQuranRecitationNotFound
+	}
+
+	reciterName := "Mishari Rashid Al-Afasy"
+	mimeType := "audio/mpeg"
+	duration := 3000
+	ayahNumber := 1
+	return entity.QuranSurahAudioManifest{
+		SurahID: surahID,
+		Recitation: entity.QuranRecitation{
+			ID:               "rec-default",
+			Name:             "Reciter",
+			DisplayName:      reciterName,
+			ReciterName:      &reciterName,
+			Style:            stringPtr("murattal"),
+			Mode:             "ayah",
+			TrackCount:       6236,
+			PublicTrackCount: 6236,
+			SegmentCount:     1,
+			IsDefault:        recitationID == "",
+		},
+		Mode: "ayah",
+		Tracks: []entity.QuranAudioTrack{{
+			RecitationID: "rec-default",
+			TrackType:    "ayah",
+			TrackKey:     "73:1",
+			SurahID:      surahID,
+			AyahNumber:   &ayahNumber,
+			PublicURL:    stringPtr("https://cdn.example/73-1.mp3"),
+			DurationMS:   &duration,
+			MIMEType:     &mimeType,
+			Segments: []entity.QuranAudioSegment{{
+				SegmentIndex:    1,
+				AyahKey:         "73:1",
+				TimestampFromMS: 1000,
+				TimestampToMS:   4000,
+				DurationMS:      &duration,
+			}},
+		}},
+		MissingAyahKeys: []string{"73:2"},
 	}, nil
 }
 
@@ -475,6 +533,10 @@ func fakeQuranAyah(surahID int, includeTranslation bool, includeAudio bool, reci
 	}
 
 	return ayah
+}
+
+func stringPtr(value string) *string {
+	return &value
 }
 
 func fakeQuranAudioTrack(surahID int, ayahNumber int, recitationID string) entity.QuranAudioTrack {

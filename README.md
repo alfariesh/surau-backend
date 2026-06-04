@@ -284,10 +284,11 @@ After audio files are uploaded to Cloudflare R2, sync the manifest back into Pos
 PG_URL='postgres://user:myAwEsOm3pa55@w0rd@localhost:5432/db' \
 go run ./cmd/sync-quran-audio-r2 \
   --manifest-jsonl=tmp/quran-audio-r2-manifest.jsonl \
+  --recitation-metadata-json=config/quran_recitation_metadata.json \
   --public-base-url=https://your-public-r2-base-url
 ```
 
-Use `--dry-run` to validate manifest counts without writing. If `--public-base-url` is omitted, the command updates `r2_key` only and leaves existing `public_url` values unchanged.
+Use `--dry-run` to validate manifest and recitation counts without writing. The sync is idempotent: it upserts missing recitations/tracks from the manifest, applies clean display metadata when `--recitation-metadata-json` is provided, and updates `r2_key/public_url`. If `--public-base-url` is omitted, the command updates `r2_key` only and leaves existing `public_url` values unchanged.
 
 ## Generate Test Translations with DeepSeek
 

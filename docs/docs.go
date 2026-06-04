@@ -3041,6 +3041,12 @@ const docTemplate = `{
                         "required": true
                     },
                     {
+                        "type": "integer",
+                        "description": "Heading ID",
+                        "name": "heading_id",
+                        "in": "query"
+                    },
+                    {
                         "type": "string",
                         "default": "id",
                         "description": "Language code",
@@ -3398,6 +3404,13 @@ const docTemplate = `{
                         "default": "id",
                         "description": "Language code: ar, id, or en",
                         "name": "lang",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Include approved Quran references for this heading",
+                        "name": "include_quran_references",
                         "in": "query"
                     }
                 ],
@@ -7625,6 +7638,62 @@ const docTemplate = `{
                 }
             }
         },
+        "/quran/surahs/{surah_id}/audio": {
+            "get": {
+                "description": "Get a compact playable audio manifest for one surah. If recitation_id is omitted, the backend uses the default playable visible recitation.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "quran"
+                ],
+                "summary": "Get Quran surah audio manifest",
+                "operationId": "get-quran-surah-audio",
+                "parameters": [
+                    {
+                        "maximum": 114,
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "Surah ID",
+                        "name": "surah_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Visible recitation ID. Empty uses the default recitation.",
+                        "name": "recitation_id",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.QuranSurahAudioManifest"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
         "/quran/surahs/{surah_id}/ayahs": {
             "get": {
                 "description": "List all ayahs or an ayah range for one surah. When include_audio=true and recitation_id is omitted, the backend uses the default playable recitation.",
@@ -8821,6 +8890,65 @@ const docTemplate = `{
                 "updated_at": {
                     "type": "string",
                     "example": "2026-01-01T00:00:00Z"
+                }
+            }
+        },
+        "entity.BookCatalogStats": {
+            "type": "object",
+            "properties": {
+                "author_count": {
+                    "type": "integer",
+                    "example": 35
+                },
+                "by_category": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.BookCategoryStat"
+                    }
+                },
+                "category_count": {
+                    "type": "integer",
+                    "example": 12
+                },
+                "coverage_count": {
+                    "type": "integer",
+                    "example": 25
+                },
+                "published_count": {
+                    "type": "integer",
+                    "example": 120
+                },
+                "total_books": {
+                    "type": "integer",
+                    "example": 120
+                },
+                "with_content_count": {
+                    "type": "integer",
+                    "example": 90
+                }
+            }
+        },
+        "entity.BookCategoryStat": {
+            "type": "object",
+            "properties": {
+                "category_id": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "category_name": {
+                    "type": "string"
+                },
+                "coverage_count": {
+                    "type": "integer",
+                    "example": 8
+                },
+                "published_count": {
+                    "type": "integer",
+                    "example": 20
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 20
                 }
             }
         },
@@ -10107,6 +10235,12 @@ const docTemplate = `{
                 "previous": {
                     "$ref": "#/definitions/entity.BookTOCLink"
                 },
+                "quran_references": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.BookQuranReference"
+                    }
+                },
                 "requested_lang": {
                     "type": "string",
                     "example": "en"
@@ -11057,6 +11191,9 @@ const docTemplate = `{
                     "type": "boolean",
                     "example": true
                 },
+                "transliteration": {
+                    "$ref": "#/definitions/entity.QuranTransliteration"
+                },
                 "updated_at": {
                     "type": "string",
                     "example": "2026-01-01T00:00:00Z"
@@ -11157,6 +11294,14 @@ const docTemplate = `{
                 "checksum": {
                     "type": "string"
                 },
+                "default_priority": {
+                    "type": "integer",
+                    "example": 0
+                },
+                "display_name": {
+                    "type": "string",
+                    "example": "Mishari Rashid Al-Afasy"
+                },
                 "format": {
                     "type": "string",
                     "example": "json"
@@ -11180,6 +11325,10 @@ const docTemplate = `{
                 "is_default": {
                     "type": "boolean",
                     "example": false
+                },
+                "is_visible": {
+                    "type": "boolean",
+                    "example": true
                 },
                 "license_status": {
                     "type": "string",
@@ -11211,6 +11360,14 @@ const docTemplate = `{
                 "reciter_name": {
                     "type": "string",
                     "example": "Mishari Rashid Al-Afasy"
+                },
+                "segment_count": {
+                    "type": "integer",
+                    "example": 77796
+                },
+                "sort_order": {
+                    "type": "integer",
+                    "example": 10
                 },
                 "source_url": {
                     "type": "string"
@@ -11364,7 +11521,7 @@ const docTemplate = `{
                 },
                 "source_id": {
                     "type": "string",
-                    "example": "qul-kfgqpc-id-simple"
+                    "example": "kemenag-id-translation"
                 },
                 "text": {
                     "type": "string"
@@ -11440,6 +11597,29 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "translator": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                }
+            }
+        },
+        "entity.QuranTransliteration": {
+            "type": "object",
+            "properties": {
+                "lang": {
+                    "type": "string",
+                    "example": "id"
+                },
+                "metadata": {
+                    "type": "object"
+                },
+                "source_id": {
+                    "type": "string",
+                    "example": "kemenag-id-latin"
+                },
+                "text": {
                     "type": "string"
                 },
                 "updated_at": {
@@ -12136,6 +12316,9 @@ const docTemplate = `{
                         "$ref": "#/definitions/entity.Book"
                     }
                 },
+                "stats": {
+                    "$ref": "#/definitions/entity.BookCatalogStats"
+                },
                 "total": {
                     "type": "integer",
                     "example": 42
@@ -12802,9 +12985,22 @@ const docTemplate = `{
         "v1.Error": {
             "type": "object",
             "properties": {
+                "code": {
+                    "type": "string",
+                    "example": "invalid_request_body"
+                },
+                "details": {},
                 "error": {
                     "type": "string",
                     "example": "message"
+                },
+                "message": {
+                    "type": "string",
+                    "example": "message"
+                },
+                "request_id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
                 }
             }
         },
@@ -13034,6 +13230,9 @@ const docTemplate = `{
                 },
                 "translation": {
                     "$ref": "#/definitions/v1.QuranReaderAyahTranslation"
+                },
+                "transliteration": {
+                    "$ref": "#/definitions/v1.QuranReaderAyahTransliteration"
                 }
             }
         },
@@ -13096,6 +13295,14 @@ const docTemplate = `{
                 }
             }
         },
+        "v1.QuranReaderAyahTransliteration": {
+            "type": "object",
+            "properties": {
+                "text": {
+                    "type": "string"
+                }
+            }
+        },
         "v1.QuranSearchList": {
             "type": "object",
             "properties": {
@@ -13108,6 +13315,121 @@ const docTemplate = `{
                 "total": {
                     "type": "integer",
                     "example": 42
+                }
+            }
+        },
+        "v1.QuranSurahAudioManifest": {
+            "type": "object",
+            "properties": {
+                "missing_ayah_keys": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "mode": {
+                    "type": "string",
+                    "example": "ayah"
+                },
+                "recitation": {
+                    "$ref": "#/definitions/v1.QuranSurahAudioRecitation"
+                },
+                "surah_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "tracks": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/v1.QuranSurahAudioTrack"
+                    }
+                }
+            }
+        },
+        "v1.QuranSurahAudioRecitation": {
+            "type": "object",
+            "properties": {
+                "display_name": {
+                    "type": "string",
+                    "example": "Mishari Rashid Al-Afasy"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "qul-ayah-recitation-mishari-rashid-al-afasy-murattal-hafs-953"
+                },
+                "is_default": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "mode": {
+                    "type": "string",
+                    "example": "ayah"
+                },
+                "public_track_count": {
+                    "type": "integer",
+                    "example": 6236
+                },
+                "reciter_name": {
+                    "type": "string",
+                    "example": "Mishari Rashid Al-Afasy"
+                },
+                "segment_count": {
+                    "type": "integer",
+                    "example": 77796
+                },
+                "style": {
+                    "type": "string",
+                    "example": "murattal"
+                },
+                "track_count": {
+                    "type": "integer",
+                    "example": 6236
+                }
+            }
+        },
+        "v1.QuranSurahAudioTrack": {
+            "type": "object",
+            "properties": {
+                "ayah_number": {
+                    "type": "integer",
+                    "example": 4
+                },
+                "duration_ms": {
+                    "type": "integer",
+                    "example": 3000
+                },
+                "duration_seconds": {
+                    "type": "integer",
+                    "example": 3
+                },
+                "mime_type": {
+                    "type": "string",
+                    "example": "audio/mpeg"
+                },
+                "recitation_id": {
+                    "type": "string",
+                    "example": "qul-recitation"
+                },
+                "segments": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/v1.QuranReaderAyahAudioSegment"
+                    }
+                },
+                "surah_id": {
+                    "type": "integer",
+                    "example": 73
+                },
+                "track_key": {
+                    "type": "string",
+                    "example": "73:4"
+                },
+                "track_type": {
+                    "type": "string",
+                    "example": "ayah"
+                },
+                "url": {
+                    "type": "string"
                 }
             }
         },

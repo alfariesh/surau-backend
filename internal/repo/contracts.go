@@ -194,6 +194,7 @@ type (
 		ListSurahs(ctx context.Context, lang string, includeInfo bool) ([]entity.QuranSurah, error)
 		GetSurah(ctx context.Context, surahID int, lang string) (entity.QuranSurah, error)
 		ListRecitations(ctx context.Context) ([]entity.QuranRecitation, error)
+		GetSurahAudioManifest(ctx context.Context, surahID int, recitationID string) (entity.QuranSurahAudioManifest, error)
 		ListTranslationSources(ctx context.Context, lang string) ([]entity.QuranTranslationSource, error)
 		ListNavigationSegments(ctx context.Context, kind string, lang string) ([]entity.QuranNavigationSegment, error)
 		GetAyah(

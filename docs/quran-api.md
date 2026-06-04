@@ -202,9 +202,10 @@ For FE playback:
 Default selection order:
 
 1. Only recitations where `has_playable_audio=true` are eligible.
-2. Prefer `mode="ayah"` over `mode="surah"`.
-3. Then sort by `name` ascending.
-4. Then sort by `id` ascending.
+2. Prefer the lowest non-null `default_priority`; production pins Mishari Rashid Al-Afasy with priority `0`.
+3. If no pinned playable recitation exists, prefer `mode="ayah"` over `mode="surah"`.
+4. Then sort by `display_name` ascending.
+5. Then sort by `id` ascending.
 
 When an ayah endpoint receives `include_audio=true` without `recitation_id`, the backend uses the same default recitation. If no full playable recitation exists yet, the endpoint still returns the ayah data with `audio` omitted or empty.
 
@@ -216,7 +217,7 @@ export function playableQuranAudioURL(track: QuranAudioTrack): string | null {
 }
 ```
 
-When `recitation_id` is provided explicitly and does not exist, the backend returns `404`.
+Only visible recitations are returned by `/recitations` and accepted by audio endpoints. When `recitation_id` is provided explicitly and does not exist or is hidden, the backend returns `404`.
 
 ## Query Parameter Rules
 
@@ -495,6 +496,50 @@ Status: `200`
 ### FE Guidance
 
 Use the recitation with `is_default=true` as the initial selected recitation. If the user chooses another recitation, pass its `id` as `recitation_id` on ayah endpoints.
+
+### 3b. Get Surah Audio Manifest
+
+```http
+GET /v1/quran/surahs/{surah_id}/audio?recitation_id=
+```
+
+Use this for player setup, preloading, download planning, or switching reciters without refetching the full ayah text payload. If `recitation_id` is omitted, the backend uses the same visible default recitation as `include_audio=true`.
+
+Response shape:
+
+```json
+{
+  "surah_id": 1,
+  "recitation": {
+    "id": "qul-ayah-recitation-mishari-rashid-al-afasy-murattal-hafs-953",
+    "display_name": "Mishari Rashid Al-Afasy",
+    "reciter_name": "Mishari Rashid Al-Afasy",
+    "style": "murattal",
+    "mode": "ayah",
+    "is_default": true,
+    "track_count": 6236,
+    "public_track_count": 6236,
+    "segment_count": 77796
+  },
+  "mode": "ayah",
+  "tracks": [
+    {
+      "recitation_id": "qul-ayah-recitation-mishari-rashid-al-afasy-murattal-hafs-953",
+      "track_type": "ayah",
+      "track_key": "1:1",
+      "surah_id": 1,
+      "ayah_number": 1,
+      "url": "https://cdn.surau.org/quran/audio/...",
+      "duration_ms": 5000,
+      "mime_type": "audio/mpeg",
+      "segments": []
+    }
+  ],
+  "missing_ayah_keys": []
+}
+```
+
+For `mode="ayah"`, tracks normally contain one playable item per ayah. For `mode="surah"`, tracks normally contain one full-surah item and `segments` marks ayah ranges inside it. `missing_ayah_keys` is the FE-safe source for partial audio states.
 
 ### 4. List Translation Sources
 
@@ -1438,9 +1483,10 @@ type BookQuranReference = {
 
 1. Fetch `GET /v1/quran/recitations`.
 2. Pick the item where `is_default=true`.
-3. Store user choice client-side if needed.
-4. Always pass the selected `recitation_id` once the user has chosen one.
-5. If a stored `recitation_id` returns `404 quran recitation not found`, clear it and fall back to the backend default.
+3. Optionally fetch `GET /v1/quran/surahs/{surah_id}/audio?recitation_id={selectedRecitationID}` to initialize the player from a compact manifest.
+4. Store user choice client-side if needed.
+5. Always pass the selected `recitation_id` once the user has chosen one.
+6. If a stored `recitation_id` returns `404 quran recitation not found`, clear it and fall back to the backend default.
 
 Playback helper:
 

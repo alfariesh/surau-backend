@@ -1640,6 +1640,21 @@ func (mr *MockQuranRepoMockRecorder) GetSurah(ctx, surahID, lang any) *gomock.Ca
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetSurah", reflect.TypeOf((*MockQuranRepo)(nil).GetSurah), ctx, surahID, lang)
 }
 
+// GetSurahAudioManifest mocks base method.
+func (m *MockQuranRepo) GetSurahAudioManifest(ctx context.Context, surahID int, recitationID string) (entity.QuranSurahAudioManifest, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetSurahAudioManifest", ctx, surahID, recitationID)
+	ret0, _ := ret[0].(entity.QuranSurahAudioManifest)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetSurahAudioManifest indicates an expected call of GetSurahAudioManifest.
+func (mr *MockQuranRepoMockRecorder) GetSurahAudioManifest(ctx, surahID, recitationID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetSurahAudioManifest", reflect.TypeOf((*MockQuranRepo)(nil).GetSurahAudioManifest), ctx, surahID, recitationID)
+}
+
 // ListBookQuranReferences mocks base method.
 func (m *MockQuranRepo) ListBookQuranReferences(ctx context.Context, filter repo.QuranBookReferenceFilter) ([]entity.BookQuranReference, int, error) {
 	m.ctrl.T.Helper()

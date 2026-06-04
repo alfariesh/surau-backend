@@ -45,12 +45,13 @@ class PromptSpec:
         return hashlib.sha256(json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
 
 
-MENTION_CLASSES = ("person", "person_reference", "place", "work_title", "group", "institution")
+MENTION_CLASSES = ("person", "person_reference", "theonym", "place", "work_title", "group", "institution")
 TERM_CLASSES = (
     "concept",
     "fiqh_term",
     "aqidah_term",
     "hadith_term",
+    "qiraat_term",
     "arabic_language_term",
     "adab_term",
     "tasawwuf_term",
@@ -92,12 +93,12 @@ def mentions_v1() -> PromptSpec:
         4. لا تستخرج الألقاب العامة وحدها مثل: الشيخ، الإمام، العلامة.
         5. استخرج الكيان بترتيب ظهوره، وتجنب التداخل بين النصوص المستخرجة.
         6. إذا كان الاسم قصيرًا أو يحتمل أكثر من شخص، ضع certainty = ambiguous.
-        7. لا تصنف أسماء الله تعالى مثل: الله، اللهم، الرب على أنها person.
+        7. صنف أسماء الله تعالى المستقلة مثل: الله، اللهم، الرب كـ theonym لا كـ person أو person_reference.
         8. صنف المراجع اللقبية مثل: النبي، رسول الله كـ person_reference لا كـ person.
         9. صنف أسماء الكتب والمؤلفات كـ work_title، ولا تصنف السور القرآنية ككتب.
 
         الأنواع المطلوبة:
-        person, person_reference, place, work_title, group, institution
+        person, person_reference, theonym, place, work_title, group, institution
         """
     ).strip()
 
@@ -171,8 +172,18 @@ def mentions_v1() -> PromptSpec:
             ],
         ),
         lx.data.ExampleData(
-            text="قال رسول الله صلى الله عليه وسلّم كما في صحيح البخاري.",
+            text="دعا المصنف: اللهم اغفر لنا، وقال رسول الله صلى الله عليه وسلّم كما في صحيح البخاري.",
             extractions=[
+                lx.data.Extraction(
+                    extraction_class="theonym",
+                    extraction_text="اللهم",
+                    attributes={
+                        "name_form": "divine_name",
+                        "role_hint": "theonym",
+                        "certainty": "explicit",
+                        "needs_review": "no",
+                    },
+                ),
                 lx.data.Extraction(
                     extraction_class="person_reference",
                     extraction_text="رسول الله صلى الله عليه وسلّم",
@@ -191,7 +202,7 @@ def mentions_v1() -> PromptSpec:
             ],
         ),
     ]
-    return PromptSpec("mentions", "mentions_v1", description, examples, MENTION_CLASSES)
+    return PromptSpec("mentions", "mentions_v2", description, examples, MENTION_CLASSES)
 
 
 def terms_v1() -> PromptSpec:
@@ -202,17 +213,65 @@ def terms_v1() -> PromptSpec:
         القواعد:
         1. extraction_text يجب أن يكون نصًا حرفيًا من المدخل.
         2. لا تستخرج مفاهيم بالاستنباط البعيد؛ استخرج ما يذكره النص صراحة.
-        3. ميّز بين مصطلحات الحديث والفقه والعقيدة واللغة والأدب والتزكية.
+        3. ميّز بين مصطلحات القراءات والحديث والفقه والعقيدة واللغة والأدب والتزكية.
         4. إذا كان اللفظ عامًا جدًا وليس مصطلحًا في السياق فلا تستخرجه.
         5. ضع teaching_type إذا كان السياق تعريفًا أو تحذيرًا أو تصنيفًا.
+        6. qiraat_term لمصطلحات القراءات ورسم المصحف وضبط الوجوه مثل: علل القراءات، القراءات العشر، القراءة المتواترة، رسم المصحف، الشذوذ.
+        7. arabic_language_term لمصطلحات النحو والإعراب والصرف واللغة، ولا تجعلها hadith_term.
+        8. hadith_term خاص بمصطلحات الحديث والإسناد والمتن والرواة في سياق الحديث.
 
         الأنواع المطلوبة:
-        concept, fiqh_term, aqidah_term, hadith_term, arabic_language_term,
-        adab_term, tasawwuf_term
+        concept, fiqh_term, aqidah_term, hadith_term, qiraat_term,
+        arabic_language_term, adab_term, tasawwuf_term
         """
     ).strip()
 
     examples = [
+        lx.data.ExampleData(
+            text="يعنى علم علل القراءات بتخريج القراءات العشر وموافقة رسم المصحف، ويبحث في النحو.",
+            extractions=[
+                lx.data.Extraction(
+                    extraction_class="qiraat_term",
+                    extraction_text="علل القراءات",
+                    attributes={
+                        "domain": "qiraat",
+                        "is_definition": "yes",
+                        "teaching_type": "definition",
+                        "certainty": "explicit",
+                    },
+                ),
+                lx.data.Extraction(
+                    extraction_class="qiraat_term",
+                    extraction_text="القراءات العشر",
+                    attributes={
+                        "domain": "qiraat",
+                        "is_definition": "no",
+                        "teaching_type": "statement",
+                        "certainty": "explicit",
+                    },
+                ),
+                lx.data.Extraction(
+                    extraction_class="qiraat_term",
+                    extraction_text="رسم المصحف",
+                    attributes={
+                        "domain": "qiraat",
+                        "is_definition": "no",
+                        "teaching_type": "condition",
+                        "certainty": "explicit",
+                    },
+                ),
+                lx.data.Extraction(
+                    extraction_class="arabic_language_term",
+                    extraction_text="النحو",
+                    attributes={
+                        "domain": "arabic_language",
+                        "is_definition": "no",
+                        "teaching_type": "condition",
+                        "certainty": "explicit",
+                    },
+                ),
+            ],
+        ),
         lx.data.ExampleData(
             text="قال المصنف إن الإخلاص أصل العمل، وأن الرياء يفسد النية في العبادة.",
             extractions=[
@@ -284,7 +343,7 @@ def terms_v1() -> PromptSpec:
             ],
         ),
     ]
-    return PromptSpec("terms", "terms_v1", description, examples, TERM_CLASSES)
+    return PromptSpec("terms", "terms_v2", description, examples, TERM_CLASSES)
 
 
 def citations_v1() -> PromptSpec:
@@ -295,8 +354,13 @@ def citations_v1() -> PromptSpec:
         القواعد:
         1. extraction_text يجب أن يكون نصًا حرفيًا موجودًا في المدخل.
         2. لا تخترع موضع آية أو حديث إذا لم يذكره النص.
-        3. استخرج الآيات والأحاديث والآثار والشعر والنقول وذكر الكتب.
-        4. إذا كانت الإحالة غير صريحة فضع citation_certainty = ambiguous.
+        3. استخرج مواضع القرآن والأحاديث والآثار والشعر والنقول وذكر الكتب.
+        4. quran_reference للإحالة أو الموضع مثل: سورة الإخلاص، [الحجرات: 10]، وليس لمجرد نص آية بلا موضع.
+        5. نص الآية أو الحديث يكون quote أو hadith_reference مع locator_text إذا ذكر المصدر.
+        6. لا تستخرج الصيغ التعبدية العامة مثل البسملة والحمدلة والصلاة على النبي كـ quote أو quran_reference إلا إذا ذكر النص موضعها صراحة.
+        7. إذا كانت الإحالة غير صريحة فضع citation_certainty = ambiguous.
+        8. book_reference يكون لعنوان كتاب أو مجموعة حديثية صريحة، لا لاسم مؤلف أو شاعر مجرد.
+        9. إذا نسب النص شعرًا أو قولًا إلى شخص مثل ابن الجزري، فاستخرج الشعر أو القول واجعل اسم الشخص في locator_text أو attributed_to، ولا تستخرجه book_reference.
 
         الأنواع المطلوبة:
         quran_reference, hadith_reference, athar, quote, poetry, book_reference,
@@ -321,10 +385,19 @@ def citations_v1() -> PromptSpec:
                     },
                 ),
                 lx.data.Extraction(
-                    extraction_class="quran_reference",
+                    extraction_class="quote",
                     extraction_text="قل هو الله أحد",
                     attributes={
-                        "reference_type": "quran",
+                        "reference_type": "quran_quote",
+                        "locator_text": "سورة الإخلاص",
+                        "citation_certainty": "explicit",
+                    },
+                ),
+                lx.data.Extraction(
+                    extraction_class="book_reference",
+                    extraction_text="البخاري",
+                    attributes={
+                        "reference_type": "hadith_collection",
                         "locator_text": "unknown",
                         "citation_certainty": "explicit",
                     },
@@ -343,6 +416,20 @@ def citations_v1() -> PromptSpec:
                     extraction_text="العلم نور",
                     attributes={
                         "reference_type": "poetry",
+                        "locator_text": "unknown",
+                        "citation_certainty": "explicit",
+                    },
+                ),
+            ],
+        ),
+        lx.data.ExampleData(
+            text="افتتح بقوله: بسم الله الرحمن الرحيم، ثم أحال إلى صحيح مسلم.",
+            extractions=[
+                lx.data.Extraction(
+                    extraction_class="book_reference",
+                    extraction_text="صحيح مسلم",
+                    attributes={
+                        "reference_type": "book",
                         "locator_text": "unknown",
                         "citation_certainty": "explicit",
                     },
@@ -372,8 +459,23 @@ def citations_v1() -> PromptSpec:
                 ),
             ],
         ),
+        lx.data.ExampleData(
+            text="وقد جمعها ابن الجزري في قوله: فكل ما وافق وجه نحو ... وصح إسنادا هو القرآن.",
+            extractions=[
+                lx.data.Extraction(
+                    extraction_class="poetry",
+                    extraction_text="فكل ما وافق وجه نحو ... وصح إسنادا هو القرآن",
+                    attributes={
+                        "reference_type": "poetry",
+                        "locator_text": "ابن الجزري",
+                        "attributed_to": "ابن الجزري",
+                        "citation_certainty": "explicit",
+                    },
+                ),
+            ],
+        ),
     ]
-    return PromptSpec("citations", "citations_v1", description, examples, CITATION_CLASSES)
+    return PromptSpec("citations", "citations_v3", description, examples, CITATION_CLASSES)
 
 
 def relations_v1() -> PromptSpec:

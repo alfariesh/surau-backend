@@ -184,6 +184,7 @@ type (
 		Surahs(ctx context.Context, lang string, includeInfo bool) ([]entity.QuranSurah, error)
 		Surah(ctx context.Context, surahID int, lang string) (entity.QuranSurah, error)
 		Recitations(ctx context.Context) ([]entity.QuranRecitation, error)
+		SurahAudio(ctx context.Context, surahID int, recitationID string) (entity.QuranSurahAudioManifest, error)
 		TranslationSources(ctx context.Context, lang string) ([]entity.QuranTranslationSource, error)
 		Juz(ctx context.Context, lang string) ([]entity.QuranNavigationSegment, error)
 		JuzAyahs(

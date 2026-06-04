@@ -78,6 +78,7 @@ func (r *QuranRepo) ListRecitations(ctx context.Context) ([]entity.QuranRecitati
 	rows, err := r.Pool.Query(ctx, `
 SELECT r.id,
        r.name,
+       COALESCE(NULLIF(r.display_name, ''), NULLIF(r.reciter_name, ''), r.name) AS display_name,
        r.reciter_name,
        r.style,
        r.mode,
@@ -89,17 +90,29 @@ SELECT r.id,
        r.metadata,
        r.imported_at,
        r.updated_at,
+       r.sort_order,
+       r.default_priority,
+       r.is_visible,
        COUNT(t.recitation_id)::int AS track_count,
        COUNT(NULLIF(t.public_url, ''))::int AS public_track_count,
        COUNT(
            CASE
                WHEN COALESCE(NULLIF(t.public_url, ''), NULLIF(t.audio_url, '')) IS NOT NULL THEN 1
            END
-       )::int AS playable_track_count
+       )::int AS playable_track_count,
+       COALESCE(sc.segment_count, 0)::int AS segment_count
 FROM quran_recitations r
 LEFT JOIN quran_audio_tracks t ON t.recitation_id = r.id
-GROUP BY r.id
-ORDER BY r.mode ASC, r.name ASC, r.id ASC`)
+LEFT JOIN (
+    SELECT recitation_id, COUNT(*)::int AS segment_count
+    FROM quran_audio_segments
+    GROUP BY recitation_id
+) sc ON sc.recitation_id = r.id
+WHERE r.is_visible = TRUE
+GROUP BY r.id, sc.segment_count
+ORDER BY r.sort_order ASC,
+         COALESCE(NULLIF(r.display_name, ''), NULLIF(r.reciter_name, ''), r.name) ASC,
+         r.id ASC`)
 	if err != nil {
 		return nil, fmt.Errorf("QuranRepo - ListRecitations - Query: %w", err)
 	}
@@ -121,6 +134,51 @@ ORDER BY r.mode ASC, r.name ASC, r.id ASC`)
 	markDefaultRecitation(recitations)
 
 	return recitations, nil
+}
+
+// GetSurahAudioManifest returns the selected recitation's playable audio manifest for one surah.
+func (r *QuranRepo) GetSurahAudioManifest(
+	ctx context.Context,
+	surahID int,
+	recitationID string,
+) (entity.QuranSurahAudioManifest, error) {
+	if err := r.ensureQuranSurah(ctx, surahID); err != nil {
+		return entity.QuranSurahAudioManifest{}, err
+	}
+
+	recitationID, err := r.resolveAudioRecitationID(ctx, recitationID)
+	if err != nil {
+		return entity.QuranSurahAudioManifest{}, err
+	}
+	if recitationID == "" {
+		return entity.QuranSurahAudioManifest{}, entity.ErrQuranRecitationNotFound
+	}
+
+	recitation, err := r.getVisibleRecitation(ctx, recitationID)
+	if err != nil {
+		return entity.QuranSurahAudioManifest{}, err
+	}
+	if defaultID, err := r.defaultPlayableRecitationID(ctx); err == nil && defaultID == recitation.ID {
+		recitation.IsDefault = true
+	}
+
+	ayahKeys, err := r.surahAyahKeys(ctx, surahID)
+	if err != nil {
+		return entity.QuranSurahAudioManifest{}, err
+	}
+
+	tracks, err := r.audioTracksForSurah(ctx, surahID, recitation)
+	if err != nil {
+		return entity.QuranSurahAudioManifest{}, err
+	}
+
+	return entity.QuranSurahAudioManifest{
+		SurahID:         surahID,
+		Recitation:      recitation,
+		Mode:            recitation.Mode,
+		Tracks:          tracks,
+		MissingAyahKeys: missingManifestAyahKeys(ayahKeys, recitation.Mode, tracks),
+	}, nil
 }
 
 // ListTranslationSources returns imported Quran translation sources for a language.
@@ -1225,6 +1283,165 @@ WHERE (
 	return result, nil
 }
 
+func (r *QuranRepo) getVisibleRecitation(ctx context.Context, recitationID string) (entity.QuranRecitation, error) {
+	row := r.Pool.QueryRow(ctx, `
+SELECT r.id,
+       r.name,
+       COALESCE(NULLIF(r.display_name, ''), NULLIF(r.reciter_name, ''), r.name) AS display_name,
+       r.reciter_name,
+       r.style,
+       r.mode,
+       r.source_url,
+       r.qul_resource_id,
+       r.format,
+       r.license_status,
+       r.checksum,
+       r.metadata,
+       r.imported_at,
+       r.updated_at,
+       r.sort_order,
+       r.default_priority,
+       r.is_visible,
+       COUNT(t.recitation_id)::int AS track_count,
+       COUNT(NULLIF(t.public_url, ''))::int AS public_track_count,
+       COUNT(
+           CASE
+               WHEN COALESCE(NULLIF(t.public_url, ''), NULLIF(t.audio_url, '')) IS NOT NULL THEN 1
+           END
+       )::int AS playable_track_count,
+       COALESCE(sc.segment_count, 0)::int AS segment_count
+FROM quran_recitations r
+LEFT JOIN quran_audio_tracks t ON t.recitation_id = r.id
+LEFT JOIN (
+    SELECT recitation_id, COUNT(*)::int AS segment_count
+    FROM quran_audio_segments
+    GROUP BY recitation_id
+) sc ON sc.recitation_id = r.id
+WHERE r.id = $1 AND r.is_visible = TRUE
+GROUP BY r.id, sc.segment_count`,
+		recitationID,
+	)
+
+	recitation, err := scanQuranRecitation(row)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return entity.QuranRecitation{}, entity.ErrQuranRecitationNotFound
+		}
+
+		return entity.QuranRecitation{}, fmt.Errorf("QuranRepo - getVisibleRecitation - scanQuranRecitation: %w", err)
+	}
+
+	return recitation, nil
+}
+
+func (r *QuranRepo) surahAyahKeys(ctx context.Context, surahID int) ([]string, error) {
+	rows, err := r.Pool.Query(ctx, `
+SELECT surah_id::text || ':' || ayah_number::text AS ayah_key
+FROM quran_ayahs
+WHERE surah_id = $1
+ORDER BY ayah_number ASC`,
+		surahID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("QuranRepo - surahAyahKeys - Query: %w", err)
+	}
+	defer rows.Close()
+
+	ayahKeys := make([]string, 0)
+	for rows.Next() {
+		var ayahKey string
+		if err = rows.Scan(&ayahKey); err != nil {
+			return nil, fmt.Errorf("QuranRepo - surahAyahKeys - Scan: %w", err)
+		}
+		ayahKeys = append(ayahKeys, ayahKey)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("QuranRepo - surahAyahKeys - rows.Err: %w", err)
+	}
+
+	return ayahKeys, nil
+}
+
+func (r *QuranRepo) audioTracksForSurah(
+	ctx context.Context,
+	surahID int,
+	recitation entity.QuranRecitation,
+) ([]entity.QuranAudioTrack, error) {
+	trackType := "ayah"
+	if recitation.Mode == "surah" {
+		trackType = "surah"
+	}
+
+	rows, err := r.Pool.Query(ctx, `
+SELECT t.recitation_id,
+       t.track_type,
+       t.track_key,
+       t.surah_id,
+       t.ayah_number,
+       t.audio_url,
+       t.r2_key,
+       t.public_url,
+       t.duration_ms,
+       t.duration_seconds,
+       t.mime_type,
+       t.metadata,
+       t.updated_at,
+       s.segment_index,
+       (s.surah_id::text || ':' || s.ayah_number::text) AS segment_ayah_key,
+       s.timestamp_from_ms,
+       s.timestamp_to_ms,
+       s.duration_ms,
+       s.metadata
+FROM quran_audio_tracks t
+LEFT JOIN quran_audio_segments s
+       ON s.recitation_id = t.recitation_id
+      AND s.track_type = t.track_type
+      AND s.track_key = t.track_key
+WHERE t.recitation_id = $1
+  AND t.surah_id = $2
+  AND t.track_type = $3
+ORDER BY t.track_type ASC, t.track_key ASC, s.segment_index ASC`,
+		recitation.ID,
+		surahID,
+		trackType,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("QuranRepo - audioTracksForSurah - Query: %w", err)
+	}
+	defer rows.Close()
+
+	grouped := make(map[string]*entity.QuranAudioTrack)
+	for rows.Next() {
+		track, _, segment, hasSegment, err := scanQuranAudioTrackRow(rows)
+		if err != nil {
+			return nil, fmt.Errorf("QuranRepo - audioTracksForSurah - scanQuranAudioTrackRow: %w", err)
+		}
+
+		trackID := track.RecitationID + ":" + track.TrackType + ":" + track.TrackKey
+		existing := grouped[trackID]
+		if existing == nil {
+			existing = &track
+			grouped[trackID] = existing
+		}
+		if hasSegment {
+			existing.Segments = append(existing.Segments, segment)
+		}
+	}
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("QuranRepo - audioTracksForSurah - rows.Err: %w", err)
+	}
+
+	tracks := make([]entity.QuranAudioTrack, 0, len(grouped))
+	for _, track := range grouped {
+		tracks = append(tracks, *track)
+	}
+	sort.Slice(tracks, func(i, j int) bool {
+		return quranAudioTrackLess(tracks[i], tracks[j])
+	})
+
+	return tracks, nil
+}
+
 func (r *QuranRepo) resolveAudioRecitationID(ctx context.Context, recitationID string) (string, error) {
 	recitationID = strings.TrimSpace(recitationID)
 	if recitationID == "" {
@@ -1232,7 +1449,7 @@ func (r *QuranRepo) resolveAudioRecitationID(ctx context.Context, recitationID s
 	}
 
 	var exists bool
-	if err := r.Pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM quran_recitations WHERE id = $1)`, recitationID).
+	if err := r.Pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM quran_recitations WHERE id = $1 AND is_visible = TRUE)`, recitationID).
 		Scan(&exists); err != nil {
 		return "", fmt.Errorf("QuranRepo - resolveAudioRecitationID - QueryRow: %w", err)
 	}
@@ -1340,6 +1557,7 @@ func (r *QuranRepo) defaultPlayableRecitationID(ctx context.Context) (string, er
 SELECT r.id
 FROM quran_recitations r
 JOIN quran_audio_tracks t ON t.recitation_id = r.id
+WHERE r.is_visible = TRUE
 GROUP BY r.id, r.mode, r.name
 HAVING COUNT(t.recitation_id) > 0
    AND COUNT(
@@ -1347,8 +1565,10 @@ HAVING COUNT(t.recitation_id) > 0
            WHEN COALESCE(NULLIF(t.public_url, ''), NULLIF(t.audio_url, '')) IS NOT NULL THEN 1
        END
    ) = COUNT(t.recitation_id)
-ORDER BY CASE r.mode WHEN 'ayah' THEN 0 WHEN 'surah' THEN 1 ELSE 2 END,
-         r.name ASC,
+ORDER BY CASE WHEN r.default_priority IS NULL THEN 1 ELSE 0 END,
+         r.default_priority ASC,
+         CASE r.mode WHEN 'ayah' THEN 0 WHEN 'surah' THEN 1 ELSE 2 END,
+         COALESCE(NULLIF(r.display_name, ''), NULLIF(r.reciter_name, ''), r.name) ASC,
          r.id ASC
 LIMIT 1`).Scan(&recitationID)
 	if err != nil {
@@ -1474,7 +1694,7 @@ func markDefaultRecitation(recitations []entity.QuranRecitation) {
 		if !recitations[i].HasPlayableAudio {
 			continue
 		}
-		if defaultIndex == -1 || quranRecitationLess(recitations[i], recitations[defaultIndex]) {
+		if defaultIndex == -1 || quranDefaultRecitationLess(recitations[i], recitations[defaultIndex]) {
 			defaultIndex = i
 		}
 	}
@@ -1483,14 +1703,30 @@ func markDefaultRecitation(recitations []entity.QuranRecitation) {
 	}
 }
 
+func quranDefaultRecitationLess(left entity.QuranRecitation, right entity.QuranRecitation) bool {
+	if left.DefaultPriority != nil || right.DefaultPriority != nil {
+		if left.DefaultPriority == nil {
+			return false
+		}
+		if right.DefaultPriority == nil {
+			return true
+		}
+		if *left.DefaultPriority != *right.DefaultPriority {
+			return *left.DefaultPriority < *right.DefaultPriority
+		}
+	}
+
+	return quranRecitationLess(left, right)
+}
+
 func quranRecitationLess(left entity.QuranRecitation, right entity.QuranRecitation) bool {
 	leftRank := quranRecitationModeRank(left.Mode)
 	rightRank := quranRecitationModeRank(right.Mode)
 	if leftRank != rightRank {
 		return leftRank < rightRank
 	}
-	if left.Name != right.Name {
-		return left.Name < right.Name
+	if left.DisplayName != right.DisplayName {
+		return left.DisplayName < right.DisplayName
 	}
 
 	return left.ID < right.ID
@@ -1522,6 +1758,7 @@ func quranAudioTrackLess(left entity.QuranAudioTrack, right entity.QuranAudioTra
 
 func scanQuranRecitation(row rowScanner) (entity.QuranRecitation, error) {
 	var recitation entity.QuranRecitation
+	var displayName sql.NullString
 	var reciterName sql.NullString
 	var style sql.NullString
 	var sourceURL sql.NullString
@@ -1529,10 +1766,12 @@ func scanQuranRecitation(row rowScanner) (entity.QuranRecitation, error) {
 	var checksum sql.NullString
 	var metadata []byte
 	var importedAt sql.NullTime
+	var defaultPriority sql.NullInt64
 
 	err := row.Scan(
 		&recitation.ID,
 		&recitation.Name,
+		&displayName,
 		&reciterName,
 		&style,
 		&recitation.Mode,
@@ -1544,14 +1783,22 @@ func scanQuranRecitation(row rowScanner) (entity.QuranRecitation, error) {
 		&metadata,
 		&importedAt,
 		&recitation.UpdatedAt,
+		&recitation.SortOrder,
+		&defaultPriority,
+		&recitation.IsVisible,
 		&recitation.TrackCount,
 		&recitation.PublicTrackCount,
 		&recitation.PlayableTrackCount,
+		&recitation.SegmentCount,
 	)
 	if err != nil {
 		return entity.QuranRecitation{}, err
 	}
 
+	recitation.DisplayName = displayName.String
+	if recitation.DisplayName == "" {
+		recitation.DisplayName = recitation.Name
+	}
 	recitation.ReciterName = nullableString(reciterName)
 	recitation.Style = nullableString(style)
 	recitation.SourceURL = nullableString(sourceURL)
@@ -1559,10 +1806,45 @@ func scanQuranRecitation(row rowScanner) (entity.QuranRecitation, error) {
 	recitation.Checksum = nullableString(checksum)
 	recitation.Metadata = entity.RawJSON(metadata)
 	recitation.ImportedAt = nullableTime(importedAt)
+	recitation.DefaultPriority = nullableInt(defaultPriority)
 	recitation.HasPublicAudio = recitation.PublicTrackCount > 0 && recitation.PublicTrackCount == recitation.TrackCount
 	recitation.HasPlayableAudio = recitation.PlayableTrackCount > 0 && recitation.PlayableTrackCount == recitation.TrackCount
 
 	return recitation, nil
+}
+
+func missingManifestAyahKeys(ayahKeys []string, mode string, tracks []entity.QuranAudioTrack) []string {
+	present := make(map[string]bool, len(ayahKeys))
+	for _, track := range tracks {
+		if !quranAudioTrackPlayable(track) {
+			continue
+		}
+
+		if mode == "surah" {
+			for _, segment := range track.Segments {
+				present[segment.AyahKey] = true
+			}
+			continue
+		}
+
+		if track.TrackType == "ayah" {
+			present[track.TrackKey] = true
+		}
+	}
+
+	missing := make([]string, 0)
+	for _, ayahKey := range ayahKeys {
+		if !present[ayahKey] {
+			missing = append(missing, ayahKey)
+		}
+	}
+
+	return missing
+}
+
+func quranAudioTrackPlayable(track entity.QuranAudioTrack) bool {
+	return (track.PublicURL != nil && *track.PublicURL != "") ||
+		(track.AudioURL != nil && *track.AudioURL != "")
 }
 
 func scanQuranTranslationSource(row rowScanner) (entity.QuranTranslationSource, error) {

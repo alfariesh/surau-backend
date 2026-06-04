@@ -492,6 +492,7 @@ Endpoint ringkas:
 | `GET` | `/v1/quran/hizbs` | Public | List hizb. |
 | `GET` | `/v1/quran/hizbs/{hizb_number}/ayahs?lang=id&view=reader_minimal` | Public | Reader by hizb. |
 | `GET` | `/v1/quran/recitations` | Public | Pilihan audio/reciter. |
+| `GET` | `/v1/quran/surahs/{surah_id}/audio?recitation_id=` | Public | Manifest audio compact untuk player/preload/offline. |
 | `GET` | `/v1/quran/translation-sources?lang=id` | Public | Pilihan sumber terjemahan. |
 
 Quran query params penting:
@@ -530,6 +531,7 @@ Audio rules:
 
 - Gunakan `public_url ?? audio_url` sebagai playable URL.
 - Pada `view=reader_minimal`, gunakan langsung `audio[].url`.
+- Untuk setup player yang lebih compact, gunakan `/quran/surahs/{surah_id}/audio`; response sudah berisi `tracks[].url` dan `missing_ayah_keys`.
 - `public_url` lebih disukai karena app-owned CDN.
 - `audio_url` tetap valid untuk local/dev fallback.
 - `r2_key` adalah storage metadata, bukan URL browser/player.
@@ -592,6 +594,24 @@ export type QuranAudioTrack = {
   duration_seconds?: number | null;
   mime_type?: string | null;
   segments?: QuranAudioSegment[];
+};
+
+export type QuranSurahAudioManifest = {
+  surah_id: number;
+  recitation: {
+    id: string;
+    display_name: string;
+    reciter_name?: string | null;
+    style?: string | null;
+    mode: "ayah" | "surah" | string;
+    is_default: boolean;
+    track_count: number;
+    public_track_count: number;
+    segment_count: number;
+  };
+  mode: "ayah" | "surah" | string;
+  tracks: Array<Omit<QuranAudioTrack, "audio_url" | "public_url" | "r2_key"> & { url: string }>;
+  missing_ayah_keys: string[];
 };
 
 export type QuranTranslationSource = {

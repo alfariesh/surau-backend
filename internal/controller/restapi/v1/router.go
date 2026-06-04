@@ -91,6 +91,7 @@ func NewRoutes(
 		quranGroup.Get("/hizbs/:hizb_number/ayahs", r.listQuranHizbAyahs)
 		quranGroup.Get("/surahs", r.listQuranSurahs)
 		quranGroup.Get("/surahs/:surah_id", r.getQuranSurah)
+		quranGroup.Get("/surahs/:surah_id/audio", r.getQuranSurahAudio)
 		quranGroup.Get("/surahs/:surah_id/ayahs", r.listQuranSurahAyahs)
 		quranGroup.Get("/ayahs/:ayah_key", r.getQuranAyah)
 		quranGroup.Get("/search", r.searchQuran)

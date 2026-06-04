@@ -110,6 +110,7 @@ type QuranAudioSegment struct {
 type QuranRecitation struct {
 	ID                 string     `json:"id" example:"qul-ayah-recitation-mishari-rashid-al-afasy-murattal-hafs-953"`
 	Name               string     `json:"name" example:"QUL ayah recitation mishari rashid al afasy murattal hafs 953"`
+	DisplayName        string     `json:"display_name" example:"Mishari Rashid Al-Afasy"`
 	ReciterName        *string    `json:"reciter_name,omitempty" example:"Mishari Rashid Al-Afasy"`
 	Style              *string    `json:"style,omitempty" example:"murattal"`
 	Mode               string     `json:"mode" example:"ayah"`
@@ -121,9 +122,13 @@ type QuranRecitation struct {
 	TrackCount         int        `json:"track_count" example:"6236"`
 	PublicTrackCount   int        `json:"public_track_count" example:"0"`
 	PlayableTrackCount int        `json:"playable_track_count" example:"6236"`
+	SegmentCount       int        `json:"segment_count" example:"77796"`
 	HasPublicAudio     bool       `json:"has_public_audio" example:"false"`
 	HasPlayableAudio   bool       `json:"has_playable_audio" example:"true"`
 	IsDefault          bool       `json:"is_default" example:"false"`
+	SortOrder          int        `json:"sort_order" example:"10"`
+	DefaultPriority    *int       `json:"default_priority,omitempty" example:"0"`
+	IsVisible          bool       `json:"is_visible" example:"true"`
 	Metadata           RawJSON    `json:"metadata,omitempty" swaggertype:"object"`
 	ImportedAt         *time.Time `json:"imported_at,omitempty" example:"2026-01-01T00:00:00Z"`
 	UpdatedAt          time.Time  `json:"updated_at" example:"2026-01-01T00:00:00Z"`
@@ -147,6 +152,15 @@ type QuranAudioTrack struct {
 	Metadata        RawJSON             `json:"metadata,omitempty" swaggertype:"object"`
 	UpdatedAt       time.Time           `json:"updated_at" example:"2026-01-01T00:00:00Z"`
 } // @name entity.QuranAudioTrack
+
+// QuranSurahAudioManifest is a FE-friendly audio manifest for one surah and recitation.
+type QuranSurahAudioManifest struct {
+	SurahID         int               `json:"surah_id" example:"1"`
+	Recitation      QuranRecitation   `json:"recitation"`
+	Mode            string            `json:"mode" example:"ayah"`
+	Tracks          []QuranAudioTrack `json:"tracks"`
+	MissingAyahKeys []string          `json:"missing_ayah_keys" example:"1:1"`
+} // @name entity.QuranSurahAudioManifest
 
 // QuranAyah is one canonical ayah row with optional translation and audio metadata.
 type QuranAyah struct {
