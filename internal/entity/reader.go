@@ -84,6 +84,26 @@ type Book struct {
 	UpdatedAt             time.Time          `json:"updated_at"         example:"2026-01-01T00:00:00Z"`
 }
 
+// BookCatalogStats summarizes the full published catalog independently from pagination.
+type BookCatalogStats struct {
+	TotalBooks       int                `json:"total_books" example:"120"`
+	PublishedCount   int                `json:"published_count" example:"120"`
+	AuthorCount      int                `json:"author_count" example:"35"`
+	CategoryCount    int                `json:"category_count" example:"12"`
+	WithContentCount int                `json:"with_content_count" example:"90"`
+	CoverageCount    int                `json:"coverage_count" example:"25"`
+	ByCategory       []BookCategoryStat `json:"by_category"`
+} // @name entity.BookCatalogStats
+
+// BookCategoryStat summarizes published catalog counts for one category.
+type BookCategoryStat struct {
+	CategoryID     *int    `json:"category_id" example:"10"`
+	CategoryName   *string `json:"category_name"`
+	Total          int     `json:"total" example:"20"`
+	PublishedCount int     `json:"published_count" example:"20"`
+	CoverageCount  int     `json:"coverage_count" example:"8"`
+} // @name entity.BookCategoryStat
+
 // RawJSON is used for metadata stored as jsonb.
 type RawJSON []byte
 
@@ -283,29 +303,30 @@ type BookSection struct {
 
 // BookTOCRead is an article-like section response with TOC navigation context.
 type BookTOCRead struct {
-	BookID                    int                 `json:"book_id"       example:"797"`
-	HeadingID                 int                 `json:"heading_id"    example:"10"`
-	Title                     string              `json:"title"         example:"باب النية"`
-	RequestedLang             string              `json:"requested_lang" example:"en"`
-	TitleLang                 string              `json:"title_lang"     example:"ar"`
-	IsTitleFallback           bool                `json:"is_title_fallback" example:"true"`
-	Summary                   *string             `json:"summary,omitempty"`
-	SummaryLang               *string             `json:"summary_lang,omitempty" example:"id"`
-	HasSummary                bool                `json:"has_summary"   example:"true"`
-	TranslationMissing        bool                `json:"translation_missing" example:"false"`
-	AvailableTranslationLangs []string            `json:"available_translation_langs" example:"id"`
-	AvailableSummaryLangs     []string            `json:"available_summary_langs" example:"id"`
-	Breadcrumb                []BookTOCLink       `json:"breadcrumb"`
-	Children                  []BookTOCLink       `json:"children"`
-	Previous                  *BookTOCLink        `json:"previous"`
-	Next                      *BookTOCLink        `json:"next"`
-	StartPageID               int                 `json:"start_page_id" example:"12"`
-	EndPageID                 int                 `json:"end_page_id"   example:"15"`
-	OriginalHTML              string              `json:"original_html"`
-	OriginalText              string              `json:"original_text"`
-	Translation               *SectionTranslation `json:"translation"`
-	Audio                     *SectionAudio       `json:"audio"`
-	Availability              ReaderAvailability  `json:"availability"`
+	BookID                    int                  `json:"book_id"       example:"797"`
+	HeadingID                 int                  `json:"heading_id"    example:"10"`
+	Title                     string               `json:"title"         example:"باب النية"`
+	RequestedLang             string               `json:"requested_lang" example:"en"`
+	TitleLang                 string               `json:"title_lang"     example:"ar"`
+	IsTitleFallback           bool                 `json:"is_title_fallback" example:"true"`
+	Summary                   *string              `json:"summary,omitempty"`
+	SummaryLang               *string              `json:"summary_lang,omitempty" example:"id"`
+	HasSummary                bool                 `json:"has_summary"   example:"true"`
+	TranslationMissing        bool                 `json:"translation_missing" example:"false"`
+	AvailableTranslationLangs []string             `json:"available_translation_langs" example:"id"`
+	AvailableSummaryLangs     []string             `json:"available_summary_langs" example:"id"`
+	Breadcrumb                []BookTOCLink        `json:"breadcrumb"`
+	Children                  []BookTOCLink        `json:"children"`
+	Previous                  *BookTOCLink         `json:"previous"`
+	Next                      *BookTOCLink         `json:"next"`
+	StartPageID               int                  `json:"start_page_id" example:"12"`
+	EndPageID                 int                  `json:"end_page_id"   example:"15"`
+	OriginalHTML              string               `json:"original_html"`
+	OriginalText              string               `json:"original_text"`
+	Translation               *SectionTranslation  `json:"translation"`
+	Audio                     *SectionAudio        `json:"audio"`
+	QuranReferences           []BookQuranReference `json:"quran_references,omitempty"`
+	Availability              ReaderAvailability   `json:"availability"`
 } // @name entity.BookTOCRead
 
 // BookTOCPlaylist is a continuous audiobook manifest for one TOC subtree.

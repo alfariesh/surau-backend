@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/evrone/go-clean-template/internal/entity"
+	"github.com/evrone/go-clean-template/internal/usecase"
 	"github.com/evrone/go-clean-template/pkg/logger"
 	"github.com/go-playground/validator/v10"
 	"github.com/gofiber/fiber/v2"
@@ -31,6 +32,8 @@ func TestQuranRoutes(t *testing.T) {
 		{name: "surahs include info when requested", path: "/v1/quran/surahs?lang=id&include_info=true", wantStatus: http.StatusOK, wantBody: `"info"`},
 		{name: "surah detail includes info", path: "/v1/quran/surahs/73?lang=id", wantStatus: http.StatusOK, wantBody: `"text_html"`},
 		{name: "recitations include default flag", path: "/v1/quran/recitations", wantStatus: http.StatusOK, wantBody: `"is_default":true`},
+		{name: "surah audio manifest", path: "/v1/quran/surahs/73/audio", wantStatus: http.StatusOK, wantBody: `"missing_ayah_keys":["73:2"]`},
+		{name: "surah audio invalid recitation", path: "/v1/quran/surahs/73/audio?recitation_id=bad-id", wantStatus: http.StatusNotFound, wantBody: `"quran recitation not found"`},
 		{name: "translation sources", path: "/v1/quran/translation-sources?lang=id", wantStatus: http.StatusOK, wantBody: `"coverage"`},
 		{name: "juz navigation", path: "/v1/quran/juz?lang=id", wantStatus: http.StatusOK, wantBody: `"kind":"juz"`},
 		{name: "juz ayahs", path: "/v1/quran/juz/29/ayahs?include_translation=false&include_audio=true&recitation_id=rec-1", wantStatus: http.StatusOK, wantBody: `"recitation_id":"rec-1"`},
@@ -56,9 +59,12 @@ func TestQuranRoutes(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			resp, err := app.Test(httptest.NewRequest(http.MethodGet, tt.path, nil))
+			resp, err := app.Test(httptest.NewRequestWithContext(t.Context(), http.MethodGet, tt.path, http.NoBody))
 
 			require.NoError(t, err)
+
+			defer resp.Body.Close()
+
 			assert.Equal(t, tt.wantStatus, resp.StatusCode)
 			body, err := io.ReadAll(resp.Body)
 			require.NoError(t, err)
@@ -164,8 +170,11 @@ func TestQuranReaderMinimalView(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			resp, err := app.Test(httptest.NewRequest(http.MethodGet, tt.path, nil))
+			resp, err := app.Test(httptest.NewRequestWithContext(t.Context(), http.MethodGet, tt.path, http.NoBody))
 			require.NoError(t, err)
+
+			defer resp.Body.Close()
+
 			assert.Equal(t, tt.wantHTTPCode, resp.StatusCode)
 
 			body, err := io.ReadAll(resp.Body)
@@ -181,7 +190,27 @@ func TestQuranReaderMinimalView(t *testing.T) {
 	}
 }
 
-func newQuranTestApp(quran *fakeQuran) *fiber.App {
+func TestBookQuranReferencesPassHeadingID(t *testing.T) {
+	t.Parallel()
+
+	quran := &captureBookReferencesQuran{fakeQuran: &fakeQuran{}}
+	app := newQuranTestApp(quran)
+	resp, err := app.Test(httptest.NewRequestWithContext(
+		t.Context(),
+		http.MethodGet,
+		"/v1/books/797/quran-references?heading_id=42",
+		http.NoBody,
+	))
+	require.NoError(t, err)
+
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	require.NotNil(t, quran.headingID)
+	assert.Equal(t, 42, *quran.headingID)
+}
+
+func newQuranTestApp(quran usecase.Quran) *fiber.App {
 	app := fiber.New()
 	controller := &V1{
 		quran: quran,
@@ -197,6 +226,7 @@ func newQuranTestApp(quran *fakeQuran) *fiber.App {
 	app.Get("/v1/quran/hizbs/:hizb_number/ayahs", controller.listQuranHizbAyahs)
 	app.Get("/v1/quran/ayahs/:ayah_key", controller.getQuranAyah)
 	app.Get("/v1/quran/surahs/:surah_id", controller.getQuranSurah)
+	app.Get("/v1/quran/surahs/:surah_id/audio", controller.getQuranSurahAudio)
 	app.Get("/v1/quran/surahs/:surah_id/ayahs", controller.listQuranSurahAyahs)
 	app.Get("/v1/quran/search", controller.searchQuran)
 	app.Get("/v1/books/:book_id/quran-references", controller.listBookQuranReferences)
@@ -205,6 +235,11 @@ func newQuranTestApp(quran *fakeQuran) *fiber.App {
 }
 
 type fakeQuran struct{}
+
+type captureBookReferencesQuran struct {
+	*fakeQuran
+	headingID *int
+}
 
 func (f *fakeQuran) Surahs(_ context.Context, _ string, includeInfo bool) ([]entity.QuranSurah, error) {
 	name := "المزمل"
@@ -223,18 +258,75 @@ func (f *fakeQuran) Surah(_ context.Context, surahID int, _ string) (entity.Qura
 }
 
 func (f *fakeQuran) Recitations(_ context.Context) ([]entity.QuranRecitation, error) {
+	defaultPriority := 0
+	displayName := "Mishari Rashid Al-Afasy"
 	return []entity.QuranRecitation{
 		{
 			ID:                 "rec-default",
 			Name:               "Reciter",
+			DisplayName:        displayName,
 			Mode:               "ayah",
 			TrackCount:         6236,
 			PublicTrackCount:   6236,
 			PlayableTrackCount: 6236,
+			SegmentCount:       77796,
 			HasPublicAudio:     true,
 			HasPlayableAudio:   true,
 			IsDefault:          true,
+			SortOrder:          10,
+			DefaultPriority:    &defaultPriority,
+			IsVisible:          true,
 		},
+	}, nil
+}
+
+func (f *fakeQuran) SurahAudio(_ context.Context, surahID int, recitationID string) (entity.QuranSurahAudioManifest, error) {
+	if surahID == 0 {
+		return entity.QuranSurahAudioManifest{}, entity.ErrQuranSurahNotFound
+	}
+
+	if recitationID == "bad-id" {
+		return entity.QuranSurahAudioManifest{}, entity.ErrQuranRecitationNotFound
+	}
+
+	reciterName := "Mishari Rashid Al-Afasy"
+	mimeType := "audio/mpeg"
+	duration := 3000
+	ayahNumber := 1
+
+	return entity.QuranSurahAudioManifest{
+		SurahID: surahID,
+		Recitation: entity.QuranRecitation{
+			ID:               "rec-default",
+			Name:             "Reciter",
+			DisplayName:      reciterName,
+			ReciterName:      &reciterName,
+			Style:            stringPtr("murattal"),
+			Mode:             "ayah",
+			TrackCount:       6236,
+			PublicTrackCount: 6236,
+			SegmentCount:     1,
+			IsDefault:        recitationID == "",
+		},
+		Mode: "ayah",
+		Tracks: []entity.QuranAudioTrack{{
+			RecitationID: "rec-default",
+			TrackType:    "ayah",
+			TrackKey:     "73:1",
+			SurahID:      surahID,
+			AyahNumber:   &ayahNumber,
+			PublicURL:    stringPtr("https://cdn.example/73-1.mp3"),
+			DurationMS:   &duration,
+			MIMEType:     &mimeType,
+			Segments: []entity.QuranAudioSegment{{
+				SegmentIndex:    1,
+				AyahKey:         "73:1",
+				TimestampFromMS: 1000,
+				TimestampToMS:   4000,
+				DurationMS:      &duration,
+			}},
+		}},
+		MissingAyahKeys: []string{"73:2"},
 	}, nil
 }
 
@@ -337,12 +429,30 @@ func (f *fakeQuran) Search(
 func (f *fakeQuran) BookReferences(
 	_ context.Context,
 	bookID int,
+	_ *int,
 	_ string,
 	_ string,
 	_ int,
 	_ int,
 ) ([]entity.BookQuranReference, int, error) {
 	return []entity.BookQuranReference{{ID: "ref-1", BookID: bookID, PageID: 1, SourceText: "سورة المزمل: 1", ReferenceKind: "surah_ayah", MatchStrategy: "explicit_surah_ayah", ReviewStatus: "approved"}}, 1, nil
+}
+
+func (f *captureBookReferencesQuran) BookReferences(
+	ctx context.Context,
+	bookID int,
+	headingID *int,
+	lang string,
+	status string,
+	limit int,
+	offset int,
+) ([]entity.BookQuranReference, int, error) {
+	if headingID != nil {
+		copied := *headingID
+		f.headingID = &copied
+	}
+
+	return f.fakeQuran.BookReferences(ctx, bookID, headingID, lang, status, limit, offset)
 }
 
 func (f *fakeQuran) MissingAssets(
@@ -389,7 +499,7 @@ func fakeNavigationAyahs(kind string, number int, includeAudio bool, recitationI
 	return []entity.QuranAyah{ayah}, nil
 }
 
-func fakeQuranAyah(surahID int, includeTranslation bool, includeAudio bool, recitationID string) entity.QuranAyah {
+func fakeQuranAyah(surahID int, includeTranslation, includeAudio bool, recitationID string) entity.QuranAyah {
 	text := "يَـٰٓأَيُّهَا ٱلْمُزَّمِّلُ"
 	imlaei := "يا أيها المزمل"
 	searchText := "يا ايها المزمل"
@@ -435,7 +545,11 @@ func fakeQuranAyah(surahID int, includeTranslation bool, includeAudio bool, reci
 	return ayah
 }
 
-func fakeQuranAudioTrack(surahID int, ayahNumber int, recitationID string) entity.QuranAudioTrack {
+func stringPtr(value string) *string {
+	return &value
+}
+
+func fakeQuranAudioTrack(surahID, ayahNumber int, recitationID string) entity.QuranAudioTrack {
 	if recitationID == "" {
 		recitationID = "rec-default"
 	}

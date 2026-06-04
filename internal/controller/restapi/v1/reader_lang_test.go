@@ -3,6 +3,7 @@ package v1
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -57,6 +58,37 @@ func TestReaderUnsupportedLanguageRoutes(t *testing.T) {
 	}
 }
 
+func TestReaderBookListIncludesCatalogStats(t *testing.T) {
+	t.Parallel()
+
+	reader := &fakeReader{stats: entity.BookCatalogStats{
+		TotalBooks:     12,
+		PublishedCount: 10,
+		ByCategory: []entity.BookCategoryStat{{
+			Total:          5,
+			PublishedCount: 4,
+		}},
+	}}
+	app := newReaderLanguageTestApp(reader)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/v1/books?lang=id", nil)
+
+	resp, err := app.Test(req)
+	require.NoError(t, err)
+
+	defer resp.Body.Close()
+
+	var body struct {
+		Stats entity.BookCatalogStats `json:"stats"`
+	}
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Equal(t, 12, body.Stats.TotalBooks)
+	assert.Equal(t, 10, body.Stats.PublishedCount)
+	require.Len(t, body.Stats.ByCategory, 1)
+	assert.Equal(t, 5, body.Stats.ByCategory[0].Total)
+}
+
 func newReaderLanguageTestApp(reader *fakeReader) *fiber.App {
 	return newReaderLanguageTestAppWithLogger(reader, logger.New("error"))
 }
@@ -82,7 +114,8 @@ func newReaderLanguageTestAppWithLogger(reader *fakeReader, l logger.Interface) 
 }
 
 type fakeReader struct {
-	err error
+	err   error
+	stats entity.BookCatalogStats
 }
 
 func (f *fakeReader) Categories(context.Context, string) ([]entity.Category, error) {
@@ -108,6 +141,14 @@ func (f *fakeReader) Books(
 
 func (f *fakeReader) Book(context.Context, int, string) (entity.Book, error) {
 	return entity.Book{}, f.err
+}
+
+func (f *fakeReader) BookStats(context.Context, string) (entity.BookCatalogStats, error) {
+	if f.stats.TotalBooks != 0 || f.stats.ByCategory != nil {
+		return f.stats, f.err
+	}
+
+	return entity.BookCatalogStats{ByCategory: []entity.BookCategoryStat{}}, f.err
 }
 
 func (f *fakeReader) Pages(context.Context, int, int, int) ([]entity.BookPage, int, error) {

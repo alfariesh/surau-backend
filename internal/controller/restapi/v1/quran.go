@@ -91,6 +91,34 @@ func (r *V1) listQuranRecitations(ctx *fiber.Ctx) error {
 	return ctx.Status(http.StatusOK).JSON(recitations)
 }
 
+// @Summary     Get Quran surah audio manifest
+// @Description Get a compact playable audio manifest for one surah. If recitation_id is omitted, the backend uses the default playable visible recitation.
+// @ID          get-quran-surah-audio
+// @Tags        quran
+// @Produce     json
+// @Param       surah_id      path     int    true  "Surah ID" minimum(1) maximum(114)
+// @Param       recitation_id query    string false "Visible recitation ID. Empty uses the default recitation."
+// @Success     200           {object} response.QuranSurahAudioManifest
+// @Failure     400           {object} response.Error
+// @Failure     404           {object} response.Error
+// @Failure     500           {object} response.Error
+// @Router      /quran/surahs/{surah_id}/audio [get]
+func (r *V1) getQuranSurahAudio(ctx *fiber.Ctx) error {
+	surahID, err := pathInt(ctx, "surah_id")
+	if err != nil {
+		return errorResponse(ctx, http.StatusBadRequest, "invalid surah_id")
+	}
+
+	manifest, err := r.quran.SurahAudio(ctx.UserContext(), surahID, ctx.Query("recitation_id"))
+	if err != nil {
+		r.logQuranError(err, "restapi - v1 - getQuranSurahAudio")
+
+		return r.quranErrorResponse(ctx, err)
+	}
+
+	return ctx.Status(http.StatusOK).JSON(response.QuranSurahAudioManifestFromEntity(&manifest))
+}
+
 // @Summary     List Quran translation sources
 // @Description List imported Quran translation sources for the requested language, with coverage and default marker.
 // @ID          list-quran-translation-sources
@@ -374,6 +402,7 @@ func (r *V1) searchQuran(ctx *fiber.Ctx) error {
 // @Tags        quran
 // @Produce     json
 // @Param       book_id path     int    true  "Book ID"
+// @Param       heading_id query int    false "Heading ID"
 // @Param       lang    query    string false "Language code" default(id)
 // @Param       status  query    string false "Review status" Enums(approved,pending,rejected,ambiguous,needs_review,all) default(approved)
 // @Param       limit   query    int    false "Limit" default(50)
@@ -389,9 +418,15 @@ func (r *V1) listBookQuranReferences(ctx *fiber.Ctx) error {
 		return errorResponse(ctx, http.StatusBadRequest, "invalid book_id")
 	}
 
+	headingID, err := optionalQueryInt(ctx, "heading_id")
+	if err != nil {
+		return errorResponse(ctx, http.StatusBadRequest, "invalid heading_id")
+	}
+
 	references, total, err := r.quran.BookReferences(
 		ctx.UserContext(),
 		bookID,
+		headingID,
 		ctx.Query("lang"),
 		ctx.Query("status", "approved"),
 		queryInt(ctx, "limit", 50),

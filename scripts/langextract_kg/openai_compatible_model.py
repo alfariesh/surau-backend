@@ -7,8 +7,11 @@ import concurrent.futures
 import dataclasses
 import hashlib
 import json
+import multiprocessing as mp
+import queue
 import re
 import threading
+import time
 from typing import Any, Iterator, Sequence
 
 from langextract.core import base_model
@@ -36,6 +39,10 @@ class OpenAICompatibleJSONModel(base_model.BaseLanguageModel):
     max_workers: int
     disable_thinking: bool
     max_json_retries: int
+    max_api_retries: int
+    api_retry_sleep_seconds: float
+    request_timeout_seconds: float
+    hard_request_timeout: bool
     format_type: data.FormatType
     audit_sink: list[dict[str, Any]] | None
     _client: Any = dataclasses.field(default=None, repr=False, compare=False)
@@ -53,6 +60,10 @@ class OpenAICompatibleJSONModel(base_model.BaseLanguageModel):
         max_workers: int = 1,
         disable_thinking: bool = True,
         max_json_retries: int = 2,
+        max_api_retries: int = 2,
+        api_retry_sleep_seconds: float = 1.0,
+        request_timeout_seconds: float = 180.0,
+        hard_request_timeout: bool = True,
         audit_sink: list[dict[str, Any]] | None = None,
     ) -> None:
         super().__init__()
@@ -71,11 +82,15 @@ class OpenAICompatibleJSONModel(base_model.BaseLanguageModel):
         self.max_workers = max(1, int(max_workers or 1))
         self.disable_thinking = disable_thinking
         self.max_json_retries = max(0, int(max_json_retries or 0))
+        self.max_api_retries = max(0, int(max_api_retries or 0))
+        self.api_retry_sleep_seconds = max(0.0, float(api_retry_sleep_seconds or 0.0))
+        self.request_timeout_seconds = max(1.0, float(request_timeout_seconds or 180.0))
+        self.hard_request_timeout = bool(hard_request_timeout)
         self.format_type = data.FormatType.JSON
         self.audit_sink = audit_sink
         self._audit_lock = threading.Lock()
         self._request_counter = 0
-        self._client = OpenAI(api_key=api_key, base_url=base_url)
+        self._client = OpenAI(api_key=api_key, base_url=base_url, timeout=self.request_timeout_seconds)
 
     @property
     def requires_fence_output(self) -> bool:
@@ -127,13 +142,29 @@ class OpenAICompatibleJSONModel(base_model.BaseLanguageModel):
         final_output = ""
         parse_status = "parse_error"
         retry_count = 0
+        api_retry_count = 0
         error_message = ""
         for attempt in range(self.max_json_retries + 1):
             retry_count = attempt
-            raw_output = self._complete(current_prompt, config)
+            try:
+                raw_output, api_retry_count = self._complete_with_retries(current_prompt, config)
+            except exceptions.InferenceRuntimeError as err:
+                final_output = '{"extractions": []}'
+                self._record_audit(
+                    request_index=request_index,
+                    prompt=prompt,
+                    raw_output=raw_output,
+                    normalized_output=final_output,
+                    parse_status="api_error",
+                    retry_count=retry_count,
+                    api_retry_count=api_retry_count,
+                    error_message=str(err),
+                )
+                return core_types.ScoredOutput(score=1.0, output=final_output)
             output = normalize_langextract_json(coerce_json_output(raw_output))
             final_output = output
-            if _is_json(output):
+            parse_status, validation_error = classify_langextract_json(output)
+            if parse_status == "success":
                 parse_status = "success"
                 self._record_audit(
                     request_index=request_index,
@@ -142,11 +173,13 @@ class OpenAICompatibleJSONModel(base_model.BaseLanguageModel):
                     normalized_output=final_output,
                     parse_status=parse_status,
                     retry_count=retry_count,
+                    api_retry_count=api_retry_count,
                     error_message="",
                 )
                 return core_types.ScoredOutput(score=1.0, output=output)
             if attempt < self.max_json_retries:
                 current_prompt = build_json_retry_prompt(prompt, raw_output)
+            error_message = validation_error
 
         if not raw_output.strip():
             parse_status = "empty"
@@ -158,9 +191,24 @@ class OpenAICompatibleJSONModel(base_model.BaseLanguageModel):
             normalized_output=final_output,
             parse_status=parse_status,
             retry_count=retry_count,
+            api_retry_count=api_retry_count,
             error_message=error_message,
         )
         return core_types.ScoredOutput(score=1.0, output=raw_output.strip())
+
+    def _complete_with_retries(self, prompt: str, config: dict[str, Any]) -> tuple[str, int]:
+        last_error: exceptions.InferenceRuntimeError | None = None
+        for api_attempt in range(self.max_api_retries + 1):
+            try:
+                return self._complete(prompt, config), api_attempt
+            except exceptions.InferenceRuntimeError as err:
+                last_error = err
+                if api_attempt >= self.max_api_retries:
+                    break
+                if self.api_retry_sleep_seconds:
+                    time.sleep(self.api_retry_sleep_seconds)
+        assert last_error is not None
+        raise last_error
 
     def _record_audit(
         self,
@@ -171,6 +219,7 @@ class OpenAICompatibleJSONModel(base_model.BaseLanguageModel):
         normalized_output: str,
         parse_status: str,
         retry_count: int,
+        api_retry_count: int,
         error_message: str,
     ) -> None:
         if self.audit_sink is None:
@@ -182,6 +231,7 @@ class OpenAICompatibleJSONModel(base_model.BaseLanguageModel):
             "normalized_output_hash": sha256_text(normalized_output),
             "parse_status": parse_status,
             "retry_count": retry_count,
+            "api_retry_count": api_retry_count,
             "error_message": error_message,
             "raw_output": raw_output,
         }
@@ -189,6 +239,20 @@ class OpenAICompatibleJSONModel(base_model.BaseLanguageModel):
             self.audit_sink.append(audit)
 
     def _complete(self, prompt: str, config: dict[str, Any]) -> str:
+        params = self._completion_params(prompt, config)
+        try:
+            if self.hard_request_timeout:
+                return self._complete_with_process_timeout(params)
+            return self._complete_with_client(params)
+        except exceptions.InferenceRuntimeError:
+            raise
+        except Exception as err:
+            raise exceptions.InferenceRuntimeError(
+                f"OpenAI-compatible API error: {err}",
+                original=err,
+            ) from err
+
+    def _completion_params(self, prompt: str, config: dict[str, Any]) -> dict[str, Any]:
         params: dict[str, Any] = {
             "model": self.model_id,
             "messages": [
@@ -212,20 +276,65 @@ class OpenAICompatibleJSONModel(base_model.BaseLanguageModel):
             params["top_p"] = config["top_p"]
         if self.disable_thinking:
             params["extra_body"] = {"thinking": {"type": "disabled"}}
+        return params
 
+    def _complete_with_client(self, params: dict[str, Any]) -> str:
+        response = self._client.chat.completions.create(**params, timeout=self.request_timeout_seconds)
+        return extract_message_text(response)
+
+    def _complete_with_process_timeout(self, params: dict[str, Any]) -> str:
+        ctx = mp.get_context("spawn")
+        result_queue = ctx.Queue(maxsize=1)
+        process = ctx.Process(
+            target=_openai_completion_worker,
+            args=(
+                result_queue,
+                self.api_key,
+                self.base_url,
+                self.request_timeout_seconds,
+                params,
+            ),
+        )
+        process.daemon = True
+        process.start()
         try:
-            response = self._client.chat.completions.create(**params)
-            output = extract_message_text(response)
-            if not output:
-                raise exceptions.InferenceRuntimeError("OpenAI-compatible response contained no content")
-            return output
-        except exceptions.InferenceRuntimeError:
-            raise
-        except Exception as err:
-            raise exceptions.InferenceRuntimeError(
-                f"OpenAI-compatible API error: {err}",
-                original=err,
-            ) from err
+            process.join(self.request_timeout_seconds)
+            if process.is_alive():
+                process.terminate()
+                process.join(5)
+                raise exceptions.InferenceRuntimeError(
+                    f"OpenAI-compatible API timeout after {self.request_timeout_seconds:g}s"
+                )
+            try:
+                result = result_queue.get(timeout=1)
+            except queue.Empty as err:
+                raise exceptions.InferenceRuntimeError(
+                    f"OpenAI-compatible API worker exited without output; exitcode={process.exitcode}"
+                ) from err
+        finally:
+            result_queue.close()
+            result_queue.join_thread()
+
+        if result.get("ok"):
+            return str(result.get("output") or "")
+        raise exceptions.InferenceRuntimeError(str(result.get("error") or "OpenAI-compatible API error"))
+
+
+def _openai_completion_worker(
+    result_queue: Any,
+    api_key: str,
+    base_url: str,
+    timeout_seconds: float,
+    params: dict[str, Any],
+) -> None:
+    try:
+        from openai import OpenAI
+
+        client = OpenAI(api_key=api_key, base_url=base_url, timeout=timeout_seconds)
+        response = client.chat.completions.create(**params, timeout=timeout_seconds)
+        result_queue.put({"ok": True, "output": extract_message_text(response)})
+    except Exception as err:  # pragma: no cover - exercised by live provider smoke tests.
+        result_queue.put({"ok": False, "error": f"{type(err).__name__}: {err}"})
 
 
 def extract_message_text(response: Any) -> str:
@@ -299,6 +408,54 @@ def normalize_langextract_json(output: str) -> str:
         return json.dumps({"extractions": parsed}, ensure_ascii=False)
 
     return output.strip()
+
+
+def classify_langextract_json(output: str) -> tuple[str, str]:
+    """Classify normalized LangExtract JSON as success, parse_error, or schema_error."""
+    if not output.strip():
+        return "empty", "empty model output"
+    try:
+        parsed = json.loads(output)
+    except json.JSONDecodeError as err:
+        return "parse_error", f"invalid JSON: {err}"
+
+    if not isinstance(parsed, dict):
+        return "schema_error", "top-level JSON must be an object"
+    unexpected_top_level_keys = sorted(key for key in parsed if key != data.EXTRACTIONS_KEY)
+    if unexpected_top_level_keys:
+        return "schema_error", f"unexpected top-level keys: {', '.join(unexpected_top_level_keys)}"
+    extractions = parsed.get("extractions")
+    if not isinstance(extractions, list):
+        return "schema_error", "top-level object must contain an extractions list"
+
+    for index, item in enumerate(extractions):
+        error = _validate_extraction_item(item)
+        if error:
+            return "schema_error", f"extractions[{index}]: {error}"
+    return "success", ""
+
+
+def _validate_extraction_item(item: Any) -> str:
+    if not isinstance(item, dict):
+        return "item must be an object"
+    extraction_keys = [key for key in item if isinstance(key, str) and not key.endswith(data.ATTRIBUTE_SUFFIX)]
+    if len(extraction_keys) != 1:
+        return "item must contain exactly one extraction text key"
+
+    extraction_key = extraction_keys[0]
+    extraction_value = item.get(extraction_key)
+    if isinstance(extraction_value, bool) or not isinstance(extraction_value, (str, int, float)):
+        return f"{extraction_key} must be scalar extraction text"
+
+    attributes_key = f"{extraction_key}{data.ATTRIBUTE_SUFFIX}"
+    allowed_keys = {extraction_key, attributes_key}
+    unexpected_keys = sorted(str(key) for key in item if key not in allowed_keys)
+    if unexpected_keys:
+        return f"unexpected keys: {', '.join(unexpected_keys)}"
+
+    if attributes_key in item and item[attributes_key] is not None and not isinstance(item[attributes_key], dict):
+        return f"{attributes_key} must be an object or null"
+    return ""
 
 
 def build_json_retry_prompt(original_prompt: str, previous_output: str) -> str:

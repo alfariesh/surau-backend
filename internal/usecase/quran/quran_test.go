@@ -58,6 +58,22 @@ func TestUseCase_AyahNormalizesDefaults(t *testing.T) {
 	assert.Equal(t, "rec-1", repository.getAyahRecitationID)
 }
 
+func TestUseCase_SurahAudioValidatesIDAndNormalizesRecitation(t *testing.T) {
+	t.Parallel()
+
+	repository := &quranRepoStub{}
+	uc := New(repository)
+
+	_, err := uc.SurahAudio(context.Background(), 0, "rec-1")
+	require.ErrorIs(t, err, entity.ErrQuranSurahNotFound)
+
+	_, err = uc.SurahAudio(context.Background(), 73, " rec-1 ")
+
+	require.NoError(t, err)
+	assert.Equal(t, 73, repository.getSurahAudioID)
+	assert.Equal(t, "rec-1", repository.getSurahAudioRecitationID)
+}
+
 func TestUseCase_NavigationValidatesRangesAndNormalizes(t *testing.T) {
 	t.Parallel()
 
@@ -148,6 +164,8 @@ type quranRepoStub struct {
 	getAyahTranslationSource          string
 	getAyahIncludeAudio               bool
 	getAyahRecitationID               string
+	getSurahAudioID                   int
+	getSurahAudioRecitationID         string
 	navigationKind                    string
 	navigationLang                    string
 	navigationAyahsKind               string
@@ -177,6 +195,13 @@ func (r *quranRepoStub) GetSurah(_ context.Context, surahID int, lang string) (e
 
 func (r *quranRepoStub) ListRecitations(context.Context) ([]entity.QuranRecitation, error) {
 	return []entity.QuranRecitation{}, nil
+}
+
+func (r *quranRepoStub) GetSurahAudioManifest(_ context.Context, surahID int, recitationID string) (entity.QuranSurahAudioManifest, error) {
+	r.getSurahAudioID = surahID
+	r.getSurahAudioRecitationID = recitationID
+
+	return entity.QuranSurahAudioManifest{}, nil
 }
 
 func (r *quranRepoStub) ListTranslationSources(context.Context, string) ([]entity.QuranTranslationSource, error) {

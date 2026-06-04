@@ -60,6 +60,15 @@ func (uc *UseCase) Recitations(ctx context.Context) ([]entity.QuranRecitation, e
 	return uc.repo.ListRecitations(ctx)
 }
 
+// SurahAudio returns a playable audio manifest for one surah and recitation.
+func (uc *UseCase) SurahAudio(ctx context.Context, surahID int, recitationID string) (entity.QuranSurahAudioManifest, error) {
+	if surahID <= 0 || surahID > 114 {
+		return entity.QuranSurahAudioManifest{}, entity.ErrQuranSurahNotFound
+	}
+
+	return uc.repo.GetSurahAudioManifest(ctx, surahID, normalizeRecitationID(recitationID))
+}
+
 // TranslationSources returns Quran translation sources for one language.
 func (uc *UseCase) TranslationSources(ctx context.Context, lang string) ([]entity.QuranTranslationSource, error) {
 	normalizedLang, err := contentlang.Normalize(lang)
@@ -264,6 +273,7 @@ func (uc *UseCase) Search(ctx context.Context, query, lang string, limit, offset
 func (uc *UseCase) BookReferences(
 	ctx context.Context,
 	bookID int,
+	headingID *int,
 	lang string,
 	status string,
 	limit int,
@@ -273,6 +283,10 @@ func (uc *UseCase) BookReferences(
 		return nil, 0, entity.ErrBookNotFound
 	}
 
+	if headingID != nil && *headingID <= 0 {
+		return nil, 0, entity.ErrHeadingNotFound
+	}
+
 	normalizedLang, err := contentlang.Normalize(lang)
 	if err != nil {
 		return nil, 0, err
@@ -280,6 +294,7 @@ func (uc *UseCase) BookReferences(
 
 	return uc.repo.ListBookQuranReferences(ctx, repo.QuranBookReferenceFilter{
 		BookID:            bookID,
+		HeadingID:         headingID,
 		Lang:              normalizedLang,
 		TranslationSource: "",
 		Status:            normalizeStatus(status),

@@ -23,6 +23,21 @@ func TestMarkDefaultRecitationPrefersFullPublicAyah(t *testing.T) {
 	assert.True(t, recitations[2].IsDefault)
 }
 
+func TestMarkDefaultRecitationPrefersPinnedPriority(t *testing.T) {
+	t.Parallel()
+
+	priority := 0
+	recitations := []entity.QuranRecitation{
+		{ID: "abdul-basit", DisplayName: "Abdul Basit", Mode: "ayah", TrackCount: 6236, PublicTrackCount: 6236, PlayableTrackCount: 6236, HasPublicAudio: true, HasPlayableAudio: true},
+		{ID: "mishari", DisplayName: "Mishari Rashid Al-Afasy", Mode: "ayah", TrackCount: 6236, PublicTrackCount: 6236, PlayableTrackCount: 6236, HasPublicAudio: true, HasPlayableAudio: true, DefaultPriority: &priority},
+	}
+
+	markDefaultRecitation(recitations)
+
+	assert.False(t, recitations[0].IsDefault)
+	assert.True(t, recitations[1].IsDefault)
+}
+
 func TestMarkDefaultRecitationAcceptsSourceAudioFallback(t *testing.T) {
 	t.Parallel()
 
@@ -64,8 +79,36 @@ func TestQuranAudioTrackLessPrefersAyahTrack(t *testing.T) {
 	ayahTrack := entity.QuranAudioTrack{RecitationID: "rec", TrackType: "ayah", TrackKey: "73:1"}
 	surahTrack := entity.QuranAudioTrack{RecitationID: "rec", TrackType: "surah", TrackKey: "73"}
 
-	assert.True(t, quranAudioTrackLess(ayahTrack, surahTrack))
-	assert.False(t, quranAudioTrackLess(surahTrack, ayahTrack))
+	assert.True(t, quranAudioTrackLess(&ayahTrack, &surahTrack))
+	assert.False(t, quranAudioTrackLess(&surahTrack, &ayahTrack))
+}
+
+func TestMissingManifestAyahKeys(t *testing.T) {
+	t.Parallel()
+
+	publicURL := "https://cdn.example/1.mp3"
+	ayahNumber := 1
+	assert.Equal(
+		t,
+		[]string{"1:2"},
+		missingManifestAyahKeys([]string{"1:1", "1:2"}, "ayah", []entity.QuranAudioTrack{{
+			TrackType:  "ayah",
+			TrackKey:   "1:1",
+			AyahNumber: &ayahNumber,
+			PublicURL:  &publicURL,
+		}}),
+	)
+
+	assert.Equal(
+		t,
+		[]string{"1:2"},
+		missingManifestAyahKeys([]string{"1:1", "1:2"}, "surah", []entity.QuranAudioTrack{{
+			TrackType: "surah",
+			TrackKey:  "1",
+			PublicURL: &publicURL,
+			Segments:  []entity.QuranAudioSegment{{AyahKey: "1:1"}},
+		}}),
+	)
 }
 
 func TestQuranNavigationColumnAllowlist(t *testing.T) {

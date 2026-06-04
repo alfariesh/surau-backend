@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/evrone/go-clean-template/internal/controller/restapi/v1/request"
 	"github.com/evrone/go-clean-template/internal/controller/restapi/v1/response"
@@ -181,7 +182,7 @@ func (r *V1) editorialCreateProductionProject(ctx *fiber.Ctx) error {
 		return r.editorialError(ctx, err)
 	}
 
-	return ctx.Status(http.StatusCreated).JSON(project)
+	return jsonWithUpdatedAtETag(ctx, http.StatusCreated, project, project.UpdatedAt)
 }
 
 // @Summary     List production projects
@@ -259,7 +260,7 @@ func (r *V1) editorialGetProductionProject(ctx *fiber.Ctx) error {
 		return r.editorialError(ctx, err)
 	}
 
-	return ctx.Status(http.StatusOK).JSON(project)
+	return jsonWithUpdatedAtETag(ctx, http.StatusOK, project, project.UpdatedAt)
 }
 
 // @Summary     Get production workspace
@@ -448,6 +449,10 @@ func (r *V1) editorialUpdateProductionProject(ctx *fiber.Ctx) error {
 		return errorResponse(ctx, http.StatusBadRequest, "invalid request body")
 	}
 
+	if ok, preconditionErr := r.checkProductionProjectIfMatch(ctx, "restapi - v1 - editorialUpdateProductionProject - precondition"); !ok || preconditionErr != nil {
+		return preconditionErr
+	}
+
 	project, err := r.editorial.UpdateProductionProject(ctx.UserContext(), actorID, ctx.Params("id"), entity.BookProductionProjectPatch{
 		WorkflowStatus: body.WorkflowStatus,
 		RequiresReview: body.RequiresReview,
@@ -462,7 +467,7 @@ func (r *V1) editorialUpdateProductionProject(ctx *fiber.Ctx) error {
 		return r.editorialError(ctx, err)
 	}
 
-	return ctx.Status(http.StatusOK).JSON(project)
+	return jsonWithUpdatedAtETag(ctx, http.StatusOK, project, project.UpdatedAt)
 }
 
 // @Summary     Get production completeness
@@ -508,7 +513,7 @@ func (r *V1) editorialGetMetadataTranslationDraft(ctx *fiber.Ctx) error {
 		return r.editorialError(ctx, err)
 	}
 
-	return ctx.Status(http.StatusOK).JSON(draft)
+	return jsonWithUpdatedAtETag(ctx, http.StatusOK, draft, draft.UpdatedAt)
 }
 
 // @Summary     Save metadata translation draft
@@ -538,6 +543,14 @@ func (r *V1) editorialSaveMetadataTranslationDraft(ctx *fiber.Ctx) error {
 		return err
 	}
 
+	if ok, preconditionErr := r.checkEditorialDraftIfMatch(ctx, "restapi - v1 - editorialSaveMetadataTranslationDraft - precondition", func() (time.Time, error) {
+		current, currentErr := r.editorial.GetMetadataTranslationDraft(ctx.UserContext(), ctx.Params("id"))
+
+		return current.UpdatedAt, currentErr
+	}); !ok || preconditionErr != nil {
+		return preconditionErr
+	}
+
 	draft, err := r.editorial.SaveMetadataTranslationDraft(ctx.UserContext(), actorID, ctx.Params("id"), entity.BookMetadataTranslationEdit{
 		DisplayTitle: body.DisplayTitle,
 		Bibliography: body.Bibliography,
@@ -552,7 +565,7 @@ func (r *V1) editorialSaveMetadataTranslationDraft(ctx *fiber.Ctx) error {
 		return r.editorialError(ctx, err)
 	}
 
-	return ctx.Status(http.StatusOK).JSON(draft)
+	return jsonWithUpdatedAtETag(ctx, http.StatusOK, draft, draft.UpdatedAt)
 }
 
 // @Summary     Delete metadata translation draft
@@ -568,7 +581,15 @@ func (r *V1) editorialSaveMetadataTranslationDraft(ctx *fiber.Ctx) error {
 // @Security    BearerAuth
 // @Router      /editorial/production-projects/{id}/metadata-draft [delete]
 func (r *V1) editorialDeleteMetadataTranslationDraft(ctx *fiber.Ctx) error {
-	return r.deleteProjectDraft(ctx, r.editorial.DeleteMetadataTranslationDraft)
+	return r.deleteProjectDraft(
+		ctx,
+		r.editorial.DeleteMetadataTranslationDraft,
+		func(ctx context.Context, projectID string) (time.Time, error) {
+			draft, err := r.editorial.GetMetadataTranslationDraft(ctx, projectID)
+
+			return draft.UpdatedAt, err
+		},
+	)
 }
 
 // @Summary     Get author translation draft
@@ -590,7 +611,7 @@ func (r *V1) editorialGetAuthorTranslationDraft(ctx *fiber.Ctx) error {
 		return r.editorialError(ctx, err)
 	}
 
-	return ctx.Status(http.StatusOK).JSON(draft)
+	return jsonWithUpdatedAtETag(ctx, http.StatusOK, draft, draft.UpdatedAt)
 }
 
 // @Summary     Save author translation draft
@@ -620,6 +641,14 @@ func (r *V1) editorialSaveAuthorTranslationDraft(ctx *fiber.Ctx) error {
 		return err
 	}
 
+	if ok, preconditionErr := r.checkEditorialDraftIfMatch(ctx, "restapi - v1 - editorialSaveAuthorTranslationDraft - precondition", func() (time.Time, error) {
+		current, currentErr := r.editorial.GetAuthorTranslationDraft(ctx.UserContext(), ctx.Params("id"))
+
+		return current.UpdatedAt, currentErr
+	}); !ok || preconditionErr != nil {
+		return preconditionErr
+	}
+
 	draft, err := r.editorial.SaveAuthorTranslationDraft(ctx.UserContext(), actorID, ctx.Params("id"), entity.AuthorTranslationEdit{
 		Name:      body.Name,
 		Biography: body.Biography,
@@ -633,7 +662,7 @@ func (r *V1) editorialSaveAuthorTranslationDraft(ctx *fiber.Ctx) error {
 		return r.editorialError(ctx, err)
 	}
 
-	return ctx.Status(http.StatusOK).JSON(draft)
+	return jsonWithUpdatedAtETag(ctx, http.StatusOK, draft, draft.UpdatedAt)
 }
 
 // @Summary     Delete author translation draft
@@ -649,7 +678,15 @@ func (r *V1) editorialSaveAuthorTranslationDraft(ctx *fiber.Ctx) error {
 // @Security    BearerAuth
 // @Router      /editorial/production-projects/{id}/author-draft [delete]
 func (r *V1) editorialDeleteAuthorTranslationDraft(ctx *fiber.Ctx) error {
-	return r.deleteProjectDraft(ctx, r.editorial.DeleteAuthorTranslationDraft)
+	return r.deleteProjectDraft(
+		ctx,
+		r.editorial.DeleteAuthorTranslationDraft,
+		func(ctx context.Context, projectID string) (time.Time, error) {
+			draft, err := r.editorial.GetAuthorTranslationDraft(ctx, projectID)
+
+			return draft.UpdatedAt, err
+		},
+	)
 }
 
 // @Summary     Get category translation draft
@@ -671,7 +708,7 @@ func (r *V1) editorialGetCategoryTranslationDraft(ctx *fiber.Ctx) error {
 		return r.editorialError(ctx, err)
 	}
 
-	return ctx.Status(http.StatusOK).JSON(draft)
+	return jsonWithUpdatedAtETag(ctx, http.StatusOK, draft, draft.UpdatedAt)
 }
 
 // @Summary     Save category translation draft
@@ -701,6 +738,14 @@ func (r *V1) editorialSaveCategoryTranslationDraft(ctx *fiber.Ctx) error {
 		return err
 	}
 
+	if ok, preconditionErr := r.checkEditorialDraftIfMatch(ctx, "restapi - v1 - editorialSaveCategoryTranslationDraft - precondition", func() (time.Time, error) {
+		current, currentErr := r.editorial.GetCategoryTranslationDraft(ctx.UserContext(), ctx.Params("id"))
+
+		return current.UpdatedAt, currentErr
+	}); !ok || preconditionErr != nil {
+		return preconditionErr
+	}
+
 	draft, err := r.editorial.SaveCategoryTranslationDraft(ctx.UserContext(), actorID, ctx.Params("id"), entity.CategoryTranslationEdit{
 		Name:     body.Name,
 		Source:   body.Source,
@@ -712,7 +757,7 @@ func (r *V1) editorialSaveCategoryTranslationDraft(ctx *fiber.Ctx) error {
 		return r.editorialError(ctx, err)
 	}
 
-	return ctx.Status(http.StatusOK).JSON(draft)
+	return jsonWithUpdatedAtETag(ctx, http.StatusOK, draft, draft.UpdatedAt)
 }
 
 // @Summary     Delete category translation draft
@@ -728,7 +773,15 @@ func (r *V1) editorialSaveCategoryTranslationDraft(ctx *fiber.Ctx) error {
 // @Security    BearerAuth
 // @Router      /editorial/production-projects/{id}/category-draft [delete]
 func (r *V1) editorialDeleteCategoryTranslationDraft(ctx *fiber.Ctx) error {
-	return r.deleteProjectDraft(ctx, r.editorial.DeleteCategoryTranslationDraft)
+	return r.deleteProjectDraft(
+		ctx,
+		r.editorial.DeleteCategoryTranslationDraft,
+		func(ctx context.Context, projectID string) (time.Time, error) {
+			draft, err := r.editorial.GetCategoryTranslationDraft(ctx, projectID)
+
+			return draft.UpdatedAt, err
+		},
+	)
 }
 
 // @Summary     Get section translation draft
@@ -757,7 +810,7 @@ func (r *V1) editorialGetSectionTranslationDraft(ctx *fiber.Ctx) error {
 		return r.editorialError(ctx, err)
 	}
 
-	return ctx.Status(http.StatusOK).JSON(draft)
+	return jsonWithUpdatedAtETag(ctx, http.StatusOK, draft, draft.UpdatedAt)
 }
 
 // @Summary     Save section translation draft
@@ -788,6 +841,14 @@ func (r *V1) editorialSaveSectionTranslationDraft(ctx *fiber.Ctx) error {
 		return err
 	}
 
+	if ok, preconditionErr := r.checkEditorialDraftIfMatch(ctx, "restapi - v1 - editorialSaveSectionTranslationDraft - precondition", func() (time.Time, error) {
+		current, currentErr := r.editorial.GetSectionTranslationDraft(ctx.UserContext(), ctx.Params("id"), headingID)
+
+		return current.UpdatedAt, currentErr
+	}); !ok || preconditionErr != nil {
+		return preconditionErr
+	}
+
 	draft, err := r.editorial.SaveSectionTranslationDraft(ctx.UserContext(), actorID, ctx.Params("id"), entity.SectionTranslationEdit{
 		HeadingID: headingID,
 		Title:     body.Title,
@@ -801,7 +862,7 @@ func (r *V1) editorialSaveSectionTranslationDraft(ctx *fiber.Ctx) error {
 		return r.editorialError(ctx, err)
 	}
 
-	return ctx.Status(http.StatusOK).JSON(draft)
+	return jsonWithUpdatedAtETag(ctx, http.StatusOK, draft, draft.UpdatedAt)
 }
 
 // @Summary     Delete section translation draft
@@ -819,7 +880,15 @@ func (r *V1) editorialSaveSectionTranslationDraft(ctx *fiber.Ctx) error {
 // @Security    BearerAuth
 // @Router      /editorial/production-projects/{id}/toc/{heading_id}/translation-draft [delete]
 func (r *V1) editorialDeleteSectionTranslationDraft(ctx *fiber.Ctx) error {
-	return r.deleteHeadingDraft(ctx, r.editorial.DeleteSectionTranslationDraft)
+	return r.deleteHeadingDraft(
+		ctx,
+		r.editorial.DeleteSectionTranslationDraft,
+		func(ctx context.Context, projectID string, headingID int) (time.Time, error) {
+			draft, err := r.editorial.GetSectionTranslationDraft(ctx, projectID, headingID)
+
+			return draft.UpdatedAt, err
+		},
+	)
 }
 
 // @Summary     Get heading summary draft
@@ -848,7 +917,7 @@ func (r *V1) editorialGetHeadingSummaryDraft(ctx *fiber.Ctx) error {
 		return r.editorialError(ctx, err)
 	}
 
-	return ctx.Status(http.StatusOK).JSON(draft)
+	return jsonWithUpdatedAtETag(ctx, http.StatusOK, draft, draft.UpdatedAt)
 }
 
 // @Summary     Save heading summary draft
@@ -879,6 +948,14 @@ func (r *V1) editorialSaveHeadingSummaryDraft(ctx *fiber.Ctx) error {
 		return err
 	}
 
+	if ok, preconditionErr := r.checkEditorialDraftIfMatch(ctx, "restapi - v1 - editorialSaveHeadingSummaryDraft - precondition", func() (time.Time, error) {
+		current, currentErr := r.editorial.GetHeadingSummaryDraft(ctx.UserContext(), ctx.Params("id"), headingID)
+
+		return current.UpdatedAt, currentErr
+	}); !ok || preconditionErr != nil {
+		return preconditionErr
+	}
+
 	draft, err := r.editorial.SaveHeadingSummaryDraft(ctx.UserContext(), actorID, ctx.Params("id"), entity.HeadingSummaryEdit{
 		HeadingID: headingID,
 		Summary:   body.Summary,
@@ -891,7 +968,7 @@ func (r *V1) editorialSaveHeadingSummaryDraft(ctx *fiber.Ctx) error {
 		return r.editorialError(ctx, err)
 	}
 
-	return ctx.Status(http.StatusOK).JSON(draft)
+	return jsonWithUpdatedAtETag(ctx, http.StatusOK, draft, draft.UpdatedAt)
 }
 
 // @Summary     Delete heading summary draft
@@ -909,7 +986,15 @@ func (r *V1) editorialSaveHeadingSummaryDraft(ctx *fiber.Ctx) error {
 // @Security    BearerAuth
 // @Router      /editorial/production-projects/{id}/toc/{heading_id}/summary-draft [delete]
 func (r *V1) editorialDeleteHeadingSummaryDraft(ctx *fiber.Ctx) error {
-	return r.deleteHeadingDraft(ctx, r.editorial.DeleteHeadingSummaryDraft)
+	return r.deleteHeadingDraft(
+		ctx,
+		r.editorial.DeleteHeadingSummaryDraft,
+		func(ctx context.Context, projectID string, headingID int) (time.Time, error) {
+			draft, err := r.editorial.GetHeadingSummaryDraft(ctx, projectID, headingID)
+
+			return draft.UpdatedAt, err
+		},
+	)
 }
 
 // @Summary     Get section audio draft
@@ -938,7 +1023,7 @@ func (r *V1) editorialGetSectionAudioDraft(ctx *fiber.Ctx) error {
 		return r.editorialError(ctx, err)
 	}
 
-	return ctx.Status(http.StatusOK).JSON(draft)
+	return jsonWithUpdatedAtETag(ctx, http.StatusOK, draft, draft.UpdatedAt)
 }
 
 // @Summary     Save section audio draft
@@ -969,6 +1054,14 @@ func (r *V1) editorialSaveSectionAudioDraft(ctx *fiber.Ctx) error {
 		return err
 	}
 
+	if ok, preconditionErr := r.checkEditorialDraftIfMatch(ctx, "restapi - v1 - editorialSaveSectionAudioDraft - precondition", func() (time.Time, error) {
+		current, currentErr := r.editorial.GetSectionAudioDraft(ctx.UserContext(), ctx.Params("id"), headingID)
+
+		return current.UpdatedAt, currentErr
+	}); !ok || preconditionErr != nil {
+		return preconditionErr
+	}
+
 	draft, err := r.editorial.SaveSectionAudioDraft(ctx.UserContext(), actorID, ctx.Params("id"), entity.SectionAudioEdit{
 		HeadingID:       headingID,
 		URL:             body.URL,
@@ -983,7 +1076,7 @@ func (r *V1) editorialSaveSectionAudioDraft(ctx *fiber.Ctx) error {
 		return r.editorialError(ctx, err)
 	}
 
-	return ctx.Status(http.StatusOK).JSON(draft)
+	return jsonWithUpdatedAtETag(ctx, http.StatusOK, draft, draft.UpdatedAt)
 }
 
 // @Summary     Delete section audio draft
@@ -1001,7 +1094,15 @@ func (r *V1) editorialSaveSectionAudioDraft(ctx *fiber.Ctx) error {
 // @Security    BearerAuth
 // @Router      /editorial/production-projects/{id}/toc/{heading_id}/audio-draft [delete]
 func (r *V1) editorialDeleteSectionAudioDraft(ctx *fiber.Ctx) error {
-	return r.deleteHeadingDraft(ctx, r.editorial.DeleteSectionAudioDraft)
+	return r.deleteHeadingDraft(
+		ctx,
+		r.editorial.DeleteSectionAudioDraft,
+		func(ctx context.Context, projectID string, headingID int) (time.Time, error) {
+			draft, err := r.editorial.GetSectionAudioDraft(ctx, projectID, headingID)
+
+			return draft.UpdatedAt, err
+		},
+	)
 }
 
 // @Summary     Review production asset
@@ -1070,6 +1171,10 @@ func (r *V1) editorialPublishProductionProject(ctx *fiber.Ctx) error {
 		return errorResponse(ctx, http.StatusUnauthorized, "unauthorized")
 	}
 
+	if ok, preconditionErr := r.checkProductionProjectIfMatch(ctx, "restapi - v1 - editorialPublishProductionProject - precondition"); !ok || preconditionErr != nil {
+		return preconditionErr
+	}
+
 	project, err := r.editorial.PublishProductionProject(ctx.UserContext(), actorID, ctx.Params("id"))
 	if err != nil {
 		r.logEditorialError(err, "restapi - v1 - editorialPublishProductionProject")
@@ -1087,7 +1192,7 @@ func (r *V1) editorialPublishProductionProject(ctx *fiber.Ctx) error {
 		return r.editorialError(ctx, err)
 	}
 
-	return ctx.Status(http.StatusOK).JSON(project)
+	return jsonWithUpdatedAtETag(ctx, http.StatusOK, project, project.UpdatedAt)
 }
 
 // @Summary     Unpublish production project
@@ -1109,6 +1214,10 @@ func (r *V1) editorialUnpublishProductionProject(ctx *fiber.Ctx) error {
 		return errorResponse(ctx, http.StatusUnauthorized, "unauthorized")
 	}
 
+	if ok, preconditionErr := r.checkProductionProjectIfMatch(ctx, "restapi - v1 - editorialUnpublishProductionProject - precondition"); !ok || preconditionErr != nil {
+		return preconditionErr
+	}
+
 	project, err := r.editorial.UnpublishProductionProject(ctx.UserContext(), actorID, ctx.Params("id"))
 	if err != nil {
 		r.logEditorialError(err, "restapi - v1 - editorialUnpublishProductionProject")
@@ -1116,7 +1225,7 @@ func (r *V1) editorialUnpublishProductionProject(ctx *fiber.Ctx) error {
 		return r.editorialError(ctx, err)
 	}
 
-	return ctx.Status(http.StatusOK).JSON(project)
+	return jsonWithUpdatedAtETag(ctx, http.StatusOK, project, project.UpdatedAt)
 }
 
 // @Summary     Delete final project asset
@@ -1247,10 +1356,17 @@ func (r *V1) productionDraftContext(ctx *fiber.Ctx) (string, int, bool) {
 func (r *V1) deleteProjectDraft(
 	ctx *fiber.Ctx,
 	delete func(context.Context, string, string) error,
+	loadUpdatedAt func(context.Context, string) (time.Time, error),
 ) error {
 	actorID, ok := ctx.Locals("userID").(string)
 	if !ok {
 		return errorResponse(ctx, http.StatusUnauthorized, "unauthorized")
+	}
+
+	if ok, preconditionErr := r.checkEditorialDraftIfMatch(ctx, "restapi - v1 - deleteProjectDraft - precondition", func() (time.Time, error) {
+		return loadUpdatedAt(ctx.UserContext(), ctx.Params("id"))
+	}); !ok || preconditionErr != nil {
+		return preconditionErr
 	}
 
 	if err := delete(ctx.UserContext(), actorID, ctx.Params("id")); err != nil {
@@ -1263,6 +1379,7 @@ func (r *V1) deleteProjectDraft(
 func (r *V1) deleteHeadingDraft(
 	ctx *fiber.Ctx,
 	delete func(context.Context, string, string, int) error,
+	loadUpdatedAt func(context.Context, string, int) (time.Time, error),
 ) error {
 	actorID, ok := ctx.Locals("userID").(string)
 	if !ok {
@@ -1272,6 +1389,12 @@ func (r *V1) deleteHeadingDraft(
 	headingID, err := pathInt(ctx, "heading_id")
 	if err != nil {
 		return errorResponse(ctx, http.StatusBadRequest, "invalid heading_id")
+	}
+
+	if ok, preconditionErr := r.checkEditorialDraftIfMatch(ctx, "restapi - v1 - deleteHeadingDraft - precondition", func() (time.Time, error) {
+		return loadUpdatedAt(ctx.UserContext(), ctx.Params("id"), headingID)
+	}); !ok || preconditionErr != nil {
+		return preconditionErr
 	}
 
 	if err = delete(ctx.UserContext(), actorID, ctx.Params("id"), headingID); err != nil {

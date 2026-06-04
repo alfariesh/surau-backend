@@ -10,8 +10,9 @@ type AuthorList struct {
 
 // BookList -.
 type BookList struct {
-	Books []entity.Book `json:"books"`
-	Total int           `json:"total" example:"42"`
+	Books []entity.Book           `json:"books"`
+	Total int                     `json:"total" example:"42"`
+	Stats entity.BookCatalogStats `json:"stats"`
 } // @name v1.BookList
 
 // PageList -.

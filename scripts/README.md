@@ -137,9 +137,12 @@ This is PageIndex-like node summary data, but it uses Surau's existing
 `book_headings`, `book_heading_ranges`, and reader endpoints instead of
 rebuilding a PDF tree.
 
-Default output language is Arabic (`--summary-lang ar`). For long books, run all
-TOC summaries bottom-up: child sections are summarized first, then parent
-summaries can be generated from child summaries to reduce cost.
+`generate_reader_summaries.py` produces canonical Arabic summaries only
+(`--summary-lang ar`). For Indonesian or English, import the Arabic summaries
+first, then translate those summaries with `translate_reader_assets.py
+--summary-only`. For long books, run all TOC summaries bottom-up: child sections
+are summarized first, then parent summaries can be generated from complete child
+summaries to reduce cost.
 
 ### Smoke Test Without LLM
 
@@ -162,6 +165,8 @@ python3 scripts/generate_reader_summaries.py \
   --all-toc \
   --limit 3 \
   --summary-lang ar \
+  --max-source-chars 0 \
+  --eval-report /tmp/surau-jalalain-summary-ar.eval.json \
   --out /tmp/surau-jalalain-summary-ar.jsonl
 ```
 
@@ -185,6 +190,20 @@ python3 scripts/translate_reader_assets.py \
   --summary-only \
   --out /tmp/surau-jalalain-summary-id.jsonl
 ```
+
+Import translated summaries with the same importer:
+
+```sh
+PG_URL='postgres://user:myAwEsOm3pa55%40w0rd@localhost:5432/db?sslmode=disable' \
+go run ./cmd/import-reader-assets --file=/tmp/surau-jalalain-summary-id.jsonl
+```
+
+`--max-source-chars 0` is the production default and disables source truncation.
+Use a positive value only for cheap sampling tests; QA treats
+`metadata.truncated_source=true` as a fatal issue.
+`--eval-report` is a quick report for newly generated rows; still run the full
+`qa_reader_assets.py --all-toc --kind heading_summary` check before production
+import.
 
 ### Translation Strategy
 

@@ -495,7 +495,7 @@ Recommended fetch wrapper behavior:
 
 1. Attach `Authorization` if logged in.
 2. Parse JSON for non-204 responses.
-3. For non-2xx, throw an `ApiError` with `status` and `error`.
+3. For non-2xx, throw an `ApiError` with `status`, `error`, optional `code`, and optional `request_id`.
 4. On `401`, route to login.
 5. On `403`, show permission denied and hide the blocked action.
 6. Do not special-case backend validation messages too much. They are stable enough for UX labels but not for business logic.
@@ -520,7 +520,12 @@ export async function api<T>(
 
   const body = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw { status: res.status, error: body.error ?? "request failed" };
+    throw {
+      status: res.status,
+      error: body.message ?? body.error ?? "request failed",
+      code: body.code,
+      requestId: body.request_id,
+    };
   }
 
   return body as T;
@@ -545,7 +550,19 @@ Common backend errors:
 | 404 | `{"error":"heading not found"}` | invalid heading for project | Refresh workspace |
 | 409 | `{"error":"production project already exists","existing_project_id":"..."}` | duplicate active `book_id + lang` | Link existing project |
 | 409 | `{"error":"production project is not ready","blocking_errors":[...]}` | publish blocked | Show returned blockers |
+| 412 | `{"error":"precondition failed"}` | stale `If-Match` on draft/project mutation | Refresh latest data and ask user to retry or merge |
 | 500 | `{"error":"internal server error"}` | server/db issue | Toast and retry option |
+
+## Optimistic Locking
+
+GET responses for production projects and draft resources include `ETag` when the resource has `updated_at`. Save/delete draft mutations, `PATCH /production-projects/{id}`, and publish/unpublish accept `If-Match`.
+
+Recommended FE behavior:
+
+1. Store the `ETag` returned by GET for each open draft or project.
+2. Send that value as `If-Match` on PUT, DELETE, PATCH, publish, and unpublish.
+3. If the backend returns `412`, refetch the resource and show a stale-change conflict state.
+4. For creating a brand-new draft after a `404 draft not found`, either omit `If-Match` for backward-compatible create or send `If-Match: *`.
 
 ## Endpoints By Screen
 
@@ -983,6 +1000,8 @@ Validation:
 
 When GET returns `404 draft not found`, show an empty form. Do not treat it as a fatal workspace error.
 
+When GET returns `200`, keep the response `ETag` and send it as `If-Match` on save/delete. A `412 precondition failed` means another editor changed the draft after this screen loaded.
+
 ### 9. TOC Draft Editors
 
 TOC assets always require `heading_id`:
@@ -1292,6 +1311,8 @@ Publish behavior:
 - Activity event `production_project.publish` is recorded.
 
 If publish fails with `409 production project is not ready`, the response mirrors publish-check fields and includes `blocking_errors`, so show those blockers directly. A separate publish-check fetch is only needed if the UI wants to refresh state again.
+
+Publish and unpublish should send the current project `ETag` as `If-Match`. If the response is `412`, reload the project/workspace before trying again.
 
 Unpublish:
 

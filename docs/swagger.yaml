@@ -175,6 +175,48 @@ definitions:
         example: "2026-01-01T00:00:00Z"
         type: string
     type: object
+  entity.BookCatalogStats:
+    properties:
+      author_count:
+        example: 35
+        type: integer
+      by_category:
+        items:
+          $ref: '#/definitions/entity.BookCategoryStat'
+        type: array
+      category_count:
+        example: 12
+        type: integer
+      coverage_count:
+        example: 25
+        type: integer
+      published_count:
+        example: 120
+        type: integer
+      total_books:
+        example: 120
+        type: integer
+      with_content_count:
+        example: 90
+        type: integer
+    type: object
+  entity.BookCategoryStat:
+    properties:
+      category_id:
+        example: 10
+        type: integer
+      category_name:
+        type: string
+      coverage_count:
+        example: 8
+        type: integer
+      published_count:
+        example: 20
+        type: integer
+      total:
+        example: 20
+        type: integer
+    type: object
   entity.BookHeading:
     properties:
       book_id:
@@ -1084,6 +1126,10 @@ definitions:
         type: string
       previous:
         $ref: '#/definitions/entity.BookTOCLink'
+      quran_references:
+        items:
+          $ref: '#/definitions/entity.BookQuranReference'
+        type: array
       requested_lang:
         example: en
         type: string
@@ -1736,6 +1782,8 @@ definitions:
       translation_missing:
         example: true
         type: boolean
+      transliteration:
+        $ref: '#/definitions/entity.QuranTransliteration'
       updated_at:
         example: "2026-01-01T00:00:00Z"
         type: string
@@ -1806,6 +1854,12 @@ definitions:
     properties:
       checksum:
         type: string
+      default_priority:
+        example: 0
+        type: integer
+      display_name:
+        example: Mishari Rashid Al-Afasy
+        type: string
       format:
         example: json
         type: string
@@ -1823,6 +1877,9 @@ definitions:
         type: string
       is_default:
         example: false
+        type: boolean
+      is_visible:
+        example: true
         type: boolean
       license_status:
         example: needs_review
@@ -1847,6 +1904,12 @@ definitions:
       reciter_name:
         example: Mishari Rashid Al-Afasy
         type: string
+      segment_count:
+        example: 77796
+        type: integer
+      sort_order:
+        example: 10
+        type: integer
       source_url:
         type: string
       style:
@@ -1954,7 +2017,7 @@ definitions:
       metadata:
         type: object
       source_id:
-        example: qul-kfgqpc-id-simple
+        example: kemenag-id-translation
         type: string
       text:
         type: string
@@ -2009,6 +2072,22 @@ definitions:
       source_url:
         type: string
       translator:
+        type: string
+      updated_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+    type: object
+  entity.QuranTransliteration:
+    properties:
+      lang:
+        example: id
+        type: string
+      metadata:
+        type: object
+      source_id:
+        example: kemenag-id-latin
+        type: string
+      text:
         type: string
       updated_at:
         example: "2026-01-01T00:00:00Z"
@@ -2502,6 +2581,8 @@ definitions:
         items:
           $ref: '#/definitions/entity.Book'
         type: array
+      stats:
+        $ref: '#/definitions/entity.BookCatalogStats'
       total:
         example: 42
         type: integer
@@ -2972,8 +3053,18 @@ definitions:
     type: object
   v1.Error:
     properties:
+      code:
+        example: invalid_request_body
+        type: string
+      details: {}
       error:
         example: message
+        type: string
+      message:
+        example: message
+        type: string
+      request_id:
+        example: 550e8400-e29b-41d4-a716-446655440000
         type: string
     type: object
   v1.ForgotPassword:
@@ -3132,6 +3223,8 @@ definitions:
         type: string
       translation:
         $ref: '#/definitions/v1.QuranReaderAyahTranslation'
+      transliteration:
+        $ref: '#/definitions/v1.QuranReaderAyahTransliteration'
     type: object
   v1.QuranReaderAyahAudioSegment:
     properties:
@@ -3174,6 +3267,11 @@ definitions:
       text:
         type: string
     type: object
+  v1.QuranReaderAyahTransliteration:
+    properties:
+      text:
+        type: string
+    type: object
   v1.QuranSearchList:
     properties:
       results:
@@ -3183,6 +3281,88 @@ definitions:
       total:
         example: 42
         type: integer
+    type: object
+  v1.QuranSurahAudioManifest:
+    properties:
+      missing_ayah_keys:
+        items:
+          type: string
+        type: array
+      mode:
+        example: ayah
+        type: string
+      recitation:
+        $ref: '#/definitions/v1.QuranSurahAudioRecitation'
+      surah_id:
+        example: 1
+        type: integer
+      tracks:
+        items:
+          $ref: '#/definitions/v1.QuranSurahAudioTrack'
+        type: array
+    type: object
+  v1.QuranSurahAudioRecitation:
+    properties:
+      display_name:
+        example: Mishari Rashid Al-Afasy
+        type: string
+      id:
+        example: qul-ayah-recitation-mishari-rashid-al-afasy-murattal-hafs-953
+        type: string
+      is_default:
+        example: true
+        type: boolean
+      mode:
+        example: ayah
+        type: string
+      public_track_count:
+        example: 6236
+        type: integer
+      reciter_name:
+        example: Mishari Rashid Al-Afasy
+        type: string
+      segment_count:
+        example: 77796
+        type: integer
+      style:
+        example: murattal
+        type: string
+      track_count:
+        example: 6236
+        type: integer
+    type: object
+  v1.QuranSurahAudioTrack:
+    properties:
+      ayah_number:
+        example: 4
+        type: integer
+      duration_ms:
+        example: 3000
+        type: integer
+      duration_seconds:
+        example: 3
+        type: integer
+      mime_type:
+        example: audio/mpeg
+        type: string
+      recitation_id:
+        example: qul-recitation
+        type: string
+      segments:
+        items:
+          $ref: '#/definitions/v1.QuranReaderAyahAudioSegment'
+        type: array
+      surah_id:
+        example: 73
+        type: integer
+      track_key:
+        example: "73:4"
+        type: string
+      track_type:
+        example: ayah
+        type: string
+      url:
+        type: string
     type: object
   v1.Register:
     properties:
@@ -5682,6 +5862,10 @@ paths:
         name: book_id
         required: true
         type: integer
+      - description: Heading ID
+        in: query
+        name: heading_id
+        type: integer
       - default: id
         description: Language code
         in: query
@@ -5937,6 +6121,11 @@ paths:
         in: query
         name: lang
         type: string
+      - default: false
+        description: Include approved Quran references for this heading
+        in: query
+        name: include_quran_references
+        type: boolean
       produces:
       - application/json
       responses:
@@ -8777,6 +8966,45 @@ paths:
           schema:
             $ref: '#/definitions/v1.Error'
       summary: Get Quran surah
+      tags:
+      - quran
+  /quran/surahs/{surah_id}/audio:
+    get:
+      description: Get a compact playable audio manifest for one surah. If recitation_id
+        is omitted, the backend uses the default playable visible recitation.
+      operationId: get-quran-surah-audio
+      parameters:
+      - description: Surah ID
+        in: path
+        maximum: 114
+        minimum: 1
+        name: surah_id
+        required: true
+        type: integer
+      - description: Visible recitation ID. Empty uses the default recitation.
+        in: query
+        name: recitation_id
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.QuranSurahAudioManifest'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      summary: Get Quran surah audio manifest
       tags:
       - quran
   /quran/surahs/{surah_id}/ayahs:

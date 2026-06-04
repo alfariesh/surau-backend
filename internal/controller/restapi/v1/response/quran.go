@@ -43,6 +43,42 @@ type QuranReaderAyahAudioSegment struct {
 	DurationMS      *int   `json:"duration_ms,omitempty" example:"3000"`
 } // @name v1.QuranReaderAyahAudioSegment
 
+// QuranSurahAudioManifest is the compact surah audio payload for FE players.
+type QuranSurahAudioManifest struct {
+	SurahID         int                       `json:"surah_id" example:"1"`
+	Recitation      QuranSurahAudioRecitation `json:"recitation"`
+	Mode            string                    `json:"mode" example:"ayah"`
+	Tracks          []QuranSurahAudioTrack    `json:"tracks"`
+	MissingAyahKeys []string                  `json:"missing_ayah_keys"`
+} // @name v1.QuranSurahAudioManifest
+
+// QuranSurahAudioRecitation summarizes the selected recitation for one manifest.
+type QuranSurahAudioRecitation struct {
+	ID               string  `json:"id" example:"qul-ayah-recitation-mishari-rashid-al-afasy-murattal-hafs-953"`
+	DisplayName      string  `json:"display_name" example:"Mishari Rashid Al-Afasy"`
+	ReciterName      *string `json:"reciter_name,omitempty" example:"Mishari Rashid Al-Afasy"`
+	Style            *string `json:"style,omitempty" example:"murattal"`
+	Mode             string  `json:"mode" example:"ayah"`
+	IsDefault        bool    `json:"is_default" example:"true"`
+	TrackCount       int     `json:"track_count" example:"6236"`
+	PublicTrackCount int     `json:"public_track_count" example:"6236"`
+	SegmentCount     int     `json:"segment_count" example:"77796"`
+} // @name v1.QuranSurahAudioRecitation
+
+// QuranSurahAudioTrack is a playable audio item in a surah manifest.
+type QuranSurahAudioTrack struct {
+	RecitationID    string                        `json:"recitation_id" example:"qul-recitation"`
+	TrackType       string                        `json:"track_type" example:"ayah"`
+	TrackKey        string                        `json:"track_key" example:"73:4"`
+	SurahID         int                           `json:"surah_id" example:"73"`
+	AyahNumber      *int                          `json:"ayah_number,omitempty" example:"4"`
+	URL             string                        `json:"url"`
+	DurationMS      *int                          `json:"duration_ms,omitempty" example:"3000"`
+	DurationSeconds *int                          `json:"duration_seconds,omitempty" example:"3"`
+	MIMEType        *string                       `json:"mime_type,omitempty" example:"audio/mpeg"`
+	Segments        []QuranReaderAyahAudioSegment `json:"segments,omitempty"`
+} // @name v1.QuranSurahAudioTrack
+
 // QuranReaderAyahs maps domain ayahs to the compact reader payload.
 func QuranReaderAyahs(ayahs []entity.QuranAyah) []QuranReaderAyah {
 	items := make([]QuranReaderAyah, 0, len(ayahs))
@@ -74,9 +110,35 @@ func QuranReaderAyahFromEntity(ayah entity.QuranAyah) QuranReaderAyah {
 	return item
 }
 
+// QuranSurahAudioManifestFromEntity maps a domain manifest to the compact API payload.
+func QuranSurahAudioManifestFromEntity(manifest *entity.QuranSurahAudioManifest) QuranSurahAudioManifest {
+	if manifest == nil {
+		return QuranSurahAudioManifest{}
+	}
+
+	return QuranSurahAudioManifest{
+		SurahID: manifest.SurahID,
+		Recitation: QuranSurahAudioRecitation{
+			ID:               manifest.Recitation.ID,
+			DisplayName:      manifest.Recitation.DisplayName,
+			ReciterName:      manifest.Recitation.ReciterName,
+			Style:            manifest.Recitation.Style,
+			Mode:             manifest.Recitation.Mode,
+			IsDefault:        manifest.Recitation.IsDefault,
+			TrackCount:       manifest.Recitation.TrackCount,
+			PublicTrackCount: manifest.Recitation.PublicTrackCount,
+			SegmentCount:     manifest.Recitation.SegmentCount,
+		},
+		Mode:            manifest.Mode,
+		Tracks:          surahAudioTracks(manifest.Tracks),
+		MissingAyahKeys: manifest.MissingAyahKeys,
+	}
+}
+
 func readerAudioTracks(tracks []entity.QuranAudioTrack) []QuranReaderAyahAudioTrack {
 	items := make([]QuranReaderAyahAudioTrack, 0, len(tracks))
-	for _, track := range tracks {
+	for i := range tracks {
+		track := &tracks[i]
 		url := readerAudioURL(track)
 		if url == "" {
 			continue
@@ -94,7 +156,38 @@ func readerAudioTracks(tracks []entity.QuranAudioTrack) []QuranReaderAyahAudioTr
 	return items
 }
 
-func readerAudioURL(track entity.QuranAudioTrack) string {
+func surahAudioTracks(tracks []entity.QuranAudioTrack) []QuranSurahAudioTrack {
+	items := make([]QuranSurahAudioTrack, 0, len(tracks))
+	for i := range tracks {
+		track := &tracks[i]
+
+		url := readerAudioURL(track)
+		if url == "" {
+			continue
+		}
+
+		items = append(items, QuranSurahAudioTrack{
+			RecitationID:    track.RecitationID,
+			TrackType:       track.TrackType,
+			TrackKey:        track.TrackKey,
+			SurahID:         track.SurahID,
+			AyahNumber:      track.AyahNumber,
+			URL:             url,
+			DurationMS:      track.DurationMS,
+			DurationSeconds: track.DurationSeconds,
+			MIMEType:        track.MIMEType,
+			Segments:        readerAudioSegments(track.Segments),
+		})
+	}
+
+	return items
+}
+
+func readerAudioURL(track *entity.QuranAudioTrack) string {
+	if track == nil {
+		return ""
+	}
+
 	if track.PublicURL != nil && *track.PublicURL != "" {
 		return *track.PublicURL
 	}

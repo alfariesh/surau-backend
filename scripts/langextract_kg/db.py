@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 import uuid
 
 from .arabic_normalize import normalized_key
@@ -40,8 +41,34 @@ def load_env_file(path: Path = DEFAULT_ENV_FILE) -> None:
             os.environ[key] = value
 
 
+def normalize_postgres_url(postgres_url: str) -> str:
+    """Quote unescaped @ signs in local Postgres passwords for psycopg."""
+    if not postgres_url or "://" not in postgres_url:
+        return postgres_url
+    scheme, rest = postgres_url.split("://", 1)
+    if scheme not in {"postgres", "postgresql"}:
+        return postgres_url
+
+    authority_end = len(rest)
+    for marker in ("/", "?", "#"):
+        marker_index = rest.find(marker)
+        if marker_index != -1:
+            authority_end = min(authority_end, marker_index)
+    authority = rest[:authority_end]
+    suffix = rest[authority_end:]
+    if authority.count("@") <= 1:
+        return postgres_url
+
+    userinfo, hostinfo = authority.rsplit("@", 1)
+    if ":" not in userinfo:
+        return postgres_url
+    user, password = userinfo.split(":", 1)
+    quoted_userinfo = f"{quote(user, safe='')}:{quote(password, safe='')}"
+    return f"{scheme}://{quoted_userinfo}@{hostinfo}{suffix}"
+
+
 def postgres_url_from_env() -> str:
-    return os.environ.get("PG_URL") or os.environ.get("POSTGRES_URL") or ""
+    return normalize_postgres_url(os.environ.get("PG_URL") or os.environ.get("POSTGRES_URL") or "")
 
 
 def json_dumps(value: Any) -> str:
@@ -67,6 +94,7 @@ def entity_type_for_class(extraction_class: str) -> str:
         "fiqh_term": "concept",
         "aqidah_term": "concept",
         "hadith_term": "concept",
+        "qiraat_term": "concept",
         "arabic_language_term": "concept",
         "adab_term": "concept",
         "tasawwuf_term": "concept",
@@ -95,6 +123,7 @@ class DBClient:
     def connect(cls, postgres_url: str) -> "DBClient":
         if not postgres_url:
             raise ValueError("PG_URL or --pg-url is required for database access")
+        postgres_url = normalize_postgres_url(postgres_url)
         try:
             import psycopg  # type: ignore
 
@@ -194,18 +223,20 @@ ORDER BY bp.page_id ASC
         book_id: int,
         task_name: str,
         prompt_version: str,
+        policy_hash: str = "",
     ) -> set[int]:
         sql = """
-SELECT DISTINCT m.page_id
-FROM knowledge_mentions m
-JOIN knowledge_extraction_runs r ON r.id = m.run_id
-WHERE m.book_id = %s
+SELECT DISTINCT d.page_id
+FROM knowledge_extraction_documents d
+JOIN knowledge_extraction_runs r ON r.id = d.run_id
+WHERE d.book_id = %s
   AND r.task_name = %s
   AND r.prompt_version = %s
   AND r.status IN ('running', 'success', 'completed_with_errors')
+  AND (%s = '' OR r.parameters->>'prompt_policy_hash' = %s)
 """
         with self._cursor() as cur:
-            cur.execute(sql, (book_id, task_name, prompt_version))
+            cur.execute(sql, (book_id, task_name, prompt_version, policy_hash, policy_hash))
             return {int(row[0]) for row in cur.fetchall()}
 
     def create_run(self, run: dict[str, Any]) -> None:
@@ -408,9 +439,6 @@ WHERE id = %s
     def insert_mention(self, record: dict[str, Any]) -> str:
         mention_id = record.get("id") or new_uuid()
         record["id"] = mention_id
-        if not record.get("source_span_id"):
-            record["source_span_id"] = new_uuid()
-        self.insert_source_span(record, object_type="mention", object_id=mention_id)
         sql = """
 INSERT INTO knowledge_mentions (
     id, run_id, book_id, page_id, heading_id, document_id, extraction_class,
@@ -434,7 +462,6 @@ DO UPDATE SET
     confidence = EXCLUDED.confidence,
     review_status = EXCLUDED.review_status,
     source_hash = EXCLUDED.source_hash,
-    source_span_id = EXCLUDED.source_span_id,
     token_start = EXCLUDED.token_start,
     token_end = EXCLUDED.token_end,
     extraction_index = EXCLUDED.extraction_index,
@@ -464,7 +491,7 @@ RETURNING id
                     record.get("confidence"),
                     record.get("review_status", "pending"),
                     record.get("source_hash"),
-                    record.get("source_span_id"),
+                    None,
                     record.get("token_start"),
                     record.get("token_end"),
                     record.get("extraction_index"),
@@ -474,16 +501,20 @@ RETURNING id
             )
             row = cur.fetchone()
             actual_mention_id = str(row[0])
-            if actual_mention_id != mention_id:
-                cur.execute(
-                    """
-UPDATE knowledge_source_spans
-SET source_object_id = %s
+        record["id"] = actual_mention_id
+        if not record.get("source_span_id"):
+            record["source_span_id"] = new_uuid()
+        source_span_id = self.insert_source_span(record, object_type="mention", object_id=actual_mention_id)
+        record["source_span_id"] = source_span_id
+        with self._cursor() as cur:
+            cur.execute(
+                """
+UPDATE knowledge_mentions
+SET source_span_id = %s
 WHERE id = %s
-  AND source_object_type = 'mention'
 """,
-                    (actual_mention_id, record.get("source_span_id")),
-                )
+                (source_span_id, actual_mention_id),
+            )
         self.conn.commit()
         return actual_mention_id
 

@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/evrone/go-clean-template/internal/controller/restapi/middleware"
 	"github.com/evrone/go-clean-template/internal/entity"
@@ -370,6 +371,97 @@ func TestEditorialProductionProjectResponsesIncludeOwner(t *testing.T) {
 	assertProductionOwner(t, workspaceBody.Project, ownerID, displayName)
 }
 
+func TestEditorialMetadataTranslationDraftETagPrecondition(t *testing.T) {
+	t.Parallel()
+
+	updatedAt := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	editorial := &fakeProductionEditorial{
+		metadataTranslationDraft: entity.BookMetadataTranslationEdit{
+			ProjectID:    "project-id",
+			DisplayTitle: "Old title",
+			UpdatedAt:    updatedAt,
+		},
+	}
+	app := newProductionTestApp(entity.User{ID: "editor-id", Role: entity.UserRoleEditor}, editorial)
+
+	getResp, err := app.Test(httptest.NewRequestWithContext(
+		t.Context(),
+		http.MethodGet,
+		"/v1/editorial/production-projects/project-id/metadata-draft",
+		nil,
+	))
+	require.NoError(t, err)
+
+	defer getResp.Body.Close()
+
+	require.Equal(t, http.StatusOK, getResp.StatusCode)
+	assert.Equal(t, updatedAtETag(updatedAt), getResp.Header.Get("ETag"))
+
+	staleReq := httptest.NewRequestWithContext(
+		t.Context(),
+		http.MethodPut,
+		"/v1/editorial/production-projects/project-id/metadata-draft",
+		strings.NewReader(`{"display_title":"New title"}`),
+	)
+	staleReq.Header.Set("Content-Type", "application/json")
+	staleReq.Header.Set("If-Match", updatedAtETag(updatedAt.Add(-time.Second)))
+
+	staleResp, err := app.Test(staleReq)
+	require.NoError(t, err)
+
+	defer staleResp.Body.Close()
+
+	assert.Equal(t, http.StatusPreconditionFailed, staleResp.StatusCode)
+	assert.Zero(t, editorial.saveMetadataTranslationDraftCalls)
+
+	matchReq := httptest.NewRequestWithContext(
+		t.Context(),
+		http.MethodPut,
+		"/v1/editorial/production-projects/project-id/metadata-draft",
+		strings.NewReader(`{"display_title":"New title"}`),
+	)
+	matchReq.Header.Set("Content-Type", "application/json")
+	matchReq.Header.Set("If-Match", updatedAtETag(updatedAt))
+
+	matchResp, err := app.Test(matchReq)
+	require.NoError(t, err)
+
+	defer matchResp.Body.Close()
+
+	assert.Equal(t, http.StatusOK, matchResp.StatusCode)
+	assert.Equal(t, 1, editorial.saveMetadataTranslationDraftCalls)
+}
+
+func TestEditorialPublishProductionProjectRejectsStaleIfMatch(t *testing.T) {
+	t.Parallel()
+
+	updatedAt := time.Date(2026, 2, 3, 4, 5, 6, 0, time.UTC)
+	editorial := &fakeProductionEditorial{
+		productionProject: entity.BookProductionProject{
+			ID:        "project-id",
+			BookID:    797,
+			Lang:      "id",
+			UpdatedAt: updatedAt,
+		},
+	}
+	app := newProductionTestApp(entity.User{ID: "admin-id", Role: entity.UserRoleAdmin}, editorial)
+	req := httptest.NewRequestWithContext(
+		t.Context(),
+		http.MethodPost,
+		"/v1/editorial/production-projects/project-id/publish",
+		nil,
+	)
+	req.Header.Set("If-Match", updatedAtETag(updatedAt.Add(-time.Second)))
+
+	resp, err := app.Test(req)
+	require.NoError(t, err)
+
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusPreconditionFailed, resp.StatusCode)
+	assert.Zero(t, editorial.publishProductionProjectCalls)
+}
+
 func assertProductionOwner(
 	t *testing.T,
 	project entity.BookProductionProject,
@@ -423,6 +515,9 @@ func newProductionTestApp(actor entity.User, editorial *fakeProductionEditorial)
 	editorialReview.Get("/production-projects/:id/draft-revisions", controller.editorialListProductionDraftRevisions)
 	editorialReview.Post("/production-projects/:id/draft-revisions/:revision_id/restore", controller.editorialRestoreProductionDraftRevision)
 	editorialReview.Get("/production-projects/:id", controller.editorialGetProductionProject)
+	editorialReview.Patch("/production-projects/:id", controller.editorialUpdateProductionProject)
+	editorialReview.Get("/production-projects/:id/metadata-draft", controller.editorialGetMetadataTranslationDraft)
+	editorialReview.Put("/production-projects/:id/metadata-draft", controller.editorialSaveMetadataTranslationDraft)
 	editorialReview.Get("/books/:book_id/metadata-draft", controller.editorialGetMetadataDraft)
 	editorialReview.Get("/books/:book_id/headings/:heading_id/draft", controller.editorialGetHeadingDraft)
 
@@ -442,6 +537,10 @@ type fakeProductionEditorial struct {
 	publishProductionProjectErr error
 	publishCheck                entity.BookProductionPublishCheck
 	productionProject           entity.BookProductionProject
+	metadataTranslationDraft    entity.BookMetadataTranslationEdit
+
+	publishProductionProjectCalls     int
+	saveMetadataTranslationDraftCalls int
 }
 
 func (f *fakeProductionEditorial) projectResponse() entity.BookProductionProject {
@@ -600,6 +699,7 @@ func (f *fakeProductionEditorial) PublishProductionProject(
 	string,
 	string,
 ) (entity.BookProductionProject, error) {
+	f.publishProductionProjectCalls++
 	if f.publishProductionProjectErr != nil {
 		return entity.BookProductionProject{}, f.publishProductionProjectErr
 	}
@@ -608,6 +708,32 @@ func (f *fakeProductionEditorial) PublishProductionProject(
 		ID:                "project-id",
 		WorkflowStatus:    entity.ProductionWorkflowPublished,
 		PublicationStatus: entity.ProductionPublicationPublished,
+	}, nil
+}
+
+func (f *fakeProductionEditorial) GetMetadataTranslationDraft(
+	context.Context,
+	string,
+) (entity.BookMetadataTranslationEdit, error) {
+	if f.metadataTranslationDraft.ProjectID != "" {
+		return f.metadataTranslationDraft, nil
+	}
+
+	return entity.BookMetadataTranslationEdit{ProjectID: "project-id", DisplayTitle: "Title"}, nil
+}
+
+func (f *fakeProductionEditorial) SaveMetadataTranslationDraft(
+	context.Context,
+	string,
+	string,
+	entity.BookMetadataTranslationEdit,
+) (entity.BookMetadataTranslationEdit, error) {
+	f.saveMetadataTranslationDraftCalls++
+
+	return entity.BookMetadataTranslationEdit{
+		ProjectID:    "project-id",
+		DisplayTitle: "New title",
+		UpdatedAt:    time.Date(2026, 1, 2, 3, 4, 6, 0, time.UTC),
 	}, nil
 }
 

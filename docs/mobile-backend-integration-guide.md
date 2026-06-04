@@ -1,6 +1,6 @@
 # Mobile Backend Integration Guide
 
-Last updated: 2026-06-01
+Last updated: 2026-06-04
 
 Dokumen ini adalah panduan utama untuk implementasi mobile app Islamic Surau dari backend ini. Fokusnya adalah kebutuhan FE mobile: urutan API call per screen, auth, data shape yang penting, strategi cache, error handling, dan behavior UI saat data terjemahan/audio belum lengkap.
 
@@ -75,7 +75,7 @@ Response shape ringkas:
 | `GET /v1/books/{book_id}/toc` | `BookTOCNode[]` array langsung |
 | `GET /v1/books/{book_id}/headings` | `BookHeading[]` array langsung |
 | `GET /v1/authors` | `{ "authors": Author[], "total": number }` |
-| `GET /v1/books` | `{ "books": Book[], "total": number }` |
+| `GET /v1/books` | `{ "books": Book[], "total": number, "stats": BookCatalogStats }` |
 | `GET /v1/books/{book_id}/pages` | `{ "pages": BookPage[], "total": number }` |
 | `GET /v1/quran/search` | `{ "results": QuranSearchResult[], "total": number }` |
 | `GET /v1/books/{book_id}/quran-references` | `{ "references": BookQuranReference[], "total": number }` |
@@ -89,9 +89,14 @@ Semua error REST memakai shape:
 
 ```json
 {
-  "error": "invalid request body"
+  "error": "invalid request body",
+  "code": "invalid_request_body",
+  "message": "invalid request body",
+  "request_id": "..."
 }
 ```
+
+`error` tetap ada untuk client lama. FE baru sebaiknya simpan `request_id` untuk debugging dan boleh branch ringan memakai `code`, tetapi status HTTP tetap sumber utama.
 
 Mobile sebaiknya branch berdasarkan HTTP status terlebih dahulu:
 
@@ -102,6 +107,7 @@ Mobile sebaiknya branch berdasarkan HTTP status terlebih dahulu:
 | `403` | Role tidak cukup atau login email belum verified | Untuk login, tampilkan screen verifikasi email. Untuk protected role, tampilkan akses terbatas. |
 | `404` | Resource tidak ada | Tampilkan empty/not found state. |
 | `409` | Conflict, misalnya email sudah terdaftar | Tampilkan pesan actionable. |
+| `412` | `If-Match` stale pada editorial mutation | Refresh resource lalu minta user retry/merge. |
 | `429` | Rate limit | Tampilkan cooldown dan retry setelah jeda. |
 | `500` | Server error | Retry manual, logging client. |
 | `503` | Service dependency bermasalah, misalnya email delivery | Tampilkan pesan retry. |
@@ -134,12 +140,27 @@ export async function apiFetch<T>(
   const data = text ? JSON.parse(text) : null;
 
   if (!response.ok) {
-    throw new ApiError(response.status, data?.error || "request failed");
+    const error = new ApiError(response.status, data?.message || data?.error || "request failed");
+    error.code = data?.code;
+    throw error;
   }
 
   return data as T;
 }
 ```
+
+## 2.1 Public Cache Contract
+
+Public `GET` reader/Quran endpoints can return:
+
+```http
+Cache-Control: public, max-age=300, stale-while-revalidate=86400
+ETag: W/"..."
+Last-Modified: ...
+X-Request-ID: ...
+```
+
+Mobile may use normal HTTP cache or send `If-None-Match` on repeat fetches. A `304 Not Modified` response means reuse the local cached JSON for that URL.
 
 ## 3. Language Contract
 
@@ -471,6 +492,7 @@ Endpoint ringkas:
 | `GET` | `/v1/quran/hizbs` | Public | List hizb. |
 | `GET` | `/v1/quran/hizbs/{hizb_number}/ayahs?lang=id&view=reader_minimal` | Public | Reader by hizb. |
 | `GET` | `/v1/quran/recitations` | Public | Pilihan audio/reciter. |
+| `GET` | `/v1/quran/surahs/{surah_id}/audio?recitation_id=` | Public | Manifest audio compact untuk player/preload/offline. |
 | `GET` | `/v1/quran/translation-sources?lang=id` | Public | Pilihan sumber terjemahan. |
 
 Quran query params penting:
@@ -509,6 +531,7 @@ Audio rules:
 
 - Gunakan `public_url ?? audio_url` sebagai playable URL.
 - Pada `view=reader_minimal`, gunakan langsung `audio[].url`.
+- Untuk setup player yang lebih compact, gunakan `/quran/surahs/{surah_id}/audio`; response sudah berisi `tracks[].url` dan `missing_ayah_keys`.
 - `public_url` lebih disukai karena app-owned CDN.
 - `audio_url` tetap valid untuk local/dev fallback.
 - `r2_key` adalah storage metadata, bukan URL browser/player.
@@ -571,6 +594,24 @@ export type QuranAudioTrack = {
   duration_seconds?: number | null;
   mime_type?: string | null;
   segments?: QuranAudioSegment[];
+};
+
+export type QuranSurahAudioManifest = {
+  surah_id: number;
+  recitation: {
+    id: string;
+    display_name: string;
+    reciter_name?: string | null;
+    style?: string | null;
+    mode: "ayah" | "surah" | string;
+    is_default: boolean;
+    track_count: number;
+    public_track_count: number;
+    segment_count: number;
+  };
+  mode: "ayah" | "surah" | string;
+  tracks: Array<Omit<QuranAudioTrack, "audio_url" | "public_url" | "r2_key"> & { url: string }>;
+  missing_ayah_keys: string[];
 };
 
 export type QuranTranslationSource = {
@@ -654,9 +695,9 @@ Endpoint ringkas:
 | `GET` | `/v1/books/{book_id}/headings` | Public | Flat headings. |
 | `GET` | `/v1/books/{book_id}/sections/{heading_id}?lang=id` | Public | Section detail legacy. |
 | `GET` | `/v1/books/{book_id}/toc?lang=id&include_audio=false` | Public | TOC tree. |
-| `GET` | `/v1/books/{book_id}/toc/{heading_id}/read?lang=id` | Public | Reader section body. |
+| `GET` | `/v1/books/{book_id}/toc/{heading_id}/read?lang=id&include_quran_references=false` | Public | Reader section body. |
 | `GET` | `/v1/books/{book_id}/toc/{heading_id}/playlist?lang=id` | Public | Audio playlist for TOC section. |
-| `GET` | `/v1/books/{book_id}/quran-references?lang=id&status=approved` | Public | Quran references linked to kitab. |
+| `GET` | `/v1/books/{book_id}/quran-references?lang=id&heading_id=10&status=approved` | Public | Quran references linked to kitab. |
 | `POST` | `/v1/books/{book_id}/rag?lang=id` | Public, rate limited | Ask AI over book. |
 | `POST` | `/v1/books/{book_id}/toc/{heading_id}/translation-feedback?lang=id` | Public, rate limited | Feedback terjemahan. |
 
@@ -670,19 +711,22 @@ Kitab query params penting:
 | `has_content` | `/books` | none | Boolean filter; kirim `true` untuk reader-ready catalog. |
 | `limit`, `offset` | `/authors`, `/books`, `/pages`, references | default `50`, `0` | Invalid `limit/offset` jatuh ke default pada sebagian endpoint. |
 | `include_audio` | `/books/{book_id}/toc` | `false` | `true` memasukkan metadata audio di node TOC jika tersedia. |
+| `include_quran_references` | `/books/{book_id}/toc/{heading_id}/read` | `false` | `true` embeds approved Quran refs scoped to the current heading. |
+| `heading_id` | `/books/{book_id}/quran-references` | none | Positive int filter. Use this instead of client-side filtering for section refs. |
 | `status` | `/books/{book_id}/quran-references` | `approved` | Allowed: `approved`, `pending`, `rejected`, `ambiguous`, `needs_review`, `all`. Mobile reader umumnya pakai `approved`. |
 
 Recommended kitab reader flow:
 
 1. `GET /v1/books/{book_id}?lang={lang}` untuk header, metadata, dan `language_coverage`.
 2. `GET /v1/books/{book_id}/toc?lang={lang}&include_audio={boolean}` untuk navigasi.
-3. `GET /v1/books/{book_id}/toc/{heading_id}/read?lang={lang}` untuk body section.
-4. `GET /v1/books/{book_id}/quran-references?lang={lang}&status=approved` jika screen menampilkan referensi Quran.
+3. `GET /v1/books/{book_id}/toc/{heading_id}/read?lang={lang}&include_quran_references=true` untuk body section dan referensi Quran section.
+4. Alternatif jika perlu lazy load: `GET /v1/books/{book_id}/quran-references?lang={lang}&heading_id={headingId}&status=approved`.
 5. `GET /v1/books/{book_id}/toc/{heading_id}/playlist?lang={lang}` jika audio kitab aktif.
 
 Display rules:
 
 - Selalu simpan kemampuan render `original_html` atau Arabic/source content.
+- `original_html` dan editorial `content_html` yang dikembalikan backend sudah melewati sanitizer allowlist server-side; FE tetap harus render hanya di area reader/editorial preview, bukan sebagai HTML arbitrer dari user.
 - Render `translation.content` hanya jika `translation !== null`.
 - Untuk `lang=ar`, render Arabic/source sebagai utama dan sembunyikan feedback terjemahan.
 - Tampilkan feedback hanya jika `translation !== null && translation.lang === selectedLang`.

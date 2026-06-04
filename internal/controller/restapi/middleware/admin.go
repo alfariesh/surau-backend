@@ -13,11 +13,11 @@ func RequireRoles(u usecase.User, roles ...string) fiber.Handler {
 	return func(ctx *fiber.Ctx) error {
 		user, ok, err := authenticatedUser(ctx, u)
 		if err != nil || !ok {
-			return ctx.Status(http.StatusUnauthorized).JSON(errorResponse{Error: "unauthorized"})
+			return middlewareError(ctx, http.StatusUnauthorized, "unauthorized")
 		}
 
 		if !hasAllowedRole(user.Role, roles) {
-			return ctx.Status(http.StatusForbidden).JSON(errorResponse{Error: "forbidden"})
+			return middlewareError(ctx, http.StatusForbidden, "forbidden")
 		}
 
 		ctx.Locals("user", user)

@@ -186,7 +186,7 @@ curl -X POST 'http://127.0.0.1:8080/v1/books/797/rag?lang=id' \
 
 Set `RAG_LLM_API_KEY` for your OpenAI-compatible provider. Optional defaults are `RAG_LLM_BASE_URL=https://ai.sumopod.com/v1`, `RAG_LLM_MODEL=glm-5.1`, `RAG_LLM_TIMEOUT=45s`, `RAG_LLM_MAX_TOKENS=1400`, `RAG_LLM_TEMPERATURE=0.1`, `RAG_MAX_CONTEXT_PAGES=8`, `RAG_TREE_FULL_MAX_NODES=450`, `RAG_TREE_BLOCK_MAX_NODES=120`, `RAG_TREE_BEAM_SIZE=3`, `RAG_TREE_MAX_TURNS=6`, and `RAG_TREE_MAX_BLOCKS_PER_TURN=6`.
 
-Reader TOC summaries can be generated separately with `scripts/generate_reader_summaries.py`. The script defaults to `SUMMARY_LLM_BASE_URL=https://ai.sumopod.com/v1`, `SUMMARY_LLM_MODEL=glm-5.1`, and falls back to the `RAG_LLM_*` environment if `SUMMARY_LLM_*` is not set. Summaries are stored per `(book_id, heading_id, lang)` for reader display and RAG tree ranking; citations still come from original page text.
+Reader TOC summaries can be generated separately with `scripts/generate_reader_summaries.py`. Generate canonical Arabic summaries first with `--summary-lang ar` and `--max-source-chars 0`, import them, then translate those summaries to `id` or `en` with `scripts/translate_reader_assets.py --summary-only`. The summary generator defaults to `SUMMARY_LLM_BASE_URL=https://ai.sumopod.com/v1`, `SUMMARY_LLM_MODEL=glm-5.1`, and falls back to the `RAG_LLM_*` environment if `SUMMARY_LLM_*` is not set. Summaries are stored per `(book_id, heading_id, lang)` for reader display and RAG tree ranking; citations still come from original page text.
 
 Run the black-box golden eval against a local or deployed API:
 
@@ -284,10 +284,11 @@ After audio files are uploaded to Cloudflare R2, sync the manifest back into Pos
 PG_URL='postgres://user:myAwEsOm3pa55@w0rd@localhost:5432/db' \
 go run ./cmd/sync-quran-audio-r2 \
   --manifest-jsonl=tmp/quran-audio-r2-manifest.jsonl \
+  --recitation-metadata-json=config/quran_recitation_metadata.json \
   --public-base-url=https://your-public-r2-base-url
 ```
 
-Use `--dry-run` to validate manifest counts without writing. If `--public-base-url` is omitted, the command updates `r2_key` only and leaves existing `public_url` values unchanged.
+Use `--dry-run` to validate manifest and recitation counts without writing. The sync is idempotent: it upserts missing recitations/tracks from the manifest, applies clean display metadata when `--recitation-metadata-json` is provided, and updates `r2_key/public_url`. If `--public-base-url` is omitted, the command updates `r2_key` only and leaves existing `public_url` values unchanged.
 
 ## Generate Test Translations with DeepSeek
 

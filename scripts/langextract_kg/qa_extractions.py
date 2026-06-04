@@ -202,6 +202,10 @@ def validate_row(row: dict[str, Any]) -> list[Issue]:
             issues.append(row_issue(FAIL, "AMBIGUOUS_PERSON_NOT_FLAGGED", "common person name must be ambiguous", row))
     if row.get("extraction_class") == "person" and is_theonym(extraction_text):
         issues.append(row_issue(FAIL, "THEONYM_AS_PERSON", "divine names must not be stored as person", row))
+    if row.get("extraction_class") == "person_reference" and is_theonym(extraction_text):
+        issues.append(
+            row_issue(FAIL, "THEONYM_AS_PERSON_REFERENCE", "standalone divine names must use theonym", row)
+        )
     if row.get("extraction_class") == "person" and is_person_reference(extraction_text):
         issues.append(row_issue(FAIL, "PERSON_REFERENCE_AS_PERSON", "title-like references must use person_reference", row))
     if row.get("extraction_class") == "person_reference" and review_status != "needs_review":

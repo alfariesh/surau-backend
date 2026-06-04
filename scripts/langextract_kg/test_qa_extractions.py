@@ -81,6 +81,20 @@ class QAExtractionsTest(unittest.TestCase):
         )
         self.assertIn("THEONYM_AS_PERSON", codes)
 
+    def test_theonym_as_person_reference_fails(self) -> None:
+        codes = self.issue_codes(
+            [
+                valid_row(
+                    extraction_class="person_reference",
+                    extraction_text="الله",
+                    exact_quote="الله",
+                    normalized_text="الله",
+                    review_status="needs_review",
+                )
+            ]
+        )
+        self.assertIn("THEONYM_AS_PERSON_REFERENCE", codes)
+
     def test_person_reference_as_person_fails(self) -> None:
         codes = self.issue_codes(
             [

@@ -10,6 +10,7 @@ from importlib import metadata
 import json
 import os
 from pathlib import Path
+import re
 import sys
 from typing import Any
 
@@ -23,10 +24,13 @@ if __package__ in (None, ""):
     from langextract_kg import db as kg_db  # type: ignore
     from langextract_kg.arabic_normalize import (  # type: ignore
         is_ambiguous_person_name,
+        is_devotional_formula,
         is_generic_extraction,
         is_person_reference,
         is_surah_reference,
         is_theonym,
+        normalize_grounding_char,
+        normalized_grounding_key,
         normalized_key,
     )
     from langextract_kg.openai_compatible_model import OpenAICompatibleJSONModel  # type: ignore
@@ -36,10 +40,13 @@ else:
     from . import db as kg_db
     from .arabic_normalize import (
         is_ambiguous_person_name,
+        is_devotional_formula,
         is_generic_extraction,
         is_person_reference,
         is_surah_reference,
         is_theonym,
+        normalize_grounding_char,
+        normalized_grounding_key,
         normalized_key,
     )
     from .openai_compatible_model import OpenAICompatibleJSONModel
@@ -79,6 +86,7 @@ def main() -> int:
                 book_id=args.book_id,
                 task_name=args.task,
                 prompt_version=prompt.version,
+                policy_hash=prompt.policy_hash,
             )
 
         pages = client.fetch_pages(
@@ -117,9 +125,7 @@ def main() -> int:
         )
 
         stored = 0
-        status = "success"
-        if failures:
-            status = "completed_with_errors"
+        status = run_status_for_failures(failures)
         if args.write_db:
             document_audit_ids = client.insert_extraction_documents(documents_audit)
             chunk_ids = client.insert_extraction_chunks(chunks_audit, document_audit_ids)
@@ -203,6 +209,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batch-length", type=int, default=8)
     parser.add_argument("--max-workers", type=int, default=4)
     parser.add_argument("--max-output-tokens", type=int, default=1800)
+    parser.add_argument("--request-timeout-seconds", type=float, default=180.0)
     parser.add_argument("--temperature", type=float, default=0.0)
     parser.add_argument("--enable-relations", action="store_true", help="Allow high-risk relation extraction")
     return parser.parse_args()
@@ -238,6 +245,7 @@ def build_run_record(args: argparse.Namespace, prompt_version: str, run_id: str,
             "batch_length": args.batch_length,
             "max_workers": args.max_workers,
             "max_output_tokens": args.max_output_tokens,
+            "request_timeout_seconds": args.request_timeout_seconds,
             "temperature": args.temperature,
             "created_at": datetime.now(timezone.utc).isoformat(),
             "langextract": langextract_runtime_info(),
@@ -268,6 +276,7 @@ def run_extraction(
         temperature=args.temperature,
         max_output_tokens=args.max_output_tokens,
         max_workers=args.max_workers,
+        request_timeout_seconds=getattr(args, "request_timeout_seconds", 180.0),
         audit_sink=raw_audits,
     )
     tokenizer = lx_tokenizer.RegexTokenizer()
@@ -320,9 +329,16 @@ def run_extraction(
         if page is None:
             failures.append({"document_id": adoc.document_id, "error": "missing source page mapping"})
             continue
-        page_records, page_failures = records_from_annotated_doc(args.run_id, adoc, page)
+        page_records, page_failures = records_from_annotated_doc(
+            args.run_id,
+            adoc,
+            page,
+            task_name=args.task,
+            allowed_classes=prompt.extraction_classes,
+        )
         records.extend(page_records)
         failures.extend(page_failures)
+    failures.extend(chunk_rejections_from_audits(args.run_id, chunks_audit, page_by_doc))
     assign_failure_chunks(failures, chunks_audit)
     return {
         "annotated_docs": annotated_docs,
@@ -435,10 +451,71 @@ def hydrate_chunk_audits(
                     **(chunk.get("metadata") or {}),
                     "request_index": index,
                     "retry_count": audit.get("retry_count", 0),
+                    "api_retry_count": audit.get("api_retry_count", 0),
                     "normalized_output_hash": audit.get("normalized_output_hash"),
                 },
             }
         )
+
+
+CHUNK_ERROR_CODES = {
+    "empty": "MODEL_OUTPUT_EMPTY",
+    "parse_error": "MODEL_OUTPUT_PARSE_ERROR",
+    "schema_error": "MODEL_OUTPUT_SCHEMA_ERROR",
+    "api_error": "MODEL_API_ERROR",
+}
+
+
+def chunk_rejections_from_audits(
+    run_id: str,
+    chunks: list[dict[str, Any]],
+    page_by_doc: dict[str, kg_db.PageSource],
+) -> list[dict[str, Any]]:
+    rejections: list[dict[str, Any]] = []
+    for chunk in chunks:
+        parse_status = str(chunk.get("parse_status") or "unknown")
+        code = CHUNK_ERROR_CODES.get(parse_status)
+        if not code:
+            continue
+        document_id = str(chunk.get("document_id") or "")
+        page = page_by_doc.get(document_id)
+        if page is None:
+            continue
+        metadata = chunk.get("metadata") or {}
+        if not isinstance(metadata, dict):
+            metadata = {"raw_metadata": metadata}
+        rejections.append(
+            {
+                "id": kg_db.new_uuid(),
+                "run_id": run_id,
+                "book_id": page.book_id,
+                "page_id": page.page_id,
+                "heading_id": page.heading_id,
+                "document_id": document_id,
+                "extraction_class": None,
+                "extraction_text": None,
+                "exact_quote": None,
+                "char_start": chunk.get("char_start"),
+                "char_end": chunk.get("char_end"),
+                "alignment_status": "model_output_error",
+                "code": code,
+                "message": str(chunk.get("error_message") or f"model output {parse_status}"),
+                "attributes": {
+                    "parse_status": parse_status,
+                    "chunk_index": chunk.get("chunk_index"),
+                    "pass_index": chunk.get("pass_index"),
+                    "prompt_hash": chunk.get("prompt_hash"),
+                    "output_hash": chunk.get("output_hash"),
+                    **metadata,
+                },
+                "source_hash": hashlib.sha256(page.content_text.encode("utf-8")).hexdigest(),
+                "raw_output_path": chunk.get("raw_output_path"),
+                "review_status": "rejected",
+                "chunk_index": chunk.get("chunk_index"),
+                "pass_index": chunk.get("pass_index"),
+            }
+        )
+    return rejections
 
 
 def attach_chunk_counts(
@@ -472,6 +549,8 @@ def attach_chunk_counts(
 
 def assign_failure_chunks(failures: list[dict[str, Any]], chunks: list[dict[str, Any]]) -> None:
     for failure in failures:
+        if failure.get("chunk_index") is not None and failure.get("pass_index") is not None:
+            continue
         if failure.get("char_start") is None or failure.get("document_id") is None:
             continue
         char_start = int(failure["char_start"])
@@ -491,6 +570,9 @@ def records_from_annotated_doc(
     run_id: str,
     adoc: Any,
     page: kg_db.PageSource,
+    *,
+    task_name: str = "",
+    allowed_classes: tuple[str, ...] | list[str] | set[str] | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     records: list[dict[str, Any]] = []
     failures: list[dict[str, Any]] = []
@@ -504,6 +586,8 @@ def records_from_annotated_doc(
             document_id=adoc.document_id,
             source_text=source_text,
             source_hash=source_hash,
+            task_name=task_name,
+            allowed_classes=allowed_classes,
         )
         if error:
             failures.append(error)
@@ -567,36 +651,69 @@ def mention_record_from_extraction(
     document_id: str,
     source_text: str,
     source_hash: str,
+    task_name: str = "",
+    allowed_classes: tuple[str, ...] | list[str] | set[str] | None = None,
 ) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
     extraction_text = str(getattr(extraction, "extraction_text", "") or "").strip()
+    model_extraction_text = extraction_text
     if not extraction_text:
         return None, failure(run_id, page, extraction, "EMPTY_TEXT", "extraction_text is empty", document_id, source_hash)
     if is_generic_extraction(extraction_text):
         return None, failure(run_id, page, extraction, "GENERIC_TEXT", "generic extraction text", document_id, source_hash)
 
-    extraction_class = canonical_extraction_class(
-        str(getattr(extraction, "extraction_class", "") or "").strip(),
-        extraction_text,
-    )
-    if extraction_class == "person" and is_theonym(extraction_text):
+    original_extraction_class = str(getattr(extraction, "extraction_class", "") or "").strip()
+    extraction_class = canonical_extraction_class(original_extraction_class, extraction_text)
+    attributes = getattr(extraction, "attributes", None) or {}
+    if not isinstance(attributes, dict):
+        attributes = {"raw_attributes": attributes}
+    if allowed_classes is not None:
+        allowed_class_set = set(allowed_classes)
+        if extraction_class not in allowed_class_set:
+            return None, failure(
+                run_id,
+                page,
+                extraction,
+                "CLASS_NOT_ALLOWED",
+                f"extraction class {extraction_class!r} is not allowed for task {task_name or 'unknown'}",
+                document_id,
+                source_hash,
+                extra_attributes={
+                    "original_extraction_class": original_extraction_class,
+                    "canonical_extraction_class": extraction_class,
+                    "task": task_name,
+                    "allowed_classes": sorted(allowed_class_set),
+                },
+            )
+    if task_name == "citations" and is_devotional_formula(extraction_text) and not has_explicit_locator(attributes):
         return None, failure(
             run_id,
             page,
             extraction,
-            "NON_PERSON_THEONYM",
-            "divine names are not person mentions",
+            "FORMULA_NOT_CITATION",
+            "devotional formulas are not stored as citations without an explicit locator",
             document_id,
             source_hash,
+            extra_attributes={"canonical_extraction_class": extraction_class},
+        )
+    if task_name == "citations" and is_author_only_book_reference(extraction_class, attributes):
+        return None, failure(
+            run_id,
+            page,
+            extraction,
+            "AUTHOR_ONLY_BOOK_REFERENCE",
+            "author/person names are not stored as book_reference citations",
+            document_id,
+            source_hash,
+            extra_attributes={"canonical_extraction_class": extraction_class},
         )
 
     interval = getattr(extraction, "char_interval", None)
     alignment_status = alignment_status_value(extraction)
     if interval is None or interval.start_pos is None or interval.end_pos is None:
-        fallback_span = find_unique_exact_span(source_text, extraction_text)
+        fallback_span = find_grounded_span(source_text, extraction_text, extraction_class)
         if fallback_span is None:
             return None, failure(run_id, page, extraction, "UNGROUNDED", "char_interval is missing", document_id, source_hash)
-        start, end = fallback_span
-        alignment_status = "match_exact_substring_fallback"
+        start, end, alignment_status = fallback_span
     else:
         start = int(interval.start_pos)
         end = int(interval.end_pos)
@@ -611,26 +728,60 @@ def mention_record_from_extraction(
                 source_hash,
             )
         if source_text[start:end] != extraction_text:
-            fallback_span = find_unique_exact_span(source_text, extraction_text)
-            if fallback_span is None:
+            source_slice = source_text[start:end]
+            if normalized_grounding_key(source_slice) == normalized_grounding_key(extraction_text):
+                alignment_status = "match_normalized_substring_fallback"
+            else:
+                fallback_span = find_grounded_span(source_text, extraction_text, extraction_class)
+                if fallback_span is None:
+                    return None, failure(
+                        run_id,
+                        page,
+                        extraction,
+                        "NON_EXACT_QUOTE",
+                        "source slice differs from extraction_text",
+                        document_id,
+                        source_hash,
+                    )
+                start, end, alignment_status = fallback_span
+
+    exact_quote = source_text[start:end]
+    if exact_quote != extraction_text:
+        attributes = {**attributes, "model_extraction_text": model_extraction_text}
+        extraction_text = exact_quote
+        if is_generic_extraction(extraction_text):
+            return None, failure(
+                run_id,
+                page,
+                extraction,
+                "GENERIC_TEXT",
+                "generic extraction text after grounding fallback",
+                document_id,
+                source_hash,
+                extra_attributes={"model_extraction_text": model_extraction_text},
+            )
+        recanonicalized_class = canonical_extraction_class(original_extraction_class, extraction_text)
+        if recanonicalized_class != extraction_class:
+            extraction_class = recanonicalized_class
+            if allowed_classes is not None and extraction_class not in set(allowed_classes):
                 return None, failure(
                     run_id,
                     page,
                     extraction,
-                    "NON_EXACT_QUOTE",
-                    "source slice differs from extraction_text",
+                    "CLASS_NOT_ALLOWED",
+                    f"extraction class {extraction_class!r} is not allowed for task {task_name or 'unknown'}",
                     document_id,
                     source_hash,
+                    extra_attributes={
+                        "original_extraction_class": original_extraction_class,
+                        "canonical_extraction_class": extraction_class,
+                        "task": task_name,
+                        "allowed_classes": sorted(set(allowed_classes)),
+                        "model_extraction_text": model_extraction_text,
+                    },
                 )
-            start, end = fallback_span
-            alignment_status = "match_exact_substring_fallback"
-
-    exact_quote = source_text[start:end]
     token_interval = getattr(extraction, "token_interval", None)
 
-    attributes = getattr(extraction, "attributes", None) or {}
-    if not isinstance(attributes, dict):
-        attributes = {"raw_attributes": attributes}
     review_status = review_status_for(extraction_class, extraction_text, attributes, alignment_status)
     confidence = confidence_for(attributes, review_status)
     return (
@@ -681,8 +832,130 @@ def find_unique_exact_span(source_text: str, extraction_text: str) -> tuple[int,
     return matches[0], matches[0] + len(extraction_text)
 
 
+QUOTE_FALLBACK_CLASSES = {"quote", "poetry", "hadith_reference"}
+SEGMENT_SPLIT_RE = re.compile(r"(?:…|\.{3,}|[\r\n]+)")
+
+
+def find_grounded_span(source_text: str, extraction_text: str, extraction_class: str) -> tuple[int, int, str] | None:
+    exact_span = find_unique_exact_span(source_text, extraction_text)
+    if exact_span is not None:
+        return exact_span[0], exact_span[1], "match_exact_substring_fallback"
+
+    normalized_span = find_unique_normalized_span(source_text, extraction_text)
+    if normalized_span is not None:
+        return normalized_span[0], normalized_span[1], "match_normalized_substring_fallback"
+
+    if extraction_class in QUOTE_FALLBACK_CLASSES:
+        segmented_span = find_segmented_quote_span(source_text, extraction_text)
+        if segmented_span is not None:
+            return segmented_span[0], segmented_span[1], "match_segmented_quote_fallback"
+    return None
+
+
+def normalized_source_with_map(source_text: str) -> tuple[str, list[int]]:
+    chars: list[str] = []
+    source_indexes: list[int] = []
+    previous_space = False
+    for index, char in enumerate(source_text):
+        normalized = normalize_grounding_char(char)
+        if not normalized:
+            continue
+        if normalized == " ":
+            if previous_space:
+                continue
+            chars.append(" ")
+            source_indexes.append(index)
+            previous_space = True
+            continue
+        for normalized_char in normalized:
+            chars.append(normalized_char)
+            source_indexes.append(index)
+        previous_space = False
+
+    while chars and chars[0] == " ":
+        chars.pop(0)
+        source_indexes.pop(0)
+    while chars and chars[-1] == " ":
+        chars.pop()
+        source_indexes.pop()
+    return "".join(chars), source_indexes
+
+
+def find_unique_normalized_span(source_text: str, extraction_text: str) -> tuple[int, int] | None:
+    source_normalized, source_map = normalized_source_with_map(source_text)
+    query = normalized_grounding_key(extraction_text)
+    if not source_normalized or not query:
+        return None
+
+    matches: list[int] = []
+    start = source_normalized.find(query)
+    while start != -1:
+        matches.append(start)
+        if len(matches) > 1:
+            return None
+        start = source_normalized.find(query, start + 1)
+    if not matches:
+        return None
+    return normalized_match_to_source_span(source_text, source_map, matches[0], matches[0] + len(query))
+
+
+def normalized_match_to_source_span(
+    source_text: str,
+    source_map: list[int],
+    normalized_start: int,
+    normalized_end: int,
+) -> tuple[int, int]:
+    source_start = source_map[normalized_start]
+    source_end = source_map[normalized_end - 1] + 1
+    while source_end < len(source_text) and not normalize_grounding_char(source_text[source_end]):
+        source_end += 1
+    return source_start, source_end
+
+
+def find_segmented_quote_span(source_text: str, extraction_text: str) -> tuple[int, int] | None:
+    if "…" not in extraction_text and "..." not in extraction_text:
+        return None
+    segments = [
+        normalized_grounding_key(segment.strip(" .…"))
+        for segment in SEGMENT_SPLIT_RE.split(extraction_text)
+        if normalized_grounding_key(segment.strip(" .…"))
+    ]
+    if len(segments) < 2:
+        return None
+
+    source_normalized, source_map = normalized_source_with_map(source_text)
+    cursor = 0
+    source_start: int | None = None
+    source_end: int | None = None
+    for segment in segments:
+        if len(segment) < 5:
+            return None
+        matches: list[int] = []
+        start = source_normalized.find(segment, cursor)
+        while start != -1:
+            matches.append(start)
+            if len(matches) > 1:
+                return None
+            start = source_normalized.find(segment, start + 1)
+        if not matches:
+            return None
+        match_start = matches[0]
+        match_end = match_start + len(segment)
+        segment_start, segment_end = normalized_match_to_source_span(source_text, source_map, match_start, match_end)
+        if source_start is None:
+            source_start = segment_start
+        source_end = segment_end
+        cursor = match_end
+
+    if source_start is None or source_end is None or source_end <= source_start:
+        return None
+    return source_start, source_end
+
+
 def canonical_extraction_class(extraction_class: str, extraction_text: str) -> str:
     """Normalize legacy/misplaced ontology classes without changing evidence text."""
+    if extraction_class in {"person", "person_reference"} and is_theonym(extraction_text):
+        return "theonym"
     if extraction_class == "book_title":
         return "quran_reference" if is_surah_reference(extraction_text) else "work_title"
     if extraction_class == "work_title" and is_surah_reference(extraction_text):
@@ -690,6 +963,18 @@ def canonical_extraction_class(extraction_class: str, extraction_text: str) -> s
     if extraction_class == "person" and is_person_reference(extraction_text):
         return "person_reference"
     return extraction_class
+
+
+def has_explicit_locator(attributes: dict[str, Any]) -> bool:
+    locator = str(attributes.get("locator_text") or "").strip().lower()
+    return locator not in {"", "unknown", "none", "null", "غير معروف", "مجهول"}
+
+
+def is_author_only_book_reference(extraction_class: str, attributes: dict[str, Any]) -> bool:
+    if extraction_class != "book_reference":
+        return False
+    reference_type = str(attributes.get("reference_type") or "").strip().lower()
+    return reference_type in {"author", "person"}
 
 
 def review_status_for(
@@ -710,7 +995,7 @@ def review_status_for(
         return "ambiguous"
     if needs_review in {"yes", "true", "1"}:
         return "needs_review"
-    if alignment_status == "match_exact_substring_fallback":
+    if alignment_status.endswith("_fallback"):
         return "needs_review"
     return "pending"
 
@@ -741,11 +1026,14 @@ def failure(
     message: str,
     document_id: str,
     source_hash: str,
+    extra_attributes: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     interval = getattr(extraction, "char_interval", None)
     attributes = getattr(extraction, "attributes", None) or {}
     if not isinstance(attributes, dict):
         attributes = {"raw_attributes": attributes}
+    if extra_attributes:
+        attributes = {**attributes, **extra_attributes}
     char_start = getattr(interval, "start_pos", None) if interval else None
     char_end = getattr(interval, "end_pos", None) if interval else None
     return {
@@ -766,6 +1054,10 @@ def failure(
         "source_hash": source_hash,
         "review_status": "rejected",
     }
+
+
+def run_status_for_failures(failures: list[dict[str, Any]]) -> str:
+    return "completed_with_errors" if failures else "success"
 
 
 def write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:

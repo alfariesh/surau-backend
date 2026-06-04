@@ -164,6 +164,7 @@ type (
 		ListCategories(ctx context.Context, lang string) ([]entity.Category, error)
 		ListAuthors(ctx context.Context, filter AuthorFilter) ([]entity.Author, int, error)
 		ListBooks(ctx context.Context, filter BookFilter) ([]entity.Book, int, error)
+		GetBookCatalogStats(ctx context.Context, lang string) (entity.BookCatalogStats, error)
 		GetBook(ctx context.Context, bookID int, lang string) (entity.Book, error)
 		ListBookPages(ctx context.Context, bookID int, filter PageFilter) ([]entity.BookPage, int, error)
 		GetBookPage(ctx context.Context, bookID, pageID int) (entity.BookPage, error)
@@ -193,6 +194,7 @@ type (
 		ListSurahs(ctx context.Context, lang string, includeInfo bool) ([]entity.QuranSurah, error)
 		GetSurah(ctx context.Context, surahID int, lang string) (entity.QuranSurah, error)
 		ListRecitations(ctx context.Context) ([]entity.QuranRecitation, error)
+		GetSurahAudioManifest(ctx context.Context, surahID int, recitationID string) (entity.QuranSurahAudioManifest, error)
 		ListTranslationSources(ctx context.Context, lang string) ([]entity.QuranTranslationSource, error)
 		ListNavigationSegments(ctx context.Context, kind string, lang string) ([]entity.QuranNavigationSegment, error)
 		GetAyah(
@@ -473,6 +475,7 @@ type (
 	// QuranBookReferenceFilter -.
 	QuranBookReferenceFilter struct {
 		BookID            int
+		HeadingID         *int
 		Lang              string
 		TranslationSource string
 		Status            string

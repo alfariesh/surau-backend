@@ -1,0 +1,102 @@
+[
+  {
+    "id": "qul-ayah-recitation-mishari-rashid-al-afasy-murattal-hafs-953",
+    "name": "QUL ayah recitation mishari rashid al afasy murattal hafs 953",
+    "display_name": "Mishari Rashid Al-Afasy",
+    "reciter_name": "Mishari Rashid Al-Afasy",
+    "style": "murattal",
+    "mode": "ayah",
+    "qul_resource_id": "953",
+    "sort_order": 10,
+    "default_priority": 0,
+    "is_visible": true
+  },
+  {
+    "id": "qul-surah-recitation-yasser-al-dosari",
+    "name": "QUL surah recitation yasser al dosari",
+    "display_name": "Yasser Al-Dosari",
+    "reciter_name": "Yasser Al-Dosari",
+    "style": "murattal",
+    "mode": "surah",
+    "sort_order": 20,
+    "is_visible": true
+  },
+  {
+    "id": "qul-ayah-recitation-abdul-basit-abdul-samad-murattal-hafs-950",
+    "name": "QUL ayah recitation abdul basit abdul samad murattal hafs 950",
+    "display_name": "Abdul Basit Abdul Samad",
+    "reciter_name": "Abdul Basit Abdul Samad",
+    "style": "murattal",
+    "mode": "ayah",
+    "qul_resource_id": "950",
+    "sort_order": 30,
+    "is_visible": true
+  },
+  {
+    "id": "qul-ayah-recitation-abdul-rahman-al-sudais-murattal-hafs-951",
+    "name": "QUL ayah recitation abdul rahman al sudais murattal hafs 951",
+    "display_name": "Abdul Rahman Al-Sudais",
+    "reciter_name": "Abdul Rahman Al-Sudais",
+    "style": "murattal",
+    "mode": "ayah",
+    "qul_resource_id": "951",
+    "sort_order": 40,
+    "is_visible": true
+  },
+  {
+    "id": "qul-ayah-recitation-maher-al-mu-aiqly-murattal-hafs-948",
+    "name": "QUL ayah recitation maher al mu aiqly murattal hafs 948",
+    "display_name": "Maher Al-Mu'aiqly",
+    "reciter_name": "Maher Al-Mu'aiqly",
+    "style": "murattal",
+    "mode": "ayah",
+    "qul_resource_id": "948",
+    "sort_order": 50,
+    "use_public_url": false,
+    "is_visible": true
+  },
+  {
+    "id": "qul-ayah-recitation-mahmoud-khalil-al-husary-murattal-hafs-957",
+    "name": "QUL ayah recitation mahmoud khalil al husary murattal hafs 957",
+    "display_name": "Mahmoud Khalil Al-Husary",
+    "reciter_name": "Mahmoud Khalil Al-Husary",
+    "style": "murattal",
+    "mode": "ayah",
+    "qul_resource_id": "957",
+    "sort_order": 60,
+    "is_visible": true
+  },
+  {
+    "id": "qul-ayah-recitation-muhammad-siddiq-al-minshawi-murattal-hafs-959",
+    "name": "QUL ayah recitation muhammad siddiq al minshawi murattal hafs 959",
+    "display_name": "Muhammad Siddiq Al-Minshawi",
+    "reciter_name": "Muhammad Siddiq Al-Minshawi",
+    "style": "murattal",
+    "mode": "ayah",
+    "qul_resource_id": "959",
+    "sort_order": 70,
+    "is_visible": true
+  },
+  {
+    "id": "qul-ayah-recitation-saud-al-shuraim-murattal-hafs-960",
+    "name": "QUL ayah recitation saud al shuraim murattal hafs 960",
+    "display_name": "Saud Al-Shuraim",
+    "reciter_name": "Saud Al-Shuraim",
+    "style": "murattal",
+    "mode": "ayah",
+    "qul_resource_id": "960",
+    "sort_order": 80,
+    "is_visible": true
+  },
+  {
+    "id": "qul-ayah-recitation-saad-al-ghamdi-murattal-hafs-954",
+    "name": "QUL ayah recitation saad al ghamdi murattal hafs 954",
+    "display_name": "Saad Al-Ghamdi",
+    "reciter_name": "Saad Al-Ghamdi",
+    "style": "murattal",
+    "mode": "ayah",
+    "qul_resource_id": "954",
+    "sort_order": 90,
+    "is_visible": false
+  }
+]

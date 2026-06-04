@@ -1020,6 +1020,21 @@ func (mr *MockReaderMockRecorder) Book(ctx, bookID, lang any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Book", reflect.TypeOf((*MockReader)(nil).Book), ctx, bookID, lang)
 }
 
+// BookStats mocks base method.
+func (m *MockReader) BookStats(ctx context.Context, lang string) (entity.BookCatalogStats, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "BookStats", ctx, lang)
+	ret0, _ := ret[0].(entity.BookCatalogStats)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// BookStats indicates an expected call of BookStats.
+func (mr *MockReaderMockRecorder) BookStats(ctx, lang any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "BookStats", reflect.TypeOf((*MockReader)(nil).BookStats), ctx, lang)
+}
+
 // Books mocks base method.
 func (m *MockReader) Books(ctx context.Context, query string, categoryID, authorID *int, hasContent *bool, limit, offset int, lang string) ([]entity.Book, int, error) {
 	m.ctrl.T.Helper()
@@ -1265,9 +1280,9 @@ func (mr *MockQuranMockRecorder) Ayah(ctx, ayahKey, lang, translationSource, inc
 }
 
 // BookReferences mocks base method.
-func (m *MockQuran) BookReferences(ctx context.Context, bookID int, lang, status string, limit, offset int) ([]entity.BookQuranReference, int, error) {
+func (m *MockQuran) BookReferences(ctx context.Context, bookID int, headingID *int, lang, status string, limit, offset int) ([]entity.BookQuranReference, int, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "BookReferences", ctx, bookID, lang, status, limit, offset)
+	ret := m.ctrl.Call(m, "BookReferences", ctx, bookID, headingID, lang, status, limit, offset)
 	ret0, _ := ret[0].([]entity.BookQuranReference)
 	ret1, _ := ret[1].(int)
 	ret2, _ := ret[2].(error)
@@ -1275,9 +1290,9 @@ func (m *MockQuran) BookReferences(ctx context.Context, bookID int, lang, status
 }
 
 // BookReferences indicates an expected call of BookReferences.
-func (mr *MockQuranMockRecorder) BookReferences(ctx, bookID, lang, status, limit, offset any) *gomock.Call {
+func (mr *MockQuranMockRecorder) BookReferences(ctx, bookID, headingID, lang, status, limit, offset any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "BookReferences", reflect.TypeOf((*MockQuran)(nil).BookReferences), ctx, bookID, lang, status, limit, offset)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "BookReferences", reflect.TypeOf((*MockQuran)(nil).BookReferences), ctx, bookID, headingID, lang, status, limit, offset)
 }
 
 // HizbAyahs mocks base method.
@@ -1368,6 +1383,21 @@ func (m *MockQuran) Recitations(ctx context.Context) ([]entity.QuranRecitation, 
 func (mr *MockQuranMockRecorder) Recitations(ctx any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Recitations", reflect.TypeOf((*MockQuran)(nil).Recitations), ctx)
+}
+
+// SurahAudio mocks base method.
+func (m *MockQuran) SurahAudio(ctx context.Context, surahID int, recitationID string) (entity.QuranSurahAudioManifest, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SurahAudio", ctx, surahID, recitationID)
+	ret0, _ := ret[0].(entity.QuranSurahAudioManifest)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// SurahAudio indicates an expected call of SurahAudio.
+func (mr *MockQuranMockRecorder) SurahAudio(ctx, surahID, recitationID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SurahAudio", reflect.TypeOf((*MockQuran)(nil).SurahAudio), ctx, surahID, recitationID)
 }
 
 // Search mocks base method.
