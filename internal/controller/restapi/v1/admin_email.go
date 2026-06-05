@@ -426,6 +426,94 @@ func (r *V1) adminEmailMessages(ctx *fiber.Ctx) error {
 	return ctx.Status(http.StatusOK).JSON(response.EmailMessageList{Items: messages, Total: total})
 }
 
+// @Summary  List email delivery events
+// @ID       admin-email-list-delivery-events
+// @Tags     admin-emails
+// @Produce  json
+// @Param    provider              query string false "Email provider"
+// @Param    event_type            query string false "Delivery event type" Enums(bounce_hard,complaint)
+// @Param    email                 query string false "Recipient email"
+// @Param    message_id            query string false "Email message ID"
+// @Param    campaign_id           query string false "Email campaign ID"
+// @Param    campaign_recipient_id query string false "Email campaign recipient ID"
+// @Param    limit                 query int    false "Page size" default(50)
+// @Param    offset                query int    false "Page offset" default(0)
+// @Success  200 {object} response.EmailDeliveryEventList
+// @Failure  401 {object} response.Error
+// @Failure  403 {object} response.Error
+// @Failure  500 {object} response.Error
+// @Security BearerAuth
+// @Router   /admin/emails/delivery-events [get]
+func (r *V1) adminEmailDeliveryEvents(ctx *fiber.Ctx) error {
+	events, total, err := r.email.DeliveryEvents(ctx.UserContext(), adminEmailDeliveryEventFilter(ctx))
+	if err != nil {
+		return adminEmailError(ctx, err)
+	}
+
+	return ctx.Status(http.StatusOK).JSON(response.EmailDeliveryEventList{Items: events, Total: total})
+}
+
+// @Summary  List delivery events for an email message
+// @ID       admin-email-list-message-delivery-events
+// @Tags     admin-emails
+// @Produce  json
+// @Param    id     path  string true  "Email message ID"
+// @Param    limit  query int    false "Page size" default(50)
+// @Param    offset query int    false "Page offset" default(0)
+// @Success  200 {object} response.EmailDeliveryEventList
+// @Failure  401 {object} response.Error
+// @Failure  403 {object} response.Error
+// @Failure  500 {object} response.Error
+// @Security BearerAuth
+// @Router   /admin/emails/messages/{id}/delivery-events [get]
+func (r *V1) adminEmailMessageDeliveryEvents(ctx *fiber.Ctx) error {
+	filter := adminEmailDeliveryEventFilter(ctx)
+	filter.MessageID = ctx.Params("id")
+	events, total, err := r.email.DeliveryEvents(ctx.UserContext(), filter)
+	if err != nil {
+		return adminEmailError(ctx, err)
+	}
+
+	return ctx.Status(http.StatusOK).JSON(response.EmailDeliveryEventList{Items: events, Total: total})
+}
+
+// @Summary  List delivery events for a campaign recipient
+// @ID       admin-email-list-campaign-recipient-delivery-events
+// @Tags     admin-emails
+// @Produce  json
+// @Param    id     path  string true  "Email campaign recipient ID"
+// @Param    limit  query int    false "Page size" default(50)
+// @Param    offset query int    false "Page offset" default(0)
+// @Success  200 {object} response.EmailDeliveryEventList
+// @Failure  401 {object} response.Error
+// @Failure  403 {object} response.Error
+// @Failure  500 {object} response.Error
+// @Security BearerAuth
+// @Router   /admin/emails/campaign-recipients/{id}/delivery-events [get]
+func (r *V1) adminEmailCampaignRecipientDeliveryEvents(ctx *fiber.Ctx) error {
+	filter := adminEmailDeliveryEventFilter(ctx)
+	filter.CampaignRecipientID = ctx.Params("id")
+	events, total, err := r.email.DeliveryEvents(ctx.UserContext(), filter)
+	if err != nil {
+		return adminEmailError(ctx, err)
+	}
+
+	return ctx.Status(http.StatusOK).JSON(response.EmailDeliveryEventList{Items: events, Total: total})
+}
+
+func adminEmailDeliveryEventFilter(ctx *fiber.Ctx) repo.EmailDeliveryEventFilter {
+	return repo.EmailDeliveryEventFilter{
+		Provider:            ctx.Query("provider"),
+		EventType:           ctx.Query("event_type"),
+		Email:               ctx.Query("email"),
+		MessageID:           ctx.Query("message_id"),
+		CampaignID:          ctx.Query("campaign_id"),
+		CampaignRecipientID: ctx.Query("campaign_recipient_id"),
+		Limit:               uint64(queryInt(ctx, "limit", 50)),
+		Offset:              uint64(queryInt(ctx, "offset", 0)),
+	}
+}
+
 // @Summary  List email suppressions
 // @ID       admin-email-list-suppressions
 // @Tags     admin-emails
@@ -528,6 +616,27 @@ func (r *V1) adminEmailCampaigns(ctx *fiber.Ctx) error {
 	}
 
 	return ctx.Status(http.StatusOK).JSON(response.EmailCampaignList{Items: campaigns, Total: total})
+}
+
+// @Summary  Summarize campaign delivery events
+// @ID       admin-email-campaign-delivery-event-summary
+// @Tags     admin-emails
+// @Produce  json
+// @Param    id path string true "Campaign ID"
+// @Success  200 {object} entity.EmailCampaignDeliveryEventSummary
+// @Failure  400 {object} response.Error
+// @Failure  401 {object} response.Error
+// @Failure  403 {object} response.Error
+// @Failure  500 {object} response.Error
+// @Security BearerAuth
+// @Router   /admin/emails/campaigns/{id}/delivery-event-summary [get]
+func (r *V1) adminEmailCampaignDeliveryEventSummary(ctx *fiber.Ctx) error {
+	summary, err := r.email.CampaignDeliveryEventSummary(ctx.UserContext(), ctx.Params("id"))
+	if err != nil {
+		return adminEmailError(ctx, err)
+	}
+
+	return ctx.Status(http.StatusOK).JSON(summary)
 }
 
 // @Summary  Create email campaign

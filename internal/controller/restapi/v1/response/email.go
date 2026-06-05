@@ -26,6 +26,12 @@ type EmailSuppressionList struct {
 	Total int                       `json:"total"`
 } // @name v1.EmailSuppressionList
 
+// EmailDeliveryEventList wraps delivery audit events.
+type EmailDeliveryEventList struct {
+	Items []entity.EmailDeliveryEvent `json:"items"`
+	Total int                         `json:"total"`
+} // @name v1.EmailDeliveryEventList
+
 // EmailCampaignList wraps marketing campaigns.
 type EmailCampaignList struct {
 	Items []entity.EmailCampaign `json:"items"`

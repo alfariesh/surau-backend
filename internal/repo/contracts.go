@@ -125,6 +125,11 @@ type (
 		DeleteEmailSuppression(ctx context.Context, id string) error
 		IsEmailSuppressed(ctx context.Context, email, category string) (bool, error)
 		UpsertEmailDeliveryEvent(ctx context.Context, event entity.EmailDeliveryEvent) (entity.EmailDeliveryEvent, bool, error)
+		ListEmailDeliveryEvents(ctx context.Context, filter EmailDeliveryEventFilter) ([]entity.EmailDeliveryEvent, int, error)
+		GetEmailCampaignDeliveryEventSummary(
+			ctx context.Context,
+			campaignID string,
+		) (entity.EmailCampaignDeliveryEventSummary, error)
 		CreateEmailCampaign(ctx context.Context, campaign entity.EmailCampaign) (entity.EmailCampaign, error)
 		ListEmailCampaigns(ctx context.Context, filter EmailCampaignFilter) ([]entity.EmailCampaign, int, error)
 		GetEmailCampaign(ctx context.Context, id string) (entity.EmailCampaign, error)
@@ -395,6 +400,18 @@ type (
 		Scope  string
 		Limit  uint64
 		Offset uint64
+	}
+
+	// EmailDeliveryEventFilter -.
+	EmailDeliveryEventFilter struct {
+		Provider            string
+		EventType           string
+		Email               string
+		MessageID           string
+		CampaignID          string
+		CampaignRecipientID string
+		Limit               uint64
+		Offset              uint64
 	}
 
 	// EmailCampaignFilter -.

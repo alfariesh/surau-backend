@@ -400,6 +400,21 @@ func (mr *MockEmailAdminMockRecorder) Campaign(ctx, id any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Campaign", reflect.TypeOf((*MockEmailAdmin)(nil).Campaign), ctx, id)
 }
 
+// CampaignDeliveryEventSummary mocks base method.
+func (m *MockEmailAdmin) CampaignDeliveryEventSummary(ctx context.Context, campaignID string) (entity.EmailCampaignDeliveryEventSummary, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CampaignDeliveryEventSummary", ctx, campaignID)
+	ret0, _ := ret[0].(entity.EmailCampaignDeliveryEventSummary)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CampaignDeliveryEventSummary indicates an expected call of CampaignDeliveryEventSummary.
+func (mr *MockEmailAdminMockRecorder) CampaignDeliveryEventSummary(ctx, campaignID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CampaignDeliveryEventSummary", reflect.TypeOf((*MockEmailAdmin)(nil).CampaignDeliveryEventSummary), ctx, campaignID)
+}
+
 // Campaigns mocks base method.
 func (m *MockEmailAdmin) Campaigns(ctx context.Context, filter repo.EmailCampaignFilter) ([]entity.EmailCampaign, int, error) {
 	m.ctrl.T.Helper()
@@ -519,6 +534,22 @@ func (mr *MockEmailAdminMockRecorder) DeleteTemplate(ctx, id any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteTemplate", reflect.TypeOf((*MockEmailAdmin)(nil).DeleteTemplate), ctx, id)
 }
 
+// DeliveryEvents mocks base method.
+func (m *MockEmailAdmin) DeliveryEvents(ctx context.Context, filter repo.EmailDeliveryEventFilter) ([]entity.EmailDeliveryEvent, int, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeliveryEvents", ctx, filter)
+	ret0, _ := ret[0].([]entity.EmailDeliveryEvent)
+	ret1, _ := ret[1].(int)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
+}
+
+// DeliveryEvents indicates an expected call of DeliveryEvents.
+func (mr *MockEmailAdminMockRecorder) DeliveryEvents(ctx, filter any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeliveryEvents", reflect.TypeOf((*MockEmailAdmin)(nil).DeliveryEvents), ctx, filter)
+}
+
 // DispatchDueCampaigns mocks base method.
 func (m *MockEmailAdmin) DispatchDueCampaigns(ctx context.Context, limit int) error {
 	m.ctrl.T.Helper()
@@ -625,21 +656,6 @@ func (mr *MockEmailAdminMockRecorder) PublishVersion(ctx, id, actorID any) *gomo
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PublishVersion", reflect.TypeOf((*MockEmailAdmin)(nil).PublishVersion), ctx, id, actorID)
 }
 
-// ScheduleCampaign mocks base method.
-func (m *MockEmailAdmin) ScheduleCampaign(ctx context.Context, id, actorID string, scheduledAt time.Time) (entity.EmailCampaign, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ScheduleCampaign", ctx, id, actorID, scheduledAt)
-	ret0, _ := ret[0].(entity.EmailCampaign)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// ScheduleCampaign indicates an expected call of ScheduleCampaign.
-func (mr *MockEmailAdminMockRecorder) ScheduleCampaign(ctx, id, actorID, scheduledAt any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ScheduleCampaign", reflect.TypeOf((*MockEmailAdmin)(nil).ScheduleCampaign), ctx, id, actorID, scheduledAt)
-}
-
 // RetryFailedCampaign mocks base method.
 func (m *MockEmailAdmin) RetryFailedCampaign(ctx context.Context, id, actorID string) (entity.EmailCampaign, error) {
 	m.ctrl.T.Helper()
@@ -653,6 +669,21 @@ func (m *MockEmailAdmin) RetryFailedCampaign(ctx context.Context, id, actorID st
 func (mr *MockEmailAdminMockRecorder) RetryFailedCampaign(ctx, id, actorID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RetryFailedCampaign", reflect.TypeOf((*MockEmailAdmin)(nil).RetryFailedCampaign), ctx, id, actorID)
+}
+
+// ScheduleCampaign mocks base method.
+func (m *MockEmailAdmin) ScheduleCampaign(ctx context.Context, id, actorID string, scheduledAt time.Time) (entity.EmailCampaign, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ScheduleCampaign", ctx, id, actorID, scheduledAt)
+	ret0, _ := ret[0].(entity.EmailCampaign)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ScheduleCampaign indicates an expected call of ScheduleCampaign.
+func (mr *MockEmailAdminMockRecorder) ScheduleCampaign(ctx, id, actorID, scheduledAt any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ScheduleCampaign", reflect.TypeOf((*MockEmailAdmin)(nil).ScheduleCampaign), ctx, id, actorID, scheduledAt)
 }
 
 // SendCampaignNow mocks base method.

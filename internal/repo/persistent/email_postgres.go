@@ -957,6 +957,118 @@ RETURNING ` + emailDeliveryEventColumns + `, (xmax = 0) AS inserted`
 	return created.event, inserted, nil
 }
 
+func (r *EmailRepo) ListEmailDeliveryEvents(
+	ctx context.Context,
+	filter repo.EmailDeliveryEventFilter,
+) ([]entity.EmailDeliveryEvent, int, error) {
+	query := emailDeliveryEventListSelect(r.Builder, filter)
+
+	sqlText, args, err := query.ToSql()
+	if err != nil {
+		return nil, 0, fmt.Errorf("EmailRepo - ListEmailDeliveryEvents - Builder: %w", err)
+	}
+	rows, err := r.Pool.Query(ctx, sqlText, args...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("EmailRepo - ListEmailDeliveryEvents - Query: %w", err)
+	}
+	defer rows.Close()
+
+	events := make([]entity.EmailDeliveryEvent, 0)
+	total := 0
+	for rows.Next() {
+		event, rowTotal, err := scanEmailDeliveryEventWithTotal(rows)
+		if err != nil {
+			return nil, 0, err
+		}
+		total = rowTotal
+		events = append(events, event)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("EmailRepo - ListEmailDeliveryEvents - rows: %w", err)
+	}
+
+	return events, total, nil
+}
+
+func emailDeliveryEventListSelect(
+	builder sq.StatementBuilderType,
+	filter repo.EmailDeliveryEventFilter,
+) sq.SelectBuilder {
+	limit := filter.Limit
+	if limit == 0 {
+		limit = 50
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	query := builder.
+		Select(emailDeliveryEventColumns, "count(*) OVER()").
+		From("email_delivery_events").
+		OrderBy("created_at DESC").
+		Limit(limit).
+		Offset(filter.Offset)
+	if strings.TrimSpace(filter.Provider) != "" {
+		query = query.Where(sq.Eq{"provider": strings.TrimSpace(filter.Provider)})
+	}
+	if strings.TrimSpace(filter.EventType) != "" {
+		query = query.Where(sq.Eq{"event_type": strings.TrimSpace(filter.EventType)})
+	}
+	if strings.TrimSpace(filter.Email) != "" {
+		query = query.Where("lower(recipient_email) = lower(?)", strings.TrimSpace(filter.Email))
+	}
+	if strings.TrimSpace(filter.MessageID) != "" {
+		query = query.Where(sq.Eq{"message_id": strings.TrimSpace(filter.MessageID)})
+	}
+	if strings.TrimSpace(filter.CampaignID) != "" {
+		query = query.Where(sq.Eq{"campaign_id": strings.TrimSpace(filter.CampaignID)})
+	}
+	if strings.TrimSpace(filter.CampaignRecipientID) != "" {
+		query = query.Where(sq.Eq{"campaign_recipient_id": strings.TrimSpace(filter.CampaignRecipientID)})
+	}
+
+	return query
+}
+
+func (r *EmailRepo) GetEmailCampaignDeliveryEventSummary(
+	ctx context.Context,
+	campaignID string,
+) (entity.EmailCampaignDeliveryEventSummary, error) {
+	summary := entity.EmailCampaignDeliveryEventSummary{CampaignID: strings.TrimSpace(campaignID)}
+	const query = `
+SELECT
+    count(*)::int,
+    count(*) FILTER (WHERE event_type = $2)::int,
+    count(*) FILTER (WHERE event_type = $3)::int,
+    count(DISTINCT lower(recipient_email))::int,
+    max(occurred_at)
+FROM email_delivery_events
+WHERE campaign_id = $1::uuid`
+
+	var lastOccurredAt sql.NullTime
+	err := r.Pool.QueryRow(
+		ctx,
+		query,
+		summary.CampaignID,
+		entity.EmailDeliveryEventBounceHard,
+		entity.EmailDeliveryEventComplaint,
+	).Scan(
+		&summary.Total,
+		&summary.BounceHard,
+		&summary.Complaint,
+		&summary.UniqueRecipients,
+		&lastOccurredAt,
+	)
+	if err != nil {
+		return entity.EmailCampaignDeliveryEventSummary{}, fmt.Errorf(
+			"EmailRepo - GetEmailCampaignDeliveryEventSummary - QueryRow: %w",
+			err,
+		)
+	}
+	summary.LastOccurredAt = nullableTime(lastOccurredAt)
+
+	return summary, nil
+}
+
 func (r *EmailRepo) CreateEmailCampaign(
 	ctx context.Context,
 	campaign entity.EmailCampaign,
@@ -1879,6 +1991,37 @@ func scanEmailDeliveryEventWithInserted(row rowScanner) (emailDeliveryEventInser
 	event.RawPayload = entity.RawJSON(rawPayload)
 
 	return emailDeliveryEventInsertResult{event: event, inserted: inserted}, nil
+}
+
+func scanEmailDeliveryEventWithTotal(row rowScanner) (entity.EmailDeliveryEvent, int, error) {
+	var event entity.EmailDeliveryEvent
+	var rawPayload []byte
+	var total int
+	err := row.Scan(
+		&event.ID,
+		&event.DedupeKey,
+		&event.Provider,
+		&event.EventType,
+		&event.RecipientEmail,
+		&event.MessageID,
+		&event.CampaignID,
+		&event.CampaignRecipient,
+		&event.Reason,
+		&event.Diagnostic,
+		&rawPayload,
+		&event.OccurredAt,
+		&event.CreatedAt,
+		&total,
+	)
+	if err != nil {
+		return entity.EmailDeliveryEvent{}, 0, fmt.Errorf(
+			"EmailRepo - scanEmailDeliveryEventWithTotal - Scan: %w",
+			err,
+		)
+	}
+	event.RawPayload = entity.RawJSON(rawPayload)
+
+	return event, total, nil
 }
 
 func scanEmailCampaign(row rowScanner) (entity.EmailCampaign, error) {

@@ -701,21 +701,6 @@ func (m *MockEmailRepo) EXPECT() *MockEmailRepoMockRecorder {
 	return m.recorder
 }
 
-// CreateEmailCampaign mocks base method.
-func (m *MockEmailRepo) CreateEmailCampaign(ctx context.Context, campaign entity.EmailCampaign) (entity.EmailCampaign, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CreateEmailCampaign", ctx, campaign)
-	ret0, _ := ret[0].(entity.EmailCampaign)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// CreateEmailCampaign indicates an expected call of CreateEmailCampaign.
-func (mr *MockEmailRepoMockRecorder) CreateEmailCampaign(ctx, campaign any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateEmailCampaign", reflect.TypeOf((*MockEmailRepo)(nil).CreateEmailCampaign), ctx, campaign)
-}
-
 // ClaimEmailCampaignForRetry mocks base method.
 func (m *MockEmailRepo) ClaimEmailCampaignForRetry(ctx context.Context, id, actorID string) (entity.EmailCampaign, error) {
 	m.ctrl.T.Helper()
@@ -729,21 +714,6 @@ func (m *MockEmailRepo) ClaimEmailCampaignForRetry(ctx context.Context, id, acto
 func (mr *MockEmailRepoMockRecorder) ClaimEmailCampaignForRetry(ctx, id, actorID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ClaimEmailCampaignForRetry", reflect.TypeOf((*MockEmailRepo)(nil).ClaimEmailCampaignForRetry), ctx, id, actorID)
-}
-
-// CreateEmailMessage mocks base method.
-func (m *MockEmailRepo) CreateEmailMessage(ctx context.Context, message entity.EmailMessageLog) (entity.EmailMessageLog, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CreateEmailMessage", ctx, message)
-	ret0, _ := ret[0].(entity.EmailMessageLog)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// CreateEmailMessage indicates an expected call of CreateEmailMessage.
-func (mr *MockEmailRepoMockRecorder) CreateEmailMessage(ctx, message any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateEmailMessage", reflect.TypeOf((*MockEmailRepo)(nil).CreateEmailMessage), ctx, message)
 }
 
 // CountEmailCampaignRecipientsByStatus mocks base method.
@@ -761,6 +731,36 @@ func (mr *MockEmailRepoMockRecorder) CountEmailCampaignRecipientsByStatus(ctx, c
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CountEmailCampaignRecipientsByStatus", reflect.TypeOf((*MockEmailRepo)(nil).CountEmailCampaignRecipientsByStatus), ctx, campaignID)
 }
 
+// CreateEmailCampaign mocks base method.
+func (m *MockEmailRepo) CreateEmailCampaign(ctx context.Context, campaign entity.EmailCampaign) (entity.EmailCampaign, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateEmailCampaign", ctx, campaign)
+	ret0, _ := ret[0].(entity.EmailCampaign)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CreateEmailCampaign indicates an expected call of CreateEmailCampaign.
+func (mr *MockEmailRepoMockRecorder) CreateEmailCampaign(ctx, campaign any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateEmailCampaign", reflect.TypeOf((*MockEmailRepo)(nil).CreateEmailCampaign), ctx, campaign)
+}
+
+// CreateEmailMessage mocks base method.
+func (m *MockEmailRepo) CreateEmailMessage(ctx context.Context, message entity.EmailMessageLog) (entity.EmailMessageLog, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateEmailMessage", ctx, message)
+	ret0, _ := ret[0].(entity.EmailMessageLog)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CreateEmailMessage indicates an expected call of CreateEmailMessage.
+func (mr *MockEmailRepoMockRecorder) CreateEmailMessage(ctx, message any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateEmailMessage", reflect.TypeOf((*MockEmailRepo)(nil).CreateEmailMessage), ctx, message)
+}
+
 // CreateEmailSuppression mocks base method.
 func (m *MockEmailRepo) CreateEmailSuppression(ctx context.Context, suppression entity.EmailSuppression) (entity.EmailSuppression, error) {
 	m.ctrl.T.Helper()
@@ -774,21 +774,6 @@ func (m *MockEmailRepo) CreateEmailSuppression(ctx context.Context, suppression 
 func (mr *MockEmailRepoMockRecorder) CreateEmailSuppression(ctx, suppression any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateEmailSuppression", reflect.TypeOf((*MockEmailRepo)(nil).CreateEmailSuppression), ctx, suppression)
-}
-
-// UpsertAutomaticEmailSuppression mocks base method.
-func (m *MockEmailRepo) UpsertAutomaticEmailSuppression(ctx context.Context, suppression entity.EmailSuppression) (entity.EmailSuppression, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "UpsertAutomaticEmailSuppression", ctx, suppression)
-	ret0, _ := ret[0].(entity.EmailSuppression)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// UpsertAutomaticEmailSuppression indicates an expected call of UpsertAutomaticEmailSuppression.
-func (mr *MockEmailRepoMockRecorder) UpsertAutomaticEmailSuppression(ctx, suppression any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpsertAutomaticEmailSuppression", reflect.TypeOf((*MockEmailRepo)(nil).UpsertAutomaticEmailSuppression), ctx, suppression)
 }
 
 // CreateEmailTemplate mocks base method.
@@ -862,6 +847,21 @@ func (m *MockEmailRepo) GetEmailCampaign(ctx context.Context, id string) (entity
 func (mr *MockEmailRepoMockRecorder) GetEmailCampaign(ctx, id any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetEmailCampaign", reflect.TypeOf((*MockEmailRepo)(nil).GetEmailCampaign), ctx, id)
+}
+
+// GetEmailCampaignDeliveryEventSummary mocks base method.
+func (m *MockEmailRepo) GetEmailCampaignDeliveryEventSummary(ctx context.Context, campaignID string) (entity.EmailCampaignDeliveryEventSummary, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetEmailCampaignDeliveryEventSummary", ctx, campaignID)
+	ret0, _ := ret[0].(entity.EmailCampaignDeliveryEventSummary)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetEmailCampaignDeliveryEventSummary indicates an expected call of GetEmailCampaignDeliveryEventSummary.
+func (mr *MockEmailRepoMockRecorder) GetEmailCampaignDeliveryEventSummary(ctx, campaignID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetEmailCampaignDeliveryEventSummary", reflect.TypeOf((*MockEmailRepo)(nil).GetEmailCampaignDeliveryEventSummary), ctx, campaignID)
 }
 
 // GetEmailEventSetting mocks base method.
@@ -985,22 +985,6 @@ func (mr *MockEmailRepoMockRecorder) IsEmailSuppressed(ctx, email, category any)
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsEmailSuppressed", reflect.TypeOf((*MockEmailRepo)(nil).IsEmailSuppressed), ctx, email, category)
 }
 
-// UpsertEmailDeliveryEvent mocks base method.
-func (m *MockEmailRepo) UpsertEmailDeliveryEvent(ctx context.Context, event entity.EmailDeliveryEvent) (entity.EmailDeliveryEvent, bool, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "UpsertEmailDeliveryEvent", ctx, event)
-	ret0, _ := ret[0].(entity.EmailDeliveryEvent)
-	ret1, _ := ret[1].(bool)
-	ret2, _ := ret[2].(error)
-	return ret0, ret1, ret2
-}
-
-// UpsertEmailDeliveryEvent indicates an expected call of UpsertEmailDeliveryEvent.
-func (mr *MockEmailRepoMockRecorder) UpsertEmailDeliveryEvent(ctx, event any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpsertEmailDeliveryEvent", reflect.TypeOf((*MockEmailRepo)(nil).UpsertEmailDeliveryEvent), ctx, event)
-}
-
 // ListDueEmailCampaigns mocks base method.
 func (m *MockEmailRepo) ListDueEmailCampaigns(ctx context.Context, now time.Time, limit int) ([]entity.EmailCampaign, error) {
 	m.ctrl.T.Helper()
@@ -1060,6 +1044,22 @@ func (m *MockEmailRepo) ListEmailCampaigns(ctx context.Context, filter repo.Emai
 func (mr *MockEmailRepoMockRecorder) ListEmailCampaigns(ctx, filter any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListEmailCampaigns", reflect.TypeOf((*MockEmailRepo)(nil).ListEmailCampaigns), ctx, filter)
+}
+
+// ListEmailDeliveryEvents mocks base method.
+func (m *MockEmailRepo) ListEmailDeliveryEvents(ctx context.Context, filter repo.EmailDeliveryEventFilter) ([]entity.EmailDeliveryEvent, int, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListEmailDeliveryEvents", ctx, filter)
+	ret0, _ := ret[0].([]entity.EmailDeliveryEvent)
+	ret1, _ := ret[1].(int)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
+}
+
+// ListEmailDeliveryEvents indicates an expected call of ListEmailDeliveryEvents.
+func (mr *MockEmailRepoMockRecorder) ListEmailDeliveryEvents(ctx, filter any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListEmailDeliveryEvents", reflect.TypeOf((*MockEmailRepo)(nil).ListEmailDeliveryEvents), ctx, filter)
 }
 
 // ListEmailMessages mocks base method.
@@ -1273,6 +1273,37 @@ func (m *MockEmailRepo) UpdateEmailTemplateVersion(ctx context.Context, id strin
 func (mr *MockEmailRepoMockRecorder) UpdateEmailTemplateVersion(ctx, id, patch any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateEmailTemplateVersion", reflect.TypeOf((*MockEmailRepo)(nil).UpdateEmailTemplateVersion), ctx, id, patch)
+}
+
+// UpsertAutomaticEmailSuppression mocks base method.
+func (m *MockEmailRepo) UpsertAutomaticEmailSuppression(ctx context.Context, suppression entity.EmailSuppression) (entity.EmailSuppression, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpsertAutomaticEmailSuppression", ctx, suppression)
+	ret0, _ := ret[0].(entity.EmailSuppression)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// UpsertAutomaticEmailSuppression indicates an expected call of UpsertAutomaticEmailSuppression.
+func (mr *MockEmailRepoMockRecorder) UpsertAutomaticEmailSuppression(ctx, suppression any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpsertAutomaticEmailSuppression", reflect.TypeOf((*MockEmailRepo)(nil).UpsertAutomaticEmailSuppression), ctx, suppression)
+}
+
+// UpsertEmailDeliveryEvent mocks base method.
+func (m *MockEmailRepo) UpsertEmailDeliveryEvent(ctx context.Context, event entity.EmailDeliveryEvent) (entity.EmailDeliveryEvent, bool, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpsertEmailDeliveryEvent", ctx, event)
+	ret0, _ := ret[0].(entity.EmailDeliveryEvent)
+	ret1, _ := ret[1].(bool)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
+}
+
+// UpsertEmailDeliveryEvent indicates an expected call of UpsertEmailDeliveryEvent.
+func (mr *MockEmailRepoMockRecorder) UpsertEmailDeliveryEvent(ctx, event any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpsertEmailDeliveryEvent", reflect.TypeOf((*MockEmailRepo)(nil).UpsertEmailDeliveryEvent), ctx, event)
 }
 
 // UpsertEmailSubscription mocks base method.

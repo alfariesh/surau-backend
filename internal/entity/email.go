@@ -210,6 +210,16 @@ type EmailDeliveryEvent struct {
 	CreatedAt         time.Time `json:"created_at"`
 }
 
+// EmailCampaignDeliveryEventSummary summarizes delivery events for one campaign.
+type EmailCampaignDeliveryEventSummary struct {
+	CampaignID       string     `json:"campaign_id"`
+	Total            int        `json:"total"`
+	BounceHard       int        `json:"bounce_hard"`
+	Complaint        int        `json:"complaint"`
+	UniqueRecipients int        `json:"unique_recipients"`
+	LastOccurredAt   *time.Time `json:"last_occurred_at,omitempty"`
+}
+
 // EmailWebhookIngestResult summarizes webhook processing.
 type EmailWebhookIngestResult struct {
 	Accepted   int `json:"accepted"`

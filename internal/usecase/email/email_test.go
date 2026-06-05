@@ -607,28 +607,109 @@ func TestRetryFailedCampaignRetriesOnlyFailedSnapshot(t *testing.T) {
 	assert.Contains(t, sender.sent[0].Text, "https://frontend.example.com/unsubscribe?token=failed")
 }
 
+func TestDeliveryEventsPassesFilterToRepo(t *testing.T) {
+	t.Parallel()
+
+	occurredAt := time.Now().UTC()
+	store := &emailRepoStub{
+		deliveryEvents: []entity.EmailDeliveryEvent{
+			{
+				ID:                "event-id",
+				DedupeKey:         "dedupe-key",
+				Provider:          entity.EmailProviderCloudflare,
+				EventType:         entity.EmailDeliveryEventBounceHard,
+				RecipientEmail:    "user@example.com",
+				MessageID:         "message-id",
+				CampaignID:        "campaign-id",
+				CampaignRecipient: "recipient-id",
+				RawPayload:        entity.RawJSON(`{"provider":"cloudflare"}`),
+				OccurredAt:        occurredAt,
+				CreatedAt:         occurredAt,
+			},
+		},
+	}
+	uc := New(store, nil, Options{})
+	filter := repo.EmailDeliveryEventFilter{
+		Provider:            entity.EmailProviderCloudflare,
+		EventType:           entity.EmailDeliveryEventBounceHard,
+		Email:               "USER@example.com",
+		MessageID:           "message-id",
+		CampaignID:          "campaign-id",
+		CampaignRecipientID: "recipient-id",
+		Limit:               25,
+		Offset:              5,
+	}
+
+	events, total, err := uc.DeliveryEvents(t.Context(), filter)
+
+	require.NoError(t, err)
+	assert.Equal(t, filter, store.deliveryEventFilter)
+	assert.Equal(t, 1, total)
+	require.Len(t, events, 1)
+	assert.Equal(t, "event-id", events[0].ID)
+}
+
+func TestDeliveryEventsNormalizesPagination(t *testing.T) {
+	t.Parallel()
+
+	store := &emailRepoStub{}
+	uc := New(store, nil, Options{})
+
+	_, _, err := uc.DeliveryEvents(t.Context(), repo.EmailDeliveryEventFilter{})
+	require.NoError(t, err)
+	assert.Equal(t, uint64(50), store.deliveryEventFilter.Limit)
+	assert.Equal(t, uint64(0), store.deliveryEventFilter.Offset)
+
+	_, _, err = uc.DeliveryEvents(t.Context(), repo.EmailDeliveryEventFilter{Limit: 101, Offset: 7})
+	require.NoError(t, err)
+	assert.Equal(t, uint64(100), store.deliveryEventFilter.Limit)
+	assert.Equal(t, uint64(7), store.deliveryEventFilter.Offset)
+}
+
+func TestCampaignDeliveryEventSummaryEmpty(t *testing.T) {
+	t.Parallel()
+
+	store := &emailRepoStub{}
+	uc := New(store, nil, Options{})
+
+	summary, err := uc.CampaignDeliveryEventSummary(t.Context(), "campaign-id")
+
+	require.NoError(t, err)
+	assert.Equal(t, "campaign-id", store.deliverySummaryCampaignID)
+	assert.Equal(t, "campaign-id", summary.CampaignID)
+	assert.Zero(t, summary.Total)
+	assert.Zero(t, summary.BounceHard)
+	assert.Zero(t, summary.Complaint)
+	assert.Zero(t, summary.UniqueRecipients)
+	assert.Nil(t, summary.LastOccurredAt)
+}
+
 type emailRepoStub struct {
 	repo.EmailRepo
 
-	template          entity.EmailTemplate
-	eventSetting      entity.EmailEventSetting
-	createdVersion    entity.EmailTemplateVersion
-	publishedVersion  entity.EmailTemplateVersion
-	suppressed        bool
-	recipientStatus   string
-	recipientError    string
-	createdMessages   []entity.EmailMessageLog
-	updatedMessages   []entity.EmailMessageLog
-	deliveryEvents    []entity.EmailDeliveryEvent
-	deliveryEventKeys map[string]bool
-	suppressions      []entity.EmailSuppression
-	suppressionByKey  map[string]entity.EmailSuppression
-	campaign          entity.EmailCampaign
-	updatedCampaign   entity.EmailCampaign
-	audience          []entity.EmailAudienceRecipient
-	recipients        []entity.EmailCampaignRecipient
-	recipientStatuses map[string]string
-	recipientErrors   map[string]string
+	template                  entity.EmailTemplate
+	eventSetting              entity.EmailEventSetting
+	createdVersion            entity.EmailTemplateVersion
+	publishedVersion          entity.EmailTemplateVersion
+	suppressed                bool
+	recipientStatus           string
+	recipientError            string
+	createdMessages           []entity.EmailMessageLog
+	updatedMessages           []entity.EmailMessageLog
+	deliveryEvents            []entity.EmailDeliveryEvent
+	deliveryEventFilter       repo.EmailDeliveryEventFilter
+	deliveryEventTotal        int
+	deliverySummaryCampaignID string
+	deliverySummary           entity.EmailCampaignDeliveryEventSummary
+	deliveryEventKeys         map[string]bool
+	suppressions              []entity.EmailSuppression
+	suppressionByKey          map[string]entity.EmailSuppression
+	campaign                  entity.EmailCampaign
+	updatedCampaign           entity.EmailCampaign
+	audience                  []entity.EmailAudienceRecipient
+	recipients                []entity.EmailCampaignRecipient
+	recipientStatuses         map[string]string
+	recipientErrors           map[string]string
 }
 
 type emailSenderStub struct {
@@ -756,6 +837,32 @@ func (s *emailRepoStub) UpsertEmailDeliveryEvent(
 	s.deliveryEvents = append(s.deliveryEvents, event)
 
 	return event, true, nil
+}
+
+func (s *emailRepoStub) ListEmailDeliveryEvents(
+	_ context.Context,
+	filter repo.EmailDeliveryEventFilter,
+) ([]entity.EmailDeliveryEvent, int, error) {
+	s.deliveryEventFilter = filter
+	total := s.deliveryEventTotal
+	if total == 0 {
+		total = len(s.deliveryEvents)
+	}
+
+	return append([]entity.EmailDeliveryEvent(nil), s.deliveryEvents...), total, nil
+}
+
+func (s *emailRepoStub) GetEmailCampaignDeliveryEventSummary(
+	_ context.Context,
+	campaignID string,
+) (entity.EmailCampaignDeliveryEventSummary, error) {
+	s.deliverySummaryCampaignID = campaignID
+	summary := s.deliverySummary
+	if summary.CampaignID == "" {
+		summary.CampaignID = campaignID
+	}
+
+	return summary, nil
 }
 
 func (s *emailRepoStub) CreateEmailMessage(

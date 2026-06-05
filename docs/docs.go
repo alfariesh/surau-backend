@@ -15,6 +15,72 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/admin/emails/campaign-recipients/{id}/delivery-events": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-emails"
+                ],
+                "summary": "List delivery events for a campaign recipient",
+                "operationId": "admin-email-list-campaign-recipient-delivery-events",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Email campaign recipient ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "default": 50,
+                        "description": "Page size",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Page offset",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.EmailDeliveryEventList"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
         "/admin/emails/campaigns": {
             "get": {
                 "produces": [
@@ -332,6 +398,64 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/admin/emails/campaigns/{id}/delivery-event-summary": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-emails"
+                ],
+                "summary": "Summarize campaign delivery events",
+                "operationId": "admin-email-campaign-delivery-event-summary",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Campaign ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.EmailCampaignDeliveryEventSummary"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
                         "schema": {
                             "$ref": "#/definitions/v1.Error"
                         }
@@ -694,6 +818,105 @@ const docTemplate = `{
                 ]
             }
         },
+        "/admin/emails/delivery-events": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-emails"
+                ],
+                "summary": "List email delivery events",
+                "operationId": "admin-email-list-delivery-events",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Email provider",
+                        "name": "provider",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "bounce_hard",
+                            "complaint"
+                        ],
+                        "type": "string",
+                        "description": "Delivery event type",
+                        "name": "event_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Recipient email",
+                        "name": "email",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Email message ID",
+                        "name": "message_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Email campaign ID",
+                        "name": "campaign_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Email campaign recipient ID",
+                        "name": "campaign_recipient_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 50,
+                        "description": "Page size",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Page offset",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.EmailDeliveryEventList"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
         "/admin/emails/events/{key}": {
             "get": {
                 "produces": [
@@ -885,6 +1108,72 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/v1.EmailMessageList"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/admin/emails/messages/{id}/delivery-events": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-emails"
+                ],
+                "summary": "List delivery events for an email message",
+                "operationId": "admin-email-list-message-delivery-events",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Email message ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "default": 50,
+                        "description": "Page size",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Page offset",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.EmailDeliveryEventList"
                         }
                     },
                     "401": {
@@ -10773,6 +11062,73 @@ const docTemplate = `{
                 }
             }
         },
+        "entity.EmailCampaignDeliveryEventSummary": {
+            "type": "object",
+            "properties": {
+                "bounce_hard": {
+                    "type": "integer"
+                },
+                "campaign_id": {
+                    "type": "string"
+                },
+                "complaint": {
+                    "type": "integer"
+                },
+                "last_occurred_at": {
+                    "type": "string"
+                },
+                "total": {
+                    "type": "integer"
+                },
+                "unique_recipients": {
+                    "type": "integer"
+                }
+            }
+        },
+        "entity.EmailDeliveryEvent": {
+            "type": "object",
+            "properties": {
+                "campaign_id": {
+                    "type": "string"
+                },
+                "campaign_recipient_id": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "dedupe_key": {
+                    "type": "string"
+                },
+                "diagnostic": {
+                    "type": "string"
+                },
+                "event_type": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "message_id": {
+                    "type": "string"
+                },
+                "occurred_at": {
+                    "type": "string"
+                },
+                "provider": {
+                    "type": "string"
+                },
+                "raw_payload": {
+                    "type": "object"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "recipient_email": {
+                    "type": "string"
+                }
+            }
+        },
         "entity.EmailEventSetting": {
             "type": "object",
             "properties": {
@@ -12877,6 +13233,20 @@ const docTemplate = `{
                 "email_changed": {
                     "type": "boolean",
                     "example": true
+                }
+            }
+        },
+        "v1.EmailDeliveryEventList": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.EmailDeliveryEvent"
+                    }
+                },
+                "total": {
+                    "type": "integer"
                 }
             }
         },

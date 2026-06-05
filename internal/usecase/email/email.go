@@ -448,6 +448,27 @@ func (uc *UseCase) DeleteSuppression(ctx context.Context, id string) error {
 	return uc.repo.DeleteEmailSuppression(ctx, id)
 }
 
+func (uc *UseCase) DeliveryEvents(
+	ctx context.Context,
+	filter repo.EmailDeliveryEventFilter,
+) ([]entity.EmailDeliveryEvent, int, error) {
+	filter = normalizeDeliveryEventFilter(filter)
+
+	return uc.repo.ListEmailDeliveryEvents(ctx, filter)
+}
+
+func (uc *UseCase) CampaignDeliveryEventSummary(
+	ctx context.Context,
+	campaignID string,
+) (entity.EmailCampaignDeliveryEventSummary, error) {
+	campaignID = strings.TrimSpace(campaignID)
+	if campaignID == "" {
+		return entity.EmailCampaignDeliveryEventSummary{}, entity.ErrInvalidEmailCampaign
+	}
+
+	return uc.repo.GetEmailCampaignDeliveryEventSummary(ctx, campaignID)
+}
+
 func (uc *UseCase) Campaigns(
 	ctx context.Context,
 	filter repo.EmailCampaignFilter,
@@ -2009,6 +2030,17 @@ func validSuppressionScope(scope string) bool {
 	default:
 		return false
 	}
+}
+
+func normalizeDeliveryEventFilter(filter repo.EmailDeliveryEventFilter) repo.EmailDeliveryEventFilter {
+	if filter.Limit == 0 {
+		filter.Limit = 50
+	}
+	if filter.Limit > 100 {
+		filter.Limit = 100
+	}
+
+	return filter
 }
 
 func normalizeKey(value string) string {
