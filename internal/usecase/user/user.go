@@ -1959,7 +1959,9 @@ func (uc *UseCase) sendAuthEmail(
 		})
 	}
 
-	return uc.emailSender.Send(ctx, message)
+	_, err := uc.emailSender.Send(ctx, message)
+
+	return err
 }
 
 func authEmailVariables(emailCtx authEmailContext) map[string]string {

@@ -67,7 +67,7 @@ type (
 
 	// EmailSender -.
 	EmailSender interface {
-		Send(ctx context.Context, message entity.EmailMessage) error
+		Send(ctx context.Context, message entity.EmailMessage) (entity.EmailSendResult, error)
 	}
 
 	// EmailRepo stores admin-managed templates, logs, subscriptions, suppressions, and campaigns.
@@ -118,8 +118,13 @@ type (
 		UnsubscribeEmail(ctx context.Context, userID, email, source string) (entity.EmailSubscription, error)
 		ListEmailSuppressions(ctx context.Context, filter EmailSuppressionFilter) ([]entity.EmailSuppression, int, error)
 		CreateEmailSuppression(ctx context.Context, suppression entity.EmailSuppression) (entity.EmailSuppression, error)
+		UpsertAutomaticEmailSuppression(
+			ctx context.Context,
+			suppression entity.EmailSuppression,
+		) (entity.EmailSuppression, error)
 		DeleteEmailSuppression(ctx context.Context, id string) error
 		IsEmailSuppressed(ctx context.Context, email, category string) (bool, error)
+		UpsertEmailDeliveryEvent(ctx context.Context, event entity.EmailDeliveryEvent) (entity.EmailDeliveryEvent, bool, error)
 		CreateEmailCampaign(ctx context.Context, campaign entity.EmailCampaign) (entity.EmailCampaign, error)
 		ListEmailCampaigns(ctx context.Context, filter EmailCampaignFilter) ([]entity.EmailCampaign, int, error)
 		GetEmailCampaign(ctx context.Context, id string) (entity.EmailCampaign, error)

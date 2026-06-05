@@ -2,6 +2,7 @@ package webapi
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -21,6 +22,7 @@ func TestCloudflareEmailClient_Send(t *testing.T) {
 		statusCode int
 		body       string
 		wantErr    bool
+		wantQueued bool
 	}{
 		{
 			name:       "delivered",
@@ -31,6 +33,7 @@ func TestCloudflareEmailClient_Send(t *testing.T) {
 			name:       "queued",
 			statusCode: http.StatusOK,
 			body:       `{"success":true,"result":{"delivered":[],"permanent_bounces":[],"queued":["user@example.com"]}}`,
+			wantQueued: true,
 		},
 		{
 			name:       "permanent bounce",
@@ -96,19 +99,52 @@ func TestCloudflareEmailClient_Send(t *testing.T) {
 
 			client := newTestCloudflareEmailClient(server.URL, 2*time.Second)
 
-			err := client.Send(context.Background(), testEmailMessage())
+			result, err := client.Send(context.Background(), testEmailMessage())
 
 			if tc.wantErr {
 				require.ErrorIs(t, err, entity.ErrEmailDeliveryFailed)
 				if tc.name == "permanent bounce" {
 					require.ErrorIs(t, err, entity.ErrEmailPermanentBounce)
+					assert.Equal(t, []string{"user@example.com"}, result.PermanentBounces)
 				}
 
 				return
 			}
 			require.NoError(t, err)
+			assert.Equal(t, entity.EmailProviderCloudflare, result.Provider)
+			assert.NotEmpty(t, result.ProviderResponse)
+			if tc.wantQueued {
+				assert.Equal(t, []string{"user@example.com"}, result.Queued)
+			} else {
+				assert.Equal(t, []string{"user@example.com"}, result.Delivered)
+			}
 		})
 	}
+}
+
+func TestCloudflareEmailClient_SendTrackingHeaders(t *testing.T) {
+	t.Parallel()
+
+	var requestBody cloudflareEmailRequest
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&requestBody))
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"success":true,"result":{"delivered":["user@example.com"],"permanent_bounces":[],"queued":[]}}`))
+	}))
+	defer server.Close()
+
+	client := newTestCloudflareEmailClient(server.URL, 2*time.Second)
+	message := testEmailMessage()
+	message.MessageID = "message-id"
+	message.CampaignID = "campaign-id"
+	message.CampaignRecipient = "recipient-id"
+
+	_, err := client.Send(context.Background(), message)
+
+	require.NoError(t, err)
+	assert.Equal(t, "message-id", requestBody.Headers["X-Surau-Message-ID"])
+	assert.Equal(t, "campaign-id", requestBody.Headers["X-Surau-Campaign-ID"])
+	assert.Equal(t, "recipient-id", requestBody.Headers["X-Surau-Campaign-Recipient-ID"])
 }
 
 func TestCloudflareEmailClient_SendTimeout(t *testing.T) {
@@ -122,7 +158,7 @@ func TestCloudflareEmailClient_SendTimeout(t *testing.T) {
 
 	client := newTestCloudflareEmailClient(server.URL, time.Nanosecond)
 
-	err := client.Send(context.Background(), testEmailMessage())
+	_, err := client.Send(context.Background(), testEmailMessage())
 
 	require.ErrorIs(t, err, entity.ErrEmailDeliveryFailed)
 }
@@ -132,7 +168,7 @@ func TestCloudflareEmailClient_SendMissingConfig(t *testing.T) {
 
 	client := NewCloudflareEmailClient(CloudflareEmailOptions{})
 
-	err := client.Send(context.Background(), testEmailMessage())
+	_, err := client.Send(context.Background(), testEmailMessage())
 
 	require.True(t, errors.Is(err, entity.ErrEmailDeliveryFailed))
 }

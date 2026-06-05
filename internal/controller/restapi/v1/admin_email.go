@@ -1,6 +1,7 @@
 package v1
 
 import (
+	"crypto/subtle"
 	"errors"
 	"net/http"
 	"strings"
@@ -834,6 +835,34 @@ func (r *V1) updateEmailPreferences(ctx *fiber.Ctx) error {
 	return ctx.Status(http.StatusOK).JSON(subscription)
 }
 
+// @Summary  Ingest Cloudflare email bounce webhook
+// @ID       email-cloudflare-bounce-webhook
+// @Tags     email
+// @Accept   json
+// @Produce  json
+// @Param    cf-webhook-auth header string true "Cloudflare webhook secret"
+// @Success  202 {object} entity.EmailWebhookIngestResult
+// @Failure  400 {object} response.Error
+// @Failure  401 {object} response.Error
+// @Failure  404 {object} response.Error
+// @Failure  500 {object} response.Error
+// @Router   /email/webhooks/cloudflare/bounces [post]
+func (r *V1) emailCloudflareBounceWebhook(ctx *fiber.Ctx) error {
+	secret := strings.TrimSpace(r.emailWebhookSecret)
+	if secret == "" {
+		return errorResponse(ctx, http.StatusNotFound, "not found")
+	}
+	if !constantTimeStringEqual(ctx.Get("cf-webhook-auth"), secret) {
+		return errorResponse(ctx, http.StatusUnauthorized, "unauthorized")
+	}
+	result, err := r.email.IngestCloudflareBounceWebhook(ctx.UserContext(), ctx.Body())
+	if err != nil {
+		return adminEmailError(ctx, err)
+	}
+
+	return ctx.Status(http.StatusAccepted).JSON(result)
+}
+
 // @Summary Unsubscribe from marketing email
 // @ID      email-unsubscribe
 // @Tags    email
@@ -902,6 +931,16 @@ func emailActorID(ctx *fiber.Ctx) string {
 	userID, _ := ctx.Locals("userID").(string)
 
 	return userID
+}
+
+func constantTimeStringEqual(left, right string) bool {
+	left = strings.TrimSpace(left)
+	right = strings.TrimSpace(right)
+	if len(left) != len(right) {
+		return false
+	}
+
+	return subtle.ConstantTimeCompare([]byte(left), []byte(right)) == 1
 }
 
 func toEmailAudience(audience request.EmailAudience) entity.EmailAudienceFilter {

@@ -33,6 +33,7 @@ EMAIL_UNSUBSCRIBE_FRONTEND_URL=http://localhost:3005/unsubscribe
 EMAIL_UNSUBSCRIBE_TOKEN_KEY_ID=default
 EMAIL_UNSUBSCRIBE_TOKEN_SECRET=
 EMAIL_UNSUBSCRIBE_TOKEN_SECRETS=
+EMAIL_CLOUDFLARE_WEBHOOK_SECRET=
 EMAIL_HTTP_TIMEOUT=10s
 ```
 
@@ -46,6 +47,7 @@ Catatan:
 - `EMAIL_UNSUBSCRIBE_TOKEN_KEY_ID` masuk ke token unsubscribe baru. Default `default`.
 - `EMAIL_UNSUBSCRIBE_TOKEN_SECRET` opsional. Jika kosong, backend memakai secret dari `EMAIL_UNSUBSCRIBE_TOKEN_SECRETS` untuk key id aktif, atau `JWT_SECRET` sebagai fallback.
 - `EMAIL_UNSUBSCRIBE_TOKEN_SECRETS` opsional untuk rotation, format JSON object seperti `{"2026-06":"secret-baru","2026-05":"secret-lama"}`.
+- `EMAIL_CLOUDFLARE_WEBHOOK_SECRET` mengaktifkan `POST /v1/email/webhooks/cloudflare/bounces`; kosong berarti endpoint webhook disabled.
 
 ## Restart Backend
 

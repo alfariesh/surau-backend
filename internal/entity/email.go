@@ -35,6 +35,12 @@ const (
 
 	EmailSuppressionScopeMarketing = "marketing"
 	EmailSuppressionScopeAll       = "all"
+
+	EmailProviderLog        = "log"
+	EmailProviderCloudflare = "cloudflare"
+
+	EmailDeliveryEventBounceHard = "bounce_hard"
+	EmailDeliveryEventComplaint  = "complaint"
 )
 
 // EmailMessage describes a rendered email ready for provider delivery.
@@ -49,7 +55,19 @@ type EmailMessage struct {
 	TemplateVersionID string            `json:"template_version_id,omitempty"`
 	Lang              string            `json:"lang,omitempty"`
 	UserID            string            `json:"user_id,omitempty"`
+	MessageID         string            `json:"message_id,omitempty"`
+	CampaignID        string            `json:"campaign_id,omitempty"`
+	CampaignRecipient string            `json:"campaign_recipient_id,omitempty"`
 	Metadata          map[string]string `json:"metadata,omitempty"`
+}
+
+// EmailSendResult describes the provider response for one send attempt.
+type EmailSendResult struct {
+	Provider         string   `json:"provider"`
+	Delivered        []string `json:"delivered,omitempty"`
+	Queued           []string `json:"queued,omitempty"`
+	PermanentBounces []string `json:"permanent_bounces,omitempty"`
+	ProviderResponse string   `json:"provider_response,omitempty"`
 }
 
 // EmailTemplate is the admin-managed template family.
@@ -173,6 +191,31 @@ type EmailSuppression struct {
 	Reason    string    `json:"reason"`
 	CreatedBy *string   `json:"created_by,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
+}
+
+// EmailDeliveryEvent stores provider delivery audit events.
+type EmailDeliveryEvent struct {
+	ID                string    `json:"id"`
+	DedupeKey         string    `json:"dedupe_key"`
+	Provider          string    `json:"provider"`
+	EventType         string    `json:"event_type"`
+	RecipientEmail    string    `json:"recipient_email"`
+	MessageID         string    `json:"message_id,omitempty"`
+	CampaignID        string    `json:"campaign_id,omitempty"`
+	CampaignRecipient string    `json:"campaign_recipient_id,omitempty"`
+	Reason            string    `json:"reason,omitempty"`
+	Diagnostic        string    `json:"diagnostic,omitempty"`
+	RawPayload        RawJSON   `json:"raw_payload,omitempty" swaggertype:"object"`
+	OccurredAt        time.Time `json:"occurred_at"`
+	CreatedAt         time.Time `json:"created_at"`
+}
+
+// EmailWebhookIngestResult summarizes webhook processing.
+type EmailWebhookIngestResult struct {
+	Accepted   int `json:"accepted"`
+	Processed  int `json:"processed"`
+	Suppressed int `json:"suppressed"`
+	Duplicates int `json:"duplicates,omitempty"`
 }
 
 // EmailCampaign stores a marketing campaign.

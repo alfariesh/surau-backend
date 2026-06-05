@@ -200,11 +200,11 @@ func TestRegister(t *testing.T) {
 			Role:     entity.UserRoleUser,
 		})
 		emailSender.EXPECT().Send(context.Background(), gomock.Any()).DoAndReturn(
-			func(_ context.Context, message entity.EmailMessage) error {
+			func(_ context.Context, message entity.EmailMessage) (entity.EmailSendResult, error) {
 				assert.Equal(t, "test@example.com", message.To)
 				assert.Contains(t, message.Text, "https://frontend.example.com/verify-email?token=")
 
-				return nil
+				return entity.EmailSendResult{}, nil
 			},
 		)
 
@@ -239,7 +239,7 @@ func TestRegister(t *testing.T) {
 			Email:    "test@example.com",
 			Role:     entity.UserRoleUser,
 		})
-		emailSender.EXPECT().Send(context.Background(), gomock.Any()).Return(entity.ErrEmailDeliveryFailed)
+		emailSender.EXPECT().Send(context.Background(), gomock.Any()).Return(entity.EmailSendResult{}, entity.ErrEmailDeliveryFailed)
 		repo.EXPECT().RevokeUnusedVerificationTokens(context.Background(), gomock.Any()).Return(nil)
 
 		_, err := uc.Register(context.Background(), "testuser", "test@example.com", "password123")
@@ -720,7 +720,7 @@ func TestResendEmailVerification(t *testing.T) {
 			Username: "testuser",
 			Email:    "test@example.com",
 		})
-		emailSender.EXPECT().Send(context.Background(), gomock.Any()).Return(nil)
+		emailSender.EXPECT().Send(context.Background(), gomock.Any()).Return(entity.EmailSendResult{}, nil)
 
 		err := uc.ResendEmailVerification(context.Background(), "test@example.com")
 
@@ -741,7 +741,7 @@ func TestResendEmailVerification(t *testing.T) {
 			Username: "testuser",
 			Email:    "test@example.com",
 		})
-		emailSender.EXPECT().Send(context.Background(), gomock.Any()).Return(errors.New("cloudflare down"))
+		emailSender.EXPECT().Send(context.Background(), gomock.Any()).Return(entity.EmailSendResult{}, errors.New("cloudflare down"))
 		repo.EXPECT().RevokeUnusedVerificationTokens(context.Background(), "user-id-123").Return(nil)
 
 		err := uc.ResendEmailVerification(context.Background(), "test@example.com")
@@ -800,11 +800,11 @@ func TestForgotPassword(t *testing.T) {
 			Email:    "test@example.com",
 		})
 		emailSender.EXPECT().Send(context.Background(), gomock.Any()).DoAndReturn(
-			func(_ context.Context, message entity.EmailMessage) error {
+			func(_ context.Context, message entity.EmailMessage) (entity.EmailSendResult, error) {
 				assert.Equal(t, "test@example.com", message.To)
 				assert.Contains(t, message.Text, "https://frontend.example.com/reset-password?token=")
 
-				return nil
+				return entity.EmailSendResult{}, nil
 			},
 		)
 
@@ -827,7 +827,7 @@ func TestForgotPassword(t *testing.T) {
 			Username: "testuser",
 			Email:    "test@example.com",
 		})
-		emailSender.EXPECT().Send(context.Background(), gomock.Any()).Return(errors.New("cloudflare down"))
+		emailSender.EXPECT().Send(context.Background(), gomock.Any()).Return(entity.EmailSendResult{}, errors.New("cloudflare down"))
 		repo.EXPECT().RevokeUnusedPasswordResetTokens(context.Background(), "user-id-123").Return(nil)
 
 		err := uc.ForgotPassword(context.Background(), "test@example.com")
@@ -1092,11 +1092,11 @@ func TestEmailChange(t *testing.T) {
 			Email:    "old@example.com",
 		})
 		emailSender.EXPECT().Send(context.Background(), gomock.Any()).DoAndReturn(
-			func(_ context.Context, message entity.EmailMessage) error {
+			func(_ context.Context, message entity.EmailMessage) (entity.EmailSendResult, error) {
 				assert.Equal(t, "new@example.com", message.To)
 				assert.Contains(t, message.Text, "https://frontend.example.com/change-email?token=")
 
-				return nil
+				return entity.EmailSendResult{}, nil
 			},
 		)
 
@@ -1238,7 +1238,7 @@ func TestAuthEmailNotifications(t *testing.T) {
 			EmailVerified: true,
 		})
 		emailSender.EXPECT().Send(context.Background(), gomock.Any()).DoAndReturn(
-			func(_ context.Context, message entity.EmailMessage) error {
+			func(_ context.Context, message entity.EmailMessage) (entity.EmailSendResult, error) {
 				assert.Equal(t, "test@example.com", message.To)
 				assert.Contains(t, message.Subject, "Password")
 				assert.Contains(t, message.Text, "Password akun Surau")
@@ -1248,7 +1248,7 @@ func TestAuthEmailNotifications(t *testing.T) {
 				assert.Contains(t, message.HTML, "https://cdn.surau.org/icons/duotone/youtube.svg")
 				assert.NotContains(t, message.HTML, "href=\"\"")
 
-				return nil
+				return entity.EmailSendResult{}, nil
 			},
 		)
 
@@ -1273,7 +1273,7 @@ func TestAuthEmailNotifications(t *testing.T) {
 			Username: "testuser",
 			Email:    "test@example.com",
 		})
-		emailSender.EXPECT().Send(context.Background(), gomock.Any()).Return(errors.New("email down"))
+		emailSender.EXPECT().Send(context.Background(), gomock.Any()).Return(entity.EmailSendResult{}, errors.New("email down"))
 
 		err = uc.ChangePassword(context.Background(), "user-id-123", "oldpassword123", "newpassword123")
 
@@ -1297,13 +1297,13 @@ func TestAuthEmailNotifications(t *testing.T) {
 			Email:    "test@example.com",
 		}, withPreferredUILang("en"))
 		emailSender.EXPECT().Send(context.Background(), gomock.Any()).DoAndReturn(
-			func(_ context.Context, message entity.EmailMessage) error {
+			func(_ context.Context, message entity.EmailMessage) (entity.EmailSendResult, error) {
 				assert.Equal(t, "Your Surau password was changed", message.Subject)
 				assert.Contains(t, message.Text, "Your Surau account password was just changed.")
 				assert.NotContains(t, message.Text, "Password akun Surau")
 				assert.Contains(t, message.Text, "https://www.facebook.com/surauapp")
 
-				return nil
+				return entity.EmailSendResult{}, nil
 			},
 		)
 
@@ -1329,13 +1329,13 @@ func TestAuthEmailNotifications(t *testing.T) {
 			Email:    "test@example.com",
 		}, withPreferredUILang("ar"))
 		emailSender.EXPECT().Send(context.Background(), gomock.Any()).DoAndReturn(
-			func(_ context.Context, message entity.EmailMessage) error {
+			func(_ context.Context, message entity.EmailMessage) (entity.EmailSendResult, error) {
 				assert.Contains(t, message.Subject, "كلمة مرور")
 				assert.Contains(t, message.Text, "تم تغيير كلمة مرور حسابك في Surau")
 				assert.Contains(t, message.HTML, `<html lang="ar" dir="rtl">`)
 				assert.Contains(t, message.HTML, "direction:rtl")
 
-				return nil
+				return entity.EmailSendResult{}, nil
 			},
 		)
 
@@ -1365,12 +1365,12 @@ func TestAuthEmailNotifications(t *testing.T) {
 			EmailVerified: true,
 		})
 		emailSender.EXPECT().Send(context.Background(), gomock.Any()).DoAndReturn(
-			func(_ context.Context, message entity.EmailMessage) error {
+			func(_ context.Context, message entity.EmailMessage) (entity.EmailSendResult, error) {
 				assert.Equal(t, "test@example.com", message.To)
 				assert.Contains(t, message.Subject, "diverifikasi")
 				assert.Contains(t, message.Text, "Email akun Surau")
 
-				return nil
+				return entity.EmailSendResult{}, nil
 			},
 		)
 
@@ -1401,11 +1401,11 @@ func TestAuthEmailNotifications(t *testing.T) {
 			Role:     entity.UserRoleAdmin,
 		})
 		emailSender.EXPECT().Send(context.Background(), gomock.Any()).DoAndReturn(
-			func(_ context.Context, message entity.EmailMessage) error {
+			func(_ context.Context, message entity.EmailMessage) (entity.EmailSendResult, error) {
 				assert.Equal(t, "admin@example.com", message.To)
 				assert.Contains(t, message.Text, entity.UserRoleAdmin)
 
-				return nil
+				return entity.EmailSendResult{}, nil
 			},
 		)
 
@@ -1439,11 +1439,11 @@ func TestAuthEmailNotifications(t *testing.T) {
 			Email:    "new@example.com",
 		})
 		emailSender.EXPECT().Send(context.Background(), gomock.Any()).Times(2).DoAndReturn(
-			func(_ context.Context, message entity.EmailMessage) error {
+			func(_ context.Context, message entity.EmailMessage) (entity.EmailSendResult, error) {
 				assert.Contains(t, []string{"old@example.com", "new@example.com"}, message.To)
 				assert.Contains(t, message.Text, "Email akun Surau")
 
-				return errors.New("email down")
+				return entity.EmailSendResult{}, errors.New("email down")
 			},
 		)
 
@@ -1473,11 +1473,11 @@ func TestAuthEmailNotifications(t *testing.T) {
 		})
 		repo.EXPECT().DeleteAccount(context.Background(), "user-id-123").Return(nil)
 		emailSender.EXPECT().Send(context.Background(), gomock.Any()).DoAndReturn(
-			func(_ context.Context, message entity.EmailMessage) error {
+			func(_ context.Context, message entity.EmailMessage) (entity.EmailSendResult, error) {
 				assert.Equal(t, "test@example.com", message.To)
 				assert.Contains(t, message.Text, "Akun Surau Anda sudah dihapus")
 
-				return errors.New("email down")
+				return entity.EmailSendResult{}, errors.New("email down")
 			},
 		)
 
@@ -1522,14 +1522,14 @@ func TestAuthEmailNotifications(t *testing.T) {
 			EmailVerified: true,
 		}, withDisplayName("Ahmad"), withTimezone("Asia/Jakarta"))
 		emailSender.EXPECT().Send(ctx, gomock.Any()).DoAndReturn(
-			func(_ context.Context, message entity.EmailMessage) error {
+			func(_ context.Context, message entity.EmailMessage) (entity.EmailSendResult, error) {
 				assert.Equal(t, "test@example.com", message.To)
 				assert.Contains(t, message.Text, "Ada login baru")
 				assert.Contains(t, message.Text, "Assalamu'alaikum, Ahmad")
 				assert.Contains(t, message.Text, "203.0.113.10")
 				assert.Contains(t, message.Text, "Asia/Jakarta")
 
-				return nil
+				return entity.EmailSendResult{}, nil
 			},
 		)
 
@@ -1592,11 +1592,11 @@ func TestAuthEmailNotifications(t *testing.T) {
 			Email:    "test@example.com",
 		})
 		emailSender.EXPECT().Send(ctx, gomock.Any()).DoAndReturn(
-			func(_ context.Context, message entity.EmailMessage) error {
+			func(_ context.Context, message entity.EmailMessage) (entity.EmailSendResult, error) {
 				assert.Equal(t, "test@example.com", message.To)
 				assert.Contains(t, message.Text, "membatasi percobaan login")
 
-				return nil
+				return entity.EmailSendResult{}, nil
 			},
 		)
 

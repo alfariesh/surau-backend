@@ -256,3 +256,25 @@ POST body:
 ```
 
 Successful unsubscribe returns the updated `EmailSubscription`.
+
+## Cloudflare Bounce Webhook
+
+```http
+POST /v1/email/webhooks/cloudflare/bounces
+```
+
+Header:
+
+```http
+cf-webhook-auth: {EMAIL_CLOUDFLARE_WEBHOOK_SECRET}
+```
+
+The endpoint is disabled with `404` when `EMAIL_CLOUDFLARE_WEBHOOK_SECRET` is empty. Valid hard bounce or complaint events create an audit row, upsert an `all` suppression, and return:
+
+```json
+{
+  "accepted": 1,
+  "processed": 1,
+  "suppressed": 1
+}
+```

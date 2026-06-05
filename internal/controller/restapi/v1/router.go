@@ -1,6 +1,7 @@
 package v1
 
 import (
+	"strings"
 	"time"
 
 	"github.com/evrone/go-clean-template/internal/controller/restapi/middleware"
@@ -23,19 +24,21 @@ func NewRoutes(
 	personal usecase.Personal,
 	editorial usecase.Editorial,
 	email usecase.EmailAdmin,
+	emailWebhookSecret string,
 	jwtManager *jwt.Manager,
 	l logger.Interface,
 ) {
 	r := &V1{
-		reader:    reader,
-		bookRAG:   bookRAG,
-		quran:     quran,
-		u:         u,
-		personal:  personal,
-		editorial: editorial,
-		email:     email,
-		l:         l,
-		v:         validator.New(validator.WithRequiredStructEnabled()),
+		reader:             reader,
+		bookRAG:            bookRAG,
+		quran:              quran,
+		u:                  u,
+		personal:           personal,
+		editorial:          editorial,
+		email:              email,
+		emailWebhookSecret: strings.TrimSpace(emailWebhookSecret),
+		l:                  l,
+		v:                  validator.New(validator.WithRequiredStructEnabled()),
 	}
 
 	// Public routes
@@ -53,6 +56,7 @@ func NewRoutes(
 	{
 		emailPublicGroup.Get("/unsubscribe", r.emailUnsubscribe)
 		emailPublicGroup.Post("/unsubscribe", r.emailUnsubscribe)
+		emailPublicGroup.Post("/webhooks/cloudflare/bounces", r.emailCloudflareBounceWebhook)
 	}
 
 	// Public reader routes

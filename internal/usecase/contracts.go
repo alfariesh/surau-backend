@@ -110,6 +110,7 @@ type (
 		SendCampaignNow(ctx context.Context, id, actorID string) (entity.EmailCampaign, error)
 		RetryFailedCampaign(ctx context.Context, id, actorID string) (entity.EmailCampaign, error)
 		CancelCampaign(ctx context.Context, id, actorID string) (entity.EmailCampaign, error)
+		IngestCloudflareBounceWebhook(ctx context.Context, payload []byte) (entity.EmailWebhookIngestResult, error)
 		TestSendCampaign(
 			ctx context.Context,
 			id,

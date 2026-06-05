@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"html"
@@ -28,6 +29,11 @@ const (
 	redactedValue       = "[redacted]"
 	defaultTokenKeyID   = "default"
 	tokenVersionV2      = "v2"
+
+	emailSuppressionReasonPermanentBounce = "permanent_bounce"
+	emailSuppressionReasonComplaint       = "complaint"
+	emailDeliverySourceSync               = "sync"
+	emailDeliverySourceWebhook            = "webhook"
 
 	campaignMetadataDeliveryTotal      = "delivery_total"
 	campaignMetadataDeliverySent       = "delivery_sent"
@@ -72,6 +78,54 @@ type campaignDeliveryStats struct {
 	skipped int
 }
 
+type deliveryEventInput struct {
+	Provider          string
+	EventType         string
+	RecipientEmail    string
+	MessageID         string
+	CampaignID        string
+	CampaignRecipient string
+	Reason            string
+	Diagnostic        string
+	RawPayload        entity.RawJSON
+	OccurredAt        time.Time
+	DedupeSeed        string
+}
+
+type cloudflareWebhookPayload struct {
+	PermanentBounces []string                 `json:"permanent_bounces"`
+	Complaints       []string                 `json:"complaints"`
+	Result           *cloudflareWebhookResult `json:"result"`
+	Data             json.RawMessage          `json:"data"`
+	Events           []cloudflareWebhookEvent `json:"events"`
+	Timestamp        any                      `json:"ts"`
+	CorrelationID    string                   `json:"alert_correlation_id"`
+}
+
+type cloudflareWebhookResult struct {
+	PermanentBounces []string `json:"permanent_bounces"`
+	Complaints       []string `json:"complaints"`
+}
+
+type cloudflareWebhookEvent struct {
+	ID                string `json:"id"`
+	Type              string `json:"type"`
+	Event             string `json:"event"`
+	EventType         string `json:"event_type"`
+	Email             string `json:"email"`
+	Recipient         string `json:"recipient"`
+	RecipientEmail    string `json:"recipient_email"`
+	MessageID         string `json:"message_id"`
+	CampaignID        string `json:"campaign_id"`
+	CampaignRecipient string `json:"campaign_recipient_id"`
+	Reason            string `json:"reason"`
+	Diagnostic        string `json:"diagnostic"`
+	DiagnosticMessage string `json:"diagnostic_message"`
+	OccurredAt        string `json:"occurred_at"`
+	Timestamp         string `json:"timestamp"`
+	Time              string `json:"time"`
+}
+
 // New creates an email use case.
 func New(r repo.EmailRepo, sender repo.EmailSender, opts Options) *UseCase {
 	tokenKeyID, tokenSeed, tokenSecrets := normalizeUnsubscribeTokenOptions(opts)
@@ -93,7 +147,9 @@ func (uc *UseCase) SendTransactional(ctx context.Context, req entity.Transaction
 		return entity.ErrEmailDeliveryFailed
 	}
 	if uc.repo == nil {
-		return uc.sender.Send(ctx, req.Fallback)
+		_, err := uc.sender.Send(ctx, req.Fallback)
+
+		return err
 	}
 
 	lang := contentlang.MustNormalize(req.Lang)
@@ -634,6 +690,39 @@ func (uc *UseCase) DispatchDueCampaigns(ctx context.Context, limit int) error {
 	return nil
 }
 
+func (uc *UseCase) IngestCloudflareBounceWebhook(
+	ctx context.Context,
+	payload []byte,
+) (entity.EmailWebhookIngestResult, error) {
+	var result entity.EmailWebhookIngestResult
+	events, err := parseCloudflareDeliveryEvents(payload, time.Now().UTC())
+	if err != nil {
+		return result, err
+	}
+	result.Accepted = len(events)
+
+	for _, event := range events {
+		inserted, err := uc.recordDeliveryEvent(ctx, event)
+		if err != nil {
+			return result, err
+		}
+		if inserted {
+			result.Processed++
+			if err = uc.markDeliveryTargetsFailed(ctx, event); err != nil {
+				return result, err
+			}
+		} else {
+			result.Duplicates++
+		}
+		if _, err = uc.upsertAutomatedSuppression(ctx, event.RecipientEmail, suppressionReasonForEvent(event.EventType)); err != nil {
+			return result, err
+		}
+		result.Suppressed++
+	}
+
+	return result, nil
+}
+
 func (uc *UseCase) Unsubscribe(ctx context.Context, token string) (entity.EmailSubscription, error) {
 	userID, email, err := uc.parseUnsubscribeToken(token)
 	if err != nil {
@@ -902,7 +991,7 @@ func (uc *UseCase) sendAndLog(
 		return entity.EmailMessageLog{}, err
 	}
 	if uc.sender == nil {
-		_, _ = uc.repo.UpdateEmailMessageStatus(
+		updated, _ := uc.repo.UpdateEmailMessageStatus(
 			ctx,
 			messageLog.ID,
 			entity.EmailMessageStatusFailed,
@@ -911,29 +1000,41 @@ func (uc *UseCase) sendAndLog(
 			entity.ErrEmailDeliveryFailed.Error(),
 			nil,
 		)
+		if updated.ID != "" {
+			messageLog = updated
+		}
 
 		return messageLog, entity.ErrEmailDeliveryFailed
 	}
 
-	if err = uc.sender.Send(ctx, message); err != nil {
-		_, _ = uc.repo.UpdateEmailMessageStatus(
+	message.MessageID = messageLog.ID
+	message.CampaignID = campaignID
+	message.CampaignRecipient = campaignRecipientID
+	sendResult, err := uc.sender.Send(ctx, message)
+	providerResponse := sendResult.ProviderResponse
+	if err != nil {
+		updated, _ := uc.repo.UpdateEmailMessageStatus(
 			ctx,
 			messageLog.ID,
 			entity.EmailMessageStatusFailed,
 			1,
-			"",
+			providerResponse,
 			err.Error(),
 			nil,
 		)
+		if updated.ID != "" {
+			messageLog = updated
+		}
 		if errors.Is(err, entity.ErrEmailPermanentBounce) {
-			_, _ = uc.CreateSuppression(ctx, entity.EmailSuppression{
-				Email:  message.To,
-				Scope:  entity.EmailSuppressionScopeAll,
-				Reason: "permanent_bounce",
-			})
+			if recordErr := uc.handleSyncPermanentBounces(ctx, message, sendResult, err); recordErr != nil {
+				return messageLog, recordErr
+			}
 		}
 
 		return messageLog, fmt.Errorf("%w: %w", entity.ErrEmailDeliveryFailed, err)
+	}
+	if providerResponse == "" {
+		providerResponse = "sent"
 	}
 
 	now := time.Now().UTC()
@@ -942,7 +1043,7 @@ func (uc *UseCase) sendAndLog(
 		messageLog.ID,
 		entity.EmailMessageStatusSent,
 		1,
-		"sent",
+		providerResponse,
 		"",
 		&now,
 	)
@@ -1007,6 +1108,132 @@ func (uc *UseCase) createMessageLog(
 	return uc.repo.CreateEmailMessage(ctx, log)
 }
 
+func (uc *UseCase) handleSyncPermanentBounces(
+	ctx context.Context,
+	message entity.EmailMessage,
+	result entity.EmailSendResult,
+	deliveryErr error,
+) error {
+	bounces := result.PermanentBounces
+	if len(bounces) == 0 {
+		bounces = []string{message.To}
+	}
+	rawPayload := rawProviderPayload(result.ProviderResponse)
+	for _, email := range bounces {
+		if !validEmail(email) {
+			continue
+		}
+		event := deliveryEventInput{
+			Provider:          providerOrDefault(result.Provider),
+			EventType:         entity.EmailDeliveryEventBounceHard,
+			RecipientEmail:    email,
+			MessageID:         message.MessageID,
+			CampaignID:        message.CampaignID,
+			CampaignRecipient: message.CampaignRecipient,
+			Reason:            emailSuppressionReasonPermanentBounce,
+			Diagnostic:        deliveryErr.Error(),
+			RawPayload:        rawPayload,
+			OccurredAt:        time.Now().UTC(),
+			DedupeSeed:        emailDeliverySourceSync,
+		}
+		if _, err := uc.recordDeliveryEvent(ctx, event); err != nil {
+			return err
+		}
+		if _, err := uc.upsertAutomatedSuppression(
+			ctx,
+			email,
+			emailSuppressionReasonPermanentBounce,
+		); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (uc *UseCase) recordDeliveryEvent(ctx context.Context, input deliveryEventInput) (bool, error) {
+	if !validEmail(input.RecipientEmail) || !validDeliveryEventType(input.EventType) {
+		return false, entity.ErrInvalidAuthInput
+	}
+	now := time.Now().UTC()
+	if input.OccurredAt.IsZero() {
+		input.OccurredAt = now
+	}
+	rawPayload := input.RawPayload
+	if len(rawPayload) == 0 || !json.Valid(rawPayload) {
+		rawPayload = entity.RawJSON(`{}`)
+	}
+	event := entity.EmailDeliveryEvent{
+		ID:                uuid.New().String(),
+		DedupeKey:         deliveryEventDedupeKey(input),
+		Provider:          providerOrDefault(input.Provider),
+		EventType:         input.EventType,
+		RecipientEmail:    strings.ToLower(strings.TrimSpace(input.RecipientEmail)),
+		MessageID:         strings.TrimSpace(input.MessageID),
+		CampaignID:        strings.TrimSpace(input.CampaignID),
+		CampaignRecipient: strings.TrimSpace(input.CampaignRecipient),
+		Reason:            strings.TrimSpace(input.Reason),
+		Diagnostic:        strings.TrimSpace(input.Diagnostic),
+		RawPayload:        rawPayload,
+		OccurredAt:        input.OccurredAt,
+		CreatedAt:         now,
+	}
+	_, inserted, err := uc.repo.UpsertEmailDeliveryEvent(ctx, event)
+
+	return inserted, err
+}
+
+func (uc *UseCase) upsertAutomatedSuppression(
+	ctx context.Context,
+	email,
+	reason string,
+) (entity.EmailSuppression, error) {
+	if !validEmail(email) {
+		return entity.EmailSuppression{}, entity.ErrInvalidAuthInput
+	}
+	now := time.Now().UTC()
+
+	return uc.repo.UpsertAutomaticEmailSuppression(ctx, entity.EmailSuppression{
+		ID:        uuid.New().String(),
+		Email:     strings.ToLower(strings.TrimSpace(email)),
+		Scope:     entity.EmailSuppressionScopeAll,
+		Reason:    strings.TrimSpace(reason),
+		CreatedAt: now,
+	})
+}
+
+func (uc *UseCase) markDeliveryTargetsFailed(ctx context.Context, event deliveryEventInput) error {
+	if strings.TrimSpace(event.MessageID) != "" {
+		_, err := uc.repo.UpdateEmailMessageStatus(
+			ctx,
+			event.MessageID,
+			entity.EmailMessageStatusFailed,
+			1,
+			string(event.RawPayload),
+			event.Diagnostic,
+			nil,
+		)
+		if err != nil && !errors.Is(err, entity.ErrEmailMessageNotFound) {
+			return err
+		}
+	}
+	if strings.TrimSpace(event.CampaignRecipient) != "" {
+		_, err := uc.repo.UpdateEmailCampaignRecipientStatus(
+			ctx,
+			event.CampaignRecipient,
+			entity.EmailRecipientStatusFailed,
+			event.MessageID,
+			event.Diagnostic,
+			nil,
+		)
+		if err != nil && !errors.Is(err, entity.ErrEmailCampaignNotFound) {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func campaignMetadataWithDeliveryStats(
 	metadata map[string]string,
 	stats campaignDeliveryStats,
@@ -1064,6 +1291,248 @@ func redactEmailMetadata(metadata map[string]string) map[string]string {
 	}
 
 	return redacted
+}
+
+func parseCloudflareDeliveryEvents(payload []byte, now time.Time) ([]deliveryEventInput, error) {
+	payload = bytes.TrimSpace(payload)
+	if len(payload) == 0 || !json.Valid(payload) {
+		return nil, entity.ErrInvalidAuthInput
+	}
+	var parsed cloudflareWebhookPayload
+	if err := json.Unmarshal(payload, &parsed); err != nil {
+		return nil, entity.ErrInvalidAuthInput
+	}
+	rawPayload := entity.RawJSON(payload)
+	seed := webhookDedupeSeed(payload, parsed.CorrelationID)
+	occurredAt := webhookOccurredAt(parsed.Timestamp, now)
+	events := make([]deliveryEventInput, 0)
+	addAddresses := func(addresses []string, eventType, reason string) {
+		for _, email := range addresses {
+			if !validEmail(email) {
+				continue
+			}
+			events = append(events, deliveryEventInput{
+				Provider:       entity.EmailProviderCloudflare,
+				EventType:      eventType,
+				RecipientEmail: email,
+				Reason:         reason,
+				Diagnostic:     reason,
+				RawPayload:     rawPayload,
+				OccurredAt:     occurredAt,
+				DedupeSeed:     seed,
+			})
+		}
+	}
+	addAddresses(parsed.PermanentBounces, entity.EmailDeliveryEventBounceHard, emailSuppressionReasonPermanentBounce)
+	addAddresses(parsed.Complaints, entity.EmailDeliveryEventComplaint, emailSuppressionReasonComplaint)
+	if parsed.Result != nil {
+		addAddresses(
+			parsed.Result.PermanentBounces,
+			entity.EmailDeliveryEventBounceHard,
+			emailSuppressionReasonPermanentBounce,
+		)
+		addAddresses(parsed.Result.Complaints, entity.EmailDeliveryEventComplaint, emailSuppressionReasonComplaint)
+	}
+	if len(parsed.Data) > 0 && json.Valid(parsed.Data) {
+		dataEvents := parseCloudflareDataEvents(parsed.Data, now, seed)
+		events = append(events, dataEvents...)
+	}
+	for _, event := range parsed.Events {
+		if input, ok := normalizedCloudflareEvent(event, rawPayload, now, seed); ok {
+			events = append(events, input)
+		}
+	}
+
+	return events, nil
+}
+
+func parseCloudflareDataEvents(data json.RawMessage, now time.Time, seed string) []deliveryEventInput {
+	var parsed struct {
+		PermanentBounces []string                 `json:"permanent_bounces"`
+		Complaints       []string                 `json:"complaints"`
+		Events           []cloudflareWebhookEvent `json:"events"`
+	}
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		return nil
+	}
+	rawPayload := entity.RawJSON(data)
+	events := make([]deliveryEventInput, 0)
+	for _, email := range parsed.PermanentBounces {
+		if !validEmail(email) {
+			continue
+		}
+		events = append(events, deliveryEventInput{
+			Provider:       entity.EmailProviderCloudflare,
+			EventType:      entity.EmailDeliveryEventBounceHard,
+			RecipientEmail: email,
+			Reason:         emailSuppressionReasonPermanentBounce,
+			Diagnostic:     emailSuppressionReasonPermanentBounce,
+			RawPayload:     rawPayload,
+			OccurredAt:     now,
+			DedupeSeed:     seed + ":data",
+		})
+	}
+	for _, email := range parsed.Complaints {
+		if !validEmail(email) {
+			continue
+		}
+		events = append(events, deliveryEventInput{
+			Provider:       entity.EmailProviderCloudflare,
+			EventType:      entity.EmailDeliveryEventComplaint,
+			RecipientEmail: email,
+			Reason:         emailSuppressionReasonComplaint,
+			Diagnostic:     emailSuppressionReasonComplaint,
+			RawPayload:     rawPayload,
+			OccurredAt:     now,
+			DedupeSeed:     seed + ":data",
+		})
+	}
+	for _, event := range parsed.Events {
+		if input, ok := normalizedCloudflareEvent(event, rawPayload, now, seed+":data"); ok {
+			events = append(events, input)
+		}
+	}
+
+	return events
+}
+
+func normalizedCloudflareEvent(
+	event cloudflareWebhookEvent,
+	rawPayload entity.RawJSON,
+	now time.Time,
+	fallbackSeed string,
+) (deliveryEventInput, bool) {
+	eventType, reason := normalizeDeliveryEventType(firstNonEmpty(event.EventType, event.Type, event.Event))
+	if eventType == "" {
+		return deliveryEventInput{}, false
+	}
+	email := firstNonEmpty(event.RecipientEmail, event.Email, event.Recipient)
+	if !validEmail(email) {
+		return deliveryEventInput{}, false
+	}
+	occurredAt := parseEventTime(firstNonEmpty(event.OccurredAt, event.Timestamp, event.Time), now)
+	diagnostic := firstNonEmpty(event.Diagnostic, event.DiagnosticMessage, event.Reason, reason)
+	dedupeSeed := firstNonEmpty(event.ID, fallbackSeed)
+
+	return deliveryEventInput{
+		Provider:          entity.EmailProviderCloudflare,
+		EventType:         eventType,
+		RecipientEmail:    email,
+		MessageID:         event.MessageID,
+		CampaignID:        event.CampaignID,
+		CampaignRecipient: event.CampaignRecipient,
+		Reason:            firstNonEmpty(event.Reason, reason),
+		Diagnostic:        diagnostic,
+		RawPayload:        rawPayload,
+		OccurredAt:        occurredAt,
+		DedupeSeed:        dedupeSeed,
+	}, true
+}
+
+func normalizeDeliveryEventType(value string) (string, string) {
+	switch normalizeKey(value) {
+	case "bounce_hard", "hard_bounce", "permanent_bounce", "permanent_bounces", "bounce":
+		return entity.EmailDeliveryEventBounceHard, emailSuppressionReasonPermanentBounce
+	case "complaint", "spam_complaint", "abuse_complaint":
+		return entity.EmailDeliveryEventComplaint, emailSuppressionReasonComplaint
+	default:
+		return "", ""
+	}
+}
+
+func validDeliveryEventType(value string) bool {
+	switch value {
+	case entity.EmailDeliveryEventBounceHard, entity.EmailDeliveryEventComplaint:
+		return true
+	default:
+		return false
+	}
+}
+
+func suppressionReasonForEvent(eventType string) string {
+	if eventType == entity.EmailDeliveryEventComplaint {
+		return emailSuppressionReasonComplaint
+	}
+
+	return emailSuppressionReasonPermanentBounce
+}
+
+func deliveryEventDedupeKey(input deliveryEventInput) string {
+	seed := strings.Join([]string{
+		providerOrDefault(input.Provider),
+		input.EventType,
+		strings.ToLower(strings.TrimSpace(input.RecipientEmail)),
+		strings.TrimSpace(input.MessageID),
+		strings.TrimSpace(input.CampaignID),
+		strings.TrimSpace(input.CampaignRecipient),
+		strings.TrimSpace(input.DedupeSeed),
+	}, ":")
+	sum := sha256.Sum256([]byte(seed))
+
+	return providerOrDefault(input.Provider) + ":" + input.EventType + ":" + hex.EncodeToString(sum[:])
+}
+
+func webhookDedupeSeed(payload []byte, correlationID string) string {
+	if strings.TrimSpace(correlationID) != "" {
+		return emailDeliverySourceWebhook + ":" + strings.TrimSpace(correlationID)
+	}
+	sum := sha256.Sum256(payload)
+
+	return emailDeliverySourceWebhook + ":" + hex.EncodeToString(sum[:])
+}
+
+func rawProviderPayload(providerResponse string) entity.RawJSON {
+	providerResponse = strings.TrimSpace(providerResponse)
+	if providerResponse != "" && json.Valid([]byte(providerResponse)) {
+		return entity.RawJSON(providerResponse)
+	}
+	raw, _ := json.Marshal(map[string]string{"provider_response": providerResponse})
+
+	return entity.RawJSON(raw)
+}
+
+func providerOrDefault(provider string) string {
+	provider = strings.TrimSpace(provider)
+	if provider == "" {
+		return entity.EmailProviderCloudflare
+	}
+
+	return provider
+}
+
+func webhookOccurredAt(value any, fallback time.Time) time.Time {
+	switch typed := value.(type) {
+	case float64:
+		if typed > 0 {
+			return time.Unix(int64(typed), 0).UTC()
+		}
+	case string:
+		return parseEventTime(typed, fallback)
+	}
+
+	return fallback
+}
+
+func parseEventTime(value string, fallback time.Time) time.Time {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return fallback
+	}
+	if parsed, err := time.Parse(time.RFC3339, value); err == nil {
+		return parsed.UTC()
+	}
+
+	return fallback
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+
+	return ""
 }
 
 func sensitiveEmailMetadataKey(key string) bool {

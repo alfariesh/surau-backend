@@ -548,6 +548,21 @@ func (mr *MockEmailAdminMockRecorder) EventSetting(ctx, key any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "EventSetting", reflect.TypeOf((*MockEmailAdmin)(nil).EventSetting), ctx, key)
 }
 
+// IngestCloudflareBounceWebhook mocks base method.
+func (m *MockEmailAdmin) IngestCloudflareBounceWebhook(ctx context.Context, payload []byte) (entity.EmailWebhookIngestResult, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "IngestCloudflareBounceWebhook", ctx, payload)
+	ret0, _ := ret[0].(entity.EmailWebhookIngestResult)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// IngestCloudflareBounceWebhook indicates an expected call of IngestCloudflareBounceWebhook.
+func (mr *MockEmailAdminMockRecorder) IngestCloudflareBounceWebhook(ctx, payload any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IngestCloudflareBounceWebhook", reflect.TypeOf((*MockEmailAdmin)(nil).IngestCloudflareBounceWebhook), ctx, payload)
+}
+
 // Messages mocks base method.
 func (m *MockEmailAdmin) Messages(ctx context.Context, filter repo.EmailMessageFilter) ([]entity.EmailMessageLog, int, error) {
 	m.ctrl.T.Helper()

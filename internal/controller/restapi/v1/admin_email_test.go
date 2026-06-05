@@ -94,6 +94,100 @@ func TestAdminEmailRetryFailedCampaign(t *testing.T) {
 	assert.Equal(t, "admin-id", email.retryActorID)
 }
 
+func TestEmailCloudflareBounceWebhook(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		secret     string
+		header     string
+		body       string
+		ingestErr  error
+		wantStatus int
+		wantCalled bool
+	}{
+		{
+			name:       "disabled",
+			secret:     "",
+			header:     "secret",
+			body:       `{}`,
+			wantStatus: http.StatusNotFound,
+		},
+		{
+			name:       "missing secret header",
+			secret:     "secret",
+			body:       `{}`,
+			wantStatus: http.StatusUnauthorized,
+		},
+		{
+			name:       "wrong secret header",
+			secret:     "secret",
+			header:     "wrong",
+			body:       `{}`,
+			wantStatus: http.StatusUnauthorized,
+		},
+		{
+			name:       "malformed json",
+			secret:     "secret",
+			header:     "secret",
+			body:       `{`,
+			ingestErr:  entity.ErrInvalidAuthInput,
+			wantStatus: http.StatusBadRequest,
+			wantCalled: true,
+		},
+		{
+			name:       "accepted",
+			secret:     "secret",
+			header:     "secret",
+			body:       `{"permanent_bounces":["user@example.com"]}`,
+			wantStatus: http.StatusAccepted,
+			wantCalled: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			email := &fakeEmailAdmin{
+				webhookResult: entity.EmailWebhookIngestResult{
+					Accepted:   1,
+					Processed:  1,
+					Suppressed: 1,
+				},
+				webhookErr: tc.ingestErr,
+			}
+			app := newEmailWebhookTestApp(email, tc.secret)
+			req := httptest.NewRequestWithContext(
+				t.Context(),
+				http.MethodPost,
+				"/v1/email/webhooks/cloudflare/bounces",
+				strings.NewReader(tc.body),
+			)
+			req.Header.Set("Content-Type", "application/json")
+			if tc.header != "" {
+				req.Header.Set("cf-webhook-auth", tc.header)
+			}
+
+			resp, err := app.Test(req)
+			require.NoError(t, err)
+			defer resp.Body.Close()
+
+			assert.Equal(t, tc.wantStatus, resp.StatusCode)
+			if tc.wantCalled {
+				assert.Equal(t, []byte(tc.body), email.webhookPayload)
+			} else {
+				assert.Empty(t, email.webhookPayload)
+			}
+			if tc.wantStatus == http.StatusAccepted {
+				var result entity.EmailWebhookIngestResult
+				require.NoError(t, json.NewDecoder(resp.Body).Decode(&result))
+				assert.Equal(t, email.webhookResult, result)
+			}
+		})
+	}
+}
+
 func newAdminEmailTestApp(email *fakeEmailAdmin, actor entity.User) *fiber.App {
 	app := fiber.New()
 	user := &fakeAuthUser{}
@@ -126,6 +220,19 @@ func newAdminEmailTestApp(email *fakeEmailAdmin, actor entity.User) *fiber.App {
 	return app
 }
 
+func newEmailWebhookTestApp(email *fakeEmailAdmin, secret string) *fiber.App {
+	app := fiber.New()
+	controller := &V1{
+		email:              email,
+		emailWebhookSecret: secret,
+		l:                  logger.New("error"),
+		v:                  validator.New(validator.WithRequiredStructEnabled()),
+	}
+	app.Post("/v1/email/webhooks/cloudflare/bounces", controller.emailCloudflareBounceWebhook)
+
+	return app
+}
+
 type fakeEmailAdmin struct {
 	usecase.EmailAdmin
 
@@ -136,6 +243,10 @@ type fakeEmailAdmin struct {
 	retryActorID  string
 	retryCampaign entity.EmailCampaign
 	retryErr      error
+
+	webhookPayload []byte
+	webhookResult  entity.EmailWebhookIngestResult
+	webhookErr     error
 }
 
 func (f *fakeEmailAdmin) CreateTemplate(
@@ -169,4 +280,16 @@ func (f *fakeEmailAdmin) RetryFailedCampaign(
 	}
 
 	return f.retryCampaign, nil
+}
+
+func (f *fakeEmailAdmin) IngestCloudflareBounceWebhook(
+	_ context.Context,
+	payload []byte,
+) (entity.EmailWebhookIngestResult, error) {
+	f.webhookPayload = append([]byte(nil), payload...)
+	if f.webhookErr != nil {
+		return entity.EmailWebhookIngestResult{}, f.webhookErr
+	}
+
+	return f.webhookResult, nil
 }

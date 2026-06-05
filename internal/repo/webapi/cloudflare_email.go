@@ -62,19 +62,30 @@ func NewCloudflareEmailClient(opts CloudflareEmailOptions) *CloudflareEmailClien
 }
 
 // Send sends a single transactional email.
-func (c *CloudflareEmailClient) Send(ctx context.Context, message entity.EmailMessage) error {
+func (c *CloudflareEmailClient) Send(
+	ctx context.Context,
+	message entity.EmailMessage,
+) (entity.EmailSendResult, error) {
 	if err := c.validate(); err != nil {
-		return err
+		return entity.EmailSendResult{}, err
 	}
 
 	body, err := json.Marshal(c.newRequestBody(message))
 	if err != nil {
-		return fmt.Errorf("%w: CloudflareEmailClient - Send - Marshal: %w", entity.ErrEmailDeliveryFailed, err)
+		return entity.EmailSendResult{}, fmt.Errorf(
+			"%w: CloudflareEmailClient - Send - Marshal: %w",
+			entity.ErrEmailDeliveryFailed,
+			err,
+		)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint(), bytes.NewReader(body))
 	if err != nil {
-		return fmt.Errorf("%w: CloudflareEmailClient - Send - NewRequest: %w", entity.ErrEmailDeliveryFailed, err)
+		return entity.EmailSendResult{}, fmt.Errorf(
+			"%w: CloudflareEmailClient - Send - NewRequest: %w",
+			entity.ErrEmailDeliveryFailed,
+			err,
+		)
 	}
 	req.Header.Set("Authorization", "Bearer "+c.apiToken)
 	req.Header.Set("Content-Type", "application/json")
@@ -82,26 +93,57 @@ func (c *CloudflareEmailClient) Send(ctx context.Context, message entity.EmailMe
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("%w: CloudflareEmailClient - Send - Do: %w", entity.ErrEmailDeliveryFailed, err)
+		return entity.EmailSendResult{}, fmt.Errorf(
+			"%w: CloudflareEmailClient - Send - Do: %w",
+			entity.ErrEmailDeliveryFailed,
+			err,
+		)
 	}
 	defer resp.Body.Close()
 
+	responseBody, readErr := io.ReadAll(io.LimitReader(resp.Body, 65536))
+	if readErr != nil {
+		return entity.EmailSendResult{}, fmt.Errorf(
+			"%w: CloudflareEmailClient - Send - ReadBody: %w",
+			entity.ErrEmailDeliveryFailed,
+			readErr,
+		)
+	}
+	providerResponse := strings.TrimSpace(string(responseBody))
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return c.statusError(resp)
+		return entity.EmailSendResult{Provider: entity.EmailProviderCloudflare, ProviderResponse: providerResponse},
+			c.statusError(resp.StatusCode, providerResponse)
 	}
 
 	var parsed cloudflareEmailResponse
-	if err = json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
-		return fmt.Errorf("%w: CloudflareEmailClient - Send - Decode: %w", entity.ErrEmailDeliveryFailed, err)
+	if err = json.Unmarshal(responseBody, &parsed); err != nil {
+		return entity.EmailSendResult{
+				Provider:         entity.EmailProviderCloudflare,
+				ProviderResponse: providerResponse,
+			}, fmt.Errorf(
+				"%w: CloudflareEmailClient - Send - Decode: %w",
+				entity.ErrEmailDeliveryFailed,
+				err,
+			)
+	}
+	result := entity.EmailSendResult{
+		Provider:         entity.EmailProviderCloudflare,
+		ProviderResponse: providerResponse,
 	}
 	if !parsed.Success {
-		return fmt.Errorf("%w: CloudflareEmailClient - Send - unsuccessful response", entity.ErrEmailDeliveryFailed)
+		return result, fmt.Errorf(
+			"%w: CloudflareEmailClient - Send - unsuccessful response",
+			entity.ErrEmailDeliveryFailed,
+		)
 	}
 	if parsed.Result == nil {
-		return fmt.Errorf("%w: CloudflareEmailClient - Send - missing result", entity.ErrEmailDeliveryFailed)
+		return result, fmt.Errorf("%w: CloudflareEmailClient - Send - missing result", entity.ErrEmailDeliveryFailed)
 	}
+	result.Delivered = parsed.Result.Delivered
+	result.Queued = parsed.Result.Queued
+	result.PermanentBounces = parsed.Result.PermanentBounces
 	if containsEmail(parsed.Result.PermanentBounces, message.To) {
-		return fmt.Errorf(
+		return result, fmt.Errorf(
 			"%w: %w for %s",
 			entity.ErrEmailDeliveryFailed,
 			entity.ErrEmailPermanentBounce,
@@ -109,14 +151,14 @@ func (c *CloudflareEmailClient) Send(ctx context.Context, message entity.EmailMe
 		)
 	}
 	if !containsEmail(parsed.Result.Delivered, message.To) && !containsEmail(parsed.Result.Queued, message.To) {
-		return fmt.Errorf(
+		return result, fmt.Errorf(
 			"%w: CloudflareEmailClient - Send - recipient was not delivered or queued: %s",
 			entity.ErrEmailDeliveryFailed,
 			message.To,
 		)
 	}
 
-	return nil
+	return result, nil
 }
 
 func (c *CloudflareEmailClient) validate() error {
@@ -142,21 +184,21 @@ func (c *CloudflareEmailClient) newRequestBody(message entity.EmailMessage) clou
 	if c.replyTo != "" {
 		body.ReplyTo = c.replyTo
 	}
+	body.Headers = trackingHeaders(message)
 
 	return body
 }
 
-func (c *CloudflareEmailClient) statusError(resp *http.Response) error {
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-	message := strings.TrimSpace(string(body))
+func (c *CloudflareEmailClient) statusError(statusCode int, message string) error {
+	message = strings.TrimSpace(message)
 	if c.apiToken != "" {
 		message = strings.ReplaceAll(message, c.apiToken, "[redacted]")
 	}
 	if message == "" {
-		message = resp.Status
+		message = http.StatusText(statusCode)
 	}
 
-	return fmt.Errorf("%w: CloudflareEmailClient status %d: %s", entity.ErrEmailDeliveryFailed, resp.StatusCode, message)
+	return fmt.Errorf("%w: CloudflareEmailClient status %d: %s", entity.ErrEmailDeliveryFailed, statusCode, message)
 }
 
 func containsEmail(values []string, email string) bool {
@@ -181,6 +223,7 @@ type cloudflareEmailRequest struct {
 	Subject string                 `json:"subject"`
 	HTML    string                 `json:"html"`
 	Text    string                 `json:"text"`
+	Headers map[string]string      `json:"headers,omitempty"`
 }
 
 type cloudflareEmailResponse struct {
@@ -190,4 +233,22 @@ type cloudflareEmailResponse struct {
 		PermanentBounces []string `json:"permanent_bounces"`
 		Queued           []string `json:"queued"`
 	} `json:"result"`
+}
+
+func trackingHeaders(message entity.EmailMessage) map[string]string {
+	headers := map[string]string{}
+	if strings.TrimSpace(message.MessageID) != "" {
+		headers["X-Surau-Message-ID"] = strings.TrimSpace(message.MessageID)
+	}
+	if strings.TrimSpace(message.CampaignID) != "" {
+		headers["X-Surau-Campaign-ID"] = strings.TrimSpace(message.CampaignID)
+	}
+	if strings.TrimSpace(message.CampaignRecipient) != "" {
+		headers["X-Surau-Campaign-Recipient-ID"] = strings.TrimSpace(message.CampaignRecipient)
+	}
+	if len(headers) == 0 {
+		return nil
+	}
+
+	return headers
 }

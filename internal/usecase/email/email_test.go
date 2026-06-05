@@ -222,6 +222,129 @@ func TestDeliverCampaignRecipientMarksSuppressedAsSkipped(t *testing.T) {
 	assert.Equal(t, "suppressed", stub.recipientError)
 }
 
+func TestDeliverCampaignRecipientHardBounceCreatesEventAndSuppression(t *testing.T) {
+	t.Parallel()
+
+	stub := &emailRepoStub{
+		template: entity.EmailTemplate{
+			ID:       "template-id",
+			Key:      "weekly_digest",
+			Category: entity.EmailCategoryMarketing,
+			Enabled:  true,
+		},
+		publishedVersion: entity.EmailTemplateVersion{
+			ID:              "version-id",
+			TemplateID:      "template-id",
+			Lang:            contentlang.Default,
+			SubjectTemplate: "Halo {{.email}}",
+			TextTemplate:    "Halo {{.unsubscribe_url}}",
+			Published:       true,
+		},
+	}
+	sender := &emailSenderStub{
+		result: entity.EmailSendResult{
+			Provider:         entity.EmailProviderCloudflare,
+			PermanentBounces: []string{"user@example.com"},
+			ProviderResponse: `{"success":true,"result":{"permanent_bounces":["user@example.com"]}}`,
+		},
+		err: fmt.Errorf("%w: %w for user@example.com", entity.ErrEmailDeliveryFailed, entity.ErrEmailPermanentBounce),
+	}
+	uc := New(stub, sender, Options{})
+
+	status, err := uc.deliverCampaignRecipient(
+		t.Context(),
+		entity.EmailCampaign{ID: "campaign-id", TemplateID: "template-id"},
+		entity.EmailCampaignRecipient{
+			ID:             "recipient-id",
+			UserID:         "user-id",
+			Email:          "user@example.com",
+			Lang:           contentlang.Default,
+			UnsubscribeURL: "https://frontend.example.com/unsubscribe?token=abc",
+		},
+	)
+
+	require.NoError(t, err)
+	assert.Equal(t, entity.EmailRecipientStatusFailed, status)
+	require.Len(t, sender.sent, 1)
+	messageID := stub.createdMessages[0].ID
+	assert.Equal(t, messageID, sender.sent[0].MessageID)
+	assert.Equal(t, "campaign-id", sender.sent[0].CampaignID)
+	assert.Equal(t, "recipient-id", sender.sent[0].CampaignRecipient)
+	require.Len(t, stub.deliveryEvents, 1)
+	assert.Equal(t, entity.EmailDeliveryEventBounceHard, stub.deliveryEvents[0].EventType)
+	assert.Equal(t, "user@example.com", stub.deliveryEvents[0].RecipientEmail)
+	assert.Equal(t, messageID, stub.deliveryEvents[0].MessageID)
+	require.Len(t, stub.suppressions, 1)
+	assert.Equal(t, entity.EmailSuppressionScopeAll, stub.suppressions[0].Scope)
+	assert.Equal(t, "permanent_bounce", stub.suppressions[0].Reason)
+	require.Len(t, stub.updatedMessages, 1)
+	assert.Equal(t, entity.EmailMessageStatusFailed, stub.updatedMessages[0].Status)
+	assert.Contains(t, stub.updatedMessages[0].ProviderResponse, "permanent_bounces")
+}
+
+func TestIngestCloudflareBounceWebhookDedupesAndSuppresses(t *testing.T) {
+	t.Parallel()
+
+	stub := &emailRepoStub{}
+	uc := New(stub, nil, Options{})
+	payload := []byte(`{
+		"alert_correlation_id":"event-1",
+		"data":{
+			"events":[{
+				"event_type":"bounce_hard",
+				"recipient_email":"USER@example.com",
+				"message_id":"message-id-1",
+				"campaign_id":"campaign-id",
+				"campaign_recipient_id":"recipient-id",
+				"diagnostic":"550 5.1.1 user unknown",
+				"occurred_at":"2026-06-05T01:02:03Z"
+			}]
+		}
+	}`)
+
+	first, err := uc.IngestCloudflareBounceWebhook(t.Context(), payload)
+	require.NoError(t, err)
+	second, err := uc.IngestCloudflareBounceWebhook(t.Context(), payload)
+	require.NoError(t, err)
+
+	assert.Equal(t, entity.EmailWebhookIngestResult{Accepted: 1, Processed: 1, Suppressed: 1}, first)
+	assert.Equal(t, entity.EmailWebhookIngestResult{Accepted: 1, Processed: 0, Suppressed: 1, Duplicates: 1}, second)
+	require.Len(t, stub.deliveryEvents, 1)
+	assert.Equal(t, "user@example.com", stub.deliveryEvents[0].RecipientEmail)
+	assert.Equal(t, "message-id-1", stub.deliveryEvents[0].MessageID)
+	require.Len(t, stub.suppressions, 1)
+	assert.Equal(t, "permanent_bounce", stub.suppressions[0].Reason)
+}
+
+func TestIngestCloudflareBounceWebhookPreservesManualSuppression(t *testing.T) {
+	t.Parallel()
+
+	actor := "admin-id"
+	stub := &emailRepoStub{
+		suppressionByKey: map[string]entity.EmailSuppression{
+			"user@example.com:all": {
+				ID:        "suppression-id",
+				Email:     "user@example.com",
+				Scope:     entity.EmailSuppressionScopeAll,
+				Reason:    "manual",
+				CreatedBy: &actor,
+				CreatedAt: time.Now().UTC(),
+			},
+		},
+	}
+	uc := New(stub, nil, Options{})
+
+	result, err := uc.IngestCloudflareBounceWebhook(
+		t.Context(),
+		[]byte(`{"permanent_bounces":["user@example.com"]}`),
+	)
+
+	require.NoError(t, err)
+	assert.Equal(t, entity.EmailWebhookIngestResult{Accepted: 1, Processed: 1, Suppressed: 1}, result)
+	assert.Equal(t, "manual", stub.suppressionByKey["user@example.com:all"].Reason)
+	assert.Empty(t, stub.suppressions)
+}
+
 func TestSendTransactionalRedactsSensitiveMetadata(t *testing.T) {
 	t.Parallel()
 
@@ -496,6 +619,10 @@ type emailRepoStub struct {
 	recipientError    string
 	createdMessages   []entity.EmailMessageLog
 	updatedMessages   []entity.EmailMessageLog
+	deliveryEvents    []entity.EmailDeliveryEvent
+	deliveryEventKeys map[string]bool
+	suppressions      []entity.EmailSuppression
+	suppressionByKey  map[string]entity.EmailSuppression
 	campaign          entity.EmailCampaign
 	updatedCampaign   entity.EmailCampaign
 	audience          []entity.EmailAudienceRecipient
@@ -505,21 +632,36 @@ type emailRepoStub struct {
 }
 
 type emailSenderStub struct {
-	sent       []entity.EmailMessage
-	err        error
-	errByEmail map[string]error
+	sent          []entity.EmailMessage
+	result        entity.EmailSendResult
+	resultByEmail map[string]entity.EmailSendResult
+	err           error
+	errByEmail    map[string]error
 }
 
-func (s *emailSenderStub) Send(ctx context.Context, message entity.EmailMessage) error {
+func (s *emailSenderStub) Send(ctx context.Context, message entity.EmailMessage) (entity.EmailSendResult, error) {
 	if err := ctx.Err(); err != nil {
-		return err
+		return entity.EmailSendResult{}, err
 	}
 	s.sent = append(s.sent, message)
+	result := s.result
+	if result.Provider == "" {
+		result.Provider = entity.EmailProviderLog
+	}
+	if result.ProviderResponse == "" {
+		result.ProviderResponse = "sent"
+	}
+	if len(result.Delivered) == 0 && len(result.Queued) == 0 && len(result.PermanentBounces) == 0 {
+		result.Delivered = []string{message.To}
+	}
+	if emailResult, ok := s.resultByEmail[message.To]; ok {
+		result = emailResult
+	}
 	if err := s.errByEmail[message.To]; err != nil {
-		return err
+		return result, err
 	}
 
-	return s.err
+	return result, s.err
 }
 
 func (s *emailRepoStub) CreateEmailTemplateVersion(
@@ -574,6 +716,46 @@ func (s *emailRepoStub) IsEmailSuppressed(
 	string,
 ) (bool, error) {
 	return s.suppressed, nil
+}
+
+func (s *emailRepoStub) UpsertAutomaticEmailSuppression(
+	_ context.Context,
+	suppression entity.EmailSuppression,
+) (entity.EmailSuppression, error) {
+	if s.suppressionByKey == nil {
+		s.suppressionByKey = map[string]entity.EmailSuppression{}
+	}
+	key := strings.ToLower(suppression.Email) + ":" + suppression.Scope
+	if existing, ok := s.suppressionByKey[key]; ok {
+		if existing.CreatedBy != nil {
+			return existing, nil
+		}
+		existing.Email = suppression.Email
+		existing.Reason = suppression.Reason
+		s.suppressionByKey[key] = existing
+
+		return existing, nil
+	}
+	s.suppressionByKey[key] = suppression
+	s.suppressions = append(s.suppressions, suppression)
+
+	return suppression, nil
+}
+
+func (s *emailRepoStub) UpsertEmailDeliveryEvent(
+	_ context.Context,
+	event entity.EmailDeliveryEvent,
+) (entity.EmailDeliveryEvent, bool, error) {
+	if s.deliveryEventKeys == nil {
+		s.deliveryEventKeys = map[string]bool{}
+	}
+	if s.deliveryEventKeys[event.DedupeKey] {
+		return event, false, nil
+	}
+	s.deliveryEventKeys[event.DedupeKey] = true
+	s.deliveryEvents = append(s.deliveryEvents, event)
+
+	return event, true, nil
 }
 
 func (s *emailRepoStub) CreateEmailMessage(

@@ -59,6 +59,7 @@ func TestNewConfig_EmailDefaults(t *testing.T) {
 	unsetEnv(t, "EMAIL_UNSUBSCRIBE_TOKEN_KEY_ID")
 	unsetEnv(t, "EMAIL_UNSUBSCRIBE_TOKEN_SECRET")
 	unsetEnv(t, "EMAIL_UNSUBSCRIBE_TOKEN_SECRETS")
+	unsetEnv(t, "EMAIL_CLOUDFLARE_WEBHOOK_SECRET")
 	unsetEnv(t, "EMAIL_HTTP_TIMEOUT")
 
 	cfg, err := NewConfig()
@@ -77,6 +78,7 @@ func TestNewConfig_EmailDefaults(t *testing.T) {
 	assert.Equal(t, "default", cfg.Email.UnsubscribeTokenKeyID)
 	assert.Empty(t, cfg.Email.UnsubscribeTokenSecret)
 	assert.Empty(t, cfg.Email.UnsubscribeTokenSecrets)
+	assert.Empty(t, cfg.Email.CloudflareWebhookSecret)
 	assert.Equal(t, "10s", cfg.Email.HTTPTimeout.String())
 }
 

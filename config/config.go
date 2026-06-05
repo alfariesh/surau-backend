@@ -86,6 +86,7 @@ type (
 		UnsubscribeTokenKeyID    string        `env:"EMAIL_UNSUBSCRIBE_TOKEN_KEY_ID" envDefault:"default"`
 		UnsubscribeTokenSecret   string        `env:"EMAIL_UNSUBSCRIBE_TOKEN_SECRET"`
 		UnsubscribeTokenSecrets  string        `env:"EMAIL_UNSUBSCRIBE_TOKEN_SECRETS"`
+		CloudflareWebhookSecret  string        `env:"EMAIL_CLOUDFLARE_WEBHOOK_SECRET"`
 		HTTPTimeout              time.Duration `env:"EMAIL_HTTP_TIMEOUT" envDefault:"10s"`
 	}
 
@@ -199,6 +200,7 @@ func NewConfig() (*Config, error) {
 	cfg.Email.UnsubscribeTokenKeyID = strings.TrimSpace(cfg.Email.UnsubscribeTokenKeyID)
 	cfg.Email.UnsubscribeTokenSecret = strings.TrimSpace(cfg.Email.UnsubscribeTokenSecret)
 	cfg.Email.UnsubscribeTokenSecrets = strings.TrimSpace(cfg.Email.UnsubscribeTokenSecrets)
+	cfg.Email.CloudflareWebhookSecret = strings.TrimSpace(cfg.Email.CloudflareWebhookSecret)
 	if cfg.Email.UnsubscribeTokenKeyID == "" {
 		return nil, fmt.Errorf("config error: EMAIL_UNSUBSCRIBE_TOKEN_KEY_ID must not be empty")
 	}
