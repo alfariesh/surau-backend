@@ -3,6 +3,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"os"
@@ -73,9 +74,11 @@ func initUseCases(cfg *config.Config, pg *postgres.Postgres, jwtManager *jwt.Man
 		})
 	}
 	emailUC := emailusecase.New(emailRepo, emailSender, emailusecase.Options{
-		SupportEmail:         cfg.Email.ReplyTo,
-		UnsubscribeURL:       unsubscribeFrontendURL(cfg),
-		UnsubscribeTokenSeed: cfg.JWT.Secret,
+		SupportEmail:            cfg.Email.ReplyTo,
+		UnsubscribeURL:          unsubscribeFrontendURL(cfg),
+		UnsubscribeTokenKeyID:   unsubscribeTokenKeyID(cfg),
+		UnsubscribeTokenSeed:    unsubscribeTokenSeed(cfg),
+		UnsubscribeTokenSecrets: unsubscribeTokenSecrets(cfg),
 	})
 	var rateLimiter repo.AuthRateLimitRepo
 	if cfg.AuthRateLimit.Enabled {
@@ -86,12 +89,14 @@ func initUseCases(cfg *config.Config, pg *postgres.Postgres, jwtManager *jwt.Man
 		user: user.New(userRepo, jwtManager, emailSender, user.Options{
 			VerifyFrontendURL:        cfg.Email.VerifyFrontendURL,
 			VerificationTTL:          cfg.Email.VerificationTTL,
+			VerificationOTPTTL:       cfg.Email.VerificationOTPTTL,
 			ResendCooldown:           cfg.Email.ResendCooldown,
 			PasswordResetFrontendURL: cfg.Email.PasswordResetFrontendURL,
 			PasswordResetTTL:         cfg.Email.PasswordResetTTL,
 			PasswordResetCooldown:    cfg.Email.PasswordResetCooldown,
 			EmailChangeFrontendURL:   cfg.Email.EmailChangeFrontendURL,
 			EmailChangeTTL:           cfg.Email.EmailChangeTTL,
+			EmailChangeOTPTTL:        cfg.Email.EmailChangeOTPTTL,
 			EmailChangeCooldown:      cfg.Email.EmailChangeCooldown,
 			SupportEmail:             cfg.Email.ReplyTo,
 			EmailService:             emailUC,
@@ -132,6 +137,14 @@ func initUseCases(cfg *config.Config, pg *postgres.Postgres, jwtManager *jwt.Man
 				ForgotPasswordIP: user.RateLimitRule{
 					Max:    cfg.AuthRateLimit.ForgotPasswordIPMax,
 					Window: cfg.AuthRateLimit.ForgotPasswordIPWindow,
+				},
+				VerifyEmailOTPEmail: user.RateLimitRule{
+					Max:    cfg.AuthRateLimit.VerifyEmailOTPEmailMax,
+					Window: cfg.AuthRateLimit.VerifyEmailOTPEmailWindow,
+				},
+				VerifyEmailOTPIP: user.RateLimitRule{
+					Max:    cfg.AuthRateLimit.VerifyEmailOTPIPMax,
+					Window: cfg.AuthRateLimit.VerifyEmailOTPIPWindow,
 				},
 				ResendVerificationEmail: user.RateLimitRule{
 					Max:    cfg.AuthRateLimit.ResendVerificationEmailMax,
@@ -297,4 +310,42 @@ func unsubscribeFrontendURL(cfg *config.Config) string {
 	parsed.RawQuery = ""
 
 	return parsed.String()
+}
+
+func unsubscribeTokenSeed(cfg *config.Config) string {
+	secrets := unsubscribeTokenSecrets(cfg)
+	keyID := unsubscribeTokenKeyID(cfg)
+	if secrets[keyID] != "" {
+		return secrets[keyID]
+	}
+	if cfg.Email.UnsubscribeTokenSecret != "" {
+		return cfg.Email.UnsubscribeTokenSecret
+	}
+
+	return cfg.JWT.Secret
+}
+
+func unsubscribeTokenKeyID(cfg *config.Config) string {
+	if cfg.Email.UnsubscribeTokenKeyID != "" {
+		return cfg.Email.UnsubscribeTokenKeyID
+	}
+
+	return "default"
+}
+
+func unsubscribeTokenSecrets(cfg *config.Config) map[string]string {
+	secrets := map[string]string{}
+	if cfg.Email.UnsubscribeTokenSecrets != "" {
+		_ = json.Unmarshal([]byte(cfg.Email.UnsubscribeTokenSecrets), &secrets)
+	}
+	keyID := unsubscribeTokenKeyID(cfg)
+	if secrets[keyID] == "" {
+		if cfg.Email.UnsubscribeTokenSecret != "" {
+			secrets[keyID] = cfg.Email.UnsubscribeTokenSecret
+		} else {
+			secrets[keyID] = cfg.JWT.Secret
+		}
+	}
+
+	return secrets
 }

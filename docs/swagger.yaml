@@ -849,6 +849,17 @@ definitions:
       is_title_fallback:
         example: true
         type: boolean
+      original_blocks:
+        items:
+          $ref: '#/definitions/entity.SourceBlock'
+        type: array
+      original_footnotes:
+        items:
+          $ref: '#/definitions/entity.SourceFootnote'
+        type: array
+      original_format:
+        example: plain_text
+        type: string
       original_html:
         type: string
       original_text:
@@ -1120,6 +1131,17 @@ definitions:
         type: boolean
       next:
         $ref: '#/definitions/entity.BookTOCLink'
+      original_blocks:
+        items:
+          $ref: '#/definitions/entity.SourceBlock'
+        type: array
+      original_footnotes:
+        items:
+          $ref: '#/definitions/entity.SourceFootnote'
+        type: array
+      original_format:
+        example: plain_text
+        type: string
       original_html:
         type: string
       original_text:
@@ -1562,6 +1584,17 @@ definitions:
       updated_at:
         type: string
       version:
+        type: integer
+    type: object
+  entity.EmailWebhookIngestResult:
+    properties:
+      accepted:
+        type: integer
+      duplicates:
+        type: integer
+      processed:
+        type: integer
+      suppressed:
         type: integer
     type: object
   entity.HeadingSummaryEdit:
@@ -2278,6 +2311,38 @@ definitions:
         example: "2026-01-01T00:00:00Z"
         type: string
       updated_by:
+        type: string
+    type: object
+  entity.SourceBlock:
+    properties:
+      html:
+        type: string
+      quran_citations:
+        items:
+          $ref: '#/definitions/entity.SourceQuranCitation'
+        type: array
+      text:
+        type: string
+      type:
+        example: paragraph
+        type: string
+    type: object
+  entity.SourceFootnote:
+    properties:
+      html:
+        type: string
+      marker:
+        example: (¬١)
+        type: string
+      text:
+        type: string
+    type: object
+  entity.SourceQuranCitation:
+    properties:
+      quote:
+        type: string
+      reference:
+        example: البقرة- ٢٥٥
         type: string
     type: object
   entity.Task:
@@ -3867,19 +3932,26 @@ definitions:
     type: object
   v1.VerifyEmail:
     properties:
+      email:
+        example: john@example.com
+        type: string
+      otp:
+        example: "123456"
+        type: string
       token:
         example: G66NnGZnWg4W88qGz3p9N0-GxjKuxEOHHsvWv3kBaBA
+        maxLength: 512
         type: string
-    required:
-    - token
     type: object
   v1.VerifyEmailChange:
     properties:
+      otp:
+        example: "123456"
+        type: string
       token:
         example: G66NnGZnWg4W88qGz3p9N0-GxjKuxEOHHsvWv3kBaBA
+        maxLength: 512
         type: string
-    required:
-    - token
     type: object
 host: localhost:8080
 info:
@@ -4140,6 +4212,47 @@ paths:
       security:
       - BearerAuth: []
       summary: Preview email campaign audience
+      tags:
+      - admin-emails
+  /admin/emails/campaigns/{id}/retry-failed:
+    post:
+      operationId: admin-email-retry-failed-campaign
+      parameters:
+      - description: Campaign ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/entity.EmailCampaign'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Retry failed email campaign recipients
       tags:
       - admin-emails
   /admin/emails/campaigns/{id}/schedule:
@@ -5275,10 +5388,10 @@ paths:
     post:
       consumes:
       - application/json
-      description: Confirm an email change token for the current user
+      description: Confirm an email change token or OTP for the current user
       operationId: verify-email-change
       parameters:
-      - description: Email change token
+      - description: Email change token or OTP
         in: body
         name: request
         required: true
@@ -5577,10 +5690,11 @@ paths:
     post:
       consumes:
       - application/json
-      description: Verify a user's email address using a one-time token
+      description: Verify a user's email address using a one-time token or 6-digit
+        OTP
       operationId: verify-email
       parameters:
-      - description: Email verification token
+      - description: Email verification token or email OTP
         in: body
         name: request
         required: true
@@ -8241,6 +8355,43 @@ paths:
           schema:
             $ref: '#/definitions/v1.Error'
       summary: Unsubscribe from marketing email
+      tags:
+      - email
+  /email/webhooks/cloudflare/bounces:
+    post:
+      consumes:
+      - application/json
+      operationId: email-cloudflare-bounce-webhook
+      parameters:
+      - description: Cloudflare webhook secret
+        in: header
+        name: cf-webhook-auth
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/entity.EmailWebhookIngestResult'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      summary: Ingest Cloudflare email bounce webhook
       tags:
       - email
   /me/quran/progress:

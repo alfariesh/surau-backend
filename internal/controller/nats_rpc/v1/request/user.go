@@ -17,7 +17,9 @@ type Login struct {
 
 // VerifyEmail -.
 type VerifyEmail struct {
-	Token string `json:"token" validate:"required"`
+	Token string `json:"token" validate:"omitempty,max=512"`
+	Email string `json:"email" validate:"omitempty,email"`
+	OTP   string `json:"otp"   validate:"omitempty,len=6,numeric"`
 }
 
 // ResendVerification -.
@@ -50,7 +52,8 @@ type RequestEmailChange struct {
 
 // VerifyEmailChange -.
 type VerifyEmailChange struct {
-	Token string `json:"token" validate:"required"`
+	Token string `json:"token" validate:"omitempty,max=512"`
+	OTP   string `json:"otp"   validate:"omitempty,len=6,numeric"`
 }
 
 // DeleteAccount -.

@@ -100,9 +100,27 @@ Section fallback example:
     }
   },
   "translation": null,
-  "original_html": "<p>...</p>"
+  "original_html": "<p dir=\"rtl\" lang=\"ar\">...</p>",
+  "original_text": "...",
+  "original_format": "plain_text",
+  "original_blocks": [
+    {
+      "type": "paragraph",
+      "text": "...",
+      "html": "<p dir=\"rtl\" lang=\"ar\">...</p>"
+    }
+  ],
+  "original_footnotes": [
+    {
+      "marker": "(¬١)",
+      "text": "...",
+      "html": "<li data-marker=\"(¬١)\">...</li>"
+    }
+  ]
 }
 ```
+
+`original_html` is always sanitized reader HTML. If the imported kitab source is plain text, the backend derives semantic paragraphs, best-effort Quran quote citations, and separate footnotes while preserving `original_text` for plain-text fallback/search previews. The section page range remains explicit via `start_page_id` and `end_page_id`; pass `include_quran_references=true` to embed approved structured Quran references for the heading.
 
 Availability actions:
 

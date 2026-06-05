@@ -17,7 +17,9 @@ type Login struct {
 
 // VerifyEmail -.
 type VerifyEmail struct {
-	Token string `json:"token" validate:"required" example:"G66NnGZnWg4W88qGz3p9N0-GxjKuxEOHHsvWv3kBaBA"`
+	Token string `json:"token" validate:"omitempty,max=512" example:"G66NnGZnWg4W88qGz3p9N0-GxjKuxEOHHsvWv3kBaBA"`
+	Email string `json:"email" validate:"omitempty,email" example:"john@example.com"`
+	OTP   string `json:"otp"   validate:"omitempty,len=6,numeric" example:"123456"`
 } // @name v1.VerifyEmail
 
 // ResendVerification -.
@@ -50,7 +52,8 @@ type RequestEmailChange struct {
 
 // VerifyEmailChange -.
 type VerifyEmailChange struct {
-	Token string `json:"token" validate:"required" example:"G66NnGZnWg4W88qGz3p9N0-GxjKuxEOHHsvWv3kBaBA"`
+	Token string `json:"token" validate:"omitempty,max=512" example:"G66NnGZnWg4W88qGz3p9N0-GxjKuxEOHHsvWv3kBaBA"`
+	OTP   string `json:"otp"   validate:"omitempty,len=6,numeric" example:"123456"`
 } // @name v1.VerifyEmailChange
 
 // DeleteAccount -.

@@ -200,13 +200,15 @@ func DefaultUserPreferences(userID string, now time.Time) UserPreferences {
 
 // EmailVerificationToken stores a one-time email verification token hash.
 type EmailVerificationToken struct {
-	ID        string
-	UserID    string
-	TokenHash string
-	ExpiresAt time.Time
-	UsedAt    *time.Time
-	SentAt    time.Time
-	CreatedAt time.Time
+	ID           string
+	UserID       string
+	TokenHash    string
+	OTPHash      string
+	OTPExpiresAt *time.Time
+	ExpiresAt    time.Time
+	UsedAt       *time.Time
+	SentAt       time.Time
+	CreatedAt    time.Time
 }
 
 // PasswordResetToken stores a one-time password reset token hash.
@@ -222,14 +224,16 @@ type PasswordResetToken struct {
 
 // EmailChangeToken stores a one-time email change verification token hash.
 type EmailChangeToken struct {
-	ID        string
-	UserID    string
-	NewEmail  string
-	TokenHash string
-	ExpiresAt time.Time
-	UsedAt    *time.Time
-	SentAt    time.Time
-	CreatedAt time.Time
+	ID           string
+	UserID       string
+	NewEmail     string
+	TokenHash    string
+	OTPHash      string
+	OTPExpiresAt *time.Time
+	ExpiresAt    time.Time
+	UsedAt       *time.Time
+	SentAt       time.Time
+	CreatedAt    time.Time
 }
 
 // EmailChangeResult reports the final state after an atomic email change.

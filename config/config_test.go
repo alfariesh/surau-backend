@@ -49,11 +49,17 @@ func TestNewConfig_EmailDefaults(t *testing.T) {
 	setRequiredEnv(t)
 	unsetEnv(t, "EMAIL_FROM_NAME")
 	unsetEnv(t, "EMAIL_VERIFICATION_TTL")
+	unsetEnv(t, "EMAIL_VERIFICATION_OTP_TTL")
 	unsetEnv(t, "EMAIL_RESEND_COOLDOWN")
 	unsetEnv(t, "PASSWORD_RESET_TTL")
 	unsetEnv(t, "PASSWORD_RESET_RESEND_COOLDOWN")
 	unsetEnv(t, "EMAIL_CHANGE_TTL")
+	unsetEnv(t, "EMAIL_CHANGE_OTP_TTL")
 	unsetEnv(t, "EMAIL_CHANGE_RESEND_COOLDOWN")
+	unsetEnv(t, "EMAIL_UNSUBSCRIBE_TOKEN_KEY_ID")
+	unsetEnv(t, "EMAIL_UNSUBSCRIBE_TOKEN_SECRET")
+	unsetEnv(t, "EMAIL_UNSUBSCRIBE_TOKEN_SECRETS")
+	unsetEnv(t, "EMAIL_CLOUDFLARE_WEBHOOK_SECRET")
 	unsetEnv(t, "EMAIL_HTTP_TIMEOUT")
 
 	cfg, err := NewConfig()
@@ -62,12 +68,40 @@ func TestNewConfig_EmailDefaults(t *testing.T) {
 	assert.Equal(t, EmailDeliveryModeCloudflare, cfg.Email.DeliveryMode)
 	assert.Equal(t, "Surau", cfg.Email.FromName)
 	assert.Equal(t, "24h0m0s", cfg.Email.VerificationTTL.String())
+	assert.Equal(t, "10m0s", cfg.Email.VerificationOTPTTL.String())
 	assert.Equal(t, "1m0s", cfg.Email.ResendCooldown.String())
 	assert.Equal(t, "1h0m0s", cfg.Email.PasswordResetTTL.String())
 	assert.Equal(t, "1m0s", cfg.Email.PasswordResetCooldown.String())
 	assert.Equal(t, "24h0m0s", cfg.Email.EmailChangeTTL.String())
+	assert.Equal(t, "10m0s", cfg.Email.EmailChangeOTPTTL.String())
 	assert.Equal(t, "1m0s", cfg.Email.EmailChangeCooldown.String())
+	assert.Equal(t, "default", cfg.Email.UnsubscribeTokenKeyID)
+	assert.Empty(t, cfg.Email.UnsubscribeTokenSecret)
+	assert.Empty(t, cfg.Email.UnsubscribeTokenSecrets)
+	assert.Empty(t, cfg.Email.CloudflareWebhookSecret)
 	assert.Equal(t, "10s", cfg.Email.HTTPTimeout.String())
+}
+
+func TestNewConfig_UnsubscribeTokenSecretTrims(t *testing.T) {
+	setRequiredEnv(t)
+	t.Setenv("EMAIL_UNSUBSCRIBE_TOKEN_SECRET", "  unsubscribe-secret  ")
+
+	cfg, err := NewConfig()
+
+	require.NoError(t, err)
+	assert.Equal(t, "unsubscribe-secret", cfg.Email.UnsubscribeTokenSecret)
+}
+
+func TestNewConfig_UnsubscribeTokenSecretMap(t *testing.T) {
+	setRequiredEnv(t)
+	t.Setenv("EMAIL_UNSUBSCRIBE_TOKEN_KEY_ID", "2026-06")
+	t.Setenv("EMAIL_UNSUBSCRIBE_TOKEN_SECRETS", `{"2026-06":"new-secret","2026-05":"old-secret"}`)
+
+	cfg, err := NewConfig()
+
+	require.NoError(t, err)
+	assert.Equal(t, "2026-06", cfg.Email.UnsubscribeTokenKeyID)
+	assert.Equal(t, `{"2026-06":"new-secret","2026-05":"old-secret"}`, cfg.Email.UnsubscribeTokenSecrets)
 }
 
 func TestNewConfig_InvalidEmail(t *testing.T) {
@@ -107,8 +141,28 @@ func TestNewConfig_InvalidEmail(t *testing.T) {
 			value: "/change-email",
 		},
 		{
+			name:  "invalid unsubscribe token key id",
+			key:   "EMAIL_UNSUBSCRIBE_TOKEN_KEY_ID",
+			value: "bad.key",
+		},
+		{
+			name:  "invalid unsubscribe token secrets json",
+			key:   "EMAIL_UNSUBSCRIBE_TOKEN_SECRETS",
+			value: "{",
+		},
+		{
+			name:  "missing current unsubscribe token secret",
+			key:   "EMAIL_UNSUBSCRIBE_TOKEN_SECRETS",
+			value: `{"previous":"old-secret"}`,
+		},
+		{
 			name:  "zero ttl",
 			key:   "EMAIL_VERIFICATION_TTL",
+			value: "0s",
+		},
+		{
+			name:  "zero verification otp ttl",
+			key:   "EMAIL_VERIFICATION_OTP_TTL",
 			value: "0s",
 		},
 		{
@@ -129,6 +183,11 @@ func TestNewConfig_InvalidEmail(t *testing.T) {
 		{
 			name:  "zero email change ttl",
 			key:   "EMAIL_CHANGE_TTL",
+			value: "0s",
+		},
+		{
+			name:  "zero email change otp ttl",
+			key:   "EMAIL_CHANGE_OTP_TTL",
 			value: "0s",
 		},
 		{
@@ -195,6 +254,7 @@ func TestNewConfig_AuthRateLimitDefaults(t *testing.T) {
 	unsetEnv(t, "AUTH_RATE_LIMIT_ENABLED")
 	unsetEnv(t, "AUTH_RATE_LIMIT_LOGIN_EMAIL_MAX")
 	unsetEnv(t, "AUTH_RATE_LIMIT_LOGIN_EMAIL_WINDOW")
+	unsetEnv(t, "AUTH_RATE_LIMIT_VERIFY_EMAIL_OTP_EMAIL_WINDOW")
 	unsetEnv(t, "AUTH_RATE_LIMIT_RESET_PASSWORD_TOKEN_WINDOW")
 
 	cfg, err := NewConfig()
@@ -203,6 +263,7 @@ func TestNewConfig_AuthRateLimitDefaults(t *testing.T) {
 	assert.True(t, cfg.AuthRateLimit.Enabled)
 	assert.Equal(t, 5, cfg.AuthRateLimit.LoginEmailMax)
 	assert.Equal(t, "5m0s", cfg.AuthRateLimit.LoginEmailWindow.String())
+	assert.Equal(t, "15m0s", cfg.AuthRateLimit.VerifyEmailOTPEmailWindow.String())
 	assert.Equal(t, "15m0s", cfg.AuthRateLimit.ResetPasswordTokenWindow.String())
 }
 
@@ -262,6 +323,11 @@ func TestNewConfig_InvalidAuthRateLimit(t *testing.T) {
 			name:  "zero reset token max",
 			key:   "AUTH_RATE_LIMIT_RESET_PASSWORD_TOKEN_MAX",
 			value: "0",
+		},
+		{
+			name:  "zero verify otp email window",
+			key:   "AUTH_RATE_LIMIT_VERIFY_EMAIL_OTP_EMAIL_WINDOW",
+			value: "0s",
 		},
 	}
 

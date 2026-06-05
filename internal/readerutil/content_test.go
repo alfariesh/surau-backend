@@ -49,6 +49,40 @@ func TestNormalizeContentSanitizesUnsafeHTML(t *testing.T) {
 	assert.Equal(t, "باب رابط", text)
 }
 
+func TestStructureSourceContentPlainText(t *testing.T) {
+	t.Parallel()
+
+	content := "المسألة الأولى\nنص أول (¬١)\n{قُلْ هُوَ اللَّهُ أَحَدٌ} [الإخلاص- ١]\n_________\n(¬١) حاشية أولى\nتتمة الحاشية\n\nنص آخر"
+
+	got := readerutil.StructureSourceContent(content)
+
+	assert.Equal(t, readerutil.SourceFormatPlainText, got.Format)
+	assert.Contains(t, got.HTML, `<h3 dir="rtl" lang="ar">المسألة الأولى</h3>`)
+	assert.Contains(t, got.HTML, `<p dir="rtl" lang="ar">نص أول <sup data-type="footnote-ref">(¬١)</sup></p>`)
+	assert.Contains(t, got.HTML, `<blockquote data-type="quran-quote" dir="rtl" lang="ar">{قُلْ هُوَ اللَّهُ أَحَدٌ} [الإخلاص- ١]</blockquote>`)
+	assert.Contains(t, got.HTML, `<section data-type="footnotes" dir="rtl" lang="ar">`)
+	assert.Len(t, got.Blocks, 4)
+	assert.Equal(t, readerutil.SourceBlockHeading, got.Blocks[0].Type)
+	assert.Len(t, got.Blocks[2].QuranCitations, 1)
+	assert.Equal(t, "الإخلاص- ١", got.Blocks[2].QuranCitations[0].Reference)
+	assert.Len(t, got.Footnotes, 1)
+	assert.Equal(t, "(¬١)", got.Footnotes[0].Marker)
+	assert.Equal(t, "حاشية أولى\nتتمة الحاشية", got.Footnotes[0].Text)
+	assert.Contains(t, got.Text, "_________")
+}
+
+func TestStructureSourceContentKeepsSemanticHTML(t *testing.T) {
+	t.Parallel()
+
+	got := readerutil.StructureSourceContent(`<p onclick="bad()">نص</p><script>alert(1)</script>`)
+
+	assert.Equal(t, readerutil.SourceFormatHTML, got.Format)
+	assert.Equal(t, "<p>نص</p>", got.HTML)
+	assert.Equal(t, "نص", got.Text)
+	assert.Len(t, got.Blocks, 1)
+	assert.Equal(t, readerutil.SourceBlockHTML, got.Blocks[0].Type)
+}
+
 func TestDecorateHeadingsAndRanges(t *testing.T) {
 	t.Parallel()
 
@@ -78,4 +112,25 @@ func TestSliceAnchoredHTML(t *testing.T) {
 	got := readerutil.SliceAnchoredHTML(content, "toc-1", "toc-2")
 
 	assert.Equal(t, "<span data-type='title' id=toc-1>أول</span> body", got)
+}
+
+func TestSliceSectionContentFallsBackToPlainHeading(t *testing.T) {
+	t.Parallel()
+
+	content := "بسم الله الرحمن الرحيم\nالمسألة الأولى\nنص المسألة\n\nالمسألة الثانية\nنص آخر"
+
+	got := readerutil.SliceSectionContent(content, "toc-1", "toc-2", "المسألة الأولى [تفصيل]", "المسألة الثانية [تفصيل]")
+
+	assert.Equal(t, "بسم الله الرحمن الرحيم\nالمسألة الأولى\nنص المسألة", got)
+}
+
+func TestSliceSectionContentTrimsLongPlainPrefix(t *testing.T) {
+	t.Parallel()
+
+	prefix := "هذه بقية طويلة من الباب السابق وفيها كلام كثير ينبغي ألا يدخل في المسألة الجديدة لأنها ليست منها"
+	content := prefix + "\nالمسألة الأولى\nنص المسألة\n\nالمسألة الثانية\nنص آخر"
+
+	got := readerutil.SliceSectionContent(content, "toc-1", "toc-2", "المسألة الأولى [تفصيل]", "المسألة الثانية [تفصيل]")
+
+	assert.Equal(t, "المسألة الأولى\nنص المسألة", got)
 }

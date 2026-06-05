@@ -40,6 +40,10 @@ created_by, updated_by, created_at, updated_at`
 	emailCampaignRecipientColumns = `
 id, campaign_id, user_id, email, lang, COALESCE(unsubscribe_url, ''), status,
 COALESCE(message_id::text, ''), COALESCE(error, ''), sent_at, created_at, updated_at`
+	emailDeliveryEventColumns = `
+id, dedupe_key, provider, event_type, recipient_email, COALESCE(message_id::text, ''),
+COALESCE(campaign_id::text, ''), COALESCE(campaign_recipient_id::text, ''),
+COALESCE(reason, ''), COALESCE(diagnostic, ''), raw_payload, occurred_at, created_at`
 )
 
 // EmailRepo stores email templates, logs, consent, suppressions, and campaigns.
@@ -677,6 +681,12 @@ func (r *EmailRepo) UpsertEmailSubscription(
 	ctx context.Context,
 	subscription entity.EmailSubscription,
 ) (entity.EmailSubscription, error) {
+	tx, err := r.Pool.Begin(ctx)
+	if err != nil {
+		return entity.EmailSubscription{}, fmt.Errorf("EmailRepo - UpsertEmailSubscription - Begin: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
 	optedInAt := subscription.OptedInAt
 	optedOutAt := subscription.OptedOutAt
 	if subscription.MarketingOptIn && optedInAt == nil {
@@ -700,7 +710,7 @@ ON CONFLICT (user_id) DO UPDATE SET
     updated_at = now()
 RETURNING user_id, marketing_opt_in, opted_in_at, opted_out_at, COALESCE(source, ''), created_at, updated_at`
 
-	return scanEmailSubscription(r.Pool.QueryRow(
+	updated, err := scanEmailSubscription(tx.QueryRow(
 		ctx,
 		query,
 		subscription.UserID,
@@ -709,6 +719,36 @@ RETURNING user_id, marketing_opt_in, opted_in_at, opted_out_at, COALESCE(source,
 		optedOutAt,
 		nullableStringArg(subscription.Source),
 	))
+	if err != nil {
+		return entity.EmailSubscription{}, err
+	}
+	if updated.MarketingOptIn {
+		_, err = tx.Exec(
+			ctx,
+			`DELETE FROM email_suppressions
+WHERE scope = $1
+  AND reason = 'unsubscribe'
+  AND email_normalized = (
+      SELECT lower(email)
+      FROM users
+      WHERE id = $2
+        AND deleted_at IS NULL
+  )`,
+			entity.EmailSuppressionScopeMarketing,
+			updated.UserID,
+		)
+		if err != nil {
+			return entity.EmailSubscription{}, fmt.Errorf(
+				"EmailRepo - UpsertEmailSubscription - DeleteSuppression: %w",
+				err,
+			)
+		}
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return entity.EmailSubscription{}, fmt.Errorf("EmailRepo - UpsertEmailSubscription - Commit: %w", err)
+	}
+
+	return updated, nil
 }
 
 func (r *EmailRepo) UnsubscribeEmail(
@@ -815,6 +855,13 @@ func (r *EmailRepo) CreateEmailSuppression(
 	return createEmailSuppressionTx(ctx, r.Pool, suppression)
 }
 
+func (r *EmailRepo) UpsertAutomaticEmailSuppression(
+	ctx context.Context,
+	suppression entity.EmailSuppression,
+) (entity.EmailSuppression, error) {
+	return upsertAutomaticEmailSuppressionTx(ctx, r.Pool, suppression)
+}
+
 func (r *EmailRepo) DeleteEmailSuppression(ctx context.Context, id string) error {
 	sqlText, args, err := r.Builder.
 		Delete("email_suppressions").
@@ -862,6 +909,52 @@ func (r *EmailRepo) IsEmailSuppressed(ctx context.Context, email, category strin
 	}
 
 	return true, nil
+}
+
+func (r *EmailRepo) UpsertEmailDeliveryEvent(
+	ctx context.Context,
+	event entity.EmailDeliveryEvent,
+) (entity.EmailDeliveryEvent, bool, error) {
+	rawPayload := event.RawPayload
+	if len(rawPayload) == 0 {
+		rawPayload = entity.RawJSON(`{}`)
+	}
+	const query = `
+INSERT INTO email_delivery_events (
+    id, dedupe_key, provider, event_type, recipient_email, message_id, campaign_id,
+    campaign_recipient_id, reason, diagnostic, raw_payload, occurred_at, created_at
+) VALUES (
+    $1::uuid, $2::varchar, $3::varchar, $4::varchar, lower($5::varchar), $6::uuid, $7::uuid,
+    $8::uuid, $9::varchar, $10::text, $11::jsonb, $12::timestamp, $13::timestamp
+)
+ON CONFLICT (dedupe_key) DO UPDATE SET
+    dedupe_key = email_delivery_events.dedupe_key
+RETURNING ` + emailDeliveryEventColumns + `, (xmax = 0) AS inserted`
+
+	var inserted bool
+	created, err := scanEmailDeliveryEventWithInserted(r.Pool.QueryRow(
+		ctx,
+		query,
+		event.ID,
+		event.DedupeKey,
+		event.Provider,
+		event.EventType,
+		event.RecipientEmail,
+		nullableStringArg(event.MessageID),
+		nullableStringArg(event.CampaignID),
+		nullableStringArg(event.CampaignRecipient),
+		nullableStringArg(event.Reason),
+		nullableStringArg(event.Diagnostic),
+		[]byte(rawPayload),
+		event.OccurredAt,
+		event.CreatedAt,
+	))
+	if err != nil {
+		return entity.EmailDeliveryEvent{}, false, err
+	}
+	inserted = created.inserted
+
+	return created.event, inserted, nil
 }
 
 func (r *EmailRepo) CreateEmailCampaign(
@@ -970,6 +1063,61 @@ func (r *EmailRepo) GetEmailCampaign(ctx context.Context, id string) (entity.Ema
 	}
 
 	return scanEmailCampaign(r.Pool.QueryRow(ctx, sqlText, args...))
+}
+
+func (r *EmailRepo) ClaimEmailCampaignForSending(
+	ctx context.Context,
+	id,
+	actorID string,
+) (entity.EmailCampaign, error) {
+	sqlText, args, err := r.Builder.
+		Update("email_campaigns").
+		Set("status", entity.EmailCampaignStatusSending).
+		Set("updated_by", nullableStringArg(actorID)).
+		Set("updated_at", sq.Expr("now()")).
+		Where(sq.Eq{"id": id}).
+		Where(sq.Eq{"status": []string{
+			entity.EmailCampaignStatusDraft,
+			entity.EmailCampaignStatusScheduled,
+		}}).
+		Suffix("RETURNING " + emailCampaignColumns).
+		ToSql()
+	if err != nil {
+		return entity.EmailCampaign{}, fmt.Errorf("EmailRepo - ClaimEmailCampaignForSending - Builder: %w", err)
+	}
+
+	campaign, err := scanEmailCampaign(r.Pool.QueryRow(ctx, sqlText, args...))
+	if errors.Is(err, entity.ErrEmailCampaignNotFound) {
+		return entity.EmailCampaign{}, entity.ErrInvalidEmailCampaign
+	}
+
+	return campaign, err
+}
+
+func (r *EmailRepo) ClaimEmailCampaignForRetry(
+	ctx context.Context,
+	id,
+	actorID string,
+) (entity.EmailCampaign, error) {
+	sqlText, args, err := r.Builder.
+		Update("email_campaigns").
+		Set("status", entity.EmailCampaignStatusSending).
+		Set("updated_by", nullableStringArg(actorID)).
+		Set("updated_at", sq.Expr("now()")).
+		Where(sq.Eq{"id": id}).
+		Where(sq.Eq{"status": entity.EmailCampaignStatusSent}).
+		Suffix("RETURNING " + emailCampaignColumns).
+		ToSql()
+	if err != nil {
+		return entity.EmailCampaign{}, fmt.Errorf("EmailRepo - ClaimEmailCampaignForRetry - Builder: %w", err)
+	}
+
+	campaign, err := scanEmailCampaign(r.Pool.QueryRow(ctx, sqlText, args...))
+	if errors.Is(err, entity.ErrEmailCampaignNotFound) {
+		return entity.EmailCampaign{}, entity.ErrInvalidEmailCampaign
+	}
+
+	return campaign, err
 }
 
 func (r *EmailRepo) UpdateEmailCampaign(
@@ -1155,6 +1303,83 @@ func (r *EmailRepo) ListEmailCampaignRecipients(
 	return recipients, nil
 }
 
+func (r *EmailRepo) ListEmailCampaignRecipientsForRetry(
+	ctx context.Context,
+	campaignID string,
+	cutoff time.Time,
+	limit int,
+) ([]entity.EmailCampaignRecipient, error) {
+	if limit <= 0 || limit > 1000 {
+		limit = 1000
+	}
+	sqlText, args, err := r.Builder.
+		Select(emailCampaignRecipientColumns).
+		From("email_campaign_recipients").
+		Where(sq.Eq{"campaign_id": campaignID}).
+		Where(sq.Eq{"status": entity.EmailRecipientStatusFailed}).
+		Where("updated_at < ?", cutoff).
+		OrderBy("updated_at ASC", "created_at ASC").
+		Limit(uint64(limit)).
+		ToSql()
+	if err != nil {
+		return nil, fmt.Errorf("EmailRepo - ListEmailCampaignRecipientsForRetry - Builder: %w", err)
+	}
+	rows, err := r.Pool.Query(ctx, sqlText, args...)
+	if err != nil {
+		return nil, fmt.Errorf("EmailRepo - ListEmailCampaignRecipientsForRetry - Query: %w", err)
+	}
+	defer rows.Close()
+
+	recipients := make([]entity.EmailCampaignRecipient, 0)
+	for rows.Next() {
+		recipient, err := scanEmailCampaignRecipient(rows)
+		if err != nil {
+			return nil, err
+		}
+		recipients = append(recipients, recipient)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("EmailRepo - ListEmailCampaignRecipientsForRetry - rows: %w", err)
+	}
+
+	return recipients, nil
+}
+
+func (r *EmailRepo) CountEmailCampaignRecipientsByStatus(
+	ctx context.Context,
+	campaignID string,
+) (map[string]int, error) {
+	sqlText, args, err := r.Builder.
+		Select("status", "count(*)").
+		From("email_campaign_recipients").
+		Where(sq.Eq{"campaign_id": campaignID}).
+		GroupBy("status").
+		ToSql()
+	if err != nil {
+		return nil, fmt.Errorf("EmailRepo - CountEmailCampaignRecipientsByStatus - Builder: %w", err)
+	}
+	rows, err := r.Pool.Query(ctx, sqlText, args...)
+	if err != nil {
+		return nil, fmt.Errorf("EmailRepo - CountEmailCampaignRecipientsByStatus - Query: %w", err)
+	}
+	defer rows.Close()
+
+	counts := map[string]int{}
+	for rows.Next() {
+		var status string
+		var count int
+		if err := rows.Scan(&status, &count); err != nil {
+			return nil, fmt.Errorf("EmailRepo - CountEmailCampaignRecipientsByStatus - Scan: %w", err)
+		}
+		counts[status] = count
+	}
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("EmailRepo - CountEmailCampaignRecipientsByStatus - rows: %w", err)
+	}
+
+	return counts, nil
+}
+
 func (r *EmailRepo) UpdateEmailCampaignRecipientStatus(
 	ctx context.Context,
 	id,
@@ -1274,6 +1499,39 @@ RETURNING id, email, scope, reason, created_by, created_at`
 		suppression.Scope,
 		suppression.Reason,
 		nullableStringPtrArg(suppression.CreatedBy),
+		suppression.CreatedAt,
+	))
+}
+
+func upsertAutomaticEmailSuppressionTx(
+	ctx context.Context,
+	execer interface {
+		QueryRow(context.Context, string, ...any) pgx.Row
+	},
+	suppression entity.EmailSuppression,
+) (entity.EmailSuppression, error) {
+	const query = `
+INSERT INTO email_suppressions (
+    id, email, email_normalized, scope, reason, created_by, created_at
+) VALUES ($1::uuid, $2::varchar, lower($2::varchar), $3::varchar, $4::varchar, NULL, $5::timestamp)
+ON CONFLICT (email_normalized, scope) DO UPDATE SET
+    email = CASE
+        WHEN email_suppressions.created_by IS NOT NULL THEN email_suppressions.email
+        ELSE EXCLUDED.email
+    END,
+    reason = CASE
+        WHEN email_suppressions.created_by IS NOT NULL THEN email_suppressions.reason
+        ELSE EXCLUDED.reason
+    END
+RETURNING id, email, scope, reason, created_by, created_at`
+
+	return scanEmailSuppression(execer.QueryRow(
+		ctx,
+		query,
+		suppression.ID,
+		suppression.Email,
+		suppression.Scope,
+		suppression.Reason,
 		suppression.CreatedAt,
 	))
 }
@@ -1585,6 +1843,42 @@ func scanEmailSuppressionWithTotal(row rowScanner) (entity.EmailSuppression, int
 	suppression.CreatedBy = nullableString(createdBy)
 
 	return suppression, total, nil
+}
+
+type emailDeliveryEventInsertResult struct {
+	event    entity.EmailDeliveryEvent
+	inserted bool
+}
+
+func scanEmailDeliveryEventWithInserted(row rowScanner) (emailDeliveryEventInsertResult, error) {
+	var event entity.EmailDeliveryEvent
+	var rawPayload []byte
+	var inserted bool
+	err := row.Scan(
+		&event.ID,
+		&event.DedupeKey,
+		&event.Provider,
+		&event.EventType,
+		&event.RecipientEmail,
+		&event.MessageID,
+		&event.CampaignID,
+		&event.CampaignRecipient,
+		&event.Reason,
+		&event.Diagnostic,
+		&rawPayload,
+		&event.OccurredAt,
+		&event.CreatedAt,
+		&inserted,
+	)
+	if err != nil {
+		return emailDeliveryEventInsertResult{}, fmt.Errorf(
+			"EmailRepo - scanEmailDeliveryEventWithInserted - Scan: %w",
+			err,
+		)
+	}
+	event.RawPayload = entity.RawJSON(rawPayload)
+
+	return emailDeliveryEventInsertResult{event: event, inserted: inserted}, nil
 }
 
 func scanEmailCampaign(row rowScanner) (entity.EmailCampaign, error) {

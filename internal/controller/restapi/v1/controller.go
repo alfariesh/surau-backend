@@ -8,15 +8,16 @@ import (
 
 // V1 -.
 type V1 struct {
-	t         usecase.Translation
-	u         usecase.User
-	tk        usecase.Task
-	reader    usecase.Reader
-	bookRAG   usecase.BookRAG
-	quran     usecase.Quran
-	personal  usecase.Personal
-	editorial usecase.Editorial
-	email     usecase.EmailAdmin
-	l         logger.Interface
-	v         *validator.Validate
+	t                  usecase.Translation
+	u                  usecase.User
+	tk                 usecase.Task
+	reader             usecase.Reader
+	bookRAG            usecase.BookRAG
+	quran              usecase.Quran
+	personal           usecase.Personal
+	editorial          usecase.Editorial
+	email              usecase.EmailAdmin
+	emailWebhookSecret string
+	l                  logger.Interface
+	v                  *validator.Validate
 }

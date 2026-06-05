@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/mail"
 	"net/url"
@@ -72,14 +73,20 @@ type (
 		ReplyTo                  string        `env:"EMAIL_REPLY_TO"`
 		VerifyFrontendURL        string        `env:"EMAIL_VERIFY_FRONTEND_URL"`
 		VerificationTTL          time.Duration `env:"EMAIL_VERIFICATION_TTL" envDefault:"24h"`
+		VerificationOTPTTL       time.Duration `env:"EMAIL_VERIFICATION_OTP_TTL" envDefault:"10m"`
 		ResendCooldown           time.Duration `env:"EMAIL_RESEND_COOLDOWN" envDefault:"1m"`
 		PasswordResetFrontendURL string        `env:"PASSWORD_RESET_FRONTEND_URL"`
 		PasswordResetTTL         time.Duration `env:"PASSWORD_RESET_TTL" envDefault:"1h"`
 		PasswordResetCooldown    time.Duration `env:"PASSWORD_RESET_RESEND_COOLDOWN" envDefault:"1m"`
 		EmailChangeFrontendURL   string        `env:"EMAIL_CHANGE_FRONTEND_URL"`
 		EmailChangeTTL           time.Duration `env:"EMAIL_CHANGE_TTL" envDefault:"24h"`
+		EmailChangeOTPTTL        time.Duration `env:"EMAIL_CHANGE_OTP_TTL" envDefault:"10m"`
 		EmailChangeCooldown      time.Duration `env:"EMAIL_CHANGE_RESEND_COOLDOWN" envDefault:"1m"`
 		UnsubscribeFrontendURL   string        `env:"EMAIL_UNSUBSCRIBE_FRONTEND_URL"`
+		UnsubscribeTokenKeyID    string        `env:"EMAIL_UNSUBSCRIBE_TOKEN_KEY_ID" envDefault:"default"`
+		UnsubscribeTokenSecret   string        `env:"EMAIL_UNSUBSCRIBE_TOKEN_SECRET"`
+		UnsubscribeTokenSecrets  string        `env:"EMAIL_UNSUBSCRIBE_TOKEN_SECRETS"`
+		CloudflareWebhookSecret  string        `env:"EMAIL_CLOUDFLARE_WEBHOOK_SECRET"`
 		HTTPTimeout              time.Duration `env:"EMAIL_HTTP_TIMEOUT" envDefault:"10s"`
 	}
 
@@ -98,6 +105,10 @@ type (
 		ForgotPasswordEmailWindow     time.Duration `env:"AUTH_RATE_LIMIT_FORGOT_PASSWORD_EMAIL_WINDOW" envDefault:"1h"`
 		ForgotPasswordIPMax           int           `env:"AUTH_RATE_LIMIT_FORGOT_PASSWORD_IP_MAX" envDefault:"20"`
 		ForgotPasswordIPWindow        time.Duration `env:"AUTH_RATE_LIMIT_FORGOT_PASSWORD_IP_WINDOW" envDefault:"1h"`
+		VerifyEmailOTPEmailMax        int           `env:"AUTH_RATE_LIMIT_VERIFY_EMAIL_OTP_EMAIL_MAX" envDefault:"5"`
+		VerifyEmailOTPEmailWindow     time.Duration `env:"AUTH_RATE_LIMIT_VERIFY_EMAIL_OTP_EMAIL_WINDOW" envDefault:"15m"`
+		VerifyEmailOTPIPMax           int           `env:"AUTH_RATE_LIMIT_VERIFY_EMAIL_OTP_IP_MAX" envDefault:"30"`
+		VerifyEmailOTPIPWindow        time.Duration `env:"AUTH_RATE_LIMIT_VERIFY_EMAIL_OTP_IP_WINDOW" envDefault:"15m"`
 		ResendVerificationEmailMax    int           `env:"AUTH_RATE_LIMIT_RESEND_VERIFICATION_EMAIL_MAX" envDefault:"3"`
 		ResendVerificationEmailWindow time.Duration `env:"AUTH_RATE_LIMIT_RESEND_VERIFICATION_EMAIL_WINDOW" envDefault:"1h"`
 		ResendVerificationIPMax       int           `env:"AUTH_RATE_LIMIT_RESEND_VERIFICATION_IP_MAX" envDefault:"20"`
@@ -186,6 +197,23 @@ func NewConfig() (*Config, error) {
 	cfg.Email.PasswordResetFrontendURL = strings.TrimSpace(cfg.Email.PasswordResetFrontendURL)
 	cfg.Email.EmailChangeFrontendURL = strings.TrimSpace(cfg.Email.EmailChangeFrontendURL)
 	cfg.Email.UnsubscribeFrontendURL = strings.TrimSpace(cfg.Email.UnsubscribeFrontendURL)
+	cfg.Email.UnsubscribeTokenKeyID = strings.TrimSpace(cfg.Email.UnsubscribeTokenKeyID)
+	cfg.Email.UnsubscribeTokenSecret = strings.TrimSpace(cfg.Email.UnsubscribeTokenSecret)
+	cfg.Email.UnsubscribeTokenSecrets = strings.TrimSpace(cfg.Email.UnsubscribeTokenSecrets)
+	cfg.Email.CloudflareWebhookSecret = strings.TrimSpace(cfg.Email.CloudflareWebhookSecret)
+	if cfg.Email.UnsubscribeTokenKeyID == "" {
+		return nil, fmt.Errorf("config error: EMAIL_UNSUBSCRIBE_TOKEN_KEY_ID must not be empty")
+	}
+	if !validUnsubscribeTokenKeyID(cfg.Email.UnsubscribeTokenKeyID) {
+		return nil, fmt.Errorf("config error: EMAIL_UNSUBSCRIBE_TOKEN_KEY_ID contains unsupported characters")
+	}
+	if err := validateUnsubscribeTokenSecrets(
+		cfg.Email.UnsubscribeTokenKeyID,
+		cfg.Email.UnsubscribeTokenSecret,
+		cfg.Email.UnsubscribeTokenSecrets,
+	); err != nil {
+		return nil, err
+	}
 	switch cfg.Email.DeliveryMode {
 	case EmailDeliveryModeCloudflare:
 		if strings.TrimSpace(cfg.Email.CloudflareAccountID) == "" {
@@ -222,6 +250,9 @@ func NewConfig() (*Config, error) {
 	if cfg.Email.VerificationTTL <= 0 {
 		return nil, fmt.Errorf("config error: EMAIL_VERIFICATION_TTL must be positive")
 	}
+	if cfg.Email.VerificationOTPTTL <= 0 {
+		return nil, fmt.Errorf("config error: EMAIL_VERIFICATION_OTP_TTL must be positive")
+	}
 	if cfg.Email.ResendCooldown <= 0 {
 		return nil, fmt.Errorf("config error: EMAIL_RESEND_COOLDOWN must be positive")
 	}
@@ -233,6 +264,9 @@ func NewConfig() (*Config, error) {
 	}
 	if cfg.Email.EmailChangeTTL <= 0 {
 		return nil, fmt.Errorf("config error: EMAIL_CHANGE_TTL must be positive")
+	}
+	if cfg.Email.EmailChangeOTPTTL <= 0 {
+		return nil, fmt.Errorf("config error: EMAIL_CHANGE_OTP_TTL must be positive")
 	}
 	if cfg.Email.EmailChangeCooldown <= 0 {
 		return nil, fmt.Errorf("config error: EMAIL_CHANGE_RESEND_COOLDOWN must be positive")
@@ -280,6 +314,18 @@ func NewConfig() (*Config, error) {
 			return nil, err
 		}
 		if err := validatePositiveDuration("AUTH_RATE_LIMIT_FORGOT_PASSWORD_IP_WINDOW", cfg.AuthRateLimit.ForgotPasswordIPWindow); err != nil {
+			return nil, err
+		}
+		if err := validatePositiveInt("AUTH_RATE_LIMIT_VERIFY_EMAIL_OTP_EMAIL_MAX", cfg.AuthRateLimit.VerifyEmailOTPEmailMax); err != nil {
+			return nil, err
+		}
+		if err := validatePositiveDuration("AUTH_RATE_LIMIT_VERIFY_EMAIL_OTP_EMAIL_WINDOW", cfg.AuthRateLimit.VerifyEmailOTPEmailWindow); err != nil {
+			return nil, err
+		}
+		if err := validatePositiveInt("AUTH_RATE_LIMIT_VERIFY_EMAIL_OTP_IP_MAX", cfg.AuthRateLimit.VerifyEmailOTPIPMax); err != nil {
+			return nil, err
+		}
+		if err := validatePositiveDuration("AUTH_RATE_LIMIT_VERIFY_EMAIL_OTP_IP_WINDOW", cfg.AuthRateLimit.VerifyEmailOTPIPWindow); err != nil {
 			return nil, err
 		}
 		if err := validatePositiveInt("AUTH_RATE_LIMIT_RESEND_VERIFICATION_EMAIL_MAX", cfg.AuthRateLimit.ResendVerificationEmailMax); err != nil {
@@ -394,6 +440,55 @@ func validAbsoluteHTTPURL(value string) bool {
 	}
 
 	return parsedURL.IsAbs() && (parsedURL.Scheme == "http" || parsedURL.Scheme == "https") && parsedURL.Host != ""
+}
+
+func validUnsubscribeTokenKeyID(value string) bool {
+	value = strings.TrimSpace(value)
+	if value == "" || len(value) > 128 {
+		return false
+	}
+	for _, r := range value {
+		if (r >= 'a' && r <= 'z') ||
+			(r >= 'A' && r <= 'Z') ||
+			(r >= '0' && r <= '9') ||
+			r == '-' ||
+			r == '_' {
+			continue
+		}
+
+		return false
+	}
+
+	return true
+}
+
+func validateUnsubscribeTokenSecrets(keyID, currentSecret, rawSecrets string) error {
+	currentSecret = strings.TrimSpace(currentSecret)
+	rawSecrets = strings.TrimSpace(rawSecrets)
+	if rawSecrets == "" {
+		return nil
+	}
+
+	secrets := map[string]string{}
+	if err := json.Unmarshal([]byte(rawSecrets), &secrets); err != nil {
+		return fmt.Errorf("config error: EMAIL_UNSUBSCRIBE_TOKEN_SECRETS must be a JSON object")
+	}
+	if len(secrets) == 0 {
+		return fmt.Errorf("config error: EMAIL_UNSUBSCRIBE_TOKEN_SECRETS must not be empty")
+	}
+	for key, secret := range secrets {
+		if !validUnsubscribeTokenKeyID(key) {
+			return fmt.Errorf("config error: EMAIL_UNSUBSCRIBE_TOKEN_SECRETS contains invalid key id")
+		}
+		if strings.TrimSpace(secret) == "" {
+			return fmt.Errorf("config error: EMAIL_UNSUBSCRIBE_TOKEN_SECRETS contains empty secret")
+		}
+	}
+	if strings.TrimSpace(secrets[keyID]) == "" && currentSecret == "" {
+		return fmt.Errorf("config error: EMAIL_UNSUBSCRIBE_TOKEN_SECRETS must include EMAIL_UNSUBSCRIBE_TOKEN_KEY_ID or EMAIL_UNSUBSCRIBE_TOKEN_SECRET must be set")
+	}
+
+	return nil
 }
 
 func validatePositiveInt(name string, value int) error {

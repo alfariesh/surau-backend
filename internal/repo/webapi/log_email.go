@@ -18,9 +18,9 @@ func NewLogEmailSender() *LogEmailSender {
 }
 
 // Send logs the email recipient, subject, and first detected link.
-func (s *LogEmailSender) Send(ctx context.Context, message entity.EmailMessage) error {
+func (s *LogEmailSender) Send(ctx context.Context, message entity.EmailMessage) (entity.EmailSendResult, error) {
 	if err := ctx.Err(); err != nil {
-		return err
+		return entity.EmailSendResult{}, err
 	}
 
 	link := firstHTTPLink(message.Text)
@@ -29,14 +29,17 @@ func (s *LogEmailSender) Send(ctx context.Context, message entity.EmailMessage) 
 	}
 
 	log.Printf(
-		"DEV_EMAIL to=%q subject=%q link=%q text=%q",
+		"DEV_EMAIL to=%q subject=%q link=%q",
 		message.To,
 		message.Subject,
 		link,
-		strings.TrimSpace(message.Text),
 	)
 
-	return nil
+	return entity.EmailSendResult{
+		Provider:         entity.EmailProviderLog,
+		Delivered:        []string{message.To},
+		ProviderResponse: "log",
+	}, nil
 }
 
 func firstHTTPLink(text string) string {

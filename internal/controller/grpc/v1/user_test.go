@@ -78,7 +78,7 @@ func (s stubAuthUser) SetRoleByEmail(context.Context, string, string, string, st
 	return entity.User{}, nil
 }
 
-func (s stubAuthUser) VerifyEmail(context.Context, string) error {
+func (s stubAuthUser) VerifyEmail(context.Context, string, string, string) error {
 	return s.verifyErr
 }
 
@@ -102,7 +102,7 @@ func (s stubAuthUser) RequestEmailChange(context.Context, string, string, string
 	return nil
 }
 
-func (s stubAuthUser) VerifyEmailChange(context.Context, string, string) error {
+func (s stubAuthUser) VerifyEmailChange(context.Context, string, string, string) error {
 	return nil
 }
 

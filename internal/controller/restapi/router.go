@@ -83,6 +83,6 @@ func NewRouter(
 	// Routers
 	apiV1Group := app.Group("/v1")
 	{
-		v1.NewRoutes(apiV1Group, r, bookRAG, q, u, p, e, email, jwtManager, l)
+		v1.NewRoutes(apiV1Group, r, bookRAG, q, u, p, e, email, cfg.Email.CloudflareWebhookSecret, jwtManager, l)
 	}
 }

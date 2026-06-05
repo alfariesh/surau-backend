@@ -63,3 +63,46 @@ func TestEmailManagementMigrationSmoke(t *testing.T) {
 		assert.Contains(t, downSQL, "DROP TABLE IF EXISTS "+table, table)
 	}
 }
+
+func TestEmailOTPMigrationSmoke(t *testing.T) {
+	t.Parallel()
+
+	up, err := os.ReadFile("../../../migrations/20260605000001_add_email_otp.up.sql")
+	require.NoError(t, err)
+	upSQL := string(up)
+
+	assert.Contains(t, upSQL, "ALTER TABLE email_verification_tokens")
+	assert.Contains(t, upSQL, "ALTER TABLE email_change_tokens")
+	assert.Contains(t, upSQL, "otp_hash")
+	assert.Contains(t, upSQL, "otp_expires_at")
+	assert.Contains(t, upSQL, "{{.otp}}")
+	assert.Contains(t, upSQL, "{{.otp_duration}}")
+
+	down, err := os.ReadFile("../../../migrations/20260605000001_add_email_otp.down.sql")
+	require.NoError(t, err)
+	downSQL := string(down)
+
+	assert.Contains(t, downSQL, "DROP COLUMN IF EXISTS otp_expires_at")
+	assert.Contains(t, downSQL, "DROP COLUMN IF EXISTS otp_hash")
+	assert.Contains(t, downSQL, "array_remove(array_remove(v.required_variables, 'otp'), 'otp_duration')")
+}
+
+func TestEmailDeliveryEventsMigrationSmoke(t *testing.T) {
+	t.Parallel()
+
+	up, err := os.ReadFile("../../../migrations/20260605000002_email_delivery_events.up.sql")
+	require.NoError(t, err)
+	upSQL := string(up)
+
+	assert.Contains(t, upSQL, "CREATE TABLE IF NOT EXISTS email_delivery_events")
+	assert.Contains(t, upSQL, "dedupe_key")
+	assert.Contains(t, upSQL, "raw_payload JSONB")
+	assert.Contains(t, upSQL, "CHECK (event_type IN ('bounce_hard', 'complaint'))")
+	assert.Contains(t, upSQL, "CREATE UNIQUE INDEX IF NOT EXISTS idx_email_delivery_events_dedupe")
+	assert.Contains(t, upSQL, "idx_email_delivery_events_message")
+	assert.Contains(t, upSQL, "idx_email_delivery_events_campaign")
+
+	down, err := os.ReadFile("../../../migrations/20260605000002_email_delivery_events.down.sql")
+	require.NoError(t, err)
+	assert.Contains(t, string(down), "DROP TABLE IF EXISTS email_delivery_events")
+}

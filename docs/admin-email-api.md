@@ -22,7 +22,7 @@ Transactional templates are seeded for:
 
 Transactional templates should have published `id`, `en`, and `ar` versions. Marketing templates require `id`; `en` and `ar` are optional but recommended.
 
-Template variables use Go template syntax, for example `{{.name}}` and `{{.link}}`. The backend validates `required_variables` before previewing or sending.
+Template variables use Go template syntax, for example `{{.name}}` and `{{.link}}`. Verification templates also receive `{{.otp}}` and `{{.otp_duration}}`. The backend validates `required_variables` before previewing or sending.
 
 ## Admin Templates
 
@@ -143,6 +143,8 @@ Message log:
 GET /v1/admin/emails/messages?category=marketing&status=failed&email=user@example.com&limit=50&offset=0
 ```
 
+Sensitive message metadata such as `link`, `otp`, `token`, `unsubscribe_url`, and URL values with a `token` query parameter are stored as `[redacted]`.
+
 Suppression list:
 
 ```http
@@ -202,6 +204,7 @@ POST /v1/admin/emails/campaigns/{id}/preview-audience
 POST /v1/admin/emails/campaigns/{id}/test-send
 POST /v1/admin/emails/campaigns/{id}/schedule
 POST /v1/admin/emails/campaigns/{id}/send-now
+POST /v1/admin/emails/campaigns/{id}/retry-failed
 POST /v1/admin/emails/campaigns/{id}/cancel
 ```
 
@@ -215,6 +218,8 @@ Schedule body:
 
 Campaign statuses are `draft`, `scheduled`, `sending`, `sent`, and `cancelled`.
 Recipient statuses are `pending`, `sent`, `failed`, and `skipped`.
+After send, campaign `metadata` includes `delivery_total`, `delivery_sent`, `delivery_failed`, `delivery_skipped`, and `delivery_finished_at`.
+`retry-failed` is valid only for `sent` campaigns and retries only recipients whose campaign-recipient status is currently `failed`.
 
 ## User Preferences And Unsubscribe
 
@@ -233,6 +238,8 @@ Patch body:
 }
 ```
 
+Setting `marketing_opt_in=true` also removes the user's `marketing/unsubscribe` suppression entry when one exists.
+
 Public unsubscribe endpoints for FE pages:
 
 ```http
@@ -249,3 +256,25 @@ POST body:
 ```
 
 Successful unsubscribe returns the updated `EmailSubscription`.
+
+## Cloudflare Bounce Webhook
+
+```http
+POST /v1/email/webhooks/cloudflare/bounces
+```
+
+Header:
+
+```http
+cf-webhook-auth: {EMAIL_CLOUDFLARE_WEBHOOK_SECRET}
+```
+
+The endpoint is disabled with `404` when `EMAIL_CLOUDFLARE_WEBHOOK_SECRET` is empty. Valid hard bounce or complaint events create an audit row, upsert an `all` suppression, and return:
+
+```json
+{
+  "accepted": 1,
+  "processed": 1,
+  "suppressed": 1
+}
+```

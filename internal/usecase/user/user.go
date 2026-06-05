@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"html"
+	"math/big"
 	"net/mail"
 	"net/url"
 	"strings"
@@ -35,6 +36,8 @@ const (
 	passwordResetTokenBytes = 32
 	emailChangeTokenBytes   = 32
 	maxResetTokenInputBytes = 512
+	otpDigits               = 6
+	otpMaxValue             = 1000000
 	maxEmailUserAgentRunes  = 160
 	defaultSupportEmail     = "support@surau.org"
 )
@@ -89,12 +92,14 @@ type UseCase struct {
 	emailService             TransactionalEmailService
 	verifyFrontendURL        string
 	verificationTTL          time.Duration
+	verificationOTPTTL       time.Duration
 	resendCooldown           time.Duration
 	passwordResetFrontendURL string
 	passwordResetTTL         time.Duration
 	passwordResetCooldown    time.Duration
 	emailChangeFrontendURL   string
 	emailChangeTTL           time.Duration
+	emailChangeOTPTTL        time.Duration
 	emailChangeCooldown      time.Duration
 	supportEmail             string
 	rateLimiter              repo.AuthRateLimitRepo
@@ -122,6 +127,8 @@ type RateLimitOptions struct {
 	RegisterIP              RateLimitRule
 	ForgotPasswordEmail     RateLimitRule
 	ForgotPasswordIP        RateLimitRule
+	VerifyEmailOTPEmail     RateLimitRule
+	VerifyEmailOTPIP        RateLimitRule
 	ResendVerificationEmail RateLimitRule
 	ResendVerificationIP    RateLimitRule
 	ResetPasswordToken      RateLimitRule
@@ -152,12 +159,14 @@ type EmailNotificationOptions struct {
 type Options struct {
 	VerifyFrontendURL        string
 	VerificationTTL          time.Duration
+	VerificationOTPTTL       time.Duration
 	ResendCooldown           time.Duration
 	PasswordResetFrontendURL string
 	PasswordResetTTL         time.Duration
 	PasswordResetCooldown    time.Duration
 	EmailChangeFrontendURL   string
 	EmailChangeTTL           time.Duration
+	EmailChangeOTPTTL        time.Duration
 	EmailChangeCooldown      time.Duration
 	SupportEmail             string
 	EmailService             TransactionalEmailService
@@ -172,6 +181,10 @@ func New(r repo.UserRepo, j *jwt.Manager, emailSender repo.EmailSender, opts Opt
 	verificationTTL := opts.VerificationTTL
 	if verificationTTL <= 0 {
 		verificationTTL = 24 * time.Hour
+	}
+	verificationOTPTTL := opts.VerificationOTPTTL
+	if verificationOTPTTL <= 0 {
+		verificationOTPTTL = 10 * time.Minute
 	}
 	resendCooldown := opts.ResendCooldown
 	if resendCooldown <= 0 {
@@ -189,6 +202,10 @@ func New(r repo.UserRepo, j *jwt.Manager, emailSender repo.EmailSender, opts Opt
 	if emailChangeTTL <= 0 {
 		emailChangeTTL = 24 * time.Hour
 	}
+	emailChangeOTPTTL := opts.EmailChangeOTPTTL
+	if emailChangeOTPTTL <= 0 {
+		emailChangeOTPTTL = 10 * time.Minute
+	}
 	emailChangeCooldown := opts.EmailChangeCooldown
 	if emailChangeCooldown <= 0 {
 		emailChangeCooldown = time.Minute
@@ -201,12 +218,14 @@ func New(r repo.UserRepo, j *jwt.Manager, emailSender repo.EmailSender, opts Opt
 		emailService:             opts.EmailService,
 		verifyFrontendURL:        opts.VerifyFrontendURL,
 		verificationTTL:          verificationTTL,
+		verificationOTPTTL:       verificationOTPTTL,
 		resendCooldown:           resendCooldown,
 		passwordResetFrontendURL: opts.PasswordResetFrontendURL,
 		passwordResetTTL:         passwordResetTTL,
 		passwordResetCooldown:    passwordResetCooldown,
 		emailChangeFrontendURL:   opts.EmailChangeFrontendURL,
 		emailChangeTTL:           emailChangeTTL,
+		emailChangeOTPTTL:        emailChangeOTPTTL,
 		emailChangeCooldown:      emailChangeCooldown,
 		supportEmail:             normalizeSupportEmail(opts.SupportEmail),
 		rateLimiter:              opts.RateLimiter,
@@ -256,7 +275,7 @@ func (uc *UseCase) Register(ctx context.Context, username, email, password strin
 	}
 	auditUserID = user.ID
 
-	rawToken, verificationToken, err := uc.newVerificationToken(user.ID, now)
+	rawToken, otp, verificationToken, err := uc.newVerificationToken(user.ID, now)
 	if err != nil {
 		return entity.User{}, err
 	}
@@ -266,7 +285,7 @@ func (uc *UseCase) Register(ctx context.Context, username, email, password strin
 		return entity.User{}, fmt.Errorf("UserUseCase - Register - uc.repo.StoreWithVerificationToken: %w", err)
 	}
 
-	if err = uc.sendVerificationEmail(ctx, user, rawToken); err != nil {
+	if err = uc.sendVerificationEmail(ctx, user, rawToken, otp); err != nil {
 		_ = uc.repo.RevokeUnusedVerificationTokens(ctx, user.ID)
 
 		return entity.User{}, err
@@ -540,44 +559,134 @@ func (uc *UseCase) UpdateUserPreferences(
 	return uc.GetUserAccount(ctx, userID)
 }
 
-// VerifyEmail verifies a one-time email verification token.
-func (uc *UseCase) VerifyEmail(ctx context.Context, token string) (err error) {
+// VerifyEmail verifies a one-time email verification token or OTP.
+func (uc *UseCase) VerifyEmail(ctx context.Context, token, email, otp string) (err error) {
 	auditUserID := ""
-	auditEmail := ""
+	auditEmail := strings.TrimSpace(email)
 	defer func() {
 		uc.auditAuth(ctx, authEventVerifyEmail, auditStatus(err), auditUserID, auditEmail, auditErrorCode(err), nil)
 	}()
 
+	token = strings.TrimSpace(token)
+	email = strings.TrimSpace(email)
+	otp = strings.TrimSpace(otp)
+	if token != "" {
+		if email != "" || otp != "" {
+			return entity.ErrInvalidAuthInput
+		}
+
+		var verifiedUser entity.User
+		verifiedUser, err = uc.verifyEmailWithToken(ctx, token)
+		if err != nil {
+			return err
+		}
+		auditUserID = verifiedUser.ID
+		auditEmail = verifiedUser.Email
+		uc.notifyEmailVerified(ctx, verifiedUser)
+
+		return nil
+	}
+	if email != "" || otp != "" {
+		var verifiedUser entity.User
+		verifiedUser, err = uc.verifyEmailWithOTP(ctx, email, otp)
+		if err != nil {
+			return err
+		}
+		auditUserID = verifiedUser.ID
+		auditEmail = verifiedUser.Email
+		uc.notifyEmailVerified(ctx, verifiedUser)
+
+		return nil
+	}
+
+	return entity.ErrInvalidAuthInput
+}
+
+func (uc *UseCase) verifyEmailWithToken(ctx context.Context, token string) (entity.User, error) {
+	if len(token) > maxResetTokenInputBytes {
+		return entity.User{}, entity.ErrInvalidVerificationToken
+	}
+
 	tokenHash, err := hashVerificationToken(token)
 	if err != nil {
-		return err
+		return entity.User{}, err
 	}
 
 	storedToken, err := uc.repo.GetVerificationTokenByHash(ctx, tokenHash)
 	if err != nil {
 		if errors.Is(err, entity.ErrVerificationTokenNotFound) {
-			return entity.ErrInvalidVerificationToken
+			return entity.User{}, entity.ErrInvalidVerificationToken
 		}
 
-		return fmt.Errorf("UserUseCase - VerifyEmail - uc.repo.GetVerificationTokenByHash: %w", err)
+		return entity.User{}, fmt.Errorf("UserUseCase - verifyEmailWithToken - uc.repo.GetVerificationTokenByHash: %w", err)
 	}
 	if storedToken.UsedAt != nil || !time.Now().UTC().Before(storedToken.ExpiresAt) {
-		return entity.ErrInvalidVerificationToken
+		return entity.User{}, entity.ErrInvalidVerificationToken
 	}
 
 	verifiedUser, err := uc.repo.VerifyEmailWithToken(ctx, storedToken.ID, storedToken.UserID)
 	if err != nil {
 		if errors.Is(err, entity.ErrInvalidVerificationToken) {
-			return err
+			return entity.User{}, err
 		}
 
-		return fmt.Errorf("UserUseCase - VerifyEmail - uc.repo.VerifyEmailWithToken: %w", err)
+		return entity.User{}, fmt.Errorf("UserUseCase - verifyEmailWithToken - uc.repo.VerifyEmailWithToken: %w", err)
 	}
-	auditUserID = verifiedUser.ID
-	auditEmail = verifiedUser.Email
-	uc.notifyEmailVerified(ctx, verifiedUser)
 
-	return nil
+	return verifiedUser, nil
+}
+
+func (uc *UseCase) verifyEmailWithOTP(ctx context.Context, email, otp string) (entity.User, error) {
+	email, err := validateEmailInput(email)
+	if err != nil {
+		return entity.User{}, err
+	}
+	otp, err = validateOTPInput(otp)
+	if err != nil {
+		return entity.User{}, err
+	}
+
+	if err = uc.enforceAuthRateLimit(ctx, authEventVerifyEmail, []rateLimitCheck{
+		{keyType: rateLimitKeyTypeEmail, value: email, rule: uc.rateLimit.VerifyEmailOTPEmail},
+		{keyType: rateLimitKeyTypeIP, value: authmeta.From(ctx).ClientIP, rule: uc.rateLimit.VerifyEmailOTPIP},
+	}); err != nil {
+		return entity.User{}, err
+	}
+
+	user, err := uc.repo.GetByEmail(ctx, email)
+	if err != nil {
+		if errors.Is(err, entity.ErrUserNotFound) {
+			return entity.User{}, entity.ErrInvalidVerificationToken
+		}
+
+		return entity.User{}, fmt.Errorf("UserUseCase - verifyEmailWithOTP - uc.repo.GetByEmail: %w", err)
+	}
+
+	storedToken, err := uc.repo.GetLatestUnusedVerificationToken(ctx, user.ID)
+	if err != nil {
+		if errors.Is(err, entity.ErrVerificationTokenNotFound) {
+			return entity.User{}, entity.ErrInvalidVerificationToken
+		}
+
+		return entity.User{}, fmt.Errorf("UserUseCase - verifyEmailWithOTP - uc.repo.GetLatestUnusedVerificationToken: %w", err)
+	}
+	if !validStoredOTP(storedToken.OTPHash, storedToken.OTPExpiresAt, storedToken.ExpiresAt, storedToken.UsedAt) {
+		return entity.User{}, entity.ErrInvalidVerificationToken
+	}
+	if err = bcrypt.CompareHashAndPassword([]byte(storedToken.OTPHash), []byte(otp)); err != nil {
+		return entity.User{}, entity.ErrInvalidVerificationToken
+	}
+
+	verifiedUser, err := uc.repo.VerifyEmailWithToken(ctx, storedToken.ID, storedToken.UserID)
+	if err != nil {
+		if errors.Is(err, entity.ErrInvalidVerificationToken) {
+			return entity.User{}, err
+		}
+
+		return entity.User{}, fmt.Errorf("UserUseCase - verifyEmailWithOTP - uc.repo.VerifyEmailWithToken: %w", err)
+	}
+
+	return verifiedUser, nil
 }
 
 // ResendEmailVerification sends a new verification email for an existing unverified user.
@@ -623,14 +732,14 @@ func (uc *UseCase) ResendEmailVerification(ctx context.Context, email string) (e
 		return entity.ErrVerificationRateLimited
 	}
 
-	rawToken, verificationToken, err := uc.newVerificationToken(user.ID, now)
+	rawToken, otp, verificationToken, err := uc.newVerificationToken(user.ID, now)
 	if err != nil {
 		return err
 	}
 	if err = uc.repo.ReplaceVerificationToken(ctx, &verificationToken); err != nil {
 		return fmt.Errorf("UserUseCase - ResendEmailVerification - uc.repo.ReplaceVerificationToken: %w", err)
 	}
-	if err = uc.sendVerificationEmail(ctx, user, rawToken); err != nil {
+	if err = uc.sendVerificationEmail(ctx, user, rawToken, otp); err != nil {
 		_ = uc.repo.RevokeUnusedVerificationTokens(ctx, user.ID)
 
 		return err
@@ -866,14 +975,14 @@ func (uc *UseCase) RequestEmailChange(ctx context.Context, userID, currentPasswo
 		return entity.ErrEmailChangeRateLimited
 	}
 
-	rawToken, emailChangeToken, err := uc.newEmailChangeToken(user.ID, newEmail, now)
+	rawToken, otp, emailChangeToken, err := uc.newEmailChangeToken(user.ID, newEmail, now)
 	if err != nil {
 		return err
 	}
 	if err = uc.repo.ReplaceEmailChangeToken(ctx, &emailChangeToken); err != nil {
 		return fmt.Errorf("UserUseCase - RequestEmailChange - uc.repo.ReplaceEmailChangeToken: %w", err)
 	}
-	if err = uc.sendEmailChangeVerificationEmail(ctx, user, newEmail, rawToken); err != nil {
+	if err = uc.sendEmailChangeVerificationEmail(ctx, user, newEmail, rawToken, otp); err != nil {
 		_ = uc.repo.RevokeUnusedEmailChangeTokens(ctx, user.ID)
 
 		return err
@@ -882,8 +991,8 @@ func (uc *UseCase) RequestEmailChange(ctx context.Context, userID, currentPasswo
 	return nil
 }
 
-// VerifyEmailChange updates a user's email using an authenticated one-time token.
-func (uc *UseCase) VerifyEmailChange(ctx context.Context, userID, token string) (err error) {
+// VerifyEmailChange updates a user's email using an authenticated one-time token or OTP.
+func (uc *UseCase) VerifyEmailChange(ctx context.Context, userID, token, otp string) (err error) {
 	auditUserID := strings.TrimSpace(userID)
 	auditEmail := ""
 	defer func() {
@@ -895,48 +1004,126 @@ func (uc *UseCase) VerifyEmailChange(ctx context.Context, userID, token string) 
 	}
 
 	token = strings.TrimSpace(token)
-	if len(token) > maxResetTokenInputBytes {
-		return entity.ErrInvalidEmailChangeToken
+	otp = strings.TrimSpace(otp)
+	if token != "" {
+		if otp != "" {
+			return entity.ErrInvalidAuthInput
+		}
+
+		var result entity.EmailChangeResult
+		result, err = uc.verifyEmailChangeWithToken(ctx, userID, token)
+		if err != nil {
+			return err
+		}
+		auditUserID = result.User.ID
+		auditEmail = result.NewEmail
+		uc.notifyEmailChanged(ctx, result.User, result.OldEmail)
+
+		return nil
 	}
-	if err = uc.enforceAuthRateLimit(ctx, authEventChangeEmailVerify, []rateLimitCheck{
+	if otp != "" {
+		var result entity.EmailChangeResult
+		result, err = uc.verifyEmailChangeWithOTP(ctx, userID, otp)
+		if err != nil {
+			return err
+		}
+		auditUserID = result.User.ID
+		auditEmail = result.NewEmail
+		uc.notifyEmailChanged(ctx, result.User, result.OldEmail)
+
+		return nil
+	}
+
+	return entity.ErrInvalidAuthInput
+}
+
+func (uc *UseCase) verifyEmailChangeWithToken(
+	ctx context.Context,
+	userID string,
+	token string,
+) (entity.EmailChangeResult, error) {
+	if len(token) > maxResetTokenInputBytes {
+		return entity.EmailChangeResult{}, entity.ErrInvalidEmailChangeToken
+	}
+	if err := uc.enforceAuthRateLimit(ctx, authEventChangeEmailVerify, []rateLimitCheck{
 		{keyType: rateLimitKeyTypeToken, value: token, rule: uc.rateLimit.ChangeEmailToken},
 		{keyType: rateLimitKeyTypeIP, value: authmeta.From(ctx).ClientIP, rule: uc.rateLimit.ChangeEmailIP},
 	}); err != nil {
-		return err
+		return entity.EmailChangeResult{}, err
 	}
 
 	tokenHash, err := hashEmailChangeToken(token)
 	if err != nil {
-		return err
+		return entity.EmailChangeResult{}, err
 	}
 
 	storedToken, err := uc.repo.GetEmailChangeTokenByHash(ctx, tokenHash)
 	if err != nil {
 		if errors.Is(err, entity.ErrEmailChangeTokenNotFound) {
-			return entity.ErrInvalidEmailChangeToken
+			return entity.EmailChangeResult{}, entity.ErrInvalidEmailChangeToken
 		}
 
-		return fmt.Errorf("UserUseCase - VerifyEmailChange - uc.repo.GetEmailChangeTokenByHash: %w", err)
+		return entity.EmailChangeResult{}, fmt.Errorf("UserUseCase - verifyEmailChangeWithToken - uc.repo.GetEmailChangeTokenByHash: %w", err)
 	}
 	if storedToken.UserID != userID ||
 		storedToken.UsedAt != nil ||
 		!time.Now().UTC().Before(storedToken.ExpiresAt) {
-		return entity.ErrInvalidEmailChangeToken
+		return entity.EmailChangeResult{}, entity.ErrInvalidEmailChangeToken
 	}
 
 	result, err := uc.repo.ChangeEmailWithToken(ctx, storedToken.ID, userID, storedToken.NewEmail)
 	if err != nil {
 		if errors.Is(err, entity.ErrInvalidEmailChangeToken) || errors.Is(err, entity.ErrUserAlreadyExists) {
-			return err
+			return entity.EmailChangeResult{}, err
 		}
 
-		return fmt.Errorf("UserUseCase - VerifyEmailChange - uc.repo.ChangeEmailWithToken: %w", err)
+		return entity.EmailChangeResult{}, fmt.Errorf("UserUseCase - verifyEmailChangeWithToken - uc.repo.ChangeEmailWithToken: %w", err)
 	}
-	auditUserID = result.User.ID
-	auditEmail = result.NewEmail
-	uc.notifyEmailChanged(ctx, result.User, result.OldEmail)
 
-	return nil
+	return result, nil
+}
+
+func (uc *UseCase) verifyEmailChangeWithOTP(
+	ctx context.Context,
+	userID string,
+	otp string,
+) (entity.EmailChangeResult, error) {
+	otp, err := validateOTPInput(otp)
+	if err != nil {
+		return entity.EmailChangeResult{}, err
+	}
+	if err = uc.enforceAuthRateLimit(ctx, authEventChangeEmailVerify, []rateLimitCheck{
+		{keyType: rateLimitKeyTypeUser, value: userID, rule: uc.rateLimit.ChangeEmailToken},
+		{keyType: rateLimitKeyTypeIP, value: authmeta.From(ctx).ClientIP, rule: uc.rateLimit.ChangeEmailIP},
+	}); err != nil {
+		return entity.EmailChangeResult{}, err
+	}
+
+	storedToken, err := uc.repo.GetLatestUnusedEmailChangeToken(ctx, userID)
+	if err != nil {
+		if errors.Is(err, entity.ErrEmailChangeTokenNotFound) {
+			return entity.EmailChangeResult{}, entity.ErrInvalidEmailChangeToken
+		}
+
+		return entity.EmailChangeResult{}, fmt.Errorf("UserUseCase - verifyEmailChangeWithOTP - uc.repo.GetLatestUnusedEmailChangeToken: %w", err)
+	}
+	if !validStoredOTP(storedToken.OTPHash, storedToken.OTPExpiresAt, storedToken.ExpiresAt, storedToken.UsedAt) {
+		return entity.EmailChangeResult{}, entity.ErrInvalidEmailChangeToken
+	}
+	if err = bcrypt.CompareHashAndPassword([]byte(storedToken.OTPHash), []byte(otp)); err != nil {
+		return entity.EmailChangeResult{}, entity.ErrInvalidEmailChangeToken
+	}
+
+	result, err := uc.repo.ChangeEmailWithToken(ctx, storedToken.ID, userID, storedToken.NewEmail)
+	if err != nil {
+		if errors.Is(err, entity.ErrInvalidEmailChangeToken) || errors.Is(err, entity.ErrUserAlreadyExists) {
+			return entity.EmailChangeResult{}, err
+		}
+
+		return entity.EmailChangeResult{}, fmt.Errorf("UserUseCase - verifyEmailChangeWithOTP - uc.repo.ChangeEmailWithToken: %w", err)
+	}
+
+	return result, nil
 }
 
 // DeleteAccount soft-deletes the current account after password confirmation.
@@ -1304,6 +1491,30 @@ func validateEmailInput(email string) (string, error) {
 	return email, nil
 }
 
+func validateOTPInput(otp string) (string, error) {
+	otp = strings.TrimSpace(otp)
+	if len(otp) != otpDigits {
+		return "", entity.ErrInvalidAuthInput
+	}
+	for _, char := range otp {
+		if char < '0' || char > '9' {
+			return "", entity.ErrInvalidAuthInput
+		}
+	}
+
+	return otp, nil
+}
+
+func validStoredOTP(otpHash string, otpExpiresAt *time.Time, tokenExpiresAt time.Time, usedAt *time.Time) bool {
+	now := time.Now().UTC()
+
+	return strings.TrimSpace(otpHash) != "" &&
+		otpExpiresAt != nil &&
+		usedAt == nil &&
+		now.Before(*otpExpiresAt) &&
+		now.Before(tokenExpiresAt)
+}
+
 func validEmail(email string) bool {
 	address, err := mail.ParseAddress(email)
 	if err != nil {
@@ -1333,6 +1544,8 @@ func normalizeRateLimitOptions(opts RateLimitOptions) RateLimitOptions {
 		RegisterIP:              RateLimitRule{Max: 10, Window: time.Hour},
 		ForgotPasswordEmail:     RateLimitRule{Max: 3, Window: time.Hour},
 		ForgotPasswordIP:        RateLimitRule{Max: 20, Window: time.Hour},
+		VerifyEmailOTPEmail:     RateLimitRule{Max: 5, Window: 15 * time.Minute},
+		VerifyEmailOTPIP:        RateLimitRule{Max: 30, Window: 15 * time.Minute},
 		ResendVerificationEmail: RateLimitRule{Max: 3, Window: time.Hour},
 		ResendVerificationIP:    RateLimitRule{Max: 20, Window: time.Hour},
 		ResetPasswordToken:      RateLimitRule{Max: 5, Window: 15 * time.Minute},
@@ -1352,6 +1565,8 @@ func normalizeRateLimitOptions(opts RateLimitOptions) RateLimitOptions {
 	opts.RegisterIP = withDefaultRule(opts.RegisterIP, defaults.RegisterIP)
 	opts.ForgotPasswordEmail = withDefaultRule(opts.ForgotPasswordEmail, defaults.ForgotPasswordEmail)
 	opts.ForgotPasswordIP = withDefaultRule(opts.ForgotPasswordIP, defaults.ForgotPasswordIP)
+	opts.VerifyEmailOTPEmail = withDefaultRule(opts.VerifyEmailOTPEmail, defaults.VerifyEmailOTPEmail)
+	opts.VerifyEmailOTPIP = withDefaultRule(opts.VerifyEmailOTPIP, defaults.VerifyEmailOTPIP)
 	opts.ResendVerificationEmail = withDefaultRule(opts.ResendVerificationEmail, defaults.ResendVerificationEmail)
 	opts.ResendVerificationIP = withDefaultRule(opts.ResendVerificationIP, defaults.ResendVerificationIP)
 	opts.ResetPasswordToken = withDefaultRule(opts.ResetPasswordToken, defaults.ResetPasswordToken)
@@ -1560,23 +1775,30 @@ func clampAdminOffset(offset int) uint64 {
 	return uint64(offset)
 }
 
-func (uc *UseCase) newVerificationToken(userID string, now time.Time) (string, entity.EmailVerificationToken, error) {
+func (uc *UseCase) newVerificationToken(userID string, now time.Time) (string, string, entity.EmailVerificationToken, error) {
 	rawTokenBytes := make([]byte, verificationTokenBytes)
 	if _, err := rand.Read(rawTokenBytes); err != nil {
-		return "", entity.EmailVerificationToken{}, fmt.Errorf("UserUseCase - newVerificationToken - rand.Read: %w", err)
+		return "", "", entity.EmailVerificationToken{}, fmt.Errorf("UserUseCase - newVerificationToken - rand.Read: %w", err)
+	}
+	otp, otpHash, err := newOTPHash()
+	if err != nil {
+		return "", "", entity.EmailVerificationToken{}, err
 	}
 
 	rawToken := base64.RawURLEncoding.EncodeToString(rawTokenBytes)
+	otpExpiresAt := now.Add(uc.verificationOTPTTL)
 	token := entity.EmailVerificationToken{
-		ID:        uuid.New().String(),
-		UserID:    userID,
-		TokenHash: hashVerificationTokenBytes(rawTokenBytes),
-		ExpiresAt: now.Add(uc.verificationTTL),
-		SentAt:    now,
-		CreatedAt: now,
+		ID:           uuid.New().String(),
+		UserID:       userID,
+		TokenHash:    hashVerificationTokenBytes(rawTokenBytes),
+		OTPHash:      otpHash,
+		OTPExpiresAt: &otpExpiresAt,
+		ExpiresAt:    now.Add(uc.verificationTTL),
+		SentAt:       now,
+		CreatedAt:    now,
 	}
 
-	return rawToken, token, nil
+	return rawToken, otp, token, nil
 }
 
 func (uc *UseCase) newPasswordResetToken(userID string, now time.Time) (string, entity.PasswordResetToken, error) {
@@ -1598,27 +1820,56 @@ func (uc *UseCase) newPasswordResetToken(userID string, now time.Time) (string, 
 	return rawToken, token, nil
 }
 
-func (uc *UseCase) newEmailChangeToken(userID, newEmail string, now time.Time) (string, entity.EmailChangeToken, error) {
+func (uc *UseCase) newEmailChangeToken(userID, newEmail string, now time.Time) (string, string, entity.EmailChangeToken, error) {
 	rawTokenBytes := make([]byte, emailChangeTokenBytes)
 	if _, err := rand.Read(rawTokenBytes); err != nil {
-		return "", entity.EmailChangeToken{}, fmt.Errorf("UserUseCase - newEmailChangeToken - rand.Read: %w", err)
+		return "", "", entity.EmailChangeToken{}, fmt.Errorf("UserUseCase - newEmailChangeToken - rand.Read: %w", err)
+	}
+	otp, otpHash, err := newOTPHash()
+	if err != nil {
+		return "", "", entity.EmailChangeToken{}, err
 	}
 
 	rawToken := base64.RawURLEncoding.EncodeToString(rawTokenBytes)
+	otpExpiresAt := now.Add(uc.emailChangeOTPTTL)
 	token := entity.EmailChangeToken{
-		ID:        uuid.New().String(),
-		UserID:    userID,
-		NewEmail:  newEmail,
-		TokenHash: hashTokenBytes(rawTokenBytes),
-		ExpiresAt: now.Add(uc.emailChangeTTL),
-		SentAt:    now,
-		CreatedAt: now,
+		ID:           uuid.New().String(),
+		UserID:       userID,
+		NewEmail:     newEmail,
+		TokenHash:    hashTokenBytes(rawTokenBytes),
+		OTPHash:      otpHash,
+		OTPExpiresAt: &otpExpiresAt,
+		ExpiresAt:    now.Add(uc.emailChangeTTL),
+		SentAt:       now,
+		CreatedAt:    now,
 	}
 
-	return rawToken, token, nil
+	return rawToken, otp, token, nil
 }
 
-func (uc *UseCase) sendVerificationEmail(ctx context.Context, user entity.User, rawToken string) error {
+func newOTPHash() (string, string, error) {
+	otp, err := newOTP()
+	if err != nil {
+		return "", "", err
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(otp), bcrypt.DefaultCost)
+	if err != nil {
+		return "", "", fmt.Errorf("UserUseCase - newOTPHash - bcrypt.GenerateFromPassword: %w", err)
+	}
+
+	return otp, string(hash), nil
+}
+
+func newOTP() (string, error) {
+	value, err := rand.Int(rand.Reader, big.NewInt(otpMaxValue))
+	if err != nil {
+		return "", fmt.Errorf("UserUseCase - newOTP - rand.Int: %w", err)
+	}
+
+	return fmt.Sprintf("%0*d", otpDigits, value.Int64()), nil
+}
+
+func (uc *UseCase) sendVerificationEmail(ctx context.Context, user entity.User, rawToken, otp string) error {
 	if uc.emailSender == nil {
 		return entity.ErrEmailDeliveryFailed
 	}
@@ -1629,10 +1880,12 @@ func (uc *UseCase) sendVerificationEmail(ctx context.Context, user entity.User, 
 	}
 
 	emailCtx := uc.newAuthEmailContext(ctx, user)
-	content := verificationEmailContent(emailCtx, link, uc.verificationTTL)
+	content := verificationEmailContent(emailCtx, link, otp, uc.verificationTTL, uc.verificationOTPTTL)
 	variables := authEmailVariables(emailCtx)
 	variables["link"] = link
+	variables["otp"] = otp
 	variables["duration"] = humanDurationText(uc.verificationTTL, emailCtx.Lang)
+	variables["otp_duration"] = humanDurationText(uc.verificationOTPTTL, emailCtx.Lang)
 	if err = uc.sendAuthEmail(
 		ctx,
 		user.Email,
@@ -1685,6 +1938,7 @@ func (uc *UseCase) sendEmailChangeVerificationEmail(
 	user entity.User,
 	newEmail string,
 	rawToken string,
+	otp string,
 ) error {
 	if uc.emailSender == nil {
 		return entity.ErrEmailDeliveryFailed
@@ -1696,10 +1950,12 @@ func (uc *UseCase) sendEmailChangeVerificationEmail(
 	}
 
 	emailCtx := uc.newAuthEmailContext(ctx, user)
-	content := emailChangeVerificationEmailContent(emailCtx, link, uc.emailChangeTTL)
+	content := emailChangeVerificationEmailContent(emailCtx, link, otp, uc.emailChangeTTL, uc.emailChangeOTPTTL)
 	variables := authEmailVariables(emailCtx)
 	variables["link"] = link
+	variables["otp"] = otp
 	variables["duration"] = humanDurationText(uc.emailChangeTTL, emailCtx.Lang)
+	variables["otp_duration"] = humanDurationText(uc.emailChangeOTPTTL, emailCtx.Lang)
 	if err = uc.sendAuthEmail(
 		ctx,
 		newEmail,
@@ -1959,7 +2215,9 @@ func (uc *UseCase) sendAuthEmail(
 		})
 	}
 
-	return uc.emailSender.Send(ctx, message)
+	_, err := uc.emailSender.Send(ctx, message)
+
+	return err
 }
 
 func authEmailVariables(emailCtx authEmailContext) map[string]string {
@@ -2187,15 +2445,18 @@ func newAuthEmailContent(
 	}
 }
 
-func verificationEmailContent(emailCtx authEmailContext, link string, ttl time.Duration) authEmailContent {
+func verificationEmailContent(emailCtx authEmailContext, link, otp string, ttl, otpTTL time.Duration) authEmailContent {
 	duration := humanDurationText(ttl, emailCtx.Lang)
+	otpDuration := humanDurationText(otpTTL, emailCtx.Lang)
 	switch emailCtx.Lang {
 	case contentlang.English:
 		text := fmt.Sprintf(
-			"%s\n\nConfirm this email address so your Surau account is ready to use:\n%s\n\nThis verification link expires in %s.\n\nIf you did not create a Surau account, you can ignore this email.",
+			"%s\n\nConfirm this email address so your Surau account is ready to use:\n%s\n\nOr enter this 6-digit code:\n%s\n\nThis verification link expires in %s. The code expires in %s.\n\nIf you did not create a Surau account, you can ignore this email.",
 			localizedGreeting(emailCtx.Lang, emailCtx.Name),
 			link,
+			otp,
 			duration,
+			otpDuration,
 		)
 
 		return newAuthEmailContent(
@@ -2203,19 +2464,21 @@ func verificationEmailContent(emailCtx authEmailContext, link string, ttl time.D
 			"Verify your Surau email",
 			"Verify your Surau email to finish setting up your account.",
 			"Verify your email",
-			"Confirm this email address so your Surau account is ready to use.",
+			"Confirm this email address so your Surau account is ready to use. Or enter this 6-digit code: "+otp+".",
 			"Verify email",
 			link,
-			"This verification link expires in "+duration+".",
+			"This verification link expires in "+duration+". The code expires in "+otpDuration+".",
 			"If you did not create a Surau account, you can ignore this email.",
 			text,
 		)
 	case contentlang.Arabic:
 		text := fmt.Sprintf(
-			"%s\n\nأكد هذا البريد الإلكتروني ليصبح حسابك في Surau جاهزا:\n%s\n\nتنتهي صلاحية رابط التأكيد خلال %s.\n\nإذا لم تنشئ حسابا في Surau، يمكنك تجاهل هذه الرسالة.",
+			"%s\n\nأكد هذا البريد الإلكتروني ليصبح حسابك في Surau جاهزا:\n%s\n\nأو أدخل هذا الرمز المكون من 6 أرقام:\n%s\n\nتنتهي صلاحية رابط التأكيد خلال %s. تنتهي صلاحية الرمز خلال %s.\n\nإذا لم تنشئ حسابا في Surau، يمكنك تجاهل هذه الرسالة.",
 			localizedGreeting(emailCtx.Lang, emailCtx.Name),
 			link,
+			otp,
 			duration,
+			otpDuration,
 		)
 
 		return newAuthEmailContent(
@@ -2223,19 +2486,21 @@ func verificationEmailContent(emailCtx authEmailContext, link string, ttl time.D
 			"تأكيد بريدك في Surau",
 			"أكمل تأكيد البريد ليصبح حسابك في Surau جاهزا.",
 			"تأكيد البريد الإلكتروني",
-			"أكد هذا البريد الإلكتروني ليصبح حسابك في Surau جاهزا.",
+			"أكد هذا البريد الإلكتروني ليصبح حسابك في Surau جاهزا. أو أدخل هذا الرمز المكون من 6 أرقام: "+otp+".",
 			"تأكيد البريد",
 			link,
-			"تنتهي صلاحية رابط التأكيد خلال "+duration+".",
+			"تنتهي صلاحية رابط التأكيد خلال "+duration+". تنتهي صلاحية الرمز خلال "+otpDuration+".",
 			"إذا لم تنشئ حسابا في Surau، يمكنك تجاهل هذه الرسالة.",
 			text,
 		)
 	default:
 		text := fmt.Sprintf(
-			"%s\n\nKonfirmasi alamat email ini agar akun Surau Anda siap digunakan:\n%s\n\nLink verifikasi ini berlaku selama %s.\n\nJika Anda tidak membuat akun Surau, abaikan email ini.",
+			"%s\n\nKonfirmasi alamat email ini agar akun Surau Anda siap digunakan:\n%s\n\nAtau masukkan kode 6 digit ini:\n%s\n\nLink verifikasi ini berlaku selama %s. Kode berlaku selama %s.\n\nJika Anda tidak membuat akun Surau, abaikan email ini.",
 			localizedGreeting(emailCtx.Lang, emailCtx.Name),
 			link,
+			otp,
 			duration,
+			otpDuration,
 		)
 
 		return newAuthEmailContent(
@@ -2243,10 +2508,10 @@ func verificationEmailContent(emailCtx authEmailContext, link string, ttl time.D
 			"Verifikasi email Surau",
 			"Selesaikan verifikasi email agar akun Surau Anda siap digunakan.",
 			"Verifikasi email",
-			"Konfirmasi alamat email ini agar akun Surau Anda siap digunakan.",
+			"Konfirmasi alamat email ini agar akun Surau Anda siap digunakan. Atau masukkan kode 6 digit ini: "+otp+".",
 			"Verifikasi email",
 			link,
-			"Link verifikasi ini berlaku selama "+duration+".",
+			"Link verifikasi ini berlaku selama "+duration+". Kode berlaku selama "+otpDuration+".",
 			"Jika Anda tidak membuat akun Surau, abaikan email ini.",
 			text,
 		)
@@ -2319,15 +2584,18 @@ func passwordResetEmailContent(emailCtx authEmailContext, link string, ttl time.
 	}
 }
 
-func emailChangeVerificationEmailContent(emailCtx authEmailContext, link string, ttl time.Duration) authEmailContent {
+func emailChangeVerificationEmailContent(emailCtx authEmailContext, link, otp string, ttl, otpTTL time.Duration) authEmailContent {
 	duration := humanDurationText(ttl, emailCtx.Lang)
+	otpDuration := humanDurationText(otpTTL, emailCtx.Lang)
 	switch emailCtx.Lang {
 	case contentlang.English:
 		text := fmt.Sprintf(
-			"%s\n\nConfirm this new email address for your Surau account:\n%s\n\nThis link expires in %s.\n\nIf you did not request this, ignore this email and keep your current email.",
+			"%s\n\nConfirm this new email address for your Surau account:\n%s\n\nOr enter this 6-digit code:\n%s\n\nThis link expires in %s. The code expires in %s.\n\nIf you did not request this, ignore this email and keep your current email.",
 			localizedGreeting(emailCtx.Lang, emailCtx.Name),
 			link,
+			otp,
 			duration,
+			otpDuration,
 		)
 
 		return newAuthEmailContent(
@@ -2335,19 +2603,21 @@ func emailChangeVerificationEmailContent(emailCtx authEmailContext, link string,
 			"Confirm your new Surau email",
 			"Confirm this email address before it becomes your Surau login email.",
 			"Confirm new email",
-			"Confirm this email address before it becomes your Surau login email.",
+			"Confirm this email address before it becomes your Surau login email. Or enter this 6-digit code: "+otp+".",
 			"Confirm email",
 			link,
-			"This link expires in "+duration+".",
+			"This link expires in "+duration+". The code expires in "+otpDuration+".",
 			"If you did not request this, ignore this email and keep your current email.",
 			text,
 		)
 	case contentlang.Arabic:
 		text := fmt.Sprintf(
-			"%s\n\nأكد هذا البريد الإلكتروني الجديد لحسابك في Surau:\n%s\n\nتنتهي صلاحية الرابط خلال %s.\n\nإذا لم تطلب ذلك، فتجاهل هذه الرسالة وسيبقى بريدك الحالي كما هو.",
+			"%s\n\nأكد هذا البريد الإلكتروني الجديد لحسابك في Surau:\n%s\n\nأو أدخل هذا الرمز المكون من 6 أرقام:\n%s\n\nتنتهي صلاحية الرابط خلال %s. تنتهي صلاحية الرمز خلال %s.\n\nإذا لم تطلب ذلك، فتجاهل هذه الرسالة وسيبقى بريدك الحالي كما هو.",
 			localizedGreeting(emailCtx.Lang, emailCtx.Name),
 			link,
+			otp,
 			duration,
+			otpDuration,
 		)
 
 		return newAuthEmailContent(
@@ -2355,19 +2625,21 @@ func emailChangeVerificationEmailContent(emailCtx authEmailContext, link string,
 			"تأكيد بريد Surau الجديد",
 			"أكد هذا البريد قبل أن يصبح بريد الدخول إلى Surau.",
 			"تأكيد البريد الجديد",
-			"أكد هذا البريد قبل أن يصبح بريد الدخول إلى Surau.",
+			"أكد هذا البريد قبل أن يصبح بريد الدخول إلى Surau. أو أدخل هذا الرمز المكون من 6 أرقام: "+otp+".",
 			"تأكيد البريد",
 			link,
-			"تنتهي صلاحية الرابط خلال "+duration+".",
+			"تنتهي صلاحية الرابط خلال "+duration+". تنتهي صلاحية الرمز خلال "+otpDuration+".",
 			"إذا لم تطلب ذلك، فتجاهل هذه الرسالة وسيبقى بريدك الحالي كما هو.",
 			text,
 		)
 	default:
 		text := fmt.Sprintf(
-			"%s\n\nKonfirmasi email baru untuk akun Surau Anda:\n%s\n\nLink ini berlaku selama %s.\n\nJika Anda tidak meminta ini, abaikan email ini dan email saat ini tetap digunakan.",
+			"%s\n\nKonfirmasi email baru untuk akun Surau Anda:\n%s\n\nAtau masukkan kode 6 digit ini:\n%s\n\nLink ini berlaku selama %s. Kode berlaku selama %s.\n\nJika Anda tidak meminta ini, abaikan email ini dan email saat ini tetap digunakan.",
 			localizedGreeting(emailCtx.Lang, emailCtx.Name),
 			link,
+			otp,
 			duration,
+			otpDuration,
 		)
 
 		return newAuthEmailContent(
@@ -2375,10 +2647,10 @@ func emailChangeVerificationEmailContent(emailCtx authEmailContext, link string,
 			"Konfirmasi email baru Surau",
 			"Konfirmasi alamat email ini sebelum menjadi email login Surau Anda.",
 			"Konfirmasi email baru",
-			"Konfirmasi alamat email ini sebelum menjadi email login Surau Anda.",
+			"Konfirmasi alamat email ini sebelum menjadi email login Surau Anda. Atau masukkan kode 6 digit ini: "+otp+".",
 			"Konfirmasi email",
 			link,
-			"Link ini berlaku selama "+duration+".",
+			"Link ini berlaku selama "+duration+". Kode berlaku selama "+otpDuration+".",
 			"Jika Anda tidak meminta ini, abaikan email ini dan email saat ini tetap digunakan.",
 			text,
 		)

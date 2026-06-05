@@ -70,7 +70,7 @@ func (s stubUserUseCase) SetRoleByEmail(context.Context, string, string, string,
 	return entity.User{}, nil
 }
 
-func (s stubUserUseCase) VerifyEmail(context.Context, string) error {
+func (s stubUserUseCase) VerifyEmail(context.Context, string, string, string) error {
 	return nil
 }
 
@@ -94,7 +94,7 @@ func (s stubUserUseCase) RequestEmailChange(context.Context, string, string, str
 	return nil
 }
 
-func (s stubUserUseCase) VerifyEmailChange(context.Context, string, string) error {
+func (s stubUserUseCase) VerifyEmailChange(context.Context, string, string, string) error {
 	return nil
 }
 

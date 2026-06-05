@@ -144,6 +144,8 @@ Use this order for a reader screen:
 Kitab display rules:
 
 - Always keep `original_html` or Arabic/source content renderable.
+- Treat `original_html` as sanitized reader HTML. If the imported source was plain text, the backend wraps it into semantic HTML and sets `original_format="plain_text"`.
+- Use `original_blocks` and `original_footnotes` when a screen needs paragraph-level rendering, footnote drawers, or Quran quote highlighting without reparsing HTML.
 - Render `translation.content` only when `translation !== null`.
 - For `lang=ar`, render Arabic/source as primary and hide feedback controls.
 - Show translation feedback only when `translation !== null && translation.lang === selectedLang`.

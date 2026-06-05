@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"html"
@@ -25,13 +26,34 @@ import (
 const (
 	defaultSupportEmail = "support@surau.org"
 	defaultBatchSize    = 500
+	redactedValue       = "[redacted]"
+	defaultTokenKeyID   = "default"
+	tokenVersionV2      = "v2"
+
+	emailSuppressionReasonPermanentBounce = "permanent_bounce"
+	emailSuppressionReasonComplaint       = "complaint"
+	emailDeliverySourceSync               = "sync"
+	emailDeliverySourceWebhook            = "webhook"
+
+	campaignMetadataDeliveryTotal      = "delivery_total"
+	campaignMetadataDeliverySent       = "delivery_sent"
+	campaignMetadataDeliveryFailed     = "delivery_failed"
+	campaignMetadataDeliverySkipped    = "delivery_skipped"
+	campaignMetadataDeliveryFinishedAt = "delivery_finished_at"
+	campaignMetadataRetryTotal         = "retry_failed_total"
+	campaignMetadataRetrySent          = "retry_failed_sent"
+	campaignMetadataRetryFailed        = "retry_failed_failed"
+	campaignMetadataRetrySkipped       = "retry_failed_skipped"
+	campaignMetadataRetryFinishedAt    = "retry_failed_finished_at"
 )
 
 // Options configures the admin-managed email service.
 type Options struct {
-	SupportEmail         string
-	UnsubscribeURL       string
-	UnsubscribeTokenSeed string
+	SupportEmail            string
+	UnsubscribeURL          string
+	UnsubscribeTokenKeyID   string
+	UnsubscribeTokenSeed    string
+	UnsubscribeTokenSecrets map[string]string
 }
 
 // UseCase coordinates templates, delivery, consent, suppressions, and campaigns.
@@ -40,17 +62,82 @@ type UseCase struct {
 	sender         repo.EmailSender
 	supportEmail   string
 	unsubscribeURL string
+	tokenKeyID     string
 	tokenSeed      string
+	tokenSecrets   map[string]string
+}
+
+type campaignClaimer interface {
+	ClaimEmailCampaignForSending(ctx context.Context, id, actorID string) (entity.EmailCampaign, error)
+}
+
+type campaignDeliveryStats struct {
+	total   int
+	sent    int
+	failed  int
+	skipped int
+}
+
+type deliveryEventInput struct {
+	Provider          string
+	EventType         string
+	RecipientEmail    string
+	MessageID         string
+	CampaignID        string
+	CampaignRecipient string
+	Reason            string
+	Diagnostic        string
+	RawPayload        entity.RawJSON
+	OccurredAt        time.Time
+	DedupeSeed        string
+}
+
+type cloudflareWebhookPayload struct {
+	PermanentBounces []string                 `json:"permanent_bounces"`
+	Complaints       []string                 `json:"complaints"`
+	Result           *cloudflareWebhookResult `json:"result"`
+	Data             json.RawMessage          `json:"data"`
+	Events           []cloudflareWebhookEvent `json:"events"`
+	Timestamp        any                      `json:"ts"`
+	CorrelationID    string                   `json:"alert_correlation_id"`
+}
+
+type cloudflareWebhookResult struct {
+	PermanentBounces []string `json:"permanent_bounces"`
+	Complaints       []string `json:"complaints"`
+}
+
+type cloudflareWebhookEvent struct {
+	ID                string `json:"id"`
+	Type              string `json:"type"`
+	Event             string `json:"event"`
+	EventType         string `json:"event_type"`
+	Email             string `json:"email"`
+	Recipient         string `json:"recipient"`
+	RecipientEmail    string `json:"recipient_email"`
+	MessageID         string `json:"message_id"`
+	CampaignID        string `json:"campaign_id"`
+	CampaignRecipient string `json:"campaign_recipient_id"`
+	Reason            string `json:"reason"`
+	Diagnostic        string `json:"diagnostic"`
+	DiagnosticMessage string `json:"diagnostic_message"`
+	OccurredAt        string `json:"occurred_at"`
+	Timestamp         string `json:"timestamp"`
+	Time              string `json:"time"`
 }
 
 // New creates an email use case.
 func New(r repo.EmailRepo, sender repo.EmailSender, opts Options) *UseCase {
+	tokenKeyID, tokenSeed, tokenSecrets := normalizeUnsubscribeTokenOptions(opts)
+
 	return &UseCase{
 		repo:           r,
 		sender:         sender,
 		supportEmail:   normalizeSupportEmail(opts.SupportEmail),
 		unsubscribeURL: strings.TrimSpace(opts.UnsubscribeURL),
-		tokenSeed:      opts.UnsubscribeTokenSeed,
+		tokenKeyID:     tokenKeyID,
+		tokenSeed:      tokenSeed,
+		tokenSecrets:   tokenSecrets,
 	}
 }
 
@@ -60,16 +147,20 @@ func (uc *UseCase) SendTransactional(ctx context.Context, req entity.Transaction
 		return entity.ErrEmailDeliveryFailed
 	}
 	if uc.repo == nil {
-		return uc.sender.Send(ctx, req.Fallback)
+		_, err := uc.sender.Send(ctx, req.Fallback)
+
+		return err
 	}
 
 	lang := contentlang.MustNormalize(req.Lang)
+	variables := cloneMap(req.Variables)
 	message := req.Fallback
+	message.Critical = message.Critical || req.Critical
 	message.Category = entity.EmailCategoryTransactional
 	message.TemplateKey = req.Key
 	message.Lang = lang
 	message.UserID = req.UserID
-	message.Metadata = req.Variables
+	message.Metadata = variables
 	if message.To == "" {
 		message.To = req.To
 	}
@@ -78,20 +169,37 @@ func (uc *UseCase) SendTransactional(ctx context.Context, req entity.Transaction
 	if err != nil && !errors.Is(err, entity.ErrEmailEventSettingNotFound) {
 		return fmt.Errorf("EmailUseCase - SendTransactional - GetEmailEventSetting: %w", err)
 	}
-	if err == nil && !setting.Enabled && !setting.Critical && !req.Critical {
-		return uc.logSkipped(ctx, message)
+	if err == nil && setting.Critical {
+		message.Critical = true
+	}
+	if err == nil && !setting.Enabled && !setting.Critical && !message.Critical {
+		templateCritical, templateErr := uc.templateIsCritical(ctx, setting.TemplateID)
+		if templateErr != nil {
+			return fmt.Errorf("EmailUseCase - SendTransactional - GetEmailTemplateByID: %w", templateErr)
+		}
+		if !templateCritical {
+			return uc.logSkipped(ctx, message)
+		}
+		message.Critical = true
 	}
 
-	version, _, err := uc.publishedVersionForKey(ctx, req.Key, lang)
+	version, template, err := uc.publishedVersionForKey(ctx, req.Key, lang)
 	if err == nil {
-		preview, renderErr := uc.render(version, req.Variables)
-		if renderErr != nil {
-			return renderErr
+		if template.Critical {
+			message.Critical = true
 		}
-		message.Subject = preview.Subject
-		message.HTML = preview.HTML
-		message.Text = preview.Text
-		message.TemplateVersionID = version.ID
+		preview, renderErr := uc.render(version, variables)
+		if renderErr != nil {
+			if !message.Critical {
+				return renderErr
+			}
+			variables["template_render_error"] = renderErr.Error()
+		} else {
+			message.Subject = preview.Subject
+			message.HTML = preview.HTML
+			message.Text = preview.Text
+			message.TemplateVersionID = version.ID
+		}
 	} else if !errors.Is(err, entity.ErrEmailTemplateVersionNotFound) {
 		return fmt.Errorf("EmailUseCase - SendTransactional - GetPublishedEmailTemplateVersion: %w", err)
 	}
@@ -445,16 +553,18 @@ func (uc *UseCase) SendCampaignNow(ctx context.Context, id, actorID string) (ent
 	if err = uc.ensureMarketingTemplate(ctx, campaign.TemplateID); err != nil {
 		return entity.EmailCampaign{}, err
 	}
-	if err = uc.prepareCampaignRecipients(ctx, campaign); err != nil {
-		return entity.EmailCampaign{}, err
-	}
-	campaign.Status = entity.EmailCampaignStatusSending
-	campaign.UpdatedBy = nullableActor(actorID)
-	campaign, err = uc.repo.UpdateEmailCampaign(ctx, campaign)
+	previousStatus := campaign.Status
+	campaign, err = uc.claimCampaignForSending(ctx, campaign, actorID)
 	if err != nil {
 		return entity.EmailCampaign{}, err
 	}
-	if err = uc.deliverCampaign(ctx, campaign); err != nil {
+	if err = uc.prepareCampaignRecipients(ctx, campaign); err != nil {
+		_ = uc.restoreCampaignStatus(ctx, campaign, previousStatus, actorID)
+
+		return entity.EmailCampaign{}, err
+	}
+	stats, err := uc.deliverCampaign(ctx, campaign)
+	if err != nil {
 		return entity.EmailCampaign{}, err
 	}
 
@@ -462,6 +572,45 @@ func (uc *UseCase) SendCampaignNow(ctx context.Context, id, actorID string) (ent
 	campaign.Status = entity.EmailCampaignStatusSent
 	campaign.SentAt = &now
 	campaign.UpdatedBy = nullableActor(actorID)
+	campaign.Metadata = campaignMetadataWithDeliveryStats(campaign.Metadata, stats, now)
+
+	return uc.repo.UpdateEmailCampaign(ctx, campaign)
+}
+
+func (uc *UseCase) RetryFailedCampaign(ctx context.Context, id, actorID string) (entity.EmailCampaign, error) {
+	campaign, err := uc.repo.GetEmailCampaign(ctx, id)
+	if err != nil {
+		return entity.EmailCampaign{}, err
+	}
+	if campaign.Status != entity.EmailCampaignStatusSent {
+		return entity.EmailCampaign{}, entity.ErrInvalidEmailCampaign
+	}
+	if err = uc.ensureMarketingTemplate(ctx, campaign.TemplateID); err != nil {
+		return entity.EmailCampaign{}, err
+	}
+	campaign, err = uc.repo.ClaimEmailCampaignForRetry(ctx, campaign.ID, actorID)
+	if err != nil {
+		return entity.EmailCampaign{}, err
+	}
+
+	retryStartedAt := time.Now().UTC()
+	stats, err := uc.deliverCampaignRetry(ctx, campaign, retryStartedAt)
+	if err != nil {
+		_ = uc.restoreCampaignStatus(ctx, campaign, entity.EmailCampaignStatusSent, actorID)
+
+		return entity.EmailCampaign{}, err
+	}
+	counts, err := uc.repo.CountEmailCampaignRecipientsByStatus(ctx, campaign.ID)
+	if err != nil {
+		_ = uc.restoreCampaignStatus(ctx, campaign, entity.EmailCampaignStatusSent, actorID)
+
+		return entity.EmailCampaign{}, err
+	}
+
+	now := time.Now().UTC()
+	campaign.Status = entity.EmailCampaignStatusSent
+	campaign.UpdatedBy = nullableActor(actorID)
+	campaign.Metadata = campaignMetadataWithRetryStats(campaign.Metadata, counts, stats, now)
 
 	return uc.repo.UpdateEmailCampaign(ctx, campaign)
 }
@@ -541,6 +690,39 @@ func (uc *UseCase) DispatchDueCampaigns(ctx context.Context, limit int) error {
 	return nil
 }
 
+func (uc *UseCase) IngestCloudflareBounceWebhook(
+	ctx context.Context,
+	payload []byte,
+) (entity.EmailWebhookIngestResult, error) {
+	var result entity.EmailWebhookIngestResult
+	events, err := parseCloudflareDeliveryEvents(payload, time.Now().UTC())
+	if err != nil {
+		return result, err
+	}
+	result.Accepted = len(events)
+
+	for _, event := range events {
+		inserted, err := uc.recordDeliveryEvent(ctx, event)
+		if err != nil {
+			return result, err
+		}
+		if inserted {
+			result.Processed++
+			if err = uc.markDeliveryTargetsFailed(ctx, event); err != nil {
+				return result, err
+			}
+		} else {
+			result.Duplicates++
+		}
+		if _, err = uc.upsertAutomatedSuppression(ctx, event.RecipientEmail, suppressionReasonForEvent(event.EventType)); err != nil {
+			return result, err
+		}
+		result.Suppressed++
+	}
+
+	return result, nil
+}
+
 func (uc *UseCase) Unsubscribe(ctx context.Context, token string) (entity.EmailSubscription, error) {
 	userID, email, err := uc.parseUnsubscribeToken(token)
 	if err != nil {
@@ -575,30 +757,112 @@ func (uc *UseCase) prepareCampaignRecipients(ctx context.Context, campaign entit
 	return uc.repo.ReplaceEmailCampaignRecipients(ctx, campaign.ID, recipients)
 }
 
-func (uc *UseCase) deliverCampaign(ctx context.Context, campaign entity.EmailCampaign) error {
-	recipients, err := uc.repo.ListEmailCampaignRecipients(
-		ctx,
-		campaign.ID,
-		entity.EmailRecipientStatusPending,
-		defaultBatchSize,
-	)
-	if err != nil {
-		return err
-	}
-	for _, recipient := range recipients {
-		if err = uc.deliverCampaignRecipient(ctx, campaign, recipient); err != nil {
-			return err
-		}
+func (uc *UseCase) claimCampaignForSending(
+	ctx context.Context,
+	campaign entity.EmailCampaign,
+	actorID string,
+) (entity.EmailCampaign, error) {
+	if claimer, ok := uc.repo.(campaignClaimer); ok {
+		return claimer.ClaimEmailCampaignForSending(ctx, campaign.ID, actorID)
 	}
 
-	return nil
+	campaign.Status = entity.EmailCampaignStatusSending
+	campaign.UpdatedBy = nullableActor(actorID)
+
+	return uc.repo.UpdateEmailCampaign(ctx, campaign)
+}
+
+func (uc *UseCase) restoreCampaignStatus(
+	ctx context.Context,
+	campaign entity.EmailCampaign,
+	status string,
+	actorID string,
+) error {
+	campaign.Status = status
+	campaign.UpdatedBy = nullableActor(actorID)
+
+	_, err := uc.repo.UpdateEmailCampaign(ctx, campaign)
+
+	return err
+}
+
+func (uc *UseCase) deliverCampaign(ctx context.Context, campaign entity.EmailCampaign) (campaignDeliveryStats, error) {
+	var stats campaignDeliveryStats
+	for {
+		recipients, err := uc.repo.ListEmailCampaignRecipients(
+			ctx,
+			campaign.ID,
+			entity.EmailRecipientStatusPending,
+			defaultBatchSize,
+		)
+		if err != nil {
+			return stats, err
+		}
+		if len(recipients) == 0 {
+			return stats, nil
+		}
+
+		for _, recipient := range recipients {
+			status, err := uc.deliverCampaignRecipient(ctx, campaign, recipient)
+			if err != nil {
+				return stats, err
+			}
+			stats.total++
+			switch status {
+			case entity.EmailRecipientStatusSent:
+				stats.sent++
+			case entity.EmailRecipientStatusSkipped:
+				stats.skipped++
+			case entity.EmailRecipientStatusFailed:
+				stats.failed++
+			}
+		}
+	}
+}
+
+func (uc *UseCase) deliverCampaignRetry(
+	ctx context.Context,
+	campaign entity.EmailCampaign,
+	cutoff time.Time,
+) (campaignDeliveryStats, error) {
+	var stats campaignDeliveryStats
+	for {
+		recipients, err := uc.repo.ListEmailCampaignRecipientsForRetry(
+			ctx,
+			campaign.ID,
+			cutoff,
+			defaultBatchSize,
+		)
+		if err != nil {
+			return stats, err
+		}
+		if len(recipients) == 0 {
+			return stats, nil
+		}
+
+		for _, recipient := range recipients {
+			status, err := uc.deliverCampaignRecipient(ctx, campaign, recipient)
+			if err != nil {
+				return stats, err
+			}
+			stats.total++
+			switch status {
+			case entity.EmailRecipientStatusSent:
+				stats.sent++
+			case entity.EmailRecipientStatusSkipped:
+				stats.skipped++
+			case entity.EmailRecipientStatusFailed:
+				stats.failed++
+			}
+		}
+	}
 }
 
 func (uc *UseCase) deliverCampaignRecipient(
 	ctx context.Context,
 	campaign entity.EmailCampaign,
 	recipient entity.EmailCampaignRecipient,
-) error {
+) (string, error) {
 	version, err := uc.publishedVersionForTemplate(ctx, campaign.TemplateID, recipient.Lang)
 	if err != nil {
 		_, _ = uc.repo.UpdateEmailCampaignRecipientStatus(
@@ -610,14 +874,13 @@ func (uc *UseCase) deliverCampaignRecipient(
 			nil,
 		)
 
-		return nil
+		return entity.EmailRecipientStatusFailed, nil
 	}
 
-	variables := map[string]string{
-		"email":           recipient.Email,
-		"lang":            recipient.Lang,
-		"unsubscribe_url": recipient.UnsubscribeURL,
-	}
+	variables := cloneMap(campaign.Metadata)
+	variables["email"] = recipient.Email
+	variables["lang"] = recipient.Lang
+	variables["unsubscribe_url"] = recipient.UnsubscribeURL
 	preview, err := uc.render(version, variables)
 	if err != nil {
 		_, _ = uc.repo.UpdateEmailCampaignRecipientStatus(
@@ -629,7 +892,7 @@ func (uc *UseCase) deliverCampaignRecipient(
 			nil,
 		)
 
-		return nil
+		return entity.EmailRecipientStatusFailed, nil
 	}
 
 	log, err := uc.sendAndLog(ctx, entity.EmailMessage{
@@ -653,7 +916,7 @@ func (uc *UseCase) deliverCampaignRecipient(
 			nil,
 		)
 
-		return nil
+		return entity.EmailRecipientStatusFailed, nil
 	}
 	if log.Status == entity.EmailMessageStatusSkipped {
 		_, err = uc.repo.UpdateEmailCampaignRecipientStatus(
@@ -665,7 +928,7 @@ func (uc *UseCase) deliverCampaignRecipient(
 			nil,
 		)
 
-		return err
+		return entity.EmailRecipientStatusSkipped, err
 	}
 
 	now := time.Now().UTC()
@@ -678,7 +941,7 @@ func (uc *UseCase) deliverCampaignRecipient(
 		&now,
 	)
 
-	return err
+	return entity.EmailRecipientStatusSent, err
 }
 
 func (uc *UseCase) sendAndLog(
@@ -691,23 +954,25 @@ func (uc *UseCase) sendAndLog(
 	if category == "" {
 		category = entity.EmailCategoryTransactional
 	}
-	if suppressed, err := uc.repo.IsEmailSuppressed(ctx, message.To, category); err != nil {
-		return entity.EmailMessageLog{}, err
-	} else if suppressed {
-		messageLog, logErr := uc.createMessageLog(
-			ctx,
-			message,
-			category,
-			campaignID,
-			campaignRecipientID,
-			entity.EmailMessageStatusSkipped,
-			0,
-			"",
-			"suppressed",
-			nil,
-		)
+	if !message.Critical {
+		if suppressed, err := uc.repo.IsEmailSuppressed(ctx, message.To, category); err != nil {
+			return entity.EmailMessageLog{}, err
+		} else if suppressed {
+			messageLog, logErr := uc.createMessageLog(
+				ctx,
+				message,
+				category,
+				campaignID,
+				campaignRecipientID,
+				entity.EmailMessageStatusSkipped,
+				0,
+				"",
+				"suppressed",
+				nil,
+			)
 
-		return messageLog, logErr
+			return messageLog, logErr
+		}
 	}
 
 	messageLog, err := uc.createMessageLog(
@@ -726,7 +991,7 @@ func (uc *UseCase) sendAndLog(
 		return entity.EmailMessageLog{}, err
 	}
 	if uc.sender == nil {
-		_, _ = uc.repo.UpdateEmailMessageStatus(
+		updated, _ := uc.repo.UpdateEmailMessageStatus(
 			ctx,
 			messageLog.ID,
 			entity.EmailMessageStatusFailed,
@@ -735,29 +1000,41 @@ func (uc *UseCase) sendAndLog(
 			entity.ErrEmailDeliveryFailed.Error(),
 			nil,
 		)
+		if updated.ID != "" {
+			messageLog = updated
+		}
 
 		return messageLog, entity.ErrEmailDeliveryFailed
 	}
 
-	if err = uc.sender.Send(ctx, message); err != nil {
-		_, _ = uc.repo.UpdateEmailMessageStatus(
+	message.MessageID = messageLog.ID
+	message.CampaignID = campaignID
+	message.CampaignRecipient = campaignRecipientID
+	sendResult, err := uc.sender.Send(ctx, message)
+	providerResponse := sendResult.ProviderResponse
+	if err != nil {
+		updated, _ := uc.repo.UpdateEmailMessageStatus(
 			ctx,
 			messageLog.ID,
 			entity.EmailMessageStatusFailed,
 			1,
-			"",
+			providerResponse,
 			err.Error(),
 			nil,
 		)
+		if updated.ID != "" {
+			messageLog = updated
+		}
 		if errors.Is(err, entity.ErrEmailPermanentBounce) {
-			_, _ = uc.CreateSuppression(ctx, entity.EmailSuppression{
-				Email:  message.To,
-				Scope:  entity.EmailSuppressionScopeAll,
-				Reason: "permanent_bounce",
-			})
+			if recordErr := uc.handleSyncPermanentBounces(ctx, message, sendResult, err); recordErr != nil {
+				return messageLog, recordErr
+			}
 		}
 
 		return messageLog, fmt.Errorf("%w: %w", entity.ErrEmailDeliveryFailed, err)
+	}
+	if providerResponse == "" {
+		providerResponse = "sent"
 	}
 
 	now := time.Now().UTC()
@@ -766,7 +1043,7 @@ func (uc *UseCase) sendAndLog(
 		messageLog.ID,
 		entity.EmailMessageStatusSent,
 		1,
-		"sent",
+		providerResponse,
 		"",
 		&now,
 	)
@@ -822,13 +1099,459 @@ func (uc *UseCase) createMessageLog(
 		Attempts:          attempts,
 		ProviderResponse:  providerResponse,
 		Error:             deliveryError,
-		Metadata:          message.Metadata,
+		Metadata:          redactEmailMetadata(message.Metadata),
 		SentAt:            sentAt,
 		CreatedAt:         now,
 		UpdatedAt:         now,
 	}
 
 	return uc.repo.CreateEmailMessage(ctx, log)
+}
+
+func (uc *UseCase) handleSyncPermanentBounces(
+	ctx context.Context,
+	message entity.EmailMessage,
+	result entity.EmailSendResult,
+	deliveryErr error,
+) error {
+	bounces := result.PermanentBounces
+	if len(bounces) == 0 {
+		bounces = []string{message.To}
+	}
+	rawPayload := rawProviderPayload(result.ProviderResponse)
+	for _, email := range bounces {
+		if !validEmail(email) {
+			continue
+		}
+		event := deliveryEventInput{
+			Provider:          providerOrDefault(result.Provider),
+			EventType:         entity.EmailDeliveryEventBounceHard,
+			RecipientEmail:    email,
+			MessageID:         message.MessageID,
+			CampaignID:        message.CampaignID,
+			CampaignRecipient: message.CampaignRecipient,
+			Reason:            emailSuppressionReasonPermanentBounce,
+			Diagnostic:        deliveryErr.Error(),
+			RawPayload:        rawPayload,
+			OccurredAt:        time.Now().UTC(),
+			DedupeSeed:        emailDeliverySourceSync,
+		}
+		if _, err := uc.recordDeliveryEvent(ctx, event); err != nil {
+			return err
+		}
+		if _, err := uc.upsertAutomatedSuppression(
+			ctx,
+			email,
+			emailSuppressionReasonPermanentBounce,
+		); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (uc *UseCase) recordDeliveryEvent(ctx context.Context, input deliveryEventInput) (bool, error) {
+	if !validEmail(input.RecipientEmail) || !validDeliveryEventType(input.EventType) {
+		return false, entity.ErrInvalidAuthInput
+	}
+	now := time.Now().UTC()
+	if input.OccurredAt.IsZero() {
+		input.OccurredAt = now
+	}
+	rawPayload := input.RawPayload
+	if len(rawPayload) == 0 || !json.Valid(rawPayload) {
+		rawPayload = entity.RawJSON(`{}`)
+	}
+	event := entity.EmailDeliveryEvent{
+		ID:                uuid.New().String(),
+		DedupeKey:         deliveryEventDedupeKey(input),
+		Provider:          providerOrDefault(input.Provider),
+		EventType:         input.EventType,
+		RecipientEmail:    strings.ToLower(strings.TrimSpace(input.RecipientEmail)),
+		MessageID:         strings.TrimSpace(input.MessageID),
+		CampaignID:        strings.TrimSpace(input.CampaignID),
+		CampaignRecipient: strings.TrimSpace(input.CampaignRecipient),
+		Reason:            strings.TrimSpace(input.Reason),
+		Diagnostic:        strings.TrimSpace(input.Diagnostic),
+		RawPayload:        rawPayload,
+		OccurredAt:        input.OccurredAt,
+		CreatedAt:         now,
+	}
+	_, inserted, err := uc.repo.UpsertEmailDeliveryEvent(ctx, event)
+
+	return inserted, err
+}
+
+func (uc *UseCase) upsertAutomatedSuppression(
+	ctx context.Context,
+	email,
+	reason string,
+) (entity.EmailSuppression, error) {
+	if !validEmail(email) {
+		return entity.EmailSuppression{}, entity.ErrInvalidAuthInput
+	}
+	now := time.Now().UTC()
+
+	return uc.repo.UpsertAutomaticEmailSuppression(ctx, entity.EmailSuppression{
+		ID:        uuid.New().String(),
+		Email:     strings.ToLower(strings.TrimSpace(email)),
+		Scope:     entity.EmailSuppressionScopeAll,
+		Reason:    strings.TrimSpace(reason),
+		CreatedAt: now,
+	})
+}
+
+func (uc *UseCase) markDeliveryTargetsFailed(ctx context.Context, event deliveryEventInput) error {
+	if strings.TrimSpace(event.MessageID) != "" {
+		_, err := uc.repo.UpdateEmailMessageStatus(
+			ctx,
+			event.MessageID,
+			entity.EmailMessageStatusFailed,
+			1,
+			string(event.RawPayload),
+			event.Diagnostic,
+			nil,
+		)
+		if err != nil && !errors.Is(err, entity.ErrEmailMessageNotFound) {
+			return err
+		}
+	}
+	if strings.TrimSpace(event.CampaignRecipient) != "" {
+		_, err := uc.repo.UpdateEmailCampaignRecipientStatus(
+			ctx,
+			event.CampaignRecipient,
+			entity.EmailRecipientStatusFailed,
+			event.MessageID,
+			event.Diagnostic,
+			nil,
+		)
+		if err != nil && !errors.Is(err, entity.ErrEmailCampaignNotFound) {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func campaignMetadataWithDeliveryStats(
+	metadata map[string]string,
+	stats campaignDeliveryStats,
+	finishedAt time.Time,
+) map[string]string {
+	metadata = cloneMap(metadata)
+	metadata[campaignMetadataDeliveryTotal] = fmt.Sprintf("%d", stats.total)
+	metadata[campaignMetadataDeliverySent] = fmt.Sprintf("%d", stats.sent)
+	metadata[campaignMetadataDeliveryFailed] = fmt.Sprintf("%d", stats.failed)
+	metadata[campaignMetadataDeliverySkipped] = fmt.Sprintf("%d", stats.skipped)
+	metadata[campaignMetadataDeliveryFinishedAt] = finishedAt.Format(time.RFC3339)
+
+	return metadata
+}
+
+func campaignMetadataWithRetryStats(
+	metadata map[string]string,
+	counts map[string]int,
+	stats campaignDeliveryStats,
+	finishedAt time.Time,
+) map[string]string {
+	metadata = cloneMap(metadata)
+	deliveryTotal := 0
+	for _, status := range []string{
+		entity.EmailRecipientStatusPending,
+		entity.EmailRecipientStatusSent,
+		entity.EmailRecipientStatusFailed,
+		entity.EmailRecipientStatusSkipped,
+	} {
+		deliveryTotal += counts[status]
+	}
+	metadata[campaignMetadataDeliveryTotal] = fmt.Sprintf("%d", deliveryTotal)
+	metadata[campaignMetadataDeliverySent] = fmt.Sprintf("%d", counts[entity.EmailRecipientStatusSent])
+	metadata[campaignMetadataDeliveryFailed] = fmt.Sprintf("%d", counts[entity.EmailRecipientStatusFailed])
+	metadata[campaignMetadataDeliverySkipped] = fmt.Sprintf("%d", counts[entity.EmailRecipientStatusSkipped])
+	metadata[campaignMetadataDeliveryFinishedAt] = finishedAt.Format(time.RFC3339)
+	metadata[campaignMetadataRetryTotal] = fmt.Sprintf("%d", stats.total)
+	metadata[campaignMetadataRetrySent] = fmt.Sprintf("%d", stats.sent)
+	metadata[campaignMetadataRetryFailed] = fmt.Sprintf("%d", stats.failed)
+	metadata[campaignMetadataRetrySkipped] = fmt.Sprintf("%d", stats.skipped)
+	metadata[campaignMetadataRetryFinishedAt] = finishedAt.Format(time.RFC3339)
+
+	return metadata
+}
+
+func redactEmailMetadata(metadata map[string]string) map[string]string {
+	redacted := map[string]string{}
+	for key, value := range metadata {
+		if sensitiveEmailMetadataKey(key) || valueHasTokenQuery(value) {
+			redacted[key] = redactedValue
+
+			continue
+		}
+		redacted[key] = value
+	}
+
+	return redacted
+}
+
+func parseCloudflareDeliveryEvents(payload []byte, now time.Time) ([]deliveryEventInput, error) {
+	payload = bytes.TrimSpace(payload)
+	if len(payload) == 0 || !json.Valid(payload) {
+		return nil, entity.ErrInvalidAuthInput
+	}
+	var parsed cloudflareWebhookPayload
+	if err := json.Unmarshal(payload, &parsed); err != nil {
+		return nil, entity.ErrInvalidAuthInput
+	}
+	rawPayload := entity.RawJSON(payload)
+	seed := webhookDedupeSeed(payload, parsed.CorrelationID)
+	occurredAt := webhookOccurredAt(parsed.Timestamp, now)
+	events := make([]deliveryEventInput, 0)
+	addAddresses := func(addresses []string, eventType, reason string) {
+		for _, email := range addresses {
+			if !validEmail(email) {
+				continue
+			}
+			events = append(events, deliveryEventInput{
+				Provider:       entity.EmailProviderCloudflare,
+				EventType:      eventType,
+				RecipientEmail: email,
+				Reason:         reason,
+				Diagnostic:     reason,
+				RawPayload:     rawPayload,
+				OccurredAt:     occurredAt,
+				DedupeSeed:     seed,
+			})
+		}
+	}
+	addAddresses(parsed.PermanentBounces, entity.EmailDeliveryEventBounceHard, emailSuppressionReasonPermanentBounce)
+	addAddresses(parsed.Complaints, entity.EmailDeliveryEventComplaint, emailSuppressionReasonComplaint)
+	if parsed.Result != nil {
+		addAddresses(
+			parsed.Result.PermanentBounces,
+			entity.EmailDeliveryEventBounceHard,
+			emailSuppressionReasonPermanentBounce,
+		)
+		addAddresses(parsed.Result.Complaints, entity.EmailDeliveryEventComplaint, emailSuppressionReasonComplaint)
+	}
+	if len(parsed.Data) > 0 && json.Valid(parsed.Data) {
+		dataEvents := parseCloudflareDataEvents(parsed.Data, now, seed)
+		events = append(events, dataEvents...)
+	}
+	for _, event := range parsed.Events {
+		if input, ok := normalizedCloudflareEvent(event, rawPayload, now, seed); ok {
+			events = append(events, input)
+		}
+	}
+
+	return events, nil
+}
+
+func parseCloudflareDataEvents(data json.RawMessage, now time.Time, seed string) []deliveryEventInput {
+	var parsed struct {
+		PermanentBounces []string                 `json:"permanent_bounces"`
+		Complaints       []string                 `json:"complaints"`
+		Events           []cloudflareWebhookEvent `json:"events"`
+	}
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		return nil
+	}
+	rawPayload := entity.RawJSON(data)
+	events := make([]deliveryEventInput, 0)
+	for _, email := range parsed.PermanentBounces {
+		if !validEmail(email) {
+			continue
+		}
+		events = append(events, deliveryEventInput{
+			Provider:       entity.EmailProviderCloudflare,
+			EventType:      entity.EmailDeliveryEventBounceHard,
+			RecipientEmail: email,
+			Reason:         emailSuppressionReasonPermanentBounce,
+			Diagnostic:     emailSuppressionReasonPermanentBounce,
+			RawPayload:     rawPayload,
+			OccurredAt:     now,
+			DedupeSeed:     seed + ":data",
+		})
+	}
+	for _, email := range parsed.Complaints {
+		if !validEmail(email) {
+			continue
+		}
+		events = append(events, deliveryEventInput{
+			Provider:       entity.EmailProviderCloudflare,
+			EventType:      entity.EmailDeliveryEventComplaint,
+			RecipientEmail: email,
+			Reason:         emailSuppressionReasonComplaint,
+			Diagnostic:     emailSuppressionReasonComplaint,
+			RawPayload:     rawPayload,
+			OccurredAt:     now,
+			DedupeSeed:     seed + ":data",
+		})
+	}
+	for _, event := range parsed.Events {
+		if input, ok := normalizedCloudflareEvent(event, rawPayload, now, seed+":data"); ok {
+			events = append(events, input)
+		}
+	}
+
+	return events
+}
+
+func normalizedCloudflareEvent(
+	event cloudflareWebhookEvent,
+	rawPayload entity.RawJSON,
+	now time.Time,
+	fallbackSeed string,
+) (deliveryEventInput, bool) {
+	eventType, reason := normalizeDeliveryEventType(firstNonEmpty(event.EventType, event.Type, event.Event))
+	if eventType == "" {
+		return deliveryEventInput{}, false
+	}
+	email := firstNonEmpty(event.RecipientEmail, event.Email, event.Recipient)
+	if !validEmail(email) {
+		return deliveryEventInput{}, false
+	}
+	occurredAt := parseEventTime(firstNonEmpty(event.OccurredAt, event.Timestamp, event.Time), now)
+	diagnostic := firstNonEmpty(event.Diagnostic, event.DiagnosticMessage, event.Reason, reason)
+	dedupeSeed := firstNonEmpty(event.ID, fallbackSeed)
+
+	return deliveryEventInput{
+		Provider:          entity.EmailProviderCloudflare,
+		EventType:         eventType,
+		RecipientEmail:    email,
+		MessageID:         event.MessageID,
+		CampaignID:        event.CampaignID,
+		CampaignRecipient: event.CampaignRecipient,
+		Reason:            firstNonEmpty(event.Reason, reason),
+		Diagnostic:        diagnostic,
+		RawPayload:        rawPayload,
+		OccurredAt:        occurredAt,
+		DedupeSeed:        dedupeSeed,
+	}, true
+}
+
+func normalizeDeliveryEventType(value string) (string, string) {
+	switch normalizeKey(value) {
+	case "bounce_hard", "hard_bounce", "permanent_bounce", "permanent_bounces", "bounce":
+		return entity.EmailDeliveryEventBounceHard, emailSuppressionReasonPermanentBounce
+	case "complaint", "spam_complaint", "abuse_complaint":
+		return entity.EmailDeliveryEventComplaint, emailSuppressionReasonComplaint
+	default:
+		return "", ""
+	}
+}
+
+func validDeliveryEventType(value string) bool {
+	switch value {
+	case entity.EmailDeliveryEventBounceHard, entity.EmailDeliveryEventComplaint:
+		return true
+	default:
+		return false
+	}
+}
+
+func suppressionReasonForEvent(eventType string) string {
+	if eventType == entity.EmailDeliveryEventComplaint {
+		return emailSuppressionReasonComplaint
+	}
+
+	return emailSuppressionReasonPermanentBounce
+}
+
+func deliveryEventDedupeKey(input deliveryEventInput) string {
+	seed := strings.Join([]string{
+		providerOrDefault(input.Provider),
+		input.EventType,
+		strings.ToLower(strings.TrimSpace(input.RecipientEmail)),
+		strings.TrimSpace(input.MessageID),
+		strings.TrimSpace(input.CampaignID),
+		strings.TrimSpace(input.CampaignRecipient),
+		strings.TrimSpace(input.DedupeSeed),
+	}, ":")
+	sum := sha256.Sum256([]byte(seed))
+
+	return providerOrDefault(input.Provider) + ":" + input.EventType + ":" + hex.EncodeToString(sum[:])
+}
+
+func webhookDedupeSeed(payload []byte, correlationID string) string {
+	if strings.TrimSpace(correlationID) != "" {
+		return emailDeliverySourceWebhook + ":" + strings.TrimSpace(correlationID)
+	}
+	sum := sha256.Sum256(payload)
+
+	return emailDeliverySourceWebhook + ":" + hex.EncodeToString(sum[:])
+}
+
+func rawProviderPayload(providerResponse string) entity.RawJSON {
+	providerResponse = strings.TrimSpace(providerResponse)
+	if providerResponse != "" && json.Valid([]byte(providerResponse)) {
+		return entity.RawJSON(providerResponse)
+	}
+	raw, _ := json.Marshal(map[string]string{"provider_response": providerResponse})
+
+	return entity.RawJSON(raw)
+}
+
+func providerOrDefault(provider string) string {
+	provider = strings.TrimSpace(provider)
+	if provider == "" {
+		return entity.EmailProviderCloudflare
+	}
+
+	return provider
+}
+
+func webhookOccurredAt(value any, fallback time.Time) time.Time {
+	switch typed := value.(type) {
+	case float64:
+		if typed > 0 {
+			return time.Unix(int64(typed), 0).UTC()
+		}
+	case string:
+		return parseEventTime(typed, fallback)
+	}
+
+	return fallback
+}
+
+func parseEventTime(value string, fallback time.Time) time.Time {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return fallback
+	}
+	if parsed, err := time.Parse(time.RFC3339, value); err == nil {
+		return parsed.UTC()
+	}
+
+	return fallback
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+
+	return ""
+}
+
+func sensitiveEmailMetadataKey(key string) bool {
+	normalized := normalizeKey(key)
+	switch normalized {
+	case "link", "otp", "token", "unsubscribe_url":
+		return true
+	default:
+		return strings.HasSuffix(normalized, "_token")
+	}
+}
+
+func valueHasTokenQuery(value string) bool {
+	parsed, err := url.Parse(strings.TrimSpace(value))
+	if err != nil {
+		return false
+	}
+
+	return parsed.Query().Get("token") != ""
 }
 
 func (uc *UseCase) render(
@@ -1017,25 +1740,137 @@ func textWithFooter(text, lang, supportEmail string) string {
 	return text + "\n\n" + footer
 }
 
-func (uc *UseCase) unsubscribeToken(userID, email string) string {
-	payload := base64.RawURLEncoding.EncodeToString([]byte(strings.TrimSpace(userID) + "\n" + strings.ToLower(strings.TrimSpace(email))))
-	mac := hmac.New(sha256.New, []byte(uc.tokenSeed))
-	_, _ = mac.Write([]byte(payload))
-	signature := hex.EncodeToString(mac.Sum(nil))
+func normalizeUnsubscribeTokenOptions(opts Options) (string, string, map[string]string) {
+	keyID := strings.TrimSpace(opts.UnsubscribeTokenKeyID)
+	if keyID == "" {
+		keyID = defaultTokenKeyID
+	}
+	seed := strings.TrimSpace(opts.UnsubscribeTokenSeed)
+	secrets := map[string]string{}
+	for key, secret := range opts.UnsubscribeTokenSecrets {
+		key = strings.TrimSpace(key)
+		secret = strings.TrimSpace(secret)
+		if key == "" || secret == "" {
+			continue
+		}
+		secrets[key] = secret
+	}
+	if seed == "" {
+		seed = secrets[keyID]
+	}
+	if seed != "" && secrets[keyID] == "" {
+		secrets[keyID] = seed
+	}
 
-	return payload + "." + signature
+	return keyID, seed, secrets
+}
+
+func (uc *UseCase) unsubscribeToken(userID, email string) string {
+	payload := unsubscribeTokenPayload(userID, email)
+	keyID := uc.tokenKeyID
+	if keyID == "" {
+		keyID = defaultTokenKeyID
+	}
+	signingInput := tokenVersionV2 + "." + keyID + "." + payload
+	signature := unsubscribeTokenSignature(signingInput, uc.secretForTokenKey(keyID))
+
+	return signingInput + "." + signature
+}
+
+func unsubscribeTokenPayload(userID, email string) string {
+	return base64.RawURLEncoding.EncodeToString(
+		[]byte(strings.TrimSpace(userID) + "\n" + strings.ToLower(strings.TrimSpace(email))),
+	)
 }
 
 func (uc *UseCase) parseUnsubscribeToken(token string) (string, string, error) {
-	payload, signature, ok := strings.Cut(strings.TrimSpace(token), ".")
-	if !ok || payload == "" || signature == "" {
+	token = strings.TrimSpace(token)
+	parts := strings.Split(token, ".")
+	switch {
+	case len(parts) == 4 && parts[0] == tokenVersionV2:
+		return uc.parseV2UnsubscribeToken(parts)
+	case len(parts) == 2:
+		return uc.parseLegacyUnsubscribeToken(parts[0], parts[1])
+	default:
 		return "", "", entity.ErrInvalidUnsubscribeToken
 	}
-	mac := hmac.New(sha256.New, []byte(uc.tokenSeed))
-	_, _ = mac.Write([]byte(payload))
-	if !hmac.Equal([]byte(signature), []byte(hex.EncodeToString(mac.Sum(nil)))) {
+}
+
+func (uc *UseCase) parseV2UnsubscribeToken(parts []string) (string, string, error) {
+	keyID, payload, signature := parts[1], parts[2], parts[3]
+	if keyID == "" || payload == "" || signature == "" {
 		return "", "", entity.ErrInvalidUnsubscribeToken
 	}
+	secret := uc.tokenSecrets[keyID]
+	if secret == "" {
+		return "", "", entity.ErrInvalidUnsubscribeToken
+	}
+	signingInput := tokenVersionV2 + "." + keyID + "." + payload
+	if !validUnsubscribeTokenSignature(signingInput, signature, secret) {
+		return "", "", entity.ErrInvalidUnsubscribeToken
+	}
+
+	return decodeUnsubscribeTokenPayload(payload)
+}
+
+func (uc *UseCase) parseLegacyUnsubscribeToken(payload, signature string) (string, string, error) {
+	if payload == "" || signature == "" {
+		return "", "", entity.ErrInvalidUnsubscribeToken
+	}
+	for _, secret := range uc.legacyTokenSecrets() {
+		if validUnsubscribeTokenSignature(payload, signature, secret) {
+			return decodeUnsubscribeTokenPayload(payload)
+		}
+	}
+
+	return "", "", entity.ErrInvalidUnsubscribeToken
+}
+
+func (uc *UseCase) secretForTokenKey(keyID string) string {
+	if uc.tokenSecrets[keyID] != "" {
+		return uc.tokenSecrets[keyID]
+	}
+
+	return uc.tokenSeed
+}
+
+func (uc *UseCase) legacyTokenSecrets() []string {
+	secrets := make([]string, 0, len(uc.tokenSecrets)+1)
+	seen := map[string]bool{}
+	if uc.tokenSeed != "" {
+		secrets = append(secrets, uc.tokenSeed)
+		seen[uc.tokenSeed] = true
+	}
+	for _, secret := range uc.tokenSecrets {
+		if secret == "" || seen[secret] {
+			continue
+		}
+		secrets = append(secrets, secret)
+		seen[secret] = true
+	}
+
+	return secrets
+}
+
+func unsubscribeTokenSignature(input, secret string) string {
+	mac := hmac.New(sha256.New, []byte(secret))
+	_, _ = mac.Write([]byte(input))
+
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
+func validUnsubscribeTokenSignature(input, signature, secret string) bool {
+	actual, err := hex.DecodeString(signature)
+	if err != nil {
+		return false
+	}
+	expectedMAC := hmac.New(sha256.New, []byte(secret))
+	_, _ = expectedMAC.Write([]byte(input))
+
+	return hmac.Equal(actual, expectedMAC.Sum(nil))
+}
+
+func decodeUnsubscribeTokenPayload(payload string) (string, string, error) {
 	decoded, err := base64.RawURLEncoding.DecodeString(payload)
 	if err != nil {
 		return "", "", entity.ErrInvalidUnsubscribeToken
@@ -1104,6 +1939,21 @@ func (uc *UseCase) publishedVersionForKey(
 	}
 
 	return uc.repo.GetPublishedEmailTemplateVersion(ctx, templateKey, contentlang.Default)
+}
+
+func (uc *UseCase) templateIsCritical(ctx context.Context, templateID string) (bool, error) {
+	if strings.TrimSpace(templateID) == "" {
+		return false, nil
+	}
+	template, err := uc.repo.GetEmailTemplateByID(ctx, templateID)
+	if errors.Is(err, entity.ErrEmailTemplateNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+
+	return template.Critical, nil
 }
 
 func (uc *UseCase) publishedVersionForTemplate(

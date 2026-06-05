@@ -72,6 +72,24 @@ export type SectionTranslation = {
   updated_at: string;
 };
 
+export type SourceQuranCitation = {
+  quote: string;
+  reference: string;
+};
+
+export type SourceBlock = {
+  type: "paragraph" | "heading" | "quran_quote" | "html";
+  text: string;
+  html: string;
+  quran_citations?: SourceQuranCitation[];
+};
+
+export type SourceFootnote = {
+  marker: string;
+  text: string;
+  html: string;
+};
+
 export type BookTOCRead = {
   book_id: number;
   heading_id: number;
@@ -87,6 +105,9 @@ export type BookTOCRead = {
   available_summary_langs: KitabLang[];
   original_html: string;
   original_text: string;
+  original_format: "html" | "plain_text";
+  original_blocks: SourceBlock[];
+  original_footnotes: SourceFootnote[];
   translation: SectionTranslation | null;
   audio: {
     lang: KitabLang;
@@ -189,7 +210,7 @@ export function labelForAvailability(decision: AvailabilityDecision): string | n
 2. Fetch book detail with `GET /v1/books/{book_id}?lang={selectedLang}`.
 3. Fetch TOC with `GET /v1/books/{book_id}/toc?lang={selectedLang}`.
 4. Fetch article body with `GET /v1/books/{book_id}/toc/{heading_id}/read?lang={selectedLang}`.
-5. Render `original_html` as the source panel for all languages.
+5. Render `original_html` as the source panel for all languages, or render `original_blocks` when the UI needs block-level control.
 6. Render translated body only when `translation !== null`.
 7. Use `availability.translation.action` for translation tab state.
 8. Use `availability.audio.action` for player state.
@@ -572,7 +593,7 @@ Supported `asset_type`: `surah_info`, `ayah_translation`, `translation_source`, 
 - `LanguageSwitcher`: owns selected `KitabLang`.
 - `CatalogFallbackBadge`: reads `localization.availability`.
 - `ReaderTitle`: reads `title_lang`, `is_title_fallback`, and `availability.title`.
-- `SourcePanel`: always renders `original_html`.
+- `SourcePanel`: renders sanitized `original_html`; can use `original_blocks` and `original_footnotes` for custom typography, footnote drawers, or quote handling.
 - `TranslationPanel`: renders only when `translation` exists or `availability.translation.action === "offer_available_lang"`.
 - `SummaryPanel`: uses `summaryState`.
 - `AudioPlayer`: uses `audioState`.

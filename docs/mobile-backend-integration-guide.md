@@ -223,6 +223,7 @@ Auth gotchas:
 - Register sukses membuat user `email_verified=false`; user baru belum bisa login sebelum verify email.
 - Login user yang belum verified mengembalikan `403 {"error":"email not verified"}`. Mobile harus tampilkan screen "cek email" dan tombol resend.
 - `POST /v1/auth/resend-verification` dan `POST /v1/auth/forgot-password` sengaja memakai response `202 {"accepted":true}`.
+- Email verification dan change-email email berisi link dan OTP 6 digit. OTP default berlaku `10m`; memakai OTP atau link akan menghabiskan verifikasi yang sama.
 - `POST /v1/auth/change-email/verify` tetap butuh Bearer token user yang sedang login. Jika deep link membuka app dari cold start, restore session dulu sebelum submit token.
 - Backend tidak punya refresh token. Saat protected endpoint mengembalikan `401`, hapus token lokal dan minta login ulang.
 - Setelah reset password, change password, change email, atau delete account, JWT lama akan invalid.
@@ -264,6 +265,15 @@ Verify email request:
 }
 ```
 
+Atau:
+
+```json
+{
+  "email": "ahmad@example.com",
+  "otp": "123456"
+}
+```
+
 Resend verification dan forgot password request:
 
 ```json
@@ -302,6 +312,14 @@ Change email request + verify:
 ```json
 {
   "token": "token-dari-deep-link"
+}
+```
+
+Atau:
+
+```json
+{
+  "otp": "123456"
 }
 ```
 
@@ -726,7 +744,8 @@ Recommended kitab reader flow:
 Display rules:
 
 - Selalu simpan kemampuan render `original_html` atau Arabic/source content.
-- `original_html` dan editorial `content_html` yang dikembalikan backend sudah melewati sanitizer allowlist server-side; FE tetap harus render hanya di area reader/editorial preview, bukan sebagai HTML arbitrer dari user.
+- `original_html` dan editorial `content_html` yang dikembalikan backend sudah melewati sanitizer allowlist server-side; untuk sumber plain text, backend membungkusnya menjadi HTML semantik dan mengisi `original_format="plain_text"`.
+- Gunakan `original_blocks` dan `original_footnotes` jika UI mobile butuh kontrol paragraf, catatan kaki, atau kutipan Quran tanpa parsing HTML sendiri.
 - Render `translation.content` hanya jika `translation !== null`.
 - Untuk `lang=ar`, render Arabic/source sebagai utama dan sembunyikan feedback terjemahan.
 - Tampilkan feedback hanya jika `translation !== null && translation.lang === selectedLang`.
@@ -789,6 +808,18 @@ export type BookTOCRead = {
   end_page_id: number;
   original_html: string;
   original_text: string;
+  original_format: "html" | "plain_text";
+  original_blocks: {
+    type: "paragraph" | "heading" | "quran_quote" | "html";
+    text: string;
+    html: string;
+    quran_citations?: { quote: string; reference: string }[];
+  }[];
+  original_footnotes: {
+    marker: string;
+    text: string;
+    html: string;
+  }[];
   translation: SectionTranslation | null;
   audio: SectionAudio | null;
   availability: BookTOCNode["availability"];
@@ -1234,6 +1265,11 @@ export const AuthAPI = {
     apiFetch(apiBaseURL, "/v1/auth/verify-email", {
       method: "POST",
       body: JSON.stringify({ token }),
+    }),
+  verifyEmailOtp: (email: string, otp: string) =>
+    apiFetch(apiBaseURL, "/v1/auth/verify-email", {
+      method: "POST",
+      body: JSON.stringify({ email, otp }),
     }),
 };
 
