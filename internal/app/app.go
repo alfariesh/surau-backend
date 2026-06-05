@@ -74,12 +74,12 @@ func initUseCases(cfg *config.Config, pg *postgres.Postgres, jwtManager *jwt.Man
 		})
 	}
 	emailUC := emailusecase.New(emailRepo, emailSender, emailusecase.Options{
-		SupportEmail:            cfg.Email.ReplyTo,
-		UnsubscribeURL:          unsubscribeFrontendURL(cfg),
-		UnsubscribeHeaderURL:    cfg.Email.UnsubscribePublicURL,
-		UnsubscribeTokenKeyID:   unsubscribeTokenKeyID(cfg),
-		UnsubscribeTokenSeed:    unsubscribeTokenSeed(cfg),
-		UnsubscribeTokenSecrets: unsubscribeTokenSecrets(cfg),
+		SupportEmail:              cfg.Email.ReplyTo,
+		UnsubscribeURL:            unsubscribeFrontendURL(cfg),
+		UnsubscribeHeaderURL:      cfg.Email.UnsubscribePublicURL,
+		UnsubscribeTokenKeyID:     unsubscribeTokenKeyID(cfg),
+		UnsubscribeTokenSeed:      unsubscribeTokenSeed(cfg),
+		UnsubscribeTokenSecrets:   unsubscribeTokenSecrets(cfg),
 	})
 	var rateLimiter repo.AuthRateLimitRepo
 	if cfg.AuthRateLimit.Enabled {
@@ -246,6 +246,9 @@ func (s *servers) startServers(emailUC *emailusecase.UseCase, l logger.Interface
 				case <-ticker.C:
 					if err := emailUC.DispatchDueCampaigns(dispatchCtx, 20); err != nil {
 						l.Error(fmt.Errorf("app - email dispatcher: %w", err))
+					}
+					if err := emailUC.DispatchDueTransactionalEmails(dispatchCtx, 20); err != nil {
+						l.Error(fmt.Errorf("app - transactional email dispatcher: %w", err))
 					}
 				}
 			}

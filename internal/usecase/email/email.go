@@ -37,6 +37,7 @@ const (
 	emailHeaderListUnsubscribe            = "List-Unsubscribe"
 	emailHeaderListUnsubscribePost        = "List-Unsubscribe-Post"
 	emailHeaderListUnsubscribeOneClick    = "One-Click"
+	transactionalRetryVisibilityTimeout   = 5 * time.Minute
 
 	campaignMetadataDeliveryTotal      = "delivery_total"
 	campaignMetadataDeliverySent       = "delivery_sent"
@@ -50,26 +51,34 @@ const (
 	campaignMetadataRetryFinishedAt    = "retry_failed_finished_at"
 )
 
+var transactionalRetryDelays = []time.Duration{
+	time.Minute,
+	5 * time.Minute,
+	15 * time.Minute,
+	time.Hour,
+	6 * time.Hour,
+}
+
 // Options configures the admin-managed email service.
 type Options struct {
-	SupportEmail            string
-	UnsubscribeURL          string
-	UnsubscribeHeaderURL    string
-	UnsubscribeTokenKeyID   string
-	UnsubscribeTokenSeed    string
-	UnsubscribeTokenSecrets map[string]string
+	SupportEmail              string
+	UnsubscribeURL            string
+	UnsubscribeHeaderURL      string
+	UnsubscribeTokenKeyID     string
+	UnsubscribeTokenSeed      string
+	UnsubscribeTokenSecrets   map[string]string
 }
 
 // UseCase coordinates templates, delivery, consent, suppressions, and campaigns.
 type UseCase struct {
-	repo           repo.EmailRepo
-	sender         repo.EmailSender
-	supportEmail   string
-	unsubscribeURL string
+	repo            repo.EmailRepo
+	sender          repo.EmailSender
+	supportEmail    string
+	unsubscribeURL  string
 	headerURL       string
-	tokenKeyID     string
-	tokenSeed      string
-	tokenSecrets   map[string]string
+	tokenKeyID      string
+	tokenSeed       string
+	tokenSecrets    map[string]string
 }
 
 type campaignClaimer interface {
@@ -136,14 +145,14 @@ func New(r repo.EmailRepo, sender repo.EmailSender, opts Options) *UseCase {
 	tokenKeyID, tokenSeed, tokenSecrets := normalizeUnsubscribeTokenOptions(opts)
 
 	return &UseCase{
-		repo:           r,
-		sender:         sender,
-		supportEmail:   normalizeSupportEmail(opts.SupportEmail),
-		unsubscribeURL: strings.TrimSpace(opts.UnsubscribeURL),
-		headerURL:      strings.TrimSpace(opts.UnsubscribeHeaderURL),
-		tokenKeyID:     tokenKeyID,
-		tokenSeed:      tokenSeed,
-		tokenSecrets:   tokenSecrets,
+		repo:            r,
+		sender:          sender,
+		supportEmail:    normalizeSupportEmail(opts.SupportEmail),
+		unsubscribeURL:  strings.TrimSpace(opts.UnsubscribeURL),
+		headerURL:       strings.TrimSpace(opts.UnsubscribeHeaderURL),
+		tokenKeyID:      tokenKeyID,
+		tokenSeed:       tokenSeed,
+		tokenSecrets:    tokenSecrets,
 	}
 }
 
@@ -717,6 +726,28 @@ func (uc *UseCase) DispatchDueCampaigns(ctx context.Context, limit int) error {
 	return nil
 }
 
+func (uc *UseCase) DispatchDueTransactionalEmails(ctx context.Context, limit int) error {
+	if uc.sender == nil || uc.repo == nil {
+		return nil
+	}
+	messages, err := uc.repo.ClaimDueTransactionalEmailMessages(
+		ctx,
+		time.Now().UTC(),
+		limit,
+		transactionalRetryVisibilityTimeout,
+	)
+	if err != nil {
+		return err
+	}
+	for _, message := range messages {
+		if err = uc.retryTransactionalMessage(ctx, message); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func (uc *UseCase) IngestCloudflareBounceWebhook(
 	ctx context.Context,
 	payload []byte,
@@ -1041,6 +1072,43 @@ func (uc *UseCase) sendAndLog(
 	sendResult, err := uc.sender.Send(ctx, message)
 	providerResponse := sendResult.ProviderResponse
 	if err != nil {
+		if errors.Is(err, entity.ErrEmailPermanentBounce) {
+			updated, _ := uc.repo.UpdateEmailMessageStatus(
+				ctx,
+				messageLog.ID,
+				entity.EmailMessageStatusFailed,
+				1,
+				providerResponse,
+				err.Error(),
+				nil,
+			)
+			if updated.ID != "" {
+				messageLog = updated
+			}
+			if recordErr := uc.handleSyncPermanentBounces(ctx, message, sendResult, err); recordErr != nil {
+				return messageLog, recordErr
+			}
+
+			return messageLog, fmt.Errorf("%w: %w", entity.ErrEmailDeliveryFailed, err)
+		}
+		if category == entity.EmailCategoryTransactional {
+			delay, _ := transactionalRetryDelayAfterAttempts(1)
+			nextAttemptAt := time.Now().UTC().Add(delay)
+			updated, retryErr := uc.repo.ScheduleEmailMessageRetry(
+				ctx,
+				messageLog.ID,
+				1,
+				providerResponse,
+				err.Error(),
+				nextAttemptAt,
+			)
+			if retryErr != nil {
+				return messageLog, retryErr
+			}
+
+			return updated, nil
+		}
+
 		updated, _ := uc.repo.UpdateEmailMessageStatus(
 			ctx,
 			messageLog.ID,
@@ -1052,11 +1120,6 @@ func (uc *UseCase) sendAndLog(
 		)
 		if updated.ID != "" {
 			messageLog = updated
-		}
-		if errors.Is(err, entity.ErrEmailPermanentBounce) {
-			if recordErr := uc.handleSyncPermanentBounces(ctx, message, sendResult, err); recordErr != nil {
-				return messageLog, recordErr
-			}
 		}
 
 		return messageLog, fmt.Errorf("%w: %w", entity.ErrEmailDeliveryFailed, err)
@@ -1080,6 +1143,128 @@ func (uc *UseCase) sendAndLog(
 	}
 
 	return messageLog, nil
+}
+
+func (uc *UseCase) retryTransactionalMessage(
+	ctx context.Context,
+	messageLog entity.EmailMessageLog,
+) error {
+	if messageLog.Category != entity.EmailCategoryTransactional {
+		return nil
+	}
+	if !messageLog.Critical {
+		suppressed, err := uc.repo.IsEmailSuppressed(ctx, messageLog.RecipientEmail, messageLog.Category)
+		if err != nil {
+			return err
+		}
+		if suppressed {
+			_, err = uc.repo.UpdateEmailMessageStatus(
+				ctx,
+				messageLog.ID,
+				entity.EmailMessageStatusSkipped,
+				messageLog.Attempts,
+				messageLog.ProviderResponse,
+				"suppressed",
+				nil,
+			)
+
+			return err
+		}
+	}
+
+	message := emailMessageFromLog(messageLog)
+	sendResult, err := uc.sender.Send(ctx, message)
+	providerResponse := sendResult.ProviderResponse
+	attempts := messageLog.Attempts + 1
+	if attempts <= 0 {
+		attempts = 1
+	}
+	if err != nil {
+		if errors.Is(err, entity.ErrEmailPermanentBounce) {
+			_, updateErr := uc.repo.UpdateEmailMessageStatus(
+				ctx,
+				messageLog.ID,
+				entity.EmailMessageStatusFailed,
+				attempts,
+				providerResponse,
+				err.Error(),
+				nil,
+			)
+			if updateErr != nil {
+				return updateErr
+			}
+
+			return uc.handleSyncPermanentBounces(ctx, message, sendResult, err)
+		}
+		if delay, ok := transactionalRetryDelayAfterAttempts(attempts); ok {
+			_, scheduleErr := uc.repo.ScheduleEmailMessageRetry(
+				ctx,
+				messageLog.ID,
+				attempts,
+				providerResponse,
+				err.Error(),
+				time.Now().UTC().Add(delay),
+			)
+
+			return scheduleErr
+		}
+
+		_, updateErr := uc.repo.UpdateEmailMessageStatus(
+			ctx,
+			messageLog.ID,
+			entity.EmailMessageStatusFailed,
+			attempts,
+			providerResponse,
+			err.Error(),
+			nil,
+		)
+
+		return updateErr
+	}
+	if providerResponse == "" {
+		providerResponse = "sent"
+	}
+
+	now := time.Now().UTC()
+	_, err = uc.repo.UpdateEmailMessageStatus(
+		ctx,
+		messageLog.ID,
+		entity.EmailMessageStatusSent,
+		attempts,
+		providerResponse,
+		"",
+		&now,
+	)
+
+	return err
+}
+
+func emailMessageFromLog(messageLog entity.EmailMessageLog) entity.EmailMessage {
+	return entity.EmailMessage{
+		To:                messageLog.RecipientEmail,
+		Subject:           messageLog.Subject,
+		HTML:              messageLog.HTML,
+		Text:              messageLog.Text,
+		Critical:          messageLog.Critical,
+		Category:          messageLog.Category,
+		TemplateKey:       messageLog.TemplateKey,
+		TemplateVersionID: messageLog.TemplateVersionID,
+		Lang:              messageLog.Lang,
+		UserID:            messageLog.UserID,
+		MessageID:         messageLog.ID,
+		CampaignID:        messageLog.CampaignID,
+		CampaignRecipient: messageLog.CampaignRecipient,
+		Headers:           cloneMap(messageLog.Headers),
+		Metadata:          cloneMap(messageLog.Metadata),
+	}
+}
+
+func transactionalRetryDelayAfterAttempts(attempts int) (time.Duration, bool) {
+	if attempts <= 0 || attempts > len(transactionalRetryDelays) {
+		return 0, false
+	}
+
+	return transactionalRetryDelays[attempts-1], true
 }
 
 func (uc *UseCase) logSkipped(ctx context.Context, message entity.EmailMessage) error {
@@ -1123,6 +1308,10 @@ func (uc *UseCase) createMessageLog(
 		RecipientEmail:    message.To,
 		Lang:              contentlang.MustNormalize(message.Lang),
 		Subject:           message.Subject,
+		HTML:              message.HTML,
+		Text:              message.Text,
+		Critical:          message.Critical,
+		Headers:           cloneMap(message.Headers),
 		Status:            status,
 		Attempts:          attempts,
 		ProviderResponse:  providerResponse,
@@ -1254,7 +1443,7 @@ func (uc *UseCase) markDeliveryTargetsFailed(ctx context.Context, event delivery
 			event.Diagnostic,
 			nil,
 		)
-		if err != nil && !errors.Is(err, entity.ErrEmailCampaignNotFound) {
+		if err != nil && !errors.Is(err, entity.ErrEmailCampaignRecipientNotFound) {
 			return err
 		}
 	}

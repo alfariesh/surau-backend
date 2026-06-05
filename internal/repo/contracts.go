@@ -112,6 +112,20 @@ type (
 			deliveryError string,
 			sentAt *time.Time,
 		) (entity.EmailMessageLog, error)
+		ScheduleEmailMessageRetry(
+			ctx context.Context,
+			id string,
+			attempts int,
+			providerResponse string,
+			deliveryError string,
+			scheduledAt time.Time,
+		) (entity.EmailMessageLog, error)
+		ClaimDueTransactionalEmailMessages(
+			ctx context.Context,
+			now time.Time,
+			limit int,
+			visibilityTimeout time.Duration,
+		) ([]entity.EmailMessageLog, error)
 		ListEmailMessages(ctx context.Context, filter EmailMessageFilter) ([]entity.EmailMessageLog, int, error)
 		GetEmailSubscription(ctx context.Context, userID string) (entity.EmailSubscription, error)
 		UpsertEmailSubscription(ctx context.Context, subscription entity.EmailSubscription) (entity.EmailSubscription, error)

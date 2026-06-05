@@ -124,6 +124,7 @@ type (
 			variables map[string]string,
 		) (entity.EmailMessageLog, error)
 		DispatchDueCampaigns(ctx context.Context, limit int) error
+		DispatchDueTransactionalEmails(ctx context.Context, limit int) error
 		Unsubscribe(ctx context.Context, token string) (entity.EmailSubscription, error)
 	}
 

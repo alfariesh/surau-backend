@@ -33,7 +33,14 @@ v.required_variables, v.published, v.created_by, v.published_by, v.published_at,
 id, category, COALESCE(template_key, ''), COALESCE(template_version_id::text, ''),
 COALESCE(campaign_id::text, ''), COALESCE(campaign_recipient_id::text, ''),
 COALESCE(user_id::text, ''), recipient_email, lang, subject, status, attempts,
-COALESCE(provider_response, ''), COALESCE(error, ''), metadata, scheduled_at, sent_at, created_at, updated_at`
+COALESCE(provider_response, ''), COALESCE(error, ''), metadata, html, text, critical, headers,
+scheduled_at, sent_at, created_at, updated_at`
+	emailMessageColumnsQualified = `
+m.id, m.category, COALESCE(m.template_key, ''), COALESCE(m.template_version_id::text, ''),
+COALESCE(m.campaign_id::text, ''), COALESCE(m.campaign_recipient_id::text, ''),
+COALESCE(m.user_id::text, ''), m.recipient_email, m.lang, m.subject, m.status, m.attempts,
+COALESCE(m.provider_response, ''), COALESCE(m.error, ''), m.metadata, m.html, m.text, m.critical, m.headers,
+m.scheduled_at, m.sent_at, m.created_at, m.updated_at`
 	emailCampaignColumns = `
 id, name, template_id, status, audience, metadata, scheduled_at, sent_at, cancelled_at,
 created_by, updated_by, created_at, updated_at`
@@ -536,6 +543,10 @@ func (r *EmailRepo) CreateEmailMessage(
 	if err != nil {
 		return entity.EmailMessageLog{}, err
 	}
+	headersJSON, err := marshalStringMap(message.Headers)
+	if err != nil {
+		return entity.EmailMessageLog{}, err
+	}
 
 	sqlText, args, err := r.Builder.
 		Insert("email_messages").
@@ -555,6 +566,10 @@ func (r *EmailRepo) CreateEmailMessage(
 			"provider_response",
 			"error",
 			"metadata",
+			"html",
+			"text",
+			"critical",
+			"headers",
 			"scheduled_at",
 			"sent_at",
 			"created_at",
@@ -576,6 +591,10 @@ func (r *EmailRepo) CreateEmailMessage(
 			nullableStringArg(message.ProviderResponse),
 			nullableStringArg(message.Error),
 			string(metadataJSON),
+			message.HTML,
+			message.Text,
+			message.Critical,
+			string(headersJSON),
 			message.ScheduledAt,
 			message.SentAt,
 			message.CreatedAt,
@@ -605,6 +624,7 @@ func (r *EmailRepo) UpdateEmailMessageStatus(
 		Set("attempts", attempts).
 		Set("provider_response", nullableStringArg(providerResponse)).
 		Set("error", nullableStringArg(deliveryError)).
+		Set("scheduled_at", nil).
 		Set("sent_at", sentAt).
 		Set("updated_at", sq.Expr("now()")).
 		Where(sq.Eq{"id": id}).
@@ -615,6 +635,119 @@ func (r *EmailRepo) UpdateEmailMessageStatus(
 	}
 
 	return scanEmailMessage(r.Pool.QueryRow(ctx, sqlText, args...))
+}
+
+func (r *EmailRepo) ScheduleEmailMessageRetry(
+	ctx context.Context,
+	id string,
+	attempts int,
+	providerResponse string,
+	deliveryError string,
+	scheduledAt time.Time,
+) (entity.EmailMessageLog, error) {
+	sqlText, args, err := r.Builder.
+		Update("email_messages").
+		Set("status", entity.EmailMessageStatusQueued).
+		Set("attempts", attempts).
+		Set("provider_response", nullableStringArg(providerResponse)).
+		Set("error", nullableStringArg(deliveryError)).
+		Set("scheduled_at", scheduledAt).
+		Set("sent_at", nil).
+		Set("updated_at", sq.Expr("now()")).
+		Where(sq.Eq{"id": id}).
+		Suffix("RETURNING " + emailMessageColumns).
+		ToSql()
+	if err != nil {
+		return entity.EmailMessageLog{}, fmt.Errorf("EmailRepo - ScheduleEmailMessageRetry - Builder: %w", err)
+	}
+
+	return scanEmailMessage(r.Pool.QueryRow(ctx, sqlText, args...))
+}
+
+func (r *EmailRepo) ClaimDueTransactionalEmailMessages(
+	ctx context.Context,
+	now time.Time,
+	limit int,
+	visibilityTimeout time.Duration,
+) ([]entity.EmailMessageLog, error) {
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	if visibilityTimeout <= 0 {
+		visibilityTimeout = 5 * time.Minute
+	}
+	limit = emailMessageClaimLimit(limit)
+
+	tx, err := r.Pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("EmailRepo - ClaimDueTransactionalEmailMessages - Begin: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	rows, err := tx.Query(
+		ctx,
+		claimDueTransactionalEmailMessagesSQL(),
+		entity.EmailCategoryTransactional,
+		entity.EmailMessageStatusQueued,
+		now.UTC(),
+		limit,
+		now.UTC().Add(visibilityTimeout),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("EmailRepo - ClaimDueTransactionalEmailMessages - Query: %w", err)
+	}
+	defer rows.Close()
+
+	messages := make([]entity.EmailMessageLog, 0, limit)
+	for rows.Next() {
+		message, err := scanEmailMessage(rows)
+		if err != nil {
+			return nil, err
+		}
+		messages = append(messages, message)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("EmailRepo - ClaimDueTransactionalEmailMessages - rows: %w", err)
+	}
+	rows.Close()
+
+	if err = tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("EmailRepo - ClaimDueTransactionalEmailMessages - Commit: %w", err)
+	}
+
+	return messages, nil
+}
+
+func emailMessageClaimLimit(limit int) int {
+	if limit <= 0 {
+		return 50
+	}
+	if limit > 100 {
+		return 100
+	}
+
+	return limit
+}
+
+func claimDueTransactionalEmailMessagesSQL() string {
+	return `
+WITH due AS (
+    SELECT id
+    FROM email_messages
+    WHERE category = $1
+      AND status = $2
+      AND scheduled_at IS NOT NULL
+      AND scheduled_at <= $3
+    ORDER BY scheduled_at ASC, created_at ASC
+    LIMIT $4
+    FOR UPDATE SKIP LOCKED
+)
+UPDATE email_messages AS m
+SET scheduled_at = $5,
+    updated_at = now()
+FROM due
+WHERE m.id = due.id
+RETURNING ` + emailMessageColumnsQualified
 }
 
 func (r *EmailRepo) ListEmailMessages(
@@ -1846,6 +1979,7 @@ func scanEmailMessageWithTotal(row rowScanner) (entity.EmailMessageLog, int, err
 func scanEmailMessageInternal(row rowScanner, withTotal bool) (entity.EmailMessageLog, int, error) {
 	var message entity.EmailMessageLog
 	var metadataRaw []byte
+	var headersRaw []byte
 	var scheduledAt sql.NullTime
 	var sentAt sql.NullTime
 	total := 0
@@ -1865,6 +1999,10 @@ func scanEmailMessageInternal(row rowScanner, withTotal bool) (entity.EmailMessa
 		&message.ProviderResponse,
 		&message.Error,
 		&metadataRaw,
+		&message.HTML,
+		&message.Text,
+		&message.Critical,
+		&headersRaw,
 		&scheduledAt,
 		&sentAt,
 		&message.CreatedAt,
@@ -1883,6 +2021,7 @@ func scanEmailMessageInternal(row rowScanner, withTotal bool) (entity.EmailMessa
 	message.ScheduledAt = nullableTime(scheduledAt)
 	message.SentAt = nullableTime(sentAt)
 	message.Metadata = unmarshalStringMap(metadataRaw)
+	message.Headers = unmarshalStringMap(headersRaw)
 
 	return message, total, nil
 }

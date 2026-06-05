@@ -162,6 +162,10 @@ type EmailMessageLog struct {
 	RecipientEmail    string            `json:"recipient_email"`
 	Lang              string            `json:"lang"`
 	Subject           string            `json:"subject"`
+	HTML              string            `json:"-" swaggerignore:"true"`
+	Text              string            `json:"-" swaggerignore:"true"`
+	Critical          bool              `json:"-" swaggerignore:"true"`
+	Headers           map[string]string `json:"-" swaggerignore:"true"`
 	Status            string            `json:"status"`
 	Attempts          int               `json:"attempts"`
 	ProviderResponse  string            `json:"provider_response,omitempty"`
@@ -210,7 +214,6 @@ type EmailDeliveryEvent struct {
 	OccurredAt        time.Time `json:"occurred_at"`
 	CreatedAt         time.Time `json:"created_at"`
 }
-
 // EmailCampaignDeliveryEventSummary summarizes delivery events for one campaign.
 type EmailCampaignDeliveryEventSummary struct {
 	CampaignID       string     `json:"campaign_id"`
