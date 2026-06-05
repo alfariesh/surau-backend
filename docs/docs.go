@@ -408,6 +408,70 @@ const docTemplate = `{
                 ]
             }
         },
+        "/admin/emails/campaigns/{id}/retry-failed": {
+            "post": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-emails"
+                ],
+                "summary": "Retry failed email campaign recipients",
+                "operationId": "admin-email-retry-failed-campaign",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Campaign ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/entity.EmailCampaign"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
         "/admin/emails/campaigns/{id}/schedule": {
             "post": {
                 "consumes": [
@@ -2154,7 +2218,7 @@ const docTemplate = `{
         },
         "/auth/change-email/verify": {
             "post": {
-                "description": "Confirm an email change token for the current user",
+                "description": "Confirm an email change token or OTP for the current user",
                 "consumes": [
                     "application/json"
                 ],
@@ -2168,7 +2232,7 @@ const docTemplate = `{
                 "operationId": "verify-email-change",
                 "parameters": [
                     {
-                        "description": "Email change token",
+                        "description": "Email change token or OTP",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -2617,7 +2681,7 @@ const docTemplate = `{
         },
         "/auth/verify-email": {
             "post": {
-                "description": "Verify a user's email address using a one-time token",
+                "description": "Verify a user's email address using a one-time token or 6-digit OTP",
                 "consumes": [
                     "application/json"
                 ],
@@ -2631,7 +2695,7 @@ const docTemplate = `{
                 "operationId": "verify-email",
                 "parameters": [
                     {
-                        "description": "Email verification token",
+                        "description": "Email verification token or email OTP",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -6574,6 +6638,62 @@ const docTemplate = `{
                 }
             }
         },
+        "/email/webhooks/cloudflare/bounces": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "email"
+                ],
+                "summary": "Ingest Cloudflare email bounce webhook",
+                "operationId": "email-cloudflare-bounce-webhook",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Cloudflare webhook secret",
+                        "name": "cf-webhook-auth",
+                        "in": "header",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/entity.EmailWebhookIngestResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
         "/me/quran/progress": {
             "get": {
                 "description": "Return the authenticated user's latest Quran resume position across surahs.",
@@ -9847,6 +9967,22 @@ const docTemplate = `{
                     "type": "boolean",
                     "example": true
                 },
+                "original_blocks": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.SourceBlock"
+                    }
+                },
+                "original_footnotes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.SourceFootnote"
+                    }
+                },
+                "original_format": {
+                    "type": "string",
+                    "example": "plain_text"
+                },
                 "original_html": {
                     "type": "string"
                 },
@@ -10225,6 +10361,22 @@ const docTemplate = `{
                 },
                 "next": {
                     "$ref": "#/definitions/entity.BookTOCLink"
+                },
+                "original_blocks": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.SourceBlock"
+                    }
+                },
+                "original_footnotes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.SourceFootnote"
+                    }
+                },
+                "original_format": {
+                    "type": "string",
+                    "example": "plain_text"
                 },
                 "original_html": {
                     "type": "string"
@@ -10877,6 +11029,23 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "entity.EmailWebhookIngestResult": {
+            "type": "object",
+            "properties": {
+                "accepted": {
+                    "type": "integer"
+                },
+                "duplicates": {
+                    "type": "integer"
+                },
+                "processed": {
+                    "type": "integer"
+                },
+                "suppressed": {
                     "type": "integer"
                 }
             }
@@ -11889,6 +12058,54 @@ const docTemplate = `{
                 },
                 "updated_by": {
                     "type": "string"
+                }
+            }
+        },
+        "entity.SourceBlock": {
+            "type": "object",
+            "properties": {
+                "html": {
+                    "type": "string"
+                },
+                "quran_citations": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.SourceQuranCitation"
+                    }
+                },
+                "text": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string",
+                    "example": "paragraph"
+                }
+            }
+        },
+        "entity.SourceFootnote": {
+            "type": "object",
+            "properties": {
+                "html": {
+                    "type": "string"
+                },
+                "marker": {
+                    "type": "string",
+                    "example": "(¬١)"
+                },
+                "text": {
+                    "type": "string"
+                }
+            }
+        },
+        "entity.SourceQuranCitation": {
+            "type": "object",
+            "properties": {
+                "quote": {
+                    "type": "string"
+                },
+                "reference": {
+                    "type": "string",
+                    "example": "البقرة- ٢٥٥"
                 }
             }
         },
@@ -14125,24 +14342,32 @@ const docTemplate = `{
         },
         "v1.VerifyEmail": {
             "type": "object",
-            "required": [
-                "token"
-            ],
             "properties": {
+                "email": {
+                    "type": "string",
+                    "example": "john@example.com"
+                },
+                "otp": {
+                    "type": "string",
+                    "example": "123456"
+                },
                 "token": {
                     "type": "string",
+                    "maxLength": 512,
                     "example": "G66NnGZnWg4W88qGz3p9N0-GxjKuxEOHHsvWv3kBaBA"
                 }
             }
         },
         "v1.VerifyEmailChange": {
             "type": "object",
-            "required": [
-                "token"
-            ],
             "properties": {
+                "otp": {
+                    "type": "string",
+                    "example": "123456"
+                },
                 "token": {
                     "type": "string",
+                    "maxLength": 512,
                     "example": "G66NnGZnWg4W88qGz3p9N0-GxjKuxEOHHsvWv3kBaBA"
                 }
             }
