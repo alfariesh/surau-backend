@@ -34,6 +34,7 @@ const (
 	emailSuppressionReasonComplaint       = "complaint"
 	emailDeliverySourceSync               = "sync"
 	emailDeliverySourceWebhook            = "webhook"
+	emailDeliverySourcePoll               = "poll"
 	emailHeaderListUnsubscribe            = "List-Unsubscribe"
 	emailHeaderListUnsubscribePost        = "List-Unsubscribe-Post"
 	emailHeaderListUnsubscribeOneClick    = "One-Click"
@@ -67,6 +68,10 @@ type Options struct {
 	UnsubscribeTokenKeyID     string
 	UnsubscribeTokenSeed      string
 	UnsubscribeTokenSecrets   map[string]string
+	CloudflareEventPoller     repo.EmailEventPoller
+	CloudflarePollingZoneID   string
+	CloudflarePollingLookback time.Duration
+	CloudflarePollingLimit    int
 }
 
 // UseCase coordinates templates, delivery, consent, suppressions, and campaigns.
@@ -79,6 +84,10 @@ type UseCase struct {
 	tokenKeyID      string
 	tokenSeed       string
 	tokenSecrets    map[string]string
+	eventPoller     repo.EmailEventPoller
+	pollingZoneID   string
+	pollingLookback time.Duration
+	pollingLimit    int
 }
 
 type campaignClaimer interface {
@@ -143,6 +152,17 @@ type cloudflareWebhookEvent struct {
 // New creates an email use case.
 func New(r repo.EmailRepo, sender repo.EmailSender, opts Options) *UseCase {
 	tokenKeyID, tokenSeed, tokenSecrets := normalizeUnsubscribeTokenOptions(opts)
+	pollingLookback := opts.CloudflarePollingLookback
+	if pollingLookback <= 0 {
+		pollingLookback = 30 * time.Minute
+	}
+	pollingLimit := opts.CloudflarePollingLimit
+	if pollingLimit <= 0 {
+		pollingLimit = 100
+	}
+	if pollingLimit > 1000 {
+		pollingLimit = 1000
+	}
 
 	return &UseCase{
 		repo:            r,
@@ -153,6 +173,10 @@ func New(r repo.EmailRepo, sender repo.EmailSender, opts Options) *UseCase {
 		tokenKeyID:      tokenKeyID,
 		tokenSeed:       tokenSeed,
 		tokenSecrets:    tokenSecrets,
+		eventPoller:     opts.CloudflareEventPoller,
+		pollingZoneID:   strings.TrimSpace(opts.CloudflarePollingZoneID),
+		pollingLookback: pollingLookback,
+		pollingLimit:    pollingLimit,
 	}
 }
 
@@ -746,6 +770,75 @@ func (uc *UseCase) DispatchDueTransactionalEmails(ctx context.Context, limit int
 	}
 
 	return nil
+}
+
+func (uc *UseCase) PollCloudflareEmailEvents(ctx context.Context) (entity.EmailWebhookIngestResult, error) {
+	var result entity.EmailWebhookIngestResult
+	if uc.repo == nil || uc.eventPoller == nil || strings.TrimSpace(uc.pollingZoneID) == "" {
+		return result, nil
+	}
+
+	now := time.Now().UTC()
+	start := now.Add(-uc.pollingLookback)
+	cursorKey := cloudflareEmailSendingCursorKey(uc.pollingZoneID)
+	cursor, err := uc.repo.GetEmailProviderPollCursor(ctx, entity.EmailProviderCloudflare, cursorKey)
+	if err != nil && !errors.Is(err, entity.ErrEmailProviderPollCursorNotFound) {
+		return result, err
+	}
+	if err == nil && !cursor.LastPolledAt.IsZero() {
+		start = cursor.LastPolledAt.Add(-uc.pollingLookback)
+	}
+	if !start.Before(now) {
+		start = now.Add(-uc.pollingLookback)
+	}
+
+	events, err := uc.eventPoller.PollCloudflareEmailEvents(ctx, entity.CloudflareEmailEventPollQuery{
+		ZoneID: uc.pollingZoneID,
+		Start:  start,
+		End:    now,
+		Limit:  uc.pollingLimit,
+	})
+	if err != nil {
+		return result, err
+	}
+	result.Accepted = len(events)
+	for _, event := range events {
+		input, ok := cloudflarePolledDeliveryEvent(event)
+		if !ok {
+			continue
+		}
+		inserted, err := uc.recordDeliveryEvent(ctx, input)
+		if err != nil {
+			return result, err
+		}
+		if inserted {
+			result.Processed++
+			if err = uc.markDeliveryTargetsFailed(ctx, input); err != nil {
+				return result, err
+			}
+		} else {
+			result.Duplicates++
+		}
+		if _, err = uc.upsertAutomatedSuppression(
+			ctx,
+			input.RecipientEmail,
+			emailSuppressionReasonPermanentBounce,
+		); err != nil {
+			return result, err
+		}
+		result.Suppressed++
+	}
+
+	_, err = uc.repo.UpsertEmailProviderPollCursor(ctx, entity.EmailProviderPollCursor{
+		Provider:     entity.EmailProviderCloudflare,
+		CursorKey:    cursorKey,
+		LastPolledAt: now,
+	})
+	if err != nil {
+		return result, err
+	}
+
+	return result, nil
 }
 
 func (uc *UseCase) IngestCloudflareBounceWebhook(
@@ -1400,6 +1493,51 @@ func (uc *UseCase) recordDeliveryEvent(ctx context.Context, input deliveryEventI
 	return inserted, err
 }
 
+func cloudflarePolledDeliveryEvent(event entity.CloudflareEmailEvent) (deliveryEventInput, bool) {
+	if !strings.EqualFold(strings.TrimSpace(event.Status), "deliveryFailed") || !validEmail(event.To) {
+		return deliveryEventInput{}, false
+	}
+	rawPayload := event.RawPayload
+	if len(rawPayload) == 0 || !json.Valid(rawPayload) {
+		raw, _ := json.Marshal(event)
+		rawPayload = entity.RawJSON(raw)
+	}
+	diagnostic := firstNonEmpty(event.ErrorDetail, event.ErrorCause, event.EventType, event.Status)
+
+	return deliveryEventInput{
+		Provider:       entity.EmailProviderCloudflare,
+		EventType:      entity.EmailDeliveryEventBounceHard,
+		RecipientEmail: event.To,
+		MessageID:      localMessageIDFromProviderMessageID(event.MessageID),
+		Reason:         firstNonEmpty(event.ErrorCause, emailSuppressionReasonPermanentBounce),
+		Diagnostic:     diagnostic,
+		RawPayload:     rawPayload,
+		OccurredAt:     event.Datetime,
+		DedupeSeed: strings.Join([]string{
+			emailDeliverySourcePoll,
+			strings.TrimSpace(event.MessageID),
+			strings.TrimSpace(event.To),
+			strings.TrimSpace(event.Status),
+			event.Datetime.UTC().Format(time.RFC3339Nano),
+			strings.TrimSpace(event.ErrorCause),
+			strings.TrimSpace(event.ErrorDetail),
+		}, ":"),
+	}, true
+}
+
+func localMessageIDFromProviderMessageID(messageID string) string {
+	messageID = strings.Trim(strings.TrimSpace(messageID), "<>")
+	if _, err := uuid.Parse(messageID); err != nil {
+		return ""
+	}
+
+	return messageID
+}
+
+func cloudflareEmailSendingCursorKey(zoneID string) string {
+	return entity.EmailProviderPollCursorCloudflareSending + ":" + strings.TrimSpace(zoneID)
+}
+
 func (uc *UseCase) upsertAutomatedSuppression(
 	ctx context.Context,
 	email,
@@ -1420,10 +1558,11 @@ func (uc *UseCase) upsertAutomatedSuppression(
 }
 
 func (uc *UseCase) markDeliveryTargetsFailed(ctx context.Context, event deliveryEventInput) error {
-	if strings.TrimSpace(event.MessageID) != "" {
+	messageID := localMessageIDFromProviderMessageID(event.MessageID)
+	if messageID != "" {
 		_, err := uc.repo.UpdateEmailMessageStatus(
 			ctx,
-			event.MessageID,
+			messageID,
 			entity.EmailMessageStatusFailed,
 			1,
 			string(event.RawPayload),
@@ -1434,16 +1573,17 @@ func (uc *UseCase) markDeliveryTargetsFailed(ctx context.Context, event delivery
 			return err
 		}
 	}
-	if strings.TrimSpace(event.CampaignRecipient) != "" {
+	campaignRecipientID := localMessageIDFromProviderMessageID(event.CampaignRecipient)
+	if campaignRecipientID != "" {
 		_, err := uc.repo.UpdateEmailCampaignRecipientStatus(
 			ctx,
-			event.CampaignRecipient,
+			campaignRecipientID,
 			entity.EmailRecipientStatusFailed,
-			event.MessageID,
+			messageID,
 			event.Diagnostic,
 			nil,
 		)
-		if err != nil && !errors.Is(err, entity.ErrEmailCampaignRecipientNotFound) {
+		if err != nil && !errors.Is(err, entity.ErrEmailCampaignNotFound) {
 			return err
 		}
 	}

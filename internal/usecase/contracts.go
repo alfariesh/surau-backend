@@ -125,6 +125,7 @@ type (
 		) (entity.EmailMessageLog, error)
 		DispatchDueCampaigns(ctx context.Context, limit int) error
 		DispatchDueTransactionalEmails(ctx context.Context, limit int) error
+		PollCloudflareEmailEvents(ctx context.Context) (entity.EmailWebhookIngestResult, error)
 		Unsubscribe(ctx context.Context, token string) (entity.EmailSubscription, error)
 	}
 

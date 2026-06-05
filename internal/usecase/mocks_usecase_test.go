@@ -624,6 +624,21 @@ func (mr *MockEmailAdminMockRecorder) Messages(ctx, filter any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Messages", reflect.TypeOf((*MockEmailAdmin)(nil).Messages), ctx, filter)
 }
 
+// PollCloudflareEmailEvents mocks base method.
+func (m *MockEmailAdmin) PollCloudflareEmailEvents(ctx context.Context) (entity.EmailWebhookIngestResult, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "PollCloudflareEmailEvents", ctx)
+	ret0, _ := ret[0].(entity.EmailWebhookIngestResult)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// PollCloudflareEmailEvents indicates an expected call of PollCloudflareEmailEvents.
+func (mr *MockEmailAdminMockRecorder) PollCloudflareEmailEvents(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PollCloudflareEmailEvents", reflect.TypeOf((*MockEmailAdmin)(nil).PollCloudflareEmailEvents), ctx)
+}
+
 // PreviewAudience mocks base method.
 func (m *MockEmailAdmin) PreviewAudience(ctx context.Context, filter entity.EmailAudienceFilter) ([]entity.EmailAudienceRecipient, int, error) {
 	m.ctrl.T.Helper()

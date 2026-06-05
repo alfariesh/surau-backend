@@ -70,6 +70,14 @@ type (
 		Send(ctx context.Context, message entity.EmailMessage) (entity.EmailSendResult, error)
 	}
 
+	// EmailEventPoller fetches provider-side asynchronous email delivery events.
+	EmailEventPoller interface {
+		PollCloudflareEmailEvents(
+			ctx context.Context,
+			query entity.CloudflareEmailEventPollQuery,
+		) ([]entity.CloudflareEmailEvent, error)
+	}
+
 	// EmailRepo stores admin-managed templates, logs, subscriptions, suppressions, and campaigns.
 	EmailRepo interface {
 		CreateEmailTemplate(ctx context.Context, template entity.EmailTemplate) (entity.EmailTemplate, error)
@@ -144,6 +152,15 @@ type (
 			ctx context.Context,
 			campaignID string,
 		) (entity.EmailCampaignDeliveryEventSummary, error)
+		GetEmailProviderPollCursor(
+			ctx context.Context,
+			provider string,
+			cursorKey string,
+		) (entity.EmailProviderPollCursor, error)
+		UpsertEmailProviderPollCursor(
+			ctx context.Context,
+			cursor entity.EmailProviderPollCursor,
+		) (entity.EmailProviderPollCursor, error)
 		CreateEmailCampaign(ctx context.Context, campaign entity.EmailCampaign) (entity.EmailCampaign, error)
 		ListEmailCampaigns(ctx context.Context, filter EmailCampaignFilter) ([]entity.EmailCampaign, int, error)
 		GetEmailCampaign(ctx context.Context, id string) (entity.EmailCampaign, error)

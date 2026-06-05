@@ -677,6 +677,45 @@ func (mr *MockEmailSenderMockRecorder) Send(ctx, message any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Send", reflect.TypeOf((*MockEmailSender)(nil).Send), ctx, message)
 }
 
+// MockEmailEventPoller is a mock of EmailEventPoller interface.
+type MockEmailEventPoller struct {
+	ctrl     *gomock.Controller
+	recorder *MockEmailEventPollerMockRecorder
+	isgomock struct{}
+}
+
+// MockEmailEventPollerMockRecorder is the mock recorder for MockEmailEventPoller.
+type MockEmailEventPollerMockRecorder struct {
+	mock *MockEmailEventPoller
+}
+
+// NewMockEmailEventPoller creates a new mock instance.
+func NewMockEmailEventPoller(ctrl *gomock.Controller) *MockEmailEventPoller {
+	mock := &MockEmailEventPoller{ctrl: ctrl}
+	mock.recorder = &MockEmailEventPollerMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockEmailEventPoller) EXPECT() *MockEmailEventPollerMockRecorder {
+	return m.recorder
+}
+
+// PollCloudflareEmailEvents mocks base method.
+func (m *MockEmailEventPoller) PollCloudflareEmailEvents(ctx context.Context, query entity.CloudflareEmailEventPollQuery) ([]entity.CloudflareEmailEvent, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "PollCloudflareEmailEvents", ctx, query)
+	ret0, _ := ret[0].([]entity.CloudflareEmailEvent)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// PollCloudflareEmailEvents indicates an expected call of PollCloudflareEmailEvents.
+func (mr *MockEmailEventPollerMockRecorder) PollCloudflareEmailEvents(ctx, query any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PollCloudflareEmailEvents", reflect.TypeOf((*MockEmailEventPoller)(nil).PollCloudflareEmailEvents), ctx, query)
+}
+
 // MockEmailRepo is a mock of EmailRepo interface.
 type MockEmailRepo struct {
 	ctrl     *gomock.Controller
@@ -892,6 +931,21 @@ func (m *MockEmailRepo) GetEmailEventSetting(ctx context.Context, key string) (e
 func (mr *MockEmailRepoMockRecorder) GetEmailEventSetting(ctx, key any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetEmailEventSetting", reflect.TypeOf((*MockEmailRepo)(nil).GetEmailEventSetting), ctx, key)
+}
+
+// GetEmailProviderPollCursor mocks base method.
+func (m *MockEmailRepo) GetEmailProviderPollCursor(ctx context.Context, provider, cursorKey string) (entity.EmailProviderPollCursor, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetEmailProviderPollCursor", ctx, provider, cursorKey)
+	ret0, _ := ret[0].(entity.EmailProviderPollCursor)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetEmailProviderPollCursor indicates an expected call of GetEmailProviderPollCursor.
+func (mr *MockEmailRepoMockRecorder) GetEmailProviderPollCursor(ctx, provider, cursorKey any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetEmailProviderPollCursor", reflect.TypeOf((*MockEmailRepo)(nil).GetEmailProviderPollCursor), ctx, provider, cursorKey)
 }
 
 // GetEmailSubscription mocks base method.
@@ -1334,6 +1388,21 @@ func (m *MockEmailRepo) UpsertEmailDeliveryEvent(ctx context.Context, event enti
 func (mr *MockEmailRepoMockRecorder) UpsertEmailDeliveryEvent(ctx, event any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpsertEmailDeliveryEvent", reflect.TypeOf((*MockEmailRepo)(nil).UpsertEmailDeliveryEvent), ctx, event)
+}
+
+// UpsertEmailProviderPollCursor mocks base method.
+func (m *MockEmailRepo) UpsertEmailProviderPollCursor(ctx context.Context, cursor entity.EmailProviderPollCursor) (entity.EmailProviderPollCursor, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpsertEmailProviderPollCursor", ctx, cursor)
+	ret0, _ := ret[0].(entity.EmailProviderPollCursor)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// UpsertEmailProviderPollCursor indicates an expected call of UpsertEmailProviderPollCursor.
+func (mr *MockEmailRepoMockRecorder) UpsertEmailProviderPollCursor(ctx, cursor any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpsertEmailProviderPollCursor", reflect.TypeOf((*MockEmailRepo)(nil).UpsertEmailProviderPollCursor), ctx, cursor)
 }
 
 // UpsertEmailSubscription mocks base method.

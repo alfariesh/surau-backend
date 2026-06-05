@@ -41,6 +41,8 @@ const (
 
 	EmailDeliveryEventBounceHard = "bounce_hard"
 	EmailDeliveryEventComplaint  = "complaint"
+
+	EmailProviderPollCursorCloudflareSending = "cloudflare:email_sending"
 )
 
 // EmailMessage describes a rendered email ready for provider delivery.
@@ -214,6 +216,39 @@ type EmailDeliveryEvent struct {
 	OccurredAt        time.Time `json:"occurred_at"`
 	CreatedAt         time.Time `json:"created_at"`
 }
+
+// CloudflareEmailEventPollQuery identifies one Cloudflare Email Service analytics poll window.
+type CloudflareEmailEventPollQuery struct {
+	ZoneID string
+	Start  time.Time
+	End    time.Time
+	Limit  int
+}
+
+// CloudflareEmailEvent is one outbound Email Service event from Cloudflare GraphQL analytics.
+type CloudflareEmailEvent struct {
+	Datetime      time.Time `json:"datetime"`
+	From          string    `json:"from,omitempty"`
+	To            string    `json:"to"`
+	Subject       string    `json:"subject,omitempty"`
+	Status        string    `json:"status"`
+	EventType     string    `json:"event_type,omitempty"`
+	SendingDomain string    `json:"sending_domain,omitempty"`
+	MessageID     string    `json:"message_id,omitempty"`
+	ErrorCause    string    `json:"error_cause,omitempty"`
+	ErrorDetail   string    `json:"error_detail,omitempty"`
+	RawPayload    RawJSON   `json:"raw_payload,omitempty" swaggertype:"object"`
+}
+
+// EmailProviderPollCursor stores the last successful provider polling checkpoint.
+type EmailProviderPollCursor struct {
+	Provider     string    `json:"provider"`
+	CursorKey    string    `json:"cursor_key"`
+	LastPolledAt time.Time `json:"last_polled_at"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+}
+
 // EmailCampaignDeliveryEventSummary summarizes delivery events for one campaign.
 type EmailCampaignDeliveryEventSummary struct {
 	CampaignID       string     `json:"campaign_id"`

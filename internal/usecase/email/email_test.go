@@ -974,6 +974,159 @@ func TestCampaignDeliveryEventSummaryEmpty(t *testing.T) {
 	assert.Nil(t, summary.LastOccurredAt)
 }
 
+func TestPollCloudflareEmailEventsCreatesSuppressionAndFailsLocalMessage(t *testing.T) {
+	t.Parallel()
+
+	messageID := "10000000-0000-0000-0000-000000000111"
+	occurredAt := time.Date(2026, 6, 5, 1, 2, 3, 0, time.UTC)
+	store := &emailRepoStub{
+		createdMessages: []entity.EmailMessageLog{{
+			ID:             messageID,
+			Category:       entity.EmailCategoryTransactional,
+			RecipientEmail: "user@example.com",
+			Status:         entity.EmailMessageStatusQueued,
+		}},
+	}
+	poller := &emailEventPollerStub{
+		events: []entity.CloudflareEmailEvent{{
+			Datetime:    occurredAt,
+			To:          "user@example.com",
+			Status:      "deliveryFailed",
+			EventType:   "smtp_delivery",
+			MessageID:   messageID,
+			ErrorCause:  "bounce",
+			ErrorDetail: "550 5.1.1 user unknown",
+			RawPayload:  entity.RawJSON(`{"messageId":"10000000-0000-0000-0000-000000000111"}`),
+		}},
+	}
+	uc := New(store, nil, Options{
+		CloudflareEventPoller:     poller,
+		CloudflarePollingZoneID:   "zone-id",
+		CloudflarePollingLookback: 30 * time.Minute,
+		CloudflarePollingLimit:    25,
+	})
+
+	result, err := uc.PollCloudflareEmailEvents(t.Context())
+
+	require.NoError(t, err)
+	assert.Equal(t, entity.EmailWebhookIngestResult{Accepted: 1, Processed: 1, Suppressed: 1}, result)
+	assert.Equal(t, "zone-id", poller.query.ZoneID)
+	assert.Equal(t, 25, poller.query.Limit)
+	assert.WithinDuration(t, time.Now().UTC().Add(-30*time.Minute), poller.query.Start, 2*time.Second)
+	assert.WithinDuration(t, time.Now().UTC(), poller.query.End, 2*time.Second)
+	require.Len(t, store.deliveryEvents, 1)
+	assert.Equal(t, entity.EmailDeliveryEventBounceHard, store.deliveryEvents[0].EventType)
+	assert.Equal(t, "user@example.com", store.deliveryEvents[0].RecipientEmail)
+	assert.Equal(t, messageID, store.deliveryEvents[0].MessageID)
+	assert.Equal(t, "bounce", store.deliveryEvents[0].Reason)
+	assert.Equal(t, "550 5.1.1 user unknown", store.deliveryEvents[0].Diagnostic)
+	require.Len(t, store.suppressions, 1)
+	assert.Equal(t, entity.EmailSuppressionScopeAll, store.suppressions[0].Scope)
+	assert.Equal(t, emailSuppressionReasonPermanentBounce, store.suppressions[0].Reason)
+	require.Len(t, store.updatedMessages, 1)
+	assert.Equal(t, entity.EmailMessageStatusFailed, store.updatedMessages[0].Status)
+	assert.Equal(t, `{"messageId":"10000000-0000-0000-0000-000000000111"}`, store.updatedMessages[0].ProviderResponse)
+	assert.Equal(t, "550 5.1.1 user unknown", store.updatedMessages[0].Error)
+	assert.Equal(t, entity.EmailProviderCloudflare, store.upsertedPollCursor.Provider)
+	assert.Equal(t, "cloudflare:email_sending:zone-id", store.upsertedPollCursor.CursorKey)
+}
+
+func TestPollCloudflareEmailEventsDedupes(t *testing.T) {
+	t.Parallel()
+
+	occurredAt := time.Date(2026, 6, 5, 1, 2, 3, 0, time.UTC)
+	store := &emailRepoStub{}
+	poller := &emailEventPollerStub{
+		events: []entity.CloudflareEmailEvent{{
+			Datetime:    occurredAt,
+			To:          "user@example.com",
+			Status:      "deliveryFailed",
+			MessageID:   "provider-message-id",
+			ErrorDetail: "550 5.1.1 user unknown",
+		}},
+	}
+	uc := New(store, nil, Options{
+		CloudflareEventPoller:   poller,
+		CloudflarePollingZoneID: "zone-id",
+	})
+
+	first, err := uc.PollCloudflareEmailEvents(t.Context())
+	require.NoError(t, err)
+	second, err := uc.PollCloudflareEmailEvents(t.Context())
+	require.NoError(t, err)
+
+	assert.Equal(t, entity.EmailWebhookIngestResult{Accepted: 1, Processed: 1, Suppressed: 1}, first)
+	assert.Equal(t, entity.EmailWebhookIngestResult{Accepted: 1, Processed: 0, Suppressed: 1, Duplicates: 1}, second)
+	require.Len(t, store.deliveryEvents, 1)
+	assert.Equal(t, 2, poller.calls)
+}
+
+func TestPollCloudflareEmailEventsMissingLocalMessageIDStillSuppresses(t *testing.T) {
+	t.Parallel()
+
+	store := &emailRepoStub{}
+	poller := &emailEventPollerStub{
+		events: []entity.CloudflareEmailEvent{{
+			Datetime:    time.Date(2026, 6, 5, 1, 2, 3, 0, time.UTC),
+			To:          "user@example.com",
+			Status:      "deliveryFailed",
+			MessageID:   "<cloudflare-message@example.com>",
+			ErrorDetail: "550 5.1.1 user unknown",
+		}},
+	}
+	uc := New(store, nil, Options{
+		CloudflareEventPoller:   poller,
+		CloudflarePollingZoneID: "zone-id",
+	})
+
+	result, err := uc.PollCloudflareEmailEvents(t.Context())
+
+	require.NoError(t, err)
+	assert.Equal(t, entity.EmailWebhookIngestResult{Accepted: 1, Processed: 1, Suppressed: 1}, result)
+	require.Len(t, store.deliveryEvents, 1)
+	assert.Empty(t, store.deliveryEvents[0].MessageID)
+	assert.Empty(t, store.updatedMessages)
+	require.Len(t, store.suppressions, 1)
+}
+
+func TestPollCloudflareEmailEventsCursorLookback(t *testing.T) {
+	t.Parallel()
+
+	lastPolledAt := time.Date(2026, 6, 5, 1, 0, 0, 0, time.UTC)
+	store := &emailRepoStub{
+		pollCursor: entity.EmailProviderPollCursor{
+			Provider:     entity.EmailProviderCloudflare,
+			CursorKey:    "cloudflare:email_sending:zone-id",
+			LastPolledAt: lastPolledAt,
+		},
+	}
+	poller := &emailEventPollerStub{}
+	uc := New(store, nil, Options{
+		CloudflareEventPoller:     poller,
+		CloudflarePollingZoneID:   "zone-id",
+		CloudflarePollingLookback: 30 * time.Minute,
+	})
+
+	_, err := uc.PollCloudflareEmailEvents(t.Context())
+
+	require.NoError(t, err)
+	assert.Equal(t, lastPolledAt.Add(-30*time.Minute), poller.query.Start)
+}
+
+func TestPollCloudflareEmailEventsDisabledDoesNothing(t *testing.T) {
+	t.Parallel()
+
+	store := &emailRepoStub{}
+	uc := New(store, nil, Options{})
+
+	result, err := uc.PollCloudflareEmailEvents(t.Context())
+
+	require.NoError(t, err)
+	assert.Equal(t, entity.EmailWebhookIngestResult{}, result)
+	assert.Empty(t, store.deliveryEvents)
+	assert.Empty(t, store.upsertedPollCursor.Provider)
+}
+
 func transactionalMessageLogForTest(
 	id string,
 	email string,
@@ -1024,6 +1177,8 @@ type emailRepoStub struct {
 	deliverySummaryCampaignID    string
 	deliverySummary              entity.EmailCampaignDeliveryEventSummary
 	deliveryEventKeys            map[string]bool
+	pollCursor                   entity.EmailProviderPollCursor
+	upsertedPollCursor           entity.EmailProviderPollCursor
 	suppressions                 []entity.EmailSuppression
 	suppressionByKey             map[string]entity.EmailSuppression
 	campaign                     entity.EmailCampaign
@@ -1040,6 +1195,29 @@ type emailSenderStub struct {
 	resultByEmail map[string]entity.EmailSendResult
 	err           error
 	errByEmail    map[string]error
+}
+
+type emailEventPollerStub struct {
+	query  entity.CloudflareEmailEventPollQuery
+	events []entity.CloudflareEmailEvent
+	err    error
+	calls  int
+}
+
+func (s *emailEventPollerStub) PollCloudflareEmailEvents(
+	ctx context.Context,
+	query entity.CloudflareEmailEventPollQuery,
+) ([]entity.CloudflareEmailEvent, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	s.calls++
+	s.query = query
+	if s.err != nil {
+		return nil, s.err
+	}
+
+	return append([]entity.CloudflareEmailEvent(nil), s.events...), nil
 }
 
 func (s *emailSenderStub) Send(ctx context.Context, message entity.EmailMessage) (entity.EmailSendResult, error) {
@@ -1197,6 +1375,34 @@ func (s *emailRepoStub) GetEmailCampaignDeliveryEventSummary(
 	}
 
 	return summary, nil
+}
+
+func (s *emailRepoStub) GetEmailProviderPollCursor(
+	_ context.Context,
+	provider string,
+	cursorKey string,
+) (entity.EmailProviderPollCursor, error) {
+	if s.pollCursor.Provider == provider && s.pollCursor.CursorKey == cursorKey {
+		return s.pollCursor, nil
+	}
+
+	return entity.EmailProviderPollCursor{}, entity.ErrEmailProviderPollCursorNotFound
+}
+
+func (s *emailRepoStub) UpsertEmailProviderPollCursor(
+	_ context.Context,
+	cursor entity.EmailProviderPollCursor,
+) (entity.EmailProviderPollCursor, error) {
+	if cursor.CreatedAt.IsZero() {
+		cursor.CreatedAt = time.Now().UTC()
+	}
+	if cursor.UpdatedAt.IsZero() {
+		cursor.UpdatedAt = time.Now().UTC()
+	}
+	s.pollCursor = cursor
+	s.upsertedPollCursor = cursor
+
+	return cursor, nil
 }
 
 func (s *emailRepoStub) CreateEmailMessage(

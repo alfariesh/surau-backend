@@ -51,6 +51,8 @@ COALESCE(message_id::text, ''), COALESCE(error, ''), sent_at, created_at, update
 id, dedupe_key, provider, event_type, recipient_email, COALESCE(message_id::text, ''),
 COALESCE(campaign_id::text, ''), COALESCE(campaign_recipient_id::text, ''),
 COALESCE(reason, ''), COALESCE(diagnostic, ''), raw_payload, occurred_at, created_at`
+	emailProviderPollCursorColumns = `
+provider, cursor_key, last_polled_at, created_at, updated_at`
 )
 
 // EmailRepo stores email templates, logs, consent, suppressions, and campaigns.
@@ -1202,6 +1204,62 @@ WHERE campaign_id = $1::uuid`
 	return summary, nil
 }
 
+func (r *EmailRepo) GetEmailProviderPollCursor(
+	ctx context.Context,
+	provider string,
+	cursorKey string,
+) (entity.EmailProviderPollCursor, error) {
+	return scanEmailProviderPollCursor(r.Pool.QueryRow(
+		ctx,
+		getEmailProviderPollCursorSQL(),
+		strings.TrimSpace(provider),
+		strings.TrimSpace(cursorKey),
+	))
+}
+
+func (r *EmailRepo) UpsertEmailProviderPollCursor(
+	ctx context.Context,
+	cursor entity.EmailProviderPollCursor,
+) (entity.EmailProviderPollCursor, error) {
+	now := time.Now().UTC()
+	if cursor.CreatedAt.IsZero() {
+		cursor.CreatedAt = now
+	}
+	if cursor.UpdatedAt.IsZero() {
+		cursor.UpdatedAt = now
+	}
+
+	return scanEmailProviderPollCursor(r.Pool.QueryRow(
+		ctx,
+		upsertEmailProviderPollCursorSQL(),
+		strings.TrimSpace(cursor.Provider),
+		strings.TrimSpace(cursor.CursorKey),
+		cursor.LastPolledAt,
+		cursor.CreatedAt,
+		cursor.UpdatedAt,
+	))
+}
+
+func getEmailProviderPollCursorSQL() string {
+	return `
+SELECT ` + emailProviderPollCursorColumns + `
+FROM email_provider_poll_cursors
+WHERE provider = $1 AND cursor_key = $2`
+}
+
+func upsertEmailProviderPollCursorSQL() string {
+	return `
+INSERT INTO email_provider_poll_cursors (
+    provider, cursor_key, last_polled_at, created_at, updated_at
+) VALUES (
+    $1::varchar, $2::varchar, $3::timestamp, $4::timestamp, $5::timestamp
+)
+ON CONFLICT (provider, cursor_key) DO UPDATE SET
+    last_polled_at = EXCLUDED.last_polled_at,
+    updated_at = EXCLUDED.updated_at
+RETURNING ` + emailProviderPollCursorColumns
+}
+
 func (r *EmailRepo) CreateEmailCampaign(
 	ctx context.Context,
 	campaign entity.EmailCampaign,
@@ -2161,6 +2219,26 @@ func scanEmailDeliveryEventWithTotal(row rowScanner) (entity.EmailDeliveryEvent,
 	event.RawPayload = entity.RawJSON(rawPayload)
 
 	return event, total, nil
+}
+
+func scanEmailProviderPollCursor(row rowScanner) (entity.EmailProviderPollCursor, error) {
+	var cursor entity.EmailProviderPollCursor
+	err := row.Scan(
+		&cursor.Provider,
+		&cursor.CursorKey,
+		&cursor.LastPolledAt,
+		&cursor.CreatedAt,
+		&cursor.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return entity.EmailProviderPollCursor{}, entity.ErrEmailProviderPollCursorNotFound
+		}
+
+		return entity.EmailProviderPollCursor{}, fmt.Errorf("EmailRepo - scanEmailProviderPollCursor - Scan: %w", err)
+	}
+
+	return cursor, nil
 }
 
 func scanEmailCampaign(row rowScanner) (entity.EmailCampaign, error) {

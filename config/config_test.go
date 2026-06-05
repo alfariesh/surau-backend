@@ -61,6 +61,12 @@ func TestNewConfig_EmailDefaults(t *testing.T) {
 	unsetEnv(t, "EMAIL_UNSUBSCRIBE_TOKEN_SECRET")
 	unsetEnv(t, "EMAIL_UNSUBSCRIBE_TOKEN_SECRETS")
 	unsetEnv(t, "EMAIL_CLOUDFLARE_WEBHOOK_SECRET")
+	unsetEnv(t, "EMAIL_CLOUDFLARE_EVENT_POLLING_ENABLED")
+	unsetEnv(t, "EMAIL_CLOUDFLARE_ZONE_ID")
+	unsetEnv(t, "EMAIL_CLOUDFLARE_ANALYTICS_API_TOKEN")
+	unsetEnv(t, "EMAIL_CLOUDFLARE_EVENT_POLLING_INTERVAL")
+	unsetEnv(t, "EMAIL_CLOUDFLARE_EVENT_POLLING_LOOKBACK")
+	unsetEnv(t, "EMAIL_CLOUDFLARE_EVENT_POLLING_LIMIT")
 	unsetEnv(t, "EMAIL_HTTP_TIMEOUT")
 
 	cfg, err := NewConfig()
@@ -81,6 +87,12 @@ func TestNewConfig_EmailDefaults(t *testing.T) {
 	assert.Empty(t, cfg.Email.UnsubscribeTokenSecret)
 	assert.Empty(t, cfg.Email.UnsubscribeTokenSecrets)
 	assert.Empty(t, cfg.Email.CloudflareWebhookSecret)
+	assert.False(t, cfg.Email.CloudflareEventPollingEnabled)
+	assert.Empty(t, cfg.Email.CloudflareZoneID)
+	assert.Empty(t, cfg.Email.CloudflareAnalyticsAPIToken)
+	assert.Equal(t, "5m0s", cfg.Email.CloudflareEventPollingInterval.String())
+	assert.Equal(t, "30m0s", cfg.Email.CloudflareEventPollingLookback.String())
+	assert.Equal(t, 100, cfg.Email.CloudflareEventPollingLimit)
 	assert.Equal(t, "10s", cfg.Email.HTTPTimeout.String())
 }
 
@@ -114,6 +126,66 @@ func TestNewConfig_UnsubscribeTokenSecretMap(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "2026-06", cfg.Email.UnsubscribeTokenKeyID)
 	assert.Equal(t, `{"2026-06":"new-secret","2026-05":"old-secret"}`, cfg.Email.UnsubscribeTokenSecrets)
+}
+
+func TestNewConfig_CloudflareEventPollingTrimsAndValidates(t *testing.T) {
+	setRequiredEnv(t)
+	t.Setenv("EMAIL_CLOUDFLARE_EVENT_POLLING_ENABLED", "true")
+	t.Setenv("EMAIL_CLOUDFLARE_ZONE_ID", "  zone-id  ")
+	t.Setenv("EMAIL_CLOUDFLARE_ANALYTICS_API_TOKEN", "  analytics-token  ")
+	t.Setenv("EMAIL_CLOUDFLARE_EVENT_POLLING_INTERVAL", "10m")
+	t.Setenv("EMAIL_CLOUDFLARE_EVENT_POLLING_LOOKBACK", "45m")
+	t.Setenv("EMAIL_CLOUDFLARE_EVENT_POLLING_LIMIT", "250")
+
+	cfg, err := NewConfig()
+
+	require.NoError(t, err)
+	assert.True(t, cfg.Email.CloudflareEventPollingEnabled)
+	assert.Equal(t, "zone-id", cfg.Email.CloudflareZoneID)
+	assert.Equal(t, "analytics-token", cfg.Email.CloudflareAnalyticsAPIToken)
+	assert.Equal(t, "10m0s", cfg.Email.CloudflareEventPollingInterval.String())
+	assert.Equal(t, "45m0s", cfg.Email.CloudflareEventPollingLookback.String())
+	assert.Equal(t, 250, cfg.Email.CloudflareEventPollingLimit)
+}
+
+func TestNewConfig_CloudflareEventPollingRequiresZoneAndToken(t *testing.T) {
+	tests := []struct {
+		name string
+		env  map[string]string
+		want string
+	}{
+		{
+			name: "missing zone",
+			env: map[string]string{
+				"EMAIL_CLOUDFLARE_ANALYTICS_API_TOKEN": "analytics-token",
+			},
+			want: "EMAIL_CLOUDFLARE_ZONE_ID is required",
+		},
+		{
+			name: "missing token",
+			env: map[string]string{
+				"EMAIL_CLOUDFLARE_ZONE_ID": "zone-id",
+			},
+			want: "EMAIL_CLOUDFLARE_ANALYTICS_API_TOKEN is required",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setRequiredEnv(t)
+			t.Setenv("EMAIL_CLOUDFLARE_EVENT_POLLING_ENABLED", "true")
+			t.Setenv("EMAIL_CLOUDFLARE_ZONE_ID", "")
+			t.Setenv("EMAIL_CLOUDFLARE_ANALYTICS_API_TOKEN", "")
+			for key, value := range tt.env {
+				t.Setenv(key, value)
+			}
+
+			_, err := NewConfig()
+
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.want)
+		})
+	}
 }
 
 func TestNewConfig_InvalidEmail(t *testing.T) {

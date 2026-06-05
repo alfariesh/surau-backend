@@ -73,6 +73,13 @@ func initUseCases(cfg *config.Config, pg *postgres.Postgres, jwtManager *jwt.Man
 			Timeout:     cfg.Email.HTTPTimeout,
 		})
 	}
+	var emailEventPoller repo.EmailEventPoller
+	if cfg.Email.DeliveryMode == config.EmailDeliveryModeCloudflare && cfg.Email.CloudflareEventPollingEnabled {
+		emailEventPoller = webapi.NewCloudflareEmailEventsClient(webapi.CloudflareEmailEventsOptions{
+			APIToken: cfg.Email.CloudflareAnalyticsAPIToken,
+			Timeout:  cfg.Email.HTTPTimeout,
+		})
+	}
 	emailUC := emailusecase.New(emailRepo, emailSender, emailusecase.Options{
 		SupportEmail:              cfg.Email.ReplyTo,
 		UnsubscribeURL:            unsubscribeFrontendURL(cfg),
@@ -80,6 +87,10 @@ func initUseCases(cfg *config.Config, pg *postgres.Postgres, jwtManager *jwt.Man
 		UnsubscribeTokenKeyID:     unsubscribeTokenKeyID(cfg),
 		UnsubscribeTokenSeed:      unsubscribeTokenSeed(cfg),
 		UnsubscribeTokenSecrets:   unsubscribeTokenSecrets(cfg),
+		CloudflareEventPoller:     emailEventPoller,
+		CloudflarePollingZoneID:   cfg.Email.CloudflareZoneID,
+		CloudflarePollingLookback: cfg.Email.CloudflareEventPollingLookback,
+		CloudflarePollingLimit:    cfg.Email.CloudflareEventPollingLimit,
 	})
 	var rateLimiter repo.AuthRateLimitRepo
 	if cfg.AuthRateLimit.Enabled {
@@ -232,13 +243,20 @@ func initServers(cfg *config.Config, pg *postgres.Postgres, uc useCases, jwtMana
 	}
 }
 
-func (s *servers) startServers(emailUC *emailusecase.UseCase, l logger.Interface) {
+func (s *servers) startServers(cfg *config.Config, emailUC *emailusecase.UseCase, l logger.Interface) {
 	if emailUC != nil {
 		dispatchCtx, cancel := context.WithCancel(context.Background())
 		s.emailDispatcherStop = cancel
 		go func() {
 			ticker := time.NewTicker(time.Minute)
 			defer ticker.Stop()
+			var pollTicker *time.Ticker
+			var pollC <-chan time.Time
+			if cfg.Email.DeliveryMode == config.EmailDeliveryModeCloudflare && cfg.Email.CloudflareEventPollingEnabled {
+				pollTicker = time.NewTicker(cfg.Email.CloudflareEventPollingInterval)
+				pollC = pollTicker.C
+				defer pollTicker.Stop()
+			}
 			for {
 				select {
 				case <-dispatchCtx.Done():
@@ -249,6 +267,10 @@ func (s *servers) startServers(emailUC *emailusecase.UseCase, l logger.Interface
 					}
 					if err := emailUC.DispatchDueTransactionalEmails(dispatchCtx, 20); err != nil {
 						l.Error(fmt.Errorf("app - transactional email dispatcher: %w", err))
+					}
+				case <-pollC:
+					if _, err := emailUC.PollCloudflareEmailEvents(dispatchCtx); err != nil {
+						l.Error(fmt.Errorf("app - cloudflare email event poller: %w", err))
 					}
 				}
 			}
@@ -298,7 +320,7 @@ func Run(cfg *config.Config) {
 
 	uc := initUseCases(cfg, pg, jwtManager)
 	s := initServers(cfg, pg, uc, jwtManager, l)
-	s.startServers(uc.email, l)
+	s.startServers(cfg, uc.email, l)
 	s.waitForShutdown(l)
 }
 
