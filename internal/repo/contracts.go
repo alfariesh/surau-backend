@@ -124,6 +124,7 @@ type (
 		ListEmailCampaigns(ctx context.Context, filter EmailCampaignFilter) ([]entity.EmailCampaign, int, error)
 		GetEmailCampaign(ctx context.Context, id string) (entity.EmailCampaign, error)
 		UpdateEmailCampaign(ctx context.Context, campaign entity.EmailCampaign) (entity.EmailCampaign, error)
+		ClaimEmailCampaignForRetry(ctx context.Context, id, actorID string) (entity.EmailCampaign, error)
 		ListMarketingAudience(
 			ctx context.Context,
 			filter entity.EmailAudienceFilter,
@@ -139,6 +140,13 @@ type (
 			status string,
 			limit int,
 		) ([]entity.EmailCampaignRecipient, error)
+		ListEmailCampaignRecipientsForRetry(
+			ctx context.Context,
+			campaignID string,
+			cutoff time.Time,
+			limit int,
+		) ([]entity.EmailCampaignRecipient, error)
+		CountEmailCampaignRecipientsByStatus(ctx context.Context, campaignID string) (map[string]int, error)
 		UpdateEmailCampaignRecipientStatus(
 			ctx context.Context,
 			id,

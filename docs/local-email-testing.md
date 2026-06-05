@@ -30,7 +30,9 @@ EMAIL_VERIFY_FRONTEND_URL=http://localhost:3005/verify-email
 PASSWORD_RESET_FRONTEND_URL=http://localhost:3005/reset-password
 EMAIL_CHANGE_FRONTEND_URL=http://localhost:3005/change-email
 EMAIL_UNSUBSCRIBE_FRONTEND_URL=http://localhost:3005/unsubscribe
+EMAIL_UNSUBSCRIBE_TOKEN_KEY_ID=default
 EMAIL_UNSUBSCRIBE_TOKEN_SECRET=
+EMAIL_UNSUBSCRIBE_TOKEN_SECRETS=
 EMAIL_HTTP_TIMEOUT=10s
 ```
 
@@ -41,7 +43,9 @@ Catatan:
 - `EMAIL_FROM_ADDRESS` harus memakai domain yang sudah aktif di Cloudflare Email Service.
 - `EMAIL_VERIFY_FRONTEND_URL`, `PASSWORD_RESET_FRONTEND_URL`, dan `EMAIL_CHANGE_FRONTEND_URL` harus mengarah ke port frontend yang sedang dipakai.
 - `EMAIL_UNSUBSCRIBE_FRONTEND_URL` dipakai untuk link unsubscribe campaign marketing. Jika kosong, backend menurunkan URL dari `EMAIL_VERIFY_FRONTEND_URL` dengan path `/unsubscribe`.
-- `EMAIL_UNSUBSCRIBE_TOKEN_SECRET` opsional. Jika kosong, backend memakai `JWT_SECRET` sebagai fallback seed token unsubscribe.
+- `EMAIL_UNSUBSCRIBE_TOKEN_KEY_ID` masuk ke token unsubscribe baru. Default `default`.
+- `EMAIL_UNSUBSCRIBE_TOKEN_SECRET` opsional. Jika kosong, backend memakai secret dari `EMAIL_UNSUBSCRIBE_TOKEN_SECRETS` untuk key id aktif, atau `JWT_SECRET` sebagai fallback.
+- `EMAIL_UNSUBSCRIBE_TOKEN_SECRETS` opsional untuk rotation, format JSON object seperti `{"2026-06":"secret-baru","2026-05":"secret-lama"}`.
 
 ## Restart Backend
 

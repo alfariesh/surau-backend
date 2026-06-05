@@ -42,13 +42,13 @@ type (
 			patch entity.UserPreferencesPatch,
 		) (entity.UserAccount, error)
 		SetRoleByEmail(ctx context.Context, actorID, actorEmail, email, role string) (entity.User, error)
-		VerifyEmail(ctx context.Context, token string) error
+		VerifyEmail(ctx context.Context, token, email, otp string) error
 		ResendEmailVerification(ctx context.Context, email string) error
 		ForgotPassword(ctx context.Context, email string) error
 		ResetPassword(ctx context.Context, token, password string) error
 		ChangePassword(ctx context.Context, userID, currentPassword, newPassword string) error
 		RequestEmailChange(ctx context.Context, userID, currentPassword, newEmail string) error
-		VerifyEmailChange(ctx context.Context, userID, token string) error
+		VerifyEmailChange(ctx context.Context, userID, token, otp string) error
 		DeleteAccount(ctx context.Context, userID, currentPassword string) error
 	}
 
@@ -108,6 +108,7 @@ type (
 		) ([]entity.EmailAudienceRecipient, int, error)
 		ScheduleCampaign(ctx context.Context, id, actorID string, scheduledAt time.Time) (entity.EmailCampaign, error)
 		SendCampaignNow(ctx context.Context, id, actorID string) (entity.EmailCampaign, error)
+		RetryFailedCampaign(ctx context.Context, id, actorID string) (entity.EmailCampaign, error)
 		CancelCampaign(ctx context.Context, id, actorID string) (entity.EmailCampaign, error)
 		TestSendCampaign(
 			ctx context.Context,

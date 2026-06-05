@@ -1037,6 +1037,32 @@ func (r *EmailRepo) ClaimEmailCampaignForSending(
 	return campaign, err
 }
 
+func (r *EmailRepo) ClaimEmailCampaignForRetry(
+	ctx context.Context,
+	id,
+	actorID string,
+) (entity.EmailCampaign, error) {
+	sqlText, args, err := r.Builder.
+		Update("email_campaigns").
+		Set("status", entity.EmailCampaignStatusSending).
+		Set("updated_by", nullableStringArg(actorID)).
+		Set("updated_at", sq.Expr("now()")).
+		Where(sq.Eq{"id": id}).
+		Where(sq.Eq{"status": entity.EmailCampaignStatusSent}).
+		Suffix("RETURNING " + emailCampaignColumns).
+		ToSql()
+	if err != nil {
+		return entity.EmailCampaign{}, fmt.Errorf("EmailRepo - ClaimEmailCampaignForRetry - Builder: %w", err)
+	}
+
+	campaign, err := scanEmailCampaign(r.Pool.QueryRow(ctx, sqlText, args...))
+	if errors.Is(err, entity.ErrEmailCampaignNotFound) {
+		return entity.EmailCampaign{}, entity.ErrInvalidEmailCampaign
+	}
+
+	return campaign, err
+}
+
 func (r *EmailRepo) UpdateEmailCampaign(
 	ctx context.Context,
 	campaign entity.EmailCampaign,
@@ -1218,6 +1244,83 @@ func (r *EmailRepo) ListEmailCampaignRecipients(
 	}
 
 	return recipients, nil
+}
+
+func (r *EmailRepo) ListEmailCampaignRecipientsForRetry(
+	ctx context.Context,
+	campaignID string,
+	cutoff time.Time,
+	limit int,
+) ([]entity.EmailCampaignRecipient, error) {
+	if limit <= 0 || limit > 1000 {
+		limit = 1000
+	}
+	sqlText, args, err := r.Builder.
+		Select(emailCampaignRecipientColumns).
+		From("email_campaign_recipients").
+		Where(sq.Eq{"campaign_id": campaignID}).
+		Where(sq.Eq{"status": entity.EmailRecipientStatusFailed}).
+		Where("updated_at < ?", cutoff).
+		OrderBy("updated_at ASC", "created_at ASC").
+		Limit(uint64(limit)).
+		ToSql()
+	if err != nil {
+		return nil, fmt.Errorf("EmailRepo - ListEmailCampaignRecipientsForRetry - Builder: %w", err)
+	}
+	rows, err := r.Pool.Query(ctx, sqlText, args...)
+	if err != nil {
+		return nil, fmt.Errorf("EmailRepo - ListEmailCampaignRecipientsForRetry - Query: %w", err)
+	}
+	defer rows.Close()
+
+	recipients := make([]entity.EmailCampaignRecipient, 0)
+	for rows.Next() {
+		recipient, err := scanEmailCampaignRecipient(rows)
+		if err != nil {
+			return nil, err
+		}
+		recipients = append(recipients, recipient)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("EmailRepo - ListEmailCampaignRecipientsForRetry - rows: %w", err)
+	}
+
+	return recipients, nil
+}
+
+func (r *EmailRepo) CountEmailCampaignRecipientsByStatus(
+	ctx context.Context,
+	campaignID string,
+) (map[string]int, error) {
+	sqlText, args, err := r.Builder.
+		Select("status", "count(*)").
+		From("email_campaign_recipients").
+		Where(sq.Eq{"campaign_id": campaignID}).
+		GroupBy("status").
+		ToSql()
+	if err != nil {
+		return nil, fmt.Errorf("EmailRepo - CountEmailCampaignRecipientsByStatus - Builder: %w", err)
+	}
+	rows, err := r.Pool.Query(ctx, sqlText, args...)
+	if err != nil {
+		return nil, fmt.Errorf("EmailRepo - CountEmailCampaignRecipientsByStatus - Query: %w", err)
+	}
+	defer rows.Close()
+
+	counts := map[string]int{}
+	for rows.Next() {
+		var status string
+		var count int
+		if err := rows.Scan(&status, &count); err != nil {
+			return nil, fmt.Errorf("EmailRepo - CountEmailCampaignRecipientsByStatus - Scan: %w", err)
+		}
+		counts[status] = count
+	}
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("EmailRepo - CountEmailCampaignRecipientsByStatus - rows: %w", err)
+	}
+
+	return counts, nil
 }
 
 func (r *EmailRepo) UpdateEmailCampaignRecipientStatus(

@@ -734,6 +734,28 @@ func (r *V1) adminEmailSendCampaignNow(ctx *fiber.Ctx) error {
 	return ctx.Status(http.StatusAccepted).JSON(campaign)
 }
 
+// @Summary  Retry failed email campaign recipients
+// @ID       admin-email-retry-failed-campaign
+// @Tags     admin-emails
+// @Produce  json
+// @Param    id path string true "Campaign ID"
+// @Success  202 {object} entity.EmailCampaign
+// @Failure  400 {object} response.Error
+// @Failure  401 {object} response.Error
+// @Failure  403 {object} response.Error
+// @Failure  404 {object} response.Error
+// @Failure  500 {object} response.Error
+// @Security BearerAuth
+// @Router   /admin/emails/campaigns/{id}/retry-failed [post]
+func (r *V1) adminEmailRetryFailedCampaign(ctx *fiber.Ctx) error {
+	campaign, err := r.email.RetryFailedCampaign(ctx.UserContext(), ctx.Params("id"), emailActorID(ctx))
+	if err != nil {
+		return adminEmailError(ctx, err)
+	}
+
+	return ctx.Status(http.StatusAccepted).JSON(campaign)
+}
+
 // @Summary  Cancel email campaign
 // @ID       admin-email-cancel-campaign
 // @Tags     admin-emails

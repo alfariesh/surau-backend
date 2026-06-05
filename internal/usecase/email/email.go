@@ -26,19 +26,28 @@ const (
 	defaultSupportEmail = "support@surau.org"
 	defaultBatchSize    = 500
 	redactedValue       = "[redacted]"
+	defaultTokenKeyID   = "default"
+	tokenVersionV2      = "v2"
 
 	campaignMetadataDeliveryTotal      = "delivery_total"
 	campaignMetadataDeliverySent       = "delivery_sent"
 	campaignMetadataDeliveryFailed     = "delivery_failed"
 	campaignMetadataDeliverySkipped    = "delivery_skipped"
 	campaignMetadataDeliveryFinishedAt = "delivery_finished_at"
+	campaignMetadataRetryTotal         = "retry_failed_total"
+	campaignMetadataRetrySent          = "retry_failed_sent"
+	campaignMetadataRetryFailed        = "retry_failed_failed"
+	campaignMetadataRetrySkipped       = "retry_failed_skipped"
+	campaignMetadataRetryFinishedAt    = "retry_failed_finished_at"
 )
 
 // Options configures the admin-managed email service.
 type Options struct {
-	SupportEmail         string
-	UnsubscribeURL       string
-	UnsubscribeTokenSeed string
+	SupportEmail            string
+	UnsubscribeURL          string
+	UnsubscribeTokenKeyID   string
+	UnsubscribeTokenSeed    string
+	UnsubscribeTokenSecrets map[string]string
 }
 
 // UseCase coordinates templates, delivery, consent, suppressions, and campaigns.
@@ -47,7 +56,9 @@ type UseCase struct {
 	sender         repo.EmailSender
 	supportEmail   string
 	unsubscribeURL string
+	tokenKeyID     string
 	tokenSeed      string
+	tokenSecrets   map[string]string
 }
 
 type campaignClaimer interface {
@@ -63,12 +74,16 @@ type campaignDeliveryStats struct {
 
 // New creates an email use case.
 func New(r repo.EmailRepo, sender repo.EmailSender, opts Options) *UseCase {
+	tokenKeyID, tokenSeed, tokenSecrets := normalizeUnsubscribeTokenOptions(opts)
+
 	return &UseCase{
 		repo:           r,
 		sender:         sender,
 		supportEmail:   normalizeSupportEmail(opts.SupportEmail),
 		unsubscribeURL: strings.TrimSpace(opts.UnsubscribeURL),
-		tokenSeed:      opts.UnsubscribeTokenSeed,
+		tokenKeyID:     tokenKeyID,
+		tokenSeed:      tokenSeed,
+		tokenSecrets:   tokenSecrets,
 	}
 }
 
@@ -506,6 +521,44 @@ func (uc *UseCase) SendCampaignNow(ctx context.Context, id, actorID string) (ent
 	return uc.repo.UpdateEmailCampaign(ctx, campaign)
 }
 
+func (uc *UseCase) RetryFailedCampaign(ctx context.Context, id, actorID string) (entity.EmailCampaign, error) {
+	campaign, err := uc.repo.GetEmailCampaign(ctx, id)
+	if err != nil {
+		return entity.EmailCampaign{}, err
+	}
+	if campaign.Status != entity.EmailCampaignStatusSent {
+		return entity.EmailCampaign{}, entity.ErrInvalidEmailCampaign
+	}
+	if err = uc.ensureMarketingTemplate(ctx, campaign.TemplateID); err != nil {
+		return entity.EmailCampaign{}, err
+	}
+	campaign, err = uc.repo.ClaimEmailCampaignForRetry(ctx, campaign.ID, actorID)
+	if err != nil {
+		return entity.EmailCampaign{}, err
+	}
+
+	retryStartedAt := time.Now().UTC()
+	stats, err := uc.deliverCampaignRetry(ctx, campaign, retryStartedAt)
+	if err != nil {
+		_ = uc.restoreCampaignStatus(ctx, campaign, entity.EmailCampaignStatusSent, actorID)
+
+		return entity.EmailCampaign{}, err
+	}
+	counts, err := uc.repo.CountEmailCampaignRecipientsByStatus(ctx, campaign.ID)
+	if err != nil {
+		_ = uc.restoreCampaignStatus(ctx, campaign, entity.EmailCampaignStatusSent, actorID)
+
+		return entity.EmailCampaign{}, err
+	}
+
+	now := time.Now().UTC()
+	campaign.Status = entity.EmailCampaignStatusSent
+	campaign.UpdatedBy = nullableActor(actorID)
+	campaign.Metadata = campaignMetadataWithRetryStats(campaign.Metadata, counts, stats, now)
+
+	return uc.repo.UpdateEmailCampaign(ctx, campaign)
+}
+
 func (uc *UseCase) CancelCampaign(ctx context.Context, id, actorID string) (entity.EmailCampaign, error) {
 	campaign, err := uc.repo.GetEmailCampaign(ctx, id)
 	if err != nil {
@@ -651,6 +704,44 @@ func (uc *UseCase) deliverCampaign(ctx context.Context, campaign entity.EmailCam
 			ctx,
 			campaign.ID,
 			entity.EmailRecipientStatusPending,
+			defaultBatchSize,
+		)
+		if err != nil {
+			return stats, err
+		}
+		if len(recipients) == 0 {
+			return stats, nil
+		}
+
+		for _, recipient := range recipients {
+			status, err := uc.deliverCampaignRecipient(ctx, campaign, recipient)
+			if err != nil {
+				return stats, err
+			}
+			stats.total++
+			switch status {
+			case entity.EmailRecipientStatusSent:
+				stats.sent++
+			case entity.EmailRecipientStatusSkipped:
+				stats.skipped++
+			case entity.EmailRecipientStatusFailed:
+				stats.failed++
+			}
+		}
+	}
+}
+
+func (uc *UseCase) deliverCampaignRetry(
+	ctx context.Context,
+	campaign entity.EmailCampaign,
+	cutoff time.Time,
+) (campaignDeliveryStats, error) {
+	var stats campaignDeliveryStats
+	for {
+		recipients, err := uc.repo.ListEmailCampaignRecipientsForRetry(
+			ctx,
+			campaign.ID,
+			cutoff,
 			defaultBatchSize,
 		)
 		if err != nil {
@@ -931,6 +1022,36 @@ func campaignMetadataWithDeliveryStats(
 	return metadata
 }
 
+func campaignMetadataWithRetryStats(
+	metadata map[string]string,
+	counts map[string]int,
+	stats campaignDeliveryStats,
+	finishedAt time.Time,
+) map[string]string {
+	metadata = cloneMap(metadata)
+	deliveryTotal := 0
+	for _, status := range []string{
+		entity.EmailRecipientStatusPending,
+		entity.EmailRecipientStatusSent,
+		entity.EmailRecipientStatusFailed,
+		entity.EmailRecipientStatusSkipped,
+	} {
+		deliveryTotal += counts[status]
+	}
+	metadata[campaignMetadataDeliveryTotal] = fmt.Sprintf("%d", deliveryTotal)
+	metadata[campaignMetadataDeliverySent] = fmt.Sprintf("%d", counts[entity.EmailRecipientStatusSent])
+	metadata[campaignMetadataDeliveryFailed] = fmt.Sprintf("%d", counts[entity.EmailRecipientStatusFailed])
+	metadata[campaignMetadataDeliverySkipped] = fmt.Sprintf("%d", counts[entity.EmailRecipientStatusSkipped])
+	metadata[campaignMetadataDeliveryFinishedAt] = finishedAt.Format(time.RFC3339)
+	metadata[campaignMetadataRetryTotal] = fmt.Sprintf("%d", stats.total)
+	metadata[campaignMetadataRetrySent] = fmt.Sprintf("%d", stats.sent)
+	metadata[campaignMetadataRetryFailed] = fmt.Sprintf("%d", stats.failed)
+	metadata[campaignMetadataRetrySkipped] = fmt.Sprintf("%d", stats.skipped)
+	metadata[campaignMetadataRetryFinishedAt] = finishedAt.Format(time.RFC3339)
+
+	return metadata
+}
+
 func redactEmailMetadata(metadata map[string]string) map[string]string {
 	redacted := map[string]string{}
 	for key, value := range metadata {
@@ -1150,25 +1271,137 @@ func textWithFooter(text, lang, supportEmail string) string {
 	return text + "\n\n" + footer
 }
 
-func (uc *UseCase) unsubscribeToken(userID, email string) string {
-	payload := base64.RawURLEncoding.EncodeToString([]byte(strings.TrimSpace(userID) + "\n" + strings.ToLower(strings.TrimSpace(email))))
-	mac := hmac.New(sha256.New, []byte(uc.tokenSeed))
-	_, _ = mac.Write([]byte(payload))
-	signature := hex.EncodeToString(mac.Sum(nil))
+func normalizeUnsubscribeTokenOptions(opts Options) (string, string, map[string]string) {
+	keyID := strings.TrimSpace(opts.UnsubscribeTokenKeyID)
+	if keyID == "" {
+		keyID = defaultTokenKeyID
+	}
+	seed := strings.TrimSpace(opts.UnsubscribeTokenSeed)
+	secrets := map[string]string{}
+	for key, secret := range opts.UnsubscribeTokenSecrets {
+		key = strings.TrimSpace(key)
+		secret = strings.TrimSpace(secret)
+		if key == "" || secret == "" {
+			continue
+		}
+		secrets[key] = secret
+	}
+	if seed == "" {
+		seed = secrets[keyID]
+	}
+	if seed != "" && secrets[keyID] == "" {
+		secrets[keyID] = seed
+	}
 
-	return payload + "." + signature
+	return keyID, seed, secrets
+}
+
+func (uc *UseCase) unsubscribeToken(userID, email string) string {
+	payload := unsubscribeTokenPayload(userID, email)
+	keyID := uc.tokenKeyID
+	if keyID == "" {
+		keyID = defaultTokenKeyID
+	}
+	signingInput := tokenVersionV2 + "." + keyID + "." + payload
+	signature := unsubscribeTokenSignature(signingInput, uc.secretForTokenKey(keyID))
+
+	return signingInput + "." + signature
+}
+
+func unsubscribeTokenPayload(userID, email string) string {
+	return base64.RawURLEncoding.EncodeToString(
+		[]byte(strings.TrimSpace(userID) + "\n" + strings.ToLower(strings.TrimSpace(email))),
+	)
 }
 
 func (uc *UseCase) parseUnsubscribeToken(token string) (string, string, error) {
-	payload, signature, ok := strings.Cut(strings.TrimSpace(token), ".")
-	if !ok || payload == "" || signature == "" {
+	token = strings.TrimSpace(token)
+	parts := strings.Split(token, ".")
+	switch {
+	case len(parts) == 4 && parts[0] == tokenVersionV2:
+		return uc.parseV2UnsubscribeToken(parts)
+	case len(parts) == 2:
+		return uc.parseLegacyUnsubscribeToken(parts[0], parts[1])
+	default:
 		return "", "", entity.ErrInvalidUnsubscribeToken
 	}
-	mac := hmac.New(sha256.New, []byte(uc.tokenSeed))
-	_, _ = mac.Write([]byte(payload))
-	if !hmac.Equal([]byte(signature), []byte(hex.EncodeToString(mac.Sum(nil)))) {
+}
+
+func (uc *UseCase) parseV2UnsubscribeToken(parts []string) (string, string, error) {
+	keyID, payload, signature := parts[1], parts[2], parts[3]
+	if keyID == "" || payload == "" || signature == "" {
 		return "", "", entity.ErrInvalidUnsubscribeToken
 	}
+	secret := uc.tokenSecrets[keyID]
+	if secret == "" {
+		return "", "", entity.ErrInvalidUnsubscribeToken
+	}
+	signingInput := tokenVersionV2 + "." + keyID + "." + payload
+	if !validUnsubscribeTokenSignature(signingInput, signature, secret) {
+		return "", "", entity.ErrInvalidUnsubscribeToken
+	}
+
+	return decodeUnsubscribeTokenPayload(payload)
+}
+
+func (uc *UseCase) parseLegacyUnsubscribeToken(payload, signature string) (string, string, error) {
+	if payload == "" || signature == "" {
+		return "", "", entity.ErrInvalidUnsubscribeToken
+	}
+	for _, secret := range uc.legacyTokenSecrets() {
+		if validUnsubscribeTokenSignature(payload, signature, secret) {
+			return decodeUnsubscribeTokenPayload(payload)
+		}
+	}
+
+	return "", "", entity.ErrInvalidUnsubscribeToken
+}
+
+func (uc *UseCase) secretForTokenKey(keyID string) string {
+	if uc.tokenSecrets[keyID] != "" {
+		return uc.tokenSecrets[keyID]
+	}
+
+	return uc.tokenSeed
+}
+
+func (uc *UseCase) legacyTokenSecrets() []string {
+	secrets := make([]string, 0, len(uc.tokenSecrets)+1)
+	seen := map[string]bool{}
+	if uc.tokenSeed != "" {
+		secrets = append(secrets, uc.tokenSeed)
+		seen[uc.tokenSeed] = true
+	}
+	for _, secret := range uc.tokenSecrets {
+		if secret == "" || seen[secret] {
+			continue
+		}
+		secrets = append(secrets, secret)
+		seen[secret] = true
+	}
+
+	return secrets
+}
+
+func unsubscribeTokenSignature(input, secret string) string {
+	mac := hmac.New(sha256.New, []byte(secret))
+	_, _ = mac.Write([]byte(input))
+
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
+func validUnsubscribeTokenSignature(input, signature, secret string) bool {
+	actual, err := hex.DecodeString(signature)
+	if err != nil {
+		return false
+	}
+	expectedMAC := hmac.New(sha256.New, []byte(secret))
+	_, _ = expectedMAC.Write([]byte(input))
+
+	return hmac.Equal(actual, expectedMAC.Sum(nil))
+}
+
+func decodeUnsubscribeTokenPayload(payload string) (string, string, error) {
 	decoded, err := base64.RawURLEncoding.DecodeString(payload)
 	if err != nil {
 		return "", "", entity.ErrInvalidUnsubscribeToken

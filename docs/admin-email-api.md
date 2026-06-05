@@ -22,7 +22,7 @@ Transactional templates are seeded for:
 
 Transactional templates should have published `id`, `en`, and `ar` versions. Marketing templates require `id`; `en` and `ar` are optional but recommended.
 
-Template variables use Go template syntax, for example `{{.name}}` and `{{.link}}`. The backend validates `required_variables` before previewing or sending.
+Template variables use Go template syntax, for example `{{.name}}` and `{{.link}}`. Verification templates also receive `{{.otp}}` and `{{.otp_duration}}`. The backend validates `required_variables` before previewing or sending.
 
 ## Admin Templates
 
@@ -204,6 +204,7 @@ POST /v1/admin/emails/campaigns/{id}/preview-audience
 POST /v1/admin/emails/campaigns/{id}/test-send
 POST /v1/admin/emails/campaigns/{id}/schedule
 POST /v1/admin/emails/campaigns/{id}/send-now
+POST /v1/admin/emails/campaigns/{id}/retry-failed
 POST /v1/admin/emails/campaigns/{id}/cancel
 ```
 
@@ -218,6 +219,7 @@ Schedule body:
 Campaign statuses are `draft`, `scheduled`, `sending`, `sent`, and `cancelled`.
 Recipient statuses are `pending`, `sent`, `failed`, and `skipped`.
 After send, campaign `metadata` includes `delivery_total`, `delivery_sent`, `delivery_failed`, `delivery_skipped`, and `delivery_finished_at`.
+`retry-failed` is valid only for `sent` campaigns and retries only recipients whose campaign-recipient status is currently `failed`.
 
 ## User Preferences And Unsubscribe
 

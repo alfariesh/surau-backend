@@ -64,6 +64,36 @@ func TestAdminEmailCreateTemplateRejectsEditorActor(t *testing.T) {
 	assert.Empty(t, email.created.Key)
 }
 
+func TestAdminEmailRetryFailedCampaign(t *testing.T) {
+	t.Parallel()
+
+	email := &fakeEmailAdmin{
+		retryCampaign: entity.EmailCampaign{
+			ID:     "campaign-id",
+			Status: entity.EmailCampaignStatusSent,
+		},
+	}
+	app := newAdminEmailTestApp(email, entity.User{ID: "admin-id", Role: entity.UserRoleAdmin})
+	req := httptest.NewRequestWithContext(
+		t.Context(),
+		http.MethodPost,
+		"/v1/admin/emails/campaigns/campaign-id/retry-failed",
+		nil,
+	)
+
+	resp, err := app.Test(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	var campaign entity.EmailCampaign
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&campaign))
+
+	assert.Equal(t, http.StatusAccepted, resp.StatusCode)
+	assert.Equal(t, "campaign-id", campaign.ID)
+	assert.Equal(t, "campaign-id", email.retryID)
+	assert.Equal(t, "admin-id", email.retryActorID)
+}
+
 func newAdminEmailTestApp(email *fakeEmailAdmin, actor entity.User) *fiber.App {
 	app := fiber.New()
 	user := &fakeAuthUser{}
@@ -86,6 +116,12 @@ func newAdminEmailTestApp(email *fakeEmailAdmin, actor entity.User) *fiber.App {
 		middleware.RequireRoles(user, entity.UserRoleAdmin),
 		controller.adminEmailCreateTemplate,
 	)
+	app.Post(
+		"/v1/admin/emails/campaigns/:id/retry-failed",
+		injectActor,
+		middleware.RequireRoles(user, entity.UserRoleAdmin),
+		controller.adminEmailRetryFailedCampaign,
+	)
 
 	return app
 }
@@ -95,6 +131,11 @@ type fakeEmailAdmin struct {
 
 	created   entity.EmailTemplate
 	createErr error
+
+	retryID       string
+	retryActorID  string
+	retryCampaign entity.EmailCampaign
+	retryErr      error
 }
 
 func (f *fakeEmailAdmin) CreateTemplate(
@@ -111,4 +152,21 @@ func (f *fakeEmailAdmin) CreateTemplate(
 	f.created = template
 
 	return template, nil
+}
+
+func (f *fakeEmailAdmin) RetryFailedCampaign(
+	_ context.Context,
+	id,
+	actorID string,
+) (entity.EmailCampaign, error) {
+	f.retryID = id
+	f.retryActorID = actorID
+	if f.retryErr != nil {
+		return entity.EmailCampaign{}, f.retryErr
+	}
+	if f.retryCampaign.ID == "" {
+		f.retryCampaign.ID = id
+	}
+
+	return f.retryCampaign, nil
 }

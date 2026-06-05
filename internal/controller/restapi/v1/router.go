@@ -231,6 +231,7 @@ func NewRoutes(
 			emailGroup.Post("/campaigns/:id/test-send", r.adminEmailTestSendCampaign)
 			emailGroup.Post("/campaigns/:id/schedule", r.adminEmailScheduleCampaign)
 			emailGroup.Post("/campaigns/:id/send-now", r.adminEmailSendCampaignNow)
+			emailGroup.Post("/campaigns/:id/retry-failed", r.adminEmailRetryFailedCampaign)
 			emailGroup.Post("/campaigns/:id/cancel", r.adminEmailCancelCampaign)
 		}
 	}
