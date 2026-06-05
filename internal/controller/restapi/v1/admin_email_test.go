@@ -348,6 +348,36 @@ func TestEmailCloudflareBounceWebhook(t *testing.T) {
 	}
 }
 
+func TestEmailUnsubscribePostAcceptsQueryToken(t *testing.T) {
+	t.Parallel()
+
+	email := &fakeEmailAdmin{
+		unsubscribeResult: entity.EmailSubscription{
+			UserID:         "user-id",
+			MarketingOptIn: false,
+			Source:         "unsubscribe_link",
+		},
+	}
+	app := newEmailUnsubscribeTestApp(email)
+	req := httptest.NewRequestWithContext(
+		t.Context(),
+		http.MethodPost,
+		"/v1/email/unsubscribe?token=unsubscribe-token",
+		nil,
+	)
+
+	resp, err := app.Test(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	var subscription entity.EmailSubscription
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&subscription))
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Equal(t, "unsubscribe-token", email.unsubscribeToken)
+	assert.False(t, subscription.MarketingOptIn)
+}
+
 func newAdminEmailTestApp(email *fakeEmailAdmin, actor entity.User) *fiber.App {
 	app := fiber.New()
 	user := &fakeAuthUser{}
@@ -404,6 +434,18 @@ func newAdminEmailTestApp(email *fakeEmailAdmin, actor entity.User) *fiber.App {
 	return app
 }
 
+func newEmailUnsubscribeTestApp(email *fakeEmailAdmin) *fiber.App {
+	app := fiber.New()
+	controller := &V1{
+		email: email,
+		l:     logger.New("error"),
+		v:     validator.New(validator.WithRequiredStructEnabled()),
+	}
+	app.Post("/v1/email/unsubscribe", controller.emailUnsubscribe)
+
+	return app
+}
+
 func newEmailWebhookTestApp(email *fakeEmailAdmin, secret string) *fiber.App {
 	app := fiber.New()
 	controller := &V1{
@@ -435,6 +477,10 @@ type fakeEmailAdmin struct {
 	deliverySummary   entity.EmailCampaignDeliveryEventSummary
 	deliverySummaryID string
 	summaryErr        error
+
+	unsubscribeToken  string
+	unsubscribeResult entity.EmailSubscription
+	unsubscribeErr    error
 
 	webhookPayload []byte
 	webhookResult  entity.EmailWebhookIngestResult
@@ -500,6 +546,21 @@ func (f *fakeEmailAdmin) CampaignDeliveryEventSummary(
 	}
 
 	return summary, nil
+}
+
+func (f *fakeEmailAdmin) Unsubscribe(
+	_ context.Context,
+	token string,
+) (entity.EmailSubscription, error) {
+	f.unsubscribeToken = token
+	if f.unsubscribeErr != nil {
+		return entity.EmailSubscription{}, f.unsubscribeErr
+	}
+	if f.unsubscribeResult.UserID == "" {
+		f.unsubscribeResult.UserID = "user-id"
+	}
+
+	return f.unsubscribeResult, nil
 }
 
 func (f *fakeEmailAdmin) IngestCloudflareBounceWebhook(

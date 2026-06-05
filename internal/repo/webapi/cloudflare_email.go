@@ -184,7 +184,7 @@ func (c *CloudflareEmailClient) newRequestBody(message entity.EmailMessage) clou
 	if c.replyTo != "" {
 		body.ReplyTo = c.replyTo
 	}
-	body.Headers = trackingHeaders(message)
+	body.Headers = emailHeaders(message)
 
 	return body
 }
@@ -251,4 +251,31 @@ func trackingHeaders(message entity.EmailMessage) map[string]string {
 	}
 
 	return headers
+}
+
+func emailHeaders(message entity.EmailMessage) map[string]string {
+	headers := map[string]string{}
+	for name, value := range message.Headers {
+		name = strings.TrimSpace(name)
+		value = strings.TrimSpace(value)
+		if invalidEmailHeader(name, value) {
+			continue
+		}
+		headers[name] = value
+	}
+	for name, value := range trackingHeaders(message) {
+		headers[name] = value
+	}
+	if len(headers) == 0 {
+		return nil
+	}
+
+	return headers
+}
+
+func invalidEmailHeader(name, value string) bool {
+	return name == "" ||
+		value == "" ||
+		strings.ContainsAny(name, "\r\n") ||
+		strings.ContainsAny(value, "\r\n")
 }

@@ -25,7 +25,7 @@ Edit `.env.production`:
 - Ganti `JWT_SECRET` dengan output `openssl rand -hex 32`.
 - Biarkan `JWT_ISSUER=surau-backend` dan `JWT_AUDIENCE=surau-api`, kecuali ada kebutuhan integrasi token khusus.
 - Biarkan `AUTH_RATE_LIMIT_ENABLED=true` untuk limiter DB-backed lintas instance; override nilai `AUTH_RATE_LIMIT_*` hanya jika traffic/UX membutuhkan.
-- Isi `CF_EMAIL_ACCOUNT_ID`, `CF_EMAIL_API_TOKEN`, `EMAIL_FROM_ADDRESS`, `EMAIL_VERIFY_FRONTEND_URL`, `PASSWORD_RESET_FRONTEND_URL`, dan `EMAIL_CHANGE_FRONTEND_URL`.
+- Isi `CF_EMAIL_ACCOUNT_ID`, `CF_EMAIL_API_TOKEN`, `EMAIL_FROM_ADDRESS`, `EMAIL_VERIFY_FRONTEND_URL`, `PASSWORD_RESET_FRONTEND_URL`, `EMAIL_CHANGE_FRONTEND_URL`, dan `EMAIL_UNSUBSCRIBE_PUBLIC_URL=https://api.surau.org/v1/email/unsubscribe`.
 - Pastikan domain `EMAIL_FROM_ADDRESS` sudah onboard di Cloudflare Email Service untuk Email Sending.
 - Biarkan `APP_BIND_ADDR=127.0.0.1` jika reverse proxy ada di server yang sama.
 - Biarkan `APP_PUBLISHED_PORT=8080`, kecuali port 8080 sudah dipakai service lain.

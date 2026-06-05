@@ -76,6 +76,7 @@ func initUseCases(cfg *config.Config, pg *postgres.Postgres, jwtManager *jwt.Man
 	emailUC := emailusecase.New(emailRepo, emailSender, emailusecase.Options{
 		SupportEmail:            cfg.Email.ReplyTo,
 		UnsubscribeURL:          unsubscribeFrontendURL(cfg),
+		UnsubscribeHeaderURL:    cfg.Email.UnsubscribePublicURL,
 		UnsubscribeTokenKeyID:   unsubscribeTokenKeyID(cfg),
 		UnsubscribeTokenSeed:    unsubscribeTokenSeed(cfg),
 		UnsubscribeTokenSecrets: unsubscribeTokenSecrets(cfg),

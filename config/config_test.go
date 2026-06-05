@@ -57,6 +57,7 @@ func TestNewConfig_EmailDefaults(t *testing.T) {
 	unsetEnv(t, "EMAIL_CHANGE_OTP_TTL")
 	unsetEnv(t, "EMAIL_CHANGE_RESEND_COOLDOWN")
 	unsetEnv(t, "EMAIL_UNSUBSCRIBE_TOKEN_KEY_ID")
+	unsetEnv(t, "EMAIL_UNSUBSCRIBE_PUBLIC_URL")
 	unsetEnv(t, "EMAIL_UNSUBSCRIBE_TOKEN_SECRET")
 	unsetEnv(t, "EMAIL_UNSUBSCRIBE_TOKEN_SECRETS")
 	unsetEnv(t, "EMAIL_CLOUDFLARE_WEBHOOK_SECRET")
@@ -76,10 +77,21 @@ func TestNewConfig_EmailDefaults(t *testing.T) {
 	assert.Equal(t, "10m0s", cfg.Email.EmailChangeOTPTTL.String())
 	assert.Equal(t, "1m0s", cfg.Email.EmailChangeCooldown.String())
 	assert.Equal(t, "default", cfg.Email.UnsubscribeTokenKeyID)
+	assert.Empty(t, cfg.Email.UnsubscribePublicURL)
 	assert.Empty(t, cfg.Email.UnsubscribeTokenSecret)
 	assert.Empty(t, cfg.Email.UnsubscribeTokenSecrets)
 	assert.Empty(t, cfg.Email.CloudflareWebhookSecret)
 	assert.Equal(t, "10s", cfg.Email.HTTPTimeout.String())
+}
+
+func TestNewConfig_UnsubscribePublicURLTrims(t *testing.T) {
+	setRequiredEnv(t)
+	t.Setenv("EMAIL_UNSUBSCRIBE_PUBLIC_URL", "  https://api.surau.org/v1/email/unsubscribe  ")
+
+	cfg, err := NewConfig()
+
+	require.NoError(t, err)
+	assert.Equal(t, "https://api.surau.org/v1/email/unsubscribe", cfg.Email.UnsubscribePublicURL)
 }
 
 func TestNewConfig_UnsubscribeTokenSecretTrims(t *testing.T) {
@@ -139,6 +151,11 @@ func TestNewConfig_InvalidEmail(t *testing.T) {
 			name:  "invalid email change url",
 			key:   "EMAIL_CHANGE_FRONTEND_URL",
 			value: "/change-email",
+		},
+		{
+			name:  "invalid unsubscribe public url",
+			key:   "EMAIL_UNSUBSCRIBE_PUBLIC_URL",
+			value: "/v1/email/unsubscribe",
 		},
 		{
 			name:  "invalid unsubscribe token key id",

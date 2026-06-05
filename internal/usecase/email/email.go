@@ -34,6 +34,9 @@ const (
 	emailSuppressionReasonComplaint       = "complaint"
 	emailDeliverySourceSync               = "sync"
 	emailDeliverySourceWebhook            = "webhook"
+	emailHeaderListUnsubscribe            = "List-Unsubscribe"
+	emailHeaderListUnsubscribePost        = "List-Unsubscribe-Post"
+	emailHeaderListUnsubscribeOneClick    = "One-Click"
 
 	campaignMetadataDeliveryTotal      = "delivery_total"
 	campaignMetadataDeliverySent       = "delivery_sent"
@@ -51,6 +54,7 @@ const (
 type Options struct {
 	SupportEmail            string
 	UnsubscribeURL          string
+	UnsubscribeHeaderURL    string
 	UnsubscribeTokenKeyID   string
 	UnsubscribeTokenSeed    string
 	UnsubscribeTokenSecrets map[string]string
@@ -62,6 +66,7 @@ type UseCase struct {
 	sender         repo.EmailSender
 	supportEmail   string
 	unsubscribeURL string
+	headerURL       string
 	tokenKeyID     string
 	tokenSeed      string
 	tokenSecrets   map[string]string
@@ -135,6 +140,7 @@ func New(r repo.EmailRepo, sender repo.EmailSender, opts Options) *UseCase {
 		sender:         sender,
 		supportEmail:   normalizeSupportEmail(opts.SupportEmail),
 		unsubscribeURL: strings.TrimSpace(opts.UnsubscribeURL),
+		headerURL:      strings.TrimSpace(opts.UnsubscribeHeaderURL),
 		tokenKeyID:     tokenKeyID,
 		tokenSeed:      tokenSeed,
 		tokenSecrets:   tokenSecrets,
@@ -1031,6 +1037,7 @@ func (uc *UseCase) sendAndLog(
 	message.MessageID = messageLog.ID
 	message.CampaignID = campaignID
 	message.CampaignRecipient = campaignRecipientID
+	message = uc.withDeliverabilityHeaders(message, category)
 	sendResult, err := uc.sender.Send(ctx, message)
 	providerResponse := sendResult.ProviderResponse
 	if err != nil {
@@ -1918,6 +1925,61 @@ func (uc *UseCase) unsubscribeLink(token string) string {
 	parsed.RawQuery = query.Encode()
 
 	return parsed.String()
+}
+
+func (uc *UseCase) withDeliverabilityHeaders(
+	message entity.EmailMessage,
+	category string,
+) entity.EmailMessage {
+	if category != entity.EmailCategoryMarketing {
+		return message
+	}
+	headerURL := uc.unsubscribeHeaderLink(message.Metadata["unsubscribe_url"])
+	if headerURL == "" {
+		return message
+	}
+	headers := cloneMap(message.Headers)
+	headers[emailHeaderListUnsubscribe] = "<" + headerURL + ">"
+	headers[emailHeaderListUnsubscribePost] = emailHeaderListUnsubscribeOneClick
+	message.Headers = headers
+
+	return message
+}
+
+func (uc *UseCase) unsubscribeHeaderLink(unsubscribeURL string) string {
+	headerBaseURL := strings.TrimSpace(uc.headerURL)
+	if headerBaseURL == "" {
+		return ""
+	}
+	token := tokenFromUnsubscribeURL(unsubscribeURL)
+	if token == "" {
+		return ""
+	}
+	parsed, err := url.Parse(headerBaseURL)
+	if err != nil || !validAbsoluteHTTPURL(parsed) {
+		return ""
+	}
+	query := parsed.Query()
+	query.Set("token", token)
+	parsed.RawQuery = query.Encode()
+
+	return parsed.String()
+}
+
+func tokenFromUnsubscribeURL(unsubscribeURL string) string {
+	parsed, err := url.Parse(strings.TrimSpace(unsubscribeURL))
+	if err != nil {
+		return ""
+	}
+
+	return strings.TrimSpace(parsed.Query().Get("token"))
+}
+
+func validAbsoluteHTTPURL(parsed *url.URL) bool {
+	return parsed != nil &&
+		parsed.IsAbs() &&
+		(parsed.Scheme == "http" || parsed.Scheme == "https") &&
+		parsed.Host != ""
 }
 
 func (uc *UseCase) ensureTransactionalCoverage(ctx context.Context, templateID, publishingLang string) error {

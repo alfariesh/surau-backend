@@ -83,6 +83,7 @@ type (
 		EmailChangeOTPTTL        time.Duration `env:"EMAIL_CHANGE_OTP_TTL" envDefault:"10m"`
 		EmailChangeCooldown      time.Duration `env:"EMAIL_CHANGE_RESEND_COOLDOWN" envDefault:"1m"`
 		UnsubscribeFrontendURL   string        `env:"EMAIL_UNSUBSCRIBE_FRONTEND_URL"`
+		UnsubscribePublicURL     string        `env:"EMAIL_UNSUBSCRIBE_PUBLIC_URL"`
 		UnsubscribeTokenKeyID    string        `env:"EMAIL_UNSUBSCRIBE_TOKEN_KEY_ID" envDefault:"default"`
 		UnsubscribeTokenSecret   string        `env:"EMAIL_UNSUBSCRIBE_TOKEN_SECRET"`
 		UnsubscribeTokenSecrets  string        `env:"EMAIL_UNSUBSCRIBE_TOKEN_SECRETS"`
@@ -197,6 +198,7 @@ func NewConfig() (*Config, error) {
 	cfg.Email.PasswordResetFrontendURL = strings.TrimSpace(cfg.Email.PasswordResetFrontendURL)
 	cfg.Email.EmailChangeFrontendURL = strings.TrimSpace(cfg.Email.EmailChangeFrontendURL)
 	cfg.Email.UnsubscribeFrontendURL = strings.TrimSpace(cfg.Email.UnsubscribeFrontendURL)
+	cfg.Email.UnsubscribePublicURL = strings.TrimSpace(cfg.Email.UnsubscribePublicURL)
 	cfg.Email.UnsubscribeTokenKeyID = strings.TrimSpace(cfg.Email.UnsubscribeTokenKeyID)
 	cfg.Email.UnsubscribeTokenSecret = strings.TrimSpace(cfg.Email.UnsubscribeTokenSecret)
 	cfg.Email.UnsubscribeTokenSecrets = strings.TrimSpace(cfg.Email.UnsubscribeTokenSecrets)
@@ -246,6 +248,9 @@ func NewConfig() (*Config, error) {
 	}
 	if cfg.Email.UnsubscribeFrontendURL != "" && !validAbsoluteHTTPURL(cfg.Email.UnsubscribeFrontendURL) {
 		return nil, fmt.Errorf("config error: EMAIL_UNSUBSCRIBE_FRONTEND_URL must be an absolute http(s) URL")
+	}
+	if cfg.Email.UnsubscribePublicURL != "" && !validAbsoluteHTTPURL(cfg.Email.UnsubscribePublicURL) {
+		return nil, fmt.Errorf("config error: EMAIL_UNSUBSCRIBE_PUBLIC_URL must be an absolute http(s) URL")
 	}
 	if cfg.Email.VerificationTTL <= 0 {
 		return nil, fmt.Errorf("config error: EMAIL_VERIFICATION_TTL must be positive")

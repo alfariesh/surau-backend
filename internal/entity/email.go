@@ -58,6 +58,7 @@ type EmailMessage struct {
 	MessageID         string            `json:"message_id,omitempty"`
 	CampaignID        string            `json:"campaign_id,omitempty"`
 	CampaignRecipient string            `json:"campaign_recipient_id,omitempty"`
+	Headers           map[string]string `json:"headers,omitempty"`
 	Metadata          map[string]string `json:"metadata,omitempty"`
 }
 
