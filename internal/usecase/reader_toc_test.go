@@ -116,13 +116,18 @@ func TestReaderTOCRead(t *testing.T) {
 	}
 	audio := &entity.SectionAudio{BookID: 1, HeadingID: 2, Lang: "id", URL: "https://cdn.test/2.mp3"}
 	section := entity.BookSection{
-		BookID:       1,
-		HeadingID:    2,
-		StartPageID:  2,
-		EndPageID:    4,
-		OriginalHTML: "<p>Original</p>",
-		OriginalText: "Original",
-		Audio:        audio,
+		BookID:         1,
+		HeadingID:      2,
+		StartPageID:    2,
+		EndPageID:      4,
+		OriginalHTML:   "<p>Original</p>",
+		OriginalText:   "Original",
+		OriginalFormat: "html",
+		OriginalBlocks: []entity.SourceBlock{
+			{Type: "html", Text: "Original", HTML: "<p>Original</p>"},
+		},
+		OriginalFootnotes: []entity.SourceFootnote{},
+		Audio:             audio,
 	}
 
 	mockRepo.EXPECT().
@@ -141,6 +146,9 @@ func TestReaderTOCRead(t *testing.T) {
 	assert.True(t, read.HasSummary)
 	assert.Equal(t, 2, read.StartPageID)
 	assert.Equal(t, 4, read.EndPageID)
+	assert.Equal(t, "html", read.OriginalFormat)
+	assert.Equal(t, section.OriginalBlocks, read.OriginalBlocks)
+	assert.Equal(t, section.OriginalFootnotes, read.OriginalFootnotes)
 	assert.Equal(t, audio, read.Audio)
 	require.Len(t, read.Breadcrumb, 1)
 	assert.Equal(t, "Root", read.Breadcrumb[0].Title)

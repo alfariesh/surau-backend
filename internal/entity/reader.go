@@ -281,6 +281,27 @@ type SectionAudio struct {
 	UpdatedAt       time.Time `json:"updated_at"       example:"2026-01-01T00:00:00Z"`
 } // @name entity.SectionAudio
 
+// SourceQuranCitation is a best-effort inline Quran citation detected in source text.
+type SourceQuranCitation struct {
+	Quote     string `json:"quote"`
+	Reference string `json:"reference" example:"البقرة- ٢٥٥"`
+} // @name entity.SourceQuranCitation
+
+// SourceBlock is one semantic source content block for stable reader rendering.
+type SourceBlock struct {
+	Type           string                `json:"type" example:"paragraph"`
+	Text           string                `json:"text"`
+	HTML           string                `json:"html"`
+	QuranCitations []SourceQuranCitation `json:"quran_citations,omitempty"`
+} // @name entity.SourceBlock
+
+// SourceFootnote is one source footnote extracted from plain kitab text.
+type SourceFootnote struct {
+	Marker string `json:"marker" example:"(¬١)"`
+	Text   string `json:"text"`
+	HTML   string `json:"html"`
+} // @name entity.SourceFootnote
+
 // BookSection is the reader response for one heading.
 type BookSection struct {
 	BookID                    int                 `json:"book_id"       example:"797"`
@@ -296,6 +317,9 @@ type BookSection struct {
 	EndPageID                 int                 `json:"end_page_id"   example:"15"`
 	OriginalHTML              string              `json:"original_html"`
 	OriginalText              string              `json:"original_text"`
+	OriginalFormat            string              `json:"original_format" example:"plain_text"`
+	OriginalBlocks            []SourceBlock       `json:"original_blocks"`
+	OriginalFootnotes         []SourceFootnote    `json:"original_footnotes"`
 	Translation               *SectionTranslation `json:"translation"`
 	Audio                     *SectionAudio       `json:"audio"`
 	Availability              ReaderAvailability  `json:"availability"`
@@ -323,6 +347,9 @@ type BookTOCRead struct {
 	EndPageID                 int                  `json:"end_page_id"   example:"15"`
 	OriginalHTML              string               `json:"original_html"`
 	OriginalText              string               `json:"original_text"`
+	OriginalFormat            string               `json:"original_format" example:"plain_text"`
+	OriginalBlocks            []SourceBlock        `json:"original_blocks"`
+	OriginalFootnotes         []SourceFootnote     `json:"original_footnotes"`
 	Translation               *SectionTranslation  `json:"translation"`
 	Audio                     *SectionAudio        `json:"audio"`
 	QuranReferences           []BookQuranReference `json:"quran_references,omitempty"`

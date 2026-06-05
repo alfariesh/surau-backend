@@ -20,11 +20,17 @@ var (
 )
 
 var (
+	_footnoteRefRE   = regexp.MustCompile(`\((?:¬)?[0-9٠-٩۰-۹]+\)`)
+	_footnoteStartRE = regexp.MustCompile(`^\((?:¬)?[0-9٠-٩۰-۹]+\)\s*(.*)$`)
+	_quranCitationRE = regexp.MustCompile(`\{([^{}]{3,})\}\s*\[([^\[\]]{2,})\]`)
+)
+
+var (
 	_allowedHTMLTags = map[string]struct{}{
 		"a": {}, "b": {}, "blockquote": {}, "br": {}, "cite": {}, "code": {}, "dd": {}, "div": {},
 		"dl": {}, "dt": {}, "em": {}, "h1": {}, "h2": {}, "h3": {}, "h4": {}, "h5": {}, "h6": {},
 		"hr": {}, "i": {}, "li": {}, "ol": {}, "p": {}, "pre": {}, "small": {}, "span": {},
-		"strong": {}, "sub": {}, "sup": {}, "table": {}, "tbody": {}, "td": {}, "tfoot": {},
+		"section": {}, "strong": {}, "sub": {}, "sup": {}, "table": {}, "tbody": {}, "td": {}, "tfoot": {},
 		"th": {}, "thead": {}, "tr": {}, "u": {}, "ul": {},
 	}
 	_voidHTMLTags = map[string]struct{}{
@@ -35,13 +41,53 @@ var (
 		"style": {}, "svg": {}, "template": {},
 	}
 	_allowedGlobalHTMLAttrs = map[string]struct{}{
-		"class": {}, "data-type": {}, "dir": {}, "id": {}, "lang": {}, "title": {},
+		"class": {}, "data-marker": {}, "data-type": {}, "dir": {}, "id": {}, "lang": {}, "title": {},
 	}
 	_allowedHTMLAttrsByTag = map[string]map[string]struct{}{
 		"a": {"href": {}, "name": {}},
 	}
 	_safeHTMLIDRE = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_:.-]*$`)
 )
+
+const (
+	SourceFormatHTML      = "html"
+	SourceFormatPlainText = "plain_text"
+
+	SourceBlockParagraph  = "paragraph"
+	SourceBlockHeading    = "heading"
+	SourceBlockQuranQuote = "quran_quote"
+	SourceBlockHTML       = "html"
+)
+
+// StructuredContent is a reader-safe rendering contract derived from raw source content.
+type StructuredContent struct {
+	Format    string
+	HTML      string
+	Text      string
+	Blocks    []SourceBlock
+	Footnotes []SourceFootnote
+}
+
+// SourceBlock is one displayable source content block.
+type SourceBlock struct {
+	Type           string
+	Text           string
+	HTML           string
+	QuranCitations []SourceQuranCitation
+}
+
+// SourceFootnote is one extracted source footnote.
+type SourceFootnote struct {
+	Marker string
+	Text   string
+	HTML   string
+}
+
+// SourceQuranCitation is a best-effort citation found inline in plain source text.
+type SourceQuranCitation struct {
+	Quote     string
+	Reference string
+}
 
 // ResolveBookDBPath returns the raw SQLite path for a book id.
 func ResolveBookDBPath(sourceDir string, bookID int) string {
@@ -60,6 +106,47 @@ func NormalizeContent(content string) (string, string) {
 	normalized = SanitizeHTML(normalized)
 
 	return normalized, PlainText(normalized)
+}
+
+// StructureSourceContent returns semantic HTML plus structured blocks for reader source content.
+func StructureSourceContent(content string) StructuredContent {
+	sanitized := SanitizeHTML(content)
+	text := PlainText(sanitized)
+	if strings.TrimSpace(sanitized) == "" {
+		return StructuredContent{
+			Format:    SourceFormatPlainText,
+			HTML:      "",
+			Text:      "",
+			Blocks:    []SourceBlock{},
+			Footnotes: []SourceFootnote{},
+		}
+	}
+
+	if _tagRE.MatchString(sanitized) {
+		return StructuredContent{
+			Format: SourceFormatHTML,
+			HTML:   sanitized,
+			Text:   text,
+			Blocks: []SourceBlock{
+				{
+					Type: SourceBlockHTML,
+					Text: text,
+					HTML: sanitized,
+				},
+			},
+			Footnotes: []SourceFootnote{},
+		}
+	}
+
+	blocks, footnotes := structurePlainText(text)
+
+	return StructuredContent{
+		Format:    SourceFormatPlainText,
+		HTML:      semanticHTML(blocks, footnotes),
+		Text:      text,
+		Blocks:    blocks,
+		Footnotes: footnotes,
+	}
 }
 
 // SanitizeHTML keeps reader-safe markup while stripping scripts, event handlers, and unsafe links.
@@ -138,6 +225,243 @@ func PlainText(content string) string {
 	}
 
 	return strings.TrimSpace(strings.Join(lines, "\n"))
+}
+
+func structurePlainText(text string) ([]SourceBlock, []SourceFootnote) {
+	lines := strings.Split(_lineBreakRE.ReplaceAllString(text, "\n"), "\n")
+	blocks := make([]SourceBlock, 0, len(lines))
+	footnotes := make([]SourceFootnote, 0)
+	var currentFootnote *SourceFootnote
+	inFootnotes := false
+
+	flushFootnote := func() {
+		if currentFootnote == nil {
+			return
+		}
+
+		currentFootnote.Text = strings.TrimSpace(currentFootnote.Text)
+		currentFootnote.HTML = footnoteHTML(*currentFootnote)
+		footnotes = append(footnotes, *currentFootnote)
+		currentFootnote = nil
+	}
+
+	for _, rawLine := range lines {
+		line := strings.TrimSpace(_spaceRE.ReplaceAllString(rawLine, " "))
+		if line == "" {
+			flushFootnote()
+			inFootnotes = false
+			continue
+		}
+
+		if isFootnoteSeparator(line) {
+			flushFootnote()
+			inFootnotes = true
+			continue
+		}
+
+		if inFootnotes {
+			matches := _footnoteStartRE.FindStringSubmatch(line)
+			if len(matches) > 0 {
+				flushFootnote()
+				currentFootnote = &SourceFootnote{
+					Marker: _footnoteRefRE.FindString(line),
+					Text:   strings.TrimSpace(matches[1]),
+				}
+				continue
+			}
+
+			if currentFootnote != nil {
+				if currentFootnote.Text != "" {
+					currentFootnote.Text += "\n"
+				}
+				currentFootnote.Text += line
+				continue
+			}
+
+			inFootnotes = false
+		}
+
+		blocks = append(blocks, sourceBlockForLine(line))
+	}
+
+	flushFootnote()
+
+	return blocks, footnotes
+}
+
+func sourceBlockForLine(line string) SourceBlock {
+	citations := quranCitations(line)
+	blockType := SourceBlockParagraph
+	if len(citations) > 0 && isMostlyQuranQuote(line) {
+		blockType = SourceBlockQuranQuote
+	} else if isLikelyHeadingLine(line) {
+		blockType = SourceBlockHeading
+	}
+
+	block := SourceBlock{
+		Type:           blockType,
+		Text:           line,
+		QuranCitations: citations,
+	}
+	block.HTML = blockHTML(block)
+
+	return block
+}
+
+func quranCitations(line string) []SourceQuranCitation {
+	matches := _quranCitationRE.FindAllStringSubmatch(line, -1)
+	if len(matches) == 0 {
+		return nil
+	}
+
+	citations := make([]SourceQuranCitation, 0, len(matches))
+	for _, match := range matches {
+		citations = append(citations, SourceQuranCitation{
+			Quote:     strings.TrimSpace(match[1]),
+			Reference: strings.TrimSpace(match[2]),
+		})
+	}
+
+	return citations
+}
+
+func isFootnoteSeparator(line string) bool {
+	if len([]rune(line)) < 3 {
+		return false
+	}
+
+	for _, r := range line {
+		switch r {
+		case '_', '-', 'ـ', '—', '=':
+			continue
+		default:
+			return false
+		}
+	}
+
+	return true
+}
+
+func isLikelyHeadingLine(line string) bool {
+	if _footnoteRefRE.MatchString(line) || strings.HasPrefix(line, "[") || strings.HasPrefix(line, "{") {
+		return false
+	}
+	if strings.ContainsAny(line, ".،؛:؟!?") {
+		return false
+	}
+
+	runeCount := len([]rune(line))
+	if runeCount <= 2 || runeCount > 100 {
+		return false
+	}
+
+	for _, prefix := range []string{
+		"باب ",
+		"فصل",
+		"كتاب ",
+		"المسألة",
+		"المقدمة",
+		"مقدمة",
+		"الخاتمة",
+		"خاتمة",
+		"تمهيد",
+		"النوع ",
+	} {
+		if strings.HasPrefix(line, prefix) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func isMostlyQuranQuote(line string) bool {
+	trimmed := strings.TrimSpace(line)
+	if !strings.HasPrefix(trimmed, "{") {
+		return false
+	}
+
+	lastBrace := strings.LastIndex(trimmed, "}")
+	if lastBrace < 0 {
+		return false
+	}
+
+	afterQuote := strings.TrimSpace(trimmed[lastBrace+1:])
+
+	return afterQuote == "" || strings.HasPrefix(afterQuote, "[")
+}
+
+func semanticHTML(blocks []SourceBlock, footnotes []SourceFootnote) string {
+	var out strings.Builder
+	for _, block := range blocks {
+		if block.HTML == "" {
+			continue
+		}
+		if out.Len() > 0 {
+			out.WriteByte('\n')
+		}
+		out.WriteString(block.HTML)
+	}
+
+	if len(footnotes) > 0 {
+		if out.Len() > 0 {
+			out.WriteByte('\n')
+		}
+		out.WriteString(`<section data-type="footnotes" dir="rtl" lang="ar">`)
+		out.WriteString("\n<ol>")
+		for _, footnote := range footnotes {
+			out.WriteByte('\n')
+			out.WriteString(footnote.HTML)
+		}
+		out.WriteString("\n</ol>\n</section>")
+	}
+
+	return out.String()
+}
+
+func blockHTML(block SourceBlock) string {
+	content := escapeWithFootnoteRefs(block.Text)
+	switch block.Type {
+	case SourceBlockHeading:
+		return `<h3 dir="rtl" lang="ar">` + content + `</h3>`
+	case SourceBlockQuranQuote:
+		return `<blockquote data-type="quran-quote" dir="rtl" lang="ar">` + content + `</blockquote>`
+	default:
+		return `<p dir="rtl" lang="ar">` + content + `</p>`
+	}
+}
+
+func footnoteHTML(footnote SourceFootnote) string {
+	content := stdhtml.EscapeString(footnote.Text)
+	content = strings.ReplaceAll(content, "\n", "<br>")
+
+	return `<li data-marker="` +
+		stdhtml.EscapeString(footnote.Marker) +
+		`"><span data-type="footnote-marker">` +
+		stdhtml.EscapeString(footnote.Marker) +
+		`</span> ` +
+		content +
+		`</li>`
+}
+
+func escapeWithFootnoteRefs(text string) string {
+	matches := _footnoteRefRE.FindAllStringIndex(text, -1)
+	if len(matches) == 0 {
+		return stdhtml.EscapeString(text)
+	}
+
+	var out strings.Builder
+	last := 0
+	for _, match := range matches {
+		out.WriteString(stdhtml.EscapeString(text[last:match[0]]))
+		out.WriteString(`<sup data-type="footnote-ref">`)
+		out.WriteString(stdhtml.EscapeString(text[match[0]:match[1]]))
+		out.WriteString(`</sup>`)
+		last = match[1]
+	}
+	out.WriteString(stdhtml.EscapeString(text[last:]))
+
+	return out.String()
 }
 
 func writeHTMLStartTag(out *strings.Builder, tag string, attrs []xhtml.Attribute) {
@@ -331,9 +655,20 @@ func BuildHeadingRanges(bookID, lastPageID int, headings []DecoratedHeading) []H
 
 // SliceAnchoredHTML extracts one section from concatenated page HTML.
 func SliceAnchoredHTML(content, startAnchor, endAnchor string) string {
+	return SliceSectionContent(content, startAnchor, endAnchor, "", "")
+}
+
+// SliceSectionContent extracts one section using HTML anchors, with a title fallback for plain-text sources.
+func SliceSectionContent(content, startAnchor, endAnchor, startTitle, endTitle string) string {
 	start := 0
 	if startAnchor != "" {
 		if idx := findAnchor(content, startAnchor); idx >= 0 {
+			start = idx
+		}
+	}
+
+	if start == 0 && startTitle != "" && !_tagRE.MatchString(content) {
+		if idx := findPlainHeading(content, startTitle); idx > 0 && shouldTrimPlainPrefix(content[:idx]) {
 			start = idx
 		}
 	}
@@ -345,11 +680,71 @@ func SliceAnchoredHTML(content, startAnchor, endAnchor string) string {
 		}
 	}
 
+	if end == len(content) && endTitle != "" && !_tagRE.MatchString(content[start:]) {
+		if idx := findPlainHeading(content[start:], endTitle); idx > 0 {
+			end = start + idx
+		}
+	}
+
 	if start > end {
 		return strings.TrimSpace(content)
 	}
 
 	return strings.TrimSpace(content[start:end])
+}
+
+func findPlainHeading(content, title string) int {
+	for _, needle := range headingNeedles(title) {
+		if idx := strings.Index(content, needle); idx >= 0 {
+			return idx
+		}
+	}
+
+	return -1
+}
+
+func headingNeedles(title string) []string {
+	title = strings.TrimSpace(PlainText(title))
+	if title == "" {
+		return nil
+	}
+
+	seen := make(map[string]struct{})
+	needles := make([]string, 0, 4)
+	add := func(value string) {
+		value = strings.TrimSpace(value)
+		if len([]rune(value)) < 3 {
+			return
+		}
+		if _, ok := seen[value]; ok {
+			return
+		}
+		seen[value] = struct{}{}
+		needles = append(needles, value)
+	}
+
+	add(title)
+	for _, sep := range []string{"[", "(", "،", ":", " - "} {
+		if idx := strings.Index(title, sep); idx > 0 {
+			add(title[:idx])
+		}
+	}
+
+	fields := strings.Fields(title)
+	for i := min(len(fields), 4); i >= 2; i-- {
+		add(strings.Join(fields[:i], " "))
+	}
+
+	return needles
+}
+
+func shouldTrimPlainPrefix(prefix string) bool {
+	text := PlainText(prefix)
+	if text == "" {
+		return false
+	}
+
+	return len([]rune(text)) > 80
 }
 
 func anchorFor(id int) string {

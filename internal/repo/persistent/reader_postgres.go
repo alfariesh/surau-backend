@@ -746,13 +746,21 @@ SELECT h.book_id,
            WHEN bhs_ar.book_id IS NOT NULL THEN bhs_ar.lang
            ELSE NULL
        END AS summary_lang,
-       COALESCE(st_av.available_langs, ARRAY[]::TEXT[]) AS available_translation_langs,
-       COALESCE(bhs_av.available_langs, ARRAY[]::TEXT[]) AS available_summary_langs,
-       COALESCE(sa_av.available_langs, ARRAY[]::TEXT[]) AS available_audio_langs
+	       COALESCE(st_av.available_langs, ARRAY[]::TEXT[]) AS available_translation_langs,
+	       COALESCE(bhs_av.available_langs, ARRAY[]::TEXT[]) AS available_summary_langs,
+	       COALESCE(sa_av.available_langs, ARRAY[]::TEXT[]) AS available_audio_langs,
+	       COALESCE(ehe.content, eh.content, '') AS end_heading_content
 FROM book_headings h
 JOIN book_heading_ranges hr ON hr.book_id = h.book_id AND hr.heading_id = h.heading_id
 JOIN book_publications p ON p.book_id = h.book_id AND p.status = 'published'
 LEFT JOIN book_heading_edits he ON he.book_id = h.book_id AND he.heading_id = h.heading_id AND he.status = 'published'
+LEFT JOIN book_headings eh
+    ON eh.book_id = h.book_id
+   AND eh.heading_id = CASE
+       WHEN hr.end_anchor ~ '^toc-[0-9]+$' THEN substring(hr.end_anchor FROM 5)::int
+       ELSE NULL
+   END
+LEFT JOIN book_heading_edits ehe ON ehe.book_id = eh.book_id AND ehe.heading_id = eh.heading_id AND ehe.status = 'published'
 LEFT JOIN book_production_projects bpp
     ON bpp.book_id = h.book_id
    AND bpp.lang = $3
@@ -818,6 +826,7 @@ WHERE h.book_id = $1 AND h.heading_id = $2 AND h.is_deleted = false`
 	var availableTranslationLangs []string
 	var availableSummaryLangs []string
 	var availableAudioLangs []string
+	var endHeadingContent string
 
 	err := r.Pool.QueryRow(ctx, sqlText, bookID, headingID, lang).Scan(
 		&heading.BookID,
@@ -839,6 +848,7 @@ WHERE h.book_id = $1 AND h.heading_id = $2 AND h.is_deleted = false`
 		&availableTranslationLangs,
 		&availableSummaryLangs,
 		&availableAudioLangs,
+		&endHeadingContent,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -864,7 +874,14 @@ WHERE h.book_id = $1 AND h.heading_id = $2 AND h.is_deleted = false`
 		builder.WriteString(page.ContentHTML)
 	}
 
-	originalHTML := readerutil.SliceAnchoredHTML(builder.String(), startAnchor.String, endAnchor.String)
+	sourceContent := readerutil.SliceSectionContent(
+		builder.String(),
+		startAnchor.String,
+		endAnchor.String,
+		heading.Content,
+		endHeadingContent,
+	)
+	structuredSource := readerutil.StructureSourceContent(sourceContent)
 
 	section := entity.BookSection{
 		BookID:                    bookID,
@@ -877,8 +894,11 @@ WHERE h.book_id = $1 AND h.heading_id = $2 AND h.is_deleted = false`
 		AvailableSummaryLangs:     emptyStringSlice(availableSummaryLangs),
 		StartPageID:               startPageID,
 		EndPageID:                 endPageID,
-		OriginalHTML:              originalHTML,
-		OriginalText:              readerutil.PlainText(originalHTML),
+		OriginalHTML:              structuredSource.HTML,
+		OriginalText:              structuredSource.Text,
+		OriginalFormat:            structuredSource.Format,
+		OriginalBlocks:            sourceBlocks(structuredSource.Blocks),
+		OriginalFootnotes:         sourceFootnotes(structuredSource.Footnotes),
 	}
 
 	translation, err := r.getSectionTranslation(ctx, bookID, headingID, lang)
@@ -1936,6 +1956,49 @@ func localizationMeta(
 		FieldLangs:     fieldLangs,
 		Availability:   entity.CatalogAvailability(requestedLang, displayLang, isFallback, availableLangs),
 	}
+}
+
+func sourceBlocks(values []readerutil.SourceBlock) []entity.SourceBlock {
+	blocks := make([]entity.SourceBlock, 0, len(values))
+	for _, value := range values {
+		blocks = append(blocks, entity.SourceBlock{
+			Type:           value.Type,
+			Text:           value.Text,
+			HTML:           value.HTML,
+			QuranCitations: sourceQuranCitations(value.QuranCitations),
+		})
+	}
+
+	return blocks
+}
+
+func sourceQuranCitations(values []readerutil.SourceQuranCitation) []entity.SourceQuranCitation {
+	if len(values) == 0 {
+		return nil
+	}
+
+	citations := make([]entity.SourceQuranCitation, 0, len(values))
+	for _, value := range values {
+		citations = append(citations, entity.SourceQuranCitation{
+			Quote:     value.Quote,
+			Reference: value.Reference,
+		})
+	}
+
+	return citations
+}
+
+func sourceFootnotes(values []readerutil.SourceFootnote) []entity.SourceFootnote {
+	footnotes := make([]entity.SourceFootnote, 0, len(values))
+	for _, value := range values {
+		footnotes = append(footnotes, entity.SourceFootnote{
+			Marker: value.Marker,
+			Text:   value.Text,
+			HTML:   value.HTML,
+		})
+	}
+
+	return footnotes
 }
 
 func emptyStringSlice(values []string) []string {
