@@ -568,7 +568,7 @@ func (r *UserRepo) RevokeUnusedVerificationTokens(ctx context.Context, userID st
 // GetVerificationTokenByHash finds a verification token by its SHA-256 hash.
 func (r *UserRepo) GetVerificationTokenByHash(ctx context.Context, tokenHash string) (entity.EmailVerificationToken, error) {
 	sqlText, args, err := r.Builder.
-		Select("id, user_id, token_hash, expires_at, used_at, sent_at, created_at").
+		Select("id, user_id, token_hash, otp_hash, otp_expires_at, expires_at, used_at, sent_at, created_at").
 		From("email_verification_tokens").
 		Where(sq.Eq{"token_hash": tokenHash}).
 		Limit(1).
@@ -588,7 +588,7 @@ func (r *UserRepo) GetVerificationTokenByHash(ctx context.Context, tokenHash str
 // GetLatestUnusedVerificationToken returns the most recent unused token for cooldown checks.
 func (r *UserRepo) GetLatestUnusedVerificationToken(ctx context.Context, userID string) (entity.EmailVerificationToken, error) {
 	sqlText, args, err := r.Builder.
-		Select("id, user_id, token_hash, expires_at, used_at, sent_at, created_at").
+		Select("id, user_id, token_hash, otp_hash, otp_expires_at, expires_at, used_at, sent_at, created_at").
 		From("email_verification_tokens").
 		Where(sq.Eq{"user_id": userID}).
 		Where("used_at IS NULL").
@@ -911,7 +911,7 @@ func (r *UserRepo) RevokeUnusedEmailChangeTokens(ctx context.Context, userID str
 // GetEmailChangeTokenByHash finds an email-change token by its SHA-256 hash.
 func (r *UserRepo) GetEmailChangeTokenByHash(ctx context.Context, tokenHash string) (entity.EmailChangeToken, error) {
 	sqlText, args, err := r.Builder.
-		Select("id, user_id, new_email, token_hash, expires_at, used_at, sent_at, created_at").
+		Select("id, user_id, new_email, token_hash, otp_hash, otp_expires_at, expires_at, used_at, sent_at, created_at").
 		From("email_change_tokens").
 		Where(sq.Eq{"token_hash": tokenHash}).
 		Limit(1).
@@ -931,7 +931,7 @@ func (r *UserRepo) GetEmailChangeTokenByHash(ctx context.Context, tokenHash stri
 // GetLatestUnusedEmailChangeToken returns the most recent unused token for cooldown checks.
 func (r *UserRepo) GetLatestUnusedEmailChangeToken(ctx context.Context, userID string) (entity.EmailChangeToken, error) {
 	sqlText, args, err := r.Builder.
-		Select("id, user_id, new_email, token_hash, expires_at, used_at, sent_at, created_at").
+		Select("id, user_id, new_email, token_hash, otp_hash, otp_expires_at, expires_at, used_at, sent_at, created_at").
 		From("email_change_tokens").
 		Where(sq.Eq{"user_id": userID}).
 		Where("used_at IS NULL").
@@ -1573,8 +1573,18 @@ func (r *UserRepo) insertDefaultProfileAndPreferences(
 func (r *UserRepo) emailVerificationTokenInsert(token *entity.EmailVerificationToken) (string, []any, error) {
 	return r.Builder.
 		Insert("email_verification_tokens").
-		Columns("id, user_id, token_hash, expires_at, used_at, sent_at, created_at").
-		Values(token.ID, token.UserID, token.TokenHash, token.ExpiresAt, token.UsedAt, token.SentAt, token.CreatedAt).
+		Columns("id, user_id, token_hash, otp_hash, otp_expires_at, expires_at, used_at, sent_at, created_at").
+		Values(
+			token.ID,
+			token.UserID,
+			token.TokenHash,
+			nullableStringArg(token.OTPHash),
+			nullableTimeArg(token.OTPExpiresAt),
+			token.ExpiresAt,
+			token.UsedAt,
+			token.SentAt,
+			token.CreatedAt,
+		).
 		ToSql()
 }
 
@@ -1589,12 +1599,14 @@ func (r *UserRepo) passwordResetTokenInsert(token *entity.PasswordResetToken) (s
 func (r *UserRepo) emailChangeTokenInsert(token *entity.EmailChangeToken) (string, []any, error) {
 	return r.Builder.
 		Insert("email_change_tokens").
-		Columns("id, user_id, new_email, token_hash, expires_at, used_at, sent_at, created_at").
+		Columns("id, user_id, new_email, token_hash, otp_hash, otp_expires_at, expires_at, used_at, sent_at, created_at").
 		Values(
 			token.ID,
 			token.UserID,
 			token.NewEmail,
 			token.TokenHash,
+			nullableStringArg(token.OTPHash),
+			nullableTimeArg(token.OTPExpiresAt),
 			token.ExpiresAt,
 			token.UsedAt,
 			token.SentAt,
@@ -1609,14 +1621,18 @@ func (r *UserRepo) scanEmailVerificationToken(
 	args ...any,
 ) (entity.EmailVerificationToken, error) {
 	var (
-		token  entity.EmailVerificationToken
-		usedAt sql.NullTime
+		token        entity.EmailVerificationToken
+		otpHash      sql.NullString
+		otpExpiresAt sql.NullTime
+		usedAt       sql.NullTime
 	)
 
 	err := r.Pool.QueryRow(ctx, sqlText, args...).Scan(
 		&token.ID,
 		&token.UserID,
 		&token.TokenHash,
+		&otpHash,
+		&otpExpiresAt,
 		&token.ExpiresAt,
 		&usedAt,
 		&token.SentAt,
@@ -1628,6 +1644,12 @@ func (r *UserRepo) scanEmailVerificationToken(
 		}
 
 		return entity.EmailVerificationToken{}, fmt.Errorf("UserRepo - scanEmailVerificationToken - QueryRow: %w", err)
+	}
+	if otpHash.Valid {
+		token.OTPHash = otpHash.String
+	}
+	if otpExpiresAt.Valid {
+		token.OTPExpiresAt = &otpExpiresAt.Time
 	}
 	if usedAt.Valid {
 		token.UsedAt = &usedAt.Time
@@ -1651,6 +1673,14 @@ func nullableStringPtrArg(value *string) any {
 	}
 
 	return nullableStringArg(*value)
+}
+
+func nullableTimeArg(value *time.Time) any {
+	if value == nil {
+		return nil
+	}
+
+	return *value
 }
 
 func (r *UserRepo) scanPasswordResetToken(
@@ -1692,8 +1722,10 @@ func (r *UserRepo) scanEmailChangeToken(
 	args ...any,
 ) (entity.EmailChangeToken, error) {
 	var (
-		token  entity.EmailChangeToken
-		usedAt sql.NullTime
+		token        entity.EmailChangeToken
+		otpHash      sql.NullString
+		otpExpiresAt sql.NullTime
+		usedAt       sql.NullTime
 	)
 
 	err := r.Pool.QueryRow(ctx, sqlText, args...).Scan(
@@ -1701,6 +1733,8 @@ func (r *UserRepo) scanEmailChangeToken(
 		&token.UserID,
 		&token.NewEmail,
 		&token.TokenHash,
+		&otpHash,
+		&otpExpiresAt,
 		&token.ExpiresAt,
 		&usedAt,
 		&token.SentAt,
@@ -1712,6 +1746,12 @@ func (r *UserRepo) scanEmailChangeToken(
 		}
 
 		return entity.EmailChangeToken{}, fmt.Errorf("UserRepo - scanEmailChangeToken - QueryRow: %w", err)
+	}
+	if otpHash.Valid {
+		token.OTPHash = otpHash.String
+	}
+	if otpExpiresAt.Valid {
+		token.OTPExpiresAt = &otpExpiresAt.Time
 	}
 	if usedAt.Valid {
 		token.UsedAt = &usedAt.Time

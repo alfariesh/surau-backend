@@ -23,9 +23,9 @@ const (
 	AuthService_Login_FullMethodName                   = "/grpc.v1.AuthService/Login"
 	AuthService_VerifyEmail_FullMethodName             = "/grpc.v1.AuthService/VerifyEmail"
 	AuthService_ResendEmailVerification_FullMethodName = "/grpc.v1.AuthService/ResendEmailVerification"
-	AuthService_ForgotPassword_FullMethodName          = "/grpc.v1.AuthService/ForgotPassword" // #nosec G101 -- generated RPC method path, not a credential.
-	AuthService_ResetPassword_FullMethodName           = "/grpc.v1.AuthService/ResetPassword"  // #nosec G101 -- generated RPC method path, not a credential.
-	AuthService_ChangePassword_FullMethodName          = "/grpc.v1.AuthService/ChangePassword" // #nosec G101 -- generated RPC method path, not a credential.
+	AuthService_ForgotPassword_FullMethodName          = "/grpc.v1.AuthService/ForgotPassword"
+	AuthService_ResetPassword_FullMethodName           = "/grpc.v1.AuthService/ResetPassword"
+	AuthService_ChangePassword_FullMethodName          = "/grpc.v1.AuthService/ChangePassword"
 	AuthService_RequestEmailChange_FullMethodName      = "/grpc.v1.AuthService/RequestEmailChange"
 	AuthService_VerifyEmailChange_FullMethodName       = "/grpc.v1.AuthService/VerifyEmailChange"
 	AuthService_DeleteAccount_FullMethodName           = "/grpc.v1.AuthService/DeleteAccount"

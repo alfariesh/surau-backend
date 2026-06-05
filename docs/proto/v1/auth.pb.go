@@ -280,6 +280,8 @@ func (x *LoginResponse) GetToken() string {
 type VerifyEmailRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Token         string                 `protobuf:"bytes,1,opt,name=token,proto3" json:"token,omitempty"`
+	Email         string                 `protobuf:"bytes,2,opt,name=email,proto3" json:"email,omitempty"`
+	Otp           string                 `protobuf:"bytes,3,opt,name=otp,proto3" json:"otp,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -317,6 +319,20 @@ func (*VerifyEmailRequest) Descriptor() ([]byte, []int) {
 func (x *VerifyEmailRequest) GetToken() string {
 	if x != nil {
 		return x.Token
+	}
+	return ""
+}
+
+func (x *VerifyEmailRequest) GetEmail() string {
+	if x != nil {
+		return x.Email
+	}
+	return ""
+}
+
+func (x *VerifyEmailRequest) GetOtp() string {
+	if x != nil {
+		return x.Otp
 	}
 	return ""
 }
@@ -832,6 +848,7 @@ func (x *RequestEmailChangeResponse) GetAccepted() bool {
 type VerifyEmailChangeRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Token         string                 `protobuf:"bytes,1,opt,name=token,proto3" json:"token,omitempty"`
+	Otp           string                 `protobuf:"bytes,2,opt,name=otp,proto3" json:"otp,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -869,6 +886,13 @@ func (*VerifyEmailChangeRequest) Descriptor() ([]byte, []int) {
 func (x *VerifyEmailChangeRequest) GetToken() string {
 	if x != nil {
 		return x.Token
+	}
+	return ""
+}
+
+func (x *VerifyEmailChangeRequest) GetOtp() string {
+	if x != nil {
+		return x.Otp
 	}
 	return ""
 }
@@ -1149,9 +1173,11 @@ const file_docs_proto_v1_auth_proto_rawDesc = "" +
 	"\x05email\x18\x01 \x01(\tR\x05email\x12\x1a\n" +
 	"\bpassword\x18\x02 \x01(\tR\bpassword\"%\n" +
 	"\rLoginResponse\x12\x14\n" +
-	"\x05token\x18\x01 \x01(\tR\x05token\"*\n" +
+	"\x05token\x18\x01 \x01(\tR\x05token\"R\n" +
 	"\x12VerifyEmailRequest\x12\x14\n" +
-	"\x05token\x18\x01 \x01(\tR\x05token\"<\n" +
+	"\x05token\x18\x01 \x01(\tR\x05token\x12\x14\n" +
+	"\x05email\x18\x02 \x01(\tR\x05email\x12\x10\n" +
+	"\x03otp\x18\x03 \x01(\tR\x03otp\"<\n" +
 	"\x13VerifyEmailResponse\x12%\n" +
 	"\x0eemail_verified\x18\x01 \x01(\bR\remailVerified\"6\n" +
 	"\x1eResendEmailVerificationRequest\x12\x14\n" +
@@ -1176,9 +1202,10 @@ const file_docs_proto_v1_auth_proto_rawDesc = "" +
 	"\x10current_password\x18\x01 \x01(\tR\x0fcurrentPassword\x12\x1b\n" +
 	"\tnew_email\x18\x02 \x01(\tR\bnewEmail\"8\n" +
 	"\x1aRequestEmailChangeResponse\x12\x1a\n" +
-	"\baccepted\x18\x01 \x01(\bR\baccepted\"0\n" +
+	"\baccepted\x18\x01 \x01(\bR\baccepted\"B\n" +
 	"\x18VerifyEmailChangeRequest\x12\x14\n" +
-	"\x05token\x18\x01 \x01(\tR\x05token\"@\n" +
+	"\x05token\x18\x01 \x01(\tR\x05token\x12\x10\n" +
+	"\x03otp\x18\x02 \x01(\tR\x03otp\"@\n" +
 	"\x19VerifyEmailChangeResponse\x12#\n" +
 	"\remail_changed\x18\x01 \x01(\bR\femailChanged\"A\n" +
 	"\x14DeleteAccountRequest\x12)\n" +

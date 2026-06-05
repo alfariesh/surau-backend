@@ -496,7 +496,7 @@ func (f *fakeAuthUser) SetRoleByEmail(_ context.Context, actorID, actorEmail, em
 	return f.roleUser, nil
 }
 
-func (f *fakeAuthUser) VerifyEmail(context.Context, string) error {
+func (f *fakeAuthUser) VerifyEmail(context.Context, string, string, string) error {
 	return f.verifyErr
 }
 
@@ -520,7 +520,7 @@ func (f *fakeAuthUser) RequestEmailChange(context.Context, string, string, strin
 	return f.requestEmailChangeErr
 }
 
-func (f *fakeAuthUser) VerifyEmailChange(context.Context, string, string) error {
+func (f *fakeAuthUser) VerifyEmailChange(context.Context, string, string, string) error {
 	return f.verifyEmailChangeErr
 }
 

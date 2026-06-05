@@ -266,6 +266,15 @@ Content-Type: application/json
 }
 ```
 
+Atau OTP dari email:
+
+```json
+{
+  "email": "ahmad@example.com",
+  "otp": "123456"
+}
+```
+
 Success `200`:
 
 ```json
@@ -279,10 +288,11 @@ Error penting:
 | Status | Error | FE behavior |
 | --- | --- | --- |
 | `400` | `invalid request body` | Token kosong atau body salah. |
-| `400` | `invalid verification token` | Tampilkan link expired/invalid dan beri opsi resend. |
+| `400` | `invalid verification token` | Tampilkan link/kode expired atau invalid dan beri opsi resend. |
+| `429` | `too many auth attempts` | Tampilkan cooldown untuk percobaan OTP. |
 | `500` | `internal server error` | Tampilkan pesan umum. |
 
-Token verification bersifat single-use dan punya TTL. Setelah submit, hapus token dari URL:
+Token dan OTP verification bersifat single-use untuk request yang sama. OTP 6 digit berlaku singkat, default `10m`; link mengikuti TTL token email. Setelah submit token dari link, hapus token dari URL:
 
 ```ts
 window.history.replaceState({}, document.title, window.location.pathname);
@@ -682,6 +692,14 @@ Content-Type: application/json
 }
 ```
 
+Atau OTP dari email baru:
+
+```json
+{
+  "otp": "123456"
+}
+```
+
 Success `200`:
 
 ```json
@@ -696,7 +714,7 @@ Error penting:
 
 | Status | Error | FE behavior |
 | --- | --- | --- |
-| `400` | `invalid request body` | Password/email/token invalid, expired, used, atau bukan milik user login. |
+| `400` | `invalid request body` | Password/email/token/OTP invalid, expired, used, atau bukan milik user login. |
 | `401` | `invalid credentials` | Current password salah. |
 | `401` | `invalid or expired token` | Clear token, redirect login. |
 | `409` | `user already exists` | Email baru sudah dipakai akun lain. |

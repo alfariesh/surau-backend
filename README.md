@@ -151,12 +151,14 @@ EMAIL_FROM_ADDRESS='noreply@yourdomain.com' \
 EMAIL_FROM_NAME='Surau' \
 EMAIL_VERIFY_FRONTEND_URL='http://localhost:3005/verify-email' \
 EMAIL_VERIFICATION_TTL=24h \
+EMAIL_VERIFICATION_OTP_TTL=10m \
 EMAIL_RESEND_COOLDOWN=1m \
 PASSWORD_RESET_FRONTEND_URL='http://localhost:3005/reset-password' \
 PASSWORD_RESET_TTL=1h \
 PASSWORD_RESET_RESEND_COOLDOWN=1m \
 EMAIL_CHANGE_FRONTEND_URL='http://localhost:3005/change-email' \
 EMAIL_CHANGE_TTL=24h \
+EMAIL_CHANGE_OTP_TTL=10m \
 EMAIL_CHANGE_RESEND_COOLDOWN=1m \
 EMAIL_UNSUBSCRIBE_FRONTEND_URL='http://localhost:3005/unsubscribe' \
 EMAIL_HTTP_TIMEOUT=10s \
@@ -166,7 +168,7 @@ RAG_LLM_MODEL='glm-5.1' \
 go run -tags migrate ./cmd/app
 ```
 
-Set `EMAIL_DELIVERY_MODE=log` for local development to print verification, password reset, email-change, and admin test-send links in the backend logs instead of calling an external email provider. In production, use `EMAIL_DELIVERY_MODE=cloudflare`; email verification, password reset, email change, best-effort auth security notifications, and marketing campaigns then use Cloudflare Email Service REST API. The sending domain must be onboarded in Cloudflare Email Service with SPF, DKIM, DMARC, and bounce records configured before real email can be delivered. Admin email APIs are documented in [docs/admin-email-api.md](docs/admin-email-api.md).
+Set `EMAIL_DELIVERY_MODE=log` for local development to print verification, password reset, email-change, and admin test-send links in the backend logs instead of calling an external email provider. Email verification and email-change messages include both a link and a 6-digit OTP; the OTP defaults to a 10 minute TTL while links keep their longer token TTL. In production, use `EMAIL_DELIVERY_MODE=cloudflare`; email verification, password reset, email change, best-effort auth security notifications, and marketing campaigns then use Cloudflare Email Service REST API. The sending domain must be onboarded in Cloudflare Email Service with SPF, DKIM, DMARC, and bounce records configured before real email can be delivered. Admin email APIs are documented in [docs/admin-email-api.md](docs/admin-email-api.md).
 
 Auth uses DB-backed rate limits for login, register, email verification resend, forgot/reset password, change password, change email, and delete account so limits work across multiple app instances. Password reset, password change, email change, and account delete increment `users.token_version`, which invalidates older JWTs on the next protected request. Sanitized auth events are written to `auth_audit_logs` for investigation; passwords, raw JWTs, and raw verification/reset/email-change tokens are never stored there. Optional security notifications cover password changed, email verified, email changed, account deleted, role changed, new login fingerprint, and suspicious failed login rate-limit events.
 

@@ -67,11 +67,17 @@ func (c *AuthController) Login(ctx context.Context, req *v1.LoginRequest) (*v1.L
 
 // VerifyEmail -.
 func (c *AuthController) VerifyEmail(ctx context.Context, req *v1.VerifyEmailRequest) (*v1.VerifyEmailResponse, error) {
-	if err := c.u.VerifyEmail(grpcAuthContext(ctx), req.GetToken()); err != nil {
+	if err := c.u.VerifyEmail(grpcAuthContext(ctx), req.GetToken(), req.GetEmail(), req.GetOtp()); err != nil {
 		c.l.Error(err, "grpc - v1 - VerifyEmail")
 
+		if errors.Is(err, entity.ErrInvalidAuthInput) {
+			return nil, status.Error(codes.InvalidArgument, "invalid auth input")
+		}
 		if errors.Is(err, entity.ErrInvalidVerificationToken) {
 			return nil, status.Error(codes.InvalidArgument, "invalid verification token")
+		}
+		if errors.Is(err, entity.ErrAuthRateLimited) {
+			return nil, status.Error(codes.ResourceExhausted, "too many auth attempts")
 		}
 
 		return nil, status.Error(codes.Internal, "internal server error")
@@ -223,7 +229,7 @@ func (c *AuthController) VerifyEmailChange(
 		return nil, status.Error(codes.Unauthenticated, "unauthorized")
 	}
 
-	if err := c.u.VerifyEmailChange(grpcAuthContext(ctx), userID, req.GetToken()); err != nil {
+	if err := c.u.VerifyEmailChange(grpcAuthContext(ctx), userID, req.GetToken(), req.GetOtp()); err != nil {
 		c.l.Error(err, "grpc - v1 - VerifyEmailChange")
 
 		if errors.Is(err, entity.ErrInvalidAuthInput) || errors.Is(err, entity.ErrInvalidEmailChangeToken) {

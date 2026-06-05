@@ -186,7 +186,7 @@ func (f *fakeAuthUser) SetRoleByEmail(context.Context, string, string, string, s
 	return entity.User{}, nil
 }
 
-func (f *fakeAuthUser) VerifyEmail(context.Context, string) error {
+func (f *fakeAuthUser) VerifyEmail(context.Context, string, string, string) error {
 	return f.verifyErr
 }
 
@@ -210,7 +210,7 @@ func (f *fakeAuthUser) RequestEmailChange(context.Context, string, string, strin
 	return nil
 }
 
-func (f *fakeAuthUser) VerifyEmailChange(context.Context, string, string) error {
+func (f *fakeAuthUser) VerifyEmailChange(context.Context, string, string, string) error {
 	return nil
 }
 

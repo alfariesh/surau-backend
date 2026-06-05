@@ -190,6 +190,8 @@ func TestRegister(t *testing.T) {
 				assert.False(t, storedUser.EmailVerified)
 				assert.Equal(t, storedUser.ID, token.UserID)
 				assert.Len(t, token.TokenHash, 64)
+				assert.NotEmpty(t, token.OTPHash)
+				assert.NotNil(t, token.OTPExpiresAt)
 
 				return nil
 			},
@@ -203,6 +205,7 @@ func TestRegister(t *testing.T) {
 			func(_ context.Context, message entity.EmailMessage) (entity.EmailSendResult, error) {
 				assert.Equal(t, "test@example.com", message.To)
 				assert.Contains(t, message.Text, "https://frontend.example.com/verify-email?token=")
+				assert.Contains(t, message.Text, "kode 6 digit")
 
 				return entity.EmailSendResult{}, nil
 			},
@@ -603,7 +606,7 @@ func TestVerifyEmail(t *testing.T) {
 		repo.EXPECT().VerifyEmailWithToken(context.Background(), "token-id", "user-id-123").
 			Return(entity.User{ID: "user-id-123", EmailVerified: true}, nil)
 
-		err := uc.VerifyEmail(context.Background(), rawToken)
+		err := uc.VerifyEmail(context.Background(), rawToken, "", "")
 
 		require.NoError(t, err)
 	})
@@ -613,7 +616,7 @@ func TestVerifyEmail(t *testing.T) {
 
 		uc, _, _ := newUserUseCase(t)
 
-		err := uc.VerifyEmail(context.Background(), "not-a-token")
+		err := uc.VerifyEmail(context.Background(), "not-a-token", "", "")
 
 		require.ErrorIs(t, err, entity.ErrInvalidVerificationToken)
 	})
@@ -626,7 +629,7 @@ func TestVerifyEmail(t *testing.T) {
 		repo.EXPECT().GetVerificationTokenByHash(context.Background(), tokenHash).
 			Return(entity.EmailVerificationToken{}, entity.ErrVerificationTokenNotFound)
 
-		err := uc.VerifyEmail(context.Background(), rawToken)
+		err := uc.VerifyEmail(context.Background(), rawToken, "", "")
 
 		require.ErrorIs(t, err, entity.ErrInvalidVerificationToken)
 	})
@@ -639,7 +642,7 @@ func TestVerifyEmail(t *testing.T) {
 		repo.EXPECT().GetVerificationTokenByHash(context.Background(), tokenHash).
 			Return(entity.EmailVerificationToken{ExpiresAt: time.Now().Add(-time.Minute)}, nil)
 
-		err := uc.VerifyEmail(context.Background(), rawToken)
+		err := uc.VerifyEmail(context.Background(), rawToken, "", "")
 
 		require.ErrorIs(t, err, entity.ErrInvalidVerificationToken)
 	})
@@ -653,9 +656,85 @@ func TestVerifyEmail(t *testing.T) {
 		repo.EXPECT().GetVerificationTokenByHash(context.Background(), tokenHash).
 			Return(entity.EmailVerificationToken{UsedAt: &usedAt, ExpiresAt: time.Now().Add(time.Hour)}, nil)
 
-		err := uc.VerifyEmail(context.Background(), rawToken)
+		err := uc.VerifyEmail(context.Background(), rawToken, "", "")
 
 		require.ErrorIs(t, err, entity.ErrInvalidVerificationToken)
+	})
+
+	t.Run("otp success", func(t *testing.T) {
+		t.Parallel()
+
+		uc, repo, _ := newUserUseCase(t)
+		otpHash, otpExpiresAt := testOTPHash(t, "123456", time.Now().Add(10*time.Minute))
+		repo.EXPECT().GetByEmail(context.Background(), "test@example.com").
+			Return(entity.User{ID: "user-id-123", Email: "test@example.com"}, nil)
+		repo.EXPECT().GetLatestUnusedVerificationToken(context.Background(), "user-id-123").
+			Return(entity.EmailVerificationToken{
+				ID:           "token-id",
+				UserID:       "user-id-123",
+				OTPHash:      otpHash,
+				OTPExpiresAt: otpExpiresAt,
+				ExpiresAt:    time.Now().Add(time.Hour),
+			}, nil)
+		repo.EXPECT().VerifyEmailWithToken(context.Background(), "token-id", "user-id-123").
+			Return(entity.User{ID: "user-id-123", Email: "test@example.com", EmailVerified: true}, nil)
+
+		err := uc.VerifyEmail(context.Background(), "", " test@example.com ", "123456")
+
+		require.NoError(t, err)
+	})
+
+	t.Run("otp expired", func(t *testing.T) {
+		t.Parallel()
+
+		uc, repo, _ := newUserUseCase(t)
+		otpHash, otpExpiresAt := testOTPHash(t, "123456", time.Now().Add(-time.Minute))
+		repo.EXPECT().GetByEmail(context.Background(), "test@example.com").
+			Return(entity.User{ID: "user-id-123", Email: "test@example.com"}, nil)
+		repo.EXPECT().GetLatestUnusedVerificationToken(context.Background(), "user-id-123").
+			Return(entity.EmailVerificationToken{
+				ID:           "token-id",
+				UserID:       "user-id-123",
+				OTPHash:      otpHash,
+				OTPExpiresAt: otpExpiresAt,
+				ExpiresAt:    time.Now().Add(time.Hour),
+			}, nil)
+
+		err := uc.VerifyEmail(context.Background(), "", "test@example.com", "123456")
+
+		require.ErrorIs(t, err, entity.ErrInvalidVerificationToken)
+	})
+
+	t.Run("otp wrong", func(t *testing.T) {
+		t.Parallel()
+
+		uc, repo, _ := newUserUseCase(t)
+		otpHash, otpExpiresAt := testOTPHash(t, "123456", time.Now().Add(10*time.Minute))
+		repo.EXPECT().GetByEmail(context.Background(), "test@example.com").
+			Return(entity.User{ID: "user-id-123", Email: "test@example.com"}, nil)
+		repo.EXPECT().GetLatestUnusedVerificationToken(context.Background(), "user-id-123").
+			Return(entity.EmailVerificationToken{
+				ID:           "token-id",
+				UserID:       "user-id-123",
+				OTPHash:      otpHash,
+				OTPExpiresAt: otpExpiresAt,
+				ExpiresAt:    time.Now().Add(time.Hour),
+			}, nil)
+
+		err := uc.VerifyEmail(context.Background(), "", "test@example.com", "654321")
+
+		require.ErrorIs(t, err, entity.ErrInvalidVerificationToken)
+	})
+
+	t.Run("ambiguous token and otp input", func(t *testing.T) {
+		t.Parallel()
+
+		uc, _, _ := newUserUseCase(t)
+		rawToken, _ := testVerificationToken()
+
+		err := uc.VerifyEmail(context.Background(), rawToken, "test@example.com", "123456")
+
+		require.ErrorIs(t, err, entity.ErrInvalidAuthInput)
 	})
 }
 
@@ -711,6 +790,8 @@ func TestResendEmailVerification(t *testing.T) {
 			func(_ context.Context, token *entity.EmailVerificationToken) error {
 				assert.Equal(t, "user-id-123", token.UserID)
 				assert.Len(t, token.TokenHash, 64)
+				assert.NotEmpty(t, token.OTPHash)
+				assert.NotNil(t, token.OTPExpiresAt)
 
 				return nil
 			},
@@ -1082,6 +1163,8 @@ func TestEmailChange(t *testing.T) {
 				assert.Equal(t, "user-id-123", token.UserID)
 				assert.Equal(t, "new@example.com", token.NewEmail)
 				assert.Len(t, token.TokenHash, 64)
+				assert.NotEmpty(t, token.OTPHash)
+				assert.NotNil(t, token.OTPExpiresAt)
 
 				return nil
 			},
@@ -1095,6 +1178,7 @@ func TestEmailChange(t *testing.T) {
 			func(_ context.Context, message entity.EmailMessage) (entity.EmailSendResult, error) {
 				assert.Equal(t, "new@example.com", message.To)
 				assert.Contains(t, message.Text, "https://frontend.example.com/change-email?token=")
+				assert.Contains(t, message.Text, "kode 6 digit")
 
 				return entity.EmailSendResult{}, nil
 			},
@@ -1142,7 +1226,7 @@ func TestEmailChange(t *testing.T) {
 				NewEmail: "new@example.com",
 			}, nil)
 
-		err := uc.VerifyEmailChange(context.Background(), "user-id-123", rawToken)
+		err := uc.VerifyEmailChange(context.Background(), "user-id-123", rawToken, "")
 
 		require.NoError(t, err)
 	})
@@ -1161,7 +1245,55 @@ func TestEmailChange(t *testing.T) {
 				ExpiresAt: time.Now().Add(time.Hour),
 			}, nil)
 
-		err := uc.VerifyEmailChange(context.Background(), "user-id-123", rawToken)
+		err := uc.VerifyEmailChange(context.Background(), "user-id-123", rawToken, "")
+
+		require.ErrorIs(t, err, entity.ErrInvalidEmailChangeToken)
+	})
+
+	t.Run("verify otp succeeds", func(t *testing.T) {
+		t.Parallel()
+
+		uc, repo, _ := newUserUseCase(t)
+		otpHash, otpExpiresAt := testOTPHash(t, "123456", time.Now().Add(10*time.Minute))
+		repo.EXPECT().GetLatestUnusedEmailChangeToken(context.Background(), "user-id-123").
+			Return(entity.EmailChangeToken{
+				ID:           "token-id",
+				UserID:       "user-id-123",
+				NewEmail:     "new@example.com",
+				OTPHash:      otpHash,
+				OTPExpiresAt: otpExpiresAt,
+				ExpiresAt:    time.Now().Add(time.Hour),
+			}, nil)
+		repo.EXPECT().ChangeEmailWithToken(context.Background(), "token-id", "user-id-123", "new@example.com").
+			Return(entity.EmailChangeResult{
+				User:     entity.User{ID: "user-id-123", Email: "new@example.com", TokenVersion: 2},
+				OldEmail: "old@example.com",
+				NewEmail: "new@example.com",
+			}, nil)
+
+		err := uc.VerifyEmailChange(context.Background(), "user-id-123", "", "123456")
+
+		require.NoError(t, err)
+	})
+
+	t.Run("verify otp rejects used token", func(t *testing.T) {
+		t.Parallel()
+
+		uc, repo, _ := newUserUseCase(t)
+		usedAt := time.Now()
+		otpHash, otpExpiresAt := testOTPHash(t, "123456", time.Now().Add(10*time.Minute))
+		repo.EXPECT().GetLatestUnusedEmailChangeToken(context.Background(), "user-id-123").
+			Return(entity.EmailChangeToken{
+				ID:           "token-id",
+				UserID:       "user-id-123",
+				NewEmail:     "new@example.com",
+				OTPHash:      otpHash,
+				OTPExpiresAt: otpExpiresAt,
+				ExpiresAt:    time.Now().Add(time.Hour),
+				UsedAt:       &usedAt,
+			}, nil)
+
+		err := uc.VerifyEmailChange(context.Background(), "user-id-123", "", "123456")
 
 		require.ErrorIs(t, err, entity.ErrInvalidEmailChangeToken)
 	})
@@ -1374,7 +1506,7 @@ func TestAuthEmailNotifications(t *testing.T) {
 			},
 		)
 
-		err := uc.VerifyEmail(context.Background(), rawToken)
+		err := uc.VerifyEmail(context.Background(), rawToken, "", "")
 
 		require.NoError(t, err)
 	})
@@ -1447,7 +1579,7 @@ func TestAuthEmailNotifications(t *testing.T) {
 			},
 		)
 
-		err := uc.VerifyEmailChange(context.Background(), "user-id-123", rawToken)
+		err := uc.VerifyEmailChange(context.Background(), "user-id-123", rawToken, "")
 
 		require.NoError(t, err)
 	})
@@ -1904,4 +2036,13 @@ func testPasswordResetToken() (string, string) {
 
 func testEmailChangeToken() (string, string) {
 	return testVerificationToken()
+}
+
+func testOTPHash(t *testing.T, otp string, expiresAt time.Time) (string, *time.Time) {
+	t.Helper()
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(otp), bcrypt.DefaultCost)
+	require.NoError(t, err)
+
+	return string(hash), &expiresAt
 }

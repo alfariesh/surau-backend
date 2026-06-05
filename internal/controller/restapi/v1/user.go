@@ -115,12 +115,12 @@ func (r *V1) login(ctx *fiber.Ctx) error {
 }
 
 // @Summary     Verify email
-// @Description Verify a user's email address using a one-time token
+// @Description Verify a user's email address using a one-time token or 6-digit OTP
 // @ID          verify-email
 // @Tags        auth
 // @Accept      json
 // @Produce     json
-// @Param       request body     request.VerifyEmail true "Email verification token"
+// @Param       request body     request.VerifyEmail true "Email verification token or email OTP"
 // @Success     200     {object} response.EmailVerification
 // @Failure     400     {object} response.Error
 // @Failure     500     {object} response.Error
@@ -140,11 +140,17 @@ func (r *V1) verifyEmail(ctx *fiber.Ctx) error {
 		return errorResponse(ctx, http.StatusBadRequest, "invalid request body")
 	}
 
-	if err := r.u.VerifyEmail(restAuthContext(ctx), body.Token); err != nil {
+	if err := r.u.VerifyEmail(restAuthContext(ctx), body.Token, body.Email, body.OTP); err != nil {
 		r.l.Error(err, "restapi - v1 - verifyEmail")
 
+		if errors.Is(err, entity.ErrInvalidAuthInput) {
+			return errorResponse(ctx, http.StatusBadRequest, "invalid request body")
+		}
 		if errors.Is(err, entity.ErrInvalidVerificationToken) {
 			return errorResponse(ctx, http.StatusBadRequest, "invalid verification token")
+		}
+		if errors.Is(err, entity.ErrAuthRateLimited) {
+			return errorResponse(ctx, http.StatusTooManyRequests, "too many auth attempts")
 		}
 
 		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
@@ -404,12 +410,12 @@ func (r *V1) requestEmailChange(ctx *fiber.Ctx) error {
 }
 
 // @Summary     Verify email change
-// @Description Confirm an email change token for the current user
+// @Description Confirm an email change token or OTP for the current user
 // @ID          verify-email-change
 // @Tags        auth
 // @Accept      json
 // @Produce     json
-// @Param       request body     request.VerifyEmailChange true "Email change token"
+// @Param       request body     request.VerifyEmailChange true "Email change token or OTP"
 // @Success     200     {object} response.EmailChanged
 // @Failure     400     {object} response.Error
 // @Failure     401     {object} response.Error
@@ -436,7 +442,7 @@ func (r *V1) verifyEmailChange(ctx *fiber.Ctx) error {
 		return errorResponse(ctx, http.StatusBadRequest, "invalid request body")
 	}
 
-	if err := r.u.VerifyEmailChange(restAuthContext(ctx), userID, body.Token); err != nil {
+	if err := r.u.VerifyEmailChange(restAuthContext(ctx), userID, body.Token, body.OTP); err != nil {
 		r.l.Error(err, "restapi - v1 - verifyEmailChange")
 
 		if errors.Is(err, entity.ErrInvalidAuthInput) || errors.Is(err, entity.ErrInvalidEmailChangeToken) {

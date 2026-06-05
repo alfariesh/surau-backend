@@ -100,10 +100,16 @@ func (r *V1) verifyEmail() server.CallHandler {
 			return nil, badRequestError("nats_rpc - V1 - verifyEmail - validation", err)
 		}
 
-		if err = r.u.VerifyEmail(natsAuthContext(), req.Token); err != nil {
+		if err = r.u.VerifyEmail(natsAuthContext(), req.Token, req.Email, req.OTP); err != nil {
 			r.l.Error(err, "nats_rpc - V1 - verifyEmail")
+			if errors.Is(err, entity.ErrInvalidAuthInput) {
+				return nil, badRequestError("nats_rpc - V1 - verifyEmail - invalid auth input", err)
+			}
 			if errors.Is(err, entity.ErrInvalidVerificationToken) {
 				return nil, badRequestError("nats_rpc - V1 - verifyEmail - invalid token", err)
+			}
+			if errors.Is(err, entity.ErrAuthRateLimited) {
+				return nil, rateLimitedError("nats_rpc - V1 - verifyEmail - rate limited", err)
 			}
 
 			return nil, fmt.Errorf("nats_rpc - V1 - verifyEmail: %w", err)
@@ -318,7 +324,7 @@ func (r *V1) verifyEmailChange() server.CallHandler {
 			return nil, badRequestError("nats_rpc - V1 - verifyEmailChange - validation", err)
 		}
 
-		if err = r.u.VerifyEmailChange(natsAuthContext(), userID, req.Token); err != nil {
+		if err = r.u.VerifyEmailChange(natsAuthContext(), userID, req.Token, req.OTP); err != nil {
 			r.l.Error(err, "nats_rpc - V1 - verifyEmailChange")
 			if errors.Is(err, entity.ErrInvalidAuthInput) || errors.Is(err, entity.ErrInvalidEmailChangeToken) {
 				return nil, badRequestError("nats_rpc - V1 - verifyEmailChange - invalid input", err)

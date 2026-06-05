@@ -46,6 +46,8 @@ message LoginResponse {
 
 message VerifyEmailRequest {
   string token = 1;
+  string email = 2;
+  string otp = 3;
 }
 
 message VerifyEmailResponse {
@@ -97,6 +99,7 @@ message RequestEmailChangeResponse {
 
 message VerifyEmailChangeRequest {
   string token = 1;
+  string otp = 2;
 }
 
 message VerifyEmailChangeResponse {

@@ -64,6 +64,29 @@ func TestEmailManagementMigrationSmoke(t *testing.T) {
 	}
 }
 
+func TestEmailOTPMigrationSmoke(t *testing.T) {
+	t.Parallel()
+
+	up, err := os.ReadFile("../../../migrations/20260605000001_add_email_otp.up.sql")
+	require.NoError(t, err)
+	upSQL := string(up)
+
+	assert.Contains(t, upSQL, "ALTER TABLE email_verification_tokens")
+	assert.Contains(t, upSQL, "ALTER TABLE email_change_tokens")
+	assert.Contains(t, upSQL, "otp_hash")
+	assert.Contains(t, upSQL, "otp_expires_at")
+	assert.Contains(t, upSQL, "{{.otp}}")
+	assert.Contains(t, upSQL, "{{.otp_duration}}")
+
+	down, err := os.ReadFile("../../../migrations/20260605000001_add_email_otp.down.sql")
+	require.NoError(t, err)
+	downSQL := string(down)
+
+	assert.Contains(t, downSQL, "DROP COLUMN IF EXISTS otp_expires_at")
+	assert.Contains(t, downSQL, "DROP COLUMN IF EXISTS otp_hash")
+	assert.Contains(t, downSQL, "array_remove(array_remove(v.required_variables, 'otp'), 'otp_duration')")
+}
+
 func TestEmailDeliveryEventsMigrationSmoke(t *testing.T) {
 	t.Parallel()
 
