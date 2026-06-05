@@ -30,10 +30,17 @@ EMAIL_VERIFY_FRONTEND_URL=http://localhost:3005/verify-email
 PASSWORD_RESET_FRONTEND_URL=http://localhost:3005/reset-password
 EMAIL_CHANGE_FRONTEND_URL=http://localhost:3005/change-email
 EMAIL_UNSUBSCRIBE_FRONTEND_URL=http://localhost:3005/unsubscribe
+EMAIL_UNSUBSCRIBE_PUBLIC_URL=http://localhost:8080/v1/email/unsubscribe
 EMAIL_UNSUBSCRIBE_TOKEN_KEY_ID=default
 EMAIL_UNSUBSCRIBE_TOKEN_SECRET=
 EMAIL_UNSUBSCRIBE_TOKEN_SECRETS=
 EMAIL_CLOUDFLARE_WEBHOOK_SECRET=
+EMAIL_CLOUDFLARE_EVENT_POLLING_ENABLED=false
+EMAIL_CLOUDFLARE_ZONE_ID=
+EMAIL_CLOUDFLARE_ANALYTICS_API_TOKEN=
+EMAIL_CLOUDFLARE_EVENT_POLLING_INTERVAL=5m
+EMAIL_CLOUDFLARE_EVENT_POLLING_LOOKBACK=30m
+EMAIL_CLOUDFLARE_EVENT_POLLING_LIMIT=100
 EMAIL_HTTP_TIMEOUT=10s
 ```
 
@@ -44,10 +51,14 @@ Catatan:
 - `EMAIL_FROM_ADDRESS` harus memakai domain yang sudah aktif di Cloudflare Email Service.
 - `EMAIL_VERIFY_FRONTEND_URL`, `PASSWORD_RESET_FRONTEND_URL`, dan `EMAIL_CHANGE_FRONTEND_URL` harus mengarah ke port frontend yang sedang dipakai.
 - `EMAIL_UNSUBSCRIBE_FRONTEND_URL` dipakai untuk link unsubscribe campaign marketing. Jika kosong, backend menurunkan URL dari `EMAIL_VERIFY_FRONTEND_URL` dengan path `/unsubscribe`.
+- `EMAIL_UNSUBSCRIBE_PUBLIC_URL` dipakai untuk header email `List-Unsubscribe` one-click dan harus mengarah ke endpoint backend publik `/v1/email/unsubscribe`.
 - `EMAIL_UNSUBSCRIBE_TOKEN_KEY_ID` masuk ke token unsubscribe baru. Default `default`.
 - `EMAIL_UNSUBSCRIBE_TOKEN_SECRET` opsional. Jika kosong, backend memakai secret dari `EMAIL_UNSUBSCRIBE_TOKEN_SECRETS` untuk key id aktif, atau `JWT_SECRET` sebagai fallback.
 - `EMAIL_UNSUBSCRIBE_TOKEN_SECRETS` opsional untuk rotation, format JSON object seperti `{"2026-06":"secret-baru","2026-05":"secret-lama"}`.
 - `EMAIL_CLOUDFLARE_WEBHOOK_SECRET` mengaktifkan `POST /v1/email/webhooks/cloudflare/bounces`; kosong berarti endpoint webhook disabled.
+- `EMAIL_CLOUDFLARE_EVENT_POLLING_ENABLED=true` mengaktifkan polling GraphQL `emailSendingAdaptive` untuk event `deliveryFailed`.
+- `EMAIL_CLOUDFLARE_ZONE_ID` dan `EMAIL_CLOUDFLARE_ANALYTICS_API_TOKEN` wajib jika polling aktif. Token analytics harus punya permission GraphQL Analytics Read untuk zone tersebut.
+- `EMAIL_CLOUDFLARE_EVENT_POLLING_INTERVAL`, `EMAIL_CLOUDFLARE_EVENT_POLLING_LOOKBACK`, dan `EMAIL_CLOUDFLARE_EVENT_POLLING_LIMIT` mengatur cadence polling, overlap window, dan batas event per query.
 
 ## Restart Backend
 
@@ -140,6 +151,7 @@ Sebelum test email real, pastikan:
 
 - Cloudflare Account ID benar.
 - API token punya akses Email Service Sending.
+- Jika polling event diaktifkan, Cloudflare Zone ID benar dan API token analytics punya akses GraphQL Analytics Read.
 - Domain `mail.surau.org` atau domain pengirim sudah onboard di Cloudflare Email Service.
 - DNS/SPF/DKIM/DMARC/bounce records sudah valid.
 - `EMAIL_FROM_ADDRESS` sesuai domain yang sudah diotorisasi.

@@ -147,6 +147,42 @@ func TestCloudflareEmailClient_SendTrackingHeaders(t *testing.T) {
 	assert.Equal(t, "recipient-id", requestBody.Headers["X-Surau-Campaign-Recipient-ID"])
 }
 
+func TestCloudflareEmailClient_SendCustomHeaders(t *testing.T) {
+	t.Parallel()
+
+	var requestBody cloudflareEmailRequest
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&requestBody))
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"success":true,"result":{"delivered":["user@example.com"],"permanent_bounces":[],"queued":[]}}`))
+	}))
+	defer server.Close()
+
+	client := newTestCloudflareEmailClient(server.URL, 2*time.Second)
+	message := testEmailMessage()
+	message.MessageID = "message-id"
+	message.Headers = map[string]string{
+		"List-Unsubscribe":      "<https://api.surau.org/v1/email/unsubscribe?token=token>",
+		"List-Unsubscribe-Post": "One-Click",
+		"X-Surau-Message-ID":    "caller-value",
+		"Invalid\nHeader":       "value",
+		"X-Invalid-Value":       "bad\r\nvalue",
+		"X-Empty-Value":         "",
+		"":                      "empty-name",
+	}
+
+	_, err := client.Send(context.Background(), message)
+
+	require.NoError(t, err)
+	assert.Equal(t, "<https://api.surau.org/v1/email/unsubscribe?token=token>", requestBody.Headers["List-Unsubscribe"])
+	assert.Equal(t, "One-Click", requestBody.Headers["List-Unsubscribe-Post"])
+	assert.Equal(t, "message-id", requestBody.Headers["X-Surau-Message-ID"])
+	assert.NotContains(t, requestBody.Headers, "Invalid\nHeader")
+	assert.NotContains(t, requestBody.Headers, "X-Invalid-Value")
+	assert.NotContains(t, requestBody.Headers, "X-Empty-Value")
+	assert.NotContains(t, requestBody.Headers, "")
+}
+
 func TestCloudflareEmailClient_SendTimeout(t *testing.T) {
 	t.Parallel()
 

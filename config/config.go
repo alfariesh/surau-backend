@@ -65,29 +65,36 @@ type (
 
 	// Email -.
 	email struct {
-		DeliveryMode             string        `env:"EMAIL_DELIVERY_MODE" envDefault:"cloudflare"`
-		CloudflareAccountID      string        `env:"CF_EMAIL_ACCOUNT_ID"`
-		CloudflareAPIToken       string        `env:"CF_EMAIL_API_TOKEN"`
-		FromAddress              string        `env:"EMAIL_FROM_ADDRESS"`
-		FromName                 string        `env:"EMAIL_FROM_NAME" envDefault:"Surau"`
-		ReplyTo                  string        `env:"EMAIL_REPLY_TO"`
-		VerifyFrontendURL        string        `env:"EMAIL_VERIFY_FRONTEND_URL"`
-		VerificationTTL          time.Duration `env:"EMAIL_VERIFICATION_TTL" envDefault:"24h"`
-		VerificationOTPTTL       time.Duration `env:"EMAIL_VERIFICATION_OTP_TTL" envDefault:"10m"`
-		ResendCooldown           time.Duration `env:"EMAIL_RESEND_COOLDOWN" envDefault:"1m"`
-		PasswordResetFrontendURL string        `env:"PASSWORD_RESET_FRONTEND_URL"`
-		PasswordResetTTL         time.Duration `env:"PASSWORD_RESET_TTL" envDefault:"1h"`
-		PasswordResetCooldown    time.Duration `env:"PASSWORD_RESET_RESEND_COOLDOWN" envDefault:"1m"`
-		EmailChangeFrontendURL   string        `env:"EMAIL_CHANGE_FRONTEND_URL"`
-		EmailChangeTTL           time.Duration `env:"EMAIL_CHANGE_TTL" envDefault:"24h"`
-		EmailChangeOTPTTL        time.Duration `env:"EMAIL_CHANGE_OTP_TTL" envDefault:"10m"`
-		EmailChangeCooldown      time.Duration `env:"EMAIL_CHANGE_RESEND_COOLDOWN" envDefault:"1m"`
-		UnsubscribeFrontendURL   string        `env:"EMAIL_UNSUBSCRIBE_FRONTEND_URL"`
-		UnsubscribeTokenKeyID    string        `env:"EMAIL_UNSUBSCRIBE_TOKEN_KEY_ID" envDefault:"default"`
-		UnsubscribeTokenSecret   string        `env:"EMAIL_UNSUBSCRIBE_TOKEN_SECRET"`
-		UnsubscribeTokenSecrets  string        `env:"EMAIL_UNSUBSCRIBE_TOKEN_SECRETS"`
-		CloudflareWebhookSecret  string        `env:"EMAIL_CLOUDFLARE_WEBHOOK_SECRET"`
-		HTTPTimeout              time.Duration `env:"EMAIL_HTTP_TIMEOUT" envDefault:"10s"`
+		DeliveryMode                   string        `env:"EMAIL_DELIVERY_MODE" envDefault:"cloudflare"`
+		CloudflareAccountID            string        `env:"CF_EMAIL_ACCOUNT_ID"`
+		CloudflareAPIToken             string        `env:"CF_EMAIL_API_TOKEN"`
+		FromAddress                    string        `env:"EMAIL_FROM_ADDRESS"`
+		FromName                       string        `env:"EMAIL_FROM_NAME" envDefault:"Surau"`
+		ReplyTo                        string        `env:"EMAIL_REPLY_TO"`
+		VerifyFrontendURL              string        `env:"EMAIL_VERIFY_FRONTEND_URL"`
+		VerificationTTL                time.Duration `env:"EMAIL_VERIFICATION_TTL" envDefault:"24h"`
+		VerificationOTPTTL             time.Duration `env:"EMAIL_VERIFICATION_OTP_TTL" envDefault:"10m"`
+		ResendCooldown                 time.Duration `env:"EMAIL_RESEND_COOLDOWN" envDefault:"1m"`
+		PasswordResetFrontendURL       string        `env:"PASSWORD_RESET_FRONTEND_URL"`
+		PasswordResetTTL               time.Duration `env:"PASSWORD_RESET_TTL" envDefault:"1h"`
+		PasswordResetCooldown          time.Duration `env:"PASSWORD_RESET_RESEND_COOLDOWN" envDefault:"1m"`
+		EmailChangeFrontendURL         string        `env:"EMAIL_CHANGE_FRONTEND_URL"`
+		EmailChangeTTL                 time.Duration `env:"EMAIL_CHANGE_TTL" envDefault:"24h"`
+		EmailChangeOTPTTL              time.Duration `env:"EMAIL_CHANGE_OTP_TTL" envDefault:"10m"`
+		EmailChangeCooldown            time.Duration `env:"EMAIL_CHANGE_RESEND_COOLDOWN" envDefault:"1m"`
+		UnsubscribeFrontendURL         string        `env:"EMAIL_UNSUBSCRIBE_FRONTEND_URL"`
+		UnsubscribePublicURL           string        `env:"EMAIL_UNSUBSCRIBE_PUBLIC_URL"`
+		UnsubscribeTokenKeyID          string        `env:"EMAIL_UNSUBSCRIBE_TOKEN_KEY_ID" envDefault:"default"`
+		UnsubscribeTokenSecret         string        `env:"EMAIL_UNSUBSCRIBE_TOKEN_SECRET"`
+		UnsubscribeTokenSecrets        string        `env:"EMAIL_UNSUBSCRIBE_TOKEN_SECRETS"`
+		CloudflareWebhookSecret        string        `env:"EMAIL_CLOUDFLARE_WEBHOOK_SECRET"`
+		CloudflareEventPollingEnabled  bool          `env:"EMAIL_CLOUDFLARE_EVENT_POLLING_ENABLED" envDefault:"false"`
+		CloudflareZoneID               string        `env:"EMAIL_CLOUDFLARE_ZONE_ID"`
+		CloudflareAnalyticsAPIToken    string        `env:"EMAIL_CLOUDFLARE_ANALYTICS_API_TOKEN"`
+		CloudflareEventPollingInterval time.Duration `env:"EMAIL_CLOUDFLARE_EVENT_POLLING_INTERVAL" envDefault:"5m"`
+		CloudflareEventPollingLookback time.Duration `env:"EMAIL_CLOUDFLARE_EVENT_POLLING_LOOKBACK" envDefault:"30m"`
+		CloudflareEventPollingLimit    int           `env:"EMAIL_CLOUDFLARE_EVENT_POLLING_LIMIT" envDefault:"100"`
+		HTTPTimeout                    time.Duration `env:"EMAIL_HTTP_TIMEOUT" envDefault:"10s"`
 	}
 
 	// AuthRateLimit -.
@@ -197,10 +204,13 @@ func NewConfig() (*Config, error) {
 	cfg.Email.PasswordResetFrontendURL = strings.TrimSpace(cfg.Email.PasswordResetFrontendURL)
 	cfg.Email.EmailChangeFrontendURL = strings.TrimSpace(cfg.Email.EmailChangeFrontendURL)
 	cfg.Email.UnsubscribeFrontendURL = strings.TrimSpace(cfg.Email.UnsubscribeFrontendURL)
+	cfg.Email.UnsubscribePublicURL = strings.TrimSpace(cfg.Email.UnsubscribePublicURL)
 	cfg.Email.UnsubscribeTokenKeyID = strings.TrimSpace(cfg.Email.UnsubscribeTokenKeyID)
 	cfg.Email.UnsubscribeTokenSecret = strings.TrimSpace(cfg.Email.UnsubscribeTokenSecret)
 	cfg.Email.UnsubscribeTokenSecrets = strings.TrimSpace(cfg.Email.UnsubscribeTokenSecrets)
 	cfg.Email.CloudflareWebhookSecret = strings.TrimSpace(cfg.Email.CloudflareWebhookSecret)
+	cfg.Email.CloudflareZoneID = strings.TrimSpace(cfg.Email.CloudflareZoneID)
+	cfg.Email.CloudflareAnalyticsAPIToken = strings.TrimSpace(cfg.Email.CloudflareAnalyticsAPIToken)
 	if cfg.Email.UnsubscribeTokenKeyID == "" {
 		return nil, fmt.Errorf("config error: EMAIL_UNSUBSCRIBE_TOKEN_KEY_ID must not be empty")
 	}
@@ -247,6 +257,9 @@ func NewConfig() (*Config, error) {
 	if cfg.Email.UnsubscribeFrontendURL != "" && !validAbsoluteHTTPURL(cfg.Email.UnsubscribeFrontendURL) {
 		return nil, fmt.Errorf("config error: EMAIL_UNSUBSCRIBE_FRONTEND_URL must be an absolute http(s) URL")
 	}
+	if cfg.Email.UnsubscribePublicURL != "" && !validAbsoluteHTTPURL(cfg.Email.UnsubscribePublicURL) {
+		return nil, fmt.Errorf("config error: EMAIL_UNSUBSCRIBE_PUBLIC_URL must be an absolute http(s) URL")
+	}
 	if cfg.Email.VerificationTTL <= 0 {
 		return nil, fmt.Errorf("config error: EMAIL_VERIFICATION_TTL must be positive")
 	}
@@ -273,6 +286,25 @@ func NewConfig() (*Config, error) {
 	}
 	if cfg.Email.HTTPTimeout <= 0 {
 		return nil, fmt.Errorf("config error: EMAIL_HTTP_TIMEOUT must be positive")
+	}
+	if cfg.Email.CloudflareEventPollingInterval <= 0 {
+		return nil, fmt.Errorf("config error: EMAIL_CLOUDFLARE_EVENT_POLLING_INTERVAL must be positive")
+	}
+	if cfg.Email.CloudflareEventPollingLookback <= 0 {
+		return nil, fmt.Errorf("config error: EMAIL_CLOUDFLARE_EVENT_POLLING_LOOKBACK must be positive")
+	}
+	if cfg.Email.CloudflareEventPollingLimit <= 0 || cfg.Email.CloudflareEventPollingLimit > 1000 {
+		return nil, fmt.Errorf("config error: EMAIL_CLOUDFLARE_EVENT_POLLING_LIMIT must be between 1 and 1000")
+	}
+	if cfg.Email.CloudflareEventPollingEnabled && cfg.Email.DeliveryMode == EmailDeliveryModeCloudflare {
+		if cfg.Email.CloudflareZoneID == "" {
+			return nil, fmt.Errorf("config error: EMAIL_CLOUDFLARE_ZONE_ID is required when event polling is enabled")
+		}
+		if cfg.Email.CloudflareAnalyticsAPIToken == "" {
+			return nil, fmt.Errorf(
+				"config error: EMAIL_CLOUDFLARE_ANALYTICS_API_TOKEN is required when event polling is enabled",
+			)
+		}
 	}
 	if cfg.AuthEmail.NotificationsEnabled &&
 		cfg.AuthEmail.FailedLoginEnabled &&

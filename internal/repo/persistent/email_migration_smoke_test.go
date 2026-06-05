@@ -106,3 +106,47 @@ func TestEmailDeliveryEventsMigrationSmoke(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, string(down), "DROP TABLE IF EXISTS email_delivery_events")
 }
+
+func TestTransactionalEmailRetryMigrationSmoke(t *testing.T) {
+	t.Parallel()
+
+	up, err := os.ReadFile("../../../migrations/20260605000003_transactional_email_retry.up.sql")
+	require.NoError(t, err)
+	upSQL := string(up)
+
+	assert.Contains(t, upSQL, "ALTER TABLE email_messages")
+	assert.Contains(t, upSQL, "ADD COLUMN IF NOT EXISTS html TEXT NOT NULL DEFAULT ''")
+	assert.Contains(t, upSQL, "ADD COLUMN IF NOT EXISTS text TEXT NOT NULL DEFAULT ''")
+	assert.Contains(t, upSQL, "ADD COLUMN IF NOT EXISTS critical BOOLEAN NOT NULL DEFAULT false")
+	assert.Contains(t, upSQL, "ADD COLUMN IF NOT EXISTS headers JSONB NOT NULL DEFAULT '{}'::jsonb")
+	assert.Contains(t, upSQL, "CREATE INDEX IF NOT EXISTS idx_email_messages_transactional_retry_due")
+	assert.Contains(t, upSQL, "WHERE category = 'transactional' AND status = 'queued'")
+
+	down, err := os.ReadFile("../../../migrations/20260605000003_transactional_email_retry.down.sql")
+	require.NoError(t, err)
+	downSQL := string(down)
+
+	assert.Contains(t, downSQL, "DROP INDEX IF EXISTS idx_email_messages_transactional_retry_due")
+	assert.Contains(t, downSQL, "DROP COLUMN IF EXISTS headers")
+	assert.Contains(t, downSQL, "DROP COLUMN IF EXISTS critical")
+	assert.Contains(t, downSQL, "DROP COLUMN IF EXISTS text")
+	assert.Contains(t, downSQL, "DROP COLUMN IF EXISTS html")
+}
+
+func TestEmailProviderPollCursorsMigrationSmoke(t *testing.T) {
+	t.Parallel()
+
+	up, err := os.ReadFile("../../../migrations/20260605000004_email_provider_poll_cursors.up.sql")
+	require.NoError(t, err)
+	upSQL := string(up)
+
+	assert.Contains(t, upSQL, "CREATE TABLE IF NOT EXISTS email_provider_poll_cursors")
+	assert.Contains(t, upSQL, "provider VARCHAR(64) NOT NULL")
+	assert.Contains(t, upSQL, "cursor_key VARCHAR(255) NOT NULL")
+	assert.Contains(t, upSQL, "last_polled_at TIMESTAMP NOT NULL")
+	assert.Contains(t, upSQL, "PRIMARY KEY (provider, cursor_key)")
+
+	down, err := os.ReadFile("../../../migrations/20260605000004_email_provider_poll_cursors.down.sql")
+	require.NoError(t, err)
+	assert.Contains(t, string(down), "DROP TABLE IF EXISTS email_provider_poll_cursors")
+}

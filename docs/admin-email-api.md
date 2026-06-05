@@ -257,6 +257,8 @@ POST body:
 
 Successful unsubscribe returns the updated `EmailSubscription`.
 
+Marketing campaign sends include `List-Unsubscribe` and `List-Unsubscribe-Post: One-Click` only when the recipient has a tokenized unsubscribe URL and `EMAIL_UNSUBSCRIBE_PUBLIC_URL` points to the public backend endpoint, for example `https://api.surau.org/v1/email/unsubscribe`.
+
 ## Cloudflare Bounce Webhook
 
 ```http
@@ -278,3 +280,15 @@ The endpoint is disabled with `404` when `EMAIL_CLOUDFLARE_WEBHOOK_SECRET` is em
   "suppressed": 1
 }
 ```
+
+## Cloudflare Event Polling
+
+The backend can also poll Cloudflare GraphQL Analytics for Email Service `deliveryFailed` events via `emailSendingAdaptive`. Enable it with:
+
+```env
+EMAIL_CLOUDFLARE_EVENT_POLLING_ENABLED=true
+EMAIL_CLOUDFLARE_ZONE_ID=...
+EMAIL_CLOUDFLARE_ANALYTICS_API_TOKEN=...
+```
+
+The analytics token must have GraphQL Analytics Read access for the zone. Polling uses a cursor with a lookback overlap, records `bounce_hard` delivery events, upserts `all` suppressions, and marks local messages failed when Cloudflare's `messageId` matches a local message UUID.

@@ -98,6 +98,11 @@ type (
 		Suppressions(ctx context.Context, filter repo.EmailSuppressionFilter) ([]entity.EmailSuppression, int, error)
 		CreateSuppression(ctx context.Context, suppression entity.EmailSuppression) (entity.EmailSuppression, error)
 		DeleteSuppression(ctx context.Context, id string) error
+		DeliveryEvents(ctx context.Context, filter repo.EmailDeliveryEventFilter) ([]entity.EmailDeliveryEvent, int, error)
+		CampaignDeliveryEventSummary(
+			ctx context.Context,
+			campaignID string,
+		) (entity.EmailCampaignDeliveryEventSummary, error)
 		Campaigns(ctx context.Context, filter repo.EmailCampaignFilter) ([]entity.EmailCampaign, int, error)
 		CreateCampaign(ctx context.Context, campaign entity.EmailCampaign) (entity.EmailCampaign, error)
 		Campaign(ctx context.Context, id string) (entity.EmailCampaign, error)
@@ -119,6 +124,8 @@ type (
 			variables map[string]string,
 		) (entity.EmailMessageLog, error)
 		DispatchDueCampaigns(ctx context.Context, limit int) error
+		DispatchDueTransactionalEmails(ctx context.Context, limit int) error
+		PollCloudflareEmailEvents(ctx context.Context) (entity.EmailWebhookIngestResult, error)
 		Unsubscribe(ctx context.Context, token string) (entity.EmailSubscription, error)
 	}
 

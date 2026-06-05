@@ -33,7 +33,14 @@ v.required_variables, v.published, v.created_by, v.published_by, v.published_at,
 id, category, COALESCE(template_key, ''), COALESCE(template_version_id::text, ''),
 COALESCE(campaign_id::text, ''), COALESCE(campaign_recipient_id::text, ''),
 COALESCE(user_id::text, ''), recipient_email, lang, subject, status, attempts,
-COALESCE(provider_response, ''), COALESCE(error, ''), metadata, scheduled_at, sent_at, created_at, updated_at`
+COALESCE(provider_response, ''), COALESCE(error, ''), metadata, html, text, critical, headers,
+scheduled_at, sent_at, created_at, updated_at`
+	emailMessageColumnsQualified = `
+m.id, m.category, COALESCE(m.template_key, ''), COALESCE(m.template_version_id::text, ''),
+COALESCE(m.campaign_id::text, ''), COALESCE(m.campaign_recipient_id::text, ''),
+COALESCE(m.user_id::text, ''), m.recipient_email, m.lang, m.subject, m.status, m.attempts,
+COALESCE(m.provider_response, ''), COALESCE(m.error, ''), m.metadata, m.html, m.text, m.critical, m.headers,
+m.scheduled_at, m.sent_at, m.created_at, m.updated_at`
 	emailCampaignColumns = `
 id, name, template_id, status, audience, metadata, scheduled_at, sent_at, cancelled_at,
 created_by, updated_by, created_at, updated_at`
@@ -44,6 +51,8 @@ COALESCE(message_id::text, ''), COALESCE(error, ''), sent_at, created_at, update
 id, dedupe_key, provider, event_type, recipient_email, COALESCE(message_id::text, ''),
 COALESCE(campaign_id::text, ''), COALESCE(campaign_recipient_id::text, ''),
 COALESCE(reason, ''), COALESCE(diagnostic, ''), raw_payload, occurred_at, created_at`
+	emailProviderPollCursorColumns = `
+provider, cursor_key, last_polled_at, created_at, updated_at`
 )
 
 // EmailRepo stores email templates, logs, consent, suppressions, and campaigns.
@@ -536,6 +545,10 @@ func (r *EmailRepo) CreateEmailMessage(
 	if err != nil {
 		return entity.EmailMessageLog{}, err
 	}
+	headersJSON, err := marshalStringMap(message.Headers)
+	if err != nil {
+		return entity.EmailMessageLog{}, err
+	}
 
 	sqlText, args, err := r.Builder.
 		Insert("email_messages").
@@ -555,6 +568,10 @@ func (r *EmailRepo) CreateEmailMessage(
 			"provider_response",
 			"error",
 			"metadata",
+			"html",
+			"text",
+			"critical",
+			"headers",
 			"scheduled_at",
 			"sent_at",
 			"created_at",
@@ -576,6 +593,10 @@ func (r *EmailRepo) CreateEmailMessage(
 			nullableStringArg(message.ProviderResponse),
 			nullableStringArg(message.Error),
 			string(metadataJSON),
+			message.HTML,
+			message.Text,
+			message.Critical,
+			string(headersJSON),
 			message.ScheduledAt,
 			message.SentAt,
 			message.CreatedAt,
@@ -605,6 +626,7 @@ func (r *EmailRepo) UpdateEmailMessageStatus(
 		Set("attempts", attempts).
 		Set("provider_response", nullableStringArg(providerResponse)).
 		Set("error", nullableStringArg(deliveryError)).
+		Set("scheduled_at", nil).
 		Set("sent_at", sentAt).
 		Set("updated_at", sq.Expr("now()")).
 		Where(sq.Eq{"id": id}).
@@ -615,6 +637,119 @@ func (r *EmailRepo) UpdateEmailMessageStatus(
 	}
 
 	return scanEmailMessage(r.Pool.QueryRow(ctx, sqlText, args...))
+}
+
+func (r *EmailRepo) ScheduleEmailMessageRetry(
+	ctx context.Context,
+	id string,
+	attempts int,
+	providerResponse string,
+	deliveryError string,
+	scheduledAt time.Time,
+) (entity.EmailMessageLog, error) {
+	sqlText, args, err := r.Builder.
+		Update("email_messages").
+		Set("status", entity.EmailMessageStatusQueued).
+		Set("attempts", attempts).
+		Set("provider_response", nullableStringArg(providerResponse)).
+		Set("error", nullableStringArg(deliveryError)).
+		Set("scheduled_at", scheduledAt).
+		Set("sent_at", nil).
+		Set("updated_at", sq.Expr("now()")).
+		Where(sq.Eq{"id": id}).
+		Suffix("RETURNING " + emailMessageColumns).
+		ToSql()
+	if err != nil {
+		return entity.EmailMessageLog{}, fmt.Errorf("EmailRepo - ScheduleEmailMessageRetry - Builder: %w", err)
+	}
+
+	return scanEmailMessage(r.Pool.QueryRow(ctx, sqlText, args...))
+}
+
+func (r *EmailRepo) ClaimDueTransactionalEmailMessages(
+	ctx context.Context,
+	now time.Time,
+	limit int,
+	visibilityTimeout time.Duration,
+) ([]entity.EmailMessageLog, error) {
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	if visibilityTimeout <= 0 {
+		visibilityTimeout = 5 * time.Minute
+	}
+	limit = emailMessageClaimLimit(limit)
+
+	tx, err := r.Pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("EmailRepo - ClaimDueTransactionalEmailMessages - Begin: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	rows, err := tx.Query(
+		ctx,
+		claimDueTransactionalEmailMessagesSQL(),
+		entity.EmailCategoryTransactional,
+		entity.EmailMessageStatusQueued,
+		now.UTC(),
+		limit,
+		now.UTC().Add(visibilityTimeout),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("EmailRepo - ClaimDueTransactionalEmailMessages - Query: %w", err)
+	}
+	defer rows.Close()
+
+	messages := make([]entity.EmailMessageLog, 0, limit)
+	for rows.Next() {
+		message, err := scanEmailMessage(rows)
+		if err != nil {
+			return nil, err
+		}
+		messages = append(messages, message)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("EmailRepo - ClaimDueTransactionalEmailMessages - rows: %w", err)
+	}
+	rows.Close()
+
+	if err = tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("EmailRepo - ClaimDueTransactionalEmailMessages - Commit: %w", err)
+	}
+
+	return messages, nil
+}
+
+func emailMessageClaimLimit(limit int) int {
+	if limit <= 0 {
+		return 50
+	}
+	if limit > 100 {
+		return 100
+	}
+
+	return limit
+}
+
+func claimDueTransactionalEmailMessagesSQL() string {
+	return `
+WITH due AS (
+    SELECT id
+    FROM email_messages
+    WHERE category = $1
+      AND status = $2
+      AND scheduled_at IS NOT NULL
+      AND scheduled_at <= $3
+    ORDER BY scheduled_at ASC, created_at ASC
+    LIMIT $4
+    FOR UPDATE SKIP LOCKED
+)
+UPDATE email_messages AS m
+SET scheduled_at = $5,
+    updated_at = now()
+FROM due
+WHERE m.id = due.id
+RETURNING ` + emailMessageColumnsQualified
 }
 
 func (r *EmailRepo) ListEmailMessages(
@@ -955,6 +1090,174 @@ RETURNING ` + emailDeliveryEventColumns + `, (xmax = 0) AS inserted`
 	inserted = created.inserted
 
 	return created.event, inserted, nil
+}
+
+func (r *EmailRepo) ListEmailDeliveryEvents(
+	ctx context.Context,
+	filter repo.EmailDeliveryEventFilter,
+) ([]entity.EmailDeliveryEvent, int, error) {
+	query := emailDeliveryEventListSelect(r.Builder, filter)
+
+	sqlText, args, err := query.ToSql()
+	if err != nil {
+		return nil, 0, fmt.Errorf("EmailRepo - ListEmailDeliveryEvents - Builder: %w", err)
+	}
+	rows, err := r.Pool.Query(ctx, sqlText, args...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("EmailRepo - ListEmailDeliveryEvents - Query: %w", err)
+	}
+	defer rows.Close()
+
+	events := make([]entity.EmailDeliveryEvent, 0)
+	total := 0
+	for rows.Next() {
+		event, rowTotal, err := scanEmailDeliveryEventWithTotal(rows)
+		if err != nil {
+			return nil, 0, err
+		}
+		total = rowTotal
+		events = append(events, event)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("EmailRepo - ListEmailDeliveryEvents - rows: %w", err)
+	}
+
+	return events, total, nil
+}
+
+func emailDeliveryEventListSelect(
+	builder sq.StatementBuilderType,
+	filter repo.EmailDeliveryEventFilter,
+) sq.SelectBuilder {
+	limit := filter.Limit
+	if limit == 0 {
+		limit = 50
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	query := builder.
+		Select(emailDeliveryEventColumns, "count(*) OVER()").
+		From("email_delivery_events").
+		OrderBy("created_at DESC").
+		Limit(limit).
+		Offset(filter.Offset)
+	if strings.TrimSpace(filter.Provider) != "" {
+		query = query.Where(sq.Eq{"provider": strings.TrimSpace(filter.Provider)})
+	}
+	if strings.TrimSpace(filter.EventType) != "" {
+		query = query.Where(sq.Eq{"event_type": strings.TrimSpace(filter.EventType)})
+	}
+	if strings.TrimSpace(filter.Email) != "" {
+		query = query.Where("lower(recipient_email) = lower(?)", strings.TrimSpace(filter.Email))
+	}
+	if strings.TrimSpace(filter.MessageID) != "" {
+		query = query.Where(sq.Eq{"message_id": strings.TrimSpace(filter.MessageID)})
+	}
+	if strings.TrimSpace(filter.CampaignID) != "" {
+		query = query.Where(sq.Eq{"campaign_id": strings.TrimSpace(filter.CampaignID)})
+	}
+	if strings.TrimSpace(filter.CampaignRecipientID) != "" {
+		query = query.Where(sq.Eq{"campaign_recipient_id": strings.TrimSpace(filter.CampaignRecipientID)})
+	}
+
+	return query
+}
+
+func (r *EmailRepo) GetEmailCampaignDeliveryEventSummary(
+	ctx context.Context,
+	campaignID string,
+) (entity.EmailCampaignDeliveryEventSummary, error) {
+	summary := entity.EmailCampaignDeliveryEventSummary{CampaignID: strings.TrimSpace(campaignID)}
+	const query = `
+SELECT
+    count(*)::int,
+    count(*) FILTER (WHERE event_type = $2)::int,
+    count(*) FILTER (WHERE event_type = $3)::int,
+    count(DISTINCT lower(recipient_email))::int,
+    max(occurred_at)
+FROM email_delivery_events
+WHERE campaign_id = $1::uuid`
+
+	var lastOccurredAt sql.NullTime
+	err := r.Pool.QueryRow(
+		ctx,
+		query,
+		summary.CampaignID,
+		entity.EmailDeliveryEventBounceHard,
+		entity.EmailDeliveryEventComplaint,
+	).Scan(
+		&summary.Total,
+		&summary.BounceHard,
+		&summary.Complaint,
+		&summary.UniqueRecipients,
+		&lastOccurredAt,
+	)
+	if err != nil {
+		return entity.EmailCampaignDeliveryEventSummary{}, fmt.Errorf(
+			"EmailRepo - GetEmailCampaignDeliveryEventSummary - QueryRow: %w",
+			err,
+		)
+	}
+	summary.LastOccurredAt = nullableTime(lastOccurredAt)
+
+	return summary, nil
+}
+
+func (r *EmailRepo) GetEmailProviderPollCursor(
+	ctx context.Context,
+	provider string,
+	cursorKey string,
+) (entity.EmailProviderPollCursor, error) {
+	return scanEmailProviderPollCursor(r.Pool.QueryRow(
+		ctx,
+		getEmailProviderPollCursorSQL(),
+		strings.TrimSpace(provider),
+		strings.TrimSpace(cursorKey),
+	))
+}
+
+func (r *EmailRepo) UpsertEmailProviderPollCursor(
+	ctx context.Context,
+	cursor entity.EmailProviderPollCursor,
+) (entity.EmailProviderPollCursor, error) {
+	now := time.Now().UTC()
+	if cursor.CreatedAt.IsZero() {
+		cursor.CreatedAt = now
+	}
+	if cursor.UpdatedAt.IsZero() {
+		cursor.UpdatedAt = now
+	}
+
+	return scanEmailProviderPollCursor(r.Pool.QueryRow(
+		ctx,
+		upsertEmailProviderPollCursorSQL(),
+		strings.TrimSpace(cursor.Provider),
+		strings.TrimSpace(cursor.CursorKey),
+		cursor.LastPolledAt,
+		cursor.CreatedAt,
+		cursor.UpdatedAt,
+	))
+}
+
+func getEmailProviderPollCursorSQL() string {
+	return `
+SELECT ` + emailProviderPollCursorColumns + `
+FROM email_provider_poll_cursors
+WHERE provider = $1 AND cursor_key = $2`
+}
+
+func upsertEmailProviderPollCursorSQL() string {
+	return `
+INSERT INTO email_provider_poll_cursors (
+    provider, cursor_key, last_polled_at, created_at, updated_at
+) VALUES (
+    $1::varchar, $2::varchar, $3::timestamp, $4::timestamp, $5::timestamp
+)
+ON CONFLICT (provider, cursor_key) DO UPDATE SET
+    last_polled_at = EXCLUDED.last_polled_at,
+    updated_at = EXCLUDED.updated_at
+RETURNING ` + emailProviderPollCursorColumns
 }
 
 func (r *EmailRepo) CreateEmailCampaign(
@@ -1734,6 +2037,7 @@ func scanEmailMessageWithTotal(row rowScanner) (entity.EmailMessageLog, int, err
 func scanEmailMessageInternal(row rowScanner, withTotal bool) (entity.EmailMessageLog, int, error) {
 	var message entity.EmailMessageLog
 	var metadataRaw []byte
+	var headersRaw []byte
 	var scheduledAt sql.NullTime
 	var sentAt sql.NullTime
 	total := 0
@@ -1753,6 +2057,10 @@ func scanEmailMessageInternal(row rowScanner, withTotal bool) (entity.EmailMessa
 		&message.ProviderResponse,
 		&message.Error,
 		&metadataRaw,
+		&message.HTML,
+		&message.Text,
+		&message.Critical,
+		&headersRaw,
 		&scheduledAt,
 		&sentAt,
 		&message.CreatedAt,
@@ -1771,6 +2079,7 @@ func scanEmailMessageInternal(row rowScanner, withTotal bool) (entity.EmailMessa
 	message.ScheduledAt = nullableTime(scheduledAt)
 	message.SentAt = nullableTime(sentAt)
 	message.Metadata = unmarshalStringMap(metadataRaw)
+	message.Headers = unmarshalStringMap(headersRaw)
 
 	return message, total, nil
 }
@@ -1879,6 +2188,57 @@ func scanEmailDeliveryEventWithInserted(row rowScanner) (emailDeliveryEventInser
 	event.RawPayload = entity.RawJSON(rawPayload)
 
 	return emailDeliveryEventInsertResult{event: event, inserted: inserted}, nil
+}
+
+func scanEmailDeliveryEventWithTotal(row rowScanner) (entity.EmailDeliveryEvent, int, error) {
+	var event entity.EmailDeliveryEvent
+	var rawPayload []byte
+	var total int
+	err := row.Scan(
+		&event.ID,
+		&event.DedupeKey,
+		&event.Provider,
+		&event.EventType,
+		&event.RecipientEmail,
+		&event.MessageID,
+		&event.CampaignID,
+		&event.CampaignRecipient,
+		&event.Reason,
+		&event.Diagnostic,
+		&rawPayload,
+		&event.OccurredAt,
+		&event.CreatedAt,
+		&total,
+	)
+	if err != nil {
+		return entity.EmailDeliveryEvent{}, 0, fmt.Errorf(
+			"EmailRepo - scanEmailDeliveryEventWithTotal - Scan: %w",
+			err,
+		)
+	}
+	event.RawPayload = entity.RawJSON(rawPayload)
+
+	return event, total, nil
+}
+
+func scanEmailProviderPollCursor(row rowScanner) (entity.EmailProviderPollCursor, error) {
+	var cursor entity.EmailProviderPollCursor
+	err := row.Scan(
+		&cursor.Provider,
+		&cursor.CursorKey,
+		&cursor.LastPolledAt,
+		&cursor.CreatedAt,
+		&cursor.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return entity.EmailProviderPollCursor{}, entity.ErrEmailProviderPollCursorNotFound
+		}
+
+		return entity.EmailProviderPollCursor{}, fmt.Errorf("EmailRepo - scanEmailProviderPollCursor - Scan: %w", err)
+	}
+
+	return cursor, nil
 }
 
 func scanEmailCampaign(row rowScanner) (entity.EmailCampaign, error) {

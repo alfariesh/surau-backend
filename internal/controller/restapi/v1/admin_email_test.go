@@ -7,9 +7,11 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/evrone/go-clean-template/internal/controller/restapi/middleware"
 	"github.com/evrone/go-clean-template/internal/entity"
+	"github.com/evrone/go-clean-template/internal/repo"
 	"github.com/evrone/go-clean-template/internal/usecase"
 	"github.com/evrone/go-clean-template/pkg/logger"
 	"github.com/go-playground/validator/v10"
@@ -92,6 +94,164 @@ func TestAdminEmailRetryFailedCampaign(t *testing.T) {
 	assert.Equal(t, "campaign-id", campaign.ID)
 	assert.Equal(t, "campaign-id", email.retryID)
 	assert.Equal(t, "admin-id", email.retryActorID)
+}
+
+func TestAdminEmailDeliveryEvents(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 6, 5, 10, 0, 0, 0, time.UTC)
+	email := &fakeEmailAdmin{
+		deliveryEvents: []entity.EmailDeliveryEvent{
+			{
+				ID:             "event-id",
+				DedupeKey:      "dedupe-key",
+				Provider:       entity.EmailProviderCloudflare,
+				EventType:      entity.EmailDeliveryEventBounceHard,
+				RecipientEmail: "user@example.com",
+				RawPayload:     entity.RawJSON(`{"provider":"cloudflare"}`),
+				OccurredAt:     now,
+				CreatedAt:      now,
+			},
+		},
+		deliveryTotal: 3,
+	}
+	app := newAdminEmailTestApp(email, entity.User{ID: "admin-id", Role: entity.UserRoleAdmin})
+	req := httptest.NewRequestWithContext(
+		t.Context(),
+		http.MethodGet,
+		"/v1/admin/emails/delivery-events?provider=cloudflare&event_type=bounce_hard&email=USER@example.com&message_id=message-id&campaign_id=campaign-id&campaign_recipient_id=recipient-id&limit=25&offset=5",
+		nil,
+	)
+
+	resp, err := app.Test(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	var body struct {
+		Items []struct {
+			ID         string         `json:"id"`
+			RawPayload map[string]any `json:"raw_payload"`
+		} `json:"items"`
+		Total int `json:"total"`
+	}
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Equal(t, 3, body.Total)
+	require.Len(t, body.Items, 1)
+	assert.Equal(t, "event-id", body.Items[0].ID)
+	assert.Equal(t, "cloudflare", body.Items[0].RawPayload["provider"])
+	assert.Equal(t, repo.EmailDeliveryEventFilter{
+		Provider:            "cloudflare",
+		EventType:           entity.EmailDeliveryEventBounceHard,
+		Email:               "USER@example.com",
+		MessageID:           "message-id",
+		CampaignID:          "campaign-id",
+		CampaignRecipientID: "recipient-id",
+		Limit:               25,
+		Offset:              5,
+	}, email.deliveryFilter)
+}
+
+func TestAdminEmailMessageDeliveryEventsAppliesMessageID(t *testing.T) {
+	t.Parallel()
+
+	email := &fakeEmailAdmin{}
+	app := newAdminEmailTestApp(email, entity.User{ID: "admin-id", Role: entity.UserRoleAdmin})
+	req := httptest.NewRequestWithContext(
+		t.Context(),
+		http.MethodGet,
+		"/v1/admin/emails/messages/message-id/delivery-events?limit=10",
+		nil,
+	)
+
+	resp, err := app.Test(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Equal(t, "message-id", email.deliveryFilter.MessageID)
+	assert.Equal(t, uint64(10), email.deliveryFilter.Limit)
+}
+
+func TestAdminEmailCampaignRecipientDeliveryEventsAppliesRecipientID(t *testing.T) {
+	t.Parallel()
+
+	email := &fakeEmailAdmin{}
+	app := newAdminEmailTestApp(email, entity.User{ID: "admin-id", Role: entity.UserRoleAdmin})
+	req := httptest.NewRequestWithContext(
+		t.Context(),
+		http.MethodGet,
+		"/v1/admin/emails/campaign-recipients/recipient-id/delivery-events",
+		nil,
+	)
+
+	resp, err := app.Test(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Equal(t, "recipient-id", email.deliveryFilter.CampaignRecipientID)
+	assert.Equal(t, uint64(50), email.deliveryFilter.Limit)
+}
+
+func TestAdminEmailCampaignDeliveryEventSummary(t *testing.T) {
+	t.Parallel()
+
+	lastOccurredAt := time.Date(2026, 6, 5, 10, 30, 0, 0, time.UTC)
+	email := &fakeEmailAdmin{
+		deliverySummary: entity.EmailCampaignDeliveryEventSummary{
+			CampaignID:       "campaign-id",
+			Total:            3,
+			BounceHard:       2,
+			Complaint:        1,
+			UniqueRecipients: 2,
+			LastOccurredAt:   &lastOccurredAt,
+		},
+	}
+	app := newAdminEmailTestApp(email, entity.User{ID: "admin-id", Role: entity.UserRoleAdmin})
+	req := httptest.NewRequestWithContext(
+		t.Context(),
+		http.MethodGet,
+		"/v1/admin/emails/campaigns/campaign-id/delivery-event-summary",
+		nil,
+	)
+
+	resp, err := app.Test(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	var summary entity.EmailCampaignDeliveryEventSummary
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&summary))
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Equal(t, "campaign-id", email.deliverySummaryID)
+	assert.Equal(t, 3, summary.Total)
+	assert.Equal(t, 2, summary.BounceHard)
+	assert.Equal(t, 1, summary.Complaint)
+	assert.Equal(t, 2, summary.UniqueRecipients)
+	require.NotNil(t, summary.LastOccurredAt)
+	assert.Equal(t, lastOccurredAt, *summary.LastOccurredAt)
+}
+
+func TestAdminEmailDeliveryEventsRejectsEditorActor(t *testing.T) {
+	t.Parallel()
+
+	email := &fakeEmailAdmin{}
+	app := newAdminEmailTestApp(email, entity.User{ID: "editor-id", Role: entity.UserRoleEditor})
+	req := httptest.NewRequestWithContext(
+		t.Context(),
+		http.MethodGet,
+		"/v1/admin/emails/delivery-events",
+		nil,
+	)
+
+	resp, err := app.Test(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+	assert.Equal(t, repo.EmailDeliveryEventFilter{}, email.deliveryFilter)
 }
 
 func TestEmailCloudflareBounceWebhook(t *testing.T) {
@@ -188,6 +348,36 @@ func TestEmailCloudflareBounceWebhook(t *testing.T) {
 	}
 }
 
+func TestEmailUnsubscribePostAcceptsQueryToken(t *testing.T) {
+	t.Parallel()
+
+	email := &fakeEmailAdmin{
+		unsubscribeResult: entity.EmailSubscription{
+			UserID:         "user-id",
+			MarketingOptIn: false,
+			Source:         "unsubscribe_link",
+		},
+	}
+	app := newEmailUnsubscribeTestApp(email)
+	req := httptest.NewRequestWithContext(
+		t.Context(),
+		http.MethodPost,
+		"/v1/email/unsubscribe?token=unsubscribe-token",
+		nil,
+	)
+
+	resp, err := app.Test(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	var subscription entity.EmailSubscription
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&subscription))
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Equal(t, "unsubscribe-token", email.unsubscribeToken)
+	assert.False(t, subscription.MarketingOptIn)
+}
+
 func newAdminEmailTestApp(email *fakeEmailAdmin, actor entity.User) *fiber.App {
 	app := fiber.New()
 	user := &fakeAuthUser{}
@@ -216,6 +406,42 @@ func newAdminEmailTestApp(email *fakeEmailAdmin, actor entity.User) *fiber.App {
 		middleware.RequireRoles(user, entity.UserRoleAdmin),
 		controller.adminEmailRetryFailedCampaign,
 	)
+	app.Get(
+		"/v1/admin/emails/delivery-events",
+		injectActor,
+		middleware.RequireRoles(user, entity.UserRoleAdmin),
+		controller.adminEmailDeliveryEvents,
+	)
+	app.Get(
+		"/v1/admin/emails/messages/:id/delivery-events",
+		injectActor,
+		middleware.RequireRoles(user, entity.UserRoleAdmin),
+		controller.adminEmailMessageDeliveryEvents,
+	)
+	app.Get(
+		"/v1/admin/emails/campaign-recipients/:id/delivery-events",
+		injectActor,
+		middleware.RequireRoles(user, entity.UserRoleAdmin),
+		controller.adminEmailCampaignRecipientDeliveryEvents,
+	)
+	app.Get(
+		"/v1/admin/emails/campaigns/:id/delivery-event-summary",
+		injectActor,
+		middleware.RequireRoles(user, entity.UserRoleAdmin),
+		controller.adminEmailCampaignDeliveryEventSummary,
+	)
+
+	return app
+}
+
+func newEmailUnsubscribeTestApp(email *fakeEmailAdmin) *fiber.App {
+	app := fiber.New()
+	controller := &V1{
+		email: email,
+		l:     logger.New("error"),
+		v:     validator.New(validator.WithRequiredStructEnabled()),
+	}
+	app.Post("/v1/email/unsubscribe", controller.emailUnsubscribe)
 
 	return app
 }
@@ -243,6 +469,18 @@ type fakeEmailAdmin struct {
 	retryActorID  string
 	retryCampaign entity.EmailCampaign
 	retryErr      error
+
+	deliveryEvents    []entity.EmailDeliveryEvent
+	deliveryTotal     int
+	deliveryFilter    repo.EmailDeliveryEventFilter
+	deliveryErr       error
+	deliverySummary   entity.EmailCampaignDeliveryEventSummary
+	deliverySummaryID string
+	summaryErr        error
+
+	unsubscribeToken  string
+	unsubscribeResult entity.EmailSubscription
+	unsubscribeErr    error
 
 	webhookPayload []byte
 	webhookResult  entity.EmailWebhookIngestResult
@@ -280,6 +518,49 @@ func (f *fakeEmailAdmin) RetryFailedCampaign(
 	}
 
 	return f.retryCampaign, nil
+}
+
+func (f *fakeEmailAdmin) DeliveryEvents(
+	_ context.Context,
+	filter repo.EmailDeliveryEventFilter,
+) ([]entity.EmailDeliveryEvent, int, error) {
+	f.deliveryFilter = filter
+	if f.deliveryErr != nil {
+		return nil, 0, f.deliveryErr
+	}
+
+	return append([]entity.EmailDeliveryEvent(nil), f.deliveryEvents...), f.deliveryTotal, nil
+}
+
+func (f *fakeEmailAdmin) CampaignDeliveryEventSummary(
+	_ context.Context,
+	campaignID string,
+) (entity.EmailCampaignDeliveryEventSummary, error) {
+	f.deliverySummaryID = campaignID
+	if f.summaryErr != nil {
+		return entity.EmailCampaignDeliveryEventSummary{}, f.summaryErr
+	}
+	summary := f.deliverySummary
+	if summary.CampaignID == "" {
+		summary.CampaignID = campaignID
+	}
+
+	return summary, nil
+}
+
+func (f *fakeEmailAdmin) Unsubscribe(
+	_ context.Context,
+	token string,
+) (entity.EmailSubscription, error) {
+	f.unsubscribeToken = token
+	if f.unsubscribeErr != nil {
+		return entity.EmailSubscription{}, f.unsubscribeErr
+	}
+	if f.unsubscribeResult.UserID == "" {
+		f.unsubscribeResult.UserID = "user-id"
+	}
+
+	return f.unsubscribeResult, nil
 }
 
 func (f *fakeEmailAdmin) IngestCloudflareBounceWebhook(

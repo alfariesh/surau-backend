@@ -70,6 +70,14 @@ type (
 		Send(ctx context.Context, message entity.EmailMessage) (entity.EmailSendResult, error)
 	}
 
+	// EmailEventPoller fetches provider-side asynchronous email delivery events.
+	EmailEventPoller interface {
+		PollCloudflareEmailEvents(
+			ctx context.Context,
+			query entity.CloudflareEmailEventPollQuery,
+		) ([]entity.CloudflareEmailEvent, error)
+	}
+
 	// EmailRepo stores admin-managed templates, logs, subscriptions, suppressions, and campaigns.
 	EmailRepo interface {
 		CreateEmailTemplate(ctx context.Context, template entity.EmailTemplate) (entity.EmailTemplate, error)
@@ -112,6 +120,20 @@ type (
 			deliveryError string,
 			sentAt *time.Time,
 		) (entity.EmailMessageLog, error)
+		ScheduleEmailMessageRetry(
+			ctx context.Context,
+			id string,
+			attempts int,
+			providerResponse string,
+			deliveryError string,
+			scheduledAt time.Time,
+		) (entity.EmailMessageLog, error)
+		ClaimDueTransactionalEmailMessages(
+			ctx context.Context,
+			now time.Time,
+			limit int,
+			visibilityTimeout time.Duration,
+		) ([]entity.EmailMessageLog, error)
 		ListEmailMessages(ctx context.Context, filter EmailMessageFilter) ([]entity.EmailMessageLog, int, error)
 		GetEmailSubscription(ctx context.Context, userID string) (entity.EmailSubscription, error)
 		UpsertEmailSubscription(ctx context.Context, subscription entity.EmailSubscription) (entity.EmailSubscription, error)
@@ -125,6 +147,20 @@ type (
 		DeleteEmailSuppression(ctx context.Context, id string) error
 		IsEmailSuppressed(ctx context.Context, email, category string) (bool, error)
 		UpsertEmailDeliveryEvent(ctx context.Context, event entity.EmailDeliveryEvent) (entity.EmailDeliveryEvent, bool, error)
+		ListEmailDeliveryEvents(ctx context.Context, filter EmailDeliveryEventFilter) ([]entity.EmailDeliveryEvent, int, error)
+		GetEmailCampaignDeliveryEventSummary(
+			ctx context.Context,
+			campaignID string,
+		) (entity.EmailCampaignDeliveryEventSummary, error)
+		GetEmailProviderPollCursor(
+			ctx context.Context,
+			provider string,
+			cursorKey string,
+		) (entity.EmailProviderPollCursor, error)
+		UpsertEmailProviderPollCursor(
+			ctx context.Context,
+			cursor entity.EmailProviderPollCursor,
+		) (entity.EmailProviderPollCursor, error)
 		CreateEmailCampaign(ctx context.Context, campaign entity.EmailCampaign) (entity.EmailCampaign, error)
 		ListEmailCampaigns(ctx context.Context, filter EmailCampaignFilter) ([]entity.EmailCampaign, int, error)
 		GetEmailCampaign(ctx context.Context, id string) (entity.EmailCampaign, error)
@@ -395,6 +431,18 @@ type (
 		Scope  string
 		Limit  uint64
 		Offset uint64
+	}
+
+	// EmailDeliveryEventFilter -.
+	EmailDeliveryEventFilter struct {
+		Provider            string
+		EventType           string
+		Email               string
+		MessageID           string
+		CampaignID          string
+		CampaignRecipientID string
+		Limit               uint64
+		Offset              uint64
 	}
 
 	// EmailCampaignFilter -.

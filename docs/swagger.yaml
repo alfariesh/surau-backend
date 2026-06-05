@@ -1415,6 +1415,50 @@ definitions:
       updated_by:
         type: string
     type: object
+  entity.EmailCampaignDeliveryEventSummary:
+    properties:
+      bounce_hard:
+        type: integer
+      campaign_id:
+        type: string
+      complaint:
+        type: integer
+      last_occurred_at:
+        type: string
+      total:
+        type: integer
+      unique_recipients:
+        type: integer
+    type: object
+  entity.EmailDeliveryEvent:
+    properties:
+      campaign_id:
+        type: string
+      campaign_recipient_id:
+        type: string
+      created_at:
+        type: string
+      dedupe_key:
+        type: string
+      diagnostic:
+        type: string
+      event_type:
+        type: string
+      id:
+        type: string
+      message_id:
+        type: string
+      occurred_at:
+        type: string
+      provider:
+        type: string
+      raw_payload:
+        type: object
+      reason:
+        type: string
+      recipient_email:
+        type: string
+    type: object
   entity.EmailEventSetting:
     properties:
       cooldown_seconds:
@@ -2894,6 +2938,15 @@ definitions:
         example: true
         type: boolean
     type: object
+  v1.EmailDeliveryEventList:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/entity.EmailDeliveryEvent'
+        type: array
+      total:
+        type: integer
+    type: object
   v1.EmailEventSettingUpdate:
     properties:
       cooldown_seconds:
@@ -3960,6 +4013,49 @@ info:
   title: Go Clean Template API
   version: "1.0"
 paths:
+  /admin/emails/campaign-recipients/{id}/delivery-events:
+    get:
+      operationId: admin-email-list-campaign-recipient-delivery-events
+      parameters:
+      - description: Email campaign recipient ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - default: 50
+        description: Page size
+        in: query
+        name: limit
+        type: integer
+      - default: 0
+        description: Page offset
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.EmailDeliveryEventList'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: List delivery events for a campaign recipient
+      tags:
+      - admin-emails
   /admin/emails/campaigns:
     get:
       operationId: admin-email-list-campaigns
@@ -4175,6 +4271,43 @@ paths:
       security:
       - BearerAuth: []
       summary: Cancel email campaign
+      tags:
+      - admin-emails
+  /admin/emails/campaigns/{id}/delivery-event-summary:
+    get:
+      operationId: admin-email-campaign-delivery-event-summary
+      parameters:
+      - description: Campaign ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.EmailCampaignDeliveryEventSummary'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Summarize campaign delivery events
       tags:
       - admin-emails
   /admin/emails/campaigns/{id}/preview-audience:
@@ -4398,6 +4531,71 @@ paths:
       summary: Test send email campaign
       tags:
       - admin-emails
+  /admin/emails/delivery-events:
+    get:
+      operationId: admin-email-list-delivery-events
+      parameters:
+      - description: Email provider
+        in: query
+        name: provider
+        type: string
+      - description: Delivery event type
+        enum:
+        - bounce_hard
+        - complaint
+        in: query
+        name: event_type
+        type: string
+      - description: Recipient email
+        in: query
+        name: email
+        type: string
+      - description: Email message ID
+        in: query
+        name: message_id
+        type: string
+      - description: Email campaign ID
+        in: query
+        name: campaign_id
+        type: string
+      - description: Email campaign recipient ID
+        in: query
+        name: campaign_recipient_id
+        type: string
+      - default: 50
+        description: Page size
+        in: query
+        name: limit
+        type: integer
+      - default: 0
+        description: Page offset
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.EmailDeliveryEventList'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: List email delivery events
+      tags:
+      - admin-emails
   /admin/emails/events/{key}:
     get:
       operationId: admin-email-get-event-setting
@@ -4539,6 +4737,49 @@ paths:
       security:
       - BearerAuth: []
       summary: List email delivery messages
+      tags:
+      - admin-emails
+  /admin/emails/messages/{id}/delivery-events:
+    get:
+      operationId: admin-email-list-message-delivery-events
+      parameters:
+      - description: Email message ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - default: 50
+        description: Page size
+        in: query
+        name: limit
+        type: integer
+      - default: 0
+        description: Page offset
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.EmailDeliveryEventList'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: List delivery events for an email message
       tags:
       - admin-emails
   /admin/emails/suppressions:

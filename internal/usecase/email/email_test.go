@@ -203,7 +203,8 @@ func TestDeliverCampaignRecipientMarksSuppressedAsSkipped(t *testing.T) {
 		},
 		suppressed: true,
 	}
-	uc := New(stub, nil, Options{})
+	sender := &emailSenderStub{}
+	uc := New(stub, sender, Options{})
 	status, err := uc.deliverCampaignRecipient(
 		t.Context(),
 		entity.EmailCampaign{ID: "campaign-id", TemplateID: "template-id"},
@@ -220,6 +221,54 @@ func TestDeliverCampaignRecipientMarksSuppressedAsSkipped(t *testing.T) {
 	assert.Equal(t, entity.EmailRecipientStatusSkipped, status)
 	assert.Equal(t, entity.EmailRecipientStatusSkipped, stub.recipientStatus)
 	assert.Equal(t, "suppressed", stub.recipientError)
+	assert.Empty(t, sender.sent)
+}
+
+func TestDeliverCampaignRecipientAddsListUnsubscribeHeaders(t *testing.T) {
+	t.Parallel()
+
+	stub := &emailRepoStub{
+		template: entity.EmailTemplate{
+			ID:       "template-id",
+			Key:      "weekly_digest",
+			Category: entity.EmailCategoryMarketing,
+			Enabled:  true,
+		},
+		publishedVersion: entity.EmailTemplateVersion{
+			ID:              "version-id",
+			TemplateID:      "template-id",
+			Lang:            contentlang.Default,
+			SubjectTemplate: "Halo {{.email}}",
+			TextTemplate:    "Halo {{.unsubscribe_url}}",
+			Published:       true,
+		},
+	}
+	sender := &emailSenderStub{}
+	uc := New(stub, sender, Options{
+		UnsubscribeHeaderURL: "https://api.surau.org/v1/email/unsubscribe",
+	})
+
+	status, err := uc.deliverCampaignRecipient(
+		t.Context(),
+		entity.EmailCampaign{ID: "campaign-id", TemplateID: "template-id"},
+		entity.EmailCampaignRecipient{
+			ID:             "recipient-id",
+			UserID:         "user-id",
+			Email:          "user@example.com",
+			Lang:           contentlang.Default,
+			UnsubscribeURL: "https://frontend.example.com/unsubscribe?token=abc",
+		},
+	)
+
+	require.NoError(t, err)
+	assert.Equal(t, entity.EmailRecipientStatusSent, status)
+	require.Len(t, sender.sent, 1)
+	assert.Equal(
+		t,
+		"<https://api.surau.org/v1/email/unsubscribe?token=abc>",
+		sender.sent[0].Headers["List-Unsubscribe"],
+	)
+	assert.Equal(t, "One-Click", sender.sent[0].Headers["List-Unsubscribe-Post"])
 }
 
 func TestDeliverCampaignRecipientHardBounceCreatesEventAndSuppression(t *testing.T) {
@@ -350,7 +399,9 @@ func TestSendTransactionalRedactsSensitiveMetadata(t *testing.T) {
 
 	stub := &emailRepoStub{}
 	sender := &emailSenderStub{}
-	uc := New(stub, sender, Options{})
+	uc := New(stub, sender, Options{
+		UnsubscribeHeaderURL: "https://api.surau.org/v1/email/unsubscribe",
+	})
 
 	err := uc.SendTransactional(t.Context(), entity.TransactionalEmailRequest{
 		Key:  entity.EmailTemplateKeyVerification,
@@ -378,6 +429,7 @@ func TestSendTransactionalRedactsSensitiveMetadata(t *testing.T) {
 	assert.Equal(t, redactedValue, stub.createdMessages[0].Metadata["unsubscribe_url"])
 	assert.Equal(t, redactedValue, stub.createdMessages[0].Metadata["relative_link"])
 	assert.Equal(t, "10 menit", stub.createdMessages[0].Metadata["duration"])
+	assert.Empty(t, sender.sent[0].Headers)
 }
 
 func TestSendTransactionalCriticalBypassesSuppression(t *testing.T) {
@@ -457,6 +509,206 @@ func TestSendTransactionalCriticalTemplateRenderFallback(t *testing.T) {
 	assert.NotEmpty(t, stub.createdMessages[0].Metadata["template_render_error"])
 }
 
+func TestSendTransactionalTransientFailureQueuesRetryAndReturnsSuccess(t *testing.T) {
+	t.Parallel()
+
+	stub := &emailRepoStub{}
+	sender := &emailSenderStub{
+		result: entity.EmailSendResult{
+			Provider:         entity.EmailProviderCloudflare,
+			ProviderResponse: `{"success":false}`,
+		},
+		err: assert.AnError,
+	}
+	uc := New(stub, sender, Options{})
+	start := time.Now().UTC()
+
+	err := uc.SendTransactional(t.Context(), entity.TransactionalEmailRequest{
+		Key:  entity.EmailTemplateKeyVerification,
+		To:   "user@example.com",
+		Lang: contentlang.Default,
+		Fallback: entity.EmailMessage{
+			To:      "user@example.com",
+			Subject: "Verify",
+			HTML:    "<p>Verify</p>",
+			Text:    "Verify",
+			Headers: map[string]string{"X-Test": "value"},
+		},
+	})
+
+	require.NoError(t, err)
+	require.Len(t, sender.sent, 1)
+	require.Len(t, stub.scheduledRetries, 1)
+	retry := stub.scheduledRetries[0]
+	assert.Equal(t, entity.EmailMessageStatusQueued, retry.Status)
+	assert.Equal(t, 1, retry.Attempts)
+	assert.Equal(t, `{"success":false}`, retry.ProviderResponse)
+	assert.Contains(t, retry.Error, assert.AnError.Error())
+	require.NotNil(t, retry.ScheduledAt)
+	assert.WithinDuration(t, start.Add(time.Minute), *retry.ScheduledAt, 2*time.Second)
+	require.Len(t, stub.createdMessages, 1)
+	assert.Equal(t, "<p>Verify</p>", stub.createdMessages[0].HTML)
+	assert.Equal(t, "Verify", stub.createdMessages[0].Text)
+	assert.Equal(t, "value", stub.createdMessages[0].Headers["X-Test"])
+}
+
+func TestSendTransactionalPermanentBounceFailsWithoutRetry(t *testing.T) {
+	t.Parallel()
+
+	stub := &emailRepoStub{}
+	sender := &emailSenderStub{
+		result: entity.EmailSendResult{
+			Provider:         entity.EmailProviderCloudflare,
+			PermanentBounces: []string{"user@example.com"},
+			ProviderResponse: `{"success":true,"result":{"permanent_bounces":["user@example.com"]}}`,
+		},
+		err: fmt.Errorf("%w: %w for user@example.com", entity.ErrEmailDeliveryFailed, entity.ErrEmailPermanentBounce),
+	}
+	uc := New(stub, sender, Options{})
+
+	err := uc.SendTransactional(t.Context(), entity.TransactionalEmailRequest{
+		Key:  entity.EmailTemplateKeyVerification,
+		To:   "user@example.com",
+		Lang: contentlang.Default,
+		Fallback: entity.EmailMessage{
+			To:      "user@example.com",
+			Subject: "Verify",
+			Text:    "Verify",
+		},
+	})
+
+	require.ErrorIs(t, err, entity.ErrEmailDeliveryFailed)
+	require.ErrorIs(t, err, entity.ErrEmailPermanentBounce)
+	assert.Empty(t, stub.scheduledRetries)
+	require.Len(t, stub.updatedMessages, 1)
+	assert.Equal(t, entity.EmailMessageStatusFailed, stub.updatedMessages[0].Status)
+	require.Len(t, stub.deliveryEvents, 1)
+	assert.Equal(t, entity.EmailDeliveryEventBounceHard, stub.deliveryEvents[0].EventType)
+	require.Len(t, stub.suppressions, 1)
+	assert.Equal(t, entity.EmailSuppressionScopeAll, stub.suppressions[0].Scope)
+}
+
+func TestDispatchDueTransactionalEmailsSendsQueuedMessage(t *testing.T) {
+	t.Parallel()
+
+	queued := transactionalMessageLogForTest("message-id", "user@example.com", 1, false)
+	stub := &emailRepoStub{claimedTransactionalMessages: []entity.EmailMessageLog{queued}}
+	sender := &emailSenderStub{}
+	uc := New(stub, sender, Options{})
+
+	err := uc.DispatchDueTransactionalEmails(t.Context(), 20)
+
+	require.NoError(t, err)
+	assert.Equal(t, 20, stub.claimLimit)
+	assert.Equal(t, transactionalRetryVisibilityTimeout, stub.claimVisibilityTimeout)
+	require.Len(t, sender.sent, 1)
+	assert.Equal(t, "message-id", sender.sent[0].MessageID)
+	assert.Equal(t, "user@example.com", sender.sent[0].To)
+	assert.Equal(t, queued.HTML, sender.sent[0].HTML)
+	require.Len(t, stub.updatedMessages, 1)
+	assert.Equal(t, entity.EmailMessageStatusSent, stub.updatedMessages[0].Status)
+	assert.Equal(t, 2, stub.updatedMessages[0].Attempts)
+	require.NotNil(t, stub.updatedMessages[0].SentAt)
+}
+
+func TestDispatchDueTransactionalEmailsReschedulesAndEventuallyFails(t *testing.T) {
+	t.Parallel()
+
+	reschedule := transactionalMessageLogForTest("message-id-reschedule", "retry@example.com", 1, false)
+	final := transactionalMessageLogForTest("message-id-final", "final@example.com", 5, false)
+	stub := &emailRepoStub{claimedTransactionalMessages: []entity.EmailMessageLog{reschedule, final}}
+	sender := &emailSenderStub{
+		errByEmail: map[string]error{
+			"retry@example.com": assert.AnError,
+			"final@example.com": assert.AnError,
+		},
+	}
+	uc := New(stub, sender, Options{})
+	start := time.Now().UTC()
+
+	err := uc.DispatchDueTransactionalEmails(t.Context(), 20)
+
+	require.NoError(t, err)
+	require.Len(t, sender.sent, 2)
+	require.Len(t, stub.scheduledRetries, 1)
+	assert.Equal(t, "message-id-reschedule", stub.scheduledRetries[0].ID)
+	assert.Equal(t, 2, stub.scheduledRetries[0].Attempts)
+	require.NotNil(t, stub.scheduledRetries[0].ScheduledAt)
+	assert.WithinDuration(t, start.Add(5*time.Minute), *stub.scheduledRetries[0].ScheduledAt, 2*time.Second)
+	require.Len(t, stub.updatedMessages, 2)
+	assert.Equal(t, entity.EmailMessageStatusFailed, stub.updatedMessages[1].Status)
+	assert.Equal(t, 6, stub.updatedMessages[1].Attempts)
+	assert.Equal(t, "message-id-final", stub.updatedMessages[1].ID)
+}
+
+func TestDispatchDueTransactionalEmailsSkipsSuppressedNonCritical(t *testing.T) {
+	t.Parallel()
+
+	queued := transactionalMessageLogForTest("message-id", "user@example.com", 1, false)
+	stub := &emailRepoStub{
+		suppressed:                   true,
+		claimedTransactionalMessages: []entity.EmailMessageLog{queued},
+	}
+	sender := &emailSenderStub{}
+	uc := New(stub, sender, Options{})
+
+	err := uc.DispatchDueTransactionalEmails(t.Context(), 20)
+
+	require.NoError(t, err)
+	assert.Empty(t, sender.sent)
+	require.Len(t, stub.updatedMessages, 1)
+	assert.Equal(t, entity.EmailMessageStatusSkipped, stub.updatedMessages[0].Status)
+	assert.Equal(t, "suppressed", stub.updatedMessages[0].Error)
+}
+
+func TestDispatchDueTransactionalEmailsCriticalBypassesSuppression(t *testing.T) {
+	t.Parallel()
+
+	queued := transactionalMessageLogForTest("message-id", "user@example.com", 1, true)
+	stub := &emailRepoStub{
+		suppressed:                   true,
+		claimedTransactionalMessages: []entity.EmailMessageLog{queued},
+	}
+	sender := &emailSenderStub{}
+	uc := New(stub, sender, Options{})
+
+	err := uc.DispatchDueTransactionalEmails(t.Context(), 20)
+
+	require.NoError(t, err)
+	require.Len(t, sender.sent, 1)
+	require.Len(t, stub.updatedMessages, 1)
+	assert.Equal(t, entity.EmailMessageStatusSent, stub.updatedMessages[0].Status)
+}
+
+func TestTransactionalRetryDelayAfterAttempts(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		attempts int
+		want     time.Duration
+		wantOK   bool
+	}{
+		{name: "first failure", attempts: 1, want: time.Minute, wantOK: true},
+		{name: "second failure", attempts: 2, want: 5 * time.Minute, wantOK: true},
+		{name: "third failure", attempts: 3, want: 15 * time.Minute, wantOK: true},
+		{name: "fourth failure", attempts: 4, want: time.Hour, wantOK: true},
+		{name: "fifth failure", attempts: 5, want: 6 * time.Hour, wantOK: true},
+		{name: "after final retry", attempts: 6, wantOK: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got, ok := transactionalRetryDelayAfterAttempts(tt.attempts)
+
+			assert.Equal(t, tt.wantOK, ok)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
 func TestSendCampaignNowProcessesAllBatchesAndUsesMetadata(t *testing.T) {
 	t.Parallel()
 
@@ -514,6 +766,44 @@ func TestSendCampaignNowProcessesAllBatchesAndUsesMetadata(t *testing.T) {
 	assert.Contains(t, sender.sent[0].Text, "ramadan")
 	assert.Contains(t, sender.sent[0].Text, "https://frontend.example.com/unsubscribe?token=")
 	assert.NotContains(t, sender.sent[0].Text, "https://bad.example.com/unsubscribe")
+	assert.Empty(t, sender.sent[0].Headers)
+}
+
+func TestTestSendCampaignOmitsListUnsubscribeHeadersWithoutToken(t *testing.T) {
+	t.Parallel()
+
+	stub := &emailRepoStub{
+		template: entity.EmailTemplate{
+			ID:       "template-id",
+			Key:      "weekly_digest",
+			Category: entity.EmailCategoryMarketing,
+			Enabled:  true,
+		},
+		publishedVersion: entity.EmailTemplateVersion{
+			ID:              "version-id",
+			TemplateID:      "template-id",
+			Lang:            contentlang.Default,
+			SubjectTemplate: "Update",
+			TextTemplate:    "{{.unsubscribe_url}}",
+			Published:       true,
+		},
+		campaign: entity.EmailCampaign{
+			ID:         "campaign-id",
+			TemplateID: "template-id",
+			Status:     entity.EmailCampaignStatusDraft,
+		},
+	}
+	sender := &emailSenderStub{}
+	uc := New(stub, sender, Options{
+		UnsubscribeURL:       "https://frontend.example.com/unsubscribe",
+		UnsubscribeHeaderURL: "https://api.surau.org/v1/email/unsubscribe",
+	})
+
+	_, err := uc.TestSendCampaign(t.Context(), "campaign-id", "user@example.com", contentlang.Default, nil)
+
+	require.NoError(t, err)
+	require.Len(t, sender.sent, 1)
+	assert.Empty(t, sender.sent[0].Headers)
 }
 
 func TestRetryFailedCampaignRetriesOnlyFailedSnapshot(t *testing.T) {
@@ -607,28 +897,296 @@ func TestRetryFailedCampaignRetriesOnlyFailedSnapshot(t *testing.T) {
 	assert.Contains(t, sender.sent[0].Text, "https://frontend.example.com/unsubscribe?token=failed")
 }
 
+func TestDeliveryEventsPassesFilterToRepo(t *testing.T) {
+	t.Parallel()
+
+	occurredAt := time.Now().UTC()
+	store := &emailRepoStub{
+		deliveryEvents: []entity.EmailDeliveryEvent{
+			{
+				ID:                "event-id",
+				DedupeKey:         "dedupe-key",
+				Provider:          entity.EmailProviderCloudflare,
+				EventType:         entity.EmailDeliveryEventBounceHard,
+				RecipientEmail:    "user@example.com",
+				MessageID:         "message-id",
+				CampaignID:        "campaign-id",
+				CampaignRecipient: "recipient-id",
+				RawPayload:        entity.RawJSON(`{"provider":"cloudflare"}`),
+				OccurredAt:        occurredAt,
+				CreatedAt:         occurredAt,
+			},
+		},
+	}
+	uc := New(store, nil, Options{})
+	filter := repo.EmailDeliveryEventFilter{
+		Provider:            entity.EmailProviderCloudflare,
+		EventType:           entity.EmailDeliveryEventBounceHard,
+		Email:               "USER@example.com",
+		MessageID:           "message-id",
+		CampaignID:          "campaign-id",
+		CampaignRecipientID: "recipient-id",
+		Limit:               25,
+		Offset:              5,
+	}
+
+	events, total, err := uc.DeliveryEvents(t.Context(), filter)
+
+	require.NoError(t, err)
+	assert.Equal(t, filter, store.deliveryEventFilter)
+	assert.Equal(t, 1, total)
+	require.Len(t, events, 1)
+	assert.Equal(t, "event-id", events[0].ID)
+}
+
+func TestDeliveryEventsNormalizesPagination(t *testing.T) {
+	t.Parallel()
+
+	store := &emailRepoStub{}
+	uc := New(store, nil, Options{})
+
+	_, _, err := uc.DeliveryEvents(t.Context(), repo.EmailDeliveryEventFilter{})
+	require.NoError(t, err)
+	assert.Equal(t, uint64(50), store.deliveryEventFilter.Limit)
+	assert.Equal(t, uint64(0), store.deliveryEventFilter.Offset)
+
+	_, _, err = uc.DeliveryEvents(t.Context(), repo.EmailDeliveryEventFilter{Limit: 101, Offset: 7})
+	require.NoError(t, err)
+	assert.Equal(t, uint64(100), store.deliveryEventFilter.Limit)
+	assert.Equal(t, uint64(7), store.deliveryEventFilter.Offset)
+}
+
+func TestCampaignDeliveryEventSummaryEmpty(t *testing.T) {
+	t.Parallel()
+
+	store := &emailRepoStub{}
+	uc := New(store, nil, Options{})
+
+	summary, err := uc.CampaignDeliveryEventSummary(t.Context(), "campaign-id")
+
+	require.NoError(t, err)
+	assert.Equal(t, "campaign-id", store.deliverySummaryCampaignID)
+	assert.Equal(t, "campaign-id", summary.CampaignID)
+	assert.Zero(t, summary.Total)
+	assert.Zero(t, summary.BounceHard)
+	assert.Zero(t, summary.Complaint)
+	assert.Zero(t, summary.UniqueRecipients)
+	assert.Nil(t, summary.LastOccurredAt)
+}
+
+func TestPollCloudflareEmailEventsCreatesSuppressionAndFailsLocalMessage(t *testing.T) {
+	t.Parallel()
+
+	messageID := "10000000-0000-0000-0000-000000000111"
+	occurredAt := time.Date(2026, 6, 5, 1, 2, 3, 0, time.UTC)
+	store := &emailRepoStub{
+		createdMessages: []entity.EmailMessageLog{{
+			ID:             messageID,
+			Category:       entity.EmailCategoryTransactional,
+			RecipientEmail: "user@example.com",
+			Status:         entity.EmailMessageStatusQueued,
+		}},
+	}
+	poller := &emailEventPollerStub{
+		events: []entity.CloudflareEmailEvent{{
+			Datetime:    occurredAt,
+			To:          "user@example.com",
+			Status:      "deliveryFailed",
+			EventType:   "smtp_delivery",
+			MessageID:   messageID,
+			ErrorCause:  "bounce",
+			ErrorDetail: "550 5.1.1 user unknown",
+			RawPayload:  entity.RawJSON(`{"messageId":"10000000-0000-0000-0000-000000000111"}`),
+		}},
+	}
+	uc := New(store, nil, Options{
+		CloudflareEventPoller:     poller,
+		CloudflarePollingZoneID:   "zone-id",
+		CloudflarePollingLookback: 30 * time.Minute,
+		CloudflarePollingLimit:    25,
+	})
+
+	result, err := uc.PollCloudflareEmailEvents(t.Context())
+
+	require.NoError(t, err)
+	assert.Equal(t, entity.EmailWebhookIngestResult{Accepted: 1, Processed: 1, Suppressed: 1}, result)
+	assert.Equal(t, "zone-id", poller.query.ZoneID)
+	assert.Equal(t, 25, poller.query.Limit)
+	assert.WithinDuration(t, time.Now().UTC().Add(-30*time.Minute), poller.query.Start, 2*time.Second)
+	assert.WithinDuration(t, time.Now().UTC(), poller.query.End, 2*time.Second)
+	require.Len(t, store.deliveryEvents, 1)
+	assert.Equal(t, entity.EmailDeliveryEventBounceHard, store.deliveryEvents[0].EventType)
+	assert.Equal(t, "user@example.com", store.deliveryEvents[0].RecipientEmail)
+	assert.Equal(t, messageID, store.deliveryEvents[0].MessageID)
+	assert.Equal(t, "bounce", store.deliveryEvents[0].Reason)
+	assert.Equal(t, "550 5.1.1 user unknown", store.deliveryEvents[0].Diagnostic)
+	require.Len(t, store.suppressions, 1)
+	assert.Equal(t, entity.EmailSuppressionScopeAll, store.suppressions[0].Scope)
+	assert.Equal(t, emailSuppressionReasonPermanentBounce, store.suppressions[0].Reason)
+	require.Len(t, store.updatedMessages, 1)
+	assert.Equal(t, entity.EmailMessageStatusFailed, store.updatedMessages[0].Status)
+	assert.Equal(t, `{"messageId":"10000000-0000-0000-0000-000000000111"}`, store.updatedMessages[0].ProviderResponse)
+	assert.Equal(t, "550 5.1.1 user unknown", store.updatedMessages[0].Error)
+	assert.Equal(t, entity.EmailProviderCloudflare, store.upsertedPollCursor.Provider)
+	assert.Equal(t, "cloudflare:email_sending:zone-id", store.upsertedPollCursor.CursorKey)
+}
+
+func TestPollCloudflareEmailEventsDedupes(t *testing.T) {
+	t.Parallel()
+
+	occurredAt := time.Date(2026, 6, 5, 1, 2, 3, 0, time.UTC)
+	store := &emailRepoStub{}
+	poller := &emailEventPollerStub{
+		events: []entity.CloudflareEmailEvent{{
+			Datetime:    occurredAt,
+			To:          "user@example.com",
+			Status:      "deliveryFailed",
+			MessageID:   "provider-message-id",
+			ErrorDetail: "550 5.1.1 user unknown",
+		}},
+	}
+	uc := New(store, nil, Options{
+		CloudflareEventPoller:   poller,
+		CloudflarePollingZoneID: "zone-id",
+	})
+
+	first, err := uc.PollCloudflareEmailEvents(t.Context())
+	require.NoError(t, err)
+	second, err := uc.PollCloudflareEmailEvents(t.Context())
+	require.NoError(t, err)
+
+	assert.Equal(t, entity.EmailWebhookIngestResult{Accepted: 1, Processed: 1, Suppressed: 1}, first)
+	assert.Equal(t, entity.EmailWebhookIngestResult{Accepted: 1, Processed: 0, Suppressed: 1, Duplicates: 1}, second)
+	require.Len(t, store.deliveryEvents, 1)
+	assert.Equal(t, 2, poller.calls)
+}
+
+func TestPollCloudflareEmailEventsMissingLocalMessageIDStillSuppresses(t *testing.T) {
+	t.Parallel()
+
+	store := &emailRepoStub{}
+	poller := &emailEventPollerStub{
+		events: []entity.CloudflareEmailEvent{{
+			Datetime:    time.Date(2026, 6, 5, 1, 2, 3, 0, time.UTC),
+			To:          "user@example.com",
+			Status:      "deliveryFailed",
+			MessageID:   "<cloudflare-message@example.com>",
+			ErrorDetail: "550 5.1.1 user unknown",
+		}},
+	}
+	uc := New(store, nil, Options{
+		CloudflareEventPoller:   poller,
+		CloudflarePollingZoneID: "zone-id",
+	})
+
+	result, err := uc.PollCloudflareEmailEvents(t.Context())
+
+	require.NoError(t, err)
+	assert.Equal(t, entity.EmailWebhookIngestResult{Accepted: 1, Processed: 1, Suppressed: 1}, result)
+	require.Len(t, store.deliveryEvents, 1)
+	assert.Empty(t, store.deliveryEvents[0].MessageID)
+	assert.Empty(t, store.updatedMessages)
+	require.Len(t, store.suppressions, 1)
+}
+
+func TestPollCloudflareEmailEventsCursorLookback(t *testing.T) {
+	t.Parallel()
+
+	lastPolledAt := time.Date(2026, 6, 5, 1, 0, 0, 0, time.UTC)
+	store := &emailRepoStub{
+		pollCursor: entity.EmailProviderPollCursor{
+			Provider:     entity.EmailProviderCloudflare,
+			CursorKey:    "cloudflare:email_sending:zone-id",
+			LastPolledAt: lastPolledAt,
+		},
+	}
+	poller := &emailEventPollerStub{}
+	uc := New(store, nil, Options{
+		CloudflareEventPoller:     poller,
+		CloudflarePollingZoneID:   "zone-id",
+		CloudflarePollingLookback: 30 * time.Minute,
+	})
+
+	_, err := uc.PollCloudflareEmailEvents(t.Context())
+
+	require.NoError(t, err)
+	assert.Equal(t, lastPolledAt.Add(-30*time.Minute), poller.query.Start)
+}
+
+func TestPollCloudflareEmailEventsDisabledDoesNothing(t *testing.T) {
+	t.Parallel()
+
+	store := &emailRepoStub{}
+	uc := New(store, nil, Options{})
+
+	result, err := uc.PollCloudflareEmailEvents(t.Context())
+
+	require.NoError(t, err)
+	assert.Equal(t, entity.EmailWebhookIngestResult{}, result)
+	assert.Empty(t, store.deliveryEvents)
+	assert.Empty(t, store.upsertedPollCursor.Provider)
+}
+
+func transactionalMessageLogForTest(
+	id string,
+	email string,
+	attempts int,
+	critical bool,
+) entity.EmailMessageLog {
+	scheduledAt := time.Now().UTC().Add(-time.Minute)
+
+	return entity.EmailMessageLog{
+		ID:             id,
+		Category:       entity.EmailCategoryTransactional,
+		TemplateKey:    entity.EmailTemplateKeyVerification,
+		RecipientEmail: email,
+		Lang:           contentlang.Default,
+		Subject:        "Verify",
+		HTML:           "<p>Verify</p>",
+		Text:           "Verify",
+		Critical:       critical,
+		Headers:        map[string]string{"X-Test": "value"},
+		Status:         entity.EmailMessageStatusQueued,
+		Attempts:       attempts,
+		ScheduledAt:    &scheduledAt,
+		CreatedAt:      scheduledAt.Add(-time.Minute),
+		UpdatedAt:      scheduledAt,
+	}
+}
+
 type emailRepoStub struct {
 	repo.EmailRepo
 
-	template          entity.EmailTemplate
-	eventSetting      entity.EmailEventSetting
-	createdVersion    entity.EmailTemplateVersion
-	publishedVersion  entity.EmailTemplateVersion
-	suppressed        bool
-	recipientStatus   string
-	recipientError    string
-	createdMessages   []entity.EmailMessageLog
-	updatedMessages   []entity.EmailMessageLog
-	deliveryEvents    []entity.EmailDeliveryEvent
-	deliveryEventKeys map[string]bool
-	suppressions      []entity.EmailSuppression
-	suppressionByKey  map[string]entity.EmailSuppression
-	campaign          entity.EmailCampaign
-	updatedCampaign   entity.EmailCampaign
-	audience          []entity.EmailAudienceRecipient
-	recipients        []entity.EmailCampaignRecipient
-	recipientStatuses map[string]string
-	recipientErrors   map[string]string
+	template                     entity.EmailTemplate
+	eventSetting                 entity.EmailEventSetting
+	createdVersion               entity.EmailTemplateVersion
+	publishedVersion             entity.EmailTemplateVersion
+	suppressed                   bool
+	recipientStatus              string
+	recipientError               string
+	createdMessages              []entity.EmailMessageLog
+	updatedMessages              []entity.EmailMessageLog
+	scheduledRetries             []entity.EmailMessageLog
+	claimedTransactionalMessages []entity.EmailMessageLog
+	claimNow                     time.Time
+	claimLimit                   int
+	claimVisibilityTimeout       time.Duration
+	deliveryEvents               []entity.EmailDeliveryEvent
+	deliveryEventFilter          repo.EmailDeliveryEventFilter
+	deliveryEventTotal           int
+	deliverySummaryCampaignID    string
+	deliverySummary              entity.EmailCampaignDeliveryEventSummary
+	deliveryEventKeys            map[string]bool
+	pollCursor                   entity.EmailProviderPollCursor
+	upsertedPollCursor           entity.EmailProviderPollCursor
+	suppressions                 []entity.EmailSuppression
+	suppressionByKey             map[string]entity.EmailSuppression
+	campaign                     entity.EmailCampaign
+	updatedCampaign              entity.EmailCampaign
+	audience                     []entity.EmailAudienceRecipient
+	recipients                   []entity.EmailCampaignRecipient
+	recipientStatuses            map[string]string
+	recipientErrors              map[string]string
 }
 
 type emailSenderStub struct {
@@ -637,6 +1195,29 @@ type emailSenderStub struct {
 	resultByEmail map[string]entity.EmailSendResult
 	err           error
 	errByEmail    map[string]error
+}
+
+type emailEventPollerStub struct {
+	query  entity.CloudflareEmailEventPollQuery
+	events []entity.CloudflareEmailEvent
+	err    error
+	calls  int
+}
+
+func (s *emailEventPollerStub) PollCloudflareEmailEvents(
+	ctx context.Context,
+	query entity.CloudflareEmailEventPollQuery,
+) ([]entity.CloudflareEmailEvent, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	s.calls++
+	s.query = query
+	if s.err != nil {
+		return nil, s.err
+	}
+
+	return append([]entity.CloudflareEmailEvent(nil), s.events...), nil
 }
 
 func (s *emailSenderStub) Send(ctx context.Context, message entity.EmailMessage) (entity.EmailSendResult, error) {
@@ -710,6 +1291,18 @@ func (s *emailRepoStub) GetPublishedEmailTemplateVersion(
 	return entity.EmailTemplateVersion{}, entity.EmailTemplate{}, entity.ErrEmailTemplateVersionNotFound
 }
 
+func (s *emailRepoStub) GetLatestEmailTemplateVersion(
+	_ context.Context,
+	templateID,
+	lang string,
+) (entity.EmailTemplateVersion, error) {
+	if s.publishedVersion.TemplateID == templateID && s.publishedVersion.Lang == lang {
+		return s.publishedVersion, nil
+	}
+
+	return entity.EmailTemplateVersion{}, entity.ErrEmailTemplateVersionNotFound
+}
+
 func (s *emailRepoStub) IsEmailSuppressed(
 	context.Context,
 	string,
@@ -758,6 +1351,60 @@ func (s *emailRepoStub) UpsertEmailDeliveryEvent(
 	return event, true, nil
 }
 
+func (s *emailRepoStub) ListEmailDeliveryEvents(
+	_ context.Context,
+	filter repo.EmailDeliveryEventFilter,
+) ([]entity.EmailDeliveryEvent, int, error) {
+	s.deliveryEventFilter = filter
+	total := s.deliveryEventTotal
+	if total == 0 {
+		total = len(s.deliveryEvents)
+	}
+
+	return append([]entity.EmailDeliveryEvent(nil), s.deliveryEvents...), total, nil
+}
+
+func (s *emailRepoStub) GetEmailCampaignDeliveryEventSummary(
+	_ context.Context,
+	campaignID string,
+) (entity.EmailCampaignDeliveryEventSummary, error) {
+	s.deliverySummaryCampaignID = campaignID
+	summary := s.deliverySummary
+	if summary.CampaignID == "" {
+		summary.CampaignID = campaignID
+	}
+
+	return summary, nil
+}
+
+func (s *emailRepoStub) GetEmailProviderPollCursor(
+	_ context.Context,
+	provider string,
+	cursorKey string,
+) (entity.EmailProviderPollCursor, error) {
+	if s.pollCursor.Provider == provider && s.pollCursor.CursorKey == cursorKey {
+		return s.pollCursor, nil
+	}
+
+	return entity.EmailProviderPollCursor{}, entity.ErrEmailProviderPollCursorNotFound
+}
+
+func (s *emailRepoStub) UpsertEmailProviderPollCursor(
+	_ context.Context,
+	cursor entity.EmailProviderPollCursor,
+) (entity.EmailProviderPollCursor, error) {
+	if cursor.CreatedAt.IsZero() {
+		cursor.CreatedAt = time.Now().UTC()
+	}
+	if cursor.UpdatedAt.IsZero() {
+		cursor.UpdatedAt = time.Now().UTC()
+	}
+	s.pollCursor = cursor
+	s.upsertedPollCursor = cursor
+
+	return cursor, nil
+}
+
 func (s *emailRepoStub) CreateEmailMessage(
 	_ context.Context,
 	message entity.EmailMessageLog,
@@ -795,8 +1442,83 @@ func (s *emailRepoStub) UpdateEmailMessageStatus(
 
 		return updated, nil
 	}
+	for idx := range s.claimedTransactionalMessages {
+		if s.claimedTransactionalMessages[idx].ID != id {
+			continue
+		}
+		updated := s.claimedTransactionalMessages[idx]
+		updated.Status = status
+		updated.Attempts = attempts
+		updated.ProviderResponse = providerResponse
+		updated.Error = deliveryError
+		updated.ScheduledAt = nil
+		updated.SentAt = sentAt
+		updated.UpdatedAt = time.Now().UTC()
+		s.claimedTransactionalMessages[idx] = updated
+		s.updatedMessages = append(s.updatedMessages, updated)
+
+		return updated, nil
+	}
 
 	return entity.EmailMessageLog{}, entity.ErrEmailMessageNotFound
+}
+
+func (s *emailRepoStub) ScheduleEmailMessageRetry(
+	_ context.Context,
+	id string,
+	attempts int,
+	providerResponse string,
+	deliveryError string,
+	scheduledAt time.Time,
+) (entity.EmailMessageLog, error) {
+	updateMessage := func(message entity.EmailMessageLog) entity.EmailMessageLog {
+		message.Status = entity.EmailMessageStatusQueued
+		message.Attempts = attempts
+		message.ProviderResponse = providerResponse
+		message.Error = deliveryError
+		message.ScheduledAt = &scheduledAt
+		message.SentAt = nil
+		message.UpdatedAt = time.Now().UTC()
+
+		return message
+	}
+	for idx := range s.createdMessages {
+		if s.createdMessages[idx].ID != id {
+			continue
+		}
+		updated := updateMessage(s.createdMessages[idx])
+		s.createdMessages[idx] = updated
+		s.scheduledRetries = append(s.scheduledRetries, updated)
+		s.updatedMessages = append(s.updatedMessages, updated)
+
+		return updated, nil
+	}
+	for idx := range s.claimedTransactionalMessages {
+		if s.claimedTransactionalMessages[idx].ID != id {
+			continue
+		}
+		updated := updateMessage(s.claimedTransactionalMessages[idx])
+		s.claimedTransactionalMessages[idx] = updated
+		s.scheduledRetries = append(s.scheduledRetries, updated)
+		s.updatedMessages = append(s.updatedMessages, updated)
+
+		return updated, nil
+	}
+
+	return entity.EmailMessageLog{}, entity.ErrEmailMessageNotFound
+}
+
+func (s *emailRepoStub) ClaimDueTransactionalEmailMessages(
+	_ context.Context,
+	now time.Time,
+	limit int,
+	visibilityTimeout time.Duration,
+) ([]entity.EmailMessageLog, error) {
+	s.claimNow = now
+	s.claimLimit = limit
+	s.claimVisibilityTimeout = visibilityTimeout
+
+	return append([]entity.EmailMessageLog(nil), s.claimedTransactionalMessages...), nil
 }
 
 func (s *emailRepoStub) GetEmailCampaign(
