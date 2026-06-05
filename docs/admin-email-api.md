@@ -143,6 +143,8 @@ Message log:
 GET /v1/admin/emails/messages?category=marketing&status=failed&email=user@example.com&limit=50&offset=0
 ```
 
+Sensitive message metadata such as `link`, `otp`, `token`, `unsubscribe_url`, and URL values with a `token` query parameter are stored as `[redacted]`.
+
 Suppression list:
 
 ```http
@@ -215,6 +217,7 @@ Schedule body:
 
 Campaign statuses are `draft`, `scheduled`, `sending`, `sent`, and `cancelled`.
 Recipient statuses are `pending`, `sent`, `failed`, and `skipped`.
+After send, campaign `metadata` includes `delivery_total`, `delivery_sent`, `delivery_failed`, `delivery_skipped`, and `delivery_finished_at`.
 
 ## User Preferences And Unsubscribe
 
@@ -232,6 +235,8 @@ Patch body:
   "marketing_opt_in": true
 }
 ```
+
+Setting `marketing_opt_in=true` also removes the user's `marketing/unsubscribe` suppression entry when one exists.
 
 Public unsubscribe endpoints for FE pages:
 

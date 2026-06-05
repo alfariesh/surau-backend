@@ -2,6 +2,7 @@ package email
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -134,7 +135,7 @@ func TestDeliverCampaignRecipientMarksSuppressedAsSkipped(t *testing.T) {
 		suppressed: true,
 	}
 	uc := New(stub, nil, Options{})
-	err := uc.deliverCampaignRecipient(
+	status, err := uc.deliverCampaignRecipient(
 		t.Context(),
 		entity.EmailCampaign{ID: "campaign-id", TemplateID: "template-id"},
 		entity.EmailCampaignRecipient{
@@ -147,19 +148,214 @@ func TestDeliverCampaignRecipientMarksSuppressedAsSkipped(t *testing.T) {
 	)
 
 	require.NoError(t, err)
+	assert.Equal(t, entity.EmailRecipientStatusSkipped, status)
 	assert.Equal(t, entity.EmailRecipientStatusSkipped, stub.recipientStatus)
 	assert.Equal(t, "suppressed", stub.recipientError)
+}
+
+func TestSendTransactionalRedactsSensitiveMetadata(t *testing.T) {
+	t.Parallel()
+
+	stub := &emailRepoStub{}
+	sender := &emailSenderStub{}
+	uc := New(stub, sender, Options{})
+
+	err := uc.SendTransactional(t.Context(), entity.TransactionalEmailRequest{
+		Key:  entity.EmailTemplateKeyVerification,
+		To:   "user@example.com",
+		Lang: contentlang.Default,
+		Variables: map[string]string{
+			"link":            "https://frontend.example.com/verify-email?token=secret",
+			"otp":             "123456",
+			"unsubscribe_url": "https://frontend.example.com/unsubscribe?token=secret",
+			"relative_link":   "/verify-email?token=secret",
+			"duration":        "10 menit",
+		},
+		Fallback: entity.EmailMessage{
+			To:      "user@example.com",
+			Subject: "Verify",
+			Text:    "Verify",
+		},
+	})
+
+	require.NoError(t, err)
+	require.Len(t, sender.sent, 1)
+	require.Len(t, stub.createdMessages, 1)
+	assert.Equal(t, redactedValue, stub.createdMessages[0].Metadata["link"])
+	assert.Equal(t, redactedValue, stub.createdMessages[0].Metadata["otp"])
+	assert.Equal(t, redactedValue, stub.createdMessages[0].Metadata["unsubscribe_url"])
+	assert.Equal(t, redactedValue, stub.createdMessages[0].Metadata["relative_link"])
+	assert.Equal(t, "10 menit", stub.createdMessages[0].Metadata["duration"])
+}
+
+func TestSendTransactionalCriticalBypassesSuppression(t *testing.T) {
+	t.Parallel()
+
+	stub := &emailRepoStub{suppressed: true}
+	sender := &emailSenderStub{}
+	uc := New(stub, sender, Options{})
+
+	err := uc.SendTransactional(t.Context(), entity.TransactionalEmailRequest{
+		Key:      entity.EmailTemplateKeyVerification,
+		To:       "user@example.com",
+		Lang:     contentlang.Default,
+		Critical: true,
+		Fallback: entity.EmailMessage{
+			To:      "user@example.com",
+			Subject: "Verify",
+			Text:    "Verify",
+		},
+	})
+
+	require.NoError(t, err)
+	require.Len(t, sender.sent, 1)
+	require.Len(t, stub.updatedMessages, 1)
+	assert.Equal(t, entity.EmailMessageStatusSent, stub.updatedMessages[0].Status)
+	assert.Equal(t, "user@example.com", sender.sent[0].To)
+}
+
+func TestSendTransactionalCriticalTemplateRenderFallback(t *testing.T) {
+	t.Parallel()
+
+	stub := &emailRepoStub{
+		template: entity.EmailTemplate{
+			ID:       "template-id",
+			Key:      entity.EmailTemplateKeyVerification,
+			Category: entity.EmailCategoryTransactional,
+			Critical: true,
+			Enabled:  true,
+		},
+		eventSetting: entity.EmailEventSetting{
+			Key:        entity.EmailTemplateKeyVerification,
+			TemplateID: "template-id",
+			Enabled:    false,
+			Critical:   false,
+		},
+		publishedVersion: entity.EmailTemplateVersion{
+			ID:              "version-id",
+			TemplateID:      "template-id",
+			Lang:            contentlang.Default,
+			SubjectTemplate: "Halo {{.missing}}",
+			TextTemplate:    "Text {{.missing}}",
+			Published:       true,
+		},
+	}
+	sender := &emailSenderStub{}
+	uc := New(stub, sender, Options{})
+
+	err := uc.SendTransactional(t.Context(), entity.TransactionalEmailRequest{
+		Key:  entity.EmailTemplateKeyVerification,
+		To:   "user@example.com",
+		Lang: contentlang.Default,
+		Variables: map[string]string{
+			"link": "https://frontend.example.com/verify-email?token=secret",
+		},
+		Fallback: entity.EmailMessage{
+			To:      "user@example.com",
+			Subject: "Fallback",
+			Text:    "Fallback text",
+		},
+	})
+
+	require.NoError(t, err)
+	require.Len(t, sender.sent, 1)
+	require.Len(t, stub.createdMessages, 1)
+	assert.Equal(t, "Fallback", sender.sent[0].Subject)
+	assert.Equal(t, redactedValue, stub.createdMessages[0].Metadata["link"])
+	assert.NotEmpty(t, stub.createdMessages[0].Metadata["template_render_error"])
+}
+
+func TestSendCampaignNowProcessesAllBatchesAndUsesMetadata(t *testing.T) {
+	t.Parallel()
+
+	const recipientCount = defaultBatchSize + 1
+	audience := make([]entity.EmailAudienceRecipient, 0, recipientCount)
+	for i := 0; i < recipientCount; i++ {
+		audience = append(audience, entity.EmailAudienceRecipient{
+			UserID: fmt.Sprintf("user-id-%d", i+1),
+			Email:  fmt.Sprintf("user%d@example.com", i+1),
+			Lang:   contentlang.Default,
+		})
+	}
+	stub := &emailRepoStub{
+		template: entity.EmailTemplate{
+			ID:       "template-id",
+			Key:      "weekly_digest",
+			Category: entity.EmailCategoryMarketing,
+			Enabled:  true,
+		},
+		publishedVersion: entity.EmailTemplateVersion{
+			ID:              "version-id",
+			TemplateID:      "template-id",
+			Lang:            contentlang.Default,
+			SubjectTemplate: "Update {{.topic}}",
+			TextTemplate:    "{{.topic}} {{.email}} {{.unsubscribe_url}}",
+			Published:       true,
+		},
+		campaign: entity.EmailCampaign{
+			ID:         "campaign-id",
+			Name:       "Ramadan Digest",
+			TemplateID: "template-id",
+			Status:     entity.EmailCampaignStatusDraft,
+			Metadata: map[string]string{
+				"topic":           "ramadan",
+				"unsubscribe_url": "https://bad.example.com/unsubscribe",
+			},
+		},
+		audience: audience,
+	}
+	sender := &emailSenderStub{}
+	uc := New(stub, sender, Options{
+		UnsubscribeURL:       "https://frontend.example.com/unsubscribe",
+		UnsubscribeTokenSeed: "secret",
+	})
+
+	campaign, err := uc.SendCampaignNow(t.Context(), "campaign-id", "admin-id")
+
+	require.NoError(t, err)
+	require.Len(t, sender.sent, recipientCount)
+	assert.Equal(t, entity.EmailCampaignStatusSent, campaign.Status)
+	assert.Equal(t, fmt.Sprintf("%d", recipientCount), campaign.Metadata[campaignMetadataDeliveryTotal])
+	assert.Equal(t, fmt.Sprintf("%d", recipientCount), campaign.Metadata[campaignMetadataDeliverySent])
+	assert.Equal(t, "0", campaign.Metadata[campaignMetadataDeliveryFailed])
+	assert.Equal(t, "0", campaign.Metadata[campaignMetadataDeliverySkipped])
+	assert.Contains(t, sender.sent[0].Text, "ramadan")
+	assert.Contains(t, sender.sent[0].Text, "https://frontend.example.com/unsubscribe?token=")
+	assert.NotContains(t, sender.sent[0].Text, "https://bad.example.com/unsubscribe")
 }
 
 type emailRepoStub struct {
 	repo.EmailRepo
 
-	template         entity.EmailTemplate
-	createdVersion   entity.EmailTemplateVersion
-	publishedVersion entity.EmailTemplateVersion
-	suppressed       bool
-	recipientStatus  string
-	recipientError   string
+	template          entity.EmailTemplate
+	eventSetting      entity.EmailEventSetting
+	createdVersion    entity.EmailTemplateVersion
+	publishedVersion  entity.EmailTemplateVersion
+	suppressed        bool
+	recipientStatus   string
+	recipientError    string
+	createdMessages   []entity.EmailMessageLog
+	updatedMessages   []entity.EmailMessageLog
+	campaign          entity.EmailCampaign
+	updatedCampaign   entity.EmailCampaign
+	audience          []entity.EmailAudienceRecipient
+	recipients        []entity.EmailCampaignRecipient
+	recipientStatuses map[string]string
+	recipientErrors   map[string]string
+}
+
+type emailSenderStub struct {
+	sent []entity.EmailMessage
+	err  error
+}
+
+func (s *emailSenderStub) Send(ctx context.Context, message entity.EmailMessage) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	s.sent = append(s.sent, message)
+
+	return s.err
 }
 
 func (s *emailRepoStub) CreateEmailTemplateVersion(
@@ -183,6 +379,17 @@ func (s *emailRepoStub) GetEmailTemplateByID(
 	}
 
 	return entity.EmailTemplate{}, entity.ErrEmailTemplateNotFound
+}
+
+func (s *emailRepoStub) GetEmailEventSetting(
+	_ context.Context,
+	key string,
+) (entity.EmailEventSetting, error) {
+	if s.eventSetting.Key == key {
+		return s.eventSetting, nil
+	}
+
+	return entity.EmailEventSetting{}, entity.ErrEmailEventSettingNotFound
 }
 
 func (s *emailRepoStub) GetPublishedEmailTemplateVersion(
@@ -210,22 +417,175 @@ func (s *emailRepoStub) CreateEmailMessage(
 	message entity.EmailMessageLog,
 ) (entity.EmailMessageLog, error) {
 	if message.ID == "" {
-		message.ID = "message-id"
+		message.ID = fmt.Sprintf("message-id-%d", len(s.createdMessages)+1)
 	}
+	s.createdMessages = append(s.createdMessages, message)
 
 	return message, nil
 }
 
+func (s *emailRepoStub) UpdateEmailMessageStatus(
+	_ context.Context,
+	id string,
+	status string,
+	attempts int,
+	providerResponse string,
+	deliveryError string,
+	sentAt *time.Time,
+) (entity.EmailMessageLog, error) {
+	for idx := range s.createdMessages {
+		if s.createdMessages[idx].ID != id {
+			continue
+		}
+		updated := s.createdMessages[idx]
+		updated.Status = status
+		updated.Attempts = attempts
+		updated.ProviderResponse = providerResponse
+		updated.Error = deliveryError
+		updated.SentAt = sentAt
+		updated.UpdatedAt = time.Now().UTC()
+		s.createdMessages[idx] = updated
+		s.updatedMessages = append(s.updatedMessages, updated)
+
+		return updated, nil
+	}
+
+	return entity.EmailMessageLog{}, entity.ErrEmailMessageNotFound
+}
+
+func (s *emailRepoStub) GetEmailCampaign(
+	_ context.Context,
+	id string,
+) (entity.EmailCampaign, error) {
+	if s.campaign.ID == id {
+		return s.campaign, nil
+	}
+
+	return entity.EmailCampaign{}, entity.ErrEmailCampaignNotFound
+}
+
+func (s *emailRepoStub) ClaimEmailCampaignForSending(
+	_ context.Context,
+	id,
+	actorID string,
+) (entity.EmailCampaign, error) {
+	if s.campaign.ID != id {
+		return entity.EmailCampaign{}, entity.ErrEmailCampaignNotFound
+	}
+	if s.campaign.Status != entity.EmailCampaignStatusDraft &&
+		s.campaign.Status != entity.EmailCampaignStatusScheduled {
+		return entity.EmailCampaign{}, entity.ErrInvalidEmailCampaign
+	}
+	s.campaign.Status = entity.EmailCampaignStatusSending
+	s.campaign.UpdatedBy = nullableActor(actorID)
+
+	return s.campaign, nil
+}
+
+func (s *emailRepoStub) UpdateEmailCampaign(
+	_ context.Context,
+	campaign entity.EmailCampaign,
+) (entity.EmailCampaign, error) {
+	if s.campaign.ID != "" && s.campaign.ID != campaign.ID {
+		return entity.EmailCampaign{}, entity.ErrEmailCampaignNotFound
+	}
+	s.campaign = campaign
+	s.updatedCampaign = campaign
+
+	return campaign, nil
+}
+
+func (s *emailRepoStub) ListMarketingAudience(
+	_ context.Context,
+	filter entity.EmailAudienceFilter,
+) ([]entity.EmailAudienceRecipient, int, error) {
+	total := len(s.audience)
+	if filter.Limit > 0 && filter.Limit < len(s.audience) {
+		return append([]entity.EmailAudienceRecipient(nil), s.audience[:filter.Limit]...), total, nil
+	}
+
+	return append([]entity.EmailAudienceRecipient(nil), s.audience...), total, nil
+}
+
+func (s *emailRepoStub) ReplaceEmailCampaignRecipients(
+	_ context.Context,
+	campaignID string,
+	recipients []entity.EmailCampaignRecipient,
+) error {
+	s.recipients = append([]entity.EmailCampaignRecipient(nil), recipients...)
+	s.recipientStatuses = map[string]string{}
+	s.recipientErrors = map[string]string{}
+	for _, recipient := range recipients {
+		if recipient.CampaignID != campaignID {
+			continue
+		}
+		s.recipientStatuses[recipient.ID] = recipient.Status
+	}
+
+	return nil
+}
+
+func (s *emailRepoStub) ListEmailCampaignRecipients(
+	_ context.Context,
+	campaignID string,
+	status string,
+	limit int,
+) ([]entity.EmailCampaignRecipient, error) {
+	if limit <= 0 {
+		limit = len(s.recipients)
+	}
+	recipients := make([]entity.EmailCampaignRecipient, 0, min(limit, len(s.recipients)))
+	for _, recipient := range s.recipients {
+		if recipient.CampaignID != campaignID {
+			continue
+		}
+		currentStatus := s.recipientStatuses[recipient.ID]
+		if currentStatus == "" {
+			currentStatus = recipient.Status
+		}
+		if status != "" && currentStatus != status {
+			continue
+		}
+		recipient.Status = currentStatus
+		recipient.Error = s.recipientErrors[recipient.ID]
+		recipients = append(recipients, recipient)
+		if len(recipients) == limit {
+			break
+		}
+	}
+
+	return recipients, nil
+}
+
 func (s *emailRepoStub) UpdateEmailCampaignRecipientStatus(
 	_ context.Context,
-	_ string,
+	id string,
 	status string,
-	_ string,
+	messageID string,
 	deliveryError string,
-	_ *time.Time,
+	sentAt *time.Time,
 ) (entity.EmailCampaignRecipient, error) {
+	if s.recipientStatuses == nil {
+		s.recipientStatuses = map[string]string{}
+	}
+	if s.recipientErrors == nil {
+		s.recipientErrors = map[string]string{}
+	}
 	s.recipientStatus = status
 	s.recipientError = deliveryError
+	s.recipientStatuses[id] = status
+	s.recipientErrors[id] = deliveryError
+	for idx := range s.recipients {
+		if s.recipients[idx].ID != id {
+			continue
+		}
+		s.recipients[idx].Status = status
+		s.recipients[idx].MessageID = messageID
+		s.recipients[idx].Error = deliveryError
+		s.recipients[idx].SentAt = sentAt
 
-	return entity.EmailCampaignRecipient{Status: status, Error: deliveryError}, nil
+		return s.recipients[idx], nil
+	}
+
+	return entity.EmailCampaignRecipient{ID: id, Status: status, MessageID: messageID, Error: deliveryError}, nil
 }

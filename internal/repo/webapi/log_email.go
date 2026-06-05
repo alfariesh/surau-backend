@@ -29,11 +29,10 @@ func (s *LogEmailSender) Send(ctx context.Context, message entity.EmailMessage) 
 	}
 
 	log.Printf(
-		"DEV_EMAIL to=%q subject=%q link=%q text=%q",
+		"DEV_EMAIL to=%q subject=%q link=%q",
 		message.To,
 		message.Subject,
 		link,
-		strings.TrimSpace(message.Text),
 	)
 
 	return nil

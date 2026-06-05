@@ -11,6 +11,7 @@ DEV_EMAIL to="user@example.com" subject="Reset your Surau password" link="http:/
 ```
 
 berarti backend sedang berada di mode log/local. Email tidak dikirim ke inbox. Link hanya dicetak ke log agar flow auth bisa dites tanpa provider email.
+Body plaintext penuh tidak dicetak ke log.
 
 Untuk mengetes email sungguhan, backend harus memakai Cloudflare Email Service.
 
@@ -29,6 +30,7 @@ EMAIL_VERIFY_FRONTEND_URL=http://localhost:3005/verify-email
 PASSWORD_RESET_FRONTEND_URL=http://localhost:3005/reset-password
 EMAIL_CHANGE_FRONTEND_URL=http://localhost:3005/change-email
 EMAIL_UNSUBSCRIBE_FRONTEND_URL=http://localhost:3005/unsubscribe
+EMAIL_UNSUBSCRIBE_TOKEN_SECRET=
 EMAIL_HTTP_TIMEOUT=10s
 ```
 
@@ -39,6 +41,7 @@ Catatan:
 - `EMAIL_FROM_ADDRESS` harus memakai domain yang sudah aktif di Cloudflare Email Service.
 - `EMAIL_VERIFY_FRONTEND_URL`, `PASSWORD_RESET_FRONTEND_URL`, dan `EMAIL_CHANGE_FRONTEND_URL` harus mengarah ke port frontend yang sedang dipakai.
 - `EMAIL_UNSUBSCRIBE_FRONTEND_URL` dipakai untuk link unsubscribe campaign marketing. Jika kosong, backend menurunkan URL dari `EMAIL_VERIFY_FRONTEND_URL` dengan path `/unsubscribe`.
+- `EMAIL_UNSUBSCRIBE_TOKEN_SECRET` opsional. Jika kosong, backend memakai `JWT_SECRET` sebagai fallback seed token unsubscribe.
 
 ## Restart Backend
 

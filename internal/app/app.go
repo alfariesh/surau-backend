@@ -75,7 +75,7 @@ func initUseCases(cfg *config.Config, pg *postgres.Postgres, jwtManager *jwt.Man
 	emailUC := emailusecase.New(emailRepo, emailSender, emailusecase.Options{
 		SupportEmail:         cfg.Email.ReplyTo,
 		UnsubscribeURL:       unsubscribeFrontendURL(cfg),
-		UnsubscribeTokenSeed: cfg.JWT.Secret,
+		UnsubscribeTokenSeed: unsubscribeTokenSeed(cfg),
 	})
 	var rateLimiter repo.AuthRateLimitRepo
 	if cfg.AuthRateLimit.Enabled {
@@ -297,4 +297,12 @@ func unsubscribeFrontendURL(cfg *config.Config) string {
 	parsed.RawQuery = ""
 
 	return parsed.String()
+}
+
+func unsubscribeTokenSeed(cfg *config.Config) string {
+	if cfg.Email.UnsubscribeTokenSecret != "" {
+		return cfg.Email.UnsubscribeTokenSecret
+	}
+
+	return cfg.JWT.Secret
 }

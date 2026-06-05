@@ -80,6 +80,7 @@ type (
 		EmailChangeTTL           time.Duration `env:"EMAIL_CHANGE_TTL" envDefault:"24h"`
 		EmailChangeCooldown      time.Duration `env:"EMAIL_CHANGE_RESEND_COOLDOWN" envDefault:"1m"`
 		UnsubscribeFrontendURL   string        `env:"EMAIL_UNSUBSCRIBE_FRONTEND_URL"`
+		UnsubscribeTokenSecret   string        `env:"EMAIL_UNSUBSCRIBE_TOKEN_SECRET"`
 		HTTPTimeout              time.Duration `env:"EMAIL_HTTP_TIMEOUT" envDefault:"10s"`
 	}
 
@@ -186,6 +187,7 @@ func NewConfig() (*Config, error) {
 	cfg.Email.PasswordResetFrontendURL = strings.TrimSpace(cfg.Email.PasswordResetFrontendURL)
 	cfg.Email.EmailChangeFrontendURL = strings.TrimSpace(cfg.Email.EmailChangeFrontendURL)
 	cfg.Email.UnsubscribeFrontendURL = strings.TrimSpace(cfg.Email.UnsubscribeFrontendURL)
+	cfg.Email.UnsubscribeTokenSecret = strings.TrimSpace(cfg.Email.UnsubscribeTokenSecret)
 	switch cfg.Email.DeliveryMode {
 	case EmailDeliveryModeCloudflare:
 		if strings.TrimSpace(cfg.Email.CloudflareAccountID) == "" {

@@ -25,6 +25,13 @@ import (
 const (
 	defaultSupportEmail = "support@surau.org"
 	defaultBatchSize    = 500
+	redactedValue       = "[redacted]"
+
+	campaignMetadataDeliveryTotal      = "delivery_total"
+	campaignMetadataDeliverySent       = "delivery_sent"
+	campaignMetadataDeliveryFailed     = "delivery_failed"
+	campaignMetadataDeliverySkipped    = "delivery_skipped"
+	campaignMetadataDeliveryFinishedAt = "delivery_finished_at"
 )
 
 // Options configures the admin-managed email service.
@@ -41,6 +48,17 @@ type UseCase struct {
 	supportEmail   string
 	unsubscribeURL string
 	tokenSeed      string
+}
+
+type campaignClaimer interface {
+	ClaimEmailCampaignForSending(ctx context.Context, id, actorID string) (entity.EmailCampaign, error)
+}
+
+type campaignDeliveryStats struct {
+	total   int
+	sent    int
+	failed  int
+	skipped int
 }
 
 // New creates an email use case.
@@ -64,12 +82,14 @@ func (uc *UseCase) SendTransactional(ctx context.Context, req entity.Transaction
 	}
 
 	lang := contentlang.MustNormalize(req.Lang)
+	variables := cloneMap(req.Variables)
 	message := req.Fallback
+	message.Critical = message.Critical || req.Critical
 	message.Category = entity.EmailCategoryTransactional
 	message.TemplateKey = req.Key
 	message.Lang = lang
 	message.UserID = req.UserID
-	message.Metadata = req.Variables
+	message.Metadata = variables
 	if message.To == "" {
 		message.To = req.To
 	}
@@ -78,20 +98,37 @@ func (uc *UseCase) SendTransactional(ctx context.Context, req entity.Transaction
 	if err != nil && !errors.Is(err, entity.ErrEmailEventSettingNotFound) {
 		return fmt.Errorf("EmailUseCase - SendTransactional - GetEmailEventSetting: %w", err)
 	}
-	if err == nil && !setting.Enabled && !setting.Critical && !req.Critical {
-		return uc.logSkipped(ctx, message)
+	if err == nil && setting.Critical {
+		message.Critical = true
+	}
+	if err == nil && !setting.Enabled && !setting.Critical && !message.Critical {
+		templateCritical, templateErr := uc.templateIsCritical(ctx, setting.TemplateID)
+		if templateErr != nil {
+			return fmt.Errorf("EmailUseCase - SendTransactional - GetEmailTemplateByID: %w", templateErr)
+		}
+		if !templateCritical {
+			return uc.logSkipped(ctx, message)
+		}
+		message.Critical = true
 	}
 
-	version, _, err := uc.publishedVersionForKey(ctx, req.Key, lang)
+	version, template, err := uc.publishedVersionForKey(ctx, req.Key, lang)
 	if err == nil {
-		preview, renderErr := uc.render(version, req.Variables)
-		if renderErr != nil {
-			return renderErr
+		if template.Critical {
+			message.Critical = true
 		}
-		message.Subject = preview.Subject
-		message.HTML = preview.HTML
-		message.Text = preview.Text
-		message.TemplateVersionID = version.ID
+		preview, renderErr := uc.render(version, variables)
+		if renderErr != nil {
+			if !message.Critical {
+				return renderErr
+			}
+			variables["template_render_error"] = renderErr.Error()
+		} else {
+			message.Subject = preview.Subject
+			message.HTML = preview.HTML
+			message.Text = preview.Text
+			message.TemplateVersionID = version.ID
+		}
 	} else if !errors.Is(err, entity.ErrEmailTemplateVersionNotFound) {
 		return fmt.Errorf("EmailUseCase - SendTransactional - GetPublishedEmailTemplateVersion: %w", err)
 	}
@@ -445,16 +482,18 @@ func (uc *UseCase) SendCampaignNow(ctx context.Context, id, actorID string) (ent
 	if err = uc.ensureMarketingTemplate(ctx, campaign.TemplateID); err != nil {
 		return entity.EmailCampaign{}, err
 	}
-	if err = uc.prepareCampaignRecipients(ctx, campaign); err != nil {
-		return entity.EmailCampaign{}, err
-	}
-	campaign.Status = entity.EmailCampaignStatusSending
-	campaign.UpdatedBy = nullableActor(actorID)
-	campaign, err = uc.repo.UpdateEmailCampaign(ctx, campaign)
+	previousStatus := campaign.Status
+	campaign, err = uc.claimCampaignForSending(ctx, campaign, actorID)
 	if err != nil {
 		return entity.EmailCampaign{}, err
 	}
-	if err = uc.deliverCampaign(ctx, campaign); err != nil {
+	if err = uc.prepareCampaignRecipients(ctx, campaign); err != nil {
+		_ = uc.restoreCampaignStatus(ctx, campaign, previousStatus, actorID)
+
+		return entity.EmailCampaign{}, err
+	}
+	stats, err := uc.deliverCampaign(ctx, campaign)
+	if err != nil {
 		return entity.EmailCampaign{}, err
 	}
 
@@ -462,6 +501,7 @@ func (uc *UseCase) SendCampaignNow(ctx context.Context, id, actorID string) (ent
 	campaign.Status = entity.EmailCampaignStatusSent
 	campaign.SentAt = &now
 	campaign.UpdatedBy = nullableActor(actorID)
+	campaign.Metadata = campaignMetadataWithDeliveryStats(campaign.Metadata, stats, now)
 
 	return uc.repo.UpdateEmailCampaign(ctx, campaign)
 }
@@ -575,30 +615,74 @@ func (uc *UseCase) prepareCampaignRecipients(ctx context.Context, campaign entit
 	return uc.repo.ReplaceEmailCampaignRecipients(ctx, campaign.ID, recipients)
 }
 
-func (uc *UseCase) deliverCampaign(ctx context.Context, campaign entity.EmailCampaign) error {
-	recipients, err := uc.repo.ListEmailCampaignRecipients(
-		ctx,
-		campaign.ID,
-		entity.EmailRecipientStatusPending,
-		defaultBatchSize,
-	)
-	if err != nil {
-		return err
-	}
-	for _, recipient := range recipients {
-		if err = uc.deliverCampaignRecipient(ctx, campaign, recipient); err != nil {
-			return err
-		}
+func (uc *UseCase) claimCampaignForSending(
+	ctx context.Context,
+	campaign entity.EmailCampaign,
+	actorID string,
+) (entity.EmailCampaign, error) {
+	if claimer, ok := uc.repo.(campaignClaimer); ok {
+		return claimer.ClaimEmailCampaignForSending(ctx, campaign.ID, actorID)
 	}
 
-	return nil
+	campaign.Status = entity.EmailCampaignStatusSending
+	campaign.UpdatedBy = nullableActor(actorID)
+
+	return uc.repo.UpdateEmailCampaign(ctx, campaign)
+}
+
+func (uc *UseCase) restoreCampaignStatus(
+	ctx context.Context,
+	campaign entity.EmailCampaign,
+	status string,
+	actorID string,
+) error {
+	campaign.Status = status
+	campaign.UpdatedBy = nullableActor(actorID)
+
+	_, err := uc.repo.UpdateEmailCampaign(ctx, campaign)
+
+	return err
+}
+
+func (uc *UseCase) deliverCampaign(ctx context.Context, campaign entity.EmailCampaign) (campaignDeliveryStats, error) {
+	var stats campaignDeliveryStats
+	for {
+		recipients, err := uc.repo.ListEmailCampaignRecipients(
+			ctx,
+			campaign.ID,
+			entity.EmailRecipientStatusPending,
+			defaultBatchSize,
+		)
+		if err != nil {
+			return stats, err
+		}
+		if len(recipients) == 0 {
+			return stats, nil
+		}
+
+		for _, recipient := range recipients {
+			status, err := uc.deliverCampaignRecipient(ctx, campaign, recipient)
+			if err != nil {
+				return stats, err
+			}
+			stats.total++
+			switch status {
+			case entity.EmailRecipientStatusSent:
+				stats.sent++
+			case entity.EmailRecipientStatusSkipped:
+				stats.skipped++
+			case entity.EmailRecipientStatusFailed:
+				stats.failed++
+			}
+		}
+	}
 }
 
 func (uc *UseCase) deliverCampaignRecipient(
 	ctx context.Context,
 	campaign entity.EmailCampaign,
 	recipient entity.EmailCampaignRecipient,
-) error {
+) (string, error) {
 	version, err := uc.publishedVersionForTemplate(ctx, campaign.TemplateID, recipient.Lang)
 	if err != nil {
 		_, _ = uc.repo.UpdateEmailCampaignRecipientStatus(
@@ -610,14 +694,13 @@ func (uc *UseCase) deliverCampaignRecipient(
 			nil,
 		)
 
-		return nil
+		return entity.EmailRecipientStatusFailed, nil
 	}
 
-	variables := map[string]string{
-		"email":           recipient.Email,
-		"lang":            recipient.Lang,
-		"unsubscribe_url": recipient.UnsubscribeURL,
-	}
+	variables := cloneMap(campaign.Metadata)
+	variables["email"] = recipient.Email
+	variables["lang"] = recipient.Lang
+	variables["unsubscribe_url"] = recipient.UnsubscribeURL
 	preview, err := uc.render(version, variables)
 	if err != nil {
 		_, _ = uc.repo.UpdateEmailCampaignRecipientStatus(
@@ -629,7 +712,7 @@ func (uc *UseCase) deliverCampaignRecipient(
 			nil,
 		)
 
-		return nil
+		return entity.EmailRecipientStatusFailed, nil
 	}
 
 	log, err := uc.sendAndLog(ctx, entity.EmailMessage{
@@ -653,7 +736,7 @@ func (uc *UseCase) deliverCampaignRecipient(
 			nil,
 		)
 
-		return nil
+		return entity.EmailRecipientStatusFailed, nil
 	}
 	if log.Status == entity.EmailMessageStatusSkipped {
 		_, err = uc.repo.UpdateEmailCampaignRecipientStatus(
@@ -665,7 +748,7 @@ func (uc *UseCase) deliverCampaignRecipient(
 			nil,
 		)
 
-		return err
+		return entity.EmailRecipientStatusSkipped, err
 	}
 
 	now := time.Now().UTC()
@@ -678,7 +761,7 @@ func (uc *UseCase) deliverCampaignRecipient(
 		&now,
 	)
 
-	return err
+	return entity.EmailRecipientStatusSent, err
 }
 
 func (uc *UseCase) sendAndLog(
@@ -691,23 +774,25 @@ func (uc *UseCase) sendAndLog(
 	if category == "" {
 		category = entity.EmailCategoryTransactional
 	}
-	if suppressed, err := uc.repo.IsEmailSuppressed(ctx, message.To, category); err != nil {
-		return entity.EmailMessageLog{}, err
-	} else if suppressed {
-		messageLog, logErr := uc.createMessageLog(
-			ctx,
-			message,
-			category,
-			campaignID,
-			campaignRecipientID,
-			entity.EmailMessageStatusSkipped,
-			0,
-			"",
-			"suppressed",
-			nil,
-		)
+	if !message.Critical {
+		if suppressed, err := uc.repo.IsEmailSuppressed(ctx, message.To, category); err != nil {
+			return entity.EmailMessageLog{}, err
+		} else if suppressed {
+			messageLog, logErr := uc.createMessageLog(
+				ctx,
+				message,
+				category,
+				campaignID,
+				campaignRecipientID,
+				entity.EmailMessageStatusSkipped,
+				0,
+				"",
+				"suppressed",
+				nil,
+			)
 
-		return messageLog, logErr
+			return messageLog, logErr
+		}
 	}
 
 	messageLog, err := uc.createMessageLog(
@@ -822,13 +907,61 @@ func (uc *UseCase) createMessageLog(
 		Attempts:          attempts,
 		ProviderResponse:  providerResponse,
 		Error:             deliveryError,
-		Metadata:          message.Metadata,
+		Metadata:          redactEmailMetadata(message.Metadata),
 		SentAt:            sentAt,
 		CreatedAt:         now,
 		UpdatedAt:         now,
 	}
 
 	return uc.repo.CreateEmailMessage(ctx, log)
+}
+
+func campaignMetadataWithDeliveryStats(
+	metadata map[string]string,
+	stats campaignDeliveryStats,
+	finishedAt time.Time,
+) map[string]string {
+	metadata = cloneMap(metadata)
+	metadata[campaignMetadataDeliveryTotal] = fmt.Sprintf("%d", stats.total)
+	metadata[campaignMetadataDeliverySent] = fmt.Sprintf("%d", stats.sent)
+	metadata[campaignMetadataDeliveryFailed] = fmt.Sprintf("%d", stats.failed)
+	metadata[campaignMetadataDeliverySkipped] = fmt.Sprintf("%d", stats.skipped)
+	metadata[campaignMetadataDeliveryFinishedAt] = finishedAt.Format(time.RFC3339)
+
+	return metadata
+}
+
+func redactEmailMetadata(metadata map[string]string) map[string]string {
+	redacted := map[string]string{}
+	for key, value := range metadata {
+		if sensitiveEmailMetadataKey(key) || valueHasTokenQuery(value) {
+			redacted[key] = redactedValue
+
+			continue
+		}
+		redacted[key] = value
+	}
+
+	return redacted
+}
+
+func sensitiveEmailMetadataKey(key string) bool {
+	normalized := normalizeKey(key)
+	switch normalized {
+	case "link", "otp", "token", "unsubscribe_url":
+		return true
+	default:
+		return strings.HasSuffix(normalized, "_token")
+	}
+}
+
+func valueHasTokenQuery(value string) bool {
+	parsed, err := url.Parse(strings.TrimSpace(value))
+	if err != nil {
+		return false
+	}
+
+	return parsed.Query().Get("token") != ""
 }
 
 func (uc *UseCase) render(
@@ -1104,6 +1237,21 @@ func (uc *UseCase) publishedVersionForKey(
 	}
 
 	return uc.repo.GetPublishedEmailTemplateVersion(ctx, templateKey, contentlang.Default)
+}
+
+func (uc *UseCase) templateIsCritical(ctx context.Context, templateID string) (bool, error) {
+	if strings.TrimSpace(templateID) == "" {
+		return false, nil
+	}
+	template, err := uc.repo.GetEmailTemplateByID(ctx, templateID)
+	if errors.Is(err, entity.ErrEmailTemplateNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+
+	return template.Critical, nil
 }
 
 func (uc *UseCase) publishedVersionForTemplate(

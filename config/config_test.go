@@ -54,6 +54,7 @@ func TestNewConfig_EmailDefaults(t *testing.T) {
 	unsetEnv(t, "PASSWORD_RESET_RESEND_COOLDOWN")
 	unsetEnv(t, "EMAIL_CHANGE_TTL")
 	unsetEnv(t, "EMAIL_CHANGE_RESEND_COOLDOWN")
+	unsetEnv(t, "EMAIL_UNSUBSCRIBE_TOKEN_SECRET")
 	unsetEnv(t, "EMAIL_HTTP_TIMEOUT")
 
 	cfg, err := NewConfig()
@@ -67,7 +68,18 @@ func TestNewConfig_EmailDefaults(t *testing.T) {
 	assert.Equal(t, "1m0s", cfg.Email.PasswordResetCooldown.String())
 	assert.Equal(t, "24h0m0s", cfg.Email.EmailChangeTTL.String())
 	assert.Equal(t, "1m0s", cfg.Email.EmailChangeCooldown.String())
+	assert.Empty(t, cfg.Email.UnsubscribeTokenSecret)
 	assert.Equal(t, "10s", cfg.Email.HTTPTimeout.String())
+}
+
+func TestNewConfig_UnsubscribeTokenSecretTrims(t *testing.T) {
+	setRequiredEnv(t)
+	t.Setenv("EMAIL_UNSUBSCRIBE_TOKEN_SECRET", "  unsubscribe-secret  ")
+
+	cfg, err := NewConfig()
+
+	require.NoError(t, err)
+	assert.Equal(t, "unsubscribe-secret", cfg.Email.UnsubscribeTokenSecret)
 }
 
 func TestNewConfig_InvalidEmail(t *testing.T) {

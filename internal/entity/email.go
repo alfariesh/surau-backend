@@ -43,6 +43,7 @@ type EmailMessage struct {
 	Subject           string            `json:"subject"`
 	HTML              string            `json:"html"`
 	Text              string            `json:"text"`
+	Critical          bool              `json:"critical,omitempty"`
 	Category          string            `json:"category,omitempty"`
 	TemplateKey       string            `json:"template_key,omitempty"`
 	TemplateVersionID string            `json:"template_version_id,omitempty"`
