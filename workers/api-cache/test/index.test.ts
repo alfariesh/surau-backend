@@ -60,17 +60,21 @@ class MemoryRateLimit {
 
 class MemoryDurableRateLimitObject {
   private count = 0;
-  private windowStartedAt = 0;
+  private resetAt = 0;
 
   async fetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
     const request = input instanceof Request ? input : new Request(input, init);
-    const payload = (await request.json()) as { limit: number; windowSeconds: number };
+    const payload = (await request.json()) as {
+      limit: number;
+      resetAtMilliseconds?: number;
+      windowSeconds: number;
+    };
     const now = Date.now();
-    const windowMilliseconds = payload.windowSeconds * 1000;
+    const resetAt = payload.resetAtMilliseconds ?? now + payload.windowSeconds * 1000;
 
-    if (!this.windowStartedAt || now - this.windowStartedAt >= windowMilliseconds) {
+    if (!this.resetAt || now >= this.resetAt) {
       this.count = 1;
-      this.windowStartedAt = now;
+      this.resetAt = resetAt;
     } else {
       this.count += 1;
     }
@@ -78,7 +82,7 @@ class MemoryDurableRateLimitObject {
     return new Response(
       JSON.stringify({
         success: this.count <= payload.limit,
-        retryAfterSeconds: Math.max(1, Math.ceil((windowMilliseconds - (now - this.windowStartedAt)) / 1000))
+        retryAfterSeconds: Math.max(1, Math.ceil((this.resetAt - now) / 1000))
       }),
       {
         headers: {
@@ -133,7 +137,13 @@ const defaultEnv = (): Env => ({
   CACHE_VERSION: "1",
   CACHE_FRESH_TTL_SECONDS: "300",
   CACHE_STALE_TTL_SECONDS: "86400",
-  MAX_CACHE_BYTES: "2000000"
+  MAX_CACHE_BYTES: "2000000",
+  RAG_DAILY_QUOTA_ENABLED: "true",
+  RAG_DAILY_GUEST_LIMIT: "100",
+  RAG_DAILY_USER_LIMIT: "50",
+  JWT_SECRET: "0123456789abcdef0123456789abcdef",
+  JWT_ISSUER: "surau-backend",
+  JWT_AUDIENCE: "surau-api"
 });
 
 function installMemoryCache(): MemoryCache {
@@ -164,6 +174,54 @@ function memoryRateLimit(binding: RateLimit): MemoryRateLimit {
   return binding as unknown as MemoryRateLimit;
 }
 
+function memoryDurableNamespace(namespace: DurableObjectNamespace): MemoryDurableRateLimitNamespace {
+  return namespace as unknown as MemoryDurableRateLimitNamespace;
+}
+
+async function signTestJWT(
+  subject: string,
+  secret = "0123456789abcdef0123456789abcdef",
+  overrides: Record<string, unknown> = {}
+): Promise<string> {
+  const header = base64URLFromBytes(new TextEncoder().encode(JSON.stringify({ alg: "HS256", typ: "JWT" })));
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  const payload = base64URLFromBytes(
+    new TextEncoder().encode(
+      JSON.stringify({
+        sub: subject,
+        iss: "surau-backend",
+        aud: "surau-api",
+        exp: nowSeconds + 3600,
+        iat: nowSeconds,
+        ...overrides
+      })
+    )
+  );
+  const signed = `${header}.${payload}`;
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    {
+      name: "HMAC",
+      hash: "SHA-256"
+    },
+    false,
+    ["sign"]
+  );
+  const signature = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(signed));
+
+  return `${signed}.${base64URLFromBytes(new Uint8Array(signature))}`;
+}
+
+function base64URLFromBytes(bytes: Uint8Array): string {
+  let binary = "";
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
 describe("Surau API cache policy", () => {
   beforeEach(() => {
     installMemoryCache();
@@ -171,6 +229,7 @@ describe("Surau API cache policy", () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
@@ -390,6 +449,186 @@ describe("Surau API cache policy", () => {
 
     expect(response.headers.get("X-Surau-RateLimit")).toBeNull();
     expect(memoryRateLimit(env.SEARCH_RATE_LIMITER).keys).toEqual([]);
+  });
+
+  it("returns daily quota 429 for the 101st guest RAG request in the same UTC day", async () => {
+    vi.setSystemTime(new Date("2026-06-06T00:00:00Z"));
+    const env = defaultEnv();
+    const ctx = new TestExecutionContext();
+    const fetchMock = vi.fn(async () => jsonResponse({ ok: true }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    let response = new Response(null);
+    for (let index = 0; index < 101; index += 1) {
+      response = await handleRequest(
+        request("/v1/books/0/rag", {
+          method: "POST",
+          headers: { "CF-Connecting-IP": "203.0.113.101" },
+          body: JSON.stringify({ question: "smoke" })
+        }),
+        env,
+        ctx as unknown as ExecutionContext
+      );
+      if (index < 100) {
+        vi.setSystemTime(new Date(Date.now() + 61_000));
+      }
+    }
+
+    expect(response.status).toBe(429);
+    expect(response.headers.get("X-Surau-RateLimit")).toBe("BLOCKED");
+    expect(response.headers.get("X-Surau-RateLimit-Policy")).toBe("rag-daily");
+    expect(response.headers.get("Retry-After")).toBe("80300");
+    expect(await response.json()).toEqual({
+      error: "rag daily quota exceeded",
+      code: "RAG_DAILY_QUOTA_EXCEEDED"
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(100);
+  });
+
+  it("returns daily quota 429 for the 51st valid JWT user RAG request", async () => {
+    vi.setSystemTime(new Date("2026-06-06T00:00:00Z"));
+    const env = defaultEnv();
+    const ctx = new TestExecutionContext();
+    const token = await signTestJWT("user-123");
+    const fetchMock = vi.fn(async () => jsonResponse({ ok: true }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    let response = new Response(null);
+    for (let index = 0; index < 51; index += 1) {
+      response = await handleRequest(
+        request("/v1/books/0/rag", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "CF-Connecting-IP": "203.0.113.102"
+          },
+          body: JSON.stringify({ question: "smoke" })
+        }),
+        env,
+        ctx as unknown as ExecutionContext
+      );
+      if (index < 50) {
+        vi.setSystemTime(new Date(Date.now() + 61_000));
+      }
+    }
+
+    expect(response.status).toBe(429);
+    expect(response.headers.get("X-Surau-RateLimit-Policy")).toBe("rag-daily");
+    expect(response.headers.get("Retry-After")).toBe("83350");
+    expect(fetchMock).toHaveBeenCalledTimes(50);
+    expect(Array.from(memoryDurableNamespace(env.EDGE_RATE_LIMITER).objects.keys())).toContain(
+      "rag-daily:user:user-123:2026-06-06"
+    );
+  });
+
+  it("falls back to IP daily quota for invalid Bearer tokens", async () => {
+    vi.setSystemTime(new Date("2026-06-06T00:00:00Z"));
+    const env = { ...defaultEnv(), RAG_DAILY_GUEST_LIMIT: "1" };
+    const ctx = new TestExecutionContext();
+    const fetchMock = vi.fn(async () => jsonResponse({ ok: true }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const first = await handleRequest(
+      request("/v1/books/0/rag", {
+        method: "POST",
+        headers: {
+          Authorization: "Bearer fake-a",
+          "CF-Connecting-IP": "203.0.113.103"
+        },
+        body: JSON.stringify({ question: "smoke" })
+      }),
+      env,
+      ctx as unknown as ExecutionContext
+    );
+    const second = await handleRequest(
+      request("/v1/books/0/rag", {
+        method: "POST",
+        headers: {
+          Authorization: "Bearer fake-b",
+          "CF-Connecting-IP": "203.0.113.103"
+        },
+        body: JSON.stringify({ question: "smoke" })
+      }),
+      env,
+      ctx as unknown as ExecutionContext
+    );
+
+    expect(first.headers.get("X-Surau-RateLimit")).toBe("PASS");
+    expect(second.status).toBe(429);
+    expect(second.headers.get("X-Surau-RateLimit-Policy")).toBe("rag-daily");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(Array.from(memoryDurableNamespace(env.EDGE_RATE_LIMITER).objects.keys())).toContain(
+      "rag-daily:ip:203.0.113.103:2026-06-06"
+    );
+  });
+
+  it("does not consume daily quota when the per-minute limiter blocks first", async () => {
+    vi.setSystemTime(new Date("2026-06-06T00:00:00Z"));
+    const env = defaultEnv();
+    const ctx = new TestExecutionContext();
+    memoryRateLimit(env.RAG_RATE_LIMITER).block();
+    const fetchMock = vi.fn(async () => jsonResponse({ ok: true }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await handleRequest(
+      request("/v1/books/0/rag", {
+        method: "POST",
+        headers: { "CF-Connecting-IP": "203.0.113.104" },
+        body: JSON.stringify({ question: "smoke" })
+      }),
+      env,
+      ctx as unknown as ExecutionContext
+    );
+
+    expect(response.status).toBe(429);
+    expect(response.headers.get("X-Surau-RateLimit-Policy")).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(Array.from(memoryDurableNamespace(env.EDGE_RATE_LIMITER).objects.keys())).not.toContain(
+      "rag-daily:ip:203.0.113.104:2026-06-06"
+    );
+  });
+
+  it("resets daily quota on UTC day rollover and updates Retry-After", async () => {
+    vi.setSystemTime(new Date("2026-06-06T23:59:30Z"));
+    const env = { ...defaultEnv(), RAG_DAILY_GUEST_LIMIT: "1" };
+    const ctx = new TestExecutionContext();
+    const fetchMock = vi.fn(async () => jsonResponse({ ok: true }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await handleRequest(
+      request("/v1/books/0/rag", {
+        method: "POST",
+        headers: { "CF-Connecting-IP": "203.0.113.105" },
+        body: JSON.stringify({ question: "smoke" })
+      }),
+      env,
+      ctx as unknown as ExecutionContext
+    );
+    const blocked = await handleRequest(
+      request("/v1/books/0/rag", {
+        method: "POST",
+        headers: { "CF-Connecting-IP": "203.0.113.105" },
+        body: JSON.stringify({ question: "smoke" })
+      }),
+      env,
+      ctx as unknown as ExecutionContext
+    );
+    vi.setSystemTime(new Date("2026-06-07T00:00:01Z"));
+    const nextDay = await handleRequest(
+      request("/v1/books/0/rag", {
+        method: "POST",
+        headers: { "CF-Connecting-IP": "203.0.113.105" },
+        body: JSON.stringify({ question: "smoke" })
+      }),
+      env,
+      ctx as unknown as ExecutionContext
+    );
+
+    expect(blocked.status).toBe(429);
+    expect(blocked.headers.get("Retry-After")).toBe("30");
+    expect(nextDay.status).toBe(200);
+    expect(nextDay.headers.get("X-Surau-RateLimit")).toBe("PASS");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("does not cache responses above MAX_CACHE_BYTES", async () => {

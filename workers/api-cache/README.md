@@ -33,11 +33,24 @@ npm run deploy
 ## Edge Rate Limits
 
 - `POST /v1/books/:book_id/rag`: `10/min`
+- RAG daily quota: valid JWT users get `50/day`; guests and invalid Bearer tokens get `100/IP/day`.
 - Auth/email-sensitive POST endpoints: `10/min`
 - `POST /v1/books/:book_id/toc/:heading_id/translation-feedback`: `30/min`
 - Public search GET endpoints with `q`: `60/min`
 - Durable Object `EDGE_RATE_LIMITER` enforces the window before origin fetch; Workers Rate Limiting bindings remain as an additional Cloudflare-native guard.
 - Blocked requests return `429`, `Retry-After: 60`, `X-Surau-Cache: BYPASS`, and `X-Surau-RateLimit: BLOCKED`.
+- Daily quota blocks also include `X-Surau-RateLimit-Policy: rag-daily` and reset at UTC midnight.
+
+Set `JWT_SECRET` as a Worker secret matching the backend JWT secret. Without it, the Worker safely treats all RAG traffic as guest/IP quota.
+
+## AI Gateway
+
+The Go backend is already OpenAI-compatible and calls `{RAG_LLM_BASE_URL}/chat/completions`. To observe RAG LLM cost and latency through Cloudflare AI Gateway, create a gateway and point `RAG_LLM_BASE_URL` at the provider path:
+
+- OpenAI provider: `https://gateway.ai.cloudflare.com/v1/{account_id}/{gateway_id}/openai`
+- Custom OpenAI-compatible provider: `https://gateway.ai.cloudflare.com/v1/{account_id}/{gateway_id}/{custom_provider_slug}/v1`
+
+Keep `RAG_LLM_API_KEY` as the upstream provider key unless credentials are stored in Cloudflare provider configs.
 
 ## Production Smoke
 
