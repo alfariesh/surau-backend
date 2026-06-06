@@ -2098,7 +2098,7 @@ func (r *EditorialRepo) productionWorkspaceBook(
 
 	err := r.Pool.QueryRow(ctx, `
 SELECT b.id,
-       b.name,
+       COALESCE(me.display_title, b.name),
        COALESCE(me.category_id, b.category_id),
        c.name,
        b.author_id,

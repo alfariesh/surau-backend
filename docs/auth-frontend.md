@@ -13,7 +13,7 @@ Dokumen ini adalah kontrak integrasi auth untuk frontend Surau. Fokus utama fron
 - Profile response berisi user auth + `profile`, `preferences`, dan `onboarding_required`.
 - Onboarding dan preferensi reader didokumentasikan lengkap di `docs/user-onboarding-api.md`.
 - Backend juga mengirim email keamanan best-effort untuk password changed, email verified, email changed, account deleted, role changed, new login/device, dan suspicious failed login.
-- Error REST memakai shape umum: `{ "error": "message" }`.
+- Error REST memakai shape umum: `{ "error": "message", "code": "...", "request_id": "..." }`.
 
 ## Base URL
 
@@ -122,11 +122,14 @@ Token dipakai apa adanya di header `Authorization`.
 
 ```json
 {
-  "error": "invalid credentials"
+  "error": "invalid credentials",
+  "code": "AUTH_INVALID_CREDENTIALS",
+  "message": "invalid credentials",
+  "request_id": "550e8400-e29b-41d4-a716-446655440000"
 }
 ```
 
-Frontend sebaiknya branch berdasarkan HTTP status terlebih dahulu, lalu pakai string `error` untuk copy yang lebih spesifik.
+Frontend sebaiknya branch berdasarkan HTTP status terlebih dahulu, lalu pakai `code` untuk logic yang perlu stabil. `error` dan `message` tetap bisa dipakai untuk copy/fallback, dan `request_id` sebaiknya disimpan saat laporan bug.
 
 ## Validasi Frontend
 
@@ -832,6 +835,15 @@ AUTH_ACCOUNT_DELETED_EMAIL_ENABLED=true
 
 Email keamanan tidak mengubah response API. Jika email notifikasi gagal dikirim, flow utama tetap sukses selama operasi utama sukses.
 
+Checklist staging/production sebelum buka auth publik:
+
+- `EMAIL_VERIFY_FRONTEND_URL` mengarah ke route verify email frontend production.
+- `PASSWORD_RESET_FRONTEND_URL` mengarah ke route reset password frontend production.
+- `EMAIL_CHANGE_FRONTEND_URL` mengarah ke route change email frontend production.
+- Origin frontend production diizinkan oleh layer CORS yang dipakai deployment.
+- Preflight CORS mengizinkan header `Authorization` dan `Content-Type`.
+- Preflight CORS mengizinkan method auth/profile: `GET`, `POST`, `PATCH`, dan `OPTIONS`.
+
 ## Recommended Auth State
 
 Minimal state frontend:
@@ -1122,18 +1134,18 @@ Catatan storage:
 
 Mapping copy yang disarankan:
 
-| Status/Error | Copy UI |
-| --- | --- |
-| `400 invalid request body` | "Periksa kembali data yang kamu isi." |
-| `401 invalid credentials` | "Email atau password salah." |
-| `401 invalid or expired token` | "Sesi kamu sudah berakhir. Silakan login lagi." |
-| `403 email not verified` | "Email belum diverifikasi. Cek inbox atau kirim ulang email verifikasi." |
-| `409 user already exists` | "Email ini sudah terdaftar. Silakan login atau reset password." |
-| `429 too many auth attempts` | "Terlalu banyak percobaan. Coba lagi beberapa saat." |
-| `429 verification email recently sent` | "Email verifikasi baru saja dikirim. Tunggu sebentar sebelum mengirim ulang." |
-| `429 password reset email recently sent` | "Email reset password baru saja dikirim. Tunggu sebentar sebelum mengirim ulang." |
-| `503 email delivery failed` | "Email belum bisa dikirim. Coba lagi nanti." |
-| `500 internal server error` | "Terjadi gangguan. Coba lagi nanti." |
+| Status/Code | Legacy error | Copy UI |
+| --- | --- | --- |
+| `400 invalid_request_body` | `invalid request body` | "Periksa kembali data yang kamu isi." |
+| `401 AUTH_INVALID_CREDENTIALS` | `invalid credentials` | "Email atau password salah." |
+| `401 AUTH_TOKEN_INVALID` | `invalid or expired token` | "Sesi kamu sudah berakhir. Silakan login lagi." |
+| `403 AUTH_EMAIL_NOT_VERIFIED` | `email not verified` | "Email belum diverifikasi. Cek inbox atau kirim ulang email verifikasi." |
+| `409 user_already_exists` | `user already exists` | "Email ini sudah terdaftar. Silakan login atau reset password." |
+| `429 AUTH_RATE_LIMITED` | `too many auth attempts` | "Terlalu banyak percobaan. Coba lagi beberapa saat." |
+| `429 verification_email_recently_sent` | `verification email recently sent` | "Email verifikasi baru saja dikirim. Tunggu sebentar sebelum mengirim ulang." |
+| `429 password_reset_email_recently_sent` | `password reset email recently sent` | "Email reset password baru saja dikirim. Tunggu sebentar sebelum mengirim ulang." |
+| `503 email_delivery_failed` | `email delivery failed` | "Email belum bisa dikirim. Coba lagi nanti." |
+| `500 internal_server_error` | `internal server error` | "Terjadi gangguan. Coba lagi nanti." |
 
 ## Security Checklist FE
 

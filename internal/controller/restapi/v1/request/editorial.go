@@ -12,6 +12,8 @@ type UpdatePublication struct {
 // SaveMetadataDraft -.
 type SaveMetadataDraft struct {
 	DisplayTitle *string `json:"display_title" validate:"omitempty,max=500"`
+	Bibliography *string `json:"bibliography"   validate:"omitempty,max=10000"`
+	Hint         *string `json:"hint"           validate:"omitempty,max=10000"`
 	Description  *string `json:"description"   validate:"omitempty,max=10000"`
 	CoverURL     *string `json:"cover_url"     validate:"omitempty,url,max=2000"`
 	CategoryID   *int    `json:"category_id"   validate:"omitempty,min=1"`

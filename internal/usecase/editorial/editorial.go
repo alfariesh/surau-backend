@@ -123,6 +123,8 @@ func (uc *UseCase) SaveMetadataDraft(
 ) (entity.BookMetadataEdit, error) {
 	edit.Status = entity.EditStatusDraft
 	edit.DisplayTitle = trimStringPtr(edit.DisplayTitle)
+	edit.Bibliography = trimStringPtr(edit.Bibliography)
+	edit.Hint = trimStringPtr(edit.Hint)
 	edit.Description = trimStringPtr(edit.Description)
 	edit.CoverURL = trimStringPtr(edit.CoverURL)
 	edit.Notes = trimStringPtr(edit.Notes)

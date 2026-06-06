@@ -1450,6 +1450,20 @@ POST /v1/editorial/collections/{slug}/items
 
 Do not mix source edit drafts with production translation drafts in the same form state. They are different workflows.
 
+`PUT /v1/editorial/books/{book_id}/metadata-draft` accepts nullable source metadata fields:
+
+```json
+{
+  "display_title": "Corrected Arabic title",
+  "bibliography": "Corrected bibliography",
+  "hint": "Corrected hint",
+  "description": "Editorial description",
+  "cover_url": "https://cdn.example/cover.jpg",
+  "category_id": 10,
+  "notes": "Internal editor note"
+}
+```
+
 ## Screen Specifications
 
 ### Production Home

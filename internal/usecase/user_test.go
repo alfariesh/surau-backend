@@ -1141,7 +1141,7 @@ func TestUpdateUserProfile(t *testing.T) {
 func TestEmailChange(t *testing.T) {
 	t.Parallel()
 
-	t.Run("request creates token and sends email to new address", func(t *testing.T) {
+	t.Run("request creates token without changing email or token version", func(t *testing.T) {
 		t.Parallel()
 
 		uc, repo, emailSender := newUserUseCase(t)
@@ -1250,6 +1250,46 @@ func TestEmailChange(t *testing.T) {
 		require.ErrorIs(t, err, entity.ErrInvalidEmailChangeToken)
 	})
 
+	t.Run("verify rejects expired token", func(t *testing.T) {
+		t.Parallel()
+
+		uc, repo, _ := newUserUseCase(t)
+		rawToken, tokenHash := testEmailChangeToken()
+		repo.EXPECT().GetEmailChangeTokenByHash(context.Background(), tokenHash).
+			Return(entity.EmailChangeToken{
+				ID:        "token-id",
+				UserID:    "user-id-123",
+				NewEmail:  "new@example.com",
+				TokenHash: tokenHash,
+				ExpiresAt: time.Now().Add(-time.Minute),
+			}, nil)
+
+		err := uc.VerifyEmailChange(context.Background(), "user-id-123", rawToken, "")
+
+		require.ErrorIs(t, err, entity.ErrInvalidEmailChangeToken)
+	})
+
+	t.Run("verify rejects used token", func(t *testing.T) {
+		t.Parallel()
+
+		uc, repo, _ := newUserUseCase(t)
+		rawToken, tokenHash := testEmailChangeToken()
+		usedAt := time.Now()
+		repo.EXPECT().GetEmailChangeTokenByHash(context.Background(), tokenHash).
+			Return(entity.EmailChangeToken{
+				ID:        "token-id",
+				UserID:    "user-id-123",
+				NewEmail:  "new@example.com",
+				TokenHash: tokenHash,
+				ExpiresAt: time.Now().Add(time.Hour),
+				UsedAt:    &usedAt,
+			}, nil)
+
+		err := uc.VerifyEmailChange(context.Background(), "user-id-123", rawToken, "")
+
+		require.ErrorIs(t, err, entity.ErrInvalidEmailChangeToken)
+	})
+
 	t.Run("verify otp succeeds", func(t *testing.T) {
 		t.Parallel()
 
@@ -1291,6 +1331,26 @@ func TestEmailChange(t *testing.T) {
 				OTPExpiresAt: otpExpiresAt,
 				ExpiresAt:    time.Now().Add(time.Hour),
 				UsedAt:       &usedAt,
+			}, nil)
+
+		err := uc.VerifyEmailChange(context.Background(), "user-id-123", "", "123456")
+
+		require.ErrorIs(t, err, entity.ErrInvalidEmailChangeToken)
+	})
+
+	t.Run("verify otp rejects expired otp", func(t *testing.T) {
+		t.Parallel()
+
+		uc, repo, _ := newUserUseCase(t)
+		otpHash, otpExpiresAt := testOTPHash(t, "123456", time.Now().Add(-time.Minute))
+		repo.EXPECT().GetLatestUnusedEmailChangeToken(context.Background(), "user-id-123").
+			Return(entity.EmailChangeToken{
+				ID:           "token-id",
+				UserID:       "user-id-123",
+				NewEmail:     "new@example.com",
+				OTPHash:      otpHash,
+				OTPExpiresAt: otpExpiresAt,
+				ExpiresAt:    time.Now().Add(time.Hour),
 			}, nil)
 
 		err := uc.VerifyEmailChange(context.Background(), "user-id-123", "", "123456")

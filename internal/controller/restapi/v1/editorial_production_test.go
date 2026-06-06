@@ -432,6 +432,37 @@ func TestEditorialMetadataTranslationDraftETagPrecondition(t *testing.T) {
 	assert.Equal(t, 1, editorial.saveMetadataTranslationDraftCalls)
 }
 
+func TestEditorialSaveSourceMetadataDraftIncludesBibliographyAndHint(t *testing.T) {
+	t.Parallel()
+
+	editorial := &fakeProductionEditorial{}
+	app := newProductionTestApp(entity.User{ID: "editor-id", Role: entity.UserRoleEditor}, editorial)
+	req := httptest.NewRequestWithContext(
+		t.Context(),
+		http.MethodPut,
+		"/v1/editorial/books/797/metadata-draft",
+		strings.NewReader(`{
+			"display_title":"New title",
+			"bibliography":"New bibliography",
+			"hint":"New hint",
+			"description":"New description"
+		}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := app.Test(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Equal(t, 1, editorial.saveMetadataDraftCalls)
+	assert.Equal(t, 797, editorial.savedMetadataDraft.BookID)
+	assert.Equal(t, ptrString("New title"), editorial.savedMetadataDraft.DisplayTitle)
+	assert.Equal(t, ptrString("New bibliography"), editorial.savedMetadataDraft.Bibliography)
+	assert.Equal(t, ptrString("New hint"), editorial.savedMetadataDraft.Hint)
+	assert.Equal(t, ptrString("New description"), editorial.savedMetadataDraft.Description)
+}
+
 func TestEditorialPublishProductionProjectRejectsStaleIfMatch(t *testing.T) {
 	t.Parallel()
 
@@ -519,6 +550,7 @@ func newProductionTestApp(actor entity.User, editorial *fakeProductionEditorial)
 	editorialReview.Get("/production-projects/:id/metadata-draft", controller.editorialGetMetadataTranslationDraft)
 	editorialReview.Put("/production-projects/:id/metadata-draft", controller.editorialSaveMetadataTranslationDraft)
 	editorialReview.Get("/books/:book_id/metadata-draft", controller.editorialGetMetadataDraft)
+	editorialReview.Put("/books/:book_id/metadata-draft", controller.editorialSaveMetadataDraft)
 	editorialReview.Get("/books/:book_id/headings/:heading_id/draft", controller.editorialGetHeadingDraft)
 
 	editorialAdmin := app.Group(
@@ -538,9 +570,12 @@ type fakeProductionEditorial struct {
 	publishCheck                entity.BookProductionPublishCheck
 	productionProject           entity.BookProductionProject
 	metadataTranslationDraft    entity.BookMetadataTranslationEdit
+	sourceMetadataDraft         entity.BookMetadataEdit
+	savedMetadataDraft          entity.BookMetadataEdit
 
 	publishProductionProjectCalls     int
 	saveMetadataTranslationDraftCalls int
+	saveMetadataDraftCalls            int
 }
 
 func (f *fakeProductionEditorial) projectResponse() entity.BookProductionProject {
@@ -741,7 +776,24 @@ func (f *fakeProductionEditorial) GetMetadataDraft(
 	context.Context,
 	int,
 ) (entity.BookMetadataEdit, error) {
+	if f.sourceMetadataDraft.BookID != 0 {
+		return f.sourceMetadataDraft, nil
+	}
+
 	return entity.BookMetadataEdit{BookID: 797, Status: entity.EditStatusDraft}, nil
+}
+
+func (f *fakeProductionEditorial) SaveMetadataDraft(
+	_ context.Context,
+	_ string,
+	edit entity.BookMetadataEdit,
+) (entity.BookMetadataEdit, error) {
+	f.saveMetadataDraftCalls++
+	f.savedMetadataDraft = edit
+	edit.Status = entity.EditStatusDraft
+	edit.UpdatedAt = time.Date(2026, 1, 2, 3, 4, 7, 0, time.UTC)
+
+	return edit, nil
 }
 
 func (f *fakeProductionEditorial) GetHeadingDraft(
@@ -750,4 +802,8 @@ func (f *fakeProductionEditorial) GetHeadingDraft(
 	int,
 ) (entity.BookHeadingEdit, error) {
 	return entity.BookHeadingEdit{BookID: 797, HeadingID: 10, Status: entity.EditStatusDraft}, nil
+}
+
+func ptrString(value string) *string {
+	return &value
 }

@@ -3,9 +3,9 @@ package middleware
 import (
 	"net/http"
 	"strings"
-	"unicode"
 
 	"github.com/evrone/go-clean-template/internal/controller/authutil"
+	"github.com/evrone/go-clean-template/internal/controller/restapi/apierror"
 	"github.com/evrone/go-clean-template/internal/usecase"
 	"github.com/evrone/go-clean-template/pkg/jwt"
 	"github.com/gofiber/fiber/v2"
@@ -53,7 +53,7 @@ func Auth(jwtManager *jwt.Manager, users usecase.User) func(*fiber.Ctx) error {
 func middlewareError(ctx *fiber.Ctx, status int, msg string) error {
 	return ctx.Status(status).JSON(errorResponse{
 		Error:     msg,
-		Code:      middlewareErrorCode(msg),
+		Code:      apierror.Code(msg),
 		Message:   msg,
 		RequestID: middlewareRequestID(ctx),
 	})
@@ -66,38 +66,4 @@ func middlewareRequestID(ctx *fiber.Ctx) string {
 	}
 
 	return requestID
-}
-
-func middlewareErrorCode(msg string) string {
-	msg = strings.ToLower(strings.TrimSpace(msg))
-	if msg == "" {
-		return "error"
-	}
-
-	var out strings.Builder
-
-	lastUnderscore := false
-
-	for _, r := range msg {
-		if unicode.IsLetter(r) || unicode.IsDigit(r) {
-			out.WriteRune(r)
-
-			lastUnderscore = false
-
-			continue
-		}
-
-		if !lastUnderscore {
-			out.WriteByte('_')
-
-			lastUnderscore = true
-		}
-	}
-
-	code := strings.Trim(out.String(), "_")
-	if code == "" {
-		return "error"
-	}
-
-	return code
 }

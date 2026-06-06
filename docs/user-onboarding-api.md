@@ -1,9 +1,10 @@
 # User Onboarding and Preferences API
 
-Last updated: 2026-05-29
+Last updated: 2026-06-05
 
 This document defines the frontend contract for user enrichment after auth.
-Register stays intentionally small: `username`, `email`, and `password`.
+Register stays intentionally small: `name` (or `display_name`), `email`, and
+`password`. `username` is still accepted only for legacy clients.
 User product metadata lives in `user_profiles` and `user_preferences`, not in
 the auth-focused `users` table.
 
@@ -240,8 +241,11 @@ Notes:
 All errors use:
 
 ```json
-{"error":"message"}
+{"error":"message","code":"stable_code","request_id":"..."}
 ```
+
+`error` stays for legacy clients. New clients should branch primarily on HTTP
+status and stable `code`, and log `request_id` for backend debugging.
 
 Important errors:
 

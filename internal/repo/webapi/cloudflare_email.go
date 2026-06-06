@@ -150,13 +150,6 @@ func (c *CloudflareEmailClient) Send(
 			message.To,
 		)
 	}
-	if !containsEmail(parsed.Result.Delivered, message.To) && !containsEmail(parsed.Result.Queued, message.To) {
-		return result, fmt.Errorf(
-			"%w: CloudflareEmailClient - Send - recipient was not delivered or queued: %s",
-			entity.ErrEmailDeliveryFailed,
-			message.To,
-		)
-	}
 
 	return result, nil
 }
