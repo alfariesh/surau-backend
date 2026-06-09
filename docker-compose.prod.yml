@@ -29,6 +29,10 @@ services:
       APP_VERSION: ${APP_VERSION:?set APP_VERSION}
       HTTP_PORT: ${HTTP_PORT:-8080}
       HTTP_USE_PREFORK_MODE: ${HTTP_USE_PREFORK_MODE:-false}
+      # Behind Cloudflare -> Caddy -> app: resolve the real visitor IP from
+      # CF-Connecting-IP, trusting only the Docker gateway hop (Caddy).
+      HTTP_PROXY_HEADER: ${HTTP_PROXY_HEADER:-CF-Connecting-IP}
+      HTTP_TRUSTED_PROXIES: ${HTTP_TRUSTED_PROXIES:-172.16.0.0/12,10.0.0.0/8,192.168.0.0/16}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       METRICS_ENABLED: ${METRICS_ENABLED:-false}
       SWAGGER_ENABLED: ${SWAGGER_ENABLED:-false}
