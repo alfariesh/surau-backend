@@ -40,6 +40,12 @@ const (
 	otpMaxValue             = 1000000
 	maxEmailUserAgentRunes  = 160
 	defaultSupportEmail     = "support@surau.org"
+
+	// decoyLoginHash is a fixed bcrypt hash (cost 10) compared against during
+	// logins for unknown accounts so the response time matches a wrong-password
+	// attempt. This keeps login timing constant and defends against user
+	// enumeration. It is not a credential and must never match any real password.
+	decoyLoginHash = "$2a$10$274brck7NUBzNFOYIlFkM.WFUpgzTxBYe0tM7Hvzqp3AVP6/I8GYC"
 )
 
 const (
@@ -404,14 +410,18 @@ func (uc *UseCase) Login(ctx context.Context, email, password string) (token str
 		return "", err
 	}
 
-	user, err := uc.repo.GetByEmail(ctx, email)
-	if err != nil {
-		return "", entity.ErrInvalidCredentials
-	}
-	auditUserID = user.ID
+	user, lookupErr := uc.repo.GetByEmail(ctx, email)
 
-	err = bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password))
-	if err != nil {
+	// Always run bcrypt against a hash — the real one when the account exists, a
+	// fixed dummy otherwise — so an unknown account costs the same time as a
+	// wrong password. Response latency must not reveal whether the email exists.
+	passwordHash := decoyLoginHash
+	if lookupErr == nil {
+		passwordHash = user.PasswordHash
+		auditUserID = user.ID
+	}
+
+	if bcrypt.CompareHashAndPassword([]byte(passwordHash), []byte(password)) != nil || lookupErr != nil {
 		return "", entity.ErrInvalidCredentials
 	}
 	if !user.EmailVerified {
@@ -1454,13 +1464,14 @@ func normalizeCountryCode(value *string) *string {
 
 func validateRegisterInput(username, email, password string) (string, string, error) {
 	username = strings.TrimSpace(username)
-	email = strings.TrimSpace(email)
 
 	usernameLen := utf8.RuneCountInString(username)
 	if usernameLen < minUsernameRunes || usernameLen > maxUsernameRunes {
 		return "", "", entity.ErrInvalidAuthInput
 	}
-	if !validEmail(email) {
+
+	email, err := validateEmailInput(email)
+	if err != nil {
 		return "", "", entity.ErrInvalidAuthInput
 	}
 	if !validPassword(password) {
@@ -1483,7 +1494,9 @@ func validateLoginInput(email, password string) (string, error) {
 }
 
 func validateEmailInput(email string) (string, error) {
-	email = strings.TrimSpace(email)
+	// Lowercase so accounts are case-insensitive on the email address; the DB
+	// enforces this too via a unique index on lower(email).
+	email = strings.ToLower(strings.TrimSpace(email))
 	if !validEmail(email) {
 		return "", entity.ErrInvalidAuthInput
 	}

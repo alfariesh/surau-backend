@@ -220,6 +220,36 @@ func TestRegister(t *testing.T) {
 		assert.Equal(t, entity.UserRoleUser, u.Role)
 	})
 
+	t.Run("register normalizes email case", func(t *testing.T) {
+		t.Parallel()
+
+		uc, repo, emailSender := newUserUseCase(t)
+		repo.EXPECT().StoreWithVerificationToken(context.Background(), gomock.Any(), gomock.Any()).DoAndReturn(
+			func(_ context.Context, storedUser *entity.User, _ *entity.EmailVerificationToken) error {
+				assert.Equal(t, "test@example.com", storedUser.Email)
+
+				return nil
+			},
+		)
+		expectAnyUserAccount(repo, context.Background(), entity.User{
+			Username: "testuser",
+			Email:    "test@example.com",
+			Role:     entity.UserRoleUser,
+		})
+		emailSender.EXPECT().Send(context.Background(), gomock.Any()).DoAndReturn(
+			func(_ context.Context, message entity.EmailMessage) (entity.EmailSendResult, error) {
+				assert.Equal(t, "test@example.com", message.To)
+
+				return entity.EmailSendResult{}, nil
+			},
+		)
+
+		u, err := uc.Register(context.Background(), "testuser", " Test@Example.COM ", "password123")
+
+		require.NoError(t, err)
+		assert.Equal(t, "test@example.com", u.Email)
+	})
+
 	t.Run("register duplicate", func(t *testing.T) {
 		t.Parallel()
 
@@ -495,6 +525,26 @@ func TestLogin(t *testing.T) {
 		claims, err := jwt.New(testJWTSecret, time.Hour, jwt.DefaultIssuer, jwt.DefaultAudience).ParseTokenClaims(token)
 		require.NoError(t, err)
 		assert.Equal(t, int64(3), claims.TokenVersion)
+	})
+
+	t.Run("login normalizes email case", func(t *testing.T) {
+		t.Parallel()
+
+		uc, repo, _ := newUserUseCase(t)
+		hash, err := bcrypt.GenerateFromPassword([]byte("password123"), bcrypt.DefaultCost)
+		require.NoError(t, err)
+
+		storedUser := entity.User{
+			ID: "user-id-123", Username: "testuser",
+			Email: "test@example.com", PasswordHash: string(hash), EmailVerified: true,
+		}
+		// Mixed-case/whitespace input must resolve to the lowercased account.
+		repo.EXPECT().GetByEmail(context.Background(), "test@example.com").Return(storedUser, nil)
+
+		token, err := uc.Login(context.Background(), " Test@Example.COM ", "password123")
+
+		require.NoError(t, err)
+		assert.NotEmpty(t, token)
 	})
 
 	t.Run("login wrong password", func(t *testing.T) {

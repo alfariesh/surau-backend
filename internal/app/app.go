@@ -222,7 +222,13 @@ func initUseCases(cfg *config.Config, pg *postgres.Postgres, jwtManager *jwt.Man
 
 func initServers(cfg *config.Config, pg *postgres.Postgres, uc useCases, jwtManager *jwt.Manager, l logger.Interface) servers {
 	// HTTP Server
-	httpServer := httpserver.New(l, httpserver.Port(cfg.HTTP.Port), httpserver.Prefork(cfg.HTTP.UsePreforkMode))
+	httpServer := httpserver.New(
+		l,
+		httpserver.Port(cfg.HTTP.Port),
+		httpserver.Prefork(cfg.HTTP.UsePreforkMode),
+		httpserver.ProxyHeader(cfg.HTTP.ProxyHeader),
+		httpserver.TrustedProxies(cfg.HTTP.TrustedProxies),
+	)
 	restapi.NewRouter(
 		httpServer.App,
 		cfg,
