@@ -372,7 +372,8 @@ RETURNING book_id, status, featured, sort_order, published_at, updated_by, updat
 // GetMetadataDraft returns the current source metadata draft.
 func (r *EditorialRepo) GetMetadataDraft(ctx context.Context, bookID int) (entity.BookMetadataEdit, error) {
 	sqlText := `
-SELECT book_id, status, display_title, description, cover_url, category_id, notes, updated_by, updated_at, published_at
+SELECT book_id, status, display_title, bibliography, hint, description, cover_url, category_id, notes,
+       updated_by, updated_at, published_at
 FROM book_metadata_edits
 WHERE book_id = $1 AND status = 'draft'`
 
@@ -396,24 +397,30 @@ func (r *EditorialRepo) SaveMetadataDraft(
 ) (entity.BookMetadataEdit, error) {
 	sqlText := `
 INSERT INTO book_metadata_edits (
-    book_id, status, display_title, description, cover_url, category_id, notes, updated_by, updated_at
+    book_id, status, display_title, bibliography, hint, description, cover_url, category_id, notes,
+    updated_by, updated_at
 )
-VALUES ($1, 'draft', $2, $3, $4, $5, $6, $7, now())
+VALUES ($1, 'draft', $2, $3, $4, $5, $6, $7, $8, $9, now())
 ON CONFLICT (book_id, status) DO UPDATE SET
     display_title = EXCLUDED.display_title,
+    bibliography = EXCLUDED.bibliography,
+    hint = EXCLUDED.hint,
     description = EXCLUDED.description,
     cover_url = EXCLUDED.cover_url,
     category_id = EXCLUDED.category_id,
     notes = EXCLUDED.notes,
     updated_by = EXCLUDED.updated_by,
     updated_at = now()
-RETURNING book_id, status, display_title, description, cover_url, category_id, notes, updated_by, updated_at, published_at`
+RETURNING book_id, status, display_title, bibliography, hint, description, cover_url, category_id, notes,
+          updated_by, updated_at, published_at`
 
 	saved, err := scanMetadataEdit(r.Pool.QueryRow(
 		ctx,
 		sqlText,
 		edit.BookID,
 		edit.DisplayTitle,
+		edit.Bibliography,
+		edit.Hint,
 		edit.Description,
 		edit.CoverURL,
 		edit.CategoryID,
@@ -433,13 +440,17 @@ RETURNING book_id, status, display_title, description, cover_url, category_id, n
 func (r *EditorialRepo) PublishMetadataDraft(ctx context.Context, actorID string, bookID int) (entity.BookMetadataEdit, error) {
 	sqlText := `
 INSERT INTO book_metadata_edits (
-    book_id, status, display_title, description, cover_url, category_id, notes, updated_by, updated_at, published_at
+    book_id, status, display_title, bibliography, hint, description, cover_url, category_id, notes,
+    updated_by, updated_at, published_at
 )
-SELECT book_id, 'published', display_title, description, cover_url, category_id, notes, $2, now(), now()
+SELECT book_id, 'published', display_title, bibliography, hint, description, cover_url, category_id, notes,
+       $2, now(), now()
 FROM book_metadata_edits
 WHERE book_id = $1 AND status = 'draft'
 ON CONFLICT (book_id, status) DO UPDATE SET
     display_title = EXCLUDED.display_title,
+    bibliography = EXCLUDED.bibliography,
+    hint = EXCLUDED.hint,
     description = EXCLUDED.description,
     cover_url = EXCLUDED.cover_url,
     category_id = EXCLUDED.category_id,
@@ -447,7 +458,8 @@ ON CONFLICT (book_id, status) DO UPDATE SET
     updated_by = EXCLUDED.updated_by,
     updated_at = now(),
     published_at = now()
-RETURNING book_id, status, display_title, description, cover_url, category_id, notes, updated_by, updated_at, published_at`
+RETURNING book_id, status, display_title, bibliography, hint, description, cover_url, category_id, notes,
+          updated_by, updated_at, published_at`
 
 	saved, err := scanMetadataEdit(r.Pool.QueryRow(ctx, sqlText, bookID, actorID))
 	if err != nil {
@@ -935,8 +947,8 @@ func (r *EditorialRepo) adminBookSelectBuilder() sq.SelectBuilder {
 			"b.printed",
 			"b.minor_release",
 			"b.major_release",
-			"b.bibliography",
-			"b.hint",
+			"COALESCE(me.bibliography, b.bibliography) AS bibliography",
+			"COALESCE(me.hint, b.hint) AS hint",
 			"b.pdf_links",
 			"b.metadata",
 			"b.source_date",
@@ -1309,6 +1321,8 @@ func scanPublication(row rowScanner) (entity.BookPublication, error) {
 func scanMetadataEdit(row rowScanner) (entity.BookMetadataEdit, error) {
 	var edit entity.BookMetadataEdit
 	var displayTitle sql.NullString
+	var bibliography sql.NullString
+	var hint sql.NullString
 	var description sql.NullString
 	var coverURL sql.NullString
 	var categoryID sql.NullInt64
@@ -1320,6 +1334,8 @@ func scanMetadataEdit(row rowScanner) (entity.BookMetadataEdit, error) {
 		&edit.BookID,
 		&edit.Status,
 		&displayTitle,
+		&bibliography,
+		&hint,
 		&description,
 		&coverURL,
 		&categoryID,
@@ -1333,6 +1349,8 @@ func scanMetadataEdit(row rowScanner) (entity.BookMetadataEdit, error) {
 	}
 
 	edit.DisplayTitle = nullableString(displayTitle)
+	edit.Bibliography = nullableString(bibliography)
+	edit.Hint = nullableString(hint)
 	edit.Description = nullableString(description)
 	edit.CoverURL = nullableString(coverURL)
 	edit.CategoryID = nullableInt(categoryID)

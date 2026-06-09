@@ -71,6 +71,8 @@ func (r *V1) editorialSaveMetadataDraft(ctx *fiber.Ctx) error {
 	edit, err := r.editorial.SaveMetadataDraft(ctx.UserContext(), actorID, entity.BookMetadataEdit{
 		BookID:       bookID,
 		DisplayTitle: body.DisplayTitle,
+		Bibliography: body.Bibliography,
+		Hint:         body.Hint,
 		Description:  body.Description,
 		CoverURL:     body.CoverURL,
 		CategoryID:   body.CategoryID,

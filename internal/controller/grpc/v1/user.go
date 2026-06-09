@@ -3,6 +3,7 @@ package v1
 import (
 	"context"
 	"errors"
+	"strings"
 
 	v1 "github.com/evrone/go-clean-template/docs/proto/v1"
 	grpcmw "github.com/evrone/go-clean-template/internal/controller/grpc/middleware"
@@ -301,8 +302,11 @@ func (c *AuthController) GetProfile(ctx context.Context, _ *v1.GetProfileRequest
 func grpcAuthContext(ctx context.Context) context.Context {
 	meta := authmeta.Meta{Transport: "grpc"}
 	if md, ok := metadata.FromIncomingContext(ctx); ok {
-		if values := md.Get("x-forwarded-for"); len(values) > 0 {
-			meta.ClientIP = values[0]
+		// Trust X-Real-IP only: the reverse proxy overwrites it with the real
+		// peer. X-Forwarded-For is appended to by the proxy and therefore
+		// client-controllable, so it must not be used for the client IP.
+		if values := md.Get("x-real-ip"); len(values) > 0 {
+			meta.ClientIP = strings.TrimSpace(values[0])
 		}
 		if values := md.Get("user-agent"); len(values) > 0 {
 			meta.UserAgent = values[0]

@@ -9436,6 +9436,9 @@ const docTemplate = `{
         "entity.BookMetadataEdit": {
             "type": "object",
             "properties": {
+                "bibliography": {
+                    "type": "string"
+                },
                 "book_id": {
                     "type": "integer",
                     "example": 797
@@ -9450,6 +9453,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "display_title": {
+                    "type": "string"
+                },
+                "hint": {
                     "type": "string"
                 },
                 "notes": {

@@ -3,6 +3,7 @@ package v1
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -282,6 +283,28 @@ func TestUserProfileAndPreferenceRoutes(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestProfileIncludesCompleteDefaultPreferences(t *testing.T) {
+	t.Parallel()
+
+	app := newAuthTestApp(&fakeAuthUser{})
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/user/profile", http.NoBody)
+
+	resp, err := app.Test(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	var account entity.UserAccount
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&account))
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Equal(t, entity.UserPreferredLangDefault, account.Preferences.PreferredUILang)
+	assert.Equal(t, entity.UserPreferredLangDefault, account.Preferences.PreferredContentLang)
+	assert.Equal(t, []string{entity.UserPreferredLangDefault}, account.Preferences.FallbackLangs)
+	assert.Equal(t, entity.UserArabicLevelNone, account.Preferences.ArabicLevel)
+	assert.Equal(t, entity.UserReaderModeArabicTranslation, account.Preferences.ReaderMode)
+	assert.Empty(t, account.Preferences.Interests)
 }
 
 func newAuthTestApp(user *fakeAuthUser) *fiber.App {

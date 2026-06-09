@@ -1,0 +1,86 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "surau-api-cache",
+	"main": "src/index.ts",
+	"compatibility_date": "2026-06-05",
+	"observability": {
+		"enabled": true
+	},
+	"limits": {
+		"cpu_ms": 50
+	},
+	"routes": [
+		{
+			"pattern": "api.surau.org/*",
+			"zone_name": "surau.org"
+		}
+	],
+	"kv_namespaces": [
+		{
+			"binding": "PUBLIC_API_CACHE",
+			"id": "3f9e5c6e4bdc46129100544caf01e6e7"
+		}
+	],
+	"durable_objects": {
+		"bindings": [
+			{
+				"name": "EDGE_RATE_LIMITER",
+				"class_name": "EdgeRateLimiter"
+			}
+		]
+	},
+	"migrations": [
+		{
+			"tag": "v1",
+			"new_sqlite_classes": [
+				"EdgeRateLimiter"
+			]
+		}
+	],
+	"ratelimits": [
+		{
+			"name": "RAG_RATE_LIMITER",
+			"namespace_id": "91001",
+			"simple": {
+				"limit": 10,
+				"period": 60
+			}
+		},
+		{
+			"name": "AUTH_EDGE_RATE_LIMITER",
+			"namespace_id": "91002",
+			"simple": {
+				"limit": 10,
+				"period": 60
+			}
+		},
+		{
+			"name": "FEEDBACK_RATE_LIMITER",
+			"namespace_id": "91003",
+			"simple": {
+				"limit": 30,
+				"period": 60
+			}
+		},
+		{
+			"name": "SEARCH_RATE_LIMITER",
+			"namespace_id": "91004",
+			"simple": {
+				"limit": 60,
+				"period": 60
+			}
+		}
+	],
+	"vars": {
+		"ORIGIN_BASE_URL": "https://origin-api.surau.org",
+		"CACHE_VERSION": "1",
+		"CACHE_FRESH_TTL_SECONDS": "300",
+		"CACHE_STALE_TTL_SECONDS": "86400",
+		"MAX_CACHE_BYTES": "2000000",
+		"RAG_DAILY_QUOTA_ENABLED": "true",
+		"RAG_DAILY_GUEST_LIMIT": "100",
+		"RAG_DAILY_USER_LIMIT": "50",
+		"JWT_ISSUER": "surau-backend",
+		"JWT_AUDIENCE": "surau-api"
+	}
+}

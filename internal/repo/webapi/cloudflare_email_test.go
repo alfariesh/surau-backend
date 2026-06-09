@@ -18,22 +18,24 @@ func TestCloudflareEmailClient_Send(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name       string
-		statusCode int
-		body       string
-		wantErr    bool
-		wantQueued bool
+		name          string
+		statusCode    int
+		body          string
+		wantErr       bool
+		wantDelivered []string
+		wantQueued    []string
 	}{
 		{
-			name:       "delivered",
-			statusCode: http.StatusOK,
-			body:       `{"success":true,"result":{"delivered":["user@example.com"],"permanent_bounces":[],"queued":[]}}`,
+			name:          "delivered",
+			statusCode:    http.StatusOK,
+			body:          `{"success":true,"result":{"delivered":["user@example.com"],"permanent_bounces":[],"queued":[]}}`,
+			wantDelivered: []string{"user@example.com"},
 		},
 		{
 			name:       "queued",
 			statusCode: http.StatusOK,
 			body:       `{"success":true,"result":{"delivered":[],"permanent_bounces":[],"queued":["user@example.com"]}}`,
-			wantQueued: true,
+			wantQueued: []string{"user@example.com"},
 		},
 		{
 			name:       "permanent bounce",
@@ -69,13 +71,12 @@ func TestCloudflareEmailClient_Send(t *testing.T) {
 			name:       "accepted with empty recipient status",
 			statusCode: http.StatusOK,
 			body:       `{"success":true,"result":{"delivered":[],"permanent_bounces":[],"queued":[]}}`,
-			wantErr:    true,
 		},
 		{
-			name:       "recipient not listed",
-			statusCode: http.StatusOK,
-			body:       `{"success":true,"result":{"delivered":["other@example.com"],"permanent_bounces":[],"queued":[]}}`,
-			wantErr:    true,
+			name:          "recipient not listed",
+			statusCode:    http.StatusOK,
+			body:          `{"success":true,"result":{"delivered":["other@example.com"],"permanent_bounces":[],"queued":[]}}`,
+			wantDelivered: []string{"other@example.com"},
 		},
 		{
 			name:       "missing result",
@@ -113,10 +114,15 @@ func TestCloudflareEmailClient_Send(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, entity.EmailProviderCloudflare, result.Provider)
 			assert.NotEmpty(t, result.ProviderResponse)
-			if tc.wantQueued {
-				assert.Equal(t, []string{"user@example.com"}, result.Queued)
+			if tc.wantDelivered != nil {
+				assert.Equal(t, tc.wantDelivered, result.Delivered)
 			} else {
-				assert.Equal(t, []string{"user@example.com"}, result.Delivered)
+				assert.Empty(t, result.Delivered)
+			}
+			if tc.wantQueued != nil {
+				assert.Equal(t, tc.wantQueued, result.Queued)
+			} else {
+				assert.Empty(t, result.Queued)
 			}
 		})
 	}

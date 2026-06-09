@@ -1,6 +1,7 @@
 package middleware_test
 
 import (
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -18,10 +19,16 @@ import (
 func newTestApp(t *testing.T) (*fiber.App, *jwt.Manager) {
 	t.Helper()
 
+	return newTestAppWithUser(t, entity.User{ID: "user-id-123", Role: entity.UserRoleUser})
+}
+
+func newTestAppWithUser(t *testing.T, user entity.User) (*fiber.App, *jwt.Manager) {
+	t.Helper()
+
 	jwtManager := jwt.New("0123456789abcdef0123456789abcdef", time.Hour, jwt.DefaultIssuer, jwt.DefaultAudience)
 
 	app := fiber.New()
-	app.Use(middleware.Auth(jwtManager, stubUserUseCase{user: entity.User{ID: "user-id-123", Role: entity.UserRoleUser}}))
+	app.Use(middleware.Auth(jwtManager, stubUserUseCase{user: user}))
 	app.Get("/test", func(c *fiber.Ctx) error {
 		userID, ok := c.Locals("userID").(string)
 		if !ok {
@@ -51,21 +58,25 @@ func TestAuthMiddleware(t *testing.T) {
 		authHeader     string
 		expectedStatus int
 		expectedBody   string
+		expectedCode   string
 	}{
 		{
 			name:           "missing header",
 			authHeader:     "",
 			expectedStatus: http.StatusUnauthorized,
+			expectedCode:   "AUTH_HEADER_MISSING",
 		},
 		{
 			name:           "invalid format",
 			authHeader:     "Basic xxx",
 			expectedStatus: http.StatusUnauthorized,
+			expectedCode:   "AUTH_HEADER_INVALID",
 		},
 		{
 			name:           "invalid token",
 			authHeader:     "Bearer invalid",
 			expectedStatus: http.StatusUnauthorized,
+			expectedCode:   "AUTH_TOKEN_INVALID",
 		},
 		{
 			name:           "valid token",
@@ -109,6 +120,43 @@ func TestAuthMiddleware(t *testing.T) {
 				require.NoError(t, readErr)
 				assert.Equal(t, localTc.expectedBody, string(body))
 			}
+			if localTc.expectedCode != "" {
+				var body struct {
+					Code string `json:"code"`
+				}
+				require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
+				assert.Equal(t, localTc.expectedCode, body.Code)
+			}
 		})
 	}
+}
+
+func TestAuthMiddlewareRejectsRevokedTokenVersion(t *testing.T) {
+	t.Parallel()
+
+	app, jwtManager := newTestAppWithUser(t, entity.User{
+		ID:           "user-id-123",
+		Role:         entity.UserRoleUser,
+		TokenVersion: 2,
+	})
+
+	oldToken, err := jwtManager.GenerateToken("user-id-123", 1)
+	require.NoError(t, err)
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/test", http.NoBody)
+	req.Header.Set("Authorization", "Bearer "+oldToken)
+
+	resp, err := app.Test(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	var body struct {
+		Error string `json:"error"`
+		Code  string `json:"code"`
+	}
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
+
+	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+	assert.Equal(t, "invalid or expired token", body.Error)
+	assert.Equal(t, "AUTH_TOKEN_INVALID", body.Code)
 }

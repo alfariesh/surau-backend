@@ -43,6 +43,8 @@ type BookMetadataEdit struct {
 	BookID       int        `json:"book_id"       example:"797"`
 	Status       string     `json:"status"        example:"draft"`
 	DisplayTitle *string    `json:"display_title"`
+	Bibliography *string    `json:"bibliography"`
+	Hint         *string    `json:"hint"`
 	Description  *string    `json:"description"`
 	CoverURL     *string    `json:"cover_url"`
 	CategoryID   *int       `json:"category_id"`

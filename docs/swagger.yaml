@@ -271,6 +271,8 @@ definitions:
     type: object
   entity.BookMetadataEdit:
     properties:
+      bibliography:
+        type: string
       book_id:
         example: 797
         type: integer
@@ -281,6 +283,8 @@ definitions:
       description:
         type: string
       display_title:
+        type: string
+      hint:
         type: string
       notes:
         type: string

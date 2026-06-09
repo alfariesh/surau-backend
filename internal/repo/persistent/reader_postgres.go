@@ -89,8 +89,8 @@ const bookBaseSearchConditionSQL = `(COALESCE(bmt.display_title, me.display_titl
 	OR a.name ILIKE ?
 	OR COALESCE(ct.name, c.name) ILIKE ?
 	OR c.name ILIKE ?
-	OR COALESCE(bmt.bibliography, b.bibliography) ILIKE ?
-	OR COALESCE(bmt.hint, b.hint) ILIKE ?
+	OR COALESCE(bmt.bibliography, me.bibliography, b.bibliography) ILIKE ?
+	OR COALESCE(bmt.hint, me.hint, b.hint) ILIKE ?
 	OR EXISTS (
 		SELECT 1
 		FROM book_metadata_translations bmt_any
@@ -1117,8 +1117,8 @@ func (r *ReaderRepo) bookSelectBuilder(lang string) sq.SelectBuilder {
 			"b.printed",
 			"b.minor_release",
 			"b.major_release",
-			"COALESCE(bmt.bibliography, b.bibliography) AS bibliography",
-			"COALESCE(bmt.hint, b.hint) AS hint",
+			"COALESCE(bmt.bibliography, me.bibliography, b.bibliography) AS bibliography",
+			"COALESCE(bmt.hint, me.hint, b.hint) AS hint",
 			"b.pdf_links",
 			"b.metadata",
 			"b.source_date",

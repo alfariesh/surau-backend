@@ -139,15 +139,19 @@ func TestEditorialSaveMetadataDraftTrimsEmptyFields(t *testing.T) {
 
 	uc, mockRepo := newEditorialUseCase(t)
 	displayTitle := "  Title  "
+	bibliography := "  Bibliography  "
+	hint := " \t "
 	description := "   "
 	categoryID := -1
 	expectedTitle := "Title"
+	expectedBibliography := "Bibliography"
 
 	mockRepo.EXPECT().
 		SaveMetadataDraft(context.Background(), "actor-id", entity.BookMetadataEdit{
 			BookID:       797,
 			Status:       entity.EditStatusDraft,
 			DisplayTitle: &expectedTitle,
+			Bibliography: &expectedBibliography,
 		}).
 		DoAndReturn(func(_ context.Context, _ string, edit entity.BookMetadataEdit) (entity.BookMetadataEdit, error) {
 			return edit, nil
@@ -156,12 +160,16 @@ func TestEditorialSaveMetadataDraftTrimsEmptyFields(t *testing.T) {
 	edit, err := uc.SaveMetadataDraft(context.Background(), "actor-id", entity.BookMetadataEdit{
 		BookID:       797,
 		DisplayTitle: &displayTitle,
+		Bibliography: &bibliography,
+		Hint:         &hint,
 		Description:  &description,
 		CategoryID:   &categoryID,
 	})
 
 	require.NoError(t, err)
 	assert.Equal(t, &expectedTitle, edit.DisplayTitle)
+	assert.Equal(t, &expectedBibliography, edit.Bibliography)
+	assert.Nil(t, edit.Hint)
 	assert.Nil(t, edit.Description)
 	assert.Nil(t, edit.CategoryID)
 }

@@ -32,6 +32,8 @@ type Server struct {
 	readTimeout     time.Duration
 	writeTimeout    time.Duration
 	shutdownTimeout time.Duration
+	proxyHeader     string
+	trustedProxies  []string
 
 	logger logger.Interface
 }
@@ -58,12 +60,23 @@ func New(l logger.Interface, opts ...Option) *Server {
 		opt(s)
 	}
 
+	// Only honor the proxy header when a trusted-proxy allowlist is configured;
+	// otherwise ctx.IP() falls back to the socket peer so clients cannot spoof it.
+	proxyHeader := s.proxyHeader
+	if len(s.trustedProxies) == 0 {
+		proxyHeader = ""
+	}
+
 	app := fiber.New(fiber.Config{
-		Prefork:      s.prefork,
-		ReadTimeout:  s.readTimeout,
-		WriteTimeout: s.writeTimeout,
-		JSONDecoder:  json.Unmarshal,
-		JSONEncoder:  json.Marshal,
+		Prefork:                 s.prefork,
+		ReadTimeout:             s.readTimeout,
+		WriteTimeout:            s.writeTimeout,
+		JSONDecoder:             json.Unmarshal,
+		JSONEncoder:             json.Marshal,
+		ProxyHeader:             proxyHeader,
+		EnableTrustedProxyCheck: len(s.trustedProxies) > 0,
+		TrustedProxies:          s.trustedProxies,
+		EnableIPValidation:      true,
 	})
 
 	s.App = app
