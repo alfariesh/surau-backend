@@ -1246,6 +1246,98 @@ func (r *UserRepo) StoreAuthAuditLog(ctx context.Context, log entity.AuthAuditLo
 	return nil
 }
 
+// ListAuthAuditEventsSince returns audit rows for one event type created after
+// since, oldest first. Used by the refresh-reuse alerter to find new events.
+func (r *UserRepo) ListAuthAuditEventsSince(
+	ctx context.Context,
+	event string,
+	since time.Time,
+	limit int,
+) ([]entity.AuthAuditLog, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+
+	sqlText, args, err := r.Builder.
+		Select("id, event, status, user_id, email, client_ip, user_agent, error_code, metadata, created_at").
+		From("auth_audit_logs").
+		Where(sq.Eq{"event": event}).
+		Where(sq.Gt{"created_at": since}).
+		OrderBy("created_at ASC").
+		Limit(uint64(limit)).
+		ToSql()
+	if err != nil {
+		return nil, fmt.Errorf("UserRepo - ListAuthAuditEventsSince - Builder: %w", err)
+	}
+
+	rows, err := r.Pool.Query(ctx, sqlText, args...)
+	if err != nil {
+		return nil, fmt.Errorf("UserRepo - ListAuthAuditEventsSince - Query: %w", err)
+	}
+	defer rows.Close()
+
+	logs := make([]entity.AuthAuditLog, 0)
+	for rows.Next() {
+		item, scanErr := scanAuthAuditLog(rows)
+		if scanErr != nil {
+			return nil, fmt.Errorf("UserRepo - ListAuthAuditEventsSince - scanAuthAuditLog: %w", scanErr)
+		}
+		logs = append(logs, item)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("UserRepo - ListAuthAuditEventsSince - rows.Err: %w", err)
+	}
+
+	return logs, nil
+}
+
+func scanAuthAuditLog(row rowScanner) (entity.AuthAuditLog, error) {
+	var (
+		log          entity.AuthAuditLog
+		userID       *string
+		email        *string
+		clientIP     *string
+		userAgent    *string
+		errorCode    *string
+		metadataJSON []byte
+	)
+	err := row.Scan(
+		&log.ID,
+		&log.Event,
+		&log.Status,
+		&userID,
+		&email,
+		&clientIP,
+		&userAgent,
+		&errorCode,
+		&metadataJSON,
+		&log.CreatedAt,
+	)
+	if err != nil {
+		return entity.AuthAuditLog{}, err
+	}
+	if userID != nil {
+		log.UserID = *userID
+	}
+	if email != nil {
+		log.Email = *email
+	}
+	if clientIP != nil {
+		log.ClientIP = *clientIP
+	}
+	if userAgent != nil {
+		log.UserAgent = *userAgent
+	}
+	if errorCode != nil {
+		log.ErrorCode = *errorCode
+	}
+	if len(metadataJSON) > 0 {
+		_ = json.Unmarshal(metadataJSON, &log.Metadata)
+	}
+
+	return log, nil
+}
+
 // RecordAuthLoginFingerprint stores a login fingerprint and reports whether it is new.
 func (r *UserRepo) RecordAuthLoginFingerprint(
 	ctx context.Context,

@@ -154,6 +154,14 @@ func (f *fakeAuthUser) LogoutAll(context.Context, string) error {
 	return nil
 }
 
+func (f *fakeAuthUser) ListSessions(context.Context, string) ([]entity.AuthSession, error) {
+	return nil, nil
+}
+
+func (f *fakeAuthUser) RevokeSession(context.Context, string, string) error {
+	return nil
+}
+
 func (f *fakeAuthUser) GetUser(context.Context, string) (entity.User, error) {
 	return entity.User{}, nil
 }

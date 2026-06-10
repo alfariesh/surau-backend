@@ -78,6 +78,11 @@ x-backend-app-environment: &x-backend-app-environment
   AUTH_ROLE_CHANGED_EMAIL_ENABLED: "${AUTH_ROLE_CHANGED_EMAIL_ENABLED:-true}"
   AUTH_EMAIL_CHANGED_EMAIL_ENABLED: "${AUTH_EMAIL_CHANGED_EMAIL_ENABLED:-true}"
   AUTH_ACCOUNT_DELETED_EMAIL_ENABLED: "${AUTH_ACCOUNT_DELETED_EMAIL_ENABLED:-true}"
+  # Admin alerting for high-signal security events (refresh-token reuse).
+  # Empty AUTH_ALERT_RECIPIENTS falls back to all admin-role users.
+  AUTH_ALERT_ENABLED: "${AUTH_ALERT_ENABLED:-false}"
+  AUTH_ALERT_INTERVAL: "${AUTH_ALERT_INTERVAL:-5m}"
+  AUTH_ALERT_RECIPIENTS: "${AUTH_ALERT_RECIPIENTS:-}"
   # Email / Cloudflare Email Service
   EMAIL_DELIVERY_MODE: "${EMAIL_DELIVERY_MODE:-log}"
   CF_EMAIL_ACCOUNT_ID: "${CF_EMAIL_ACCOUNT_ID:-dev-cloudflare-account-id}"

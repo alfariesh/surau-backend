@@ -46,6 +46,14 @@ func (s stubAuthUser) LogoutAll(context.Context, string) error {
 	return nil
 }
 
+func (s stubAuthUser) ListSessions(context.Context, string) ([]entity.AuthSession, error) {
+	return nil, nil
+}
+
+func (s stubAuthUser) RevokeSession(context.Context, string, string) error {
+	return nil
+}
+
 func (s stubAuthUser) GetUser(context.Context, string) (entity.User, error) {
 	return entity.User{}, nil
 }

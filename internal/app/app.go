@@ -43,6 +43,7 @@ type servers struct {
 	http                *httpserver.Server
 	emailDispatcherStop context.CancelFunc
 	authCleanupStop     context.CancelFunc
+	authAlertStop       context.CancelFunc
 }
 
 func initUseCases(cfg *config.Config, pg *postgres.Postgres, jwtManager *jwt.Manager) useCases {
@@ -145,6 +146,10 @@ func initUseCases(cfg *config.Config, pg *postgres.Postgres, jwtManager *jwt.Man
 				EmailChangedEnabled:    cfg.AuthEmail.EmailChangedEnabled,
 				AccountDeletedEnabled:  cfg.AuthEmail.AccountDeletedEnabled,
 				FailedLoginCooldown:    cfg.AuthEmail.FailedLoginCooldown,
+			},
+			Alert: user.AlertOptions{
+				Enabled:    cfg.AuthAlert.Enabled,
+				Recipients: cfg.AuthAlert.Recipients,
 			},
 			RateLimit: user.RateLimitOptions{
 				LoginEmail: user.RateLimitRule{
@@ -318,6 +323,35 @@ func (s *servers) startServers(cfg *config.Config, emailUC *emailusecase.UseCase
 			}
 		}()
 	}
+	if userUC != nil && cfg.AuthAlert.Enabled {
+		alertCtx, cancel := context.WithCancel(context.Background())
+		s.authAlertStop = cancel
+		go func() {
+			// Short initial delay so a restart surfaces fresh reuse events
+			// quickly instead of waiting a full interval.
+			initialDelay := time.NewTimer(30 * time.Second)
+			defer initialDelay.Stop()
+			ticker := time.NewTicker(cfg.AuthAlert.Interval)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-alertCtx.Done():
+					return
+				case <-initialDelay.C:
+				case <-ticker.C:
+				}
+				count, err := userUC.AlertRefreshReuse(alertCtx)
+				if err != nil {
+					l.Error(fmt.Errorf("app - refresh-reuse alert: %w", err))
+
+					continue
+				}
+				if count > 0 {
+					l.Info("app - refresh-reuse alert: notified admins of %d new event(s)", count)
+				}
+			}
+		}()
+	}
 	if emailUC != nil {
 		dispatchCtx, cancel := context.WithCancel(context.Background())
 		s.emailDispatcherStop = cancel
@@ -375,6 +409,9 @@ func (s *servers) shutdownServers(l logger.Interface) {
 	}
 	if s.authCleanupStop != nil {
 		s.authCleanupStop()
+	}
+	if s.authAlertStop != nil {
+		s.authAlertStop()
 	}
 	if err := s.http.Shutdown(); err != nil {
 		l.Error(fmt.Errorf("app - Run - httpServer.Shutdown: %w", err))

@@ -13,6 +13,7 @@ import (
 	"net/mail"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -66,6 +67,7 @@ const (
 	authEventLogout             = "logout"
 	authEventLogoutAll          = "logout_all"
 	authEventRefreshReuse       = "refresh_reuse_detected"
+	authEventSessionRevoke      = "session_revoke"
 	authEmailPasswordChanged    = "password_changed"
 	authEmailEmailVerified      = "email_verified"
 	authEmailNewLogin           = "new_login"
@@ -123,6 +125,9 @@ type UseCase struct {
 	cleanup                  CleanupOptions
 	rateLimit                RateLimitOptions
 	emailNotifications       EmailNotificationOptions
+	alert                    AlertOptions
+	alertMu                  sync.Mutex
+	alertWatermark           time.Time
 }
 
 // TransactionalEmailService sends admin-managed transactional emails.
@@ -192,6 +197,14 @@ type EmailNotificationOptions struct {
 	FailedLoginCooldown    time.Duration
 }
 
+// AlertOptions configures admin alerting for high-signal security events such
+// as refresh-token reuse. Recipients are explicit admin addresses; when empty,
+// the alerter falls back to every user with the admin role.
+type AlertOptions struct {
+	Enabled    bool
+	Recipients []string
+}
+
 // Options configures user auth email verification.
 type Options struct {
 	VerifyFrontendURL        string
@@ -217,6 +230,7 @@ type Options struct {
 	Cleanup                  CleanupOptions
 	RateLimit                RateLimitOptions
 	EmailNotifications       EmailNotificationOptions
+	Alert                    AlertOptions
 }
 
 // New -.
@@ -285,7 +299,24 @@ func New(r repo.UserRepo, j *jwt.Manager, emailSender repo.EmailSender, opts Opt
 		cleanup:                  opts.Cleanup,
 		rateLimit:                normalizeRateLimitOptions(opts.RateLimit),
 		emailNotifications:       normalizeEmailNotificationOptions(opts.EmailNotifications),
+		alert:                    normalizeAlertOptions(opts.Alert),
+		// Seed the alert watermark at construction so the first scan only
+		// considers reuse events that happen after boot, never the backlog.
+		alertWatermark: time.Now().UTC(),
 	}
+}
+
+// normalizeAlertOptions trims and de-blanks the configured recipient list.
+func normalizeAlertOptions(opts AlertOptions) AlertOptions {
+	recipients := make([]string, 0, len(opts.Recipients))
+	for _, r := range opts.Recipients {
+		if trimmed := strings.TrimSpace(r); trimmed != "" {
+			recipients = append(recipients, trimmed)
+		}
+	}
+	opts.Recipients = recipients
+
+	return opts
 }
 
 // Register -.
@@ -1873,6 +1904,8 @@ func auditErrorCode(err error) string {
 		return "invalid_role"
 	case errors.Is(err, entity.ErrInvalidRefreshToken):
 		return "invalid_refresh_token"
+	case errors.Is(err, entity.ErrAuthSessionNotFound):
+		return "auth_session_not_found"
 	case errors.Is(err, entity.ErrAccountLocked):
 		return "account_locked"
 	case errors.Is(err, entity.ErrLastAdmin):

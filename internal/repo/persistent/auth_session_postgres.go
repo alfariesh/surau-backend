@@ -201,6 +201,75 @@ func (r *UserRepo) RevokeAllAuthSessions(ctx context.Context, userID string) (in
 	return revoked.RowsAffected(), nil
 }
 
+// ListActiveAuthSessions returns the user's unrevoked, unexpired sessions
+// ordered by most recent activity. Rotation keeps one active row per family,
+// so each row corresponds to one active device.
+func (r *UserRepo) ListActiveAuthSessions(ctx context.Context, userID string) ([]entity.AuthSession, error) {
+	sqlText, args, err := r.Builder.
+		Select(authSessionColumns).
+		From("auth_sessions").
+		Where(sq.Eq{"user_id": userID}).
+		Where("revoked_at IS NULL").
+		Where("expires_at > now()").
+		OrderBy("last_used_at DESC").
+		ToSql()
+	if err != nil {
+		return nil, fmt.Errorf("UserRepo - ListActiveAuthSessions - r.Builder: %w", err)
+	}
+
+	rows, err := r.Pool.Query(ctx, sqlText, args...)
+	if err != nil {
+		return nil, fmt.Errorf("UserRepo - ListActiveAuthSessions - Query: %w", err)
+	}
+	defer rows.Close()
+
+	sessions := make([]entity.AuthSession, 0)
+	for rows.Next() {
+		session, scanErr := scanAuthSession(rows)
+		if scanErr != nil {
+			return nil, fmt.Errorf("UserRepo - ListActiveAuthSessions - scanAuthSession: %w", scanErr)
+		}
+		sessions = append(sessions, session)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("UserRepo - ListActiveAuthSessions - rows.Err: %w", err)
+	}
+
+	return sessions, nil
+}
+
+// RevokeAuthSessionByID revokes the family behind one active session, scoped to
+// the owning user so callers cannot revoke other users' sessions. The session
+// row id is resolved to its family first, then the whole rotation chain is
+// revoked (a family has one active row, so this kills exactly that device).
+func (r *UserRepo) RevokeAuthSessionByID(ctx context.Context, userID, sessionID string) error {
+	lookupSQL, lookupArgs, err := r.Builder.
+		Select("family_id").
+		From("auth_sessions").
+		Where(sq.Eq{"id": sessionID, "user_id": userID}).
+		Where("revoked_at IS NULL").
+		Where("expires_at > now()").
+		ToSql()
+	if err != nil {
+		return fmt.Errorf("UserRepo - RevokeAuthSessionByID - lookup Builder: %w", err)
+	}
+
+	var familyID string
+	if err = r.Pool.QueryRow(ctx, lookupSQL, lookupArgs...).Scan(&familyID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return entity.ErrAuthSessionNotFound
+		}
+
+		return fmt.Errorf("UserRepo - RevokeAuthSessionByID - lookup QueryRow: %w", err)
+	}
+
+	if _, err = r.RevokeAuthSessionFamily(ctx, familyID); err != nil {
+		return fmt.Errorf("UserRepo - RevokeAuthSessionByID - RevokeAuthSessionFamily: %w", err)
+	}
+
+	return nil
+}
+
 // revokeAuthSessionsInTx revokes every active session for the user inside an
 // existing transaction. Used by mutations that already bump token_version.
 func revokeAuthSessionsInTx(ctx context.Context, tx pgx.Tx, userID string) error {

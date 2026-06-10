@@ -204,6 +204,58 @@ func (uc *UseCase) LogoutAll(ctx context.Context, userID string) (err error) {
 	return nil
 }
 
+// ListSessions returns the user's active devices (one row per active session
+// family), newest activity first. Read-only: no audit, no rate limit.
+func (uc *UseCase) ListSessions(ctx context.Context, userID string) ([]entity.AuthSession, error) {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return nil, entity.ErrInvalidAuthInput
+	}
+	if uc.sessions == nil {
+		return []entity.AuthSession{}, nil
+	}
+
+	sessions, err := uc.sessions.ListActiveAuthSessions(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("UserUseCase - ListSessions - ListActiveAuthSessions: %w", err)
+	}
+
+	return sessions, nil
+}
+
+// RevokeSession revokes one of the user's active sessions by its id. The access
+// token tied to that device keeps working until it expires (minutes), but the
+// refresh token is killed immediately so the device cannot renew.
+func (uc *UseCase) RevokeSession(ctx context.Context, userID, sessionID string) (err error) {
+	auditUserID := strings.TrimSpace(userID)
+	defer func() {
+		uc.auditAuth(ctx, authEventSessionRevoke, auditStatus(err), auditUserID, "", auditErrorCode(err), nil)
+	}()
+
+	sessionID = strings.TrimSpace(sessionID)
+	if auditUserID == "" || sessionID == "" {
+		return entity.ErrInvalidAuthInput
+	}
+	// Session ids are UUIDs; a malformed id can never match a real session, so
+	// treat it as not-found rather than letting the DB raise a type error.
+	if _, parseErr := uuid.Parse(sessionID); parseErr != nil {
+		return entity.ErrAuthSessionNotFound
+	}
+	if uc.sessions == nil {
+		return entity.ErrAuthSessionNotFound
+	}
+
+	if err = uc.sessions.RevokeAuthSessionByID(ctx, auditUserID, sessionID); err != nil {
+		if errors.Is(err, entity.ErrAuthSessionNotFound) {
+			return entity.ErrAuthSessionNotFound
+		}
+
+		return fmt.Errorf("UserUseCase - RevokeSession - RevokeAuthSessionByID: %w", err)
+	}
+
+	return nil
+}
+
 // CleanupAuthData deletes expired auth rows using the configured retentions.
 // It is called by the app's periodic maintenance job, not by transports.
 func (uc *UseCase) CleanupAuthData(ctx context.Context) (entity.AuthCleanupResult, error) {

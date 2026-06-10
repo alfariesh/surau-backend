@@ -72,6 +72,13 @@ type (
 		// RevokeAllAuthSessions revokes every active session for the user and
 		// bumps users.token_version in one transaction (logout everywhere).
 		RevokeAllAuthSessions(ctx context.Context, userID string) (int64, error)
+		// ListActiveAuthSessions returns the user's unrevoked, unexpired sessions
+		// (one row per active device), newest activity first.
+		ListActiveAuthSessions(ctx context.Context, userID string) ([]entity.AuthSession, error)
+		// RevokeAuthSessionByID revokes the family of one active session, scoped
+		// to the owning user. Returns entity.ErrAuthSessionNotFound when no
+		// active session matches the id for that user.
+		RevokeAuthSessionByID(ctx context.Context, userID, sessionID string) error
 	}
 
 	// AuthLockoutRepo stores progressive login lockout counters.
@@ -92,6 +99,14 @@ type (
 	// AuthAuditRepo -.
 	AuthAuditRepo interface {
 		StoreAuthAuditLog(ctx context.Context, log entity.AuthAuditLog) error
+		// ListAuthAuditEventsSince returns audit rows for one event type created
+		// strictly after since, oldest first, capped at limit.
+		ListAuthAuditEventsSince(
+			ctx context.Context,
+			event string,
+			since time.Time,
+			limit int,
+		) ([]entity.AuthAuditLog, error)
 	}
 
 	// EmailSender -.

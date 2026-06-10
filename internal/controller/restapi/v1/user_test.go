@@ -499,6 +499,17 @@ func newAuthTestApp(user *fakeAuthUser) *fiber.App {
 
 		return controller.updatePreferences(ctx)
 	})
+	app.Get("/auth/sessions", func(ctx *fiber.Ctx) error {
+		ctx.Locals("userID", "user-id-123")
+		ctx.Locals("sessionID", "fam-current")
+
+		return controller.listSessions(ctx)
+	})
+	app.Delete("/auth/sessions/:id", func(ctx *fiber.Ctx) error {
+		ctx.Locals("userID", "user-id-123")
+
+		return controller.revokeSession(ctx)
+	})
 
 	return app
 }
@@ -525,12 +536,17 @@ type fakeAuthUser struct {
 	refreshErr            error
 	logoutErr             error
 	logoutAllErr          error
+	listSessionsErr       error
+	revokeSessionErr      error
 
-	roleActorID    string
-	roleActorEmail string
-	roleEmail      string
-	role           string
-	roleUser       entity.User
+	sessions          []entity.AuthSession
+	revokeSessionUser string
+	revokeSessionID   string
+	roleActorID       string
+	roleActorEmail    string
+	roleEmail         string
+	role              string
+	roleUser          entity.User
 }
 
 func (f *fakeAuthUser) Register(context.Context, string, string, string) (entity.User, error) {
@@ -559,6 +575,21 @@ func (f *fakeAuthUser) Logout(context.Context, string) error {
 
 func (f *fakeAuthUser) LogoutAll(context.Context, string) error {
 	return f.logoutAllErr
+}
+
+func (f *fakeAuthUser) ListSessions(_ context.Context, _ string) ([]entity.AuthSession, error) {
+	if f.listSessionsErr != nil {
+		return nil, f.listSessionsErr
+	}
+
+	return f.sessions, nil
+}
+
+func (f *fakeAuthUser) RevokeSession(_ context.Context, userID, sessionID string) error {
+	f.revokeSessionUser = userID
+	f.revokeSessionID = sessionID
+
+	return f.revokeSessionErr
 }
 
 func testLoginResult() entity.LoginResult {

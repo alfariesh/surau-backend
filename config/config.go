@@ -29,6 +29,7 @@ type (
 		AuthLockout   authLockout
 		AuthCleanup   authCleanup
 		AuthEmail     authEmail
+		AuthAlert     authAlert
 		RAG           rag
 		Metrics       metrics
 		Swagger       swagger
@@ -186,6 +187,14 @@ type (
 		AccountDeletedEnabled  bool          `env:"AUTH_ACCOUNT_DELETED_EMAIL_ENABLED" envDefault:"true"`
 	}
 
+	// AuthAlert configures admin alerting for high-signal security events
+	// (currently refresh-token reuse).
+	authAlert struct {
+		Enabled    bool          `env:"AUTH_ALERT_ENABLED" envDefault:"false"`
+		Interval   time.Duration `env:"AUTH_ALERT_INTERVAL" envDefault:"5m"`
+		Recipients []string      `env:"AUTH_ALERT_RECIPIENTS" envSeparator:","`
+	}
+
 	// RAG -.
 	rag struct {
 		LLMBaseURL           string        `env:"RAG_LLM_BASE_URL" envDefault:"https://ai.sumopod.com/v1"`
@@ -261,6 +270,9 @@ func NewConfig() (*Config, error) {
 		if cfg.AuthCleanup.AuditRetention < 0 {
 			return nil, fmt.Errorf("config error: AUTH_CLEANUP_AUDIT_RETENTION must not be negative")
 		}
+	}
+	if cfg.AuthAlert.Enabled && cfg.AuthAlert.Interval <= 0 {
+		return nil, fmt.Errorf("config error: AUTH_ALERT_INTERVAL must be positive")
 	}
 	cfg.Email.CloudflareAccountID = strings.TrimSpace(cfg.Email.CloudflareAccountID)
 	cfg.Email.CloudflareAPIToken = strings.TrimSpace(cfg.Email.CloudflareAPIToken)

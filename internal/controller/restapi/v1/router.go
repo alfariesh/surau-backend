@@ -113,6 +113,8 @@ func NewRoutes(
 		protectedAuthGroup.Post("/change-email/verify", r.verifyEmailChange)
 		protectedAuthGroup.Post("/delete-account", r.deleteAccount)
 		protectedAuthGroup.Post("/logout-all", r.logoutAll)
+		protectedAuthGroup.Get("/sessions", r.listSessions)
+		protectedAuthGroup.Delete("/sessions/:id", r.revokeSession)
 	}
 
 	userGroup := protected.Group("/user")

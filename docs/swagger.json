@@ -3112,6 +3112,97 @@
                 }
             }
         },
+        "/auth/sessions": {
+            "get": {
+                "description": "List the current user's active devices/sessions (manage devices)",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "List active sessions",
+                "operationId": "list-sessions",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.SessionList"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/auth/sessions/{id}": {
+            "delete": {
+                "description": "Revoke one of the current user's sessions (sign out a single device)",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Revoke a session",
+                "operationId": "revoke-session",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Session ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.SessionRevoked"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
         "/auth/verify-email": {
             "post": {
                 "description": "Verify a user's email address using a one-time token or 6-digit OTP",
@@ -14606,6 +14697,59 @@
                     "items": {
                         "type": "string"
                     }
+                }
+            }
+        },
+        "v1.SessionInfo": {
+            "type": "object",
+            "properties": {
+                "client_ip": {
+                    "type": "string",
+                    "example": "203.0.113.42"
+                },
+                "created_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "expires_at": {
+                    "type": "string",
+                    "example": "2026-02-01T00:00:00Z"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "is_current": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "last_used_at": {
+                    "type": "string",
+                    "example": "2026-01-02T08:30:00Z"
+                },
+                "user_agent": {
+                    "type": "string",
+                    "example": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)"
+                }
+            }
+        },
+        "v1.SessionList": {
+            "type": "object",
+            "properties": {
+                "sessions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/v1.SessionInfo"
+                    }
+                }
+            }
+        },
+        "v1.SessionRevoked": {
+            "type": "object",
+            "properties": {
+                "session_revoked": {
+                    "type": "boolean",
+                    "example": true
                 }
             }
         },

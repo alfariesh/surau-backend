@@ -25,6 +25,8 @@ type (
 		RefreshSession(ctx context.Context, refreshToken string) (entity.LoginResult, error)
 		Logout(ctx context.Context, refreshToken string) error
 		LogoutAll(ctx context.Context, userID string) error
+		ListSessions(ctx context.Context, userID string) ([]entity.AuthSession, error)
+		RevokeSession(ctx context.Context, userID, sessionID string) error
 		GetUser(ctx context.Context, userID string) (entity.User, error)
 		GetUserAccount(ctx context.Context, userID string) (entity.UserAccount, error)
 		AdminUsers(ctx context.Context, query, role string, emailVerified *bool, limit, offset int) ([]entity.UserAccount, int, error)

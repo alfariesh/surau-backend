@@ -3801,6 +3801,43 @@ definitions:
           type: string
         type: array
     type: object
+  v1.SessionInfo:
+    properties:
+      client_ip:
+        example: 203.0.113.42
+        type: string
+      created_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      expires_at:
+        example: "2026-02-01T00:00:00Z"
+        type: string
+      id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      is_current:
+        example: true
+        type: boolean
+      last_used_at:
+        example: "2026-01-02T08:30:00Z"
+        type: string
+      user_agent:
+        example: Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)
+        type: string
+    type: object
+  v1.SessionList:
+    properties:
+      sessions:
+        items:
+          $ref: '#/definitions/v1.SessionInfo'
+        type: array
+    type: object
+  v1.SessionRevoked:
+    properties:
+      session_revoked:
+        example: true
+        type: boolean
+    type: object
   v1.SessionsRevoked:
     properties:
       sessions_revoked:
@@ -6146,6 +6183,64 @@ paths:
           schema:
             $ref: '#/definitions/v1.Error'
       summary: Reset password
+      tags:
+      - auth
+  /auth/sessions:
+    get:
+      description: List the current user's active devices/sessions (manage devices)
+      operationId: list-sessions
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.SessionList'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: List active sessions
+      tags:
+      - auth
+  /auth/sessions/{id}:
+    delete:
+      description: Revoke one of the current user's sessions (sign out a single device)
+      operationId: revoke-session
+      parameters:
+      - description: Session ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.SessionRevoked'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Revoke a session
       tags:
       - auth
   /auth/verify-email:

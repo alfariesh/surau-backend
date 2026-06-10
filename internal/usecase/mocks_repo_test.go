@@ -653,6 +653,21 @@ func (mr *MockAuthSessionRepoMockRecorder) GetAuthSessionByTokenHash(ctx, tokenH
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetAuthSessionByTokenHash", reflect.TypeOf((*MockAuthSessionRepo)(nil).GetAuthSessionByTokenHash), ctx, tokenHash)
 }
 
+// ListActiveAuthSessions mocks base method.
+func (m *MockAuthSessionRepo) ListActiveAuthSessions(ctx context.Context, userID string) ([]entity.AuthSession, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListActiveAuthSessions", ctx, userID)
+	ret0, _ := ret[0].([]entity.AuthSession)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListActiveAuthSessions indicates an expected call of ListActiveAuthSessions.
+func (mr *MockAuthSessionRepoMockRecorder) ListActiveAuthSessions(ctx, userID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListActiveAuthSessions", reflect.TypeOf((*MockAuthSessionRepo)(nil).ListActiveAuthSessions), ctx, userID)
+}
+
 // RevokeAllAuthSessions mocks base method.
 func (m *MockAuthSessionRepo) RevokeAllAuthSessions(ctx context.Context, userID string) (int64, error) {
 	m.ctrl.T.Helper()
@@ -666,6 +681,20 @@ func (m *MockAuthSessionRepo) RevokeAllAuthSessions(ctx context.Context, userID 
 func (mr *MockAuthSessionRepoMockRecorder) RevokeAllAuthSessions(ctx, userID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RevokeAllAuthSessions", reflect.TypeOf((*MockAuthSessionRepo)(nil).RevokeAllAuthSessions), ctx, userID)
+}
+
+// RevokeAuthSessionByID mocks base method.
+func (m *MockAuthSessionRepo) RevokeAuthSessionByID(ctx context.Context, userID, sessionID string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RevokeAuthSessionByID", ctx, userID, sessionID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// RevokeAuthSessionByID indicates an expected call of RevokeAuthSessionByID.
+func (mr *MockAuthSessionRepoMockRecorder) RevokeAuthSessionByID(ctx, userID, sessionID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RevokeAuthSessionByID", reflect.TypeOf((*MockAuthSessionRepo)(nil).RevokeAuthSessionByID), ctx, userID, sessionID)
 }
 
 // RevokeAuthSessionFamily mocks base method.
@@ -826,6 +855,21 @@ func NewMockAuthAuditRepo(ctrl *gomock.Controller) *MockAuthAuditRepo {
 // EXPECT returns an object that allows the caller to indicate expected use.
 func (m *MockAuthAuditRepo) EXPECT() *MockAuthAuditRepoMockRecorder {
 	return m.recorder
+}
+
+// ListAuthAuditEventsSince mocks base method.
+func (m *MockAuthAuditRepo) ListAuthAuditEventsSince(ctx context.Context, event string, since time.Time, limit int) ([]entity.AuthAuditLog, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListAuthAuditEventsSince", ctx, event, since, limit)
+	ret0, _ := ret[0].([]entity.AuthAuditLog)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListAuthAuditEventsSince indicates an expected call of ListAuthAuditEventsSince.
+func (mr *MockAuthAuditRepoMockRecorder) ListAuthAuditEventsSince(ctx, event, since, limit any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListAuthAuditEventsSince", reflect.TypeOf((*MockAuthAuditRepo)(nil).ListAuthAuditEventsSince), ctx, event, since, limit)
 }
 
 // StoreAuthAuditLog mocks base method.

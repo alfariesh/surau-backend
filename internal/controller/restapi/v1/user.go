@@ -234,6 +234,70 @@ func (r *V1) logoutAll(ctx *fiber.Ctx) error {
 	return ctx.Status(http.StatusOK).JSON(response.SessionsRevoked{SessionsRevoked: true})
 }
 
+// @Summary     List active sessions
+// @Description List the current user's active devices/sessions (manage devices)
+// @ID          list-sessions
+// @Tags        auth
+// @Produce     json
+// @Success     200 {object} response.SessionList
+// @Failure     401 {object} response.Error
+// @Failure     500 {object} response.Error
+// @Security    BearerAuth
+// @Router      /auth/sessions [get]
+func (r *V1) listSessions(ctx *fiber.Ctx) error {
+	userID, ok := ctx.Locals("userID").(string)
+	if !ok || userID == "" {
+		return errorResponse(ctx, http.StatusUnauthorized, "unauthorized")
+	}
+
+	sessions, err := r.u.ListSessions(restAuthContext(ctx), userID)
+	if err != nil {
+		r.l.Error(err, "restapi - v1 - listSessions")
+
+		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
+	}
+
+	currentFamilyID, _ := ctx.Locals("sessionID").(string)
+
+	return ctx.Status(http.StatusOK).JSON(response.NewSessionList(sessions, currentFamilyID))
+}
+
+// @Summary     Revoke a session
+// @Description Revoke one of the current user's sessions (sign out a single device)
+// @ID          revoke-session
+// @Tags        auth
+// @Produce     json
+// @Param       id  path     string true "Session ID"
+// @Success     200 {object} response.SessionRevoked
+// @Failure     401 {object} response.Error
+// @Failure     404 {object} response.Error
+// @Failure     500 {object} response.Error
+// @Security    BearerAuth
+// @Router      /auth/sessions/{id} [delete]
+func (r *V1) revokeSession(ctx *fiber.Ctx) error {
+	userID, ok := ctx.Locals("userID").(string)
+	if !ok || userID == "" {
+		return errorResponse(ctx, http.StatusUnauthorized, "unauthorized")
+	}
+
+	sessionID := ctx.Params("id")
+
+	if err := r.u.RevokeSession(restAuthContext(ctx), userID, sessionID); err != nil {
+		r.l.Error(err, "restapi - v1 - revokeSession")
+
+		if errors.Is(err, entity.ErrInvalidAuthInput) {
+			return errorResponse(ctx, http.StatusBadRequest, "invalid request")
+		}
+		if errors.Is(err, entity.ErrAuthSessionNotFound) {
+			return errorResponse(ctx, http.StatusNotFound, "session not found")
+		}
+
+		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
+	}
+
+	return ctx.Status(http.StatusOK).JSON(response.SessionRevoked{SessionRevoked: true})
+}
+
 // @Summary     Verify email
 // @Description Verify a user's email address using a one-time token or 6-digit OTP
 // @ID          verify-email
