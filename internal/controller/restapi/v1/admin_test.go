@@ -89,6 +89,48 @@ func TestAdminSetUserRoleMapsInvalidRole(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 }
 
+func TestAdminSetUserRoleMapsSelfRoleChange(t *testing.T) {
+	t.Parallel()
+
+	user := &fakeAuthUser{roleErr: entity.ErrSelfRoleChange}
+	app := newAdminRoleTestApp(user, entity.User{ID: "admin-id", Email: "admin@example.com", Role: entity.UserRoleAdmin})
+	req := httptest.NewRequestWithContext(
+		t.Context(),
+		http.MethodPatch,
+		"/v1/admin/users/role",
+		strings.NewReader(`{"email":"admin@example.com","role":"user"}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := app.Test(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusConflict, resp.StatusCode)
+	assert.Contains(t, readTestBody(t, resp), "cannot change own role")
+}
+
+func TestAdminSetUserRoleMapsLastAdmin(t *testing.T) {
+	t.Parallel()
+
+	user := &fakeAuthUser{roleErr: entity.ErrLastAdmin}
+	app := newAdminRoleTestApp(user, entity.User{ID: "admin-id", Email: "admin@example.com", Role: entity.UserRoleAdmin})
+	req := httptest.NewRequestWithContext(
+		t.Context(),
+		http.MethodPatch,
+		"/v1/admin/users/role",
+		strings.NewReader(`{"email":"other-admin@example.com","role":"user"}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := app.Test(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusConflict, resp.StatusCode)
+	assert.Contains(t, readTestBody(t, resp), "cannot demote the last admin")
+}
+
 func TestAdminUsersListSupportsEditorLookup(t *testing.T) {
 	t.Parallel()
 

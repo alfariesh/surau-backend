@@ -2809,6 +2809,156 @@ const docTemplate = `{
                 }
             }
         },
+        "/auth/logout": {
+            "post": {
+                "description": "Revoke the session behind a refresh token. Idempotent: unknown tokens return success.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Logout",
+                "operationId": "logout",
+                "parameters": [
+                    {
+                        "description": "Refresh token",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.Logout"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.LoggedOut"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/logout-all": {
+            "post": {
+                "description": "Revoke all of the current user's sessions and invalidate outstanding access tokens",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Logout everywhere",
+                "operationId": "logout-all",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.SessionsRevoked"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/auth/refresh": {
+            "post": {
+                "description": "Exchange a refresh token for a new access/refresh token pair",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Refresh session",
+                "operationId": "refresh-session",
+                "parameters": [
+                    {
+                        "description": "Refresh token",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.RefreshToken"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Token"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
         "/auth/register": {
             "post": {
                 "description": "Register a new user",
@@ -9201,6 +9351,14 @@ const docTemplate = `{
                 "bibliography": {
                     "type": "string"
                 },
+                "catalog_publication_status": {
+                    "type": "string",
+                    "example": "published"
+                },
+                "catalog_published": {
+                    "type": "boolean",
+                    "example": true
+                },
                 "category_id": {
                     "type": "integer",
                     "example": 10
@@ -9268,6 +9426,22 @@ const docTemplate = `{
                     "type": "integer",
                     "example": 1
                 },
+                "production_publication_status": {
+                    "type": "string",
+                    "example": "hidden"
+                },
+                "production_published": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "production_status": {
+                    "type": "string",
+                    "example": "candidate"
+                },
+                "production_workflow_status": {
+                    "type": "string",
+                    "example": "drafting"
+                },
                 "publication_status": {
                     "type": "string",
                     "example": "published"
@@ -9315,6 +9489,10 @@ const docTemplate = `{
                         "$ref": "#/definitions/entity.BookCategoryStat"
                     }
                 },
+                "catalog_published_count": {
+                    "type": "integer",
+                    "example": 120
+                },
                 "category_count": {
                     "type": "integer",
                     "example": 12
@@ -9323,9 +9501,17 @@ const docTemplate = `{
                     "type": "integer",
                     "example": 25
                 },
+                "production_published_count": {
+                    "type": "integer",
+                    "example": 25
+                },
                 "published_count": {
                     "type": "integer",
                     "example": 120
+                },
+                "scope": {
+                    "type": "string",
+                    "example": "catalog_global"
                 },
                 "total_books": {
                     "type": "integer",
@@ -9340,6 +9526,10 @@ const docTemplate = `{
         "entity.BookCategoryStat": {
             "type": "object",
             "properties": {
+                "catalog_published_count": {
+                    "type": "integer",
+                    "example": 20
+                },
                 "category_id": {
                     "type": "integer",
                     "example": 10
@@ -9348,6 +9538,10 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "coverage_count": {
+                    "type": "integer",
+                    "example": 8
+                },
+                "production_published_count": {
                     "type": "integer",
                     "example": 8
                 },
@@ -13236,9 +13430,33 @@ const docTemplate = `{
         "v1.EmailChanged": {
             "type": "object",
             "properties": {
+                "access_token": {
+                    "type": "string",
+                    "example": "eyJhbGciOiJIUzI1NiIs..."
+                },
                 "email_changed": {
                     "type": "boolean",
                     "example": true
+                },
+                "expires_in": {
+                    "type": "integer",
+                    "example": 900
+                },
+                "refresh_token": {
+                    "type": "string",
+                    "example": "3q2-7w8X9yZ0aB1cD2eF3g..."
+                },
+                "session_id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "token": {
+                    "type": "string",
+                    "example": "eyJhbGciOiJIUzI1NiIs..."
+                },
+                "token_type": {
+                    "type": "string",
+                    "example": "Bearer"
                 }
             }
         },
@@ -13594,6 +13812,10 @@ const docTemplate = `{
                 "request_id": {
                     "type": "string",
                     "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "retry_after": {
+                    "type": "integer",
+                    "example": 60
                 }
             }
         },
@@ -13606,6 +13828,15 @@ const docTemplate = `{
                 "email": {
                     "type": "string",
                     "example": "john@example.com"
+                }
+            }
+        },
+        "v1.LoggedOut": {
+            "type": "object",
+            "properties": {
+                "logged_out": {
+                    "type": "boolean",
+                    "example": true
                 }
             }
         },
@@ -13628,6 +13859,19 @@ const docTemplate = `{
                 }
             }
         },
+        "v1.Logout": {
+            "type": "object",
+            "required": [
+                "refresh_token"
+            ],
+            "properties": {
+                "refresh_token": {
+                    "type": "string",
+                    "maxLength": 512,
+                    "example": "3q2-7w8X9yZ0aB1cD2eF3g..."
+                }
+            }
+        },
         "v1.PageList": {
             "type": "object",
             "properties": {
@@ -13646,9 +13890,33 @@ const docTemplate = `{
         "v1.PasswordChanged": {
             "type": "object",
             "properties": {
+                "access_token": {
+                    "type": "string",
+                    "example": "eyJhbGciOiJIUzI1NiIs..."
+                },
+                "expires_in": {
+                    "type": "integer",
+                    "example": 900
+                },
                 "password_changed": {
                     "type": "boolean",
                     "example": true
+                },
+                "refresh_token": {
+                    "type": "string",
+                    "example": "3q2-7w8X9yZ0aB1cD2eF3g..."
+                },
+                "session_id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "token": {
+                    "type": "string",
+                    "example": "eyJhbGciOiJIUzI1NiIs..."
+                },
+                "token_type": {
+                    "type": "string",
+                    "example": "Bearer"
                 }
             }
         },
@@ -14026,6 +14294,19 @@ const docTemplate = `{
                 }
             }
         },
+        "v1.RefreshToken": {
+            "type": "object",
+            "required": [
+                "refresh_token"
+            ],
+            "properties": {
+                "refresh_token": {
+                    "type": "string",
+                    "maxLength": 512,
+                    "example": "3q2-7w8X9yZ0aB1cD2eF3g..."
+                }
+            }
+        },
         "v1.Register": {
             "type": "object",
             "required": [
@@ -14334,6 +14615,15 @@ const docTemplate = `{
                 }
             }
         },
+        "v1.SessionsRevoked": {
+            "type": "object",
+            "properties": {
+                "sessions_revoked": {
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        },
         "v1.SetUserRole": {
             "type": "object",
             "required": [
@@ -14369,9 +14659,29 @@ const docTemplate = `{
         "v1.Token": {
             "type": "object",
             "properties": {
+                "access_token": {
+                    "type": "string",
+                    "example": "eyJhbGciOiJIUzI1NiIs..."
+                },
+                "expires_in": {
+                    "type": "integer",
+                    "example": 900
+                },
+                "refresh_token": {
+                    "type": "string",
+                    "example": "3q2-7w8X9yZ0aB1cD2eF3g..."
+                },
+                "session_id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
                 "token": {
                     "type": "string",
                     "example": "eyJhbGciOiJIUzI1NiIs..."
+                },
+                "token_type": {
+                    "type": "string",
+                    "example": "Bearer"
                 }
             }
         },

@@ -46,6 +46,8 @@ func NewRoutes(
 	{
 		authGroup.Post("/register", r.register)
 		authGroup.Post("/login", r.login)
+		authGroup.Post("/refresh", r.refreshToken)
+		authGroup.Post("/logout", r.logout)
 		authGroup.Post("/verify-email", r.verifyEmail)
 		authGroup.Post("/resend-verification", r.resendVerification)
 		authGroup.Post("/forgot-password", r.forgotPassword)
@@ -110,6 +112,7 @@ func NewRoutes(
 		protectedAuthGroup.Post("/change-email/request", r.requestEmailChange)
 		protectedAuthGroup.Post("/change-email/verify", r.verifyEmailChange)
 		protectedAuthGroup.Post("/delete-account", r.deleteAccount)
+		protectedAuthGroup.Post("/logout-all", r.logoutAll)
 	}
 
 	userGroup := protected.Group("/user")

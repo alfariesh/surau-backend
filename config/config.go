@@ -26,6 +26,8 @@ type (
 		JWT           jwt
 		Email         email
 		AuthRateLimit authRateLimit
+		AuthLockout   authLockout
+		AuthCleanup   authCleanup
 		AuthEmail     authEmail
 		RAG           rag
 		Metrics       metrics
@@ -59,10 +61,14 @@ type (
 
 	// JWT -.
 	jwt struct {
-		Secret      string        `env:"JWT_SECRET,required"`
-		TokenExpiry time.Duration `env:"JWT_TOKEN_EXPIRY" envDefault:"24h"`
-		Issuer      string        `env:"JWT_ISSUER" envDefault:"surau-backend"`
-		Audience    string        `env:"JWT_AUDIENCE" envDefault:"surau-api"`
+		Secret string `env:"JWT_SECRET,required"`
+		// TokenExpiry is the legacy single-token TTL; signing now uses
+		// AccessTokenExpiry. Kept validated for env back-compat.
+		TokenExpiry        time.Duration `env:"JWT_TOKEN_EXPIRY" envDefault:"24h"`
+		AccessTokenExpiry  time.Duration `env:"JWT_ACCESS_TOKEN_EXPIRY" envDefault:"15m"`
+		RefreshTokenExpiry time.Duration `env:"JWT_REFRESH_TOKEN_EXPIRY" envDefault:"720h"`
+		Issuer             string        `env:"JWT_ISSUER" envDefault:"surau-backend"`
+		Audience           string        `env:"JWT_AUDIENCE" envDefault:"surau-api"`
 	}
 
 	// Email -.
@@ -140,6 +146,31 @@ type (
 		DeleteAccountUserWindow       time.Duration `env:"AUTH_RATE_LIMIT_DELETE_ACCOUNT_USER_WINDOW" envDefault:"1h"`
 		DeleteAccountIPMax            int           `env:"AUTH_RATE_LIMIT_DELETE_ACCOUNT_IP_MAX" envDefault:"10"`
 		DeleteAccountIPWindow         time.Duration `env:"AUTH_RATE_LIMIT_DELETE_ACCOUNT_IP_WINDOW" envDefault:"1h"`
+		RefreshTokenMax               int           `env:"AUTH_RATE_LIMIT_REFRESH_TOKEN_MAX" envDefault:"5"`
+		RefreshTokenWindow            time.Duration `env:"AUTH_RATE_LIMIT_REFRESH_TOKEN_WINDOW" envDefault:"15m"`
+		RefreshIPMax                  int           `env:"AUTH_RATE_LIMIT_REFRESH_IP_MAX" envDefault:"60"`
+		RefreshIPWindow               time.Duration `env:"AUTH_RATE_LIMIT_REFRESH_IP_WINDOW" envDefault:"15m"`
+		VerifyEmailTokenMax           int           `env:"AUTH_RATE_LIMIT_VERIFY_EMAIL_TOKEN_MAX" envDefault:"5"`
+		VerifyEmailTokenWindow        time.Duration `env:"AUTH_RATE_LIMIT_VERIFY_EMAIL_TOKEN_WINDOW" envDefault:"15m"`
+	}
+
+	// AuthLockout -.
+	authLockout struct {
+		Enabled      bool          `env:"AUTH_LOCKOUT_ENABLED" envDefault:"true"`
+		Threshold    int           `env:"AUTH_LOCKOUT_THRESHOLD" envDefault:"5"`
+		BaseDuration time.Duration `env:"AUTH_LOCKOUT_BASE_DURATION" envDefault:"1m"`
+		Factor       int           `env:"AUTH_LOCKOUT_FACTOR" envDefault:"15"`
+		MaxDuration  time.Duration `env:"AUTH_LOCKOUT_MAX_DURATION" envDefault:"1h"`
+	}
+
+	// AuthCleanup -.
+	authCleanup struct {
+		Enabled          bool          `env:"AUTH_CLEANUP_ENABLED" envDefault:"true"`
+		Interval         time.Duration `env:"AUTH_CLEANUP_INTERVAL" envDefault:"6h"`
+		TokenRetention   time.Duration `env:"AUTH_CLEANUP_TOKEN_RETENTION" envDefault:"720h"`
+		SessionRetention time.Duration `env:"AUTH_CLEANUP_SESSION_RETENTION" envDefault:"720h"`
+		// AuditRetention 0 keeps audit logs forever.
+		AuditRetention time.Duration `env:"AUTH_CLEANUP_AUDIT_RETENTION" envDefault:"0"`
 	}
 
 	// AuthEmail -.
@@ -196,6 +227,40 @@ func NewConfig() (*Config, error) {
 	}
 	if cfg.JWT.TokenExpiry <= 0 || cfg.JWT.TokenExpiry > 24*time.Hour {
 		return nil, fmt.Errorf("config error: JWT_TOKEN_EXPIRY must be positive and no more than 24h")
+	}
+	if cfg.JWT.AccessTokenExpiry <= 0 || cfg.JWT.AccessTokenExpiry > 24*time.Hour {
+		return nil, fmt.Errorf("config error: JWT_ACCESS_TOKEN_EXPIRY must be positive and no more than 24h")
+	}
+	if cfg.JWT.RefreshTokenExpiry < cfg.JWT.AccessTokenExpiry || cfg.JWT.RefreshTokenExpiry > 8760*time.Hour {
+		return nil, fmt.Errorf("config error: JWT_REFRESH_TOKEN_EXPIRY must be at least JWT_ACCESS_TOKEN_EXPIRY and no more than 8760h")
+	}
+	if cfg.AuthLockout.Enabled {
+		if cfg.AuthLockout.Threshold <= 0 {
+			return nil, fmt.Errorf("config error: AUTH_LOCKOUT_THRESHOLD must be positive")
+		}
+		if cfg.AuthLockout.Factor <= 0 {
+			return nil, fmt.Errorf("config error: AUTH_LOCKOUT_FACTOR must be positive")
+		}
+		if cfg.AuthLockout.BaseDuration <= 0 {
+			return nil, fmt.Errorf("config error: AUTH_LOCKOUT_BASE_DURATION must be positive")
+		}
+		if cfg.AuthLockout.MaxDuration < cfg.AuthLockout.BaseDuration {
+			return nil, fmt.Errorf("config error: AUTH_LOCKOUT_MAX_DURATION must be at least AUTH_LOCKOUT_BASE_DURATION")
+		}
+	}
+	if cfg.AuthCleanup.Enabled {
+		if cfg.AuthCleanup.Interval <= 0 {
+			return nil, fmt.Errorf("config error: AUTH_CLEANUP_INTERVAL must be positive")
+		}
+		if cfg.AuthCleanup.TokenRetention <= 0 {
+			return nil, fmt.Errorf("config error: AUTH_CLEANUP_TOKEN_RETENTION must be positive")
+		}
+		if cfg.AuthCleanup.SessionRetention <= 0 {
+			return nil, fmt.Errorf("config error: AUTH_CLEANUP_SESSION_RETENTION must be positive")
+		}
+		if cfg.AuthCleanup.AuditRetention < 0 {
+			return nil, fmt.Errorf("config error: AUTH_CLEANUP_AUDIT_RETENTION must not be negative")
+		}
 	}
 	cfg.Email.CloudflareAccountID = strings.TrimSpace(cfg.Email.CloudflareAccountID)
 	cfg.Email.CloudflareAPIToken = strings.TrimSpace(cfg.Email.CloudflareAPIToken)
@@ -426,6 +491,24 @@ func NewConfig() (*Config, error) {
 			return nil, err
 		}
 		if err := validatePositiveDuration("AUTH_RATE_LIMIT_DELETE_ACCOUNT_IP_WINDOW", cfg.AuthRateLimit.DeleteAccountIPWindow); err != nil {
+			return nil, err
+		}
+		if err := validatePositiveInt("AUTH_RATE_LIMIT_REFRESH_TOKEN_MAX", cfg.AuthRateLimit.RefreshTokenMax); err != nil {
+			return nil, err
+		}
+		if err := validatePositiveDuration("AUTH_RATE_LIMIT_REFRESH_TOKEN_WINDOW", cfg.AuthRateLimit.RefreshTokenWindow); err != nil {
+			return nil, err
+		}
+		if err := validatePositiveInt("AUTH_RATE_LIMIT_REFRESH_IP_MAX", cfg.AuthRateLimit.RefreshIPMax); err != nil {
+			return nil, err
+		}
+		if err := validatePositiveDuration("AUTH_RATE_LIMIT_REFRESH_IP_WINDOW", cfg.AuthRateLimit.RefreshIPWindow); err != nil {
+			return nil, err
+		}
+		if err := validatePositiveInt("AUTH_RATE_LIMIT_VERIFY_EMAIL_TOKEN_MAX", cfg.AuthRateLimit.VerifyEmailTokenMax); err != nil {
+			return nil, err
+		}
+		if err := validatePositiveDuration("AUTH_RATE_LIMIT_VERIFY_EMAIL_TOKEN_WINDOW", cfg.AuthRateLimit.VerifyEmailTokenWindow); err != nil {
 			return nil, err
 		}
 	}

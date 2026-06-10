@@ -62,7 +62,7 @@ func (r *V1) login() server.CallHandler {
 			return nil, badRequestError("amqp_rpc - V1 - login - validation", err)
 		}
 
-		token, err := r.u.Login(amqpAuthContext(), req.Email, req.Password)
+		result, err := r.u.Login(amqpAuthContext(), req.Email, req.Password)
 		if err != nil {
 			r.l.Error(err, "amqp_rpc - V1 - login")
 			if errors.Is(err, entity.ErrInvalidAuthInput) {
@@ -81,7 +81,7 @@ func (r *V1) login() server.CallHandler {
 			return nil, fmt.Errorf("amqp_rpc - V1 - login: %w", err)
 		}
 
-		return response.Token{Token: token}, nil
+		return response.Token{Token: result.AccessToken}, nil
 	}
 }
 
@@ -244,7 +244,7 @@ func (r *V1) changePassword() server.CallHandler {
 			return nil, badRequestError("amqp_rpc - V1 - changePassword - validation", err)
 		}
 
-		if err = r.u.ChangePassword(amqpAuthContext(), userID, req.CurrentPassword, req.NewPassword); err != nil {
+		if _, err = r.u.ChangePassword(amqpAuthContext(), userID, req.CurrentPassword, req.NewPassword); err != nil {
 			r.l.Error(err, "amqp_rpc - V1 - changePassword")
 			if errors.Is(err, entity.ErrInvalidAuthInput) {
 				return nil, badRequestError("amqp_rpc - V1 - changePassword - invalid input", err)
@@ -324,7 +324,7 @@ func (r *V1) verifyEmailChange() server.CallHandler {
 			return nil, badRequestError("amqp_rpc - V1 - verifyEmailChange - validation", err)
 		}
 
-		if err = r.u.VerifyEmailChange(amqpAuthContext(), userID, req.Token, req.OTP); err != nil {
+		if _, err = r.u.VerifyEmailChange(amqpAuthContext(), userID, req.Token, req.OTP); err != nil {
 			r.l.Error(err, "amqp_rpc - V1 - verifyEmailChange")
 			if errors.Is(err, entity.ErrInvalidAuthInput) || errors.Is(err, entity.ErrInvalidEmailChangeToken) {
 				return nil, badRequestError("amqp_rpc - V1 - verifyEmailChange - invalid input", err)

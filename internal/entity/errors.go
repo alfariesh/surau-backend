@@ -1,6 +1,9 @@
 package entity
 
-import "errors"
+import (
+	"errors"
+	"time"
+)
 
 var (
 	ErrUserNotFound                    = errors.New("user not found")
@@ -19,6 +22,10 @@ var (
 	ErrPasswordResetTokenNotFound      = errors.New("password reset token not found")
 	ErrPasswordResetRateLimited        = errors.New("password reset rate limited")
 	ErrInvalidEmailChangeToken         = errors.New("invalid email change token")
+	ErrInvalidRefreshToken             = errors.New("invalid refresh token")
+	ErrAccountLocked                   = errors.New("account temporarily locked")
+	ErrLastAdmin                       = errors.New("cannot demote the last admin")
+	ErrSelfRoleChange                  = errors.New("admins cannot change their own role")
 	ErrEmailChangeTokenNotFound        = errors.New("email change token not found")
 	ErrEmailChangeRateLimited          = errors.New("email change rate limited")
 	ErrEmailPermanentBounce            = errors.New("email permanent bounce")
@@ -69,6 +76,21 @@ var (
 	ErrInvalidQuranRange               = errors.New("invalid quran range")
 	ErrInvalidQuranProgress            = errors.New("invalid quran progress")
 )
+
+// AuthRateLimitedError carries the retry-after hint computed by the rate
+// limiter so transports can surface it (Retry-After header / retry_after
+// field). errors.Is(err, ErrAuthRateLimited) keeps matching via Unwrap.
+type AuthRateLimitedError struct {
+	RetryAfter time.Duration
+}
+
+func (e *AuthRateLimitedError) Error() string {
+	return ErrAuthRateLimited.Error()
+}
+
+func (e *AuthRateLimitedError) Unwrap() error {
+	return ErrAuthRateLimited
+}
 
 // ProductionProjectExistsError carries the active project that blocks a duplicate create.
 type ProductionProjectExistsError struct {

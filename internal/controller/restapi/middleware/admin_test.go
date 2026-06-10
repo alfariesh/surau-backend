@@ -22,8 +22,20 @@ func (s stubUserUseCase) Register(context.Context, string, string, string) (enti
 	return entity.User{}, nil
 }
 
-func (s stubUserUseCase) Login(context.Context, string, string) (string, error) {
-	return "", nil
+func (s stubUserUseCase) Login(context.Context, string, string) (entity.LoginResult, error) {
+	return entity.LoginResult{}, nil
+}
+
+func (s stubUserUseCase) RefreshSession(context.Context, string) (entity.LoginResult, error) {
+	return entity.LoginResult{}, nil
+}
+
+func (s stubUserUseCase) Logout(context.Context, string) error {
+	return nil
+}
+
+func (s stubUserUseCase) LogoutAll(context.Context, string) error {
+	return nil
 }
 
 func (s stubUserUseCase) GetUser(context.Context, string) (entity.User, error) {
@@ -86,16 +98,16 @@ func (s stubUserUseCase) ResetPassword(context.Context, string, string) error {
 	return nil
 }
 
-func (s stubUserUseCase) ChangePassword(context.Context, string, string, string) error {
-	return nil
+func (s stubUserUseCase) ChangePassword(context.Context, string, string, string) (entity.LoginResult, error) {
+	return entity.LoginResult{}, nil
 }
 
 func (s stubUserUseCase) RequestEmailChange(context.Context, string, string, string) error {
 	return nil
 }
 
-func (s stubUserUseCase) VerifyEmailChange(context.Context, string, string, string) error {
-	return nil
+func (s stubUserUseCase) VerifyEmailChange(context.Context, string, string, string) (entity.LoginResult, error) {
+	return entity.LoginResult{}, nil
 }
 
 func (s stubUserUseCase) DeleteAccount(context.Context, string, string) error {

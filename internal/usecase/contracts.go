@@ -21,7 +21,10 @@ type (
 	// User -.
 	User interface {
 		Register(ctx context.Context, username, email, password string) (entity.User, error)
-		Login(ctx context.Context, email, password string) (string, error)
+		Login(ctx context.Context, email, password string) (entity.LoginResult, error)
+		RefreshSession(ctx context.Context, refreshToken string) (entity.LoginResult, error)
+		Logout(ctx context.Context, refreshToken string) error
+		LogoutAll(ctx context.Context, userID string) error
 		GetUser(ctx context.Context, userID string) (entity.User, error)
 		GetUserAccount(ctx context.Context, userID string) (entity.UserAccount, error)
 		AdminUsers(ctx context.Context, query, role string, emailVerified *bool, limit, offset int) ([]entity.UserAccount, int, error)
@@ -46,9 +49,9 @@ type (
 		ResendEmailVerification(ctx context.Context, email string) error
 		ForgotPassword(ctx context.Context, email string) error
 		ResetPassword(ctx context.Context, token, password string) error
-		ChangePassword(ctx context.Context, userID, currentPassword, newPassword string) error
+		ChangePassword(ctx context.Context, userID, currentPassword, newPassword string) (entity.LoginResult, error)
 		RequestEmailChange(ctx context.Context, userID, currentPassword, newEmail string) error
-		VerifyEmailChange(ctx context.Context, userID, token, otp string) error
+		VerifyEmailChange(ctx context.Context, userID, token, otp string) (entity.LoginResult, error)
 		DeleteAccount(ctx context.Context, userID, currentPassword string) error
 	}
 

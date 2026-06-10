@@ -468,3 +468,97 @@ func TestNewConfig_InvalidJWT(t *testing.T) {
 		})
 	}
 }
+
+func TestNewConfig_AuthSessionDefaults(t *testing.T) {
+	setRequiredEnv(t)
+	unsetEnv(t, "JWT_ACCESS_TOKEN_EXPIRY")
+	unsetEnv(t, "JWT_REFRESH_TOKEN_EXPIRY")
+	unsetEnv(t, "AUTH_LOCKOUT_ENABLED")
+	unsetEnv(t, "AUTH_CLEANUP_ENABLED")
+
+	cfg, err := NewConfig()
+
+	require.NoError(t, err)
+	assert.Equal(t, "15m0s", cfg.JWT.AccessTokenExpiry.String())
+	assert.Equal(t, "720h0m0s", cfg.JWT.RefreshTokenExpiry.String())
+	assert.True(t, cfg.AuthLockout.Enabled)
+	assert.Equal(t, 5, cfg.AuthLockout.Threshold)
+	assert.Equal(t, "1m0s", cfg.AuthLockout.BaseDuration.String())
+	assert.Equal(t, 15, cfg.AuthLockout.Factor)
+	assert.Equal(t, "1h0m0s", cfg.AuthLockout.MaxDuration.String())
+	assert.True(t, cfg.AuthCleanup.Enabled)
+	assert.Equal(t, "6h0m0s", cfg.AuthCleanup.Interval.String())
+	assert.Equal(t, "720h0m0s", cfg.AuthCleanup.TokenRetention.String())
+	assert.Equal(t, "720h0m0s", cfg.AuthCleanup.SessionRetention.String())
+	assert.Equal(t, "0s", cfg.AuthCleanup.AuditRetention.String())
+}
+
+func TestNewConfig_AuthSessionValidation(t *testing.T) {
+	tests := []struct {
+		name    string
+		key     string
+		value   string
+		wantErr string
+	}{
+		{
+			name:    "access expiry over 24h",
+			key:     "JWT_ACCESS_TOKEN_EXPIRY",
+			value:   "25h",
+			wantErr: "JWT_ACCESS_TOKEN_EXPIRY",
+		},
+		{
+			name:    "refresh expiry below access expiry",
+			key:     "JWT_REFRESH_TOKEN_EXPIRY",
+			value:   "5m",
+			wantErr: "JWT_REFRESH_TOKEN_EXPIRY",
+		},
+		{
+			name:    "refresh expiry over one year",
+			key:     "JWT_REFRESH_TOKEN_EXPIRY",
+			value:   "9000h",
+			wantErr: "JWT_REFRESH_TOKEN_EXPIRY",
+		},
+		{
+			name:    "lockout threshold zero",
+			key:     "AUTH_LOCKOUT_THRESHOLD",
+			value:   "0",
+			wantErr: "AUTH_LOCKOUT_THRESHOLD",
+		},
+		{
+			name:    "lockout max below base",
+			key:     "AUTH_LOCKOUT_MAX_DURATION",
+			value:   "1s",
+			wantErr: "AUTH_LOCKOUT_MAX_DURATION",
+		},
+		{
+			name:    "cleanup interval zero",
+			key:     "AUTH_CLEANUP_INTERVAL",
+			value:   "0",
+			wantErr: "AUTH_CLEANUP_INTERVAL",
+		},
+		{
+			name:    "refresh rate limit max zero",
+			key:     "AUTH_RATE_LIMIT_REFRESH_TOKEN_MAX",
+			value:   "0",
+			wantErr: "AUTH_RATE_LIMIT_REFRESH_TOKEN_MAX",
+		},
+		{
+			name:    "verify email token window zero",
+			key:     "AUTH_RATE_LIMIT_VERIFY_EMAIL_TOKEN_WINDOW",
+			value:   "0",
+			wantErr: "AUTH_RATE_LIMIT_VERIFY_EMAIL_TOKEN_WINDOW",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			setRequiredEnv(t)
+			t.Setenv(tc.key, tc.value)
+
+			_, err := NewConfig()
+
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.wantErr)
+		})
+	}
+}

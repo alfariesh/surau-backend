@@ -26,12 +26,24 @@ func (s stubAuthUser) Register(context.Context, string, string, string) (entity.
 	return entity.User{}, s.registerErr
 }
 
-func (s stubAuthUser) Login(context.Context, string, string) (string, error) {
+func (s stubAuthUser) Login(context.Context, string, string) (entity.LoginResult, error) {
 	if s.loginErr != nil {
-		return "", s.loginErr
+		return entity.LoginResult{}, s.loginErr
 	}
 
-	return "token", nil
+	return entity.LoginResult{AccessToken: "token", RefreshToken: "refresh-token", SessionID: "session-id"}, nil
+}
+
+func (s stubAuthUser) RefreshSession(context.Context, string) (entity.LoginResult, error) {
+	return entity.LoginResult{AccessToken: "token"}, nil
+}
+
+func (s stubAuthUser) Logout(context.Context, string) error {
+	return nil
+}
+
+func (s stubAuthUser) LogoutAll(context.Context, string) error {
+	return nil
 }
 
 func (s stubAuthUser) GetUser(context.Context, string) (entity.User, error) {
@@ -94,16 +106,20 @@ func (s stubAuthUser) ResetPassword(context.Context, string, string) error {
 	return s.resetErr
 }
 
-func (s stubAuthUser) ChangePassword(context.Context, string, string, string) error {
-	return s.changeErr
+func (s stubAuthUser) ChangePassword(context.Context, string, string, string) (entity.LoginResult, error) {
+	if s.changeErr != nil {
+		return entity.LoginResult{}, s.changeErr
+	}
+
+	return entity.LoginResult{AccessToken: "token"}, nil
 }
 
 func (s stubAuthUser) RequestEmailChange(context.Context, string, string, string) error {
 	return nil
 }
 
-func (s stubAuthUser) VerifyEmailChange(context.Context, string, string, string) error {
-	return nil
+func (s stubAuthUser) VerifyEmailChange(context.Context, string, string, string) (entity.LoginResult, error) {
+	return entity.LoginResult{AccessToken: "token"}, nil
 }
 
 func (s stubAuthUser) DeleteAccount(context.Context, string, string) error {

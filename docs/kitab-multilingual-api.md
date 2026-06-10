@@ -140,6 +140,20 @@ Availability actions:
 - `POST /v1/books/{book_id}/toc/{heading_id}/translation-feedback?lang=...` remains exact-language only and returns `404 translation not found` if that section translation does not exist.
 - `POST /v1/books/{book_id}/rag?lang=...` validates the same language contract and includes `requested_lang` in the response.
 
+### Reader Publication Status Fields
+
+`publication_status` is the legacy catalog/source publication status from `book_publications`. New clients should read the explicit fields:
+
+- `catalog_publication_status` / `catalog_published`: whether the Arabic/source catalog book is visible in the public reader.
+- `production_workflow_status`, `production_publication_status`, `production_published`: status of the matching `book_id + lang` production project for `lang=id|en`.
+- `production_status`: compact frontend state. `candidate` means no active production project exists for the requested target language; `published` means the target-language production project is public.
+
+Reader stats have `scope="catalog_global"` because they describe the published source catalog, not the current list filter/page. They keep `published_count` as the legacy catalog count and add:
+
+- `catalog_published_count`: source catalog books published via `book_publications`.
+- `production_published_count`: target-language production projects published via `book_production_projects`.
+- `coverage_count`: alias for target-language production coverage in the published source catalog.
+
 ## Editorial Missing Reader Assets Queue
 
 `GET /v1/editorial/reader/missing-assets` requires editor or admin role and exposes reader localization gaps. It does not generate translations, summaries, or audio; it only reports missing assets for editorial tooling.

@@ -959,6 +959,9 @@ func (r *EditorialRepo) adminBookSelectBuilder() sq.SelectBuilder {
 			"NULL::TEXT AS reviewed_by",
 			"NULL::TIMESTAMPTZ AS reviewed_at",
 			"COALESCE(p.status, 'hidden') AS publication_status",
+			"COALESCE(p.status, 'hidden') AS catalog_publication_status",
+			"NULL::TEXT AS production_workflow_status",
+			"NULL::TEXT AS production_publication_status",
 			"COALESCE(p.featured, false) AS featured",
 			"p.sort_order",
 			"b.has_content",
@@ -974,6 +977,7 @@ func (r *EditorialRepo) adminBookSelectBuilder() sq.SelectBuilder {
 			"'ar'::TEXT AS bibliography_lang",
 			"'ar'::TEXT AS hint_lang",
 			"'ar'::TEXT AS description_lang",
+			"NULL::TEXT AS production_status",
 		).
 		From("books b").
 		LeftJoin("book_publications p ON p.book_id = b.id").

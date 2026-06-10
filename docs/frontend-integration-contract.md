@@ -1,6 +1,6 @@
 # Frontend Integration Contract
 
-Last updated: 2026-05-31
+Last updated: 2026-06-09
 
 This is the main FE integration entrypoint for kitab reader and Quran reader.
 Use it together with:
@@ -87,6 +87,18 @@ type UserAccount = {
 
 See `docs/user-onboarding-api.md` for full request/response shapes, accepted
 interests, and QA scenarios.
+
+## Authentication and Account Email
+
+Email addresses are case-insensitive. The backend trims and lowercases the email on every auth endpoint that accepts one, and stores and returns it in lowercase.
+
+- Trim and lowercase the email client-side before sending it to `POST /v1/auth/register`, `POST /v1/auth/login`, `POST /v1/auth/forgot-password`, `POST /v1/auth/resend-verification`, the email-OTP form of `POST /v1/auth/verify-email`, and `POST /v1/auth/change-email/request`. This keeps client state consistent with what the backend stores.
+- Login succeeds regardless of the case the user typed: `John@Example.com` and `john@example.com` resolve to the same account.
+- Expect every `email` field in responses (profile, register, account) to be lowercase. Compare against the API value, not the raw user input.
+- Failed login and registering an already-used email return a generic error and never reveal whether an email exists. Do not branch UI on account existence.
+- Auth endpoints are rate limited per client IP and per email/account. On `429 too many auth attempts`, show a retry-later state and back off; do not retry immediately.
+
+Request/response shapes and status codes are unchanged; see `/swagger/index.html` on a running backend for full auth schemas.
 
 ## Email Preferences
 
@@ -239,6 +251,7 @@ FE handling:
 - `404 quran recitation not found`: clear saved recitation preference.
 - `404 quran translation source not found`: clear saved source preference for that language.
 - `404 translation not found` on kitab feedback: hide feedback because exact requested translation is missing.
+- `429 too many auth attempts`: auth rate limit hit (enforced per client IP and per email/account). Back off and show a retry-later state; do not retry immediately.
 - `500 internal server error`: show retry UI and keep previous content if cached.
 - Onboarding/profile errors follow the same `{ "error": "message" }` shape.
 
@@ -285,6 +298,8 @@ Use `GET /v1/editorial/production-projects/{id}/publish-check` before enabling p
 
 Admin-only actions are publish, unpublish, and final asset soft-delete. Reader pages for `lang=id|en` only expose final assets after the matching project is published, so frontend can rely on public reader responses as the source of truth for what is visible.
 
+For public kitab reader lists, do not treat legacy `publication_status` as target-language production status. It is the source catalog status. Prefer `catalog_published`, `production_published`, and `production_status`; stats likewise distinguish legacy `published_count`/`catalog_published_count` from `production_published_count`. Reader stats include `scope="catalog_global"` and are not scoped to the current list filter/page.
+
 ## Admin User Management
 
 Use `GET /v1/admin/users?q=&role=&email_verified=&limit=&offset=` for the admin user list. The response is `{ "users": UserAccount[], "total": number }`. `GET /v1/admin/users?role=editor` doubles as the editor lookup for production project owner assignment.
@@ -304,3 +319,4 @@ Use `GET /v1/admin/users/{id}` for detail and `GET /v1/admin/users/{id}/activity
 - Unsupported `lang=fr` is handled as a recoverable client state error.
 - New user profile returns `preferred_content_lang=id` and `onboarding_required=true`.
 - Completing onboarding flips `onboarding_required=false` and updates subsequent default reader language.
+- Registering `User@Example.com` then logging in with `user@example.com` succeeds (email is case-insensitive), and `email` in responses comes back lowercased.

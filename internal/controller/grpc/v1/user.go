@@ -43,7 +43,7 @@ func (c *AuthController) Register(ctx context.Context, req *v1.RegisterRequest) 
 
 // Login -.
 func (c *AuthController) Login(ctx context.Context, req *v1.LoginRequest) (*v1.LoginResponse, error) {
-	token, err := c.u.Login(grpcAuthContext(ctx), req.GetEmail(), req.GetPassword())
+	result, err := c.u.Login(grpcAuthContext(ctx), req.GetEmail(), req.GetPassword())
 	if err != nil {
 		c.l.Error(err, "grpc - v1 - Login")
 
@@ -63,7 +63,7 @@ func (c *AuthController) Login(ctx context.Context, req *v1.LoginRequest) (*v1.L
 		return nil, status.Error(codes.Internal, "internal server error")
 	}
 
-	return &v1.LoginResponse{Token: token}, nil
+	return &v1.LoginResponse{Token: result.AccessToken}, nil
 }
 
 // VerifyEmail -.
@@ -166,7 +166,7 @@ func (c *AuthController) ChangePassword(
 		return nil, status.Error(codes.Unauthenticated, "unauthorized")
 	}
 
-	if err := c.u.ChangePassword(grpcAuthContext(ctx), userID, req.GetCurrentPassword(), req.GetNewPassword()); err != nil {
+	if _, err := c.u.ChangePassword(grpcAuthContext(ctx), userID, req.GetCurrentPassword(), req.GetNewPassword()); err != nil {
 		c.l.Error(err, "grpc - v1 - ChangePassword")
 
 		if errors.Is(err, entity.ErrInvalidAuthInput) {
@@ -230,7 +230,7 @@ func (c *AuthController) VerifyEmailChange(
 		return nil, status.Error(codes.Unauthenticated, "unauthorized")
 	}
 
-	if err := c.u.VerifyEmailChange(grpcAuthContext(ctx), userID, req.GetToken(), req.GetOtp()); err != nil {
+	if _, err := c.u.VerifyEmailChange(grpcAuthContext(ctx), userID, req.GetToken(), req.GetOtp()); err != nil {
 		c.l.Error(err, "grpc - v1 - VerifyEmailChange")
 
 		if errors.Is(err, entity.ErrInvalidAuthInput) || errors.Is(err, entity.ErrInvalidEmailChangeToken) {

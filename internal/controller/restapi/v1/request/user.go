@@ -38,6 +38,16 @@ type ResetPassword struct {
 	Password string `json:"password" validate:"required,min=8,max=72" example:"newsecret123"`
 } // @name v1.ResetPassword
 
+// RefreshToken -.
+type RefreshToken struct {
+	RefreshToken string `json:"refresh_token" validate:"required,max=512" example:"3q2-7w8X9yZ0aB1cD2eF3g..."`
+} // @name v1.RefreshToken
+
+// Logout -.
+type Logout struct {
+	RefreshToken string `json:"refresh_token" validate:"required,max=512" example:"3q2-7w8X9yZ0aB1cD2eF3g..."`
+} // @name v1.Logout
+
 // ChangePassword -.
 type ChangePassword struct {
 	CurrentPassword string `json:"current_password" validate:"required,min=8,max=72" example:"oldsecret123"`

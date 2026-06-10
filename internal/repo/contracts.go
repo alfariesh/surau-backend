@@ -60,6 +60,35 @@ type (
 		IncrementAuthRateLimit(ctx context.Context, limit entity.AuthRateLimit) (entity.AuthRateLimitResult, error)
 	}
 
+	// AuthSessionRepo stores refresh-token sessions.
+	AuthSessionRepo interface {
+		CreateAuthSession(ctx context.Context, session entity.AuthSession) error
+		GetAuthSessionByTokenHash(ctx context.Context, tokenHash string) (entity.AuthSession, error)
+		// RotateAuthSession atomically revokes the old session row and inserts
+		// its replacement. Returns entity.ErrInvalidRefreshToken when the old
+		// row was already revoked or replaced (concurrent rotation = reuse).
+		RotateAuthSession(ctx context.Context, oldID string, next entity.AuthSession) error
+		RevokeAuthSessionFamily(ctx context.Context, familyID string) (int64, error)
+		// RevokeAllAuthSessions revokes every active session for the user and
+		// bumps users.token_version in one transaction (logout everywhere).
+		RevokeAllAuthSessions(ctx context.Context, userID string) (int64, error)
+	}
+
+	// AuthLockoutRepo stores progressive login lockout counters.
+	AuthLockoutRepo interface {
+		// GetAuthLoginLockout returns the zero value when no row exists.
+		GetAuthLoginLockout(ctx context.Context, keyHash string) (entity.AuthLoginLockout, error)
+		// IncrementAuthLoginFailure upserts the counter and applies lockedUntil
+		// when non-nil, returning the new consecutive failure count.
+		IncrementAuthLoginFailure(ctx context.Context, keyHash string, lockedUntil *time.Time) (int, error)
+		ResetAuthLoginLockout(ctx context.Context, keyHash string) error
+	}
+
+	// AuthMaintenanceRepo deletes expired auth rows.
+	AuthMaintenanceRepo interface {
+		CleanupAuthData(ctx context.Context, policy AuthCleanupPolicy) (entity.AuthCleanupResult, error)
+	}
+
 	// AuthAuditRepo -.
 	AuthAuditRepo interface {
 		StoreAuthAuditLog(ctx context.Context, log entity.AuthAuditLog) error
@@ -363,6 +392,15 @@ type (
 		UserID string
 		Limit  uint64
 		Offset uint64
+	}
+
+	// AuthCleanupPolicy bounds one auth-data cleanup run. AuditRetention 0
+	// keeps audit logs forever.
+	AuthCleanupPolicy struct {
+		Now              time.Time
+		TokenRetention   time.Duration
+		SessionRetention time.Duration
+		AuditRetention   time.Duration
 	}
 
 	// TaskFilter -.

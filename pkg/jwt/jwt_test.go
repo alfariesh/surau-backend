@@ -60,6 +60,36 @@ func TestJWT_GenerateAndParse(t *testing.T) {
 	assert.Equal(t, int64(7), claims.TokenVersion)
 }
 
+func TestJWT_GenerateSessionToken_RoundTripsSessionID(t *testing.T) {
+	t.Parallel()
+
+	j := newTestManager(time.Hour)
+
+	before := time.Now().UTC()
+	token, expiresAt, err := j.GenerateSessionToken("user-123", 7, "session-abc")
+	require.NoError(t, err)
+	assert.NotEmpty(t, token)
+	assert.WithinDuration(t, before.Add(time.Hour), expiresAt, 5*time.Second)
+
+	claims, err := j.ParseTokenClaims(token)
+	require.NoError(t, err)
+	assert.Equal(t, "user-123", claims.UserID)
+	assert.Equal(t, int64(7), claims.TokenVersion)
+	assert.Equal(t, "session-abc", claims.SessionID)
+}
+
+func TestJWT_ParseTokenClaims_LegacyTokenWithoutSessionID(t *testing.T) {
+	t.Parallel()
+
+	// Tokens minted before the refresh-token flow have no sid claim and must
+	// keep parsing with an empty SessionID.
+	token := signRegisteredClaims(t, baseClaims(), jwtlib.SigningMethodHS256)
+
+	claims, err := newTestManager(time.Hour).ParseTokenClaims(token)
+	require.NoError(t, err)
+	assert.Empty(t, claims.SessionID)
+}
+
 func TestJWT_ParseTokenClaims_MissingTokenVersionDefaultsToZero(t *testing.T) {
 	t.Parallel()
 

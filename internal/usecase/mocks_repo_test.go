@@ -600,6 +600,210 @@ func (mr *MockAuthRateLimitRepoMockRecorder) IncrementAuthRateLimit(ctx, limit a
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IncrementAuthRateLimit", reflect.TypeOf((*MockAuthRateLimitRepo)(nil).IncrementAuthRateLimit), ctx, limit)
 }
 
+// MockAuthSessionRepo is a mock of AuthSessionRepo interface.
+type MockAuthSessionRepo struct {
+	ctrl     *gomock.Controller
+	recorder *MockAuthSessionRepoMockRecorder
+	isgomock struct{}
+}
+
+// MockAuthSessionRepoMockRecorder is the mock recorder for MockAuthSessionRepo.
+type MockAuthSessionRepoMockRecorder struct {
+	mock *MockAuthSessionRepo
+}
+
+// NewMockAuthSessionRepo creates a new mock instance.
+func NewMockAuthSessionRepo(ctrl *gomock.Controller) *MockAuthSessionRepo {
+	mock := &MockAuthSessionRepo{ctrl: ctrl}
+	mock.recorder = &MockAuthSessionRepoMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockAuthSessionRepo) EXPECT() *MockAuthSessionRepoMockRecorder {
+	return m.recorder
+}
+
+// CreateAuthSession mocks base method.
+func (m *MockAuthSessionRepo) CreateAuthSession(ctx context.Context, session entity.AuthSession) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateAuthSession", ctx, session)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// CreateAuthSession indicates an expected call of CreateAuthSession.
+func (mr *MockAuthSessionRepoMockRecorder) CreateAuthSession(ctx, session any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateAuthSession", reflect.TypeOf((*MockAuthSessionRepo)(nil).CreateAuthSession), ctx, session)
+}
+
+// GetAuthSessionByTokenHash mocks base method.
+func (m *MockAuthSessionRepo) GetAuthSessionByTokenHash(ctx context.Context, tokenHash string) (entity.AuthSession, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetAuthSessionByTokenHash", ctx, tokenHash)
+	ret0, _ := ret[0].(entity.AuthSession)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetAuthSessionByTokenHash indicates an expected call of GetAuthSessionByTokenHash.
+func (mr *MockAuthSessionRepoMockRecorder) GetAuthSessionByTokenHash(ctx, tokenHash any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetAuthSessionByTokenHash", reflect.TypeOf((*MockAuthSessionRepo)(nil).GetAuthSessionByTokenHash), ctx, tokenHash)
+}
+
+// RevokeAllAuthSessions mocks base method.
+func (m *MockAuthSessionRepo) RevokeAllAuthSessions(ctx context.Context, userID string) (int64, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RevokeAllAuthSessions", ctx, userID)
+	ret0, _ := ret[0].(int64)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// RevokeAllAuthSessions indicates an expected call of RevokeAllAuthSessions.
+func (mr *MockAuthSessionRepoMockRecorder) RevokeAllAuthSessions(ctx, userID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RevokeAllAuthSessions", reflect.TypeOf((*MockAuthSessionRepo)(nil).RevokeAllAuthSessions), ctx, userID)
+}
+
+// RevokeAuthSessionFamily mocks base method.
+func (m *MockAuthSessionRepo) RevokeAuthSessionFamily(ctx context.Context, familyID string) (int64, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RevokeAuthSessionFamily", ctx, familyID)
+	ret0, _ := ret[0].(int64)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// RevokeAuthSessionFamily indicates an expected call of RevokeAuthSessionFamily.
+func (mr *MockAuthSessionRepoMockRecorder) RevokeAuthSessionFamily(ctx, familyID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RevokeAuthSessionFamily", reflect.TypeOf((*MockAuthSessionRepo)(nil).RevokeAuthSessionFamily), ctx, familyID)
+}
+
+// RotateAuthSession mocks base method.
+func (m *MockAuthSessionRepo) RotateAuthSession(ctx context.Context, oldID string, next entity.AuthSession) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RotateAuthSession", ctx, oldID, next)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// RotateAuthSession indicates an expected call of RotateAuthSession.
+func (mr *MockAuthSessionRepoMockRecorder) RotateAuthSession(ctx, oldID, next any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RotateAuthSession", reflect.TypeOf((*MockAuthSessionRepo)(nil).RotateAuthSession), ctx, oldID, next)
+}
+
+// MockAuthLockoutRepo is a mock of AuthLockoutRepo interface.
+type MockAuthLockoutRepo struct {
+	ctrl     *gomock.Controller
+	recorder *MockAuthLockoutRepoMockRecorder
+	isgomock struct{}
+}
+
+// MockAuthLockoutRepoMockRecorder is the mock recorder for MockAuthLockoutRepo.
+type MockAuthLockoutRepoMockRecorder struct {
+	mock *MockAuthLockoutRepo
+}
+
+// NewMockAuthLockoutRepo creates a new mock instance.
+func NewMockAuthLockoutRepo(ctrl *gomock.Controller) *MockAuthLockoutRepo {
+	mock := &MockAuthLockoutRepo{ctrl: ctrl}
+	mock.recorder = &MockAuthLockoutRepoMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockAuthLockoutRepo) EXPECT() *MockAuthLockoutRepoMockRecorder {
+	return m.recorder
+}
+
+// GetAuthLoginLockout mocks base method.
+func (m *MockAuthLockoutRepo) GetAuthLoginLockout(ctx context.Context, keyHash string) (entity.AuthLoginLockout, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetAuthLoginLockout", ctx, keyHash)
+	ret0, _ := ret[0].(entity.AuthLoginLockout)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetAuthLoginLockout indicates an expected call of GetAuthLoginLockout.
+func (mr *MockAuthLockoutRepoMockRecorder) GetAuthLoginLockout(ctx, keyHash any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetAuthLoginLockout", reflect.TypeOf((*MockAuthLockoutRepo)(nil).GetAuthLoginLockout), ctx, keyHash)
+}
+
+// IncrementAuthLoginFailure mocks base method.
+func (m *MockAuthLockoutRepo) IncrementAuthLoginFailure(ctx context.Context, keyHash string, lockedUntil *time.Time) (int, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "IncrementAuthLoginFailure", ctx, keyHash, lockedUntil)
+	ret0, _ := ret[0].(int)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// IncrementAuthLoginFailure indicates an expected call of IncrementAuthLoginFailure.
+func (mr *MockAuthLockoutRepoMockRecorder) IncrementAuthLoginFailure(ctx, keyHash, lockedUntil any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IncrementAuthLoginFailure", reflect.TypeOf((*MockAuthLockoutRepo)(nil).IncrementAuthLoginFailure), ctx, keyHash, lockedUntil)
+}
+
+// ResetAuthLoginLockout mocks base method.
+func (m *MockAuthLockoutRepo) ResetAuthLoginLockout(ctx context.Context, keyHash string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ResetAuthLoginLockout", ctx, keyHash)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// ResetAuthLoginLockout indicates an expected call of ResetAuthLoginLockout.
+func (mr *MockAuthLockoutRepoMockRecorder) ResetAuthLoginLockout(ctx, keyHash any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ResetAuthLoginLockout", reflect.TypeOf((*MockAuthLockoutRepo)(nil).ResetAuthLoginLockout), ctx, keyHash)
+}
+
+// MockAuthMaintenanceRepo is a mock of AuthMaintenanceRepo interface.
+type MockAuthMaintenanceRepo struct {
+	ctrl     *gomock.Controller
+	recorder *MockAuthMaintenanceRepoMockRecorder
+	isgomock struct{}
+}
+
+// MockAuthMaintenanceRepoMockRecorder is the mock recorder for MockAuthMaintenanceRepo.
+type MockAuthMaintenanceRepoMockRecorder struct {
+	mock *MockAuthMaintenanceRepo
+}
+
+// NewMockAuthMaintenanceRepo creates a new mock instance.
+func NewMockAuthMaintenanceRepo(ctrl *gomock.Controller) *MockAuthMaintenanceRepo {
+	mock := &MockAuthMaintenanceRepo{ctrl: ctrl}
+	mock.recorder = &MockAuthMaintenanceRepoMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockAuthMaintenanceRepo) EXPECT() *MockAuthMaintenanceRepoMockRecorder {
+	return m.recorder
+}
+
+// CleanupAuthData mocks base method.
+func (m *MockAuthMaintenanceRepo) CleanupAuthData(ctx context.Context, policy repo.AuthCleanupPolicy) (entity.AuthCleanupResult, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CleanupAuthData", ctx, policy)
+	ret0, _ := ret[0].(entity.AuthCleanupResult)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CleanupAuthData indicates an expected call of CleanupAuthData.
+func (mr *MockAuthMaintenanceRepoMockRecorder) CleanupAuthData(ctx, policy any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CleanupAuthData", reflect.TypeOf((*MockAuthMaintenanceRepo)(nil).CleanupAuthData), ctx, policy)
+}
+
 // MockAuthAuditRepo is a mock of AuthAuditRepo interface.
 type MockAuthAuditRepo struct {
 	ctrl     *gomock.Controller

@@ -130,11 +130,12 @@ func (mr *MockUserMockRecorder) AdminUsers(ctx, query, role, emailVerified, limi
 }
 
 // ChangePassword mocks base method.
-func (m *MockUser) ChangePassword(ctx context.Context, userID, currentPassword, newPassword string) error {
+func (m *MockUser) ChangePassword(ctx context.Context, userID, currentPassword, newPassword string) (entity.LoginResult, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ChangePassword", ctx, userID, currentPassword, newPassword)
-	ret0, _ := ret[0].(error)
-	return ret0
+	ret0, _ := ret[0].(entity.LoginResult)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
 }
 
 // ChangePassword indicates an expected call of ChangePassword.
@@ -217,10 +218,10 @@ func (mr *MockUserMockRecorder) GetUserAccount(ctx, userID any) *gomock.Call {
 }
 
 // Login mocks base method.
-func (m *MockUser) Login(ctx context.Context, email, password string) (string, error) {
+func (m *MockUser) Login(ctx context.Context, email, password string) (entity.LoginResult, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Login", ctx, email, password)
-	ret0, _ := ret[0].(string)
+	ret0, _ := ret[0].(entity.LoginResult)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -229,6 +230,49 @@ func (m *MockUser) Login(ctx context.Context, email, password string) (string, e
 func (mr *MockUserMockRecorder) Login(ctx, email, password any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Login", reflect.TypeOf((*MockUser)(nil).Login), ctx, email, password)
+}
+
+// Logout mocks base method.
+func (m *MockUser) Logout(ctx context.Context, refreshToken string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Logout", ctx, refreshToken)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// Logout indicates an expected call of Logout.
+func (mr *MockUserMockRecorder) Logout(ctx, refreshToken any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Logout", reflect.TypeOf((*MockUser)(nil).Logout), ctx, refreshToken)
+}
+
+// LogoutAll mocks base method.
+func (m *MockUser) LogoutAll(ctx context.Context, userID string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "LogoutAll", ctx, userID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// LogoutAll indicates an expected call of LogoutAll.
+func (mr *MockUserMockRecorder) LogoutAll(ctx, userID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LogoutAll", reflect.TypeOf((*MockUser)(nil).LogoutAll), ctx, userID)
+}
+
+// RefreshSession mocks base method.
+func (m *MockUser) RefreshSession(ctx context.Context, refreshToken string) (entity.LoginResult, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RefreshSession", ctx, refreshToken)
+	ret0, _ := ret[0].(entity.LoginResult)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// RefreshSession indicates an expected call of RefreshSession.
+func (mr *MockUserMockRecorder) RefreshSession(ctx, refreshToken any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RefreshSession", reflect.TypeOf((*MockUser)(nil).RefreshSession), ctx, refreshToken)
 }
 
 // Register mocks base method.
@@ -348,11 +392,12 @@ func (mr *MockUserMockRecorder) VerifyEmail(ctx, token, email, otp any) *gomock.
 }
 
 // VerifyEmailChange mocks base method.
-func (m *MockUser) VerifyEmailChange(ctx context.Context, userID, token, otp string) error {
+func (m *MockUser) VerifyEmailChange(ctx context.Context, userID, token, otp string) (entity.LoginResult, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "VerifyEmailChange", ctx, userID, token, otp)
-	ret0, _ := ret[0].(error)
-	return ret0
+	ret0, _ := ret[0].(entity.LoginResult)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
 }
 
 // VerifyEmailChange indicates an expected call of VerifyEmailChange.

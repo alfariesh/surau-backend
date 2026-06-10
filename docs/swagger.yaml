@@ -102,6 +102,12 @@ definitions:
         type: string
       bibliography:
         type: string
+      catalog_publication_status:
+        example: published
+        type: string
+      catalog_published:
+        example: true
+        type: boolean
       category_id:
         example: 10
         type: integer
@@ -150,6 +156,18 @@ definitions:
       printed:
         example: 1
         type: integer
+      production_publication_status:
+        example: hidden
+        type: string
+      production_published:
+        example: false
+        type: boolean
+      production_status:
+        example: candidate
+        type: string
+      production_workflow_status:
+        example: drafting
+        type: string
       publication_status:
         example: published
         type: string
@@ -184,15 +202,24 @@ definitions:
         items:
           $ref: '#/definitions/entity.BookCategoryStat'
         type: array
+      catalog_published_count:
+        example: 120
+        type: integer
       category_count:
         example: 12
         type: integer
       coverage_count:
         example: 25
         type: integer
+      production_published_count:
+        example: 25
+        type: integer
       published_count:
         example: 120
         type: integer
+      scope:
+        example: catalog_global
+        type: string
       total_books:
         example: 120
         type: integer
@@ -202,12 +229,18 @@ definitions:
     type: object
   entity.BookCategoryStat:
     properties:
+      catalog_published_count:
+        example: 20
+        type: integer
       category_id:
         example: 10
         type: integer
       category_name:
         type: string
       coverage_count:
+        example: 8
+        type: integer
+      production_published_count:
         example: 8
         type: integer
       published_count:
@@ -2938,9 +2971,27 @@ definitions:
     type: object
   v1.EmailChanged:
     properties:
+      access_token:
+        example: eyJhbGciOiJIUzI1NiIs...
+        type: string
       email_changed:
         example: true
         type: boolean
+      expires_in:
+        example: 900
+        type: integer
+      refresh_token:
+        example: 3q2-7w8X9yZ0aB1cD2eF3g...
+        type: string
+      session_id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      token:
+        example: eyJhbGciOiJIUzI1NiIs...
+        type: string
+      token_type:
+        example: Bearer
+        type: string
     type: object
   v1.EmailDeliveryEventList:
     properties:
@@ -3188,6 +3239,9 @@ definitions:
       request_id:
         example: 550e8400-e29b-41d4-a716-446655440000
         type: string
+      retry_after:
+        example: 60
+        type: integer
     type: object
   v1.ForgotPassword:
     properties:
@@ -3196,6 +3250,12 @@ definitions:
         type: string
     required:
     - email
+    type: object
+  v1.LoggedOut:
+    properties:
+      logged_out:
+        example: true
+        type: boolean
     type: object
   v1.Login:
     properties:
@@ -3211,6 +3271,15 @@ definitions:
     - email
     - password
     type: object
+  v1.Logout:
+    properties:
+      refresh_token:
+        example: 3q2-7w8X9yZ0aB1cD2eF3g...
+        maxLength: 512
+        type: string
+    required:
+    - refresh_token
+    type: object
   v1.PageList:
     properties:
       pages:
@@ -3223,9 +3292,27 @@ definitions:
     type: object
   v1.PasswordChanged:
     properties:
+      access_token:
+        example: eyJhbGciOiJIUzI1NiIs...
+        type: string
+      expires_in:
+        example: 900
+        type: integer
       password_changed:
         example: true
         type: boolean
+      refresh_token:
+        example: 3q2-7w8X9yZ0aB1cD2eF3g...
+        type: string
+      session_id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      token:
+        example: eyJhbGciOiJIUzI1NiIs...
+        type: string
+      token_type:
+        example: Bearer
+        type: string
     type: object
   v1.PasswordReset:
     properties:
@@ -3486,6 +3573,15 @@ definitions:
       url:
         type: string
     type: object
+  v1.RefreshToken:
+    properties:
+      refresh_token:
+        example: 3q2-7w8X9yZ0aB1cD2eF3g...
+        maxLength: 512
+        type: string
+    required:
+    - refresh_token
+    type: object
   v1.Register:
     properties:
       display_name:
@@ -3705,6 +3801,12 @@ definitions:
           type: string
         type: array
     type: object
+  v1.SessionsRevoked:
+    properties:
+      sessions_revoked:
+        example: true
+        type: boolean
+    type: object
   v1.SetUserRole:
     properties:
       email:
@@ -3729,8 +3831,23 @@ definitions:
     type: object
   v1.Token:
     properties:
+      access_token:
+        example: eyJhbGciOiJIUzI1NiIs...
+        type: string
+      expires_in:
+        example: 900
+        type: integer
+      refresh_token:
+        example: 3q2-7w8X9yZ0aB1cD2eF3g...
+        type: string
+      session_id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
       token:
         example: eyJhbGciOiJIUzI1NiIs...
+        type: string
+      token_type:
+        example: Bearer
         type: string
     type: object
   v1.TransitionTask:
@@ -5824,6 +5941,106 @@ paths:
           schema:
             $ref: '#/definitions/v1.Error'
       summary: Login
+      tags:
+      - auth
+  /auth/logout:
+    post:
+      consumes:
+      - application/json
+      description: 'Revoke the session behind a refresh token. Idempotent: unknown
+        tokens return success.'
+      operationId: logout
+      parameters:
+      - description: Refresh token
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.Logout'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.LoggedOut'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      summary: Logout
+      tags:
+      - auth
+  /auth/logout-all:
+    post:
+      description: Revoke all of the current user's sessions and invalidate outstanding
+        access tokens
+      operationId: logout-all
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.SessionsRevoked'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Logout everywhere
+      tags:
+      - auth
+  /auth/refresh:
+    post:
+      consumes:
+      - application/json
+      description: Exchange a refresh token for a new access/refresh token pair
+      operationId: refresh-session
+      parameters:
+      - description: Refresh token
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.RefreshToken'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.Token'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      summary: Refresh session
       tags:
       - auth
   /auth/register:

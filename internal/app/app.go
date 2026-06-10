@@ -42,6 +42,7 @@ type useCases struct {
 type servers struct {
 	http                *httpserver.Server
 	emailDispatcherStop context.CancelFunc
+	authCleanupStop     context.CancelFunc
 }
 
 func initUseCases(cfg *config.Config, pg *postgres.Postgres, jwtManager *jwt.Manager) useCases {
@@ -96,6 +97,10 @@ func initUseCases(cfg *config.Config, pg *postgres.Postgres, jwtManager *jwt.Man
 	if cfg.AuthRateLimit.Enabled {
 		rateLimiter = userRepo
 	}
+	var lockoutRepo repo.AuthLockoutRepo
+	if cfg.AuthLockout.Enabled {
+		lockoutRepo = userRepo
+	}
 
 	return useCases{
 		user: user.New(userRepo, jwtManager, emailSender, user.Options{
@@ -114,6 +119,22 @@ func initUseCases(cfg *config.Config, pg *postgres.Postgres, jwtManager *jwt.Man
 			EmailService:             emailUC,
 			RateLimiter:              rateLimiter,
 			AuditLogger:              userRepo,
+			Sessions:                 userRepo,
+			Lockout:                  lockoutRepo,
+			Maintenance:              userRepo,
+			RefreshTokenTTL:          cfg.JWT.RefreshTokenExpiry,
+			LockoutOptions: user.LockoutOptions{
+				Enabled:      cfg.AuthLockout.Enabled,
+				Threshold:    cfg.AuthLockout.Threshold,
+				BaseDuration: cfg.AuthLockout.BaseDuration,
+				Factor:       cfg.AuthLockout.Factor,
+				MaxDuration:  cfg.AuthLockout.MaxDuration,
+			},
+			Cleanup: user.CleanupOptions{
+				TokenRetention:   cfg.AuthCleanup.TokenRetention,
+				SessionRetention: cfg.AuthCleanup.SessionRetention,
+				AuditRetention:   cfg.AuthCleanup.AuditRetention,
+			},
 			EmailNotifications: user.EmailNotificationOptions{
 				Enabled:                cfg.AuthEmail.NotificationsEnabled,
 				NewLoginEnabled:        cfg.AuthEmail.NewLoginEnabled,
@@ -202,6 +223,18 @@ func initUseCases(cfg *config.Config, pg *postgres.Postgres, jwtManager *jwt.Man
 					Max:    cfg.AuthRateLimit.DeleteAccountIPMax,
 					Window: cfg.AuthRateLimit.DeleteAccountIPWindow,
 				},
+				RefreshToken: user.RateLimitRule{
+					Max:    cfg.AuthRateLimit.RefreshTokenMax,
+					Window: cfg.AuthRateLimit.RefreshTokenWindow,
+				},
+				RefreshIP: user.RateLimitRule{
+					Max:    cfg.AuthRateLimit.RefreshIPMax,
+					Window: cfg.AuthRateLimit.RefreshIPWindow,
+				},
+				VerifyEmailToken: user.RateLimitRule{
+					Max:    cfg.AuthRateLimit.VerifyEmailTokenMax,
+					Window: cfg.AuthRateLimit.VerifyEmailTokenWindow,
+				},
 			},
 		}),
 		reader: reader.New(readerRepo),
@@ -249,7 +282,42 @@ func initServers(cfg *config.Config, pg *postgres.Postgres, uc useCases, jwtMana
 	}
 }
 
-func (s *servers) startServers(cfg *config.Config, emailUC *emailusecase.UseCase, l logger.Interface) {
+func (s *servers) startServers(cfg *config.Config, emailUC *emailusecase.UseCase, userUC *user.UseCase, l logger.Interface) {
+	if userUC != nil && cfg.AuthCleanup.Enabled {
+		cleanupCtx, cancel := context.WithCancel(context.Background())
+		s.authCleanupStop = cancel
+		go func() {
+			// First pass shortly after boot so restarts do not postpone
+			// cleanup by a full interval.
+			initialDelay := time.NewTimer(30 * time.Second)
+			defer initialDelay.Stop()
+			ticker := time.NewTicker(cfg.AuthCleanup.Interval)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-cleanupCtx.Done():
+					return
+				case <-initialDelay.C:
+				case <-ticker.C:
+				}
+				result, err := userUC.CleanupAuthData(cleanupCtx)
+				if err != nil {
+					l.Error(fmt.Errorf("app - auth cleanup: %w", err))
+
+					continue
+				}
+				l.Info(
+					"app - auth cleanup: rate_limits=%d tokens=%d sessions=%d lockouts=%d cooldowns=%d audit=%d",
+					result.RateLimits,
+					result.VerificationTokens+result.PasswordResetTokens+result.EmailChangeTokens,
+					result.Sessions,
+					result.Lockouts,
+					result.NotificationCooldowns,
+					result.AuditLogs,
+				)
+			}
+		}()
+	}
 	if emailUC != nil {
 		dispatchCtx, cancel := context.WithCancel(context.Background())
 		s.emailDispatcherStop = cancel
@@ -305,6 +373,9 @@ func (s *servers) shutdownServers(l logger.Interface) {
 	if s.emailDispatcherStop != nil {
 		s.emailDispatcherStop()
 	}
+	if s.authCleanupStop != nil {
+		s.authCleanupStop()
+	}
 	if err := s.http.Shutdown(); err != nil {
 		l.Error(fmt.Errorf("app - Run - httpServer.Shutdown: %w", err))
 	}
@@ -321,12 +392,13 @@ func Run(cfg *config.Config) {
 	}
 	defer pg.Close()
 
-	// JWT
-	jwtManager := jwt.New(cfg.JWT.Secret, cfg.JWT.TokenExpiry, cfg.JWT.Issuer, cfg.JWT.Audience)
+	// JWT. The manager's duration is the ACCESS token TTL; refresh tokens are
+	// opaque session tokens with their own configured expiry.
+	jwtManager := jwt.New(cfg.JWT.Secret, cfg.JWT.AccessTokenExpiry, cfg.JWT.Issuer, cfg.JWT.Audience)
 
 	uc := initUseCases(cfg, pg, jwtManager)
 	s := initServers(cfg, pg, uc, jwtManager, l)
-	s.startServers(cfg, uc.email, l)
+	s.startServers(cfg, uc.email, uc.user, l)
 	s.waitForShutdown(l)
 }
 

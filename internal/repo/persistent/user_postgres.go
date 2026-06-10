@@ -402,27 +402,55 @@ ON CONFLICT (user_id) DO UPDATE SET
 
 // SetRoleByEmail updates one user's role by email.
 func (r *UserRepo) SetRoleByEmail(ctx context.Context, email, role string) (entity.UserRoleChange, error) {
-	const query = `
-WITH existing AS (
-    SELECT id, role AS previous_role
-    FROM users
-    WHERE email = $1 AND deleted_at IS NULL
-    FOR UPDATE
-),
-updated AS (
-    UPDATE users u
-    SET role = $2,
-        updated_at = now()
-    FROM existing e
-    WHERE u.id = e.id
-    RETURNING u.id, u.username, u.email, u.role, u.password_hash, u.email_verified,
-              u.token_version, u.created_at, u.updated_at, e.previous_role
-)
-SELECT id, username, email, role, password_hash, email_verified, token_version, created_at, updated_at, previous_role
-FROM updated`
+	tx, err := r.Pool.Begin(ctx)
+	if err != nil {
+		return entity.UserRoleChange{}, fmt.Errorf("UserRepo - SetRoleByEmail - r.Pool.Begin: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	var (
+		targetID     string
+		previousRole string
+	)
+	err = tx.QueryRow(
+		ctx,
+		"SELECT id, role FROM users WHERE email = $1 AND deleted_at IS NULL FOR UPDATE",
+		email,
+	).Scan(&targetID, &previousRole)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return entity.UserRoleChange{}, entity.ErrUserNotFound
+		}
+
+		return entity.UserRoleChange{}, fmt.Errorf("UserRepo - SetRoleByEmail - lock user: %w", err)
+	}
+
+	// Demoting the last remaining admin would lock everyone out of the admin
+	// API; recovery would require direct DB access or the CLI escape hatch.
+	if previousRole == entity.UserRoleAdmin && role != entity.UserRoleAdmin {
+		var adminCount int
+		err = tx.QueryRow(
+			ctx,
+			"SELECT count(*) FROM users WHERE role = $1 AND deleted_at IS NULL",
+			entity.UserRoleAdmin,
+		).Scan(&adminCount)
+		if err != nil {
+			return entity.UserRoleChange{}, fmt.Errorf("UserRepo - SetRoleByEmail - count admins: %w", err)
+		}
+		if adminCount <= 1 {
+			return entity.UserRoleChange{}, entity.ErrLastAdmin
+		}
+	}
+
+	const updateQuery = `
+UPDATE users
+SET role = $2,
+    updated_at = now()
+WHERE id = $1
+RETURNING id, username, email, role, password_hash, email_verified, token_version, created_at, updated_at`
 
 	var change entity.UserRoleChange
-	err := r.Pool.QueryRow(ctx, query, email, role).
+	err = tx.QueryRow(ctx, updateQuery, targetID, role).
 		Scan(
 			&change.User.ID,
 			&change.User.Username,
@@ -433,16 +461,16 @@ FROM updated`
 			&change.User.TokenVersion,
 			&change.User.CreatedAt,
 			&change.User.UpdatedAt,
-			&change.PreviousRole,
 		)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return entity.UserRoleChange{}, entity.ErrUserNotFound
-		}
-
-		return entity.UserRoleChange{}, fmt.Errorf("UserRepo - SetRoleByEmail - r.Pool.QueryRow: %w", err)
+		return entity.UserRoleChange{}, fmt.Errorf("UserRepo - SetRoleByEmail - update QueryRow: %w", err)
 	}
+	change.PreviousRole = previousRole
 	change.NewRole = change.User.Role
+
+	if err = tx.Commit(ctx); err != nil {
+		return entity.UserRoleChange{}, fmt.Errorf("UserRepo - SetRoleByEmail - tx.Commit: %w", err)
+	}
 
 	return change, nil
 }
@@ -499,6 +527,10 @@ func (r *UserRepo) ChangePassword(ctx context.Context, userID, passwordHash stri
 	}
 	if _, err = tx.Exec(ctx, revokeSQL, revokeArgs...); err != nil {
 		return entity.User{}, fmt.Errorf("UserRepo - ChangePassword - revoke Exec: %w", err)
+	}
+
+	if err = revokeAuthSessionsInTx(ctx, tx, userID); err != nil {
+		return entity.User{}, fmt.Errorf("UserRepo - ChangePassword - %w", err)
 	}
 
 	if err = tx.Commit(ctx); err != nil {
@@ -846,6 +878,10 @@ func (r *UserRepo) ResetPasswordWithToken(ctx context.Context, tokenID, userID, 
 		return entity.User{}, fmt.Errorf("UserRepo - ResetPasswordWithToken - revoke Exec: %w", err)
 	}
 
+	if err = revokeAuthSessionsInTx(ctx, tx, userID); err != nil {
+		return entity.User{}, fmt.Errorf("UserRepo - ResetPasswordWithToken - %w", err)
+	}
+
 	if err = tx.Commit(ctx); err != nil {
 		return entity.User{}, fmt.Errorf("UserRepo - ResetPasswordWithToken - tx.Commit: %w", err)
 	}
@@ -1043,6 +1079,10 @@ func (r *UserRepo) ChangeEmailWithToken(
 		return entity.EmailChangeResult{}, fmt.Errorf("UserRepo - ChangeEmailWithToken - revoke Exec: %w", err)
 	}
 
+	if err = revokeAuthSessionsInTx(ctx, tx, userID); err != nil {
+		return entity.EmailChangeResult{}, fmt.Errorf("UserRepo - ChangeEmailWithToken - %w", err)
+	}
+
 	if err = tx.Commit(ctx); err != nil {
 		return entity.EmailChangeResult{}, fmt.Errorf("UserRepo - ChangeEmailWithToken - tx.Commit: %w", err)
 	}
@@ -1098,6 +1138,7 @@ WHERE id = $1
 		"DELETE FROM email_verification_tokens WHERE user_id = $1",
 		"DELETE FROM password_reset_tokens WHERE user_id = $1",
 		"DELETE FROM email_change_tokens WHERE user_id = $1",
+		"DELETE FROM auth_sessions WHERE user_id = $1",
 		"DELETE FROM auth_login_fingerprints WHERE user_id = $1",
 		"UPDATE auth_audit_logs SET email = NULL, client_ip = NULL, user_agent = NULL WHERE user_id = $1",
 	}

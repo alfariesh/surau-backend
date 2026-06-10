@@ -53,55 +53,66 @@ type Author struct {
 
 // Book is searchable catalog metadata plus source metadata.
 type Book struct {
-	ID                    int                `json:"id"             example:"797"`
-	Name                  string             `json:"name"           example:"الزبد في مصطلح الحديث"`
-	CategoryID            *int               `json:"category_id"    example:"10"`
-	CategoryName          *string            `json:"category_name"  example:"علوم الحديث"`
-	AuthorID              *int               `json:"author_id"      example:"177"`
-	AuthorName            *string            `json:"author_name"    example:"فضل الرحمن صافي"`
-	Type                  *int               `json:"type"           example:"1"`
-	Printed               *int               `json:"printed"        example:"1"`
-	MinorRelease          *int               `json:"minor_release"  example:"0"`
-	MajorRelease          *int               `json:"major_release"  example:"1"`
-	Bibliography          *string            `json:"bibliography"`
-	Hint                  *string            `json:"hint"`
-	PDFLinks              RawJSON            `json:"pdf_links,omitempty" swaggertype:"object"`
-	Metadata              RawJSON            `json:"metadata,omitempty"  swaggertype:"object"`
-	SourceDate            *string            `json:"source_date"     example:"02091443"`
-	Description           *string            `json:"description"`
-	CoverURL              *string            `json:"cover_url"`
-	EditorialNotes        *string            `json:"editorial_notes"`
-	TranslationStatus     *string            `json:"translation_status,omitempty" example:"generated"`
-	TranslationReviewedBy *string            `json:"translation_reviewed_by,omitempty" example:"Editor A"`
-	TranslationReviewedAt *time.Time         `json:"translation_reviewed_at,omitempty" example:"2026-01-01T00:00:00Z"`
-	Localization          LocalizationMeta   `json:"localization"`
-	LanguageCoverage      []LanguageCoverage `json:"language_coverage,omitempty"`
-	PublicationStatus     *string            `json:"publication_status" example:"published"`
-	Featured              bool               `json:"featured"           example:"false"`
-	SortOrder             *int               `json:"sort_order"         example:"10"`
-	HasContent            bool               `json:"has_content"        example:"true"`
-	IsDeleted             bool               `json:"is_deleted"         example:"false"`
-	UpdatedAt             time.Time          `json:"updated_at"         example:"2026-01-01T00:00:00Z"`
+	ID                          int                `json:"id"             example:"797"`
+	Name                        string             `json:"name"           example:"الزبد في مصطلح الحديث"`
+	CategoryID                  *int               `json:"category_id"    example:"10"`
+	CategoryName                *string            `json:"category_name"  example:"علوم الحديث"`
+	AuthorID                    *int               `json:"author_id"      example:"177"`
+	AuthorName                  *string            `json:"author_name"    example:"فضل الرحمن صافي"`
+	Type                        *int               `json:"type"           example:"1"`
+	Printed                     *int               `json:"printed"        example:"1"`
+	MinorRelease                *int               `json:"minor_release"  example:"0"`
+	MajorRelease                *int               `json:"major_release"  example:"1"`
+	Bibliography                *string            `json:"bibliography"`
+	Hint                        *string            `json:"hint"`
+	PDFLinks                    RawJSON            `json:"pdf_links,omitempty" swaggertype:"object"`
+	Metadata                    RawJSON            `json:"metadata,omitempty"  swaggertype:"object"`
+	SourceDate                  *string            `json:"source_date"     example:"02091443"`
+	Description                 *string            `json:"description"`
+	CoverURL                    *string            `json:"cover_url"`
+	EditorialNotes              *string            `json:"editorial_notes"`
+	TranslationStatus           *string            `json:"translation_status,omitempty" example:"generated"`
+	TranslationReviewedBy       *string            `json:"translation_reviewed_by,omitempty" example:"Editor A"`
+	TranslationReviewedAt       *time.Time         `json:"translation_reviewed_at,omitempty" example:"2026-01-01T00:00:00Z"`
+	Localization                LocalizationMeta   `json:"localization"`
+	LanguageCoverage            []LanguageCoverage `json:"language_coverage,omitempty"`
+	PublicationStatus           *string            `json:"publication_status" example:"published"`
+	CatalogPublicationStatus    *string            `json:"catalog_publication_status,omitempty" example:"published"`
+	CatalogPublished            bool               `json:"catalog_published" example:"true"`
+	ProductionWorkflowStatus    *string            `json:"production_workflow_status,omitempty" example:"drafting"`
+	ProductionPublicationStatus *string            `json:"production_publication_status,omitempty" example:"hidden"`
+	ProductionPublished         bool               `json:"production_published" example:"false"`
+	ProductionStatus            *string            `json:"production_status,omitempty" example:"candidate"`
+	Featured                    bool               `json:"featured"           example:"false"`
+	SortOrder                   *int               `json:"sort_order"         example:"10"`
+	HasContent                  bool               `json:"has_content"        example:"true"`
+	IsDeleted                   bool               `json:"is_deleted"         example:"false"`
+	UpdatedAt                   time.Time          `json:"updated_at"         example:"2026-01-01T00:00:00Z"`
 }
 
 // BookCatalogStats summarizes the full published catalog independently from pagination.
 type BookCatalogStats struct {
-	TotalBooks       int                `json:"total_books" example:"120"`
-	PublishedCount   int                `json:"published_count" example:"120"`
-	AuthorCount      int                `json:"author_count" example:"35"`
-	CategoryCount    int                `json:"category_count" example:"12"`
-	WithContentCount int                `json:"with_content_count" example:"90"`
-	CoverageCount    int                `json:"coverage_count" example:"25"`
-	ByCategory       []BookCategoryStat `json:"by_category"`
+	Scope                    string             `json:"scope" example:"catalog_global"`
+	TotalBooks               int                `json:"total_books" example:"120"`
+	PublishedCount           int                `json:"published_count" example:"120"`
+	CatalogPublishedCount    int                `json:"catalog_published_count" example:"120"`
+	ProductionPublishedCount int                `json:"production_published_count" example:"25"`
+	AuthorCount              int                `json:"author_count" example:"35"`
+	CategoryCount            int                `json:"category_count" example:"12"`
+	WithContentCount         int                `json:"with_content_count" example:"90"`
+	CoverageCount            int                `json:"coverage_count" example:"25"`
+	ByCategory               []BookCategoryStat `json:"by_category"`
 } // @name entity.BookCatalogStats
 
 // BookCategoryStat summarizes published catalog counts for one category.
 type BookCategoryStat struct {
-	CategoryID     *int    `json:"category_id" example:"10"`
-	CategoryName   *string `json:"category_name"`
-	Total          int     `json:"total" example:"20"`
-	PublishedCount int     `json:"published_count" example:"20"`
-	CoverageCount  int     `json:"coverage_count" example:"8"`
+	CategoryID               *int    `json:"category_id" example:"10"`
+	CategoryName             *string `json:"category_name"`
+	Total                    int     `json:"total" example:"20"`
+	PublishedCount           int     `json:"published_count" example:"20"`
+	CatalogPublishedCount    int     `json:"catalog_published_count" example:"20"`
+	ProductionPublishedCount int     `json:"production_published_count" example:"8"`
+	CoverageCount            int     `json:"coverage_count" example:"8"`
 } // @name entity.BookCategoryStat
 
 // RawJSON is used for metadata stored as jsonb.

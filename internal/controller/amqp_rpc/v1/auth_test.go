@@ -134,12 +134,24 @@ func (f *fakeAuthUser) Register(context.Context, string, string, string) (entity
 	return entity.User{}, f.registerErr
 }
 
-func (f *fakeAuthUser) Login(context.Context, string, string) (string, error) {
+func (f *fakeAuthUser) Login(context.Context, string, string) (entity.LoginResult, error) {
 	if f.loginErr != nil {
-		return "", f.loginErr
+		return entity.LoginResult{}, f.loginErr
 	}
 
-	return "token", nil
+	return entity.LoginResult{AccessToken: "token", RefreshToken: "refresh-token", SessionID: "session-id"}, nil
+}
+
+func (f *fakeAuthUser) RefreshSession(context.Context, string) (entity.LoginResult, error) {
+	return entity.LoginResult{AccessToken: "token", RefreshToken: "refresh-token", SessionID: "session-id"}, nil
+}
+
+func (f *fakeAuthUser) Logout(context.Context, string) error {
+	return nil
+}
+
+func (f *fakeAuthUser) LogoutAll(context.Context, string) error {
+	return nil
 }
 
 func (f *fakeAuthUser) GetUser(context.Context, string) (entity.User, error) {
@@ -202,16 +214,20 @@ func (f *fakeAuthUser) ResetPassword(context.Context, string, string) error {
 	return f.resetErr
 }
 
-func (f *fakeAuthUser) ChangePassword(context.Context, string, string, string) error {
-	return f.changeErr
+func (f *fakeAuthUser) ChangePassword(context.Context, string, string, string) (entity.LoginResult, error) {
+	if f.changeErr != nil {
+		return entity.LoginResult{}, f.changeErr
+	}
+
+	return entity.LoginResult{AccessToken: "token", RefreshToken: "refresh-token", SessionID: "session-id"}, nil
 }
 
 func (f *fakeAuthUser) RequestEmailChange(context.Context, string, string, string) error {
 	return nil
 }
 
-func (f *fakeAuthUser) VerifyEmailChange(context.Context, string, string, string) error {
-	return nil
+func (f *fakeAuthUser) VerifyEmailChange(context.Context, string, string, string) (entity.LoginResult, error) {
+	return entity.LoginResult{AccessToken: "token", RefreshToken: "refresh-token", SessionID: "session-id"}, nil
 }
 
 func (f *fakeAuthUser) DeleteAccount(context.Context, string, string) error {
