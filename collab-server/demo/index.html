@@ -1,0 +1,198 @@
+<!doctype html>
+<!--
+  VERIFICATION TOOL — not the product frontend.
+
+  Open this file in two browser windows, paste an editor/admin access token
+  (POST /v1/auth/login), set the document name (page:{book_id}:{page_id}) and
+  connect. Typing in one window must appear in the other, with remote cursors.
+
+  The extension list below MUST mirror collab-server/src/schema.ts (the
+  authoritative schema). See docs/collab.md for the production frontend
+  contract.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Surau collab demo</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 2rem; max-width: 900px; }
+    label { display: inline-block; min-width: 7rem; }
+    input { width: 28rem; margin-bottom: .4rem; font-family: monospace; }
+    #status { margin: .6rem 0; font-weight: 600; }
+    #status.connected { color: #15803d; }
+    #status.disconnected { color: #b91c1c; }
+    #editor { border: 1px solid #d4d4d8; border-radius: 6px; padding: 1rem; min-height: 18rem; }
+    #editor [dir="rtl"] { direction: rtl; text-align: right; }
+    .collaboration-cursor__caret, .collaboration-carets__caret {
+      border-left: 1px solid; border-right: 1px solid; margin-left: -1px; margin-right: -1px;
+      pointer-events: none; position: relative; word-break: normal;
+    }
+    .collaboration-cursor__label, .collaboration-carets__label {
+      border-radius: 3px 3px 3px 0; color: #fff; font-size: 12px; font-weight: 600;
+      left: -1px; line-height: normal; padding: .1rem .3rem; position: absolute; top: -1.4em;
+      user-select: none; white-space: nowrap;
+    }
+    section[data-type="footnotes"] { border-top: 1px dashed #a1a1aa; margin-top: 1rem; padding-top: .5rem; font-size: .9em; }
+    sup[data-type="footnote-ref"] { color: #2563eb; }
+  </style>
+</head>
+<body>
+  <h1>Surau collab demo</h1>
+  <div>
+    <div><label>WS URL</label><input id="url" value="ws://localhost:8090" /></div>
+    <div><label>Document</label><input id="doc" value="page:990001:1" /></div>
+    <div><label>Access token</label><input id="token" placeholder="paste editor/admin JWT" /></div>
+    <div><label>Your name</label><input id="name" value="Editor A" /></div>
+    <button id="connect">Connect</button>
+    <button id="disconnect" disabled>Disconnect</button>
+  </div>
+  <div id="status" class="disconnected">disconnected</div>
+  <div id="editor"></div>
+
+  <script type="module">
+    import { HocuspocusProvider } from "https://esm.sh/@hocuspocus/provider@4.1.1?bundle";
+    import { Editor, Extension, Mark, Node } from "https://esm.sh/@tiptap/core@3.26.0?bundle";
+    import StarterKit from "https://esm.sh/@tiptap/starter-kit@3.26.0?bundle";
+    import Link from "https://esm.sh/@tiptap/extension-link@3.26.0?bundle";
+    import Subscript from "https://esm.sh/@tiptap/extension-subscript@3.26.0?bundle";
+    import Superscript from "https://esm.sh/@tiptap/extension-superscript@3.26.0?bundle";
+    import { Table, TableRow, TableHeader, TableCell } from "https://esm.sh/@tiptap/extension-table@3.26.0?bundle";
+    import Collaboration from "https://esm.sh/@tiptap/extension-collaboration@3.26.0?bundle";
+    import CollaborationCaret from "https://esm.sh/@tiptap/extension-collaboration-caret@3.26.0?bundle";
+
+    // ---- mirror of collab-server/src/schema.ts ----
+    const GLOBAL_ATTRIBUTES = ["class", "data-marker", "data-type", "dir", "id", "lang", "title"];
+    const blockContainer = (name, tag) => Node.create({
+      name, group: "block", content: "block+", defining: true, priority: 50,
+      parseHTML: () => [{ tag }],
+      renderHTML: ({ HTMLAttributes }) => [tag, HTMLAttributes, 0],
+    });
+    const Div = blockContainer("div", "div");
+    const Section = blockContainer("section", "section");
+    const DefinitionList = Node.create({
+      name: "definitionList", group: "block", content: "(definitionTerm | definitionDescription)+",
+      parseHTML: () => [{ tag: "dl" }], renderHTML: ({ HTMLAttributes }) => ["dl", HTMLAttributes, 0],
+    });
+    const DefinitionTerm = Node.create({
+      name: "definitionTerm", content: "inline*", defining: true,
+      parseHTML: () => [{ tag: "dt" }], renderHTML: ({ HTMLAttributes }) => ["dt", HTMLAttributes, 0],
+    });
+    const DefinitionDescription = Node.create({
+      name: "definitionDescription", content: "block+", defining: true,
+      parseHTML: () => [{ tag: "dd" }], renderHTML: ({ HTMLAttributes }) => ["dd", HTMLAttributes, 0],
+    });
+    const simpleMark = (name, tag) => Mark.create({
+      name, parseHTML: () => [{ tag }], renderHTML: ({ HTMLAttributes }) => [tag, HTMLAttributes, 0],
+    });
+    const Small = simpleMark("small", "small");
+    const Cite = simpleMark("cite", "cite");
+    const SpanMark = Mark.create({
+      name: "spanMark", priority: 50,
+      parseHTML: () => [{ tag: "span" }], renderHTML: ({ HTMLAttributes }) => ["span", HTMLAttributes, 0],
+    });
+    // Mirror of schema.ts: render the sanitizer-clean table shape (v3 injects
+    // style/colgroup/colspan="1" that Go strips).
+    const SurauTable = Table.extend({
+      renderHTML: ({ HTMLAttributes }) => ["table", HTMLAttributes, ["tbody", 0]],
+    });
+    const cleanCellRenderHTML = (tag) => ({ HTMLAttributes }) => {
+      const { colspan, rowspan, colwidth, style, ...rest } = HTMLAttributes;
+      const attrs = { ...rest };
+      if (colspan != null && String(colspan) !== "1") attrs.colspan = colspan;
+      if (rowspan != null && String(rowspan) !== "1") attrs.rowspan = rowspan;
+      return [tag, attrs, 0];
+    };
+    const SurauTableCell = TableCell.extend({ renderHTML: cleanCellRenderHTML("td") });
+    const SurauTableHeader = TableHeader.extend({ renderHTML: cleanCellRenderHTML("th") });
+    const SurauLink = Link.extend({
+      addAttributes() {
+        return {
+          ...this.parent?.(),
+          name: {
+            default: null,
+            parseHTML: (el) => el.getAttribute("name"),
+            renderHTML: (attrs) => (attrs.name ? { name: attrs.name } : {}),
+          },
+        };
+      },
+    }).configure({ openOnClick: false, autolink: false, linkOnPaste: false, HTMLAttributes: { rel: null, target: null } });
+    const GlobalAttributes = Extension.create({
+      name: "surauGlobalAttributes",
+      addGlobalAttributes() {
+        return [{
+          types: [
+            "paragraph", "heading", "blockquote", "bulletList", "orderedList", "listItem",
+            "codeBlock", "horizontalRule", "hardBreak", "table", "tableRow", "tableCell",
+            "tableHeader", "div", "section", "definitionList", "definitionTerm",
+            "definitionDescription", "bold", "italic", "underline", "subscript",
+            "superscript", "code", "link", "small", "cite", "spanMark",
+          ],
+          attributes: Object.fromEntries(GLOBAL_ATTRIBUTES.map((attr) => [attr, {
+            default: null,
+            parseHTML: (el) => el.getAttribute(attr),
+            renderHTML: (attrs) => (attrs[attr] != null ? { [attr]: attrs[attr] } : {}),
+          }])),
+        }];
+      },
+    });
+    const surauExtensions = [
+      StarterKit.configure({ undoRedo: false, strike: false, link: false }),
+      SurauLink, Subscript, Superscript,
+      SurauTable.configure({ resizable: false }), TableRow, SurauTableHeader, SurauTableCell,
+      Div, Section, DefinitionList, DefinitionTerm, DefinitionDescription,
+      Small, Cite, SpanMark, GlobalAttributes,
+    ];
+    // ---- end schema mirror ----
+
+    const statusEl = document.getElementById("status");
+    const setStatus = (text, ok) => {
+      statusEl.textContent = text;
+      statusEl.className = ok ? "connected" : "disconnected";
+    };
+
+    let provider = null;
+    let editor = null;
+
+    document.getElementById("connect").addEventListener("click", () => {
+      const url = document.getElementById("url").value.trim();
+      const name = document.getElementById("doc").value.trim();
+      const token = document.getElementById("token").value.trim();
+      const userName = document.getElementById("name").value.trim() || "Editor";
+
+      provider = new HocuspocusProvider({
+        url,
+        name,
+        token,
+        onStatus: ({ status }) => setStatus(status, status === "connected"),
+        onAuthenticationFailed: ({ reason }) => setStatus(`auth failed: ${reason}`, false),
+        onClose: ({ event }) => setStatus(`closed (${event.code}) — reconnecting…`, false),
+      });
+
+      editor = new Editor({
+        element: document.getElementById("editor"),
+        extensions: [
+          ...surauExtensions,
+          Collaboration.configure({ document: provider.document }),
+          CollaborationCaret.configure({
+            provider,
+            user: { name: userName, color: "#" + Math.floor(Math.random() * 0xffffff).toString(16).padStart(6, "0") },
+          }),
+        ],
+      });
+
+      document.getElementById("connect").disabled = true;
+      document.getElementById("disconnect").disabled = false;
+    });
+
+    document.getElementById("disconnect").addEventListener("click", () => {
+      editor?.destroy();
+      provider?.destroy();
+      editor = null;
+      provider = null;
+      setStatus("disconnected", false);
+      document.getElementById("connect").disabled = false;
+      document.getElementById("disconnect").disabled = true;
+    });
+  </script>
+</body>
+</html>
