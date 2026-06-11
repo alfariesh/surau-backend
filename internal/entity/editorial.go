@@ -1,6 +1,9 @@
 package entity
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 const (
 	PublicationStatusHidden    = "hidden"
@@ -10,6 +13,14 @@ const (
 
 	EditStatusDraft     = "draft"
 	EditStatusPublished = "published"
+
+	EditOriginREST    = "rest"
+	EditOriginCollab  = "collab"
+	EditOriginRestore = "restore"
+
+	SourceEditAssetPage     = "page"
+	SourceEditAssetHeading  = "heading"
+	SourceEditAssetMetadata = "metadata"
 
 	FeedbackStatusOpen     = "open"
 	FeedbackStatusResolved = "resolved"
@@ -76,6 +87,21 @@ type BookHeadingEdit struct {
 	UpdatedAt   time.Time  `json:"updated_at"   example:"2026-01-01T00:00:00Z"`
 	PublishedAt *time.Time `json:"published_at" example:"2026-01-01T00:00:00Z"`
 } // @name entity.BookHeadingEdit
+
+// BookSourceEditRevision is one immutable snapshot of a source kitab edit
+// (page content, heading title, or book metadata) for history and restore.
+type BookSourceEditRevision struct {
+	ID        string          `json:"id"         example:"550e8400-e29b-41d4-a716-446655440000"`
+	BookID    int             `json:"book_id"    example:"797"`
+	AssetType string          `json:"asset_type" example:"page"`
+	PageID    *int            `json:"page_id,omitempty"    example:"1"`
+	HeadingID *int            `json:"heading_id,omitempty" example:"10"`
+	Version   int             `json:"version"    example:"3"`
+	ActorID   *string         `json:"actor_id,omitempty"`
+	Origin    string          `json:"origin"     example:"rest"`
+	Snapshot  json.RawMessage `json:"snapshot"   swaggertype:"object"`
+	CreatedAt time.Time       `json:"created_at" example:"2026-01-01T00:00:00Z"`
+} // @name entity.BookSourceEditRevision
 
 // BookCollectionItem assigns a book to a curated shelf.
 type BookCollectionItem struct {

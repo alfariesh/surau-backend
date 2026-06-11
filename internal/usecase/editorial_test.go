@@ -3,6 +3,7 @@ package usecase_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/evrone/go-clean-template/internal/entity"
 	"github.com/evrone/go-clean-template/internal/repo"
@@ -118,8 +119,8 @@ func TestEditorialSavePageDraftNormalizesContent(t *testing.T) {
 			Status:      entity.EditStatusDraft,
 			ContentHTML: "<p>السلام</p>\n<div>نص</div>",
 			ContentText: "السلام\nنص",
-		}).
-		DoAndReturn(func(_ context.Context, _ string, edit entity.BookPageEdit) (entity.BookPageEdit, error) {
+		}, nil, entity.EditOriginREST).
+		DoAndReturn(func(_ context.Context, _ string, edit entity.BookPageEdit, _ *time.Time, _ string) (entity.BookPageEdit, error) {
 			return edit, nil
 		})
 
@@ -127,7 +128,7 @@ func TestEditorialSavePageDraftNormalizesContent(t *testing.T) {
 		BookID:      797,
 		PageID:      1,
 		ContentHTML: "\ufeff舄<p>السلام</p>\r\n<div>نص</div>",
-	})
+	}, nil, entity.EditOriginREST)
 
 	require.NoError(t, err)
 	assert.Equal(t, "<p>السلام</p>\n<div>نص</div>", edit.ContentHTML)
@@ -152,8 +153,8 @@ func TestEditorialSaveMetadataDraftTrimsEmptyFields(t *testing.T) {
 			Status:       entity.EditStatusDraft,
 			DisplayTitle: &expectedTitle,
 			Bibliography: &expectedBibliography,
-		}).
-		DoAndReturn(func(_ context.Context, _ string, edit entity.BookMetadataEdit) (entity.BookMetadataEdit, error) {
+		}, nil, entity.EditOriginREST).
+		DoAndReturn(func(_ context.Context, _ string, edit entity.BookMetadataEdit, _ *time.Time, _ string) (entity.BookMetadataEdit, error) {
 			return edit, nil
 		})
 
@@ -164,7 +165,7 @@ func TestEditorialSaveMetadataDraftTrimsEmptyFields(t *testing.T) {
 		Hint:         &hint,
 		Description:  &description,
 		CategoryID:   &categoryID,
-	})
+	}, nil, entity.EditOriginREST)
 
 	require.NoError(t, err)
 	assert.Equal(t, &expectedTitle, edit.DisplayTitle)
@@ -172,6 +173,65 @@ func TestEditorialSaveMetadataDraftTrimsEmptyFields(t *testing.T) {
 	assert.Nil(t, edit.Hint)
 	assert.Nil(t, edit.Description)
 	assert.Nil(t, edit.CategoryID)
+}
+
+func TestEditorialRestorePageDraftRevision(t *testing.T) {
+	t.Parallel()
+
+	t.Run("replays snapshot as new draft with restore origin", func(t *testing.T) {
+		t.Parallel()
+
+		uc, mockRepo := newEditorialUseCase(t)
+		pageID := 1
+
+		mockRepo.EXPECT().
+			GetSourceEditRevision(context.Background(), "revision-id").
+			Return(entity.BookSourceEditRevision{
+				ID:        "revision-id",
+				BookID:    797,
+				AssetType: entity.SourceEditAssetPage,
+				PageID:    &pageID,
+				Version:   2,
+				Snapshot:  []byte(`{"content_html":"<p>lama</p>","content_text":"lama"}`),
+			}, nil)
+		mockRepo.EXPECT().
+			SavePageDraft(context.Background(), "actor-id", entity.BookPageEdit{
+				BookID:      797,
+				PageID:      1,
+				Status:      entity.EditStatusDraft,
+				ContentHTML: "<p>lama</p>",
+				ContentText: "lama",
+			}, nil, entity.EditOriginRestore).
+			DoAndReturn(func(_ context.Context, _ string, edit entity.BookPageEdit, _ *time.Time, _ string) (entity.BookPageEdit, error) {
+				return edit, nil
+			})
+
+		edit, err := uc.RestorePageDraftRevision(context.Background(), "actor-id", 797, 1, "revision-id")
+
+		require.NoError(t, err)
+		assert.Equal(t, "<p>lama</p>", edit.ContentHTML)
+	})
+
+	t.Run("revision scoped to another page is rejected", func(t *testing.T) {
+		t.Parallel()
+
+		uc, mockRepo := newEditorialUseCase(t)
+		otherPageID := 9
+
+		mockRepo.EXPECT().
+			GetSourceEditRevision(context.Background(), "revision-id").
+			Return(entity.BookSourceEditRevision{
+				ID:        "revision-id",
+				BookID:    797,
+				AssetType: entity.SourceEditAssetPage,
+				PageID:    &otherPageID,
+				Snapshot:  []byte(`{"content_html":"<p>x</p>"}`),
+			}, nil)
+
+		_, err := uc.RestorePageDraftRevision(context.Background(), "actor-id", 797, 1, "revision-id")
+
+		require.ErrorIs(t, err, entity.ErrDraftNotFound)
+	})
 }
 
 func TestEditorialTranslationFeedbacksStatusFilter(t *testing.T) {

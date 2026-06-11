@@ -83,6 +83,9 @@ x-backend-app-environment: &x-backend-app-environment
   AUTH_ALERT_ENABLED: "${AUTH_ALERT_ENABLED:-false}"
   AUTH_ALERT_INTERVAL: "${AUTH_ALERT_INTERVAL:-5m}"
   AUTH_ALERT_RECIPIENTS: "${AUTH_ALERT_RECIPIENTS:-}"
+  # Collaborative editing bridge (collab-server -> app internal API)
+  COLLAB_ENABLED: "${COLLAB_ENABLED:-true}"
+  COLLAB_SERVICE_TOKEN: "${COLLAB_SERVICE_TOKEN:-dev-collab-service-token-32-bytes-min}"
   # Email / Cloudflare Email Service
   EMAIL_DELIVERY_MODE: "${EMAIL_DELIVERY_MODE:-log}"
   CF_EMAIL_ACCOUNT_ID: "${CF_EMAIL_ACCOUNT_ID:-dev-cloudflare-account-id}"
@@ -115,7 +118,10 @@ services:
     environment:
       <<: *x-db-environment
     volumes:
-      - db_data:/var/lib/postgresql/18/data
+      # postgres:18 images keep PGDATA under /var/lib/postgresql (the image's
+      # volume root). Mounting the old /18/data path left data on an anonymous
+      # volume that vanished on every container recreate.
+      - db_data:/var/lib/postgresql
     ports:
       - "5432:5432"
     networks:
@@ -148,6 +154,29 @@ services:
         aliases:
           - app.lvh.me
 
+  collab:
+    container_name: collab
+    build:
+      context: ./collab-server
+    environment:
+      COLLAB_PORT: "8090"
+      COLLAB_PG_URL: "postgres://user:myAwEsOm3pa55@w0rd@db:5432/db"
+      COLLAB_GO_API_URL: "http://app:8080"
+      COLLAB_SERVICE_TOKEN: "${COLLAB_SERVICE_TOKEN:-dev-collab-service-token-32-bytes-min}"
+      COLLAB_DEBOUNCE_MS: "3000"
+      COLLAB_DEBOUNCE_MAX_MS: "10000"
+      COLLAB_TOKEN_GRACE_MS: "30000"
+      COLLAB_LOG_LEVEL: "info"
+    ports:
+      - "8090:8090"
+    depends_on:
+      - db
+      - app
+    networks:
+      app_network:
+        aliases:
+          - collab.lvh.me
+
   nginx:
     container_name: nginx
     image: nginx:1.31.0-alpine
@@ -157,6 +186,7 @@ services:
       - "80:80"
     depends_on:
       - app
+      - collab
     networks:
       app_network:
         aliases:

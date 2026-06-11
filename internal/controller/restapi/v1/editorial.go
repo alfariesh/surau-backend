@@ -52,6 +52,10 @@ func (r *V1) editorialError(ctx *fiber.Ctx, err error) error {
 		return errorResponse(ctx, http.StatusNotFound, "heading not found")
 	case errors.Is(err, entity.ErrForbidden):
 		return errorResponse(ctx, http.StatusForbidden, "forbidden")
+	case errors.Is(err, entity.ErrPreconditionFailed):
+		return errorResponse(ctx, http.StatusPreconditionFailed, "precondition failed")
+	case errors.Is(err, entity.ErrPreconditionRequired):
+		return errorResponse(ctx, http.StatusPreconditionRequired, "if-match header required")
 	default:
 		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
 	}

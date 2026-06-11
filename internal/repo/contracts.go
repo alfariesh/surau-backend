@@ -345,14 +345,16 @@ type (
 		ListProductionCandidates(ctx context.Context, filter ProductionCandidateFilter) ([]entity.BookProductionCandidate, int, error)
 		UpdatePublication(ctx context.Context, actorID string, publication entity.BookPublication) (entity.BookPublication, error)
 		GetMetadataDraft(ctx context.Context, bookID int) (entity.BookMetadataEdit, error)
-		SaveMetadataDraft(ctx context.Context, actorID string, edit entity.BookMetadataEdit) (entity.BookMetadataEdit, error)
-		PublishMetadataDraft(ctx context.Context, actorID string, bookID int) (entity.BookMetadataEdit, error)
+		SaveMetadataDraft(ctx context.Context, actorID string, edit entity.BookMetadataEdit, expected *time.Time, origin string) (entity.BookMetadataEdit, error)
+		PublishMetadataDraft(ctx context.Context, actorID string, bookID int, expected *time.Time) (entity.BookMetadataEdit, error)
 		GetPageEdit(ctx context.Context, bookID, pageID int) (entity.EditorialPageEdit, error)
-		SavePageDraft(ctx context.Context, actorID string, edit entity.BookPageEdit) (entity.BookPageEdit, error)
-		PublishPageDraft(ctx context.Context, actorID string, bookID, pageID int) (entity.BookPageEdit, error)
+		SavePageDraft(ctx context.Context, actorID string, edit entity.BookPageEdit, expected *time.Time, origin string) (entity.BookPageEdit, error)
+		PublishPageDraft(ctx context.Context, actorID string, bookID, pageID int, expected *time.Time) (entity.BookPageEdit, error)
 		GetHeadingDraft(ctx context.Context, bookID, headingID int) (entity.BookHeadingEdit, error)
-		SaveHeadingDraft(ctx context.Context, actorID string, edit entity.BookHeadingEdit) (entity.BookHeadingEdit, error)
-		PublishHeadingDraft(ctx context.Context, actorID string, bookID, headingID int) (entity.BookHeadingEdit, error)
+		SaveHeadingDraft(ctx context.Context, actorID string, edit entity.BookHeadingEdit, expected *time.Time, origin string) (entity.BookHeadingEdit, error)
+		PublishHeadingDraft(ctx context.Context, actorID string, bookID, headingID int, expected *time.Time) (entity.BookHeadingEdit, error)
+		ListSourceEditRevisions(ctx context.Context, filter SourceEditRevisionFilter) ([]entity.BookSourceEditRevision, int, error)
+		GetSourceEditRevision(ctx context.Context, revisionID string) (entity.BookSourceEditRevision, error)
 		AddCollectionItem(ctx context.Context, actorID, slug string, bookID int, sortOrder *int) (entity.BookCollectionItem, error)
 		ListTranslationFeedbacks(ctx context.Context, filter TranslationFeedbackFilter) ([]entity.EditorialTranslationFeedback, int, error)
 		TranslationFeedbackSummary(ctx context.Context, filter TranslationFeedbackFilter) (entity.EditorialTranslationFeedbackSummary, error)
@@ -543,6 +545,16 @@ type (
 	ProductionDraftRevisionFilter struct {
 		ProjectID string
 		AssetType string
+		HeadingID *int
+		Limit     uint64
+		Offset    uint64
+	}
+
+	// SourceEditRevisionFilter -.
+	SourceEditRevisionFilter struct {
+		BookID    int
+		AssetType string
+		PageID    *int
 		HeadingID *int
 		Limit     uint64
 		Offset    uint64

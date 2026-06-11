@@ -14,6 +14,8 @@ import (
 const (
 	EmailDeliveryModeCloudflare = "cloudflare"
 	EmailDeliveryModeLog        = "log"
+
+	minCollabServiceTokenBytes = 32
 )
 
 type (
@@ -31,6 +33,7 @@ type (
 		AuthEmail     authEmail
 		AuthAlert     authAlert
 		RAG           rag
+		Collab        collab
 		Metrics       metrics
 		Swagger       swagger
 	}
@@ -47,6 +50,15 @@ type (
 		UsePreforkMode bool     `env:"HTTP_USE_PREFORK_MODE" envDefault:"false"`
 		ProxyHeader    string   `env:"HTTP_PROXY_HEADER" envDefault:"X-Real-IP"`
 		TrustedProxies []string `env:"HTTP_TRUSTED_PROXIES" envSeparator:","`
+		BodyLimitBytes int      `env:"HTTP_BODY_LIMIT_BYTES" envDefault:"4194304"`
+	}
+
+	// Collab configures the realtime collaborative editing bridge. When
+	// enabled, the app exposes /internal/collab endpoints (service-token
+	// guarded) that the collab-server uses to seed and persist page drafts.
+	collab struct {
+		Enabled      bool   `env:"COLLAB_ENABLED" envDefault:"false"`
+		ServiceToken string `env:"COLLAB_SERVICE_TOKEN"`
 	}
 
 	// Log -.
@@ -230,6 +242,14 @@ func NewConfig() (*Config, error) {
 	}
 	if cfg.PG.PoolMax < 1 || cfg.PG.PoolMax > 100 {
 		return nil, fmt.Errorf("config error: PG_POOL_MAX must be between 1 and 100")
+	}
+
+	if cfg.HTTP.BodyLimitBytes <= 0 {
+		return nil, fmt.Errorf("config error: HTTP_BODY_LIMIT_BYTES must be positive") //nolint:err113 // matches the file's uniform config-error style
+	}
+
+	if cfg.Collab.Enabled && len(cfg.Collab.ServiceToken) < minCollabServiceTokenBytes {
+		return nil, fmt.Errorf("config error: COLLAB_SERVICE_TOKEN must be at least 32 bytes when COLLAB_ENABLED is true") //nolint:err113 // matches the file's uniform config-error style
 	}
 	if len(cfg.JWT.Secret) < 32 {
 		return nil, fmt.Errorf("config error: JWT_SECRET must be at least 32 bytes")

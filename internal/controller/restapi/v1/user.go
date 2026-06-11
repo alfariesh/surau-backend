@@ -718,6 +718,34 @@ func (r *V1) deleteAccount(ctx *fiber.Ctx) error {
 	return ctx.Status(http.StatusOK).JSON(response.AccountDeleted{AccountDeleted: true})
 }
 
+// @Summary     Introspect access token
+// @Description Return the authenticated identity (id, username, role, session) for the presented Bearer token. Built for service-to-service auth bridging (e.g. the collab websocket server): the Auth middleware has already verified signature, token_version and session revocation, so the response reflects live session state with no extra queries.
+// @ID          auth-introspect
+// @Tags        auth
+// @Produce     json
+// @Success     200 {object} response.Introspection
+// @Failure     401 {object} response.Error
+// @Security    BearerAuth
+// @Router      /auth/introspect [get]
+func (r *V1) introspect(ctx *fiber.Ctx) error {
+	user, ok := ctx.Locals("user").(entity.User)
+	if !ok {
+		return errorResponse(ctx, http.StatusUnauthorized, "unauthorized")
+	}
+
+	sessionID := ""
+	if value, ok := ctx.Locals("sessionID").(string); ok {
+		sessionID = value
+	}
+
+	return ctx.Status(http.StatusOK).JSON(response.Introspection{
+		UserID:    user.ID,
+		Username:  user.Username,
+		Role:      user.Role,
+		SessionID: sessionID,
+	})
+}
+
 // @Summary     Get profile
 // @Description Get current user profile
 // @ID          profile

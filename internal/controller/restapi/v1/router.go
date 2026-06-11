@@ -14,6 +14,9 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/limiter"
 )
 
+// editorialSavesPerMinute caps per-user editorial draft writes (autosave bursts).
+const editorialSavesPerMinute = 120
+
 // NewRoutes -.
 func NewRoutes(
 	apiV1Group fiber.Router,
@@ -108,6 +111,7 @@ func NewRoutes(
 
 	protectedAuthGroup := protected.Group("/auth")
 	{
+		protectedAuthGroup.Get("/introspect", r.introspect)
 		protectedAuthGroup.Post("/change-password", r.changePassword)
 		protectedAuthGroup.Post("/change-email/request", r.requestEmailChange)
 		protectedAuthGroup.Post("/change-email/verify", r.verifyEmailChange)
@@ -143,7 +147,25 @@ func NewRoutes(
 		meGroup.Delete("/saved-items/:id", r.deleteSavedItem)
 	}
 
-	editorialGroup := protected.Group("/editorial")
+	// One shared per-user budget across all editorial draft saves so autosave
+	// bursts cannot monopolize the database. In-memory store is fine: single
+	// instance, prefork off.
+	editorialSaveLimiter := limiter.New(limiter.Config{
+		Max:        editorialSavesPerMinute,
+		Expiration: time.Minute,
+		KeyGenerator: func(ctx *fiber.Ctx) string {
+			if userID, ok := ctx.Locals("userID").(string); ok && userID != "" {
+				return userID
+			}
+
+			return ctx.IP()
+		},
+		Next: func(ctx *fiber.Ctx) bool {
+			return ctx.Method() != fiber.MethodPut
+		},
+	})
+
+	editorialGroup := protected.Group("/editorial", editorialSaveLimiter)
 	{
 		editorialReviewGroup := editorialGroup.Group(
 			"",
@@ -192,6 +214,8 @@ func NewRoutes(
 		editorialReviewGroup.Put("/books/:book_id/metadata-draft", r.editorialSaveMetadataDraft)
 		editorialReviewGroup.Get("/books/:book_id/pages/:page_id", r.editorialGetPageEdit)
 		editorialReviewGroup.Put("/books/:book_id/pages/:page_id/draft", r.editorialSavePageDraft)
+		editorialReviewGroup.Get("/books/:book_id/pages/:page_id/draft-revisions", r.editorialListPageDraftRevisions)
+		editorialReviewGroup.Post("/books/:book_id/pages/:page_id/draft-revisions/:revision_id/restore", r.editorialRestorePageDraftRevision)
 		editorialReviewGroup.Get("/books/:book_id/headings/:heading_id/draft", r.editorialGetHeadingDraft)
 		editorialReviewGroup.Put("/books/:book_id/headings/:heading_id/draft", r.editorialSaveHeadingDraft)
 

@@ -572,6 +572,7 @@ type fakeProductionEditorial struct {
 	metadataTranslationDraft    entity.BookMetadataTranslationEdit
 	sourceMetadataDraft         entity.BookMetadataEdit
 	savedMetadataDraft          entity.BookMetadataEdit
+	savedMetadataDraftExpected  *time.Time
 
 	publishProductionProjectCalls     int
 	saveMetadataTranslationDraftCalls int
@@ -787,9 +788,12 @@ func (f *fakeProductionEditorial) SaveMetadataDraft(
 	_ context.Context,
 	_ string,
 	edit entity.BookMetadataEdit,
+	expected *time.Time,
+	_ string,
 ) (entity.BookMetadataEdit, error) {
 	f.saveMetadataDraftCalls++
 	f.savedMetadataDraft = edit
+	f.savedMetadataDraftExpected = expected
 	edit.Status = entity.EditStatusDraft
 	edit.UpdatedAt = time.Date(2026, 1, 2, 3, 4, 7, 0, time.UTC)
 

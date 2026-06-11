@@ -78,6 +78,16 @@ type AccountDeleted struct {
 	AccountDeleted bool `json:"account_deleted" example:"true"`
 } // @name v1.AccountDeleted
 
+// Introspection reports the live identity behind a Bearer token so external
+// services (e.g. the collab websocket server) can bridge authentication
+// without sharing the JWT secret or duplicating session-revocation logic.
+type Introspection struct {
+	UserID    string `json:"user_id"    example:"550e8400-e29b-41d4-a716-446655440000"`
+	Username  string `json:"username"   example:"johndoe"`
+	Role      string `json:"role"       example:"editor"`
+	SessionID string `json:"session_id" example:"550e8400-e29b-41d4-a716-446655440000"`
+} // @name v1.Introspection
+
 // LoggedOut -.
 type LoggedOut struct {
 	LoggedOut bool `json:"logged_out" example:"true"`

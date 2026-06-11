@@ -59,6 +59,8 @@ var (
 	ErrRAGNotConfigured                = errors.New("rag llm is not configured")
 	ErrRAGEvidenceNotFound             = errors.New("rag evidence not found")
 	ErrForbidden                       = errors.New("forbidden")
+	ErrPreconditionFailed              = errors.New("precondition failed")
+	ErrPreconditionRequired            = errors.New("precondition required")
 	ErrInvalidRole                     = errors.New("invalid role")
 	ErrInvalidStatus                   = errors.New("invalid status")
 	ErrInvalidAssetType                = errors.New("invalid asset type")

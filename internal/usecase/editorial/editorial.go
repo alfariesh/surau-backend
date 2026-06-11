@@ -2,7 +2,10 @@ package editorial
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"strings"
+	"time"
 
 	"github.com/evrone/go-clean-template/internal/entity"
 	"github.com/evrone/go-clean-template/internal/readerlang"
@@ -115,11 +118,14 @@ func (uc *UseCase) GetMetadataDraft(ctx context.Context, bookID int) (entity.Boo
 	return uc.repo.GetMetadataDraft(ctx, bookID)
 }
 
-// SaveMetadataDraft stores metadata override as draft.
+// SaveMetadataDraft stores metadata override as draft. A non-nil expected
+// timestamp enforces optimistic concurrency against the current draft.
 func (uc *UseCase) SaveMetadataDraft(
 	ctx context.Context,
 	actorID string,
 	edit entity.BookMetadataEdit,
+	expected *time.Time,
+	origin string,
 ) (entity.BookMetadataEdit, error) {
 	edit.Status = entity.EditStatusDraft
 	edit.DisplayTitle = trimStringPtr(edit.DisplayTitle)
@@ -132,12 +138,12 @@ func (uc *UseCase) SaveMetadataDraft(
 		edit.CategoryID = nil
 	}
 
-	return uc.repo.SaveMetadataDraft(ctx, actorID, edit)
+	return uc.repo.SaveMetadataDraft(ctx, actorID, edit, expected, origin)
 }
 
 // PublishMetadataDraft promotes metadata draft to published.
-func (uc *UseCase) PublishMetadataDraft(ctx context.Context, actorID string, bookID int) (entity.BookMetadataEdit, error) {
-	return uc.repo.PublishMetadataDraft(ctx, actorID, bookID)
+func (uc *UseCase) PublishMetadataDraft(ctx context.Context, actorID string, bookID int, expected *time.Time) (entity.BookMetadataEdit, error) {
+	return uc.repo.PublishMetadataDraft(ctx, actorID, bookID, expected)
 }
 
 // GetPageEdit returns raw page plus draft and published overrides.
@@ -145,19 +151,91 @@ func (uc *UseCase) GetPageEdit(ctx context.Context, bookID, pageID int) (entity.
 	return uc.repo.GetPageEdit(ctx, bookID, pageID)
 }
 
-// SavePageDraft stores page override as draft.
-func (uc *UseCase) SavePageDraft(ctx context.Context, actorID string, edit entity.BookPageEdit) (entity.BookPageEdit, error) {
+// SavePageDraft stores page override as draft. A non-nil expected timestamp
+// enforces optimistic concurrency against the current draft (or raw page when
+// no draft exists yet).
+//
+//nolint:gocritic // value param mirrors the usecase.Editorial interface
+func (uc *UseCase) SavePageDraft(
+	ctx context.Context,
+	actorID string,
+	edit entity.BookPageEdit,
+	expected *time.Time,
+	origin string,
+) (entity.BookPageEdit, error) {
 	contentHTML, contentText := readerutil.NormalizeContent(edit.ContentHTML)
 	edit.Status = entity.EditStatusDraft
 	edit.ContentHTML = contentHTML
 	edit.ContentText = contentText
 
-	return uc.repo.SavePageDraft(ctx, actorID, edit)
+	return uc.repo.SavePageDraft(ctx, actorID, edit, expected, origin)
+}
+
+// PageDraftRevisions returns the newest-first revision history for one page's
+// draft content.
+func (uc *UseCase) PageDraftRevisions(
+	ctx context.Context,
+	bookID, pageID int,
+	limit, offset int,
+) ([]entity.BookSourceEditRevision, int, error) {
+	if bookID <= 0 {
+		return nil, 0, entity.ErrBookNotFound
+	}
+
+	if pageID <= 0 {
+		return nil, 0, entity.ErrPageNotFound
+	}
+
+	return uc.repo.ListSourceEditRevisions(ctx, repo.SourceEditRevisionFilter{
+		BookID:    bookID,
+		AssetType: entity.SourceEditAssetPage,
+		PageID:    &pageID,
+		Limit:     clampLimit(limit),
+		Offset:    clampOffset(offset),
+	})
+}
+
+// RestorePageDraftRevision replays one historical snapshot as the current page
+// draft. The restore itself is recorded as a new revision (origin "restore"),
+// so history stays append-only.
+func (uc *UseCase) RestorePageDraftRevision(
+	ctx context.Context,
+	actorID string,
+	bookID, pageID int,
+	revisionID string,
+) (entity.BookPageEdit, error) {
+	revision, err := uc.repo.GetSourceEditRevision(ctx, strings.TrimSpace(revisionID))
+	if err != nil {
+		return entity.BookPageEdit{}, err
+	}
+
+	if revision.AssetType != entity.SourceEditAssetPage ||
+		revision.BookID != bookID ||
+		revision.PageID == nil || *revision.PageID != pageID {
+		return entity.BookPageEdit{}, entity.ErrDraftNotFound
+	}
+
+	var snapshot struct {
+		ContentHTML string `json:"content_html"`
+	}
+	if err = json.Unmarshal(revision.Snapshot, &snapshot); err != nil {
+		return entity.BookPageEdit{}, fmt.Errorf("EditorialUseCase - RestorePageDraftRevision - unmarshal snapshot: %w", err)
+	}
+
+	if strings.TrimSpace(snapshot.ContentHTML) == "" {
+		return entity.BookPageEdit{}, entity.ErrDraftNotFound
+	}
+
+	return uc.SavePageDraft(ctx, actorID, entity.BookPageEdit{
+		BookID:      bookID,
+		PageID:      pageID,
+		ContentHTML: snapshot.ContentHTML,
+	}, nil, entity.EditOriginRestore)
 }
 
 // PublishPageDraft promotes page draft to published.
-func (uc *UseCase) PublishPageDraft(ctx context.Context, actorID string, bookID, pageID int) (entity.BookPageEdit, error) {
-	return uc.repo.PublishPageDraft(ctx, actorID, bookID, pageID)
+func (uc *UseCase) PublishPageDraft(ctx context.Context, actorID string, bookID, pageID int, expected *time.Time) (entity.BookPageEdit, error) {
+	return uc.repo.PublishPageDraft(ctx, actorID, bookID, pageID, expected)
 }
 
 // GetHeadingDraft returns one source heading draft.
@@ -172,21 +250,24 @@ func (uc *UseCase) GetHeadingDraft(ctx context.Context, bookID, headingID int) (
 	return uc.repo.GetHeadingDraft(ctx, bookID, headingID)
 }
 
-// SaveHeadingDraft stores heading title override as draft.
+// SaveHeadingDraft stores heading title override as draft. A non-nil expected
+// timestamp enforces optimistic concurrency against the current draft.
 func (uc *UseCase) SaveHeadingDraft(
 	ctx context.Context,
 	actorID string,
 	edit entity.BookHeadingEdit,
+	expected *time.Time,
+	origin string,
 ) (entity.BookHeadingEdit, error) {
 	edit.Status = entity.EditStatusDraft
 	edit.Content = strings.TrimSpace(edit.Content)
 
-	return uc.repo.SaveHeadingDraft(ctx, actorID, edit)
+	return uc.repo.SaveHeadingDraft(ctx, actorID, edit, expected, origin)
 }
 
 // PublishHeadingDraft promotes heading draft to published.
-func (uc *UseCase) PublishHeadingDraft(ctx context.Context, actorID string, bookID, headingID int) (entity.BookHeadingEdit, error) {
-	return uc.repo.PublishHeadingDraft(ctx, actorID, bookID, headingID)
+func (uc *UseCase) PublishHeadingDraft(ctx context.Context, actorID string, bookID, headingID int, expected *time.Time) (entity.BookHeadingEdit, error) {
+	return uc.repo.PublishHeadingDraft(ctx, actorID, bookID, headingID, expected)
 }
 
 // AddCollectionItem adds or reorders a book in a collection.

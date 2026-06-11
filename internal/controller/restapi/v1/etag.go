@@ -82,3 +82,41 @@ func updatedAtETagMatches(header string, updatedAt time.Time) bool {
 func updatedAtETag(updatedAt time.Time) string {
 	return strconv.Quote(strconv.FormatInt(updatedAt.UTC().UnixNano(), 10))
 }
+
+// parseIfMatch extracts the expected updated_at from an If-Match header so the
+// repo layer can enforce it atomically. Returns:
+//   - (nil, false, true) when the header is absent,
+//   - (nil, true, true) for "*" (precondition present but unconditional),
+//   - (&t, true, true) for a parseable updated_at ETag,
+//   - (nil, true, false) when present but no candidate can ever match (412).
+func parseIfMatch(ctx *fiber.Ctx) (expected *time.Time, present, ok bool) {
+	header := requestHeader(ctx, fiber.HeaderIfMatch)
+	if header == "" {
+		return nil, false, true
+	}
+
+	for _, candidate := range strings.Split(header, ",") {
+		candidate = strings.TrimSpace(candidate)
+		if candidate == "*" {
+			return nil, true, true
+		}
+
+		candidate = strings.TrimSpace(strings.TrimPrefix(candidate, "W/"))
+
+		unquoted, err := strconv.Unquote(candidate)
+		if err != nil {
+			continue
+		}
+
+		nanos, err := strconv.ParseInt(unquoted, 10, 64)
+		if err != nil {
+			continue
+		}
+
+		parsed := time.Unix(0, nanos).UTC()
+
+		return &parsed, true, true
+	}
+
+	return nil, true, false
+}

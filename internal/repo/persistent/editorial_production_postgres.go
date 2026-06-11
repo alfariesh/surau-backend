@@ -12,6 +12,7 @@ import (
 	"github.com/evrone/go-clean-template/internal/repo"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"golang.org/x/sync/errgroup"
 )
 
 type productionQuerier interface {
@@ -228,13 +229,12 @@ func (r *EditorialRepo) ProductionCompleteness(
 }
 
 // ProductionWorkspace returns a compact production dashboard for one project.
+// After the two ordered fetches (project, then book for author/category ids)
+// the remaining independent lookups run concurrently — they previously executed
+// as 6+ sequential round trips, which dominated workspace latency. pgxpool is
+// safe for concurrent use; parallelism is bounded by the pool size.
 func (r *EditorialRepo) ProductionWorkspace(ctx context.Context, projectID string) (entity.BookProductionWorkspace, error) {
 	project, err := r.GetProductionProject(ctx, projectID)
-	if err != nil {
-		return entity.BookProductionWorkspace{}, err
-	}
-
-	completeness, err := r.productionCompleteness(ctx, r.Pool, project)
 	if err != nil {
 		return entity.BookProductionWorkspace{}, err
 	}
@@ -244,77 +244,116 @@ func (r *EditorialRepo) ProductionWorkspace(ctx context.Context, projectID strin
 		return entity.BookProductionWorkspace{}, err
 	}
 
-	metadataFinal := productionFinalExists(ctx, r.Pool, `
+	var (
+		completeness entity.BookProductionCompleteness
+		metadata     entity.ProductionAssetStatus
+		author       *entity.ProductionAssetStatus
+		category     *entity.ProductionAssetStatus
+		headings     []entity.BookProductionWorkspaceHeading
+	)
+
+	group, groupCtx := errgroup.WithContext(ctx)
+
+	group.Go(func() error {
+		var completenessErr error
+
+		completeness, completenessErr = r.productionCompleteness(groupCtx, r.Pool, project)
+
+		return completenessErr
+	})
+
+	group.Go(func() error {
+		metadataFinal := productionFinalExists(groupCtx, r.Pool, `
 SELECT EXISTS (
     SELECT 1
     FROM book_metadata_translations
     WHERE book_id = $1 AND lang = $2 AND is_deleted = false
 )`, project.BookID, project.Lang)
-	metadata, err := productionScalarAssetStatus(
-		ctx,
-		r.Pool,
-		project,
-		entity.ProductionAssetBookMetadata,
-		true,
-		"book_metadata_translation_edits",
-		"NULLIF(BTRIM(display_title), '') IS NOT NULL",
-		metadataFinal,
-	)
-	if err != nil {
-		return entity.BookProductionWorkspace{}, err
-	}
 
-	var author *entity.ProductionAssetStatus
+		var metadataErr error
+
+		metadata, metadataErr = productionScalarAssetStatus(
+			groupCtx,
+			r.Pool,
+			project,
+			entity.ProductionAssetBookMetadata,
+			true,
+			"book_metadata_translation_edits",
+			"NULLIF(BTRIM(display_title), '') IS NOT NULL",
+			metadataFinal,
+		)
+
+		return metadataErr
+	})
+
 	if book.AuthorID != nil {
-		authorFinal := productionFinalExists(ctx, r.Pool, `
+		group.Go(func() error {
+			authorFinal := productionFinalExists(groupCtx, r.Pool, `
 SELECT EXISTS (
     SELECT 1
     FROM author_translations
     WHERE author_id = $1 AND lang = $2 AND is_deleted = false
 )`, *book.AuthorID, project.Lang)
-		authorStatus, statusErr := productionScalarAssetStatus(
-			ctx,
-			r.Pool,
-			project,
-			entity.ProductionAssetAuthorMetadata,
-			true,
-			"author_translation_edits",
-			"NULLIF(BTRIM(name), '') IS NOT NULL",
-			authorFinal,
-		)
-		if statusErr != nil {
-			return entity.BookProductionWorkspace{}, statusErr
-		}
-		author = &authorStatus
+
+			authorStatus, statusErr := productionScalarAssetStatus(
+				groupCtx,
+				r.Pool,
+				project,
+				entity.ProductionAssetAuthorMetadata,
+				true,
+				"author_translation_edits",
+				"NULLIF(BTRIM(name), '') IS NOT NULL",
+				authorFinal,
+			)
+			if statusErr != nil {
+				return statusErr
+			}
+
+			author = &authorStatus
+
+			return nil
+		})
 	}
 
-	var category *entity.ProductionAssetStatus
 	if book.CategoryID != nil {
-		categoryFinal := productionFinalExists(ctx, r.Pool, `
+		group.Go(func() error {
+			categoryFinal := productionFinalExists(groupCtx, r.Pool, `
 SELECT EXISTS (
     SELECT 1
     FROM category_translations
     WHERE category_id = $1 AND lang = $2 AND is_deleted = false
 )`, *book.CategoryID, project.Lang)
-		categoryStatus, statusErr := productionScalarAssetStatus(
-			ctx,
-			r.Pool,
-			project,
-			entity.ProductionAssetCategoryMetadata,
-			true,
-			"category_translation_edits",
-			"NULLIF(BTRIM(name), '') IS NOT NULL",
-			categoryFinal,
-		)
-		if statusErr != nil {
-			return entity.BookProductionWorkspace{}, statusErr
-		}
-		category = &categoryStatus
+
+			categoryStatus, statusErr := productionScalarAssetStatus(
+				groupCtx,
+				r.Pool,
+				project,
+				entity.ProductionAssetCategoryMetadata,
+				true,
+				"category_translation_edits",
+				"NULLIF(BTRIM(name), '') IS NOT NULL",
+				categoryFinal,
+			)
+			if statusErr != nil {
+				return statusErr
+			}
+
+			category = &categoryStatus
+
+			return nil
+		})
 	}
 
-	headings, err := productionWorkspaceHeadings(ctx, r.Pool, project)
-	if err != nil {
-		return entity.BookProductionWorkspace{}, err
+	group.Go(func() error {
+		var headingsErr error
+
+		headings, headingsErr = productionWorkspaceHeadings(groupCtx, r.Pool, project)
+
+		return headingsErr
+	})
+
+	if waitErr := group.Wait(); waitErr != nil {
+		return entity.BookProductionWorkspace{}, waitErr
 	}
 
 	return entity.BookProductionWorkspace{
@@ -509,9 +548,7 @@ func (r *EditorialRepo) RestoreProductionDraftRevision(
 	if err != nil {
 		return entity.BookProductionDraftRevision{}, fmt.Errorf("EditorialRepo - RestoreProductionDraftRevision - begin: %w", err)
 	}
-	defer func() {
-		_ = tx.Rollback(ctx)
-	}()
+	defer rollbackTx(ctx, tx)
 
 	if _, err = lockProductionProject(ctx, tx, projectID); err != nil {
 		return entity.BookProductionDraftRevision{}, err
@@ -611,9 +648,7 @@ func (r *EditorialRepo) SaveMetadataTranslationDraft(
 	if err != nil {
 		return entity.BookMetadataTranslationEdit{}, fmt.Errorf("EditorialRepo - SaveMetadataTranslationDraft - begin: %w", err)
 	}
-	defer func() {
-		_ = tx.Rollback(ctx)
-	}()
+	defer rollbackTx(ctx, tx)
 
 	if _, err = lockProductionProject(ctx, tx, projectID); err != nil {
 		return entity.BookMetadataTranslationEdit{}, err
@@ -699,9 +734,7 @@ func (r *EditorialRepo) SaveAuthorTranslationDraft(
 	if err != nil {
 		return entity.AuthorTranslationEdit{}, fmt.Errorf("EditorialRepo - SaveAuthorTranslationDraft - begin: %w", err)
 	}
-	defer func() {
-		_ = tx.Rollback(ctx)
-	}()
+	defer rollbackTx(ctx, tx)
 
 	if _, err = lockProductionProject(ctx, tx, projectID); err != nil {
 		return entity.AuthorTranslationEdit{}, err
@@ -783,9 +816,7 @@ func (r *EditorialRepo) SaveCategoryTranslationDraft(
 	if err != nil {
 		return entity.CategoryTranslationEdit{}, fmt.Errorf("EditorialRepo - SaveCategoryTranslationDraft - begin: %w", err)
 	}
-	defer func() {
-		_ = tx.Rollback(ctx)
-	}()
+	defer rollbackTx(ctx, tx)
 
 	if _, err = lockProductionProject(ctx, tx, projectID); err != nil {
 		return entity.CategoryTranslationEdit{}, err
@@ -867,9 +898,7 @@ func (r *EditorialRepo) SaveSectionTranslationDraft(
 	if err != nil {
 		return entity.SectionTranslationEdit{}, fmt.Errorf("EditorialRepo - SaveSectionTranslationDraft - begin: %w", err)
 	}
-	defer func() {
-		_ = tx.Rollback(ctx)
-	}()
+	defer rollbackTx(ctx, tx)
 
 	if _, err = lockProductionProject(ctx, tx, projectID); err != nil {
 		return entity.SectionTranslationEdit{}, err
@@ -959,9 +988,7 @@ func (r *EditorialRepo) SaveHeadingSummaryDraft(
 	if err != nil {
 		return entity.HeadingSummaryEdit{}, fmt.Errorf("EditorialRepo - SaveHeadingSummaryDraft - begin: %w", err)
 	}
-	defer func() {
-		_ = tx.Rollback(ctx)
-	}()
+	defer rollbackTx(ctx, tx)
 
 	if _, err = lockProductionProject(ctx, tx, projectID); err != nil {
 		return entity.HeadingSummaryEdit{}, err
@@ -1049,9 +1076,7 @@ func (r *EditorialRepo) SaveSectionAudioDraft(
 	if err != nil {
 		return entity.SectionAudioEdit{}, fmt.Errorf("EditorialRepo - SaveSectionAudioDraft - begin: %w", err)
 	}
-	defer func() {
-		_ = tx.Rollback(ctx)
-	}()
+	defer rollbackTx(ctx, tx)
 
 	if _, err = lockProductionProject(ctx, tx, projectID); err != nil {
 		return entity.SectionAudioEdit{}, err
@@ -1185,9 +1210,7 @@ func (r *EditorialRepo) PublishProductionProject(
 	if err != nil {
 		return entity.BookProductionProject{}, fmt.Errorf("EditorialRepo - PublishProductionProject - begin: %w", err)
 	}
-	defer func() {
-		_ = tx.Rollback(ctx)
-	}()
+	defer rollbackTx(ctx, tx)
 
 	project, err := scanProductionProject(tx.QueryRow(ctx, `
 SELECT id, book_id, lang, workflow_status, publication_status, requires_review,

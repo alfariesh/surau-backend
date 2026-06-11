@@ -266,6 +266,7 @@ func initServers(cfg *config.Config, pg *postgres.Postgres, uc useCases, jwtMana
 		httpserver.Prefork(cfg.HTTP.UsePreforkMode),
 		httpserver.ProxyHeader(cfg.HTTP.ProxyHeader),
 		httpserver.TrustedProxies(cfg.HTTP.TrustedProxies),
+		httpserver.BodyLimit(cfg.HTTP.BodyLimitBytes),
 	)
 	restapi.NewRouter(
 		httpServer.App,

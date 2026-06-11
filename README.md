@@ -10,8 +10,23 @@ REST + auth backend for an Islamic classical book reader. The service imports ra
 - JWT auth for profile, progress, and saved items
 - Cloudflare Email Service for transactional email verification and password reset
 - SQLite importer via `modernc.org/sqlite`
+- Optional realtime collaborative page editing via a Yjs/Hocuspocus sidecar (`collab-server/`, Node 22) — see [docs/collab.md](docs/collab.md)
 
 The runtime app no longer starts RabbitMQ, NATS, or gRPC. Legacy packages may still compile in the tree, but `cmd/app` wires only REST + Postgres + JWT.
+
+### Editorial source edits: concurrency & history
+
+- Draft saves use atomic optimistic locking enforced in SQL. Page draft writes
+  (`PUT .../pages/{page_id}/draft` and `POST .../publish`) **require**
+  `If-Match` with the ETag from the last GET — stale ETags get `412`, a missing
+  header gets `428`, `If-Match: *` is the explicit last-write-wins escape
+  hatch. Metadata/heading saves accept If-Match optionally but enforce it
+  atomically when present.
+- Every effective save snapshots into `book_source_edit_revisions`
+  (page/heading/metadata; deduplicated, last 50 kept per resource).
+  `GET /v1/editorial/books/{book_id}/pages/{page_id}/draft-revisions` lists
+  history; `POST .../draft-revisions/{revision_id}/restore` replays a snapshot
+  as a new draft.
 
 ## Main Endpoints
 

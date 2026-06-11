@@ -2163,6 +2163,22 @@ func (mr *MockEditorialMockRecorder) MissingReaderAssets(ctx, targetLang, assetT
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MissingReaderAssets", reflect.TypeOf((*MockEditorial)(nil).MissingReaderAssets), ctx, targetLang, assetType, bookID, limit, offset)
 }
 
+// PageDraftRevisions mocks base method.
+func (m *MockEditorial) PageDraftRevisions(ctx context.Context, bookID, pageID, limit, offset int) ([]entity.BookSourceEditRevision, int, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "PageDraftRevisions", ctx, bookID, pageID, limit, offset)
+	ret0, _ := ret[0].([]entity.BookSourceEditRevision)
+	ret1, _ := ret[1].(int)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
+}
+
+// PageDraftRevisions indicates an expected call of PageDraftRevisions.
+func (mr *MockEditorialMockRecorder) PageDraftRevisions(ctx, bookID, pageID, limit, offset any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PageDraftRevisions", reflect.TypeOf((*MockEditorial)(nil).PageDraftRevisions), ctx, bookID, pageID, limit, offset)
+}
+
 // ProductionActivity mocks base method.
 func (m *MockEditorial) ProductionActivity(ctx context.Context, projectID string, limit, offset int) ([]entity.BookProductionEvent, int, error) {
 	m.ctrl.T.Helper()
@@ -2303,48 +2319,48 @@ func (mr *MockEditorialMockRecorder) ProductionWorkspace(ctx, projectID any) *go
 }
 
 // PublishHeadingDraft mocks base method.
-func (m *MockEditorial) PublishHeadingDraft(ctx context.Context, actorID string, bookID, headingID int) (entity.BookHeadingEdit, error) {
+func (m *MockEditorial) PublishHeadingDraft(ctx context.Context, actorID string, bookID, headingID int, expected *time.Time) (entity.BookHeadingEdit, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "PublishHeadingDraft", ctx, actorID, bookID, headingID)
+	ret := m.ctrl.Call(m, "PublishHeadingDraft", ctx, actorID, bookID, headingID, expected)
 	ret0, _ := ret[0].(entity.BookHeadingEdit)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // PublishHeadingDraft indicates an expected call of PublishHeadingDraft.
-func (mr *MockEditorialMockRecorder) PublishHeadingDraft(ctx, actorID, bookID, headingID any) *gomock.Call {
+func (mr *MockEditorialMockRecorder) PublishHeadingDraft(ctx, actorID, bookID, headingID, expected any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PublishHeadingDraft", reflect.TypeOf((*MockEditorial)(nil).PublishHeadingDraft), ctx, actorID, bookID, headingID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PublishHeadingDraft", reflect.TypeOf((*MockEditorial)(nil).PublishHeadingDraft), ctx, actorID, bookID, headingID, expected)
 }
 
 // PublishMetadataDraft mocks base method.
-func (m *MockEditorial) PublishMetadataDraft(ctx context.Context, actorID string, bookID int) (entity.BookMetadataEdit, error) {
+func (m *MockEditorial) PublishMetadataDraft(ctx context.Context, actorID string, bookID int, expected *time.Time) (entity.BookMetadataEdit, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "PublishMetadataDraft", ctx, actorID, bookID)
+	ret := m.ctrl.Call(m, "PublishMetadataDraft", ctx, actorID, bookID, expected)
 	ret0, _ := ret[0].(entity.BookMetadataEdit)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // PublishMetadataDraft indicates an expected call of PublishMetadataDraft.
-func (mr *MockEditorialMockRecorder) PublishMetadataDraft(ctx, actorID, bookID any) *gomock.Call {
+func (mr *MockEditorialMockRecorder) PublishMetadataDraft(ctx, actorID, bookID, expected any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PublishMetadataDraft", reflect.TypeOf((*MockEditorial)(nil).PublishMetadataDraft), ctx, actorID, bookID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PublishMetadataDraft", reflect.TypeOf((*MockEditorial)(nil).PublishMetadataDraft), ctx, actorID, bookID, expected)
 }
 
 // PublishPageDraft mocks base method.
-func (m *MockEditorial) PublishPageDraft(ctx context.Context, actorID string, bookID, pageID int) (entity.BookPageEdit, error) {
+func (m *MockEditorial) PublishPageDraft(ctx context.Context, actorID string, bookID, pageID int, expected *time.Time) (entity.BookPageEdit, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "PublishPageDraft", ctx, actorID, bookID, pageID)
+	ret := m.ctrl.Call(m, "PublishPageDraft", ctx, actorID, bookID, pageID, expected)
 	ret0, _ := ret[0].(entity.BookPageEdit)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // PublishPageDraft indicates an expected call of PublishPageDraft.
-func (mr *MockEditorialMockRecorder) PublishPageDraft(ctx, actorID, bookID, pageID any) *gomock.Call {
+func (mr *MockEditorialMockRecorder) PublishPageDraft(ctx, actorID, bookID, pageID, expected any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PublishPageDraft", reflect.TypeOf((*MockEditorial)(nil).PublishPageDraft), ctx, actorID, bookID, pageID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PublishPageDraft", reflect.TypeOf((*MockEditorial)(nil).PublishPageDraft), ctx, actorID, bookID, pageID, expected)
 }
 
 // PublishProductionProject mocks base method.
@@ -2390,6 +2406,21 @@ func (m *MockEditorial) ResolveTranslationFeedback(ctx context.Context, actorID,
 func (mr *MockEditorialMockRecorder) ResolveTranslationFeedback(ctx, actorID, feedbackID, note any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ResolveTranslationFeedback", reflect.TypeOf((*MockEditorial)(nil).ResolveTranslationFeedback), ctx, actorID, feedbackID, note)
+}
+
+// RestorePageDraftRevision mocks base method.
+func (m *MockEditorial) RestorePageDraftRevision(ctx context.Context, actorID string, bookID, pageID int, revisionID string) (entity.BookPageEdit, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RestorePageDraftRevision", ctx, actorID, bookID, pageID, revisionID)
+	ret0, _ := ret[0].(entity.BookPageEdit)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// RestorePageDraftRevision indicates an expected call of RestorePageDraftRevision.
+func (mr *MockEditorialMockRecorder) RestorePageDraftRevision(ctx, actorID, bookID, pageID, revisionID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RestorePageDraftRevision", reflect.TypeOf((*MockEditorial)(nil).RestorePageDraftRevision), ctx, actorID, bookID, pageID, revisionID)
 }
 
 // RestoreProductionDraftRevision mocks base method.
@@ -2452,18 +2483,18 @@ func (mr *MockEditorialMockRecorder) SaveCategoryTranslationDraft(ctx, actorID, 
 }
 
 // SaveHeadingDraft mocks base method.
-func (m *MockEditorial) SaveHeadingDraft(ctx context.Context, actorID string, edit entity.BookHeadingEdit) (entity.BookHeadingEdit, error) {
+func (m *MockEditorial) SaveHeadingDraft(ctx context.Context, actorID string, edit entity.BookHeadingEdit, expected *time.Time, origin string) (entity.BookHeadingEdit, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "SaveHeadingDraft", ctx, actorID, edit)
+	ret := m.ctrl.Call(m, "SaveHeadingDraft", ctx, actorID, edit, expected, origin)
 	ret0, _ := ret[0].(entity.BookHeadingEdit)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // SaveHeadingDraft indicates an expected call of SaveHeadingDraft.
-func (mr *MockEditorialMockRecorder) SaveHeadingDraft(ctx, actorID, edit any) *gomock.Call {
+func (mr *MockEditorialMockRecorder) SaveHeadingDraft(ctx, actorID, edit, expected, origin any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SaveHeadingDraft", reflect.TypeOf((*MockEditorial)(nil).SaveHeadingDraft), ctx, actorID, edit)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SaveHeadingDraft", reflect.TypeOf((*MockEditorial)(nil).SaveHeadingDraft), ctx, actorID, edit, expected, origin)
 }
 
 // SaveHeadingSummaryDraft mocks base method.
@@ -2482,18 +2513,18 @@ func (mr *MockEditorialMockRecorder) SaveHeadingSummaryDraft(ctx, actorID, proje
 }
 
 // SaveMetadataDraft mocks base method.
-func (m *MockEditorial) SaveMetadataDraft(ctx context.Context, actorID string, edit entity.BookMetadataEdit) (entity.BookMetadataEdit, error) {
+func (m *MockEditorial) SaveMetadataDraft(ctx context.Context, actorID string, edit entity.BookMetadataEdit, expected *time.Time, origin string) (entity.BookMetadataEdit, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "SaveMetadataDraft", ctx, actorID, edit)
+	ret := m.ctrl.Call(m, "SaveMetadataDraft", ctx, actorID, edit, expected, origin)
 	ret0, _ := ret[0].(entity.BookMetadataEdit)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // SaveMetadataDraft indicates an expected call of SaveMetadataDraft.
-func (mr *MockEditorialMockRecorder) SaveMetadataDraft(ctx, actorID, edit any) *gomock.Call {
+func (mr *MockEditorialMockRecorder) SaveMetadataDraft(ctx, actorID, edit, expected, origin any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SaveMetadataDraft", reflect.TypeOf((*MockEditorial)(nil).SaveMetadataDraft), ctx, actorID, edit)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SaveMetadataDraft", reflect.TypeOf((*MockEditorial)(nil).SaveMetadataDraft), ctx, actorID, edit, expected, origin)
 }
 
 // SaveMetadataTranslationDraft mocks base method.
@@ -2512,18 +2543,18 @@ func (mr *MockEditorialMockRecorder) SaveMetadataTranslationDraft(ctx, actorID, 
 }
 
 // SavePageDraft mocks base method.
-func (m *MockEditorial) SavePageDraft(ctx context.Context, actorID string, edit entity.BookPageEdit) (entity.BookPageEdit, error) {
+func (m *MockEditorial) SavePageDraft(ctx context.Context, actorID string, edit entity.BookPageEdit, expected *time.Time, origin string) (entity.BookPageEdit, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "SavePageDraft", ctx, actorID, edit)
+	ret := m.ctrl.Call(m, "SavePageDraft", ctx, actorID, edit, expected, origin)
 	ret0, _ := ret[0].(entity.BookPageEdit)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // SavePageDraft indicates an expected call of SavePageDraft.
-func (mr *MockEditorialMockRecorder) SavePageDraft(ctx, actorID, edit any) *gomock.Call {
+func (mr *MockEditorialMockRecorder) SavePageDraft(ctx, actorID, edit, expected, origin any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SavePageDraft", reflect.TypeOf((*MockEditorial)(nil).SavePageDraft), ctx, actorID, edit)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SavePageDraft", reflect.TypeOf((*MockEditorial)(nil).SavePageDraft), ctx, actorID, edit, expected, origin)
 }
 
 // SaveSectionAudioDraft mocks base method.

@@ -44,6 +44,16 @@ func ShutdownTimeout(timeout time.Duration) Option {
 	}
 }
 
+// BodyLimit caps the accepted request body size in bytes. Values <= 0 keep the
+// default (4 MiB).
+func BodyLimit(bytes int) Option {
+	return func(s *Server) {
+		if bytes > 0 {
+			s.bodyLimit = bytes
+		}
+	}
+}
+
 // ProxyHeader sets the header used to resolve the client IP when a request
 // arrives through a trusted reverse proxy (e.g. "X-Real-IP"). It only takes
 // effect together with a non-empty TrustedProxies allowlist.

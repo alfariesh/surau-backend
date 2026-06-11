@@ -8,6 +8,7 @@ temp-*
 .playwright-mcp
 app
 web-reader
+collab-server
 
 .dockerignore
 .env

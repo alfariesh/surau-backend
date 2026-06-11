@@ -85,4 +85,12 @@ func NewRouter(
 	{
 		v1.NewRoutes(apiV1Group, r, bookRAG, q, u, p, e, email, cfg.Email.CloudflareWebhookSecret, jwtManager, l)
 	}
+
+	// Internal service-to-service bridge for the collab websocket server.
+	// Guarded by a static service token and meant for the private network
+	// only — the reverse proxy must not forward /internal (nginx returns 404).
+	if cfg.Collab.Enabled {
+		internalGroup := app.Group("/internal", middleware.ServiceToken(cfg.Collab.ServiceToken))
+		v1.NewInternalRoutes(internalGroup, e, l)
+	}
 }
