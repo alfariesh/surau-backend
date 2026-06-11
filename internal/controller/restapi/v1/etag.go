@@ -1,7 +1,6 @@
 package v1
 
 import (
-	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -23,26 +22,6 @@ func setUpdatedAtETag(ctx *fiber.Ctx, updatedAt time.Time) {
 	ctx.Set(fiber.HeaderETag, updatedAtETag(updatedAt))
 }
 
-func checkUpdatedAtIfMatch(ctx *fiber.Ctx, updatedAt time.Time) bool {
-	if !hasIfMatch(ctx) {
-		return true
-	}
-
-	if updatedAtETagMatches(requestHeader(ctx, fiber.HeaderIfMatch), updatedAt) {
-		return true
-	}
-
-	if err := errorResponse(ctx, http.StatusPreconditionFailed, "precondition failed"); err != nil {
-		return false
-	}
-
-	return false
-}
-
-func hasIfMatch(ctx *fiber.Ctx) bool {
-	return requestHeader(ctx, fiber.HeaderIfMatch) != ""
-}
-
 func requestHeader(ctx *fiber.Ctx, key string) string {
 	if value := strings.TrimSpace(ctx.Get(key)); value != "" {
 		return value
@@ -61,22 +40,6 @@ func requestHeader(ctx *fiber.Ctx, key string) string {
 	}
 
 	return ""
-}
-
-func updatedAtETagMatches(header string, updatedAt time.Time) bool {
-	for _, candidate := range strings.Split(header, ",") {
-		candidate = strings.TrimSpace(candidate)
-		if candidate == "*" {
-			return true
-		}
-
-		candidate = strings.TrimSpace(strings.TrimPrefix(candidate, "W/"))
-		if !updatedAt.IsZero() && candidate == updatedAtETag(updatedAt) {
-			return true
-		}
-	}
-
-	return false
 }
 
 func updatedAtETag(updatedAt time.Time) string {

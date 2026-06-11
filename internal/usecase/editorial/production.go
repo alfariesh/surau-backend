@@ -3,6 +3,7 @@ package editorial
 import (
 	"context"
 	"strings"
+	"time"
 
 	"github.com/evrone/go-clean-template/internal/entity"
 	"github.com/evrone/go-clean-template/internal/repo"
@@ -299,6 +300,7 @@ func (uc *UseCase) UpdateProductionProject(
 	actorID,
 	projectID string,
 	patch entity.BookProductionProjectPatch,
+	expected *time.Time,
 ) (entity.BookProductionProject, error) {
 	projectID = strings.TrimSpace(projectID)
 	if projectID == "" {
@@ -323,7 +325,7 @@ func (uc *UseCase) UpdateProductionProject(
 		patch.Priority = &zero
 	}
 
-	return uc.repo.UpdateProductionProject(ctx, actorID, projectID, patch)
+	return uc.repo.UpdateProductionProject(ctx, actorID, projectID, patch, expected)
 }
 
 // ProductionCompleteness returns publish readiness for a project.
@@ -345,6 +347,7 @@ func (uc *UseCase) SaveMetadataTranslationDraft(
 	actorID,
 	projectID string,
 	edit entity.BookMetadataTranslationEdit,
+	expected *time.Time,
 ) (entity.BookMetadataTranslationEdit, error) {
 	edit.ProjectID = strings.TrimSpace(projectID)
 	edit.DisplayTitle = strings.TrimSpace(edit.DisplayTitle)
@@ -357,11 +360,11 @@ func (uc *UseCase) SaveMetadataTranslationDraft(
 		return entity.BookMetadataTranslationEdit{}, entity.ErrInvalidProductionDraft
 	}
 
-	return uc.repo.SaveMetadataTranslationDraft(ctx, actorID, edit.ProjectID, edit)
+	return uc.repo.SaveMetadataTranslationDraft(ctx, actorID, edit.ProjectID, edit, expected)
 }
 
-func (uc *UseCase) DeleteMetadataTranslationDraft(ctx context.Context, actorID, projectID string) error {
-	return uc.repo.DeleteMetadataTranslationDraft(ctx, actorID, strings.TrimSpace(projectID))
+func (uc *UseCase) DeleteMetadataTranslationDraft(ctx context.Context, actorID, projectID string, expected *time.Time) error {
+	return uc.repo.DeleteMetadataTranslationDraft(ctx, actorID, strings.TrimSpace(projectID), expected)
 }
 
 func (uc *UseCase) GetAuthorTranslationDraft(ctx context.Context, projectID string) (entity.AuthorTranslationEdit, error) {
@@ -373,6 +376,7 @@ func (uc *UseCase) SaveAuthorTranslationDraft(
 	actorID,
 	projectID string,
 	edit entity.AuthorTranslationEdit,
+	expected *time.Time,
 ) (entity.AuthorTranslationEdit, error) {
 	edit.ProjectID = strings.TrimSpace(projectID)
 	edit.Name = strings.TrimSpace(edit.Name)
@@ -384,11 +388,11 @@ func (uc *UseCase) SaveAuthorTranslationDraft(
 		return entity.AuthorTranslationEdit{}, entity.ErrInvalidProductionDraft
 	}
 
-	return uc.repo.SaveAuthorTranslationDraft(ctx, actorID, edit.ProjectID, edit)
+	return uc.repo.SaveAuthorTranslationDraft(ctx, actorID, edit.ProjectID, edit, expected)
 }
 
-func (uc *UseCase) DeleteAuthorTranslationDraft(ctx context.Context, actorID, projectID string) error {
-	return uc.repo.DeleteAuthorTranslationDraft(ctx, actorID, strings.TrimSpace(projectID))
+func (uc *UseCase) DeleteAuthorTranslationDraft(ctx context.Context, actorID, projectID string, expected *time.Time) error {
+	return uc.repo.DeleteAuthorTranslationDraft(ctx, actorID, strings.TrimSpace(projectID), expected)
 }
 
 func (uc *UseCase) GetCategoryTranslationDraft(ctx context.Context, projectID string) (entity.CategoryTranslationEdit, error) {
@@ -400,6 +404,7 @@ func (uc *UseCase) SaveCategoryTranslationDraft(
 	actorID,
 	projectID string,
 	edit entity.CategoryTranslationEdit,
+	expected *time.Time,
 ) (entity.CategoryTranslationEdit, error) {
 	edit.ProjectID = strings.TrimSpace(projectID)
 	edit.Name = strings.TrimSpace(edit.Name)
@@ -409,11 +414,11 @@ func (uc *UseCase) SaveCategoryTranslationDraft(
 		return entity.CategoryTranslationEdit{}, entity.ErrInvalidProductionDraft
 	}
 
-	return uc.repo.SaveCategoryTranslationDraft(ctx, actorID, edit.ProjectID, edit)
+	return uc.repo.SaveCategoryTranslationDraft(ctx, actorID, edit.ProjectID, edit, expected)
 }
 
-func (uc *UseCase) DeleteCategoryTranslationDraft(ctx context.Context, actorID, projectID string) error {
-	return uc.repo.DeleteCategoryTranslationDraft(ctx, actorID, strings.TrimSpace(projectID))
+func (uc *UseCase) DeleteCategoryTranslationDraft(ctx context.Context, actorID, projectID string, expected *time.Time) error {
+	return uc.repo.DeleteCategoryTranslationDraft(ctx, actorID, strings.TrimSpace(projectID), expected)
 }
 
 func (uc *UseCase) GetSectionTranslationDraft(
@@ -433,6 +438,7 @@ func (uc *UseCase) SaveSectionTranslationDraft(
 	actorID,
 	projectID string,
 	edit entity.SectionTranslationEdit,
+	expected *time.Time,
 ) (entity.SectionTranslationEdit, error) {
 	edit.ProjectID = strings.TrimSpace(projectID)
 	edit.Title = trimStringPtr(edit.Title)
@@ -443,15 +449,15 @@ func (uc *UseCase) SaveSectionTranslationDraft(
 		return entity.SectionTranslationEdit{}, entity.ErrInvalidProductionDraft
 	}
 
-	return uc.repo.SaveSectionTranslationDraft(ctx, actorID, edit.ProjectID, edit)
+	return uc.repo.SaveSectionTranslationDraft(ctx, actorID, edit.ProjectID, edit, expected)
 }
 
-func (uc *UseCase) DeleteSectionTranslationDraft(ctx context.Context, actorID, projectID string, headingID int) error {
+func (uc *UseCase) DeleteSectionTranslationDraft(ctx context.Context, actorID, projectID string, headingID int, expected *time.Time) error {
 	if headingID <= 0 {
 		return entity.ErrHeadingNotFound
 	}
 
-	return uc.repo.DeleteSectionTranslationDraft(ctx, actorID, strings.TrimSpace(projectID), headingID)
+	return uc.repo.DeleteSectionTranslationDraft(ctx, actorID, strings.TrimSpace(projectID), headingID, expected)
 }
 
 func (uc *UseCase) GetHeadingSummaryDraft(
@@ -471,6 +477,7 @@ func (uc *UseCase) SaveHeadingSummaryDraft(
 	actorID,
 	projectID string,
 	edit entity.HeadingSummaryEdit,
+	expected *time.Time,
 ) (entity.HeadingSummaryEdit, error) {
 	edit.ProjectID = strings.TrimSpace(projectID)
 	edit.Summary = strings.TrimSpace(edit.Summary)
@@ -480,15 +487,15 @@ func (uc *UseCase) SaveHeadingSummaryDraft(
 		return entity.HeadingSummaryEdit{}, entity.ErrInvalidProductionDraft
 	}
 
-	return uc.repo.SaveHeadingSummaryDraft(ctx, actorID, edit.ProjectID, edit)
+	return uc.repo.SaveHeadingSummaryDraft(ctx, actorID, edit.ProjectID, edit, expected)
 }
 
-func (uc *UseCase) DeleteHeadingSummaryDraft(ctx context.Context, actorID, projectID string, headingID int) error {
+func (uc *UseCase) DeleteHeadingSummaryDraft(ctx context.Context, actorID, projectID string, headingID int, expected *time.Time) error {
 	if headingID <= 0 {
 		return entity.ErrHeadingNotFound
 	}
 
-	return uc.repo.DeleteHeadingSummaryDraft(ctx, actorID, strings.TrimSpace(projectID), headingID)
+	return uc.repo.DeleteHeadingSummaryDraft(ctx, actorID, strings.TrimSpace(projectID), headingID, expected)
 }
 
 func (uc *UseCase) GetSectionAudioDraft(
@@ -508,6 +515,7 @@ func (uc *UseCase) SaveSectionAudioDraft(
 	actorID,
 	projectID string,
 	edit entity.SectionAudioEdit,
+	expected *time.Time,
 ) (entity.SectionAudioEdit, error) {
 	edit.ProjectID = strings.TrimSpace(projectID)
 	edit.URL = strings.TrimSpace(edit.URL)
@@ -521,15 +529,15 @@ func (uc *UseCase) SaveSectionAudioDraft(
 		return entity.SectionAudioEdit{}, entity.ErrInvalidProductionDraft
 	}
 
-	return uc.repo.SaveSectionAudioDraft(ctx, actorID, edit.ProjectID, edit)
+	return uc.repo.SaveSectionAudioDraft(ctx, actorID, edit.ProjectID, edit, expected)
 }
 
-func (uc *UseCase) DeleteSectionAudioDraft(ctx context.Context, actorID, projectID string, headingID int) error {
+func (uc *UseCase) DeleteSectionAudioDraft(ctx context.Context, actorID, projectID string, headingID int, expected *time.Time) error {
 	if headingID <= 0 {
 		return entity.ErrHeadingNotFound
 	}
 
-	return uc.repo.DeleteSectionAudioDraft(ctx, actorID, strings.TrimSpace(projectID), headingID)
+	return uc.repo.DeleteSectionAudioDraft(ctx, actorID, strings.TrimSpace(projectID), headingID, expected)
 }
 
 // ReviewProductionAsset changes draft review status for one production asset.
@@ -572,26 +580,28 @@ func (uc *UseCase) PublishProductionProject(
 	ctx context.Context,
 	actorID,
 	projectID string,
+	expected *time.Time,
 ) (entity.BookProductionProject, error) {
 	projectID = strings.TrimSpace(projectID)
 	if projectID == "" {
 		return entity.BookProductionProject{}, entity.ErrProductionProjectNotFound
 	}
 
-	return uc.repo.PublishProductionProject(ctx, actorID, projectID)
+	return uc.repo.PublishProductionProject(ctx, actorID, projectID, expected)
 }
 
 func (uc *UseCase) UnpublishProductionProject(
 	ctx context.Context,
 	actorID,
 	projectID string,
+	expected *time.Time,
 ) (entity.BookProductionProject, error) {
 	projectID = strings.TrimSpace(projectID)
 	if projectID == "" {
 		return entity.BookProductionProject{}, entity.ErrProductionProjectNotFound
 	}
 
-	return uc.repo.UnpublishProductionProject(ctx, actorID, projectID)
+	return uc.repo.UnpublishProductionProject(ctx, actorID, projectID, expected)
 }
 
 func (uc *UseCase) DeleteFinalProductionAsset(

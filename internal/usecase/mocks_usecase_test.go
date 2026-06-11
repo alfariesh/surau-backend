@@ -1900,31 +1900,31 @@ func (mr *MockEditorialMockRecorder) CreateProductionProject(ctx, actorID, proje
 }
 
 // DeleteAuthorTranslationDraft mocks base method.
-func (m *MockEditorial) DeleteAuthorTranslationDraft(ctx context.Context, actorID, projectID string) error {
+func (m *MockEditorial) DeleteAuthorTranslationDraft(ctx context.Context, actorID, projectID string, expected *time.Time) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "DeleteAuthorTranslationDraft", ctx, actorID, projectID)
+	ret := m.ctrl.Call(m, "DeleteAuthorTranslationDraft", ctx, actorID, projectID, expected)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // DeleteAuthorTranslationDraft indicates an expected call of DeleteAuthorTranslationDraft.
-func (mr *MockEditorialMockRecorder) DeleteAuthorTranslationDraft(ctx, actorID, projectID any) *gomock.Call {
+func (mr *MockEditorialMockRecorder) DeleteAuthorTranslationDraft(ctx, actorID, projectID, expected any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteAuthorTranslationDraft", reflect.TypeOf((*MockEditorial)(nil).DeleteAuthorTranslationDraft), ctx, actorID, projectID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteAuthorTranslationDraft", reflect.TypeOf((*MockEditorial)(nil).DeleteAuthorTranslationDraft), ctx, actorID, projectID, expected)
 }
 
 // DeleteCategoryTranslationDraft mocks base method.
-func (m *MockEditorial) DeleteCategoryTranslationDraft(ctx context.Context, actorID, projectID string) error {
+func (m *MockEditorial) DeleteCategoryTranslationDraft(ctx context.Context, actorID, projectID string, expected *time.Time) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "DeleteCategoryTranslationDraft", ctx, actorID, projectID)
+	ret := m.ctrl.Call(m, "DeleteCategoryTranslationDraft", ctx, actorID, projectID, expected)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // DeleteCategoryTranslationDraft indicates an expected call of DeleteCategoryTranslationDraft.
-func (mr *MockEditorialMockRecorder) DeleteCategoryTranslationDraft(ctx, actorID, projectID any) *gomock.Call {
+func (mr *MockEditorialMockRecorder) DeleteCategoryTranslationDraft(ctx, actorID, projectID, expected any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteCategoryTranslationDraft", reflect.TypeOf((*MockEditorial)(nil).DeleteCategoryTranslationDraft), ctx, actorID, projectID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteCategoryTranslationDraft", reflect.TypeOf((*MockEditorial)(nil).DeleteCategoryTranslationDraft), ctx, actorID, projectID, expected)
 }
 
 // DeleteFinalProductionAsset mocks base method.
@@ -1942,59 +1942,59 @@ func (mr *MockEditorialMockRecorder) DeleteFinalProductionAsset(ctx, actorID, pr
 }
 
 // DeleteHeadingSummaryDraft mocks base method.
-func (m *MockEditorial) DeleteHeadingSummaryDraft(ctx context.Context, actorID, projectID string, headingID int) error {
+func (m *MockEditorial) DeleteHeadingSummaryDraft(ctx context.Context, actorID, projectID string, headingID int, expected *time.Time) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "DeleteHeadingSummaryDraft", ctx, actorID, projectID, headingID)
+	ret := m.ctrl.Call(m, "DeleteHeadingSummaryDraft", ctx, actorID, projectID, headingID, expected)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // DeleteHeadingSummaryDraft indicates an expected call of DeleteHeadingSummaryDraft.
-func (mr *MockEditorialMockRecorder) DeleteHeadingSummaryDraft(ctx, actorID, projectID, headingID any) *gomock.Call {
+func (mr *MockEditorialMockRecorder) DeleteHeadingSummaryDraft(ctx, actorID, projectID, headingID, expected any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteHeadingSummaryDraft", reflect.TypeOf((*MockEditorial)(nil).DeleteHeadingSummaryDraft), ctx, actorID, projectID, headingID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteHeadingSummaryDraft", reflect.TypeOf((*MockEditorial)(nil).DeleteHeadingSummaryDraft), ctx, actorID, projectID, headingID, expected)
 }
 
 // DeleteMetadataTranslationDraft mocks base method.
-func (m *MockEditorial) DeleteMetadataTranslationDraft(ctx context.Context, actorID, projectID string) error {
+func (m *MockEditorial) DeleteMetadataTranslationDraft(ctx context.Context, actorID, projectID string, expected *time.Time) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "DeleteMetadataTranslationDraft", ctx, actorID, projectID)
+	ret := m.ctrl.Call(m, "DeleteMetadataTranslationDraft", ctx, actorID, projectID, expected)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // DeleteMetadataTranslationDraft indicates an expected call of DeleteMetadataTranslationDraft.
-func (mr *MockEditorialMockRecorder) DeleteMetadataTranslationDraft(ctx, actorID, projectID any) *gomock.Call {
+func (mr *MockEditorialMockRecorder) DeleteMetadataTranslationDraft(ctx, actorID, projectID, expected any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteMetadataTranslationDraft", reflect.TypeOf((*MockEditorial)(nil).DeleteMetadataTranslationDraft), ctx, actorID, projectID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteMetadataTranslationDraft", reflect.TypeOf((*MockEditorial)(nil).DeleteMetadataTranslationDraft), ctx, actorID, projectID, expected)
 }
 
 // DeleteSectionAudioDraft mocks base method.
-func (m *MockEditorial) DeleteSectionAudioDraft(ctx context.Context, actorID, projectID string, headingID int) error {
+func (m *MockEditorial) DeleteSectionAudioDraft(ctx context.Context, actorID, projectID string, headingID int, expected *time.Time) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "DeleteSectionAudioDraft", ctx, actorID, projectID, headingID)
+	ret := m.ctrl.Call(m, "DeleteSectionAudioDraft", ctx, actorID, projectID, headingID, expected)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // DeleteSectionAudioDraft indicates an expected call of DeleteSectionAudioDraft.
-func (mr *MockEditorialMockRecorder) DeleteSectionAudioDraft(ctx, actorID, projectID, headingID any) *gomock.Call {
+func (mr *MockEditorialMockRecorder) DeleteSectionAudioDraft(ctx, actorID, projectID, headingID, expected any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteSectionAudioDraft", reflect.TypeOf((*MockEditorial)(nil).DeleteSectionAudioDraft), ctx, actorID, projectID, headingID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteSectionAudioDraft", reflect.TypeOf((*MockEditorial)(nil).DeleteSectionAudioDraft), ctx, actorID, projectID, headingID, expected)
 }
 
 // DeleteSectionTranslationDraft mocks base method.
-func (m *MockEditorial) DeleteSectionTranslationDraft(ctx context.Context, actorID, projectID string, headingID int) error {
+func (m *MockEditorial) DeleteSectionTranslationDraft(ctx context.Context, actorID, projectID string, headingID int, expected *time.Time) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "DeleteSectionTranslationDraft", ctx, actorID, projectID, headingID)
+	ret := m.ctrl.Call(m, "DeleteSectionTranslationDraft", ctx, actorID, projectID, headingID, expected)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // DeleteSectionTranslationDraft indicates an expected call of DeleteSectionTranslationDraft.
-func (mr *MockEditorialMockRecorder) DeleteSectionTranslationDraft(ctx, actorID, projectID, headingID any) *gomock.Call {
+func (mr *MockEditorialMockRecorder) DeleteSectionTranslationDraft(ctx, actorID, projectID, headingID, expected any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteSectionTranslationDraft", reflect.TypeOf((*MockEditorial)(nil).DeleteSectionTranslationDraft), ctx, actorID, projectID, headingID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteSectionTranslationDraft", reflect.TypeOf((*MockEditorial)(nil).DeleteSectionTranslationDraft), ctx, actorID, projectID, headingID, expected)
 }
 
 // GetAuthorTranslationDraft mocks base method.
@@ -2364,18 +2364,18 @@ func (mr *MockEditorialMockRecorder) PublishPageDraft(ctx, actorID, bookID, page
 }
 
 // PublishProductionProject mocks base method.
-func (m *MockEditorial) PublishProductionProject(ctx context.Context, actorID, projectID string) (entity.BookProductionProject, error) {
+func (m *MockEditorial) PublishProductionProject(ctx context.Context, actorID, projectID string, expected *time.Time) (entity.BookProductionProject, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "PublishProductionProject", ctx, actorID, projectID)
+	ret := m.ctrl.Call(m, "PublishProductionProject", ctx, actorID, projectID, expected)
 	ret0, _ := ret[0].(entity.BookProductionProject)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // PublishProductionProject indicates an expected call of PublishProductionProject.
-func (mr *MockEditorialMockRecorder) PublishProductionProject(ctx, actorID, projectID any) *gomock.Call {
+func (mr *MockEditorialMockRecorder) PublishProductionProject(ctx, actorID, projectID, expected any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PublishProductionProject", reflect.TypeOf((*MockEditorial)(nil).PublishProductionProject), ctx, actorID, projectID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PublishProductionProject", reflect.TypeOf((*MockEditorial)(nil).PublishProductionProject), ctx, actorID, projectID, expected)
 }
 
 // ReopenTranslationFeedback mocks base method.
@@ -2453,33 +2453,33 @@ func (mr *MockEditorialMockRecorder) ReviewProductionAsset(ctx, actorID, project
 }
 
 // SaveAuthorTranslationDraft mocks base method.
-func (m *MockEditorial) SaveAuthorTranslationDraft(ctx context.Context, actorID, projectID string, edit entity.AuthorTranslationEdit) (entity.AuthorTranslationEdit, error) {
+func (m *MockEditorial) SaveAuthorTranslationDraft(ctx context.Context, actorID, projectID string, edit entity.AuthorTranslationEdit, expected *time.Time) (entity.AuthorTranslationEdit, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "SaveAuthorTranslationDraft", ctx, actorID, projectID, edit)
+	ret := m.ctrl.Call(m, "SaveAuthorTranslationDraft", ctx, actorID, projectID, edit, expected)
 	ret0, _ := ret[0].(entity.AuthorTranslationEdit)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // SaveAuthorTranslationDraft indicates an expected call of SaveAuthorTranslationDraft.
-func (mr *MockEditorialMockRecorder) SaveAuthorTranslationDraft(ctx, actorID, projectID, edit any) *gomock.Call {
+func (mr *MockEditorialMockRecorder) SaveAuthorTranslationDraft(ctx, actorID, projectID, edit, expected any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SaveAuthorTranslationDraft", reflect.TypeOf((*MockEditorial)(nil).SaveAuthorTranslationDraft), ctx, actorID, projectID, edit)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SaveAuthorTranslationDraft", reflect.TypeOf((*MockEditorial)(nil).SaveAuthorTranslationDraft), ctx, actorID, projectID, edit, expected)
 }
 
 // SaveCategoryTranslationDraft mocks base method.
-func (m *MockEditorial) SaveCategoryTranslationDraft(ctx context.Context, actorID, projectID string, edit entity.CategoryTranslationEdit) (entity.CategoryTranslationEdit, error) {
+func (m *MockEditorial) SaveCategoryTranslationDraft(ctx context.Context, actorID, projectID string, edit entity.CategoryTranslationEdit, expected *time.Time) (entity.CategoryTranslationEdit, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "SaveCategoryTranslationDraft", ctx, actorID, projectID, edit)
+	ret := m.ctrl.Call(m, "SaveCategoryTranslationDraft", ctx, actorID, projectID, edit, expected)
 	ret0, _ := ret[0].(entity.CategoryTranslationEdit)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // SaveCategoryTranslationDraft indicates an expected call of SaveCategoryTranslationDraft.
-func (mr *MockEditorialMockRecorder) SaveCategoryTranslationDraft(ctx, actorID, projectID, edit any) *gomock.Call {
+func (mr *MockEditorialMockRecorder) SaveCategoryTranslationDraft(ctx, actorID, projectID, edit, expected any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SaveCategoryTranslationDraft", reflect.TypeOf((*MockEditorial)(nil).SaveCategoryTranslationDraft), ctx, actorID, projectID, edit)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SaveCategoryTranslationDraft", reflect.TypeOf((*MockEditorial)(nil).SaveCategoryTranslationDraft), ctx, actorID, projectID, edit, expected)
 }
 
 // SaveHeadingDraft mocks base method.
@@ -2498,18 +2498,18 @@ func (mr *MockEditorialMockRecorder) SaveHeadingDraft(ctx, actorID, edit, expect
 }
 
 // SaveHeadingSummaryDraft mocks base method.
-func (m *MockEditorial) SaveHeadingSummaryDraft(ctx context.Context, actorID, projectID string, edit entity.HeadingSummaryEdit) (entity.HeadingSummaryEdit, error) {
+func (m *MockEditorial) SaveHeadingSummaryDraft(ctx context.Context, actorID, projectID string, edit entity.HeadingSummaryEdit, expected *time.Time) (entity.HeadingSummaryEdit, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "SaveHeadingSummaryDraft", ctx, actorID, projectID, edit)
+	ret := m.ctrl.Call(m, "SaveHeadingSummaryDraft", ctx, actorID, projectID, edit, expected)
 	ret0, _ := ret[0].(entity.HeadingSummaryEdit)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // SaveHeadingSummaryDraft indicates an expected call of SaveHeadingSummaryDraft.
-func (mr *MockEditorialMockRecorder) SaveHeadingSummaryDraft(ctx, actorID, projectID, edit any) *gomock.Call {
+func (mr *MockEditorialMockRecorder) SaveHeadingSummaryDraft(ctx, actorID, projectID, edit, expected any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SaveHeadingSummaryDraft", reflect.TypeOf((*MockEditorial)(nil).SaveHeadingSummaryDraft), ctx, actorID, projectID, edit)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SaveHeadingSummaryDraft", reflect.TypeOf((*MockEditorial)(nil).SaveHeadingSummaryDraft), ctx, actorID, projectID, edit, expected)
 }
 
 // SaveMetadataDraft mocks base method.
@@ -2528,18 +2528,18 @@ func (mr *MockEditorialMockRecorder) SaveMetadataDraft(ctx, actorID, edit, expec
 }
 
 // SaveMetadataTranslationDraft mocks base method.
-func (m *MockEditorial) SaveMetadataTranslationDraft(ctx context.Context, actorID, projectID string, edit entity.BookMetadataTranslationEdit) (entity.BookMetadataTranslationEdit, error) {
+func (m *MockEditorial) SaveMetadataTranslationDraft(ctx context.Context, actorID, projectID string, edit entity.BookMetadataTranslationEdit, expected *time.Time) (entity.BookMetadataTranslationEdit, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "SaveMetadataTranslationDraft", ctx, actorID, projectID, edit)
+	ret := m.ctrl.Call(m, "SaveMetadataTranslationDraft", ctx, actorID, projectID, edit, expected)
 	ret0, _ := ret[0].(entity.BookMetadataTranslationEdit)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // SaveMetadataTranslationDraft indicates an expected call of SaveMetadataTranslationDraft.
-func (mr *MockEditorialMockRecorder) SaveMetadataTranslationDraft(ctx, actorID, projectID, edit any) *gomock.Call {
+func (mr *MockEditorialMockRecorder) SaveMetadataTranslationDraft(ctx, actorID, projectID, edit, expected any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SaveMetadataTranslationDraft", reflect.TypeOf((*MockEditorial)(nil).SaveMetadataTranslationDraft), ctx, actorID, projectID, edit)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SaveMetadataTranslationDraft", reflect.TypeOf((*MockEditorial)(nil).SaveMetadataTranslationDraft), ctx, actorID, projectID, edit, expected)
 }
 
 // SavePageDraft mocks base method.
@@ -2558,33 +2558,33 @@ func (mr *MockEditorialMockRecorder) SavePageDraft(ctx, actorID, edit, expected,
 }
 
 // SaveSectionAudioDraft mocks base method.
-func (m *MockEditorial) SaveSectionAudioDraft(ctx context.Context, actorID, projectID string, edit entity.SectionAudioEdit) (entity.SectionAudioEdit, error) {
+func (m *MockEditorial) SaveSectionAudioDraft(ctx context.Context, actorID, projectID string, edit entity.SectionAudioEdit, expected *time.Time) (entity.SectionAudioEdit, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "SaveSectionAudioDraft", ctx, actorID, projectID, edit)
+	ret := m.ctrl.Call(m, "SaveSectionAudioDraft", ctx, actorID, projectID, edit, expected)
 	ret0, _ := ret[0].(entity.SectionAudioEdit)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // SaveSectionAudioDraft indicates an expected call of SaveSectionAudioDraft.
-func (mr *MockEditorialMockRecorder) SaveSectionAudioDraft(ctx, actorID, projectID, edit any) *gomock.Call {
+func (mr *MockEditorialMockRecorder) SaveSectionAudioDraft(ctx, actorID, projectID, edit, expected any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SaveSectionAudioDraft", reflect.TypeOf((*MockEditorial)(nil).SaveSectionAudioDraft), ctx, actorID, projectID, edit)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SaveSectionAudioDraft", reflect.TypeOf((*MockEditorial)(nil).SaveSectionAudioDraft), ctx, actorID, projectID, edit, expected)
 }
 
 // SaveSectionTranslationDraft mocks base method.
-func (m *MockEditorial) SaveSectionTranslationDraft(ctx context.Context, actorID, projectID string, edit entity.SectionTranslationEdit) (entity.SectionTranslationEdit, error) {
+func (m *MockEditorial) SaveSectionTranslationDraft(ctx context.Context, actorID, projectID string, edit entity.SectionTranslationEdit, expected *time.Time) (entity.SectionTranslationEdit, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "SaveSectionTranslationDraft", ctx, actorID, projectID, edit)
+	ret := m.ctrl.Call(m, "SaveSectionTranslationDraft", ctx, actorID, projectID, edit, expected)
 	ret0, _ := ret[0].(entity.SectionTranslationEdit)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // SaveSectionTranslationDraft indicates an expected call of SaveSectionTranslationDraft.
-func (mr *MockEditorialMockRecorder) SaveSectionTranslationDraft(ctx, actorID, projectID, edit any) *gomock.Call {
+func (mr *MockEditorialMockRecorder) SaveSectionTranslationDraft(ctx, actorID, projectID, edit, expected any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SaveSectionTranslationDraft", reflect.TypeOf((*MockEditorial)(nil).SaveSectionTranslationDraft), ctx, actorID, projectID, edit)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SaveSectionTranslationDraft", reflect.TypeOf((*MockEditorial)(nil).SaveSectionTranslationDraft), ctx, actorID, projectID, edit, expected)
 }
 
 // TranslationFeedbackSummary mocks base method.
@@ -2619,33 +2619,33 @@ func (mr *MockEditorialMockRecorder) TranslationFeedbacks(ctx, bookID, headingID
 }
 
 // UnpublishProductionProject mocks base method.
-func (m *MockEditorial) UnpublishProductionProject(ctx context.Context, actorID, projectID string) (entity.BookProductionProject, error) {
+func (m *MockEditorial) UnpublishProductionProject(ctx context.Context, actorID, projectID string, expected *time.Time) (entity.BookProductionProject, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "UnpublishProductionProject", ctx, actorID, projectID)
+	ret := m.ctrl.Call(m, "UnpublishProductionProject", ctx, actorID, projectID, expected)
 	ret0, _ := ret[0].(entity.BookProductionProject)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // UnpublishProductionProject indicates an expected call of UnpublishProductionProject.
-func (mr *MockEditorialMockRecorder) UnpublishProductionProject(ctx, actorID, projectID any) *gomock.Call {
+func (mr *MockEditorialMockRecorder) UnpublishProductionProject(ctx, actorID, projectID, expected any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UnpublishProductionProject", reflect.TypeOf((*MockEditorial)(nil).UnpublishProductionProject), ctx, actorID, projectID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UnpublishProductionProject", reflect.TypeOf((*MockEditorial)(nil).UnpublishProductionProject), ctx, actorID, projectID, expected)
 }
 
 // UpdateProductionProject mocks base method.
-func (m *MockEditorial) UpdateProductionProject(ctx context.Context, actorID, projectID string, patch entity.BookProductionProjectPatch) (entity.BookProductionProject, error) {
+func (m *MockEditorial) UpdateProductionProject(ctx context.Context, actorID, projectID string, patch entity.BookProductionProjectPatch, expected *time.Time) (entity.BookProductionProject, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "UpdateProductionProject", ctx, actorID, projectID, patch)
+	ret := m.ctrl.Call(m, "UpdateProductionProject", ctx, actorID, projectID, patch, expected)
 	ret0, _ := ret[0].(entity.BookProductionProject)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // UpdateProductionProject indicates an expected call of UpdateProductionProject.
-func (mr *MockEditorialMockRecorder) UpdateProductionProject(ctx, actorID, projectID, patch any) *gomock.Call {
+func (mr *MockEditorialMockRecorder) UpdateProductionProject(ctx, actorID, projectID, patch, expected any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateProductionProject", reflect.TypeOf((*MockEditorial)(nil).UpdateProductionProject), ctx, actorID, projectID, patch)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateProductionProject", reflect.TypeOf((*MockEditorial)(nil).UpdateProductionProject), ctx, actorID, projectID, patch, expected)
 }
 
 // UpdatePublication mocks base method.

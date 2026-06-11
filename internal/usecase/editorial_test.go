@@ -818,8 +818,8 @@ func TestEditorialSaveSectionTranslationDraft(t *testing.T) {
 				Content:      "Translated content",
 				Source:       &expectedSource,
 				ReviewStatus: entity.ProductionReviewDraft,
-			}).
-			DoAndReturn(func(_ context.Context, _ string, _ string, edit entity.SectionTranslationEdit) (entity.SectionTranslationEdit, error) {
+			}, nil).
+			DoAndReturn(func(_ context.Context, _, _ string, edit entity.SectionTranslationEdit, _ *time.Time) (entity.SectionTranslationEdit, error) {
 				return edit, nil
 			})
 
@@ -828,7 +828,7 @@ func TestEditorialSaveSectionTranslationDraft(t *testing.T) {
 			Title:     &title,
 			Content:   "  Translated content  ",
 			Source:    &source,
-		})
+		}, nil)
 
 		require.NoError(t, err)
 		assert.Equal(t, "Translated content", edit.Content)
@@ -843,7 +843,7 @@ func TestEditorialSaveSectionTranslationDraft(t *testing.T) {
 		_, err := uc.SaveSectionTranslationDraft(context.Background(), "actor-id", "project-id", entity.SectionTranslationEdit{
 			HeadingID: 10,
 			Content:   " ",
-		})
+		}, nil)
 
 		require.ErrorIs(t, err, entity.ErrInvalidProductionDraft)
 	})
@@ -915,10 +915,10 @@ func TestEditorialPublishProductionProject(t *testing.T) {
 	}
 
 	mockRepo.EXPECT().
-		PublishProductionProject(context.Background(), "actor-id", "project-id").
+		PublishProductionProject(context.Background(), "actor-id", "project-id", nil).
 		Return(expected, nil)
 
-	got, err := uc.PublishProductionProject(context.Background(), "actor-id", " project-id ")
+	got, err := uc.PublishProductionProject(context.Background(), "actor-id", " project-id ", nil)
 
 	require.NoError(t, err)
 	assert.Equal(t, expected, got)

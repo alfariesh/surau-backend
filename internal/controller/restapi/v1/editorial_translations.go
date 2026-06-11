@@ -449,8 +449,9 @@ func (r *V1) editorialUpdateProductionProject(ctx *fiber.Ctx) error {
 		return errorResponse(ctx, http.StatusBadRequest, "invalid request body")
 	}
 
-	if ok, preconditionErr := r.checkProductionProjectIfMatch(ctx, "restapi - v1 - editorialUpdateProductionProject - precondition"); !ok || preconditionErr != nil {
-		return preconditionErr
+	expected, _, okMatch := parseIfMatch(ctx)
+	if !okMatch {
+		return errorResponse(ctx, http.StatusPreconditionFailed, "precondition failed")
 	}
 
 	project, err := r.editorial.UpdateProductionProject(ctx.UserContext(), actorID, ctx.Params("id"), entity.BookProductionProjectPatch{
@@ -460,7 +461,7 @@ func (r *V1) editorialUpdateProductionProject(ctx *fiber.Ctx) error {
 		Priority:       body.Priority,
 		OwnerID:        body.OwnerID,
 		Notes:          body.Notes,
-	})
+	}, expected)
 	if err != nil {
 		r.logEditorialError(err, "restapi - v1 - editorialUpdateProductionProject")
 
@@ -543,12 +544,9 @@ func (r *V1) editorialSaveMetadataTranslationDraft(ctx *fiber.Ctx) error {
 		return err
 	}
 
-	if ok, preconditionErr := r.checkEditorialDraftIfMatch(ctx, "restapi - v1 - editorialSaveMetadataTranslationDraft - precondition", func() (time.Time, error) {
-		current, currentErr := r.editorial.GetMetadataTranslationDraft(ctx.UserContext(), ctx.Params("id"))
-
-		return current.UpdatedAt, currentErr
-	}); !ok || preconditionErr != nil {
-		return preconditionErr
+	expected, _, okMatch := parseIfMatch(ctx)
+	if !okMatch {
+		return errorResponse(ctx, http.StatusPreconditionFailed, "precondition failed")
 	}
 
 	draft, err := r.editorial.SaveMetadataTranslationDraft(ctx.UserContext(), actorID, ctx.Params("id"), entity.BookMetadataTranslationEdit{
@@ -558,7 +556,7 @@ func (r *V1) editorialSaveMetadataTranslationDraft(ctx *fiber.Ctx) error {
 		Description:  body.Description,
 		Source:       body.Source,
 		Metadata:     entity.RawJSON(body.Metadata),
-	})
+	}, expected)
 	if err != nil {
 		r.logEditorialError(err, "restapi - v1 - editorialSaveMetadataTranslationDraft")
 
@@ -584,11 +582,6 @@ func (r *V1) editorialDeleteMetadataTranslationDraft(ctx *fiber.Ctx) error {
 	return r.deleteProjectDraft(
 		ctx,
 		r.editorial.DeleteMetadataTranslationDraft,
-		func(ctx context.Context, projectID string) (time.Time, error) {
-			draft, err := r.editorial.GetMetadataTranslationDraft(ctx, projectID)
-
-			return draft.UpdatedAt, err
-		},
 	)
 }
 
@@ -641,12 +634,9 @@ func (r *V1) editorialSaveAuthorTranslationDraft(ctx *fiber.Ctx) error {
 		return err
 	}
 
-	if ok, preconditionErr := r.checkEditorialDraftIfMatch(ctx, "restapi - v1 - editorialSaveAuthorTranslationDraft - precondition", func() (time.Time, error) {
-		current, currentErr := r.editorial.GetAuthorTranslationDraft(ctx.UserContext(), ctx.Params("id"))
-
-		return current.UpdatedAt, currentErr
-	}); !ok || preconditionErr != nil {
-		return preconditionErr
+	expected, _, okMatch := parseIfMatch(ctx)
+	if !okMatch {
+		return errorResponse(ctx, http.StatusPreconditionFailed, "precondition failed")
 	}
 
 	draft, err := r.editorial.SaveAuthorTranslationDraft(ctx.UserContext(), actorID, ctx.Params("id"), entity.AuthorTranslationEdit{
@@ -655,7 +645,7 @@ func (r *V1) editorialSaveAuthorTranslationDraft(ctx *fiber.Ctx) error {
 		DeathText: body.DeathText,
 		Source:    body.Source,
 		Metadata:  entity.RawJSON(body.Metadata),
-	})
+	}, expected)
 	if err != nil {
 		r.logEditorialError(err, "restapi - v1 - editorialSaveAuthorTranslationDraft")
 
@@ -681,11 +671,6 @@ func (r *V1) editorialDeleteAuthorTranslationDraft(ctx *fiber.Ctx) error {
 	return r.deleteProjectDraft(
 		ctx,
 		r.editorial.DeleteAuthorTranslationDraft,
-		func(ctx context.Context, projectID string) (time.Time, error) {
-			draft, err := r.editorial.GetAuthorTranslationDraft(ctx, projectID)
-
-			return draft.UpdatedAt, err
-		},
 	)
 }
 
@@ -738,19 +723,16 @@ func (r *V1) editorialSaveCategoryTranslationDraft(ctx *fiber.Ctx) error {
 		return err
 	}
 
-	if ok, preconditionErr := r.checkEditorialDraftIfMatch(ctx, "restapi - v1 - editorialSaveCategoryTranslationDraft - precondition", func() (time.Time, error) {
-		current, currentErr := r.editorial.GetCategoryTranslationDraft(ctx.UserContext(), ctx.Params("id"))
-
-		return current.UpdatedAt, currentErr
-	}); !ok || preconditionErr != nil {
-		return preconditionErr
+	expected, _, okMatch := parseIfMatch(ctx)
+	if !okMatch {
+		return errorResponse(ctx, http.StatusPreconditionFailed, "precondition failed")
 	}
 
 	draft, err := r.editorial.SaveCategoryTranslationDraft(ctx.UserContext(), actorID, ctx.Params("id"), entity.CategoryTranslationEdit{
 		Name:     body.Name,
 		Source:   body.Source,
 		Metadata: entity.RawJSON(body.Metadata),
-	})
+	}, expected)
 	if err != nil {
 		r.logEditorialError(err, "restapi - v1 - editorialSaveCategoryTranslationDraft")
 
@@ -776,11 +758,6 @@ func (r *V1) editorialDeleteCategoryTranslationDraft(ctx *fiber.Ctx) error {
 	return r.deleteProjectDraft(
 		ctx,
 		r.editorial.DeleteCategoryTranslationDraft,
-		func(ctx context.Context, projectID string) (time.Time, error) {
-			draft, err := r.editorial.GetCategoryTranslationDraft(ctx, projectID)
-
-			return draft.UpdatedAt, err
-		},
 	)
 }
 
@@ -841,12 +818,9 @@ func (r *V1) editorialSaveSectionTranslationDraft(ctx *fiber.Ctx) error {
 		return err
 	}
 
-	if ok, preconditionErr := r.checkEditorialDraftIfMatch(ctx, "restapi - v1 - editorialSaveSectionTranslationDraft - precondition", func() (time.Time, error) {
-		current, currentErr := r.editorial.GetSectionTranslationDraft(ctx.UserContext(), ctx.Params("id"), headingID)
-
-		return current.UpdatedAt, currentErr
-	}); !ok || preconditionErr != nil {
-		return preconditionErr
+	expected, _, okMatch := parseIfMatch(ctx)
+	if !okMatch {
+		return errorResponse(ctx, http.StatusPreconditionFailed, "precondition failed")
 	}
 
 	draft, err := r.editorial.SaveSectionTranslationDraft(ctx.UserContext(), actorID, ctx.Params("id"), entity.SectionTranslationEdit{
@@ -855,7 +829,7 @@ func (r *V1) editorialSaveSectionTranslationDraft(ctx *fiber.Ctx) error {
 		Content:   body.Content,
 		Source:    body.Source,
 		Metadata:  entity.RawJSON(body.Metadata),
-	})
+	}, expected)
 	if err != nil {
 		r.logEditorialError(err, "restapi - v1 - editorialSaveSectionTranslationDraft")
 
@@ -883,11 +857,6 @@ func (r *V1) editorialDeleteSectionTranslationDraft(ctx *fiber.Ctx) error {
 	return r.deleteHeadingDraft(
 		ctx,
 		r.editorial.DeleteSectionTranslationDraft,
-		func(ctx context.Context, projectID string, headingID int) (time.Time, error) {
-			draft, err := r.editorial.GetSectionTranslationDraft(ctx, projectID, headingID)
-
-			return draft.UpdatedAt, err
-		},
 	)
 }
 
@@ -948,12 +917,9 @@ func (r *V1) editorialSaveHeadingSummaryDraft(ctx *fiber.Ctx) error {
 		return err
 	}
 
-	if ok, preconditionErr := r.checkEditorialDraftIfMatch(ctx, "restapi - v1 - editorialSaveHeadingSummaryDraft - precondition", func() (time.Time, error) {
-		current, currentErr := r.editorial.GetHeadingSummaryDraft(ctx.UserContext(), ctx.Params("id"), headingID)
-
-		return current.UpdatedAt, currentErr
-	}); !ok || preconditionErr != nil {
-		return preconditionErr
+	expected, _, okMatch := parseIfMatch(ctx)
+	if !okMatch {
+		return errorResponse(ctx, http.StatusPreconditionFailed, "precondition failed")
 	}
 
 	draft, err := r.editorial.SaveHeadingSummaryDraft(ctx.UserContext(), actorID, ctx.Params("id"), entity.HeadingSummaryEdit{
@@ -961,7 +927,7 @@ func (r *V1) editorialSaveHeadingSummaryDraft(ctx *fiber.Ctx) error {
 		Summary:   body.Summary,
 		Source:    body.Source,
 		Metadata:  entity.RawJSON(body.Metadata),
-	})
+	}, expected)
 	if err != nil {
 		r.logEditorialError(err, "restapi - v1 - editorialSaveHeadingSummaryDraft")
 
@@ -989,11 +955,6 @@ func (r *V1) editorialDeleteHeadingSummaryDraft(ctx *fiber.Ctx) error {
 	return r.deleteHeadingDraft(
 		ctx,
 		r.editorial.DeleteHeadingSummaryDraft,
-		func(ctx context.Context, projectID string, headingID int) (time.Time, error) {
-			draft, err := r.editorial.GetHeadingSummaryDraft(ctx, projectID, headingID)
-
-			return draft.UpdatedAt, err
-		},
 	)
 }
 
@@ -1054,12 +1015,9 @@ func (r *V1) editorialSaveSectionAudioDraft(ctx *fiber.Ctx) error {
 		return err
 	}
 
-	if ok, preconditionErr := r.checkEditorialDraftIfMatch(ctx, "restapi - v1 - editorialSaveSectionAudioDraft - precondition", func() (time.Time, error) {
-		current, currentErr := r.editorial.GetSectionAudioDraft(ctx.UserContext(), ctx.Params("id"), headingID)
-
-		return current.UpdatedAt, currentErr
-	}); !ok || preconditionErr != nil {
-		return preconditionErr
+	expected, _, okMatch := parseIfMatch(ctx)
+	if !okMatch {
+		return errorResponse(ctx, http.StatusPreconditionFailed, "precondition failed")
 	}
 
 	draft, err := r.editorial.SaveSectionAudioDraft(ctx.UserContext(), actorID, ctx.Params("id"), entity.SectionAudioEdit{
@@ -1069,7 +1027,7 @@ func (r *V1) editorialSaveSectionAudioDraft(ctx *fiber.Ctx) error {
 		DurationSeconds: body.DurationSeconds,
 		MIMEType:        body.MIMEType,
 		Metadata:        entity.RawJSON(body.Metadata),
-	})
+	}, expected)
 	if err != nil {
 		r.logEditorialError(err, "restapi - v1 - editorialSaveSectionAudioDraft")
 
@@ -1097,11 +1055,6 @@ func (r *V1) editorialDeleteSectionAudioDraft(ctx *fiber.Ctx) error {
 	return r.deleteHeadingDraft(
 		ctx,
 		r.editorial.DeleteSectionAudioDraft,
-		func(ctx context.Context, projectID string, headingID int) (time.Time, error) {
-			draft, err := r.editorial.GetSectionAudioDraft(ctx, projectID, headingID)
-
-			return draft.UpdatedAt, err
-		},
 	)
 }
 
@@ -1171,11 +1124,12 @@ func (r *V1) editorialPublishProductionProject(ctx *fiber.Ctx) error {
 		return errorResponse(ctx, http.StatusUnauthorized, "unauthorized")
 	}
 
-	if ok, preconditionErr := r.checkProductionProjectIfMatch(ctx, "restapi - v1 - editorialPublishProductionProject - precondition"); !ok || preconditionErr != nil {
-		return preconditionErr
+	expected, _, okMatch := parseIfMatch(ctx)
+	if !okMatch {
+		return errorResponse(ctx, http.StatusPreconditionFailed, "precondition failed")
 	}
 
-	project, err := r.editorial.PublishProductionProject(ctx.UserContext(), actorID, ctx.Params("id"))
+	project, err := r.editorial.PublishProductionProject(ctx.UserContext(), actorID, ctx.Params("id"), expected)
 	if err != nil {
 		r.logEditorialError(err, "restapi - v1 - editorialPublishProductionProject")
 		if errors.Is(err, entity.ErrProductionNotReady) {
@@ -1214,11 +1168,12 @@ func (r *V1) editorialUnpublishProductionProject(ctx *fiber.Ctx) error {
 		return errorResponse(ctx, http.StatusUnauthorized, "unauthorized")
 	}
 
-	if ok, preconditionErr := r.checkProductionProjectIfMatch(ctx, "restapi - v1 - editorialUnpublishProductionProject - precondition"); !ok || preconditionErr != nil {
-		return preconditionErr
+	expected, _, okMatch := parseIfMatch(ctx)
+	if !okMatch {
+		return errorResponse(ctx, http.StatusPreconditionFailed, "precondition failed")
 	}
 
-	project, err := r.editorial.UnpublishProductionProject(ctx.UserContext(), actorID, ctx.Params("id"))
+	project, err := r.editorial.UnpublishProductionProject(ctx.UserContext(), actorID, ctx.Params("id"), expected)
 	if err != nil {
 		r.logEditorialError(err, "restapi - v1 - editorialUnpublishProductionProject")
 
@@ -1355,21 +1310,19 @@ func (r *V1) productionDraftContext(ctx *fiber.Ctx) (string, int, bool) {
 
 func (r *V1) deleteProjectDraft(
 	ctx *fiber.Ctx,
-	delete func(context.Context, string, string) error,
-	loadUpdatedAt func(context.Context, string) (time.Time, error),
+	deleteDraft func(context.Context, string, string, *time.Time) error,
 ) error {
 	actorID, ok := ctx.Locals("userID").(string)
 	if !ok {
 		return errorResponse(ctx, http.StatusUnauthorized, "unauthorized")
 	}
 
-	if ok, preconditionErr := r.checkEditorialDraftIfMatch(ctx, "restapi - v1 - deleteProjectDraft - precondition", func() (time.Time, error) {
-		return loadUpdatedAt(ctx.UserContext(), ctx.Params("id"))
-	}); !ok || preconditionErr != nil {
-		return preconditionErr
+	expected, _, okMatch := parseIfMatch(ctx)
+	if !okMatch {
+		return errorResponse(ctx, http.StatusPreconditionFailed, "precondition failed")
 	}
 
-	if err := delete(ctx.UserContext(), actorID, ctx.Params("id")); err != nil {
+	if err := deleteDraft(ctx.UserContext(), actorID, ctx.Params("id"), expected); err != nil {
 		return r.editorialError(ctx, err)
 	}
 
@@ -1378,8 +1331,7 @@ func (r *V1) deleteProjectDraft(
 
 func (r *V1) deleteHeadingDraft(
 	ctx *fiber.Ctx,
-	delete func(context.Context, string, string, int) error,
-	loadUpdatedAt func(context.Context, string, int) (time.Time, error),
+	deleteDraft func(context.Context, string, string, int, *time.Time) error,
 ) error {
 	actorID, ok := ctx.Locals("userID").(string)
 	if !ok {
@@ -1391,13 +1343,12 @@ func (r *V1) deleteHeadingDraft(
 		return errorResponse(ctx, http.StatusBadRequest, "invalid heading_id")
 	}
 
-	if ok, preconditionErr := r.checkEditorialDraftIfMatch(ctx, "restapi - v1 - deleteHeadingDraft - precondition", func() (time.Time, error) {
-		return loadUpdatedAt(ctx.UserContext(), ctx.Params("id"), headingID)
-	}); !ok || preconditionErr != nil {
-		return preconditionErr
+	expected, _, okMatch := parseIfMatch(ctx)
+	if !okMatch {
+		return errorResponse(ctx, http.StatusPreconditionFailed, "precondition failed")
 	}
 
-	if err = delete(ctx.UserContext(), actorID, ctx.Params("id"), headingID); err != nil {
+	if err = deleteDraft(ctx.UserContext(), actorID, ctx.Params("id"), headingID, expected); err != nil {
 		return r.editorialError(ctx, err)
 	}
 

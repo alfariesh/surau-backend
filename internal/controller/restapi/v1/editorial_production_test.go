@@ -731,10 +731,16 @@ func (f *fakeProductionEditorial) RestoreProductionDraftRevision(
 }
 
 func (f *fakeProductionEditorial) PublishProductionProject(
-	context.Context,
-	string,
-	string,
+	_ context.Context,
+	_ string,
+	_ string,
+	expected *time.Time,
 ) (entity.BookProductionProject, error) {
+	// Mirror the repo behavior: a non-nil expected must match the project row.
+	if expected != nil && !expected.Equal(f.projectResponse().UpdatedAt) {
+		return entity.BookProductionProject{}, entity.ErrPreconditionFailed
+	}
+
 	f.publishProductionProjectCalls++
 	if f.publishProductionProjectErr != nil {
 		return entity.BookProductionProject{}, f.publishProductionProjectErr
@@ -758,12 +764,19 @@ func (f *fakeProductionEditorial) GetMetadataTranslationDraft(
 	return entity.BookMetadataTranslationEdit{ProjectID: "project-id", DisplayTitle: "Title"}, nil
 }
 
+//nolint:gocritic // value param mirrors the usecase.Editorial interface
 func (f *fakeProductionEditorial) SaveMetadataTranslationDraft(
-	context.Context,
-	string,
-	string,
-	entity.BookMetadataTranslationEdit,
+	_ context.Context,
+	_ string,
+	_ string,
+	_ entity.BookMetadataTranslationEdit,
+	expected *time.Time,
 ) (entity.BookMetadataTranslationEdit, error) {
+	// Mirror the repo behavior: a non-nil expected must match the draft row.
+	if expected != nil && !expected.Equal(f.metadataTranslationDraft.UpdatedAt) {
+		return entity.BookMetadataTranslationEdit{}, entity.ErrPreconditionFailed
+	}
+
 	f.saveMetadataTranslationDraftCalls++
 
 	return entity.BookMetadataTranslationEdit{

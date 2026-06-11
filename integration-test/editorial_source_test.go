@@ -91,6 +91,83 @@ func TestEditorialSourcePageDraftConcurrency(t *testing.T) {
 	}
 }
 
+// TestEditorialProductionDraftConcurrency exercises atomic If-Match
+// enforcement on production drafts and projects: a writer holding a stale ETag
+// gets 412 instead of silently overwriting, while If-Match stays optional for
+// the enrichment scripts.
+func TestEditorialProductionDraftConcurrency(t *testing.T) {
+	seedProductionKitabFixture(t)
+
+	token := adminJWT(t)
+	project := createProductionProject(t, token, productionFixtureBookID, "id")
+	draftURL := fmt.Sprintf("%s/v1/editorial/production-projects/%s/metadata-draft", baseURL(), project.ID)
+
+	// Unconditional save still works (scripts depend on this).
+	resp := doJSONWithIfMatch(t, http.MethodPut, draftURL,
+		bytes.NewBufferString(`{"display_title":"Judul Pertama"}`), token, "")
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("unconditional save expected 200, got %d", resp.StatusCode)
+	}
+	firstETag := resp.Header.Get("ETag")
+	if firstETag == "" {
+		t.Fatal("expected ETag on draft response")
+	}
+
+	// Conditional save with the fresh ETag succeeds and rotates the ETag.
+	resp = doJSONWithIfMatch(t, http.MethodPut, draftURL,
+		bytes.NewBufferString(`{"display_title":"Judul Kedua"}`), token, firstETag)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("conditional save expected 200, got %d", resp.StatusCode)
+	}
+
+	// Replaying the stale ETag loses atomically.
+	resp = doJSONWithIfMatch(t, http.MethodPut, draftURL,
+		bytes.NewBufferString(`{"display_title":"Penimpa Basi"}`), token, firstETag)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusPreconditionFailed {
+		t.Fatalf("stale conditional save expected 412, got %d", resp.StatusCode)
+	}
+
+	// Project PATCH with a stale ETag is rejected the same way.
+	projectURL := fmt.Sprintf("%s/v1/editorial/production-projects/%s", baseURL(), project.ID)
+
+	resp = doJSONWithIfMatch(t, http.MethodGet, projectURL, nil, token, "")
+	resp.Body.Close()
+	projectETag := resp.Header.Get("ETag")
+	if projectETag == "" {
+		t.Fatal("expected ETag on project response")
+	}
+
+	resp = doJSONWithIfMatch(t, http.MethodPatch, projectURL,
+		bytes.NewBufferString(`{"priority":5}`), token, projectETag)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("conditional project patch expected 200, got %d", resp.StatusCode)
+	}
+
+	resp = doJSONWithIfMatch(t, http.MethodPatch, projectURL,
+		bytes.NewBufferString(`{"priority":7}`), token, projectETag)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusPreconditionFailed {
+		t.Fatalf("stale project patch expected 412, got %d", resp.StatusCode)
+	}
+
+	// Delete with a stale ETag is rejected; unconditional delete succeeds.
+	resp = doJSONWithIfMatch(t, http.MethodDelete, draftURL, nil, token, firstETag)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusPreconditionFailed {
+		t.Fatalf("stale delete expected 412, got %d", resp.StatusCode)
+	}
+
+	resp = doJSONWithIfMatch(t, http.MethodDelete, draftURL, nil, token, "")
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("unconditional delete expected 204, got %d", resp.StatusCode)
+	}
+}
+
 func doJSONWithIfMatch(t *testing.T, method, url string, body *bytes.Buffer, token, ifMatch string) *http.Response {
 	t.Helper()
 

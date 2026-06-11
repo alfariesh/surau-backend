@@ -21,7 +21,10 @@ The runtime app no longer starts RabbitMQ, NATS, or gRPC. Legacy packages may st
   `If-Match` with the ETag from the last GET — stale ETags get `412`, a missing
   header gets `428`, `If-Match: *` is the explicit last-write-wins escape
   hatch. Metadata/heading saves accept If-Match optionally but enforce it
-  atomically when present.
+  atomically when present. The same applies to every production endpoint
+  (translation/summary/audio drafts, project PATCH/publish/unpublish/delete):
+  If-Match stays optional there — enrichment scripts save unconditionally —
+  but a provided ETag is enforced atomically (412 on staleness).
 - Every effective save snapshots into `book_source_edit_revisions`
   (page/heading/metadata; deduplicated, last 50 kept per resource).
   `GET /v1/editorial/books/{book_id}/pages/{page_id}/draft-revisions` lists
