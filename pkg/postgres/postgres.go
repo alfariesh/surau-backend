@@ -19,9 +19,11 @@ const (
 
 // Postgres -.
 type Postgres struct {
-	maxPoolSize  int
-	connAttempts int
-	connTimeout  time.Duration
+	maxPoolSize     int
+	connAttempts    int
+	connTimeout     time.Duration
+	maxConnLifetime time.Duration
+	maxConnIdleTime time.Duration
 
 	Builder squirrel.StatementBuilderType
 	Pool    *pgxpool.Pool
@@ -54,6 +56,13 @@ func New(url string, opts ...Option) (*Postgres, error) {
 	}
 
 	poolConfig.MaxConns = safeIntToInt32(pg.maxPoolSize)
+	// Zero values keep the pgxpool defaults (1h lifetime, 30m idle).
+	if pg.maxConnLifetime > 0 {
+		poolConfig.MaxConnLifetime = pg.maxConnLifetime
+	}
+	if pg.maxConnIdleTime > 0 {
+		poolConfig.MaxConnIdleTime = pg.maxConnIdleTime
+	}
 
 	var lastErr error
 	for pg.connAttempts > 0 {

@@ -85,8 +85,11 @@ type (
 
 	// PG -.
 	pg struct {
-		PoolMax int    `env:"PG_POOL_MAX,required"`
+		PoolMax int    `env:"PG_POOL_MAX" envDefault:"10"`
 		URL     string `env:"PG_URL,required"`
+		// Zero keeps the pgxpool default for either setting.
+		MaxConnLifetime time.Duration `env:"PG_MAX_CONN_LIFETIME" envDefault:"1h"`
+		MaxConnIdleTime time.Duration `env:"PG_MAX_CONN_IDLE_TIME" envDefault:"30m"`
 	}
 
 	// JWT -.
@@ -264,6 +267,14 @@ func NewConfig() (*Config, error) {
 	}
 	if cfg.PG.PoolMax < 1 || cfg.PG.PoolMax > 100 {
 		return nil, fmt.Errorf("config error: PG_POOL_MAX must be between 1 and 100")
+	}
+
+	if cfg.PG.MaxConnLifetime < 0 {
+		return nil, fmt.Errorf("config error: PG_MAX_CONN_LIFETIME must not be negative") //nolint:err113 // matches the file's uniform config-error style
+	}
+
+	if cfg.PG.MaxConnIdleTime < 0 {
+		return nil, fmt.Errorf("config error: PG_MAX_CONN_IDLE_TIME must not be negative") //nolint:err113 // matches the file's uniform config-error style
 	}
 
 	if cfg.HTTP.BodyLimitBytes <= 0 {

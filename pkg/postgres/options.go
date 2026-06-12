@@ -25,3 +25,17 @@ func ConnTimeout(timeout time.Duration) Option {
 		c.connTimeout = timeout
 	}
 }
+
+// MaxConnLifetime bounds how long one pooled connection may live.
+func MaxConnLifetime(lifetime time.Duration) Option {
+	return func(c *Postgres) {
+		c.maxConnLifetime = lifetime
+	}
+}
+
+// MaxConnIdleTime bounds how long an idle connection stays in the pool.
+func MaxConnIdleTime(idle time.Duration) Option {
+	return func(c *Postgres) {
+		c.maxConnIdleTime = idle
+	}
+}

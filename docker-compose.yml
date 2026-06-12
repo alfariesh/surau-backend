@@ -22,7 +22,7 @@ x-backend-app-environment: &x-backend-app-environment
   # Logger
   LOG_LEVEL: "debug"
   # PG
-  PG_POOL_MAX: "2"
+  PG_POOL_MAX: "10"
   PG_URL: "postgres://user:myAwEsOm3pa55@w0rd@db:5432/db"
   # Metrics
   METRICS_ENABLED: "true"

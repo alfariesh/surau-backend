@@ -424,7 +424,12 @@ func Run(cfg *config.Config) {
 	l := logger.New(cfg.Log.Level)
 
 	// Repository
-	pg, err := postgres.New(cfg.PG.URL, postgres.MaxPoolSize(cfg.PG.PoolMax))
+	pg, err := postgres.New(
+		cfg.PG.URL,
+		postgres.MaxPoolSize(cfg.PG.PoolMax),
+		postgres.MaxConnLifetime(cfg.PG.MaxConnLifetime),
+		postgres.MaxConnIdleTime(cfg.PG.MaxConnIdleTime),
+	)
 	if err != nil {
 		l.Fatal(fmt.Errorf("app - Run - postgres.New: %w", err))
 	}
