@@ -46,13 +46,14 @@ func newUserUseCaseWithSessions(
 	return useCase, repo, sessions, lockout
 }
 
-func testRefreshToken(t *testing.T) (string, string) {
+func testRefreshToken(t *testing.T) (token, tokenHash string) {
 	t.Helper()
 
 	raw := make([]byte, 32)
 	for i := range raw {
 		raw[i] = byte(i + 1)
 	}
+
 	hash := sha256.Sum256(raw)
 
 	return base64.RawURLEncoding.EncodeToString(raw), hex.EncodeToString(hash[:])
@@ -75,6 +76,7 @@ func TestLoginIssuesSession(t *testing.T) {
 		ID: "user-id-123", Username: "testuser",
 		Email: "test@example.com", PasswordHash: string(hash), EmailVerified: true, TokenVersion: 3,
 	}
+
 	lockout.EXPECT().
 		GetAuthLoginLockout(context.Background(), testLockoutKeyHash("test@example.com")).
 		Return(entity.AuthLoginLockout{}, nil)
@@ -82,6 +84,7 @@ func TestLoginIssuesSession(t *testing.T) {
 	lockout.EXPECT().ResetAuthLoginLockout(context.Background(), testLockoutKeyHash("test@example.com")).Return(nil)
 
 	var storedSession entity.AuthSession
+
 	sessions.EXPECT().
 		CreateAuthSession(context.Background(), gomock.Any()).
 		DoAndReturn(func(_ context.Context, session entity.AuthSession) error {
@@ -102,6 +105,7 @@ func TestLoginIssuesSession(t *testing.T) {
 	// The stored hash must be the sha256 of the raw refresh token bytes.
 	rawBytes, err := base64.RawURLEncoding.DecodeString(result.RefreshToken)
 	require.NoError(t, err)
+
 	expectedHash := sha256.Sum256(rawBytes)
 	assert.Equal(t, hex.EncodeToString(expectedHash[:]), storedSession.RefreshTokenHash)
 
@@ -139,6 +143,7 @@ func TestRefreshSession(t *testing.T) {
 			Return(entity.User{ID: "user-id-123", Email: "test@example.com", TokenVersion: 3}, nil)
 
 		var next entity.AuthSession
+
 		sessions.EXPECT().
 			RotateAuthSession(gomock.Any(), "session-old", gomock.Any()).
 			DoAndReturn(func(_ context.Context, _ string, session entity.AuthSession) error {
@@ -569,6 +574,7 @@ func TestChangePasswordIssuesSession(t *testing.T) {
 	repo.EXPECT().ChangePassword(gomock.Any(), "user-id-123", gomock.Any()).Return(changedUser, nil)
 
 	var storedSession entity.AuthSession
+
 	sessions.EXPECT().
 		CreateAuthSession(gomock.Any(), gomock.Any()).
 		DoAndReturn(func(_ context.Context, session entity.AuthSession) error {

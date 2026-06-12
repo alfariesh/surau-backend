@@ -39,6 +39,7 @@ func (r *PersonalRepo) SyncSnapshot(
 	}
 
 	var effectiveSince *time.Time
+
 	if since != nil {
 		overlapped := since.Add(-syncSinceOverlap)
 		effectiveSince = &overlapped
@@ -60,15 +61,19 @@ func (r *PersonalRepo) SyncSnapshot(
 	if snapshot.ReadingProgress, err = r.syncReadingProgress(ctx, tx, userID, effectiveSince); err != nil {
 		return entity.PersonalSyncSnapshot{}, err
 	}
+
 	if snapshot.QuranProgress, err = r.syncQuranProgress(ctx, tx, userID, effectiveSince); err != nil {
 		return entity.PersonalSyncSnapshot{}, err
 	}
+
 	if snapshot.SavedItems, err = r.syncSavedItems(ctx, tx, userID, effectiveSince); err != nil {
 		return entity.PersonalSyncSnapshot{}, err
 	}
+
 	if snapshot.SavedItemIDs, snapshot.SavedItemsFullResync, err = r.syncSavedItemIDs(ctx, tx, userID); err != nil {
 		return entity.PersonalSyncSnapshot{}, err
 	}
+
 	if snapshot.KhatamCycles, err = r.syncKhatamCycles(ctx, tx, userID, effectiveSince); err != nil {
 		return entity.PersonalSyncSnapshot{}, err
 	}
@@ -80,6 +85,7 @@ func (r *PersonalRepo) SyncSnapshot(
 	return snapshot, nil
 }
 
+//nolint:dupl // parallel structure to syncQuranProgress over a different row type
 func (r *PersonalRepo) syncReadingProgress(
 	ctx context.Context,
 	tx pgx.Tx,
@@ -105,6 +111,7 @@ func (r *PersonalRepo) syncReadingProgress(
 	defer rows.Close()
 
 	items := make([]entity.ReadingProgress, 0)
+
 	for rows.Next() {
 		progress, err := scanProgress(rows)
 		if err != nil {
@@ -113,6 +120,7 @@ func (r *PersonalRepo) syncReadingProgress(
 
 		items = append(items, progress)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("PersonalRepo - syncReadingProgress - rows.Err: %w", err)
 	}
@@ -120,6 +128,7 @@ func (r *PersonalRepo) syncReadingProgress(
 	return items, nil
 }
 
+//nolint:dupl // parallel structure to syncReadingProgress over a different row type
 func (r *PersonalRepo) syncQuranProgress(
 	ctx context.Context,
 	tx pgx.Tx,
@@ -145,6 +154,7 @@ func (r *PersonalRepo) syncQuranProgress(
 	defer rows.Close()
 
 	items := make([]entity.QuranReadingProgress, 0)
+
 	for rows.Next() {
 		progress, err := scanQuranProgress(rows)
 		if err != nil {
@@ -153,6 +163,7 @@ func (r *PersonalRepo) syncQuranProgress(
 
 		items = append(items, progress)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("PersonalRepo - syncQuranProgress - rows.Err: %w", err)
 	}
@@ -185,6 +196,7 @@ func (r *PersonalRepo) syncSavedItems(
 	defer rows.Close()
 
 	items := make([]entity.SavedItem, 0)
+
 	for rows.Next() {
 		item, err := scanSavedItem(rows)
 		if err != nil {
@@ -193,6 +205,7 @@ func (r *PersonalRepo) syncSavedItems(
 
 		items = append(items, item)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("PersonalRepo - syncSavedItems - rows.Err: %w", err)
 	}
@@ -203,7 +216,7 @@ func (r *PersonalRepo) syncSavedItems(
 // syncSavedItemIDs returns every saved-item ID for delete reconciliation, or
 // (nil, true, nil) when the user holds more than maxSyncSavedItemIDs items
 // and the client must full-resync via paging instead.
-func (r *PersonalRepo) syncSavedItemIDs(ctx context.Context, tx pgx.Tx, userID string) ([]string, bool, error) {
+func (r *PersonalRepo) syncSavedItemIDs(ctx context.Context, tx pgx.Tx, userID string) (ids []string, truncated bool, err error) {
 	rows, err := tx.Query(
 		ctx,
 		`SELECT id FROM saved_items WHERE user_id = $1 ORDER BY id ASC LIMIT $2`,
@@ -215,7 +228,8 @@ func (r *PersonalRepo) syncSavedItemIDs(ctx context.Context, tx pgx.Tx, userID s
 	}
 	defer rows.Close()
 
-	ids := make([]string, 0)
+	ids = make([]string, 0)
+
 	for rows.Next() {
 		var id string
 		if err := rows.Scan(&id); err != nil {
@@ -224,9 +238,11 @@ func (r *PersonalRepo) syncSavedItemIDs(ctx context.Context, tx pgx.Tx, userID s
 
 		ids = append(ids, id)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, false, fmt.Errorf("PersonalRepo - syncSavedItemIDs - rows.Err: %w", err)
 	}
+
 	if len(ids) > maxSyncSavedItemIDs {
 		return []string{}, true, nil
 	}
@@ -242,8 +258,10 @@ func (r *PersonalRepo) syncKhatamCycles(
 ) ([]entity.QuranKhatamCycle, error) {
 	condition := ""
 	args := []any{userID}
+
 	if since != nil {
 		condition = " AND c.updated_at >= $2"
+
 		args = append(args, *since)
 	}
 
@@ -261,6 +279,7 @@ ORDER BY c.started_at DESC, c.id DESC`, khatamCycleColumns, khatamMarksLateral, 
 	defer rows.Close()
 
 	cycles := make([]entity.QuranKhatamCycle, 0)
+
 	for rows.Next() {
 		cycle, err := scanKhatamCycle(rows)
 		if err != nil {
@@ -269,6 +288,7 @@ ORDER BY c.started_at DESC, c.id DESC`, khatamCycleColumns, khatamMarksLateral, 
 
 		cycles = append(cycles, cycle)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("PersonalRepo - syncKhatamCycles - rows.Err: %w", err)
 	}

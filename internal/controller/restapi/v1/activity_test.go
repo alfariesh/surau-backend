@@ -21,12 +21,15 @@ func newActivityTestApp(personal *fakePersonal, authenticated bool) *fiber.App {
 		l:        logger.New("error"),
 		v:        validator.New(validator.WithRequiredStructEnabled()),
 	}
+
 	if authenticated {
 		app.Use(func(ctx *fiber.Ctx) error {
 			ctx.Locals("userID", "user-id")
+
 			return ctx.Next()
 		})
 	}
+
 	app.Get("/v1/me/activity", controller.getReadingActivity)
 	app.Get("/v1/me/activity/streak", controller.getReadingStreak)
 
@@ -59,9 +62,12 @@ func TestReadingActivityRoutes(t *testing.T) {
 	t.Run("activity summary", func(t *testing.T) {
 		t.Parallel()
 
-		resp, err := app.Test(httptest.NewRequest(http.MethodGet, "/v1/me/activity?from=2026-06-01&to=2026-06-12", nil))
-
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/v1/me/activity?from=2026-06-01&to=2026-06-12", http.NoBody)
+		resp, err := app.Test(req)
 		require.NoError(t, err)
+
+		defer resp.Body.Close()
+
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 
 		body, err := io.ReadAll(resp.Body)
@@ -74,9 +80,12 @@ func TestReadingActivityRoutes(t *testing.T) {
 	t.Run("streak", func(t *testing.T) {
 		t.Parallel()
 
-		resp, err := app.Test(httptest.NewRequest(http.MethodGet, "/v1/me/activity/streak?today=2026-06-12", nil))
-
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/v1/me/activity/streak?today=2026-06-12", http.NoBody)
+		resp, err := app.Test(req)
 		require.NoError(t, err)
+
+		defer resp.Body.Close()
+
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 
 		body, err := io.ReadAll(resp.Body)
@@ -104,9 +113,12 @@ func TestReadingActivityRouteErrors(t *testing.T) {
 			t.Parallel()
 
 			app := newActivityTestApp(&fakePersonal{activityErr: tt.err}, true)
-			resp, err := app.Test(httptest.NewRequest(http.MethodGet, tt.path, nil))
-
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, tt.path, http.NoBody)
+			resp, err := app.Test(req)
 			require.NoError(t, err)
+
+			defer resp.Body.Close()
+
 			assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 		})
 	}
@@ -116,10 +128,12 @@ func TestReadingActivityRoutesRequireAuth(t *testing.T) {
 	t.Parallel()
 
 	app := newActivityTestApp(&fakePersonal{}, false)
-	for _, path := range []string{"/v1/me/activity", "/v1/me/activity/streak"} {
-		resp, err := app.Test(httptest.NewRequest(http.MethodGet, path, nil))
 
+	for _, path := range []string{"/v1/me/activity", "/v1/me/activity/streak"} {
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, path, http.NoBody)
+		resp, err := app.Test(req)
 		require.NoError(t, err)
 		assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+		resp.Body.Close()
 	}
 }

@@ -27,11 +27,11 @@ type sessionListResponse struct {
 
 // registerVerifiedUser registers a fresh user, marks it verified, and returns
 // the login email plus the user id.
-func registerVerifiedUser(t *testing.T) (string, string) {
+func registerVerifiedUser(t *testing.T) (email, userID string) {
 	t.Helper()
 
 	stamp := time.Now().UnixNano()
-	email := fmt.Sprintf("session_%d@test.local", stamp)
+	email = fmt.Sprintf("session_%d@test.local", stamp)
 	body := fmt.Sprintf(`{"username":"sess_%d","email":%q,"password":"testpass123"}`, stamp, email)
 
 	resp := doJSON(t, http.MethodPost, baseURL()+"/v1/auth/register", bytes.NewBufferString(body), "")
@@ -39,10 +39,12 @@ func registerVerifiedUser(t *testing.T) (string, string) {
 		resp.Body.Close()
 		t.Fatalf("register expected 201, got %d", resp.StatusCode)
 	}
+
 	var reg struct {
 		ID string `json:"id"`
 	}
 	decodeAndClose(t, resp, &reg)
+
 	if reg.ID == "" {
 		t.Fatal("register did not return a user id")
 	}
@@ -61,10 +63,12 @@ func loginWithUA(t *testing.T, email, userAgent string) sessionTokenResponse {
 	defer cancel()
 
 	body := fmt.Sprintf(`{"email":%q,"password":"testpass123"}`, email)
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL()+"/v1/auth/login", bytes.NewBufferString(body))
 	if err != nil {
 		t.Fatalf("new login request: %v", err)
 	}
+
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", userAgent)
 
@@ -72,6 +76,7 @@ func loginWithUA(t *testing.T, email, userAgent string) sessionTokenResponse {
 	if err != nil {
 		t.Fatalf("login %s: %v", userAgent, err)
 	}
+
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
 		t.Fatalf("login expected 200, got %d", resp.StatusCode)
@@ -79,6 +84,7 @@ func loginWithUA(t *testing.T, email, userAgent string) sessionTokenResponse {
 
 	var tokens sessionTokenResponse
 	decodeAndClose(t, resp, &tokens)
+
 	if tokens.AccessToken == "" || tokens.RefreshToken == "" {
 		t.Fatal("login did not return access/refresh tokens")
 	}
@@ -112,11 +118,15 @@ func TestAuthSessionManagementFlow(t *testing.T) {
 	if len(list.Sessions) != 2 {
 		t.Fatalf("expected 2 active sessions, got %d", len(list.Sessions))
 	}
+
 	currentCount := 0
+
 	var deviceBSessionID string
+
 	for _, s := range list.Sessions {
 		if s.IsCurrent {
 			currentCount++
+
 			if s.UserAgent != "IntegrationDeviceA/1.0" {
 				t.Fatalf("current session has user_agent %q, want device A", s.UserAgent)
 			}
@@ -124,9 +134,11 @@ func TestAuthSessionManagementFlow(t *testing.T) {
 			deviceBSessionID = s.ID
 		}
 	}
+
 	if currentCount != 1 {
 		t.Fatalf("expected exactly 1 current session, got %d", currentCount)
 	}
+
 	if deviceBSessionID == "" {
 		t.Fatal("could not find the non-current (device B) session id")
 	}
@@ -137,10 +149,12 @@ func TestAuthSessionManagementFlow(t *testing.T) {
 		resp.Body.Close()
 		t.Fatalf("revoke expected 200, got %d", resp.StatusCode)
 	}
+
 	var revoked struct {
 		SessionRevoked bool `json:"session_revoked"`
 	}
 	decodeAndClose(t, resp, &revoked)
+
 	if !revoked.SessionRevoked {
 		t.Fatal("expected session_revoked=true")
 	}
@@ -150,6 +164,7 @@ func TestAuthSessionManagementFlow(t *testing.T) {
 	if len(list.Sessions) != 1 {
 		t.Fatalf("expected 1 active session after revoke, got %d", len(list.Sessions))
 	}
+
 	if !list.Sessions[0].IsCurrent {
 		t.Fatal("remaining session should be the current device")
 	}
@@ -159,6 +174,7 @@ func TestAuthSessionManagementFlow(t *testing.T) {
 		resp = doJSON(t, http.MethodDelete, baseURL()+"/v1/auth/sessions/"+id, nil, deviceA.AccessToken)
 		status := resp.StatusCode
 		resp.Body.Close()
+
 		if status != http.StatusNotFound {
 			t.Fatalf("revoke %q expected 404, got %d", id, status)
 		}
@@ -171,11 +187,13 @@ func TestRefreshReuseDetectedAudit(t *testing.T) {
 
 	// Rotate once: the presented refresh token is retired and replaced.
 	refreshBody := fmt.Sprintf(`{"refresh_token":%q}`, tokens.RefreshToken)
+
 	resp := doJSON(t, http.MethodPost, baseURL()+"/v1/auth/refresh", bytes.NewBufferString(refreshBody), "")
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
 		t.Fatalf("first refresh expected 200, got %d", resp.StatusCode)
 	}
+
 	var rotated sessionTokenResponse
 	decodeAndClose(t, resp, &rotated)
 
@@ -183,6 +201,7 @@ func TestRefreshReuseDetectedAudit(t *testing.T) {
 	resp = doJSON(t, http.MethodPost, baseURL()+"/v1/auth/refresh", bytes.NewBufferString(refreshBody), "")
 	replayStatus := resp.StatusCode
 	resp.Body.Close()
+
 	if replayStatus != http.StatusUnauthorized {
 		t.Fatalf("replayed refresh expected 401, got %d", replayStatus)
 	}
@@ -195,12 +214,14 @@ func TestRefreshReuseDetectedAudit(t *testing.T) {
 	defer cancel()
 
 	var count int
+
 	err := pool.QueryRow(ctx, `
 SELECT COUNT(*) FROM auth_audit_logs
 WHERE event = 'refresh_reuse_detected' AND user_id = $1`, userID).Scan(&count)
 	if err != nil {
 		t.Fatalf("query audit logs: %v", err)
 	}
+
 	if count < 1 {
 		t.Fatalf("expected >=1 refresh_reuse_detected audit row for user, got %d", count)
 	}

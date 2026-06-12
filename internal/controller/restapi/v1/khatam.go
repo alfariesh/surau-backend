@@ -162,7 +162,7 @@ func (r *V1) listKhatamHistory(ctx *fiber.Ctx) error {
 	cycles, total, err := r.personal.ListKhatamHistory(
 		ctx.UserContext(),
 		userID,
-		queryInt(ctx, "limit", 50),
+		queryInt(ctx, "limit", defaultListLimit),
 		queryInt(ctx, "offset", 0),
 	)
 	if err != nil {

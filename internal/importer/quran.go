@@ -1267,6 +1267,7 @@ func insertQuranImportRuns(ctx context.Context, pool *pgxpool.Pool, opts QuranAs
 		if checksum == "" {
 			continue
 		}
+
 		batch.Queue(
 			`
 INSERT INTO quran_import_runs (

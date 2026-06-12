@@ -51,6 +51,10 @@ const (
 	// and rate-limited, so a higher cost only adds request latency.
 	otpHashCost = bcrypt.DefaultCost
 
+	// defaultAuthDataTTL is the 30-day default for refresh-token lifetime and
+	// auth row retention when no explicit option is configured.
+	defaultAuthDataTTL = 720 * time.Hour
+
 	// decoyLoginHash is a fixed bcrypt hash (cost 10) compared against during
 	// logins for unknown accounts so the response time matches a wrong-password
 	// attempt. This keeps login timing constant and defends against user
@@ -275,9 +279,10 @@ func New(r repo.UserRepo, j *jwt.Manager, emailSender repo.EmailSender, opts Opt
 	if emailChangeCooldown <= 0 {
 		emailChangeCooldown = time.Minute
 	}
+
 	refreshTokenTTL := opts.RefreshTokenTTL
 	if refreshTokenTTL <= 0 {
-		refreshTokenTTL = 720 * time.Hour
+		refreshTokenTTL = defaultAuthDataTTL
 	}
 
 	return &UseCase{
@@ -322,6 +327,7 @@ func normalizeAlertOptions(opts AlertOptions) AlertOptions {
 			recipients = append(recipients, trimmed)
 		}
 	}
+
 	opts.Recipients = recipients
 
 	return opts
@@ -502,7 +508,8 @@ func (uc *UseCase) Login(ctx context.Context, email, password string) (result en
 	if err = uc.enforceLoginRateLimit(ctx, email); err != nil {
 		return entity.LoginResult{}, err
 	}
-	if err = uc.checkLoginLockout(ctx, email); err != nil {
+
+	if err := uc.checkLoginLockout(ctx, email); err != nil {
 		return entity.LoginResult{}, err
 	}
 
@@ -527,9 +534,10 @@ func (uc *UseCase) Login(ctx context.Context, email, password string) (result en
 	if !user.EmailVerified {
 		return entity.LoginResult{}, entity.ErrEmailNotVerified
 	}
+
 	uc.resetLoginLockout(ctx, email)
 
-	result, err = uc.issueSession(ctx, user)
+	result, err = uc.issueSession(ctx, &user)
 	if err != nil {
 		return entity.LoginResult{}, err
 	}
@@ -986,6 +994,30 @@ func (uc *UseCase) ResetPassword(ctx context.Context, token, password string) (e
 // ChangePassword updates the current user's password after verifying the
 // current password. Existing sessions are revoked in the same transaction, so
 // a fresh session is issued and returned to keep the caller logged in.
+// userWithVerifiedPassword loads a user by ID and verifies the supplied
+// current password; both unknown users and wrong passwords collapse into
+// ErrInvalidCredentials.
+func (uc *UseCase) userWithVerifiedPassword(
+	ctx context.Context,
+	userID,
+	currentPassword string,
+) (entity.User, error) {
+	user, err := uc.repo.GetByID(ctx, userID)
+	if err != nil {
+		if errors.Is(err, entity.ErrUserNotFound) {
+			return entity.User{}, entity.ErrInvalidCredentials
+		}
+
+		return entity.User{}, fmt.Errorf("UserUseCase - userWithVerifiedPassword - uc.repo.GetByID: %w", err)
+	}
+
+	if err = bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(currentPassword)); err != nil {
+		return entity.User{}, entity.ErrInvalidCredentials
+	}
+
+	return user, nil
+}
+
 func (uc *UseCase) ChangePassword(
 	ctx context.Context,
 	userID,
@@ -1009,20 +1041,12 @@ func (uc *UseCase) ChangePassword(
 		return entity.LoginResult{}, err
 	}
 
-	user, err := uc.repo.GetByID(ctx, userID)
+	user, err := uc.userWithVerifiedPassword(ctx, userID, currentPassword)
 	if err != nil {
-		if errors.Is(err, entity.ErrUserNotFound) {
-			return entity.LoginResult{}, entity.ErrInvalidCredentials
-		}
-
-		return entity.LoginResult{}, fmt.Errorf("UserUseCase - ChangePassword - uc.repo.GetByID: %w", err)
+		return entity.LoginResult{}, err
 	}
 	auditUserID = user.ID
 	auditEmail = user.Email
-
-	if err = bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(currentPassword)); err != nil {
-		return entity.LoginResult{}, entity.ErrInvalidCredentials
-	}
 
 	hash, err := hashPassword(newPassword)
 	if err != nil {
@@ -1038,7 +1062,7 @@ func (uc *UseCase) ChangePassword(
 		return entity.LoginResult{}, fmt.Errorf("UserUseCase - ChangePassword - uc.repo.ChangePassword: %w", err)
 	}
 
-	result, err = uc.issueSession(ctx, changedUser)
+	result, err = uc.issueSession(ctx, &changedUser)
 	if err != nil {
 		return entity.LoginResult{}, err
 	}
@@ -1144,6 +1168,7 @@ func (uc *UseCase) VerifyEmailChange(
 	otp = strings.TrimSpace(otp)
 
 	var result entity.EmailChangeResult
+
 	switch {
 	case token != "":
 		if otp != "" {
@@ -1155,16 +1180,19 @@ func (uc *UseCase) VerifyEmailChange(
 	default:
 		return entity.LoginResult{}, entity.ErrInvalidAuthInput
 	}
+
 	if err != nil {
 		return entity.LoginResult{}, err
 	}
+
 	auditUserID = result.User.ID
 	auditEmail = result.NewEmail
 
-	login, err = uc.issueSession(ctx, result.User)
+	login, err = uc.issueSession(ctx, &result.User)
 	if err != nil {
 		return entity.LoginResult{}, err
 	}
+
 	uc.notifyEmailChanged(ctx, result.User, result.OldEmail)
 
 	return login, nil
@@ -1684,18 +1712,18 @@ func normalizeRateLimitOptions(opts RateLimitOptions) RateLimitOptions {
 		VerifyEmailOTPIP:        RateLimitRule{Max: 30, Window: 15 * time.Minute},
 		ResendVerificationEmail: RateLimitRule{Max: 3, Window: time.Hour},
 		ResendVerificationIP:    RateLimitRule{Max: 20, Window: time.Hour},
-		ResetPasswordToken:      RateLimitRule{Max: 5, Window: 15 * time.Minute},
-		ResetPasswordIP:         RateLimitRule{Max: 30, Window: 15 * time.Minute},
-		ChangePasswordUser:      RateLimitRule{Max: 5, Window: 5 * time.Minute},
+		ResetPasswordToken:      RateLimitRule{Max: 5, Window: 15 * time.Minute},  //nolint:mnd // default rate-limit table,
+		ResetPasswordIP:         RateLimitRule{Max: 30, Window: 15 * time.Minute}, //nolint:mnd // default rate-limit table,
+		ChangePasswordUser:      RateLimitRule{Max: 5, Window: 5 * time.Minute},   //nolint:mnd // default rate-limit table,
 		ChangePasswordIP:        RateLimitRule{Max: 30, Window: 5 * time.Minute},
 		ChangeEmailUser:         RateLimitRule{Max: 3, Window: time.Hour},
 		ChangeEmailIP:           RateLimitRule{Max: 10, Window: time.Hour},
 		ChangeEmailToken:        RateLimitRule{Max: 5, Window: 15 * time.Minute},
 		DeleteAccountUser:       RateLimitRule{Max: 3, Window: time.Hour},
 		DeleteAccountIP:         RateLimitRule{Max: 10, Window: time.Hour},
-		RefreshToken:            RateLimitRule{Max: 5, Window: 15 * time.Minute},
-		RefreshIP:               RateLimitRule{Max: 60, Window: 15 * time.Minute},
-		VerifyEmailToken:        RateLimitRule{Max: 5, Window: 15 * time.Minute},
+		RefreshToken:            RateLimitRule{Max: 5, Window: 15 * time.Minute},  //nolint:mnd // default rate-limit table,
+		RefreshIP:               RateLimitRule{Max: 60, Window: 15 * time.Minute}, //nolint:mnd // default rate-limit table,
+		VerifyEmailToken:        RateLimitRule{Max: 5, Window: 15 * time.Minute},  //nolint:mnd // default rate-limit table,
 	}
 
 	opts.LoginEmail = withDefaultRule(opts.LoginEmail, defaults.LoginEmail)
@@ -1728,12 +1756,15 @@ func normalizeLockoutOptions(opts LockoutOptions) LockoutOptions {
 	if opts.Threshold <= 0 {
 		opts.Threshold = 5
 	}
+
 	if opts.BaseDuration <= 0 {
 		opts.BaseDuration = time.Minute
 	}
+
 	if opts.Factor <= 0 {
 		opts.Factor = 15
 	}
+
 	if opts.MaxDuration < opts.BaseDuration {
 		opts.MaxDuration = time.Hour
 	}
@@ -2021,6 +2052,7 @@ func newOTPHash() (string, string, error) {
 	if err != nil {
 		return "", "", err
 	}
+
 	hash, err := bcrypt.GenerateFromPassword([]byte(otp), otpHashCost)
 	if err != nil {
 		return "", "", fmt.Errorf("UserUseCase - newOTPHash - bcrypt.GenerateFromPassword: %w", err)

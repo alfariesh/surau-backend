@@ -51,7 +51,7 @@ func (r *V1) register(ctx *fiber.Ctx) error {
 			return errorResponse(ctx, http.StatusBadRequest, "invalid request body")
 		}
 		if errors.Is(err, entity.ErrAuthRateLimited) {
-			return rateLimitedResponse(ctx, err, "too many auth attempts")
+			return rateLimitedResponse(ctx, err)
 		}
 		if errors.Is(err, entity.ErrEmailDeliveryFailed) {
 			return errorResponse(ctx, http.StatusServiceUnavailable, "email delivery failed")
@@ -104,14 +104,15 @@ func (r *V1) login(ctx *fiber.Ctx) error {
 		if errors.Is(err, entity.ErrEmailNotVerified) {
 			return errorResponse(ctx, http.StatusForbidden, "email not verified")
 		}
+
 		if errors.Is(err, entity.ErrAuthRateLimited) || errors.Is(err, entity.ErrAccountLocked) {
-			return rateLimitedResponse(ctx, err, "too many auth attempts")
+			return rateLimitedResponse(ctx, err)
 		}
 
 		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
 	}
 
-	return ctx.Status(http.StatusOK).JSON(response.NewToken(result))
+	return ctx.Status(http.StatusOK).JSON(response.NewToken(&result))
 }
 
 // @Summary     Refresh session
@@ -149,17 +150,18 @@ func (r *V1) refreshToken(ctx *fiber.Ctx) error {
 		if errors.Is(err, entity.ErrInvalidRefreshToken) {
 			return errorResponse(ctx, http.StatusUnauthorized, "invalid refresh token")
 		}
+
 		if errors.Is(err, entity.ErrInvalidAuthInput) {
 			return errorResponse(ctx, http.StatusBadRequest, "invalid request body")
 		}
 		if errors.Is(err, entity.ErrAuthRateLimited) {
-			return rateLimitedResponse(ctx, err, "too many auth attempts")
+			return rateLimitedResponse(ctx, err)
 		}
 
 		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
 	}
 
-	return ctx.Status(http.StatusOK).JSON(response.NewToken(result))
+	return ctx.Status(http.StatusOK).JSON(response.NewToken(&result))
 }
 
 // @Summary     Logout
@@ -195,8 +197,9 @@ func (r *V1) logout(ctx *fiber.Ctx) error {
 		if errors.Is(err, entity.ErrInvalidAuthInput) {
 			return errorResponse(ctx, http.StatusBadRequest, "invalid request body")
 		}
+
 		if errors.Is(err, entity.ErrAuthRateLimited) {
-			return rateLimitedResponse(ctx, err, "too many auth attempts")
+			return rateLimitedResponse(ctx, err)
 		}
 
 		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
@@ -258,7 +261,7 @@ func (r *V1) listSessions(ctx *fiber.Ctx) error {
 		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
 	}
 
-	currentFamilyID, _ := ctx.Locals("sessionID").(string)
+	currentFamilyID, _ := ctx.Locals("sessionID").(string) //nolint:errcheck // a missing session id only unsets is_current
 
 	return ctx.Status(http.StatusOK).JSON(response.NewSessionList(sessions, currentFamilyID))
 }
@@ -290,6 +293,7 @@ func (r *V1) revokeSession(ctx *fiber.Ctx) error {
 		if errors.Is(err, entity.ErrInvalidAuthInput) {
 			return errorResponse(ctx, http.StatusBadRequest, "invalid request")
 		}
+
 		if errors.Is(err, entity.ErrAuthSessionNotFound) {
 			return errorResponse(ctx, http.StatusNotFound, "session not found")
 		}
@@ -336,7 +340,7 @@ func (r *V1) verifyEmail(ctx *fiber.Ctx) error {
 			return errorResponse(ctx, http.StatusBadRequest, "invalid verification token")
 		}
 		if errors.Is(err, entity.ErrAuthRateLimited) {
-			return rateLimitedResponse(ctx, err, "too many auth attempts")
+			return rateLimitedResponse(ctx, err)
 		}
 
 		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
@@ -382,7 +386,7 @@ func (r *V1) resendVerification(ctx *fiber.Ctx) error {
 			return errorResponse(ctx, http.StatusTooManyRequests, "verification email recently sent")
 		}
 		if errors.Is(err, entity.ErrAuthRateLimited) {
-			return rateLimitedResponse(ctx, err, "too many auth attempts")
+			return rateLimitedResponse(ctx, err)
 		}
 		if errors.Is(err, entity.ErrEmailDeliveryFailed) {
 			return errorResponse(ctx, http.StatusServiceUnavailable, "email delivery failed")
@@ -431,7 +435,7 @@ func (r *V1) forgotPassword(ctx *fiber.Ctx) error {
 			return errorResponse(ctx, http.StatusTooManyRequests, "password reset email recently sent")
 		}
 		if errors.Is(err, entity.ErrAuthRateLimited) {
-			return rateLimitedResponse(ctx, err, "too many auth attempts")
+			return rateLimitedResponse(ctx, err)
 		}
 		if errors.Is(err, entity.ErrEmailDeliveryFailed) {
 			return errorResponse(ctx, http.StatusServiceUnavailable, "email delivery failed")
@@ -476,7 +480,7 @@ func (r *V1) resetPassword(ctx *fiber.Ctx) error {
 			return errorResponse(ctx, http.StatusBadRequest, "invalid request body")
 		}
 		if errors.Is(err, entity.ErrAuthRateLimited) {
-			return rateLimitedResponse(ctx, err, "too many auth attempts")
+			return rateLimitedResponse(ctx, err)
 		}
 
 		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
@@ -529,13 +533,13 @@ func (r *V1) changePassword(ctx *fiber.Ctx) error {
 			return errorResponse(ctx, http.StatusUnauthorized, "invalid credentials")
 		}
 		if errors.Is(err, entity.ErrAuthRateLimited) {
-			return rateLimitedResponse(ctx, err, "too many auth attempts")
+			return rateLimitedResponse(ctx, err)
 		}
 
 		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
 	}
 
-	token := response.NewToken(result)
+	token := response.NewToken(&result)
 
 	return ctx.Status(http.StatusOK).JSON(response.PasswordChanged{
 		PasswordChanged: true,
@@ -594,7 +598,7 @@ func (r *V1) requestEmailChange(ctx *fiber.Ctx) error {
 			return errorResponse(ctx, http.StatusConflict, "user already exists")
 		}
 		if errors.Is(err, entity.ErrEmailChangeRateLimited) || errors.Is(err, entity.ErrAuthRateLimited) {
-			return rateLimitedResponse(ctx, err, "too many auth attempts")
+			return rateLimitedResponse(ctx, err)
 		}
 		if errors.Is(err, entity.ErrEmailDeliveryFailed) {
 			return errorResponse(ctx, http.StatusServiceUnavailable, "email delivery failed")
@@ -650,13 +654,13 @@ func (r *V1) verifyEmailChange(ctx *fiber.Ctx) error {
 			return errorResponse(ctx, http.StatusConflict, "user already exists")
 		}
 		if errors.Is(err, entity.ErrAuthRateLimited) {
-			return rateLimitedResponse(ctx, err, "too many auth attempts")
+			return rateLimitedResponse(ctx, err)
 		}
 
 		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
 	}
 
-	token := response.NewToken(result)
+	token := response.NewToken(&result)
 
 	return ctx.Status(http.StatusOK).JSON(response.EmailChanged{
 		EmailChanged: true,
@@ -711,7 +715,7 @@ func (r *V1) deleteAccount(ctx *fiber.Ctx) error {
 			return errorResponse(ctx, http.StatusUnauthorized, "invalid credentials")
 		}
 		if errors.Is(err, entity.ErrAuthRateLimited) {
-			return rateLimitedResponse(ctx, err, "too many auth attempts")
+			return rateLimitedResponse(ctx, err)
 		}
 
 		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")

@@ -14,7 +14,7 @@ const authSessionColumns = "id, family_id, user_id, refresh_token_hash, token_ve
 	"user_agent, client_ip, created_at, last_used_at, expires_at, revoked_at, replaced_by_id"
 
 // CreateAuthSession stores a new refresh-token session row.
-func (r *UserRepo) CreateAuthSession(ctx context.Context, session entity.AuthSession) error {
+func (r *UserRepo) CreateAuthSession(ctx context.Context, session entity.AuthSession) error { //nolint:gocritic // value param fixed by the repo interface contract
 	sqlText, args, err := r.Builder.
 		Insert("auth_sessions").
 		Columns(authSessionColumns).
@@ -70,7 +70,7 @@ func (r *UserRepo) GetAuthSessionByTokenHash(ctx context.Context, tokenHash stri
 // RotateAuthSession revokes the old session row and inserts its replacement
 // atomically. Losing a concurrent rotation race returns
 // entity.ErrInvalidRefreshToken so callers treat it as token reuse.
-func (r *UserRepo) RotateAuthSession(ctx context.Context, oldID string, next entity.AuthSession) error {
+func (r *UserRepo) RotateAuthSession(ctx context.Context, oldID string, next entity.AuthSession) error { //nolint:gocritic // value param fixed by the repo interface contract
 	tx, err := r.Pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("UserRepo - RotateAuthSession - r.Pool.Begin: %w", err)
@@ -94,6 +94,7 @@ func (r *UserRepo) RotateAuthSession(ctx context.Context, oldID string, next ent
 	if err != nil {
 		return fmt.Errorf("UserRepo - RotateAuthSession - revoke Exec: %w", err)
 	}
+
 	if tag.RowsAffected() != 1 {
 		return entity.ErrInvalidRefreshToken
 	}
@@ -175,6 +176,7 @@ func (r *UserRepo) RevokeAllAuthSessions(ctx context.Context, userID string) (in
 	if err != nil {
 		return 0, fmt.Errorf("UserRepo - RevokeAllAuthSessions - user Exec: %w", err)
 	}
+
 	if tag.RowsAffected() != 1 {
 		return 0, entity.ErrUserNotFound
 	}
@@ -224,13 +226,16 @@ func (r *UserRepo) ListActiveAuthSessions(ctx context.Context, userID string) ([
 	defer rows.Close()
 
 	sessions := make([]entity.AuthSession, 0)
+
 	for rows.Next() {
 		session, scanErr := scanAuthSession(rows)
 		if scanErr != nil {
 			return nil, fmt.Errorf("UserRepo - ListActiveAuthSessions - scanAuthSession: %w", scanErr)
 		}
+
 		sessions = append(sessions, session)
 	}
+
 	if err = rows.Err(); err != nil {
 		return nil, fmt.Errorf("UserRepo - ListActiveAuthSessions - rows.Err: %w", err)
 	}
@@ -287,6 +292,7 @@ func scanAuthSession(row rowScanner) (entity.AuthSession, error) {
 		userAgent *string
 		clientIP  *string
 	)
+
 	err := row.Scan(
 		&session.ID,
 		&session.FamilyID,
@@ -304,9 +310,11 @@ func scanAuthSession(row rowScanner) (entity.AuthSession, error) {
 	if err != nil {
 		return entity.AuthSession{}, err
 	}
+
 	if userAgent != nil {
 		session.UserAgent = *userAgent
 	}
+
 	if clientIP != nil {
 		session.ClientIP = *clientIP
 	}

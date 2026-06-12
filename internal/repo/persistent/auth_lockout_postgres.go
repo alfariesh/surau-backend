@@ -19,6 +19,7 @@ FROM auth_login_lockouts
 WHERE key_hash = $1`
 
 	var lockout entity.AuthLoginLockout
+
 	err := r.Pool.QueryRow(ctx, query, keyHash).Scan(
 		&lockout.KeyHash,
 		&lockout.ConsecutiveFailures,

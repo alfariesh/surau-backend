@@ -1,6 +1,7 @@
 package v1
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"time"
@@ -30,11 +31,13 @@ func (r *V1) syncPersonalData(ctx *fiber.Ctx) error {
 	}
 
 	var since *time.Time
+
 	if raw := ctx.Query("since"); raw != "" {
 		parsed, err := time.Parse(time.RFC3339, raw)
 		if err != nil {
 			return errorResponse(ctx, http.StatusBadRequest, "invalid since")
 		}
+
 		since = &parsed
 	}
 
@@ -84,14 +87,38 @@ func (r *V1) batchSaveProgress(ctx *fiber.Ctx) error {
 		return errorResponse(ctx, http.StatusBadRequest, "empty batch")
 	}
 
-	results := response.BatchProgressResults{
-		Kitab: make([]response.BatchKitabProgressResult, 0, len(body.Kitab)),
-		Quran: make([]response.BatchQuranProgressResult, 0, len(body.Quran)),
+	kitabResults, err := r.applyKitabBatch(ctx.UserContext(), userID, body.Kitab)
+	if err != nil {
+		r.l.Error(err, "restapi - v1 - batchSaveProgress - kitab")
+
+		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
 	}
 
-	for _, entry := range body.Kitab {
+	quranResults, err := r.applyQuranBatch(ctx.UserContext(), userID, body.Quran)
+	if err != nil {
+		r.l.Error(err, "restapi - v1 - batchSaveProgress - quran")
+
+		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
+	}
+
+	return ctx.Status(http.StatusOK).JSON(response.BatchProgressResults{
+		Kitab: kitabResults,
+		Quran: quranResults,
+	})
+}
+
+// applyKitabBatch replays kitab progress entries in order. Expected domain
+// failures mark single entries; an unexpected error aborts the whole batch.
+func (r *V1) applyKitabBatch(
+	ctx context.Context,
+	userID string,
+	entries []request.BatchKitabProgress,
+) ([]response.BatchKitabProgressResult, error) {
+	results := make([]response.BatchKitabProgressResult, 0, len(entries))
+
+	for _, entry := range entries {
 		progress, err := r.personal.SaveProgress(
-			ctx.UserContext(),
+			ctx,
 			userID,
 			entry.BookID,
 			entry.PageID,
@@ -102,38 +129,46 @@ func (r *V1) batchSaveProgress(ctx *fiber.Ctx) error {
 		if err != nil {
 			message, expected := kitabProgressEntryError(err)
 			if !expected {
-				r.l.Error(err, "restapi - v1 - batchSaveProgress - kitab")
-
-				return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
+				return nil, err
 			}
 
-			results.Kitab = append(results.Kitab, response.BatchKitabProgressResult{Status: "error", Error: &message})
+			results = append(results, response.BatchKitabProgressResult{Status: "error", Error: &message})
 
 			continue
 		}
 
-		results.Kitab = append(results.Kitab, response.BatchKitabProgressResult{Status: "ok", Progress: &progress})
+		results = append(results, response.BatchKitabProgressResult{Status: "ok", Progress: &progress})
 	}
 
-	for _, entry := range body.Quran {
-		progress, err := r.personal.SaveQuranProgress(ctx.UserContext(), userID, entry.AyahKey, entry.ClientObservedAt)
+	return results, nil
+}
+
+// applyQuranBatch replays Quran progress entries in order. Expected domain
+// failures mark single entries; an unexpected error aborts the whole batch.
+func (r *V1) applyQuranBatch(
+	ctx context.Context,
+	userID string,
+	entries []request.BatchQuranProgress,
+) ([]response.BatchQuranProgressResult, error) {
+	results := make([]response.BatchQuranProgressResult, 0, len(entries))
+
+	for _, entry := range entries {
+		progress, err := r.personal.SaveQuranProgress(ctx, userID, entry.AyahKey, entry.ClientObservedAt)
 		if err != nil {
 			message, expected := quranProgressEntryError(err)
 			if !expected {
-				r.l.Error(err, "restapi - v1 - batchSaveProgress - quran")
-
-				return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
+				return nil, err
 			}
 
-			results.Quran = append(results.Quran, response.BatchQuranProgressResult{Status: "error", Error: &message})
+			results = append(results, response.BatchQuranProgressResult{Status: "error", Error: &message})
 
 			continue
 		}
 
-		results.Quran = append(results.Quran, response.BatchQuranProgressResult{Status: "ok", Progress: &progress})
+		results = append(results, response.BatchQuranProgressResult{Status: "ok", Progress: &progress})
 	}
 
-	return ctx.Status(http.StatusOK).JSON(results)
+	return results, nil
 }
 
 // kitabProgressEntryError maps expected kitab progress failures to a

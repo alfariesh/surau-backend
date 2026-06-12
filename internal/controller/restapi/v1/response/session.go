@@ -33,7 +33,8 @@ type SessionRevoked struct {
 // matches the caller's current access token.
 func NewSessionList(sessions []entity.AuthSession, currentFamilyID string) SessionList {
 	items := make([]SessionInfo, 0, len(sessions))
-	for _, session := range sessions {
+	for i := range sessions {
+		session := &sessions[i]
 		items = append(items, SessionInfo{
 			ID:         session.ID,
 			UserAgent:  session.UserAgent,

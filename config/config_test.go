@@ -469,6 +469,7 @@ func TestNewConfig_InvalidJWT(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest // t.Setenv (via setRequiredEnv) is incompatible with t.Parallel
 func TestNewConfig_AuthSessionDefaults(t *testing.T) {
 	setRequiredEnv(t)
 	unsetEnv(t, "JWT_ACCESS_TOKEN_EXPIRY")

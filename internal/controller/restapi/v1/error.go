@@ -23,7 +23,9 @@ func errorResponse(ctx *fiber.Ctx, code int, msg string) error {
 
 // rateLimitedResponse renders a 429 and, when the usecase reported a
 // retry-after hint, surfaces it via the Retry-After header and body field.
-func rateLimitedResponse(ctx *fiber.Ctx, err error, msg string) error {
+func rateLimitedResponse(ctx *fiber.Ctx, err error) error {
+	const msg = "too many auth attempts"
+
 	var rateLimited *entity.AuthRateLimitedError
 	if errors.As(err, &rateLimited) && rateLimited.RetryAfter > 0 {
 		seconds := int64(math.Ceil(rateLimited.RetryAfter.Seconds()))

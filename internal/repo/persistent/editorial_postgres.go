@@ -1252,7 +1252,7 @@ WHERE book_id = $1 AND page_id = $2 AND status = $3`
 // means the connection itself broke, and the pool already discards broken
 // connections, so there is no recovery action to take here.
 func rollbackTx(ctx context.Context, tx pgx.Tx) {
-	_ = tx.Rollback(ctx) //nolint:errcheck // ErrTxClosed after commit is the expected no-op
+	_ = tx.Rollback(ctx)
 }
 
 // sourceEditRevision describes one snapshot to append to the source-edit

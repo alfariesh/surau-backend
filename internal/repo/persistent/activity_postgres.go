@@ -45,6 +45,7 @@ SELECT
     EXISTS (SELECT 1 FROM user_days WHERE activity_date = $2::date) AS active_today`
 
 	streak := entity.ReadingStreak{Today: today}
+
 	var lastActive sql.NullTime
 	if err := r.Pool.QueryRow(ctx, sqlText, userID, today).Scan(
 		&streak.CurrentStreakDays,
@@ -87,9 +88,12 @@ ORDER BY activity_date ASC`
 		To:   to,
 		Days: []entity.ReadingActivityDay{},
 	}
+
 	for rows.Next() {
-		var day entity.ReadingActivityDay
-		var date time.Time
+		var (
+			day  entity.ReadingActivityDay
+			date time.Time
+		)
 		if err := rows.Scan(
 			&date,
 			&day.QuranAyahsRead,
@@ -104,14 +108,17 @@ ORDER BY activity_date ASC`
 		summary.Days = append(summary.Days, day)
 		summary.ActiveDays++
 		summary.QuranAyahsRead += day.QuranAyahsRead
+
 		summary.KitabPagesRead += day.KitabPagesRead
 		if day.QuranEvents > 0 {
 			summary.QuranActiveDays++
 		}
+
 		if day.KitabEvents > 0 {
 			summary.KitabActiveDays++
 		}
 	}
+
 	if err := rows.Err(); err != nil {
 		return entity.ReadingActivitySummary{}, fmt.Errorf("PersonalRepo - GetReadingActivity - rows.Err: %w", err)
 	}

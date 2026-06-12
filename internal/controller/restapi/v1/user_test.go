@@ -187,7 +187,7 @@ func TestAuthRoutesEmailVerificationErrors(t *testing.T) {
 			t.Parallel()
 
 			app := newAuthTestApp(tt.user)
-			req := httptest.NewRequest(tt.method, tt.path, bytes.NewBufferString(tt.body))
+			req := httptest.NewRequestWithContext(t.Context(), tt.method, tt.path, bytes.NewBufferString(tt.body))
 			req.Header.Set("Content-Type", "application/json")
 
 			resp, err := app.Test(req)
@@ -205,12 +205,15 @@ func TestAuthSessionRoutes(t *testing.T) {
 		t.Parallel()
 
 		app := newAuthTestApp(&fakeAuthUser{})
-		req := httptest.NewRequest(http.MethodPost, "/auth/login",
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/auth/login",
 			bytes.NewBufferString(`{"email":"test@example.com","password":"password123"}`))
 		req.Header.Set("Content-Type", "application/json")
 
 		resp, err := app.Test(req)
 		require.NoError(t, err)
+
+		defer resp.Body.Close()
+
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 
 		body := readTestBody(t, resp)
@@ -225,12 +228,15 @@ func TestAuthSessionRoutes(t *testing.T) {
 		t.Parallel()
 
 		app := newAuthTestApp(&fakeAuthUser{})
-		req := httptest.NewRequest(http.MethodPost, "/auth/refresh",
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/auth/refresh",
 			bytes.NewBufferString(`{"refresh_token":"some-refresh-token"}`))
 		req.Header.Set("Content-Type", "application/json")
 
 		resp, err := app.Test(req)
 		require.NoError(t, err)
+
+		defer resp.Body.Close()
+
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 
 		body := readTestBody(t, resp)
@@ -242,12 +248,15 @@ func TestAuthSessionRoutes(t *testing.T) {
 		t.Parallel()
 
 		app := newAuthTestApp(&fakeAuthUser{refreshErr: entity.ErrInvalidRefreshToken})
-		req := httptest.NewRequest(http.MethodPost, "/auth/refresh",
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/auth/refresh",
 			bytes.NewBufferString(`{"refresh_token":"bad-token"}`))
 		req.Header.Set("Content-Type", "application/json")
 
 		resp, err := app.Test(req)
 		require.NoError(t, err)
+
+		defer resp.Body.Close()
+
 		assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 	})
 
@@ -257,12 +266,15 @@ func TestAuthSessionRoutes(t *testing.T) {
 		app := newAuthTestApp(&fakeAuthUser{
 			refreshErr: &entity.AuthRateLimitedError{RetryAfter: 90 * time.Second},
 		})
-		req := httptest.NewRequest(http.MethodPost, "/auth/refresh",
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/auth/refresh",
 			bytes.NewBufferString(`{"refresh_token":"some-refresh-token"}`))
 		req.Header.Set("Content-Type", "application/json")
 
 		resp, err := app.Test(req)
 		require.NoError(t, err)
+
+		defer resp.Body.Close()
+
 		assert.Equal(t, http.StatusTooManyRequests, resp.StatusCode)
 		assert.Equal(t, "90", resp.Header.Get("Retry-After"))
 		assert.Contains(t, readTestBody(t, resp), `"retry_after":90`)
@@ -272,12 +284,15 @@ func TestAuthSessionRoutes(t *testing.T) {
 		t.Parallel()
 
 		app := newAuthTestApp(&fakeAuthUser{})
-		req := httptest.NewRequest(http.MethodPost, "/auth/logout",
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/auth/logout",
 			bytes.NewBufferString(`{"refresh_token":"some-refresh-token"}`))
 		req.Header.Set("Content-Type", "application/json")
 
 		resp, err := app.Test(req)
 		require.NoError(t, err)
+
+		defer resp.Body.Close()
+
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 		assert.Contains(t, readTestBody(t, resp), `"logged_out":true`)
 	})
@@ -286,10 +301,13 @@ func TestAuthSessionRoutes(t *testing.T) {
 		t.Parallel()
 
 		app := newAuthTestApp(&fakeAuthUser{})
-		req := httptest.NewRequest(http.MethodPost, "/auth/logout-all", http.NoBody)
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/auth/logout-all", http.NoBody)
 
 		resp, err := app.Test(req)
 		require.NoError(t, err)
+
+		defer resp.Body.Close()
+
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 		assert.Contains(t, readTestBody(t, resp), `"sessions_revoked":true`)
 	})
@@ -298,12 +316,15 @@ func TestAuthSessionRoutes(t *testing.T) {
 		t.Parallel()
 
 		app := newAuthTestApp(&fakeAuthUser{})
-		req := httptest.NewRequest(http.MethodPost, "/auth/change-password",
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/auth/change-password",
 			bytes.NewBufferString(`{"current_password":"oldpassword123","new_password":"newpassword123"}`))
 		req.Header.Set("Content-Type", "application/json")
 
 		resp, err := app.Test(req)
 		require.NoError(t, err)
+
+		defer resp.Body.Close()
+
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 
 		body := readTestBody(t, resp)
@@ -316,12 +337,15 @@ func TestAuthSessionRoutes(t *testing.T) {
 		t.Parallel()
 
 		app := newAuthTestApp(&fakeAuthUser{})
-		req := httptest.NewRequest(http.MethodPost, "/auth/change-email/verify",
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/auth/change-email/verify",
 			bytes.NewBufferString(`{"token":"valid"}`))
 		req.Header.Set("Content-Type", "application/json")
 
 		resp, err := app.Test(req)
 		require.NoError(t, err)
+
+		defer resp.Body.Close()
+
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 
 		body := readTestBody(t, resp)
@@ -402,7 +426,7 @@ func TestUserProfileAndPreferenceRoutes(t *testing.T) {
 			t.Parallel()
 
 			app := newAuthTestApp(tt.user)
-			req := httptest.NewRequest(tt.method, tt.path, bytes.NewBufferString(tt.body))
+			req := httptest.NewRequestWithContext(t.Context(), tt.method, tt.path, bytes.NewBufferString(tt.body))
 			req.Header.Set("Content-Type", "application/json")
 
 			resp, err := app.Test(req)

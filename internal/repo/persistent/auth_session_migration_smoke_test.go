@@ -13,6 +13,7 @@ func TestAuthSessionsMigrationSmoke(t *testing.T) {
 
 	up, err := os.ReadFile("../../../migrations/20260610000001_create_auth_sessions.up.sql")
 	require.NoError(t, err)
+
 	upSQL := string(up)
 
 	assert.Contains(t, upSQL, "CREATE TABLE IF NOT EXISTS auth_sessions")
@@ -32,6 +33,7 @@ func TestAuthLoginLockoutsMigrationSmoke(t *testing.T) {
 
 	up, err := os.ReadFile("../../../migrations/20260610000002_create_auth_login_lockouts.up.sql")
 	require.NoError(t, err)
+
 	upSQL := string(up)
 
 	assert.Contains(t, upSQL, "CREATE TABLE IF NOT EXISTS auth_login_lockouts")

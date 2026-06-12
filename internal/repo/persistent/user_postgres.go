@@ -414,6 +414,7 @@ func (r *UserRepo) SetRoleByEmail(ctx context.Context, email, role string) (enti
 		targetID     string
 		previousRole string
 	)
+
 	err = tx.QueryRow(
 		ctx,
 		"SELECT id, role FROM users WHERE email = $1 AND deleted_at IS NULL FOR UPDATE",
@@ -431,6 +432,7 @@ func (r *UserRepo) SetRoleByEmail(ctx context.Context, email, role string) (enti
 	// API; recovery would require direct DB access or the CLI escape hatch.
 	if previousRole == entity.UserRoleAdmin && role != entity.UserRoleAdmin {
 		var adminCount int
+
 		err = tx.QueryRow(
 			ctx,
 			"SELECT count(*) FROM users WHERE role = $1 AND deleted_at IS NULL",
@@ -439,6 +441,7 @@ func (r *UserRepo) SetRoleByEmail(ctx context.Context, email, role string) (enti
 		if err != nil {
 			return entity.UserRoleChange{}, fmt.Errorf("UserRepo - SetRoleByEmail - count admins: %w", err)
 		}
+
 		if adminCount <= 1 {
 			return entity.UserRoleChange{}, entity.ErrLastAdmin
 		}
@@ -452,6 +455,7 @@ WHERE id = $1
 RETURNING id, username, email, role, password_hash, email_verified, token_version, created_at, updated_at`
 
 	var change entity.UserRoleChange
+
 	err = tx.QueryRow(ctx, updateQuery, targetID, role).
 		Scan(
 			&change.User.ID,
@@ -467,6 +471,7 @@ RETURNING id, username, email, role, password_hash, email_verified, token_versio
 	if err != nil {
 		return entity.UserRoleChange{}, fmt.Errorf("UserRepo - SetRoleByEmail - update QueryRow: %w", err)
 	}
+
 	change.PreviousRole = previousRole
 	change.NewRole = change.User.Role
 
@@ -1276,13 +1281,16 @@ func (r *UserRepo) ListAuthAuditEventsSince(
 	defer rows.Close()
 
 	logs := make([]entity.AuthAuditLog, 0)
+
 	for rows.Next() {
 		item, scanErr := scanAuthAuditLog(rows)
 		if scanErr != nil {
 			return nil, fmt.Errorf("UserRepo - ListAuthAuditEventsSince - scanAuthAuditLog: %w", scanErr)
 		}
+
 		logs = append(logs, item)
 	}
+
 	if err = rows.Err(); err != nil {
 		return nil, fmt.Errorf("UserRepo - ListAuthAuditEventsSince - rows.Err: %w", err)
 	}
@@ -1300,6 +1308,7 @@ func scanAuthAuditLog(row rowScanner) (entity.AuthAuditLog, error) {
 		errorCode    *string
 		metadataJSON []byte
 	)
+
 	err := row.Scan(
 		&log.ID,
 		&log.Event,
@@ -1315,23 +1324,29 @@ func scanAuthAuditLog(row rowScanner) (entity.AuthAuditLog, error) {
 	if err != nil {
 		return entity.AuthAuditLog{}, err
 	}
+
 	if userID != nil {
 		log.UserID = *userID
 	}
+
 	if email != nil {
 		log.Email = *email
 	}
+
 	if clientIP != nil {
 		log.ClientIP = *clientIP
 	}
+
 	if userAgent != nil {
 		log.UserAgent = *userAgent
 	}
+
 	if errorCode != nil {
 		log.ErrorCode = *errorCode
 	}
+
 	if len(metadataJSON) > 0 {
-		_ = json.Unmarshal(metadataJSON, &log.Metadata)
+		_ = json.Unmarshal(metadataJSON, &log.Metadata) //nolint:errcheck // malformed audit metadata degrades to empty, never fails the read
 	}
 
 	return log, nil

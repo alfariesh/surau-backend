@@ -25,12 +25,15 @@ func newSyncTestApp(personal *fakePersonal, authenticated bool) *fiber.App {
 		l:        logger.New("error"),
 		v:        validator.New(validator.WithRequiredStructEnabled()),
 	}
+
 	if authenticated {
 		app.Use(func(ctx *fiber.Ctx) error {
 			ctx.Locals("userID", "user-id")
+
 			return ctx.Next()
 		})
 	}
+
 	app.Get("/v1/me/sync", controller.syncPersonalData)
 	app.Post("/v1/me/progress/batch", controller.batchSaveProgress)
 
@@ -53,9 +56,12 @@ func TestSyncPersonalDataRoute(t *testing.T) {
 	}
 	app := newSyncTestApp(fake, true)
 
-	resp, err := app.Test(httptest.NewRequest(http.MethodGet, "/v1/me/sync?since=2026-06-11T00:00:00Z", nil))
+	resp, err := app.Test(httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/v1/me/sync?since=2026-06-11T00:00:00Z", http.NoBody))
 
 	require.NoError(t, err)
+
+	defer resp.Body.Close()
+
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
 	body, err := io.ReadAll(resp.Body)
@@ -76,9 +82,12 @@ func TestSyncPersonalDataWithoutSince(t *testing.T) {
 	fake := &fakePersonal{}
 	app := newSyncTestApp(fake, true)
 
-	resp, err := app.Test(httptest.NewRequest(http.MethodGet, "/v1/me/sync", nil))
+	resp, err := app.Test(httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/v1/me/sync", http.NoBody))
 
 	require.NoError(t, err)
+
+	defer resp.Body.Close()
+
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	assert.Nil(t, fake.lastSyncSince)
 }
@@ -100,9 +109,12 @@ func TestSyncPersonalDataInvalidSince(t *testing.T) {
 			t.Parallel()
 
 			app := newSyncTestApp(tt.fake, true)
-			resp, err := app.Test(httptest.NewRequest(http.MethodGet, tt.path, nil))
+			resp, err := app.Test(httptest.NewRequestWithContext(t.Context(), http.MethodGet, tt.path, http.NoBody))
 
 			require.NoError(t, err)
+
+			defer resp.Body.Close()
+
 			assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 		})
 	}
@@ -117,7 +129,8 @@ func TestBatchSaveProgressMixedResults(t *testing.T) {
 	}
 	app := newSyncTestApp(fake, true)
 
-	req := httptest.NewRequest(
+	req := httptest.NewRequestWithContext(
+		t.Context(),
 		http.MethodPost,
 		"/v1/me/progress/batch",
 		bytes.NewBufferString(`{
@@ -135,6 +148,9 @@ func TestBatchSaveProgressMixedResults(t *testing.T) {
 	resp, err := app.Test(req)
 
 	require.NoError(t, err)
+
+	defer resp.Body.Close()
+
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
 	body, err := io.ReadAll(resp.Body)
@@ -143,8 +159,9 @@ func TestBatchSaveProgressMixedResults(t *testing.T) {
 	assert.Contains(t, string(body), `"error":"book not found"`)
 	assert.Contains(t, string(body), `"ayah_key":"73:4"`)
 	// First kitab entry ok, second error, in request order.
-	okIdx := strings.Index(string(body), `"status":"ok"`)
-	errIdx := strings.Index(string(body), `"status":"error"`)
+	okIdx := bytes.Index(body, []byte(`"status":"ok"`))
+	errIdx := bytes.Index(body, []byte(`"status":"error"`))
+
 	require.GreaterOrEqual(t, okIdx, 0)
 	require.GreaterOrEqual(t, errIdx, 0)
 	assert.Less(t, okIdx, errIdx)
@@ -170,12 +187,15 @@ func TestBatchSaveProgressRejectsInvalidBodies(t *testing.T) {
 			t.Parallel()
 
 			app := newSyncTestApp(&fakePersonal{}, true)
-			req := httptest.NewRequest(http.MethodPost, "/v1/me/progress/batch", bytes.NewBufferString(tt.body))
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/v1/me/progress/batch", bytes.NewBufferString(tt.body))
 			req.Header.Set("Content-Type", "application/json")
 
 			resp, err := app.Test(req)
 
 			require.NoError(t, err)
+
+			defer resp.Body.Close()
+
 			assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 		})
 	}
@@ -199,7 +219,7 @@ func TestSyncRoutesRequireAuth(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			req := httptest.NewRequest(tt.method, tt.path, bytes.NewBufferString(tt.body))
+			req := httptest.NewRequestWithContext(t.Context(), tt.method, tt.path, bytes.NewBufferString(tt.body))
 			if tt.body != "" {
 				req.Header.Set("Content-Type", "application/json")
 			}
@@ -207,6 +227,9 @@ func TestSyncRoutesRequireAuth(t *testing.T) {
 			resp, err := app.Test(req)
 
 			require.NoError(t, err)
+
+			defer resp.Body.Close()
+
 			assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 		})
 	}

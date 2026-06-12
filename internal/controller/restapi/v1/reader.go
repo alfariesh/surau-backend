@@ -692,6 +692,9 @@ func pathInt(ctx *fiber.Ctx, key string) (int, error) {
 	return value, nil
 }
 
+// defaultListLimit is the page size used when a list endpoint gets no limit.
+const defaultListLimit = 50
+
 func queryInt(ctx *fiber.Ctx, key string, defaultValue int) int {
 	value := ctx.Query(key)
 	if value == "" {

@@ -687,6 +687,7 @@ func retrievalQueries(question string) []string {
 		if query == "" {
 			return
 		}
+
 		if slices.Contains(queries, query) {
 			return
 		}
@@ -832,7 +833,7 @@ func sourceSegments(content string) []string {
 	return segments
 }
 
-func trimFallbackQuote(segment string, query string) string {
+func trimFallbackQuote(segment, query string) string {
 	segment = strings.TrimSpace(segment)
 	if segment == "" {
 		return ""
@@ -844,10 +845,11 @@ func trimFallbackQuote(segment string, query string) string {
 	return clipExactRunes(segment, fallbackQuoteLimit)
 }
 
-func quoteAroundByteIndex(value string, index int, maxRunes int) string {
+func quoteAroundByteIndex(value string, index, maxRunes int) string {
 	runes := []rune(value)
 	runeIndex := len([]rune(value[:index]))
 	start := max(runeIndex-maxRunes/3, 0)
+
 	end := min(start+maxRunes, len(runes))
 	if end-start > maxRunes {
 		start = end - maxRunes
@@ -1174,7 +1176,7 @@ func summarySnippet(summary *string) string {
 	return clipText(*summary, 360)
 }
 
-func titleMatchesQuestion(title string, question string) bool {
+func titleMatchesQuestion(title, question string) bool {
 	title = normalizeSearchText(title)
 	question = normalizeSearchText(question)
 	if len([]rune(title)) < 2 || question == "" {
@@ -1216,7 +1218,7 @@ func splitHeadingBlocks(ids []int, blockSize int) [][]int {
 	return blocks
 }
 
-func filterHeadingIDs(ids []int, allowedIDs []int) []int {
+func filterHeadingIDs(ids, allowedIDs []int) []int {
 	allowed := make(map[int]struct{}, len(allowedIDs))
 	for _, id := range allowedIDs {
 		allowed[id] = struct{}{}
@@ -1598,7 +1600,7 @@ func extractCitationMarkers(answer string) []string {
 	return refs
 }
 
-func containsNormalized(source string, quote string) bool {
+func containsNormalized(source, quote string) bool {
 	source = normalizeEvidenceText(source)
 	quote = normalizeEvidenceText(quote)
 	if quote == "" {

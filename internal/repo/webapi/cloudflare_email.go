@@ -257,6 +257,7 @@ func emailHeaders(message entity.EmailMessage) map[string]string {
 		}
 		headers[name] = value
 	}
+
 	maps.Copy(headers, trackingHeaders(message))
 	if len(headers) == 0 {
 		return nil

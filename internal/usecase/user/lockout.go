@@ -22,6 +22,7 @@ func (uc *UseCase) checkLoginLockout(ctx context.Context, email string) error {
 	if err != nil {
 		return fmt.Errorf("UserUseCase - checkLoginLockout - GetAuthLoginLockout: %w", err)
 	}
+
 	if lockout.LockedUntil != nil && time.Now().UTC().Before(*lockout.LockedUntil) {
 		return entity.ErrAccountLocked
 	}
@@ -40,18 +41,20 @@ func (uc *UseCase) recordLoginFailure(ctx context.Context, email string) {
 	}
 
 	keyHash := lockoutKeyHash(email)
+
 	lockout, err := uc.lockout.GetAuthLoginLockout(ctx, keyHash)
 	if err != nil {
 		return
 	}
 
 	var lockedUntil *time.Time
+
 	if duration := uc.lockoutDuration(lockout.ConsecutiveFailures + 1); duration > 0 {
 		deadline := time.Now().UTC().Add(duration)
 		lockedUntil = &deadline
 	}
 
-	_, _ = uc.lockout.IncrementAuthLoginFailure(ctx, keyHash, lockedUntil)
+	_, _ = uc.lockout.IncrementAuthLoginFailure(ctx, keyHash, lockedUntil) //nolint:errcheck // lockout bookkeeping must not fail the login flow
 }
 
 // resetLoginLockout clears the failure counter after a successful login.
@@ -60,7 +63,7 @@ func (uc *UseCase) resetLoginLockout(ctx context.Context, email string) {
 		return
 	}
 
-	_ = uc.lockout.ResetAuthLoginLockout(ctx, lockoutKeyHash(email))
+	_ = uc.lockout.ResetAuthLoginLockout(ctx, lockoutKeyHash(email)) //nolint:errcheck // lockout bookkeeping must not fail the login flow
 }
 
 // lockoutDuration returns the lockout length for the given consecutive
@@ -73,6 +76,7 @@ func (uc *UseCase) lockoutDuration(failures int) time.Duration {
 	}
 
 	duration := opts.BaseDuration
+
 	tier := failures / opts.Threshold
 	for i := 1; i < tier; i++ {
 		duration *= time.Duration(opts.Factor)
@@ -80,6 +84,7 @@ func (uc *UseCase) lockoutDuration(failures int) time.Duration {
 			return opts.MaxDuration
 		}
 	}
+
 	if duration > opts.MaxDuration {
 		return opts.MaxDuration
 	}

@@ -63,6 +63,10 @@ linters:
     errcheck:
       check-type-assertions: true
       check-blank: true
+      # Deferred/best-effort rollback after commit is the standard pgx idiom;
+      # its error is meaningless once the tx finished.
+      exclude-functions:
+        - (github.com/jackc/pgx/v5.Tx).Rollback
     errorlint:
       errorf: true
     exhaustive:
@@ -76,6 +80,10 @@ linters:
       min-len: 2
       min-occurrences: 5
       ignore-tests: true
+      # SQL column identifiers repeated across squirrel builders are not
+      # magic strings worth hoisting.
+      ignore-string-values:
+        - "^(id|user_id)$"
     gocritic:
       disabled-checks:
         - dupImport
@@ -110,6 +118,22 @@ linters:
       - linters:
           - godot
         path: internal
+      # Size/duplication/magic-number linters add noise, not safety, in
+      # table-driven tests; correctness linters (bodyclose, noctx, errcheck)
+      # stay active for tests.
+      - linters:
+          - funlen
+          - gocognit
+          - gocyclo
+          - cyclop
+          - dupl
+          - mnd
+          - goconst
+        path: _test\.go$
+      # CLI tools print to stdout by design.
+      - linters:
+          - forbidigo
+        path: ^cmd/
     paths:
       - bin/
       - third_party$

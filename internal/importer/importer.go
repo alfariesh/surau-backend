@@ -797,6 +797,7 @@ VALUES ($1, $2, $3, $4, 'running', $5, $6)`,
 
 func finishRun(ctx context.Context, pool *pgxpool.Pool, stats Stats, status string) error {
 	errs, _ := json.Marshal(stats.Errors)
+
 	_, err := pool.Exec(
 		ctx, `
 UPDATE import_runs SET

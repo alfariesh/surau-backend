@@ -37,3 +37,4 @@ coverage.txt
 temp-pageIndex/
 temp-langextract/
 temp-pageIndex-condb/
+.playwright-mcp/

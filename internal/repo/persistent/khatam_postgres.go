@@ -12,6 +12,13 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
+// Percent values carry two decimal places: scale by percentScale before
+// rounding, then divide by percentFull.
+const (
+	percentFull  = 100
+	percentScale = 10000
+)
+
 // khatamCycleColumns is the shared select list for one cycle row plus its
 // aggregated juz marks (completed_juz int[] and juz_count).
 const khatamCycleColumns = `c.id, c.user_id, c.started_at, c.completed_at, c.notes, c.created_at, c.updated_at,
@@ -30,7 +37,7 @@ LEFT JOIN LATERAL (
 // (user_id) WHERE completed_at IS NULL enforces one active cycle per user.
 func (r *PersonalRepo) StartKhatamCycle(
 	ctx context.Context,
-	cycle entity.QuranKhatamCycle,
+	cycle entity.QuranKhatamCycle, //nolint:gocritic // value param fixed by the repo interface contract
 ) (entity.QuranKhatamCycle, error) {
 	sqlText := `
 INSERT INTO quran_khatam_cycles (id, user_id, started_at, completed_at, notes, created_at, updated_at)
@@ -38,8 +45,11 @@ VALUES ($1, $2, now(), NULL, $3, now(), now())
 RETURNING id, user_id, started_at, completed_at, notes, created_at, updated_at`
 
 	created := entity.QuranKhatamCycle{CompletedJuz: []int{}}
-	var completedAt sql.NullTime
-	var notes sql.NullString
+
+	var (
+		completedAt sql.NullTime
+		notes       sql.NullString
+	)
 	if err := r.Pool.QueryRow(ctx, sqlText, cycle.ID, cycle.UserID, cycle.Notes).Scan(
 		&created.ID,
 		&created.UserID,
@@ -223,7 +233,7 @@ LEFT JOIN completed c ON true`, entity.KhatamJuzTotal)
 		Notes:        nullableString(notes),
 		CompletedJuz: completedJuz,
 		JuzCount:     entity.KhatamJuzTotal,
-		Percent:      100,
+		Percent:      percentFull,
 		CreatedAt:    createdAt.Time,
 		UpdatedAt:    updatedAt.Time,
 	}
@@ -263,6 +273,7 @@ LIMIT $2 OFFSET $3`, khatamCycleColumns, khatamMarksLateral)
 	defer rows.Close()
 
 	cycles := make([]entity.QuranKhatamCycle, 0, limit)
+
 	for rows.Next() {
 		cycle, err := scanKhatamCycle(rows)
 		if err != nil {
@@ -271,6 +282,7 @@ LIMIT $2 OFFSET $3`, khatamCycleColumns, khatamMarksLateral)
 
 		cycles = append(cycles, cycle)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, 0, fmt.Errorf("PersonalRepo - ListKhatamHistory - rows.Err: %w", err)
 	}
@@ -279,10 +291,12 @@ LIMIT $2 OFFSET $3`, khatamCycleColumns, khatamMarksLateral)
 }
 
 func scanKhatamCycle(row rowScanner) (entity.QuranKhatamCycle, error) {
-	var cycle entity.QuranKhatamCycle
-	var completedAt sql.NullTime
-	var notes sql.NullString
-	var completedJuz []int32
+	var (
+		cycle        entity.QuranKhatamCycle
+		completedAt  sql.NullTime
+		notes        sql.NullString
+		completedJuz []int32
+	)
 
 	err := row.Scan(
 		&cycle.ID,
@@ -302,12 +316,15 @@ func scanKhatamCycle(row rowScanner) (entity.QuranKhatamCycle, error) {
 	if completedAt.Valid {
 		cycle.CompletedAt = &completedAt.Time
 	}
+
 	cycle.Notes = nullableString(notes)
+
 	cycle.CompletedJuz = make([]int, 0, len(completedJuz))
 	for _, juz := range completedJuz {
 		cycle.CompletedJuz = append(cycle.CompletedJuz, int(juz))
 	}
-	cycle.Percent = math.Round(float64(cycle.JuzCount)/float64(entity.KhatamJuzTotal)*10000) / 100
+
+	cycle.Percent = math.Round(float64(cycle.JuzCount)/float64(entity.KhatamJuzTotal)*percentScale) / percentFull
 
 	return cycle, nil
 }

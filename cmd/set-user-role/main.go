@@ -47,8 +47,11 @@ func main() {
 
 	// Unlike the admin API, this CLI deliberately skips the last-admin guard:
 	// it is the recovery escape hatch when no working admin account remains.
-	var user entity.User
-	var previousRole string
+	var (
+		user         entity.User
+		previousRole string
+	)
+
 	err = pool.QueryRow(
 		ctx, `
 WITH existing AS (
@@ -90,6 +93,7 @@ RETURNING u.id, u.username, u.email, u.role, e.previous_role, u.created_at, u.up
 	if err != nil {
 		fatalf("marshal audit metadata: %v", err)
 	}
+
 	_, err = pool.Exec(
 		ctx, `
 INSERT INTO auth_audit_logs (id, event, status, user_id, email, error_code, metadata, created_at)

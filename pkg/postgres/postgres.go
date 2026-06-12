@@ -60,6 +60,7 @@ func New(url string, opts ...Option) (*Postgres, error) {
 	if pg.maxConnLifetime > 0 {
 		poolConfig.MaxConnLifetime = pg.maxConnLifetime
 	}
+
 	if pg.maxConnIdleTime > 0 {
 		poolConfig.MaxConnIdleTime = pg.maxConnIdleTime
 	}

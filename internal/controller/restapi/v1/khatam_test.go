@@ -22,12 +22,15 @@ func newKhatamTestApp(personal *fakePersonal, authenticated bool) *fiber.App {
 		l:        logger.New("error"),
 		v:        validator.New(validator.WithRequiredStructEnabled()),
 	}
+
 	if authenticated {
 		app.Use(func(ctx *fiber.Ctx) error {
 			ctx.Locals("userID", "user-id")
+
 			return ctx.Next()
 		})
 	}
+
 	app.Post("/v1/me/quran/khatam", controller.startKhatamCycle)
 	app.Get("/v1/me/quran/khatam", controller.getActiveKhatamCycle)
 	app.Get("/v1/me/quran/khatam/history", controller.listKhatamHistory)
@@ -121,7 +124,7 @@ func TestKhatamRoutes(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			req := httptest.NewRequest(tt.method, tt.path, bytes.NewBufferString(tt.body))
+			req := httptest.NewRequestWithContext(t.Context(), tt.method, tt.path, bytes.NewBufferString(tt.body))
 			if tt.body != "" {
 				req.Header.Set("Content-Type", "application/json")
 			}
@@ -129,7 +132,11 @@ func TestKhatamRoutes(t *testing.T) {
 			resp, err := app.Test(req)
 
 			require.NoError(t, err)
+
+			defer resp.Body.Close()
+
 			assert.Equal(t, tt.wantStatus, resp.StatusCode)
+
 			if tt.wantBody != "" {
 				body, err := io.ReadAll(resp.Body)
 				require.NoError(t, err)
@@ -184,9 +191,12 @@ func TestKhatamRouteErrors(t *testing.T) {
 			t.Parallel()
 
 			app := newKhatamTestApp(&fakePersonal{khatamErr: tt.err}, true)
-			resp, err := app.Test(httptest.NewRequest(tt.method, tt.path, nil))
-
+			req := httptest.NewRequestWithContext(t.Context(), tt.method, tt.path, http.NoBody)
+			resp, err := app.Test(req)
 			require.NoError(t, err)
+
+			defer resp.Body.Close()
+
 			assert.Equal(t, tt.wantStatus, resp.StatusCode)
 		})
 	}
@@ -213,9 +223,12 @@ func TestKhatamRoutesRequireAuth(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			resp, err := app.Test(httptest.NewRequest(tt.method, tt.path, nil))
-
+			req := httptest.NewRequestWithContext(t.Context(), tt.method, tt.path, http.NoBody)
+			resp, err := app.Test(req)
 			require.NoError(t, err)
+
+			defer resp.Body.Close()
+
 			assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 		})
 	}

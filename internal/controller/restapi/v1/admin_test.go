@@ -104,6 +104,7 @@ func TestAdminSetUserRoleMapsSelfRoleChange(t *testing.T) {
 
 	resp, err := app.Test(req)
 	require.NoError(t, err)
+
 	defer resp.Body.Close()
 
 	assert.Equal(t, http.StatusConflict, resp.StatusCode)
@@ -125,6 +126,7 @@ func TestAdminSetUserRoleMapsLastAdmin(t *testing.T) {
 
 	resp, err := app.Test(req)
 	require.NoError(t, err)
+
 	defer resp.Body.Close()
 
 	assert.Equal(t, http.StatusConflict, resp.StatusCode)

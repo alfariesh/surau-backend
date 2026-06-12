@@ -92,6 +92,7 @@ func TestRevokeSession(t *testing.T) {
 
 func mustParseTime(t *testing.T, value string) time.Time {
 	t.Helper()
+
 	parsed, err := time.Parse(time.RFC3339, value)
 	require.NoError(t, err)
 

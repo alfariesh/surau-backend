@@ -28,7 +28,7 @@ jobs:
         with:
           fail_level: error
           reporter: github-pr-review
-          yamllint_flags: '-d "{extends: default, rules: {truthy: disable}}" .'
+          yamllint_flags: '-c .yamllint.yml .'
 
   hadolint:
     name: runner / hadolint

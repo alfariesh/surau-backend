@@ -32,13 +32,17 @@ func TestSessionLimiterCapsPerUser(t *testing.T) {
 	app := newSessionLimiterTestApp("user-a")
 
 	for i := range sessionRequestsPerMinute {
-		resp, err := app.Test(httptest.NewRequest(http.MethodGet, "/auth/sessions", nil))
+		resp, err := app.Test(httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/auth/sessions", http.NoBody))
 		require.NoError(t, err)
 		require.Equal(t, http.StatusOK, resp.StatusCode, "request %d should pass", i+1)
+		resp.Body.Close()
 	}
 
-	resp, err := app.Test(httptest.NewRequest(http.MethodGet, "/auth/sessions", nil))
+	resp, err := app.Test(httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/auth/sessions", http.NoBody))
 	require.NoError(t, err)
+
+	defer resp.Body.Close()
+
 	assert.Equal(t, http.StatusTooManyRequests, resp.StatusCode)
 }
 
@@ -56,23 +60,30 @@ func TestSessionLimiterKeysAreIsolatedPerUser(t *testing.T) {
 	})
 
 	for range sessionRequestsPerMinute {
-		req := httptest.NewRequest(http.MethodGet, "/auth/sessions", nil)
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/auth/sessions", http.NoBody)
 		req.Header.Set("X-Test-User", "user-a")
 		resp, err := app.Test(req)
 		require.NoError(t, err)
 		require.Equal(t, http.StatusOK, resp.StatusCode)
+		resp.Body.Close()
 	}
 
 	// user-a is exhausted, user-b still has a full budget.
-	reqA := httptest.NewRequest(http.MethodGet, "/auth/sessions", nil)
+	reqA := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/auth/sessions", http.NoBody)
 	reqA.Header.Set("X-Test-User", "user-a")
 	respA, err := app.Test(reqA)
 	require.NoError(t, err)
+
+	defer respA.Body.Close()
+
 	assert.Equal(t, http.StatusTooManyRequests, respA.StatusCode)
 
-	reqB := httptest.NewRequest(http.MethodGet, "/auth/sessions", nil)
+	reqB := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/auth/sessions", http.NoBody)
 	reqB.Header.Set("X-Test-User", "user-b")
 	respB, err := app.Test(reqB)
 	require.NoError(t, err)
+
+	defer respB.Body.Close()
+
 	assert.Equal(t, http.StatusOK, respB.StatusCode)
 }

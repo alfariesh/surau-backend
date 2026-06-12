@@ -45,21 +45,18 @@ func (uc *UseCase) AlertRefreshReuse(ctx context.Context) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("UserUseCase - AlertRefreshReuse - ListAuthAuditEventsSince: %w", err)
 	}
+
 	if len(events) == 0 {
 		return 0, nil
 	}
 
-	newest := watermark
-	for _, event := range events {
-		if event.CreatedAt.After(newest) {
-			newest = event.CreatedAt
-		}
-	}
+	newest := newestEventTime(events, watermark)
 
 	recipients, err := uc.alertRecipients(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("UserUseCase - AlertRefreshReuse - alertRecipients: %w", err)
 	}
+
 	if len(recipients) == 0 {
 		// Nobody to notify — advance the watermark so we don't rescan forever.
 		uc.advanceAlertWatermark(newest)
@@ -67,9 +64,30 @@ func (uc *UseCase) AlertRefreshReuse(ctx context.Context) (int, error) {
 		return len(events), nil
 	}
 
+	sentAtLeastOne, sendErr := uc.sendRefreshReuseAlert(ctx, recipients, events)
+
+	// Advance once at least one admin was reached so a single flaky recipient
+	// cannot cause the whole digest to resend every interval.
+	if sentAtLeastOne {
+		uc.advanceAlertWatermark(newest)
+	}
+
+	if sendErr != nil {
+		return len(events), fmt.Errorf("UserUseCase - AlertRefreshReuse - Send: %w", sendErr)
+	}
+
+	return len(events), nil
+}
+
+// sendRefreshReuseAlert delivers the digest to every recipient, reporting
+// whether anyone was reached and the last delivery error.
+func (uc *UseCase) sendRefreshReuseAlert(
+	ctx context.Context,
+	recipients []string,
+	events []entity.AuthAuditLog,
+) (sentAtLeastOne bool, sendErr error) {
 	subject, htmlBody, textBody := buildRefreshReuseAlert(events)
-	sentAtLeastOne := false
-	var sendErr error
+
 	for _, to := range recipients {
 		if _, err := uc.emailSender.Send(ctx, entity.EmailMessage{
 			To:       to,
@@ -83,19 +101,24 @@ func (uc *UseCase) AlertRefreshReuse(ctx context.Context) (int, error) {
 
 			continue
 		}
+
 		sentAtLeastOne = true
 	}
 
-	// Advance once at least one admin was reached so a single flaky recipient
-	// cannot cause the whole digest to resend every interval.
-	if sentAtLeastOne {
-		uc.advanceAlertWatermark(newest)
-	}
-	if sendErr != nil {
-		return len(events), fmt.Errorf("UserUseCase - AlertRefreshReuse - Send: %w", sendErr)
+	return sentAtLeastOne, sendErr
+}
+
+// newestEventTime returns the latest event timestamp, or fallback when no
+// event is newer.
+func newestEventTime(events []entity.AuthAuditLog, fallback time.Time) time.Time {
+	newest := fallback
+	for i := range events {
+		if events[i].CreatedAt.After(newest) {
+			newest = events[i].CreatedAt
+		}
 	}
 
-	return len(events), nil
+	return newest
 }
 
 func (uc *UseCase) advanceAlertWatermark(t time.Time) {
@@ -112,6 +135,7 @@ func (uc *UseCase) alertRecipients(ctx context.Context) ([]string, error) {
 	if len(uc.alert.Recipients) > 0 {
 		return uc.alert.Recipients, nil
 	}
+
 	if uc.repo == nil {
 		return nil, nil
 	}
@@ -125,8 +149,8 @@ func (uc *UseCase) alertRecipients(ctx context.Context) ([]string, error) {
 	}
 
 	emails := make([]string, 0, len(accounts))
-	for _, account := range accounts {
-		if email := strings.TrimSpace(account.Email); email != "" {
+	for i := range accounts {
+		if email := strings.TrimSpace(accounts[i].Email); email != "" {
 			emails = append(emails, email)
 		}
 	}
@@ -139,29 +163,30 @@ func (uc *UseCase) alertRecipients(ctx context.Context) ([]string, error) {
 func buildRefreshReuseAlert(events []entity.AuthAuditLog) (subject, htmlBody, textBody string) {
 	subject = fmt.Sprintf("[Surau security] %s refresh-token reuse detected", strconv.Itoa(len(events)))
 
-	var text strings.Builder
-	var rows strings.Builder
-	text.WriteString(fmt.Sprintf(
-		"%d refresh-token reuse event(s) were detected. Each is a strong signal of a stolen refresh token; the affected session family was revoked automatically.\n\n",
-		len(events),
-	))
+	var (
+		text strings.Builder
+		rows strings.Builder
+	)
+
+	fmt.Fprintf(&text, "%d refresh-token reuse event(s) were detected. Each is a strong signal of a stolen refresh token; the affected session family was revoked automatically.\n\n",
+		len(events))
 
 	shown := events
+
 	truncated := 0
 	if len(shown) > refreshReuseAlertMaxRows {
 		truncated = len(shown) - refreshReuseAlertMaxRows
 		shown = shown[:refreshReuseAlertMaxRows]
 	}
 
-	for _, event := range shown {
+	for i := range shown {
+		event := &shown[i]
 		ts := event.CreatedAt.UTC().Format(time.RFC3339)
 		familyID := event.Metadata["family_id"]
 		revoked := event.Metadata["revoked_sessions"]
 
-		text.WriteString(fmt.Sprintf(
-			"- %s | user=%s | ip=%s | family=%s | revoked_sessions=%s\n",
-			ts, fallbackDash(event.UserID), fallbackDash(event.ClientIP), fallbackDash(familyID), fallbackDash(revoked),
-		))
+		fmt.Fprintf(&text, "- %s | user=%s | ip=%s | family=%s | revoked_sessions=%s\n",
+			ts, fallbackDash(event.UserID), fallbackDash(event.ClientIP), fallbackDash(familyID), fallbackDash(revoked))
 		rows.WriteString("<tr>" +
 			"<td>" + html.EscapeString(ts) + "</td>" +
 			"<td>" + html.EscapeString(fallbackDash(event.UserID)) + "</td>" +
@@ -170,8 +195,9 @@ func buildRefreshReuseAlert(events []entity.AuthAuditLog) (subject, htmlBody, te
 			"<td>" + html.EscapeString(fallbackDash(revoked)) + "</td>" +
 			"</tr>")
 	}
+
 	if truncated > 0 {
-		text.WriteString(fmt.Sprintf("\n…and %d more (see auth_audit_logs).\n", truncated))
+		fmt.Fprintf(&text, "\n…and %d more (see auth_audit_logs).\n", truncated)
 	}
 
 	htmlBody = "<h2>Refresh-token reuse detected</h2>" +

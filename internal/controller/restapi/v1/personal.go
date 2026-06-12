@@ -34,7 +34,7 @@ func (r *V1) listProgress(ctx *fiber.Ctx) error {
 		ctx.UserContext(),
 		userID,
 		ctx.Query("lang"),
-		queryInt(ctx, "limit", 50),
+		queryInt(ctx, "limit", defaultListLimit),
 		queryInt(ctx, "offset", 0),
 	)
 	if err != nil {
@@ -365,7 +365,7 @@ func (r *V1) listSavedItems(ctx *fiber.Ctx) error {
 		bookID,
 		surahID,
 		ctx.Query("tag"),
-		queryInt(ctx, "limit", 50),
+		queryInt(ctx, "limit", defaultListLimit),
 		queryInt(ctx, "offset", 0),
 	)
 	if err != nil {

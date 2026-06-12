@@ -18,7 +18,7 @@ type Token struct {
 } // @name v1.Token
 
 // NewToken builds the token payload from a usecase login result.
-func NewToken(result entity.LoginResult) Token {
+func NewToken(result *entity.LoginResult) Token {
 	expiresIn := max(int64(time.Until(result.AccessExpiresAt).Seconds()), 0)
 
 	return Token{

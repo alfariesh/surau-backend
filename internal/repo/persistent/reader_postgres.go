@@ -1651,42 +1651,44 @@ func scanAuthor(row rowScanner) (entity.Author, error) {
 }
 
 func scanBook(row rowScanner) (entity.Book, error) {
-	var book entity.Book
-	var categoryID sql.NullInt64
-	var categoryName sql.NullString
-	var authorID sql.NullInt64
-	var authorName sql.NullString
-	var bookType sql.NullInt64
-	var printed sql.NullInt64
-	var minorRelease sql.NullInt64
-	var majorRelease sql.NullInt64
-	var bibliography sql.NullString
-	var hint sql.NullString
-	var pdfLinks []byte
-	var metadata []byte
-	var sourceDate sql.NullString
-	var description sql.NullString
-	var coverURL sql.NullString
-	var editorialNotes sql.NullString
-	var translationStatus sql.NullString
-	var reviewedBy sql.NullString
-	var reviewedAt sql.NullTime
-	var publicationStatus sql.NullString
-	var catalogPublicationStatus sql.NullString
-	var productionWorkflowStatus sql.NullString
-	var productionPublicationStatus sql.NullString
-	var sortOrder sql.NullInt64
-	var requestedLang string
-	var displayLang string
-	var isFallback bool
-	var availableLangs []string
-	var nameLang string
-	var categoryNameLang string
-	var authorNameLang string
-	var bibliographyLang string
-	var hintLang string
-	var descriptionLang string
-	var productionStatus sql.NullString
+	var (
+		book                        entity.Book
+		categoryID                  sql.NullInt64
+		categoryName                sql.NullString
+		authorID                    sql.NullInt64
+		authorName                  sql.NullString
+		bookType                    sql.NullInt64
+		printed                     sql.NullInt64
+		minorRelease                sql.NullInt64
+		majorRelease                sql.NullInt64
+		bibliography                sql.NullString
+		hint                        sql.NullString
+		pdfLinks                    []byte
+		metadata                    []byte
+		sourceDate                  sql.NullString
+		description                 sql.NullString
+		coverURL                    sql.NullString
+		editorialNotes              sql.NullString
+		translationStatus           sql.NullString
+		reviewedBy                  sql.NullString
+		reviewedAt                  sql.NullTime
+		publicationStatus           sql.NullString
+		catalogPublicationStatus    sql.NullString
+		productionWorkflowStatus    sql.NullString
+		productionPublicationStatus sql.NullString
+		sortOrder                   sql.NullInt64
+		requestedLang               string
+		displayLang                 string
+		isFallback                  bool
+		availableLangs              []string
+		nameLang                    string
+		categoryNameLang            string
+		authorNameLang              string
+		bibliographyLang            string
+		hintLang                    string
+		descriptionLang             string
+		productionStatus            sql.NullString
+	)
 
 	err := row.Scan(
 		&book.ID,

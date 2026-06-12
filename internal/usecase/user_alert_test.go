@@ -60,6 +60,7 @@ func TestAlertRefreshReuse(t *testing.T) {
 			Return(events, nil)
 
 		var sent entity.EmailMessage
+
 		emailSender.EXPECT().
 			Send(gomock.Any(), gomock.Any()).
 			DoAndReturn(func(_ context.Context, msg entity.EmailMessage) (entity.EmailSendResult, error) {
@@ -122,6 +123,7 @@ func TestAlertRefreshReuse(t *testing.T) {
 			}, 1, nil)
 
 		recipients := make([]string, 0, 1)
+
 		emailSender.EXPECT().
 			Send(gomock.Any(), gomock.Any()).
 			DoAndReturn(func(_ context.Context, msg entity.EmailMessage) (entity.EmailSendResult, error) {

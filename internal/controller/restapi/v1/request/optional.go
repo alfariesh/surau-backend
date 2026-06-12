@@ -18,6 +18,7 @@ func (o *Optional[T]) UnmarshalJSON(data []byte) error {
 	o.Set = true
 	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
 		o.Value = nil
+
 		return nil
 	}
 

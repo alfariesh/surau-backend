@@ -52,12 +52,15 @@ func (r *PersonalRepo) SaveProgress(ctx context.Context, progress entity.Reading
 	if progress.BookID <= 0 {
 		return entity.ReadingProgress{}, entity.ErrBookNotFound
 	}
+
 	if progress.PageID != nil && *progress.PageID <= 0 {
 		return entity.ReadingProgress{}, entity.ErrInvalidReaderLocation
 	}
+
 	if progress.HeadingID != nil && *progress.HeadingID <= 0 {
 		return entity.ReadingProgress{}, entity.ErrInvalidReaderLocation
 	}
+
 	if progress.ObservedAt.IsZero() {
 		progress.ObservedAt = time.Now().UTC()
 	}
@@ -183,6 +186,8 @@ LEFT JOIN upserted u ON true`
 // ListProgress returns a user's in-progress books ordered by recent activity,
 // enriched with light book metadata so clients can render a shelf directly.
 // Unpublished and deleted books drop off the list.
+//
+//nolint:funlen // linear SQL build + scan
 func (r *PersonalRepo) ListProgress(
 	ctx context.Context,
 	userID, lang string,
@@ -233,11 +238,14 @@ LIMIT $3 OFFSET $4`
 	defer rows.Close()
 
 	entries := make([]entity.ContinueReadingEntry, 0, limit)
+
 	for rows.Next() {
-		var entry entity.ContinueReadingEntry
-		var pageID, headingID sql.NullInt64
-		var progressPercent sql.NullFloat64
-		var coverURL, authorName sql.NullString
+		var (
+			entry                entity.ContinueReadingEntry
+			pageID, headingID    sql.NullInt64
+			progressPercent      sql.NullFloat64
+			coverURL, authorName sql.NullString
+		)
 
 		if err := rows.Scan(
 			&entry.UserID,
@@ -255,16 +263,19 @@ LIMIT $3 OFFSET $4`
 		}
 
 		entry.PageID = nullableInt(pageID)
+
 		entry.HeadingID = nullableInt(headingID)
 		if progressPercent.Valid {
 			entry.ProgressPercent = &progressPercent.Float64
 		}
+
 		entry.Book.BookID = entry.BookID
 		entry.Book.CoverURL = nullableString(coverURL)
 		entry.Book.AuthorName = nullableString(authorName)
 
 		entries = append(entries, entry)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, 0, fmt.Errorf("PersonalRepo - ListProgress - rows.Err: %w", err)
 	}
@@ -505,11 +516,14 @@ func (r *PersonalRepo) ListSavedItems(ctx context.Context, userID string, filter
 // be unpublished between check and write. On conflict only provided
 // (non-null) metadata overwrites the stored row; clearing is PATCH's job.
 // The returned bool reports whether a new row was created.
-func (r *PersonalRepo) UpsertSavedItem(ctx context.Context, item entity.SavedItem) (entity.SavedItem, bool, error) {
+//
+//nolint:funlen // linear SQL build + scan over one wide upsert
+func (r *PersonalRepo) UpsertSavedItem(ctx context.Context, item entity.SavedItem) (entity.SavedItem, bool, error) { //nolint:gocritic // value param fixed by the repo interface contract
 	conflictTarget, err := savedItemConflictTarget(item.ItemType)
 	if err != nil {
 		return entity.SavedItem{}, false, err
 	}
+
 	checks, err := savedItemChecks(item.ItemType)
 	if err != nil {
 		return entity.SavedItem{}, false, err
@@ -635,14 +649,17 @@ func (r *PersonalRepo) UpdateSavedItem(
 	if patch.LabelSet {
 		builder = builder.Set("label", patch.Label)
 	}
+
 	if patch.NoteSet {
 		builder = builder.Set("note", patch.Note)
 	}
+
 	if patch.TagsSet {
 		tags := patch.Tags
 		if tags == nil {
 			tags = []string{}
 		}
+
 		builder = builder.Set("tags", tags)
 	}
 
@@ -875,8 +892,10 @@ func scanProgress(row rowScanner) (entity.ReadingProgress, error) {
 }
 
 func scanQuranProgress(row rowScanner) (entity.QuranReadingProgress, error) {
-	var progress entity.QuranReadingProgress
-	var pageNumber, juzNumber, hizbNumber sql.NullInt64
+	var (
+		progress                          entity.QuranReadingProgress
+		pageNumber, juzNumber, hizbNumber sql.NullInt64
+	)
 
 	err := row.Scan(
 		&progress.UserID,

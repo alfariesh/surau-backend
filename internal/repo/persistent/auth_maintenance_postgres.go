@@ -12,6 +12,8 @@ import (
 // windows, used/expired one-time tokens past retention, dead sessions past
 // retention, stale lockout counters, expired notification cooldowns, and —
 // only when a retention is configured — old audit logs.
+//
+//nolint:funlen // linear sequence of per-table cleanup statements
 func (r *UserRepo) CleanupAuthData(
 	ctx context.Context,
 	policy repo.AuthCleanupPolicy,
@@ -79,6 +81,7 @@ func (r *UserRepo) CleanupAuthData(
 		if err != nil {
 			return result, fmt.Errorf("UserRepo - CleanupAuthData - r.Pool.Exec: %w", err)
 		}
+
 		*step.count = tag.RowsAffected()
 	}
 

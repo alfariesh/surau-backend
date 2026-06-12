@@ -1,0 +1,13 @@
+extends: default
+
+# Generated and vendored files are not hand-maintained.
+ignore: |
+  docs/swagger.yaml
+  collab-server/node_modules
+  bin
+
+rules:
+  truthy: disable
+  # Compose env values, URLs, and workflow run lines legitimately run long.
+  line-length:
+    max: 160

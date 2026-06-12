@@ -30,6 +30,7 @@ const (
 	activityDateLayout       = "2006-01-02"
 	activityDefaultRangeDays = 30
 	activityMaxRangeDays     = 366
+	hoursPerDay              = 24
 )
 
 // UseCase provides authenticated reader operations.
@@ -196,24 +197,30 @@ func (uc *UseCase) UpdateSavedItem(
 	if !patch.LabelSet && !patch.NoteSet && !patch.TagsSet {
 		return entity.SavedItem{}, entity.ErrInvalidSavedItem
 	}
+
 	if patch.LabelSet && patch.Label != nil && utf8.RuneCountInString(*patch.Label) > maxLabelLength {
 		return entity.SavedItem{}, entity.ErrInvalidSavedItem
 	}
+
 	if patch.NoteSet && patch.Note != nil && utf8.RuneCountInString(*patch.Note) > maxNoteLength {
 		return entity.SavedItem{}, entity.ErrInvalidSavedItem
 	}
+
 	if patch.TagsSet {
 		if patch.Tags == nil {
 			// Explicit null clears all tags.
 			patch.Tags = []string{}
 		}
+
 		normalizedTags, err := normalizeSavedItemTags(patch.Tags)
 		if err != nil {
 			return entity.SavedItem{}, err
 		}
+
 		if normalizedTags == nil {
 			normalizedTags = []string{}
 		}
+
 		patch.Tags = normalizedTags
 	}
 
@@ -303,6 +310,7 @@ func (uc *UseCase) SyncPersonalData(
 		if normalized.IsZero() || normalized.After(time.Now().UTC().Add(progressFutureTolerance)) {
 			return entity.PersonalSyncSnapshot{}, entity.ErrInvalidSyncSince
 		}
+
 		since = &normalized
 	}
 
@@ -340,12 +348,13 @@ func (uc *UseCase) GetReadingActivity(
 	if normalizedFrom == "" {
 		normalizedFrom = toDate.AddDate(0, 0, -(activityDefaultRangeDays - 1)).Format(activityDateLayout)
 	}
+
 	fromDate, err := time.Parse(activityDateLayout, normalizedFrom)
 	if err != nil {
 		return entity.ReadingActivitySummary{}, entity.ErrInvalidActivityDate
 	}
 
-	if fromDate.After(toDate) || toDate.Sub(fromDate) > activityMaxRangeDays*24*time.Hour {
+	if fromDate.After(toDate) || toDate.Sub(fromDate) > activityMaxRangeDays*hoursPerDay*time.Hour {
 		return entity.ReadingActivitySummary{}, entity.ErrInvalidActivityRange
 	}
 
@@ -356,7 +365,8 @@ func (uc *UseCase) GetReadingActivity(
 // defaults to the server's UTC date; dates further than two days from it are
 // rejected (no real timezone is that far away).
 func resolveActivityDate(date string) (string, error) {
-	serverToday := time.Now().UTC().Truncate(24 * time.Hour)
+	serverToday := time.Now().UTC().Truncate(hoursPerDay * time.Hour)
+
 	date = strings.TrimSpace(date)
 	if date == "" {
 		return serverToday.Format(activityDateLayout), nil
@@ -366,6 +376,7 @@ func resolveActivityDate(date string) (string, error) {
 	if err != nil {
 		return "", entity.ErrInvalidActivityDate
 	}
+
 	if parsed.After(serverToday.Add(2*24*time.Hour)) || parsed.Before(serverToday.Add(-2*24*time.Hour)) {
 		return "", entity.ErrInvalidActivityDate
 	}
@@ -404,10 +415,12 @@ func clampOffset(offset int) uint64 {
 // carries the client's local calendar date for reading-activity bucketing.
 func resolveObservedAt(clientObservedAt *time.Time) (time.Time, bool) {
 	now := time.Now().UTC()
+
 	observedAt := now
 	if clientObservedAt != nil {
 		observedAt = *clientObservedAt
 	}
+
 	if observedAt.IsZero() || observedAt.After(now.Add(progressFutureTolerance)) {
 		return time.Time{}, false
 	}
@@ -445,6 +458,7 @@ func normalizeSavedItem(item entity.SavedItem) (entity.SavedItem, error) {
 		if err != nil {
 			return entity.SavedItem{}, entity.ErrInvalidAyahKey
 		}
+
 		item.SurahID = new(surahID)
 		item.AyahKey = new(quranutil.AyahKey(surahID, ayahNumber))
 	case entity.SavedItemTypeQuranRange:

@@ -46,7 +46,7 @@ func TestReaderUnsupportedLanguageRoutes(t *testing.T) {
 			t.Parallel()
 
 			app := newReaderLanguageTestApp(&fakeReader{err: entity.ErrUnsupportedLanguage})
-			req := httptest.NewRequest(tt.method, tt.path, bytes.NewBufferString(tt.body))
+			req := httptest.NewRequestWithContext(t.Context(), tt.method, tt.path, bytes.NewBufferString(tt.body))
 			req.Header.Set("Content-Type", "application/json")
 
 			resp, err := app.Test(req)

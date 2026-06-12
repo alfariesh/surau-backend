@@ -438,6 +438,7 @@ func getQuranTranslationSources(t *testing.T, lang string) []quranTranslationSou
 	t.Helper()
 
 	resp := doJSON(t, http.MethodGet, fmt.Sprintf("%s/v1/quran/translation-sources?lang=%s", baseURL(), lang), nil, "")
+
 	var sourceList struct {
 		Items []quranTranslationSourceResponse `json:"items"`
 	}
@@ -472,7 +473,7 @@ func getQuranAyah(t *testing.T, lang string) quranAyahResponse {
 	return ayah
 }
 
-func getQuranAyahAudio(t *testing.T, lang string, recitationID string) quranAyahResponse {
+func getQuranAyahAudio(t *testing.T, lang, recitationID string) quranAyahResponse {
 	t.Helper()
 
 	requestURL := fmt.Sprintf("%s/v1/quran/ayahs/%s?lang=%s&include_audio=true", baseURL(), fixtureQuranAyahKey, lang)

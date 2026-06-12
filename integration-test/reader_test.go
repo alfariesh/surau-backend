@@ -377,7 +377,7 @@ WHERE email = $1`, email)
 	}
 }
 
-func setUserRoleByEmail(t *testing.T, email string, role string) {
+func setUserRoleByEmail(t *testing.T, email, role string) {
 	t.Helper()
 
 	pool := integrationDB(t)
@@ -810,6 +810,7 @@ func getTOC(t *testing.T, lang string) []tocNode {
 	t.Helper()
 
 	resp := doJSON(t, http.MethodGet, fmt.Sprintf("%s/v1/books/%d/toc?lang=%s", baseURL(), fixtureBookID, lang), nil, "")
+
 	var tocList struct {
 		Items []tocNode `json:"items"`
 	}

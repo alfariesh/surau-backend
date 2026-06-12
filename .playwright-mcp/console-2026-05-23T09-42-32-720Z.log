@@ -1,1 +1,0 @@
-[  301057ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:8090/api/v1/books?lang=ar&has_content=true&limit=40&offset=0:0

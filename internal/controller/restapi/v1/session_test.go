@@ -23,9 +23,12 @@ func TestListSessionsRoute(t *testing.T) {
 			{ID: "s2", FamilyID: "fam-other", UserAgent: "Chrome", ClientIP: "203.0.113.2", LastUsedAt: now, ExpiresAt: now},
 		}})
 
-		req := httptest.NewRequest(http.MethodGet, "/auth/sessions", nil)
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/auth/sessions", http.NoBody)
 		resp, err := app.Test(req)
 		require.NoError(t, err)
+
+		defer resp.Body.Close()
+
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 
 		body := readTestBody(t, resp)
@@ -44,10 +47,13 @@ func TestListSessionsRoute(t *testing.T) {
 		t.Parallel()
 
 		app := newAuthTestApp(&fakeAuthUser{listSessionsErr: assertAnyError})
-		req := httptest.NewRequest(http.MethodGet, "/auth/sessions", nil)
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/auth/sessions", http.NoBody)
 
 		resp, err := app.Test(req)
 		require.NoError(t, err)
+
+		defer resp.Body.Close()
+
 		assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
 	})
 }
@@ -61,9 +67,12 @@ func TestRevokeSessionRoute(t *testing.T) {
 		user := &fakeAuthUser{}
 		app := newAuthTestApp(user)
 
-		req := httptest.NewRequest(http.MethodDelete, "/auth/sessions/sess-42", nil)
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodDelete, "/auth/sessions/sess-42", http.NoBody)
 		resp, err := app.Test(req)
 		require.NoError(t, err)
+
+		defer resp.Body.Close()
+
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 		assert.Contains(t, readTestBody(t, resp), `"session_revoked":true`)
 		assert.Equal(t, "user-id-123", user.revokeSessionUser)
@@ -74,15 +83,21 @@ func TestRevokeSessionRoute(t *testing.T) {
 		t.Parallel()
 
 		app := newAuthTestApp(&fakeAuthUser{revokeSessionErr: entity.ErrAuthSessionNotFound})
-		req := httptest.NewRequest(http.MethodDelete, "/auth/sessions/ghost", nil)
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodDelete, "/auth/sessions/ghost", http.NoBody)
 
 		resp, err := app.Test(req)
 		require.NoError(t, err)
+
+		defer resp.Body.Close()
+
 		assert.Equal(t, http.StatusNotFound, resp.StatusCode)
 	})
 }
 
-// assertAnyError is a sentinel non-domain error used to drive the 500 path.
+// assertAnyError is a sentinel non-domain error used to drive the 500 path;
+// identity matters, so it must stay a single package-level value.
+//
+//nolint:gochecknoglobals // sentinel error compared by identity across tests
 var assertAnyError = &genericError{}
 
 type genericError struct{}

@@ -98,6 +98,7 @@ func initUseCases(cfg *config.Config, pg *postgres.Postgres, jwtManager *jwt.Man
 	if cfg.AuthRateLimit.Enabled {
 		rateLimiter = userRepo
 	}
+
 	var lockoutRepo repo.AuthLockoutRepo
 	if cfg.AuthLockout.Enabled {
 		lockoutRepo = userRepo
@@ -288,104 +289,130 @@ func initServers(cfg *config.Config, pg *postgres.Postgres, uc useCases, jwtMana
 	}
 }
 
+// backgroundInitialDelay is the short head start before the first cleanup and
+// alert passes, so restarts do not postpone them by a full interval.
+const backgroundInitialDelay = 30 * time.Second
+
 func (s *servers) startServers(cfg *config.Config, emailUC *emailusecase.UseCase, userUC *user.UseCase, l logger.Interface) {
 	if userUC != nil && cfg.AuthCleanup.Enabled {
 		cleanupCtx, cancel := context.WithCancel(context.Background())
 		s.authCleanupStop = cancel
-		go func() {
-			// First pass shortly after boot so restarts do not postpone
-			// cleanup by a full interval.
-			initialDelay := time.NewTimer(30 * time.Second)
-			defer initialDelay.Stop()
-			ticker := time.NewTicker(cfg.AuthCleanup.Interval)
-			defer ticker.Stop()
-			for {
-				select {
-				case <-cleanupCtx.Done():
-					return
-				case <-initialDelay.C:
-				case <-ticker.C:
-				}
-				result, err := userUC.CleanupAuthData(cleanupCtx)
-				if err != nil {
-					l.Error(fmt.Errorf("app - auth cleanup: %w", err))
 
-					continue
-				}
-				l.Info(
-					"app - auth cleanup: rate_limits=%d tokens=%d sessions=%d lockouts=%d cooldowns=%d audit=%d",
-					result.RateLimits,
-					result.VerificationTokens+result.PasswordResetTokens+result.EmailChangeTokens,
-					result.Sessions,
-					result.Lockouts,
-					result.NotificationCooldowns,
-					result.AuditLogs,
-				)
-			}
-		}()
+		go runAuthCleanupLoop(cleanupCtx, cfg.AuthCleanup.Interval, userUC, l)
 	}
+
 	if userUC != nil && cfg.AuthAlert.Enabled {
 		alertCtx, cancel := context.WithCancel(context.Background())
 		s.authAlertStop = cancel
-		go func() {
-			// Short initial delay so a restart surfaces fresh reuse events
-			// quickly instead of waiting a full interval.
-			initialDelay := time.NewTimer(30 * time.Second)
-			defer initialDelay.Stop()
-			ticker := time.NewTicker(cfg.AuthAlert.Interval)
-			defer ticker.Stop()
-			for {
-				select {
-				case <-alertCtx.Done():
-					return
-				case <-initialDelay.C:
-				case <-ticker.C:
-				}
-				count, err := userUC.AlertRefreshReuse(alertCtx)
-				if err != nil {
-					l.Error(fmt.Errorf("app - refresh-reuse alert: %w", err))
 
-					continue
-				}
-				if count > 0 {
-					l.Info("app - refresh-reuse alert: notified admins of %d new event(s)", count)
-				}
-			}
-		}()
+		go runAuthAlertLoop(alertCtx, cfg.AuthAlert.Interval, userUC, l)
 	}
+
 	if emailUC != nil {
 		dispatchCtx, cancel := context.WithCancel(context.Background())
 		s.emailDispatcherStop = cancel
-		go func() {
-			ticker := time.NewTicker(cfg.Email.DispatchInterval)
-			defer ticker.Stop()
-			var pollTicker *time.Ticker
-			var pollC <-chan time.Time
-			if cfg.Email.DeliveryMode == config.EmailDeliveryModeCloudflare && cfg.Email.CloudflareEventPollingEnabled {
-				pollTicker = time.NewTicker(cfg.Email.CloudflareEventPollingInterval)
-				pollC = pollTicker.C
-				defer pollTicker.Stop()
-			}
-			for {
-				select {
-				case <-dispatchCtx.Done():
-					return
-				case <-ticker.C:
-					if err := emailUC.DispatchDueCampaigns(dispatchCtx, cfg.Email.DispatchBatch); err != nil {
-						l.Error(fmt.Errorf("app - email dispatcher: %w", err))
-					}
-					if err := emailUC.DispatchDueTransactionalEmails(dispatchCtx, cfg.Email.DispatchBatch); err != nil {
-						l.Error(fmt.Errorf("app - transactional email dispatcher: %w", err))
-					}
-				case <-pollC:
-					if _, err := emailUC.PollCloudflareEmailEvents(dispatchCtx); err != nil {
-						l.Error(fmt.Errorf("app - cloudflare email event poller: %w", err))
-					}
-				}
-			}
-		}()
+
+		go runEmailDispatchLoop(dispatchCtx, cfg, emailUC, l)
 	}
+
 	s.http.Start()
+}
+
+func runAuthCleanupLoop(ctx context.Context, interval time.Duration, userUC *user.UseCase, l logger.Interface) {
+	initialDelay := time.NewTimer(backgroundInitialDelay)
+	defer initialDelay.Stop()
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-initialDelay.C:
+		case <-ticker.C:
+		}
+
+		result, err := userUC.CleanupAuthData(ctx)
+		if err != nil {
+			l.Error(fmt.Errorf("app - auth cleanup: %w", err))
+
+			continue
+		}
+
+		l.Info(
+			"app - auth cleanup: rate_limits=%d tokens=%d sessions=%d lockouts=%d cooldowns=%d audit=%d",
+			result.RateLimits,
+			result.VerificationTokens+result.PasswordResetTokens+result.EmailChangeTokens,
+			result.Sessions,
+			result.Lockouts,
+			result.NotificationCooldowns,
+			result.AuditLogs,
+		)
+	}
+}
+
+func runAuthAlertLoop(ctx context.Context, interval time.Duration, userUC *user.UseCase, l logger.Interface) {
+	initialDelay := time.NewTimer(backgroundInitialDelay)
+	defer initialDelay.Stop()
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-initialDelay.C:
+		case <-ticker.C:
+		}
+
+		count, err := userUC.AlertRefreshReuse(ctx)
+		if err != nil {
+			l.Error(fmt.Errorf("app - refresh-reuse alert: %w", err))
+
+			continue
+		}
+
+		if count > 0 {
+			l.Info("app - refresh-reuse alert: notified admins of %d new event(s)", count)
+		}
+	}
+}
+
+func runEmailDispatchLoop(ctx context.Context, cfg *config.Config, emailUC *emailusecase.UseCase, l logger.Interface) {
+	ticker := time.NewTicker(cfg.Email.DispatchInterval)
+	defer ticker.Stop()
+
+	var pollTicker *time.Ticker
+
+	var pollC <-chan time.Time
+
+	if cfg.Email.DeliveryMode == config.EmailDeliveryModeCloudflare && cfg.Email.CloudflareEventPollingEnabled {
+		pollTicker = time.NewTicker(cfg.Email.CloudflareEventPollingInterval)
+		pollC = pollTicker.C
+
+		defer pollTicker.Stop()
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if err := emailUC.DispatchDueCampaigns(ctx, cfg.Email.DispatchBatch); err != nil {
+				l.Error(fmt.Errorf("app - email dispatcher: %w", err))
+			}
+
+			if err := emailUC.DispatchDueTransactionalEmails(ctx, cfg.Email.DispatchBatch); err != nil {
+				l.Error(fmt.Errorf("app - transactional email dispatcher: %w", err))
+			}
+		case <-pollC:
+			if _, err := emailUC.PollCloudflareEmailEvents(ctx); err != nil {
+				l.Error(fmt.Errorf("app - cloudflare email event poller: %w", err))
+			}
+		}
+	}
 }
 
 func (s *servers) waitForShutdown(l logger.Interface) {
@@ -408,9 +435,11 @@ func (s *servers) shutdownServers(l logger.Interface) {
 	if s.emailDispatcherStop != nil {
 		s.emailDispatcherStop()
 	}
+
 	if s.authCleanupStop != nil {
 		s.authCleanupStop()
 	}
+
 	if s.authAlertStop != nil {
 		s.authAlertStop()
 	}

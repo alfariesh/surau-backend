@@ -268,6 +268,7 @@ ON CONFLICT (book_id, heading_id, lang) DO UPDATE SET
 			)
 		case "audio":
 			stats.Audio++
+
 			batch.Queue(
 				`
 INSERT INTO section_audio (book_id, heading_id, lang, url, narrator, duration_seconds, mime_type, metadata, updated_at)

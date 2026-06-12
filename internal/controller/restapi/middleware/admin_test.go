@@ -18,51 +18,51 @@ type stubUserUseCase struct {
 	err  error
 }
 
-func (s stubUserUseCase) Register(context.Context, string, string, string) (entity.User, error) {
+func (s *stubUserUseCase) Register(context.Context, string, string, string) (entity.User, error) {
 	return entity.User{}, nil
 }
 
-func (s stubUserUseCase) Login(context.Context, string, string) (entity.LoginResult, error) {
+func (s *stubUserUseCase) Login(context.Context, string, string) (entity.LoginResult, error) {
 	return entity.LoginResult{}, nil
 }
 
-func (s stubUserUseCase) RefreshSession(context.Context, string) (entity.LoginResult, error) {
+func (s *stubUserUseCase) RefreshSession(context.Context, string) (entity.LoginResult, error) {
 	return entity.LoginResult{}, nil
 }
 
-func (s stubUserUseCase) Logout(context.Context, string) error {
+func (s *stubUserUseCase) Logout(context.Context, string) error {
 	return nil
 }
 
-func (s stubUserUseCase) LogoutAll(context.Context, string) error {
+func (s *stubUserUseCase) LogoutAll(context.Context, string) error {
 	return nil
 }
 
-func (s stubUserUseCase) ListSessions(context.Context, string) ([]entity.AuthSession, error) {
+func (s *stubUserUseCase) ListSessions(context.Context, string) ([]entity.AuthSession, error) {
 	return nil, nil
 }
 
-func (s stubUserUseCase) RevokeSession(context.Context, string, string) error {
+func (s *stubUserUseCase) RevokeSession(context.Context, string, string) error {
 	return nil
 }
 
-func (s stubUserUseCase) GetUser(context.Context, string) (entity.User, error) {
+func (s *stubUserUseCase) GetUser(context.Context, string) (entity.User, error) {
 	return s.user, s.err
 }
 
-func (s stubUserUseCase) GetUserAccount(context.Context, string) (entity.UserAccount, error) {
+func (s *stubUserUseCase) GetUserAccount(context.Context, string) (entity.UserAccount, error) {
 	return entity.UserAccount{}, nil
 }
 
-func (s stubUserUseCase) AdminUsers(context.Context, string, string, *bool, int, int) ([]entity.UserAccount, int, error) {
+func (s *stubUserUseCase) AdminUsers(context.Context, string, string, *bool, int, int) ([]entity.UserAccount, int, error) {
 	return nil, 0, nil
 }
 
-func (s stubUserUseCase) AdminUserActivity(context.Context, string, int, int) ([]entity.UserActivity, int, error) {
+func (s *stubUserUseCase) AdminUserActivity(context.Context, string, int, int) ([]entity.UserActivity, int, error) {
 	return nil, 0, nil
 }
 
-func (s stubUserUseCase) CompleteOnboarding(
+func (s *stubUserUseCase) CompleteOnboarding(
 	context.Context,
 	string,
 	entity.UserOnboarding,
@@ -70,7 +70,7 @@ func (s stubUserUseCase) CompleteOnboarding(
 	return entity.UserAccount{}, nil
 }
 
-func (s stubUserUseCase) UpdateUserProfile(
+func (s *stubUserUseCase) UpdateUserProfile(
 	context.Context,
 	string,
 	entity.UserProfilePatch,
@@ -78,7 +78,7 @@ func (s stubUserUseCase) UpdateUserProfile(
 	return entity.UserAccount{}, nil
 }
 
-func (s stubUserUseCase) UpdateUserPreferences(
+func (s *stubUserUseCase) UpdateUserPreferences(
 	context.Context,
 	string,
 	entity.UserPreferencesPatch,
@@ -86,39 +86,39 @@ func (s stubUserUseCase) UpdateUserPreferences(
 	return entity.UserAccount{}, nil
 }
 
-func (s stubUserUseCase) SetRoleByEmail(context.Context, string, string, string, string) (entity.User, error) {
+func (s *stubUserUseCase) SetRoleByEmail(context.Context, string, string, string, string) (entity.User, error) {
 	return entity.User{}, nil
 }
 
-func (s stubUserUseCase) VerifyEmail(context.Context, string, string, string) error {
+func (s *stubUserUseCase) VerifyEmail(context.Context, string, string, string) error {
 	return nil
 }
 
-func (s stubUserUseCase) ResendEmailVerification(context.Context, string) error {
+func (s *stubUserUseCase) ResendEmailVerification(context.Context, string) error {
 	return nil
 }
 
-func (s stubUserUseCase) ForgotPassword(context.Context, string) error {
+func (s *stubUserUseCase) ForgotPassword(context.Context, string) error {
 	return nil
 }
 
-func (s stubUserUseCase) ResetPassword(context.Context, string, string) error {
+func (s *stubUserUseCase) ResetPassword(context.Context, string, string) error {
 	return nil
 }
 
-func (s stubUserUseCase) ChangePassword(context.Context, string, string, string) (entity.LoginResult, error) {
+func (s *stubUserUseCase) ChangePassword(context.Context, string, string, string) (entity.LoginResult, error) {
 	return entity.LoginResult{}, nil
 }
 
-func (s stubUserUseCase) RequestEmailChange(context.Context, string, string, string) error {
+func (s *stubUserUseCase) RequestEmailChange(context.Context, string, string, string) error {
 	return nil
 }
 
-func (s stubUserUseCase) VerifyEmailChange(context.Context, string, string, string) (entity.LoginResult, error) {
+func (s *stubUserUseCase) VerifyEmailChange(context.Context, string, string, string) (entity.LoginResult, error) {
 	return entity.LoginResult{}, nil
 }
 
-func (s stubUserUseCase) DeleteAccount(context.Context, string, string) error {
+func (s *stubUserUseCase) DeleteAccount(context.Context, string, string) error {
 	return nil
 }
 
@@ -199,7 +199,7 @@ func TestRequireRoles(t *testing.T) {
 
 				return ctx.Next()
 			})
-			app.Use(middleware.RequireRoles(stubUserUseCase{user: localTc.user, err: localTc.err}, localTc.roles...))
+			app.Use(middleware.RequireRoles(&stubUserUseCase{user: localTc.user, err: localTc.err}, localTc.roles...))
 			app.Get("/admin", func(ctx *fiber.Ctx) error {
 				return ctx.SendStatus(http.StatusOK)
 			})
