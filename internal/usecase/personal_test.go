@@ -378,6 +378,25 @@ func TestPersonalSyncPersonalData(t *testing.T) {
 		require.NoError(t, err)
 	})
 
+	t.Run("saved items full-resync flag passes through", func(t *testing.T) {
+		t.Parallel()
+
+		uc, mockRepo := newPersonalUseCase(t)
+
+		mockRepo.EXPECT().
+			SyncSnapshot(context.Background(), "user-id", nil).
+			Return(entity.PersonalSyncSnapshot{
+				SavedItemIDs:         []string{},
+				SavedItemsFullResync: true,
+			}, nil)
+
+		snapshot, err := uc.SyncPersonalData(context.Background(), "user-id", nil)
+
+		require.NoError(t, err)
+		assert.True(t, snapshot.SavedItemsFullResync)
+		assert.Empty(t, snapshot.SavedItemIDs)
+	})
+
 	t.Run("since normalized to UTC", func(t *testing.T) {
 		t.Parallel()
 

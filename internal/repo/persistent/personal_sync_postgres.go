@@ -15,6 +15,11 @@ import (
 // is therefore at-least-once; clients upsert idempotently by key.
 const syncSinceOverlap = time.Minute
 
+// maxSyncSavedItemIDs caps the deletion-reconciliation ID list. Beyond this
+// the snapshot sets SavedItemsFullResync instead of returning an unbounded
+// payload, and the client rebuilds via paging GET /me/saved-items.
+const maxSyncSavedItemIDs = 10000
+
 // SyncSnapshot returns the user's personal reader state changed since the
 // given time (or everything when since is nil). All reads share one
 // read-only repeatable-read transaction so the payload and its server_time
@@ -61,7 +66,7 @@ func (r *PersonalRepo) SyncSnapshot(
 	if snapshot.SavedItems, err = r.syncSavedItems(ctx, tx, userID, effectiveSince); err != nil {
 		return entity.PersonalSyncSnapshot{}, err
 	}
-	if snapshot.SavedItemIDs, err = r.syncSavedItemIDs(ctx, tx, userID); err != nil {
+	if snapshot.SavedItemIDs, snapshot.SavedItemsFullResync, err = r.syncSavedItemIDs(ctx, tx, userID); err != nil {
 		return entity.PersonalSyncSnapshot{}, err
 	}
 	if snapshot.KhatamCycles, err = r.syncKhatamCycles(ctx, tx, userID, effectiveSince); err != nil {
@@ -195,10 +200,18 @@ func (r *PersonalRepo) syncSavedItems(
 	return items, nil
 }
 
-func (r *PersonalRepo) syncSavedItemIDs(ctx context.Context, tx pgx.Tx, userID string) ([]string, error) {
-	rows, err := tx.Query(ctx, `SELECT id FROM saved_items WHERE user_id = $1 ORDER BY id ASC`, userID)
+// syncSavedItemIDs returns every saved-item ID for delete reconciliation, or
+// (nil, true, nil) when the user holds more than maxSyncSavedItemIDs items
+// and the client must full-resync via paging instead.
+func (r *PersonalRepo) syncSavedItemIDs(ctx context.Context, tx pgx.Tx, userID string) ([]string, bool, error) {
+	rows, err := tx.Query(
+		ctx,
+		`SELECT id FROM saved_items WHERE user_id = $1 ORDER BY id ASC LIMIT $2`,
+		userID,
+		maxSyncSavedItemIDs+1,
+	)
 	if err != nil {
-		return nil, fmt.Errorf("PersonalRepo - syncSavedItemIDs - tx.Query: %w", err)
+		return nil, false, fmt.Errorf("PersonalRepo - syncSavedItemIDs - tx.Query: %w", err)
 	}
 	defer rows.Close()
 
@@ -206,16 +219,19 @@ func (r *PersonalRepo) syncSavedItemIDs(ctx context.Context, tx pgx.Tx, userID s
 	for rows.Next() {
 		var id string
 		if err := rows.Scan(&id); err != nil {
-			return nil, fmt.Errorf("PersonalRepo - syncSavedItemIDs - rows.Scan: %w", err)
+			return nil, false, fmt.Errorf("PersonalRepo - syncSavedItemIDs - rows.Scan: %w", err)
 		}
 
 		ids = append(ids, id)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("PersonalRepo - syncSavedItemIDs - rows.Err: %w", err)
+		return nil, false, fmt.Errorf("PersonalRepo - syncSavedItemIDs - rows.Err: %w", err)
+	}
+	if len(ids) > maxSyncSavedItemIDs {
+		return []string{}, true, nil
 	}
 
-	return ids, nil
+	return ids, false, nil
 }
 
 func (r *PersonalRepo) syncKhatamCycles(

@@ -12,7 +12,7 @@ import (
 )
 
 // @Summary     Sync personal reader data
-// @Description Return reading progress (kitab and Quran), saved items, and khatam cycles changed at or after the since cursor; omit since for a full snapshot. Delivery is at-least-once (a server-side overlap window re-sends recent rows), so clients must upsert idempotently by key and store server_time as the next cursor. saved_item_ids always lists every current saved-item ID for delete reconciliation.
+// @Description Return reading progress (kitab and Quran), saved items, and khatam cycles changed at or after the since cursor; omit since for a full snapshot. Delivery is at-least-once (a server-side overlap window re-sends recent rows), so clients must upsert idempotently by key and store server_time as the next cursor. saved_item_ids lists every current saved-item ID for delete reconciliation; when saved_items_full_resync=true the ID list was over the server cap (10000) and arrives empty — rebuild the local saved-items store by paging GET /me/saved-items instead of deleting by absence.
 // @ID          sync-personal-data
 // @Tags        me
 // @Produce     json
