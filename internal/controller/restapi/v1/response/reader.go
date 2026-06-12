@@ -37,6 +37,18 @@ type QuranProgressList struct {
 	Surahs []entity.QuranReadingProgress `json:"surahs"`
 } // @name v1.QuranProgressList
 
+// ContinueReadingList -.
+type ContinueReadingList struct {
+	Items []entity.ContinueReadingEntry `json:"items"`
+	Total int                           `json:"total" example:"3"`
+} // @name v1.ContinueReadingList
+
+// KhatamHistory -.
+type KhatamHistory struct {
+	Cycles []entity.QuranKhatamCycle `json:"cycles"`
+	Total  int                       `json:"total" example:"2"`
+} // @name v1.KhatamHistory
+
 // TranslationFeedbackList -.
 type TranslationFeedbackList struct {
 	Feedbacks []entity.EditorialTranslationFeedback `json:"feedbacks"`

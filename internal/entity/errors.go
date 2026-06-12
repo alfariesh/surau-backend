@@ -78,6 +78,11 @@ var (
 	ErrInvalidAyahKey                  = errors.New("invalid ayah key")
 	ErrInvalidQuranRange               = errors.New("invalid quran range")
 	ErrInvalidQuranProgress            = errors.New("invalid quran progress")
+	ErrInvalidReadingProgress          = errors.New("invalid reading progress")
+	ErrKhatamCycleNotFound             = errors.New("khatam cycle not found")
+	ErrKhatamCycleActiveExists         = errors.New("active khatam cycle already exists")
+	ErrKhatamCycleIncomplete           = errors.New("khatam cycle incomplete")
+	ErrInvalidJuzNumber                = errors.New("invalid juz number")
 )
 
 // AuthRateLimitedError carries the retry-after hint computed by the rate

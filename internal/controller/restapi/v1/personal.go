@@ -10,6 +10,59 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
+// @Summary     List reading progress
+// @Description Return the authenticated user's in-progress books ordered by recent activity (continue-reading shelf), enriched with light book metadata.
+// @ID          list-progress
+// @Tags        me
+// @Produce     json
+// @Security    BearerAuth
+// @Param       lang   query    string false "Language code: ar, id, or en" default(id)
+// @Param       limit  query    int    false "Limit" default(50)
+// @Param       offset query    int    false "Offset" default(0)
+// @Success     200    {object} response.ContinueReadingList
+// @Failure     400    {object} response.Error
+// @Failure     401    {object} response.Error
+// @Failure     500    {object} response.Error
+// @Router      /me/progress [get]
+func (r *V1) listProgress(ctx *fiber.Ctx) error {
+	userID, ok := ctx.Locals("userID").(string)
+	if !ok {
+		return errorResponse(ctx, http.StatusUnauthorized, "unauthorized")
+	}
+
+	entries, total, err := r.personal.ListProgress(
+		ctx.UserContext(),
+		userID,
+		ctx.Query("lang"),
+		queryInt(ctx, "limit", 50),
+		queryInt(ctx, "offset", 0),
+	)
+	if err != nil {
+		r.l.Error(err, "restapi - v1 - listProgress")
+
+		if errors.Is(err, entity.ErrUnsupportedLanguage) {
+			return errorResponse(ctx, http.StatusBadRequest, "unsupported language")
+		}
+
+		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
+	}
+
+	return ctx.Status(http.StatusOK).JSON(response.ContinueReadingList{Items: entries, Total: total})
+}
+
+// @Summary     Get reading progress
+// @Description Return the authenticated user's reading position for one book.
+// @ID          get-progress
+// @Tags        me
+// @Produce     json
+// @Security    BearerAuth
+// @Param       book_id path     int true "Book ID"
+// @Success     200     {object} entity.ReadingProgress
+// @Failure     400     {object} response.Error
+// @Failure     401     {object} response.Error
+// @Failure     404     {object} response.Error
+// @Failure     500     {object} response.Error
+// @Router      /me/progress/{book_id} [get]
 func (r *V1) getProgress(ctx *fiber.Ctx) error {
 	userID, ok := ctx.Locals("userID").(string)
 	if !ok {
@@ -35,6 +88,21 @@ func (r *V1) getProgress(ctx *fiber.Ctx) error {
 	return ctx.Status(http.StatusOK).JSON(progress)
 }
 
+// @Summary     Save reading progress
+// @Description Upsert the authenticated user's reading position for one book. Older client_observed_at events do not roll back progress.
+// @ID          save-progress
+// @Tags        me
+// @Accept      json
+// @Produce     json
+// @Security    BearerAuth
+// @Param       book_id path     int                  true "Book ID"
+// @Param       request body     request.SaveProgress true "Reading position"
+// @Success     200     {object} entity.ReadingProgress
+// @Failure     400     {object} response.Error
+// @Failure     401     {object} response.Error
+// @Failure     404     {object} response.Error
+// @Failure     500     {object} response.Error
+// @Router      /me/progress/{book_id} [put]
 func (r *V1) saveProgress(ctx *fiber.Ctx) error {
 	userID, ok := ctx.Locals("userID").(string)
 	if !ok {
@@ -55,7 +123,15 @@ func (r *V1) saveProgress(ctx *fiber.Ctx) error {
 		return errorResponse(ctx, http.StatusBadRequest, "invalid request body")
 	}
 
-	progress, err := r.personal.SaveProgress(ctx.UserContext(), userID, bookID, body.PageID, body.HeadingID, body.ProgressPercent)
+	progress, err := r.personal.SaveProgress(
+		ctx.UserContext(),
+		userID,
+		bookID,
+		body.PageID,
+		body.HeadingID,
+		body.ProgressPercent,
+		body.ClientObservedAt,
+	)
 	if err != nil {
 		r.l.Error(err, "restapi - v1 - saveProgress")
 
@@ -65,6 +141,22 @@ func (r *V1) saveProgress(ctx *fiber.Ctx) error {
 	return ctx.Status(http.StatusOK).JSON(progress)
 }
 
+// @Summary     Save TOC reading progress
+// @Description Upsert the authenticated user's reading position at a TOC heading. Older client_observed_at events do not roll back progress.
+// @ID          save-toc-progress
+// @Tags        me
+// @Accept      json
+// @Produce     json
+// @Security    BearerAuth
+// @Param       book_id    path     int                     true "Book ID"
+// @Param       heading_id path     int                     true "Heading ID"
+// @Param       request    body     request.SaveTOCProgress true "Reading position"
+// @Success     200        {object} entity.ReadingProgress
+// @Failure     400        {object} response.Error
+// @Failure     401        {object} response.Error
+// @Failure     404        {object} response.Error
+// @Failure     500        {object} response.Error
+// @Router      /me/progress/{book_id}/toc/{heading_id} [put]
 func (r *V1) saveTOCProgress(ctx *fiber.Ctx) error {
 	userID, ok := ctx.Locals("userID").(string)
 	if !ok {
@@ -90,7 +182,15 @@ func (r *V1) saveTOCProgress(ctx *fiber.Ctx) error {
 		return errorResponse(ctx, http.StatusBadRequest, "invalid request body")
 	}
 
-	progress, err := r.personal.SaveProgress(ctx.UserContext(), userID, bookID, nil, &headingID, body.ProgressPercent)
+	progress, err := r.personal.SaveProgress(
+		ctx.UserContext(),
+		userID,
+		bookID,
+		nil,
+		&headingID,
+		body.ProgressPercent,
+		body.ClientObservedAt,
+	)
 	if err != nil {
 		r.l.Error(err, "restapi - v1 - saveTOCProgress")
 
@@ -278,7 +378,7 @@ func (r *V1) listSavedItems(ctx *fiber.Ctx) error {
 }
 
 // @Summary     Save or update an item
-// @Description Save a Quran ayah/range or kitab page/heading. Posting the same target updates label, note, and tags.
+// @Description Save a Quran ayah/range or kitab page/heading. Posting the same target updates provided metadata only; absent label/note/tags never clear stored values (clearing is PATCH's job). Returns 201 when a new item is created, 200 when an existing one is updated.
 // @ID          upsert-saved-item
 // @Tags        me
 // @Accept      json
@@ -286,6 +386,7 @@ func (r *V1) listSavedItems(ctx *fiber.Ctx) error {
 // @Security    BearerAuth
 // @Param       request body     request.UpsertSavedItem true "Saved item target and metadata"
 // @Success     200     {object} entity.SavedItem
+// @Success     201     {object} entity.SavedItem
 // @Failure     400     {object} response.Error
 // @Failure     401     {object} response.Error
 // @Failure     500     {object} response.Error
@@ -305,7 +406,7 @@ func (r *V1) upsertSavedItem(ctx *fiber.Ctx) error {
 		return errorResponse(ctx, http.StatusBadRequest, "invalid request body")
 	}
 
-	item, err := r.personal.UpsertSavedItem(ctx.UserContext(), userID, entity.SavedItem{
+	item, created, err := r.personal.UpsertSavedItem(ctx.UserContext(), userID, entity.SavedItem{
 		ItemType:       body.ItemType,
 		BookID:         body.BookID,
 		PageID:         body.PageID,
@@ -324,11 +425,16 @@ func (r *V1) upsertSavedItem(ctx *fiber.Ctx) error {
 		return savedItemErrorResponse(ctx, err)
 	}
 
-	return ctx.Status(http.StatusOK).JSON(item)
+	status := http.StatusOK
+	if created {
+		status = http.StatusCreated
+	}
+
+	return ctx.Status(status).JSON(item)
 }
 
 // @Summary     Update saved item metadata
-// @Description Update label, note, and tags for one private saved item.
+// @Description Partially update label, note, and tags for one private saved item. Absent fields stay unchanged; explicit null clears a field. A body without any known field is rejected.
 // @ID          update-saved-item
 // @Tags        me
 // @Accept      json
@@ -355,11 +461,18 @@ func (r *V1) updateSavedItem(ctx *fiber.Ctx) error {
 		return errorResponse(ctx, http.StatusBadRequest, "invalid request body")
 	}
 
-	if err := r.v.Struct(body); err != nil {
-		return errorResponse(ctx, http.StatusBadRequest, "invalid request body")
+	patch := entity.SavedItemPatch{
+		Label:    body.Label.Value,
+		LabelSet: body.Label.Set,
+		Note:     body.Note.Value,
+		NoteSet:  body.Note.Set,
+		TagsSet:  body.Tags.Set,
+	}
+	if body.Tags.Set && body.Tags.Value != nil {
+		patch.Tags = *body.Tags.Value
 	}
 
-	item, err := r.personal.UpdateSavedItem(ctx.UserContext(), userID, savedItemID, body.Label, body.Note, body.Tags)
+	item, err := r.personal.UpdateSavedItem(ctx.UserContext(), userID, savedItemID, patch)
 	if err != nil {
 		r.l.Error(err, "restapi - v1 - updateSavedItem")
 
@@ -433,6 +546,8 @@ func readerLocationErrorResponse(ctx *fiber.Ctx, err error) error {
 		return errorResponse(ctx, http.StatusBadRequest, "heading not found")
 	case errors.Is(err, entity.ErrInvalidReaderLocation):
 		return errorResponse(ctx, http.StatusBadRequest, "invalid reader location")
+	case errors.Is(err, entity.ErrInvalidReadingProgress):
+		return errorResponse(ctx, http.StatusBadRequest, "invalid reading progress")
 	default:
 		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
 	}

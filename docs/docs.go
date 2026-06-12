@@ -2750,6 +2750,38 @@ const docTemplate = `{
                 }
             }
         },
+        "/auth/introspect": {
+            "get": {
+                "description": "Return the authenticated identity (id, username, role, session) for the presented Bearer token. Built for service-to-service auth bridging (e.g. the collab websocket server): the Auth middleware has already verified signature, token_version and session revocation, so the response reflects live session state with no extra queries.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Introspect access token",
+                "operationId": "auth-introspect",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Introspection"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
         "/auth/login": {
             "post": {
                 "description": "Authenticate user and get JWT token",
@@ -4252,6 +4284,169 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/entity.BookMetadataEdit"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/editorial/books/{book_id}/pages/{page_id}/draft-revisions": {
+            "get": {
+                "description": "List the newest-first revision history for one page draft. Requires editor or admin role.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "editorial"
+                ],
+                "summary": "List page draft revisions",
+                "operationId": "editorial-list-page-draft-revisions",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Book ID",
+                        "name": "book_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page ID",
+                        "name": "page_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page size (default 50, max 200)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Offset",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.SourceEditRevisionList"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/editorial/books/{book_id}/pages/{page_id}/draft-revisions/{revision_id}/restore": {
+            "post": {
+                "description": "Replay a previous page draft snapshot as the current draft; the restore creates a new revision. Requires editor or admin role.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "editorial"
+                ],
+                "summary": "Restore page draft revision",
+                "operationId": "editorial-restore-page-draft-revision",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Book ID",
+                        "name": "book_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page ID",
+                        "name": "page_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Revision ID",
+                        "name": "revision_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.BookPageEdit"
                         }
                     },
                     "400": {
@@ -7224,6 +7419,604 @@ const docTemplate = `{
                 }
             }
         },
+        "/me/progress": {
+            "get": {
+                "description": "Return the authenticated user's in-progress books ordered by recent activity (continue-reading shelf), enriched with light book metadata.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "me"
+                ],
+                "summary": "List reading progress",
+                "operationId": "list-progress",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "default": "id",
+                        "description": "Language code: ar, id, or en",
+                        "name": "lang",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 50,
+                        "description": "Limit",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Offset",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ContinueReadingList"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/me/progress/{book_id}": {
+            "get": {
+                "description": "Return the authenticated user's reading position for one book.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "me"
+                ],
+                "summary": "Get reading progress",
+                "operationId": "get-progress",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Book ID",
+                        "name": "book_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.ReadingProgress"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            },
+            "put": {
+                "description": "Upsert the authenticated user's reading position for one book. Older client_observed_at events do not roll back progress.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "me"
+                ],
+                "summary": "Save reading progress",
+                "operationId": "save-progress",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Book ID",
+                        "name": "book_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Reading position",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.SaveProgress"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.ReadingProgress"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/me/progress/{book_id}/toc/{heading_id}": {
+            "put": {
+                "description": "Upsert the authenticated user's reading position at a TOC heading. Older client_observed_at events do not roll back progress.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "me"
+                ],
+                "summary": "Save TOC reading progress",
+                "operationId": "save-toc-progress",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Book ID",
+                        "name": "book_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Heading ID",
+                        "name": "heading_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Reading position",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.SaveTOCProgress"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.ReadingProgress"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/me/quran/khatam": {
+            "get": {
+                "description": "Return the authenticated user's active khatam cycle with completed juz marks.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "me"
+                ],
+                "summary": "Get active khatam cycle",
+                "operationId": "get-active-khatam-cycle",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.QuranKhatamCycle"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            },
+            "post": {
+                "description": "Start a new Quran khatam cycle. Only one active cycle is allowed per user.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "me"
+                ],
+                "summary": "Start khatam cycle",
+                "operationId": "start-khatam-cycle",
+                "parameters": [
+                    {
+                        "description": "Optional cycle notes",
+                        "name": "request",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/v1.StartKhatamCycle"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/entity.QuranKhatamCycle"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/me/quran/khatam/complete": {
+            "post": {
+                "description": "Complete the active khatam cycle. Requires all 30 juz to be marked; marking the 30th juz does not auto-complete so accidental marks stay reversible.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "me"
+                ],
+                "summary": "Complete khatam cycle",
+                "operationId": "complete-khatam-cycle",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.QuranKhatamCycle"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/me/quran/khatam/history": {
+            "get": {
+                "description": "Return the authenticated user's completed khatam cycles ordered by completion recency.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "me"
+                ],
+                "summary": "List khatam history",
+                "operationId": "list-khatam-history",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "default": 50,
+                        "description": "Limit",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Offset",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.KhatamHistory"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/me/quran/khatam/juz/{juz_number}": {
+            "put": {
+                "description": "Mark one juz (1-30) as completed on the active khatam cycle. Idempotent.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "me"
+                ],
+                "summary": "Mark khatam juz",
+                "operationId": "mark-khatam-juz",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Juz number (1-30)",
+                        "name": "juz_number",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.QuranKhatamCycle"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            },
+            "delete": {
+                "description": "Remove one juz mark (1-30) from the active khatam cycle. Idempotent.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "me"
+                ],
+                "summary": "Unmark khatam juz",
+                "operationId": "unmark-khatam-juz",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Juz number (1-30)",
+                        "name": "juz_number",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.QuranKhatamCycle"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
         "/me/quran/progress": {
             "get": {
                 "description": "Return the authenticated user's latest Quran resume position across surahs.",
@@ -7517,7 +8310,7 @@ const docTemplate = `{
                 ]
             },
             "post": {
-                "description": "Save a Quran ayah/range or kitab page/heading. Posting the same target updates label, note, and tags.",
+                "description": "Save a Quran ayah/range or kitab page/heading. Posting the same target updates provided metadata only; absent label/note/tags never clear stored values (clearing is PATCH's job). Returns 201 when a new item is created, 200 when an existing one is updated.",
                 "consumes": [
                     "application/json"
                 ],
@@ -7543,6 +8336,12 @@ const docTemplate = `{
                 "responses": {
                     "200": {
                         "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.SavedItem"
+                        }
+                    },
+                    "201": {
+                        "description": "Created",
                         "schema": {
                             "$ref": "#/definitions/entity.SavedItem"
                         }
@@ -7661,7 +8460,7 @@ const docTemplate = `{
                 ]
             },
             "patch": {
-                "description": "Update label, note, and tags for one private saved item.",
+                "description": "Partially update label, note, and tags for one private saved item. Absent fields stay unchanged; explicit null clears a field. A body without any known field is rejected.",
                 "consumes": [
                     "application/json"
                 ],
@@ -9853,6 +10652,40 @@ const docTemplate = `{
                 }
             }
         },
+        "entity.BookPageEdit": {
+            "type": "object",
+            "properties": {
+                "book_id": {
+                    "type": "integer",
+                    "example": 797
+                },
+                "content_html": {
+                    "type": "string"
+                },
+                "content_text": {
+                    "type": "string"
+                },
+                "page_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "published_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "status": {
+                    "type": "string",
+                    "example": "draft"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "updated_by": {
+                    "type": "string"
+                }
+            }
+        },
         "entity.BookProductionBlocking": {
             "type": "object",
             "properties": {
@@ -10590,6 +11423,49 @@ const docTemplate = `{
                 }
             }
         },
+        "entity.BookSourceEditRevision": {
+            "type": "object",
+            "properties": {
+                "actor_id": {
+                    "type": "string"
+                },
+                "asset_type": {
+                    "type": "string",
+                    "example": "page"
+                },
+                "book_id": {
+                    "type": "integer",
+                    "example": 797
+                },
+                "created_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "heading_id": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "origin": {
+                    "type": "string",
+                    "example": "rest"
+                },
+                "page_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "snapshot": {
+                    "type": "object"
+                },
+                "version": {
+                    "type": "integer",
+                    "example": 3
+                }
+            }
+        },
         "entity.BookTOCLink": {
             "type": "object",
             "properties": {
@@ -11081,6 +11957,42 @@ const docTemplate = `{
                 },
                 "updated_by": {
                     "type": "string"
+                }
+            }
+        },
+        "entity.ContinueReadingEntry": {
+            "type": "object",
+            "properties": {
+                "book": {
+                    "$ref": "#/definitions/entity.ReadingProgressBookSummary"
+                },
+                "book_id": {
+                    "type": "integer",
+                    "example": 797
+                },
+                "heading_id": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "observed_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "page_id": {
+                    "type": "integer",
+                    "example": 12
+                },
+                "progress_percent": {
+                    "type": "number",
+                    "example": 32.5
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "user_id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
                 }
             }
         },
@@ -12027,6 +12939,53 @@ const docTemplate = `{
                 }
             }
         },
+        "entity.QuranKhatamCycle": {
+            "type": "object",
+            "properties": {
+                "completed_at": {
+                    "type": "string",
+                    "example": "2026-02-01T00:00:00Z"
+                },
+                "completed_juz": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "created_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "juz_count": {
+                    "type": "integer",
+                    "example": 17
+                },
+                "notes": {
+                    "type": "string",
+                    "example": "Khatam Ramadhan"
+                },
+                "percent": {
+                    "type": "number",
+                    "example": 56.67
+                },
+                "started_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "user_id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                }
+            }
+        },
         "entity.QuranNavigationBoundary": {
             "type": "object",
             "properties": {
@@ -12082,9 +13041,21 @@ const docTemplate = `{
                     "type": "integer",
                     "example": 4
                 },
+                "hizb_number": {
+                    "type": "integer",
+                    "example": 57
+                },
+                "juz_number": {
+                    "type": "integer",
+                    "example": 29
+                },
                 "observed_at": {
                     "type": "string",
                     "example": "2026-01-01T00:00:00Z"
+                },
+                "page_number": {
+                    "type": "integer",
+                    "example": 574
                 },
                 "position_percent": {
                     "type": "number",
@@ -12458,6 +13429,60 @@ const docTemplate = `{
                 },
                 "translation": {
                     "$ref": "#/definitions/entity.AvailabilityDecision"
+                }
+            }
+        },
+        "entity.ReadingProgress": {
+            "type": "object",
+            "properties": {
+                "book_id": {
+                    "type": "integer",
+                    "example": 797
+                },
+                "heading_id": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "observed_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "page_id": {
+                    "type": "integer",
+                    "example": 12
+                },
+                "progress_percent": {
+                    "type": "number",
+                    "example": 32.5
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "user_id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                }
+            }
+        },
+        "entity.ReadingProgressBookSummary": {
+            "type": "object",
+            "properties": {
+                "author_name": {
+                    "type": "string",
+                    "example": "الإمام البخاري"
+                },
+                "book_id": {
+                    "type": "integer",
+                    "example": 797
+                },
+                "cover_url": {
+                    "type": "string",
+                    "example": "https://cdn.example/cover.jpg"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "صحيح البخاري"
                 }
             }
         },
@@ -13253,6 +14278,21 @@ const docTemplate = `{
                 }
             }
         },
+        "v1.ContinueReadingList": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.ContinueReadingEntry"
+                    }
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 3
+                }
+            }
+        },
         "v1.CreateProductionProject": {
             "type": "object",
             "required": [
@@ -13919,6 +14959,42 @@ const docTemplate = `{
                 "email": {
                     "type": "string",
                     "example": "john@example.com"
+                }
+            }
+        },
+        "v1.Introspection": {
+            "type": "object",
+            "properties": {
+                "role": {
+                    "type": "string",
+                    "example": "editor"
+                },
+                "session_id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "user_id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "username": {
+                    "type": "string",
+                    "example": "johndoe"
+                }
+            }
+        },
+        "v1.KhatamHistory": {
+            "type": "object",
+            "properties": {
+                "cycles": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.QuranKhatamCycle"
+                    }
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 2
                 }
             }
         },
@@ -14614,6 +15690,31 @@ const docTemplate = `{
                 }
             }
         },
+        "v1.SaveProgress": {
+            "type": "object",
+            "properties": {
+                "client_observed_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "heading_id": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "example": 10
+                },
+                "page_id": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "example": 12
+                },
+                "progress_percent": {
+                    "type": "number",
+                    "maximum": 100,
+                    "minimum": 0,
+                    "example": 32.5
+                }
+            }
+        },
         "v1.SaveQuranProgress": {
             "type": "object",
             "required": [
@@ -14665,7 +15766,8 @@ const docTemplate = `{
             ],
             "properties": {
                 "content": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 200000
                 },
                 "metadata": {
                     "type": "object"
@@ -14677,6 +15779,21 @@ const docTemplate = `{
                 "title": {
                     "type": "string",
                     "maxLength": 1000
+                }
+            }
+        },
+        "v1.SaveTOCProgress": {
+            "type": "object",
+            "properties": {
+                "client_observed_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "progress_percent": {
+                    "type": "number",
+                    "maximum": 100,
+                    "minimum": 0,
+                    "example": 32.5
                 }
             }
         },
@@ -14782,6 +15899,31 @@ const docTemplate = `{
                 "role": {
                     "type": "string",
                     "example": "editor"
+                }
+            }
+        },
+        "v1.SourceEditRevisionList": {
+            "type": "object",
+            "properties": {
+                "revisions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.BookSourceEditRevision"
+                    }
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 42
+                }
+            }
+        },
+        "v1.StartKhatamCycle": {
+            "type": "object",
+            "properties": {
+                "notes": {
+                    "type": "string",
+                    "maxLength": 2000,
+                    "example": "Khatam Ramadhan"
                 }
             }
         },
@@ -14905,12 +16047,10 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "label": {
-                    "type": "string",
-                    "maxLength": 255
+                    "type": "string"
                 },
                 "note": {
-                    "type": "string",
-                    "maxLength": 2000
+                    "type": "string"
                 },
                 "tags": {
                     "type": "array",

@@ -28,13 +28,29 @@ type SavedItem struct {
 	UpdatedAt      time.Time `json:"updated_at"       example:"2026-01-01T00:00:00Z"`
 } // @name entity.SavedItem
 
+// SavedItemPatch carries partial saved-item metadata updates. The Set flags
+// distinguish absent fields (unchanged) from explicit nulls (cleared).
+type SavedItemPatch struct {
+	Label    *string
+	LabelSet bool
+	Note     *string
+	NoteSet  bool
+	Tags     []string
+	TagsSet  bool
+}
+
 // QuranReadingProgress stores one private resume position for a Quran surah.
+// PageNumber, JuzNumber, and HizbNumber are resolved from the ayah's mushaf
+// metadata at read time so clients can resume by page or juz directly.
 type QuranReadingProgress struct {
-	UserID          string    `json:"user_id"          example:"550e8400-e29b-41d4-a716-446655440000"`
-	SurahID         int       `json:"surah_id"         example:"73"`
-	AyahNumber      int       `json:"ayah_number"      example:"4"`
-	AyahKey         string    `json:"ayah_key"         example:"73:4"`
-	PositionPercent float64   `json:"position_percent" example:"25.00"`
-	ObservedAt      time.Time `json:"observed_at"      example:"2026-01-01T00:00:00Z"`
-	UpdatedAt       time.Time `json:"updated_at"       example:"2026-01-01T00:00:00Z"`
+	UserID          string    `json:"user_id"               example:"550e8400-e29b-41d4-a716-446655440000"`
+	SurahID         int       `json:"surah_id"              example:"73"`
+	AyahNumber      int       `json:"ayah_number"           example:"4"`
+	AyahKey         string    `json:"ayah_key"              example:"73:4"`
+	PositionPercent float64   `json:"position_percent"      example:"25.00"`
+	PageNumber      *int      `json:"page_number,omitempty" example:"574"`
+	JuzNumber       *int      `json:"juz_number,omitempty"  example:"29"`
+	HizbNumber      *int      `json:"hizb_number,omitempty" example:"57"`
+	ObservedAt      time.Time `json:"observed_at"           example:"2026-01-01T00:00:00Z"`
+	UpdatedAt       time.Time `json:"updated_at"            example:"2026-01-01T00:00:00Z"`
 } // @name entity.QuranReadingProgress

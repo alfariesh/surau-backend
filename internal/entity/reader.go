@@ -394,5 +394,20 @@ type ReadingProgress struct {
 	PageID          *int      `json:"page_id"          example:"12"`
 	HeadingID       *int      `json:"heading_id"       example:"10"`
 	ProgressPercent *float64  `json:"progress_percent" example:"32.50"`
+	ObservedAt      time.Time `json:"observed_at"      example:"2026-01-01T00:00:00Z"`
 	UpdatedAt       time.Time `json:"updated_at"       example:"2026-01-01T00:00:00Z"`
 } // @name entity.ReadingProgress
+
+// ReadingProgressBookSummary is light book metadata for the continue-reading shelf.
+type ReadingProgressBookSummary struct {
+	BookID     int     `json:"book_id"               example:"797"`
+	Name       string  `json:"name"                  example:"صحيح البخاري"`
+	CoverURL   *string `json:"cover_url,omitempty"   example:"https://cdn.example/cover.jpg"`
+	AuthorName *string `json:"author_name,omitempty" example:"الإمام البخاري"`
+} // @name entity.ReadingProgressBookSummary
+
+// ContinueReadingEntry is one in-progress book with resume metadata.
+type ContinueReadingEntry struct {
+	ReadingProgress
+	Book ReadingProgressBookSummary `json:"book"`
+} // @name entity.ContinueReadingEntry

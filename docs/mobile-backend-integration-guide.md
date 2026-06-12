@@ -82,6 +82,8 @@ Response shape ringkas:
 | `GET /v1/me/saved-items` | `{ "items": SavedItem[], "total": number }` |
 | `GET /v1/me/saved-items/tags` | `{ "tags": string[] }` |
 | `GET /v1/me/quran/progress/surahs` | `{ "surahs": QuranReadingProgress[] }` |
+| `GET /v1/me/progress` | `{ "items": ContinueReadingEntry[], "total": number }` |
+| `GET /v1/me/quran/khatam/history` | `{ "cycles": QuranKhatamCycle[], "total": number }` |
 
 ## 2. Error Contract
 
@@ -685,16 +687,49 @@ export type QuranReadingProgress = {
   ayah_number: number;
   ayah_key: string;
   position_percent: number;
+  page_number?: number | null; // halaman mushaf, dari metadata ayah
+  juz_number?: number | null;
+  hizb_number?: number | null;
   observed_at: string;
   updated_at: string;
 };
 ```
+
+`page_number`, `juz_number`, dan `hizb_number` di-resolve backend dari metadata ayah sehingga FE bisa langsung resume per halaman/juz tanpa lookup tambahan.
 
 Mobile save strategy:
 
 - Save saat user berhenti scroll beberapa detik, pindah ayah aktif, pause audio, background app, atau keluar screen.
 - Debounce 2-5 detik.
 - Kirim `client_observed_at` agar event lama tidak menimpa progress baru.
+
+### Khatam Tracking
+
+| Method | Path | Auth | Kegunaan |
+| --- | --- | --- | --- |
+| `POST` | `/v1/me/quran/khatam` | Bearer | Mulai cycle khatam baru (`201`; `409` jika sudah ada cycle aktif). Body opsional `{ "notes": string }`. |
+| `GET` | `/v1/me/quran/khatam` | Bearer | Cycle aktif + juz yang sudah selesai (`404` jika tidak ada). |
+| `PUT` | `/v1/me/quran/khatam/juz/{juz_number}` | Bearer | Tandai juz 1-30 selesai (idempotent). |
+| `DELETE` | `/v1/me/quran/khatam/juz/{juz_number}` | Bearer | Batalkan tanda juz (idempotent). |
+| `POST` | `/v1/me/quran/khatam/complete` | Bearer | Selesaikan cycle. Wajib 30 juz lengkap; `409 {"error":"khatam cycle incomplete"}` jika belum. |
+| `GET` | `/v1/me/quran/khatam/history` | Bearer | Riwayat khatam selesai (limit/offset). |
+
+```ts
+export type QuranKhatamCycle = {
+  id: string;
+  user_id: string;
+  started_at: string;
+  completed_at?: string | null;
+  notes?: string | null;
+  completed_juz: number[]; // sorted ascending
+  juz_count: number; // 0-30
+  percent: number; // juz_count / 30 * 100, 2 desimal
+  created_at: string;
+  updated_at: string;
+};
+```
+
+Catatan UX: menandai juz ke-30 TIDAK otomatis menyelesaikan cycle — FE sebaiknya menampilkan prompt "Selesaikan khatam?" saat `juz_count === 30`, lalu memanggil endpoint complete. Ini menjaga tanda juz tetap bisa dibatalkan sebelum konfirmasi.
 
 ## 7. Kitab Reader
 
@@ -959,6 +994,7 @@ Protected endpoint:
 
 | Method | Path | Auth | Kegunaan |
 | --- | --- | --- | --- |
+| `GET` | `/v1/me/progress?lang=id&limit=50&offset=0` | Bearer | Continue-reading shelf: semua kitab yang sedang dibaca, urut aktivitas terbaru, dengan metadata buku ringan. |
 | `GET` | `/v1/me/progress/{book_id}` | Bearer | Ambil progress kitab. |
 | `PUT` | `/v1/me/progress/{book_id}` | Bearer | Simpan progress by page/heading. |
 | `PUT` | `/v1/me/progress/{book_id}/toc/{heading_id}` | Bearer | Simpan progress TOC section. |
@@ -971,7 +1007,8 @@ Save progress request:
 {
   "page_id": 12,
   "heading_id": 10,
-  "progress_percent": 32.5
+  "progress_percent": 32.5,
+  "client_observed_at": "2026-06-01T10:00:00Z"
 }
 ```
 
@@ -979,7 +1016,8 @@ Save TOC progress request:
 
 ```json
 {
-  "progress_percent": 32.5
+  "progress_percent": 32.5,
+  "client_observed_at": "2026-06-01T10:00:00Z"
 }
 ```
 
@@ -992,7 +1030,17 @@ export type ReadingProgress = {
   page_id?: number | null;
   heading_id?: number | null;
   progress_percent?: number | null;
+  observed_at: string;
   updated_at: string;
+};
+
+export type ContinueReadingEntry = ReadingProgress & {
+  book: {
+    book_id: number;
+    name: string; // judul ter-resolve sesuai lang (fallback Arab)
+    cover_url?: string | null;
+    author_name?: string | null;
+  };
 };
 ```
 
@@ -1001,7 +1049,9 @@ Mobile save strategy:
 - Save saat heading aktif berubah, scroll idle, app background, atau keluar reader.
 - Debounce 2-5 detik.
 - Jangan spam setiap scroll pixel.
+- Kirim `client_observed_at` (sama seperti progress Quran): event dengan timestamp lebih lama tidak akan menimpa posisi yang lebih baru, jadi retry/offline sync aman.
 - Jika user guest, simpan progress lokal dan sync setelah login jika produk menginginkan.
+- Buku yang di-unpublish otomatis hilang dari shelf continue-reading.
 
 ## 10. Saved Items / Bookmarks
 
@@ -1024,7 +1074,8 @@ Saved item rules:
 - Jika `quran_range` punya `from_ayah_number === to_ayah_number`, backend menormalisasi menjadi `quran_ayah`.
 - Tags di-trim, lowercase, dedupe, max `20` tags, max `64` char per tag.
 - `label` max `255`, `note` max `2000`.
-- `POST /v1/me/saved-items` bersifat upsert target yang sama; gunakan response sebagai source of truth.
+- `POST /v1/me/saved-items` bersifat upsert target yang sama: `201` saat item baru dibuat, `200` saat item lama di-update. Field `label`/`note`/`tags` yang TIDAK dikirim tidak akan menimpa nilai tersimpan — re-bookmark target yang sama tanpa note tidak menghapus note lama. POST tidak bisa menghapus metadata; gunakan PATCH.
+- `PATCH /v1/me/saved-items/{id}` adalah partial update murni: field yang tidak dikirim tetap, `null` eksplisit menghapus field (`{"label": null}` menghapus label; `{"tags": null}` mengosongkan tags), dan body tanpa field yang dikenal ditolak `400`.
 - `DELETE` sukses mengembalikan `204` tanpa body.
 
 Types:

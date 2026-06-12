@@ -4,9 +4,11 @@ import (
 	"context"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/evrone/go-clean-template/internal/entity"
 	"github.com/evrone/go-clean-template/internal/quranutil"
+	"github.com/evrone/go-clean-template/internal/readerlang"
 	"github.com/evrone/go-clean-template/internal/repo"
 	"github.com/google/uuid"
 )
@@ -14,10 +16,16 @@ import (
 const (
 	defaultLimit = 50
 	maxLimit     = 200
-	maxTags      = 20
-	maxTagLength = 64
+	// maxOffset bounds deep-offset scans; keyset pagination is future work.
+	maxOffset = 10000
+	maxTags   = 20
+	// maxTagLength/maxLabelLength/maxNoteLength mirror the saved_items CHECK
+	// constraints; PATCH bodies bypass validator tags so they are enforced here.
+	maxTagLength   = 64
+	maxLabelLength = 255
+	maxNoteLength  = 2000
 
-	quranProgressFutureTolerance = 5 * time.Minute
+	progressFutureTolerance = 5 * time.Minute
 )
 
 // UseCase provides authenticated reader operations.
@@ -35,21 +43,43 @@ func (uc *UseCase) GetProgress(ctx context.Context, userID string, bookID int) (
 	return uc.repo.GetProgress(ctx, userID, bookID)
 }
 
-// SaveProgress upserts one user's progress for a book.
+// SaveProgress upserts one user's progress for a book. Stale
+// client_observed_at events never roll the stored position back.
 func (uc *UseCase) SaveProgress(
 	ctx context.Context,
 	userID string,
 	bookID int,
 	pageID, headingID *int,
 	progressPercent *float64,
+	clientObservedAt *time.Time,
 ) (entity.ReadingProgress, error) {
+	observedAt, ok := resolveObservedAt(clientObservedAt)
+	if !ok {
+		return entity.ReadingProgress{}, entity.ErrInvalidReadingProgress
+	}
+
 	return uc.repo.SaveProgress(ctx, entity.ReadingProgress{
 		UserID:          userID,
 		BookID:          bookID,
 		PageID:          pageID,
 		HeadingID:       headingID,
 		ProgressPercent: progressPercent,
+		ObservedAt:      observedAt,
 	})
+}
+
+// ListProgress returns the user's in-progress books for the continue-reading shelf.
+func (uc *UseCase) ListProgress(
+	ctx context.Context,
+	userID, lang string,
+	limit, offset int,
+) ([]entity.ContinueReadingEntry, int, error) {
+	normalizedLang, err := readerlang.Normalize(lang)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return uc.repo.ListProgress(ctx, userID, normalizedLang, clampLimit(limit), clampOffset(offset))
 }
 
 // GetQuranProgress returns the user's latest Quran resume position across surahs.
@@ -90,12 +120,8 @@ func (uc *UseCase) SaveQuranProgress(
 		return entity.QuranReadingProgress{}, entity.ErrInvalidAyahKey
 	}
 
-	now := time.Now().UTC()
-	observedAt := now
-	if clientObservedAt != nil {
-		observedAt = clientObservedAt.UTC()
-	}
-	if observedAt.IsZero() || observedAt.After(now.Add(quranProgressFutureTolerance)) {
+	observedAt, ok := resolveObservedAt(clientObservedAt)
+	if !ok {
 		return entity.QuranReadingProgress{}, entity.ErrInvalidQuranProgress
 	}
 
@@ -137,42 +163,57 @@ func (uc *UseCase) ListSavedItems(
 }
 
 // UpsertSavedItem creates or updates a saved item for the same target.
+// Absent metadata never overwrites stored values; the returned bool reports
+// whether a new item was created.
 func (uc *UseCase) UpsertSavedItem(
 	ctx context.Context,
 	userID string,
 	item entity.SavedItem,
-) (entity.SavedItem, error) {
+) (entity.SavedItem, bool, error) {
 	item.ID = uuid.New().String()
 	item.UserID = userID
 
 	normalized, err := normalizeSavedItem(item)
 	if err != nil {
-		return entity.SavedItem{}, err
+		return entity.SavedItem{}, false, err
 	}
 
 	return uc.repo.UpsertSavedItem(ctx, normalized)
 }
 
-// UpdateSavedItem updates mutable saved item metadata.
+// UpdateSavedItem applies a partial metadata update: absent fields stay
+// unchanged, explicit nulls clear. A patch without any field is rejected.
 func (uc *UseCase) UpdateSavedItem(
 	ctx context.Context,
 	userID string,
 	savedItemID string,
-	label, note *string,
-	tags []string,
+	patch entity.SavedItemPatch,
 ) (entity.SavedItem, error) {
-	normalizedTags, err := normalizeSavedItemTags(tags)
-	if err != nil {
-		return entity.SavedItem{}, err
+	if !patch.LabelSet && !patch.NoteSet && !patch.TagsSet {
+		return entity.SavedItem{}, entity.ErrInvalidSavedItem
+	}
+	if patch.LabelSet && patch.Label != nil && utf8.RuneCountInString(*patch.Label) > maxLabelLength {
+		return entity.SavedItem{}, entity.ErrInvalidSavedItem
+	}
+	if patch.NoteSet && patch.Note != nil && utf8.RuneCountInString(*patch.Note) > maxNoteLength {
+		return entity.SavedItem{}, entity.ErrInvalidSavedItem
+	}
+	if patch.TagsSet {
+		if patch.Tags == nil {
+			// Explicit null clears all tags.
+			patch.Tags = []string{}
+		}
+		normalizedTags, err := normalizeSavedItemTags(patch.Tags)
+		if err != nil {
+			return entity.SavedItem{}, err
+		}
+		if normalizedTags == nil {
+			normalizedTags = []string{}
+		}
+		patch.Tags = normalizedTags
 	}
 
-	return uc.repo.UpdateSavedItem(ctx, entity.SavedItem{
-		ID:     strings.TrimSpace(savedItemID),
-		UserID: userID,
-		Label:  label,
-		Note:   note,
-		Tags:   normalizedTags,
-	})
+	return uc.repo.UpdateSavedItem(ctx, userID, strings.TrimSpace(savedItemID), patch)
 }
 
 // DeleteSavedItem removes one saved item.
@@ -183,6 +224,67 @@ func (uc *UseCase) DeleteSavedItem(ctx context.Context, userID, savedItemID stri
 // ListSavedItemTags returns all private saved-item tags for autocomplete.
 func (uc *UseCase) ListSavedItemTags(ctx context.Context, userID string) ([]string, error) {
 	return uc.repo.ListSavedItemTags(ctx, userID)
+}
+
+// StartKhatamCycle begins a new khatam cycle. Only one active cycle is
+// allowed per user.
+func (uc *UseCase) StartKhatamCycle(
+	ctx context.Context,
+	userID string,
+	notes *string,
+) (entity.QuranKhatamCycle, error) {
+	if notes != nil {
+		trimmed := strings.TrimSpace(*notes)
+		if trimmed == "" {
+			notes = nil
+		} else {
+			notes = &trimmed
+		}
+	}
+
+	return uc.repo.StartKhatamCycle(ctx, entity.QuranKhatamCycle{
+		ID:     uuid.New().String(),
+		UserID: userID,
+		Notes:  notes,
+	})
+}
+
+// GetActiveKhatamCycle returns the user's active khatam cycle.
+func (uc *UseCase) GetActiveKhatamCycle(ctx context.Context, userID string) (entity.QuranKhatamCycle, error) {
+	return uc.repo.GetActiveKhatamCycle(ctx, userID)
+}
+
+// MarkKhatamJuz marks one juz as completed on the active cycle (idempotent).
+func (uc *UseCase) MarkKhatamJuz(ctx context.Context, userID string, juzNumber int) (entity.QuranKhatamCycle, error) {
+	if juzNumber < 1 || juzNumber > entity.KhatamJuzTotal {
+		return entity.QuranKhatamCycle{}, entity.ErrInvalidJuzNumber
+	}
+
+	return uc.repo.MarkKhatamJuz(ctx, userID, juzNumber)
+}
+
+// UnmarkKhatamJuz removes one juz mark from the active cycle (idempotent).
+func (uc *UseCase) UnmarkKhatamJuz(ctx context.Context, userID string, juzNumber int) (entity.QuranKhatamCycle, error) {
+	if juzNumber < 1 || juzNumber > entity.KhatamJuzTotal {
+		return entity.QuranKhatamCycle{}, entity.ErrInvalidJuzNumber
+	}
+
+	return uc.repo.UnmarkKhatamJuz(ctx, userID, juzNumber)
+}
+
+// CompleteKhatamCycle completes the active cycle once all 30 juz are marked.
+// Completion is explicit so an accidental final mark stays reversible.
+func (uc *UseCase) CompleteKhatamCycle(ctx context.Context, userID string) (entity.QuranKhatamCycle, error) {
+	return uc.repo.CompleteKhatamCycle(ctx, userID)
+}
+
+// ListKhatamHistory returns completed khatam cycles.
+func (uc *UseCase) ListKhatamHistory(
+	ctx context.Context,
+	userID string,
+	limit, offset int,
+) ([]entity.QuranKhatamCycle, int, error) {
+	return uc.repo.ListKhatamHistory(ctx, userID, clampLimit(limit), clampOffset(offset))
 }
 
 func clampLimit(limit int) uint64 {
@@ -202,7 +304,27 @@ func clampOffset(offset int) uint64 {
 		return 0
 	}
 
+	if offset > maxOffset {
+		return maxOffset
+	}
+
 	return uint64(offset)
+}
+
+// resolveObservedAt validates the client-supplied event time used by the
+// monotonic progress upserts. The reported false means the time is zero or
+// further in the future than the shared tolerance allows.
+func resolveObservedAt(clientObservedAt *time.Time) (time.Time, bool) {
+	now := time.Now().UTC()
+	observedAt := now
+	if clientObservedAt != nil {
+		observedAt = clientObservedAt.UTC()
+	}
+	if observedAt.IsZero() || observedAt.After(now.Add(progressFutureTolerance)) {
+		return time.Time{}, false
+	}
+
+	return observedAt, true
 }
 
 func normalizeSavedItem(item entity.SavedItem) (entity.SavedItem, error) {
@@ -235,8 +357,8 @@ func normalizeSavedItem(item entity.SavedItem) (entity.SavedItem, error) {
 		if err != nil {
 			return entity.SavedItem{}, entity.ErrInvalidAyahKey
 		}
-		item.SurahID = intPtr(surahID)
-		item.AyahKey = stringPtr(quranutil.AyahKey(surahID, ayahNumber))
+		item.SurahID = new(surahID)
+		item.AyahKey = new(quranutil.AyahKey(surahID, ayahNumber))
 	case entity.SavedItemTypeQuranRange:
 		if item.SurahID == nil || item.FromAyahNumber == nil || item.ToAyahNumber == nil ||
 			item.AyahKey != nil || item.BookID != nil || item.PageID != nil || item.HeadingID != nil {
@@ -247,7 +369,7 @@ func normalizeSavedItem(item entity.SavedItem) (entity.SavedItem, error) {
 		}
 		if *item.FromAyahNumber == *item.ToAyahNumber {
 			item.ItemType = entity.SavedItemTypeQuranAyah
-			item.AyahKey = stringPtr(quranutil.AyahKey(*item.SurahID, *item.FromAyahNumber))
+			item.AyahKey = new(quranutil.AyahKey(*item.SurahID, *item.FromAyahNumber))
 			item.FromAyahNumber = nil
 			item.ToAyahNumber = nil
 		}
@@ -275,6 +397,10 @@ func normalizeSavedItemType(itemType string, allowEmpty bool) (string, error) {
 }
 
 func normalizeSavedItemTags(tags []string) ([]string, error) {
+	if tags == nil {
+		// Absent tags stay nil so upserts can preserve stored values.
+		return nil, nil
+	}
 	if len(tags) == 0 {
 		return []string{}, nil
 	}
@@ -313,12 +439,4 @@ func normalizeSavedItemTag(tag string) (string, error) {
 
 func hasQuranTarget(item entity.SavedItem) bool {
 	return item.SurahID != nil || item.AyahKey != nil || item.FromAyahNumber != nil || item.ToAyahNumber != nil
-}
-
-func intPtr(value int) *int {
-	return &value
-}
-
-func stringPtr(value string) *string {
-	return &value
 }

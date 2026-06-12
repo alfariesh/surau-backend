@@ -17,6 +17,10 @@ import (
 // editorialSavesPerMinute caps per-user editorial draft writes (autosave bursts).
 const editorialSavesPerMinute = 120
 
+// personalWritesPerMinute caps per-user personal writes (progress autosave,
+// saved items, khatam) so reader clients cannot hammer the database.
+const personalWritesPerMinute = 240
+
 // NewRoutes -.
 func NewRoutes(
 	apiV1Group fiber.Router,
@@ -131,8 +135,31 @@ func NewRoutes(
 		userGroup.Patch("/email-preferences", r.updateEmailPreferences)
 	}
 
-	meGroup := protected.Group("/me")
+	// One shared per-user budget across all personal writes. GETs stay
+	// uncounted. In-memory store is fine: single instance, prefork off.
+	personalWriteLimiter := limiter.New(limiter.Config{
+		Max:        personalWritesPerMinute,
+		Expiration: time.Minute,
+		KeyGenerator: func(ctx *fiber.Ctx) string {
+			if userID, ok := ctx.Locals("userID").(string); ok && userID != "" {
+				return userID
+			}
+
+			return ctx.IP()
+		},
+		Next: func(ctx *fiber.Ctx) bool {
+			switch ctx.Method() {
+			case fiber.MethodPut, fiber.MethodPost, fiber.MethodPatch, fiber.MethodDelete:
+				return false
+			}
+
+			return true
+		},
+	})
+
+	meGroup := protected.Group("/me", personalWriteLimiter)
 	{
+		meGroup.Get("/progress", r.listProgress)
 		meGroup.Get("/progress/:book_id", r.getProgress)
 		meGroup.Put("/progress/:book_id", r.saveProgress)
 		meGroup.Put("/progress/:book_id/toc/:heading_id", r.saveTOCProgress)
@@ -140,6 +167,12 @@ func NewRoutes(
 		meGroup.Put("/quran/progress", r.saveQuranProgress)
 		meGroup.Get("/quran/progress/surahs", r.listQuranSurahProgress)
 		meGroup.Get("/quran/progress/surahs/:surah_id", r.getQuranSurahProgress)
+		meGroup.Post("/quran/khatam", r.startKhatamCycle)
+		meGroup.Get("/quran/khatam", r.getActiveKhatamCycle)
+		meGroup.Get("/quran/khatam/history", r.listKhatamHistory)
+		meGroup.Post("/quran/khatam/complete", r.completeKhatamCycle)
+		meGroup.Put("/quran/khatam/juz/:juz_number", r.markKhatamJuz)
+		meGroup.Delete("/quran/khatam/juz/:juz_number", r.unmarkKhatamJuz)
 		meGroup.Get("/saved-items", r.listSavedItems)
 		meGroup.Post("/saved-items", r.upsertSavedItem)
 		meGroup.Get("/saved-items/tags", r.listSavedItemTags)

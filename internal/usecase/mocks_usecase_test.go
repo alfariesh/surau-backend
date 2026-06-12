@@ -1664,6 +1664,21 @@ func (m *MockPersonal) EXPECT() *MockPersonalMockRecorder {
 	return m.recorder
 }
 
+// CompleteKhatamCycle mocks base method.
+func (m *MockPersonal) CompleteKhatamCycle(ctx context.Context, userID string) (entity.QuranKhatamCycle, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CompleteKhatamCycle", ctx, userID)
+	ret0, _ := ret[0].(entity.QuranKhatamCycle)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CompleteKhatamCycle indicates an expected call of CompleteKhatamCycle.
+func (mr *MockPersonalMockRecorder) CompleteKhatamCycle(ctx, userID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CompleteKhatamCycle", reflect.TypeOf((*MockPersonal)(nil).CompleteKhatamCycle), ctx, userID)
+}
+
 // DeleteSavedItem mocks base method.
 func (m *MockPersonal) DeleteSavedItem(ctx context.Context, userID, savedItemID string) error {
 	m.ctrl.T.Helper()
@@ -1676,6 +1691,21 @@ func (m *MockPersonal) DeleteSavedItem(ctx context.Context, userID, savedItemID 
 func (mr *MockPersonalMockRecorder) DeleteSavedItem(ctx, userID, savedItemID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteSavedItem", reflect.TypeOf((*MockPersonal)(nil).DeleteSavedItem), ctx, userID, savedItemID)
+}
+
+// GetActiveKhatamCycle mocks base method.
+func (m *MockPersonal) GetActiveKhatamCycle(ctx context.Context, userID string) (entity.QuranKhatamCycle, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetActiveKhatamCycle", ctx, userID)
+	ret0, _ := ret[0].(entity.QuranKhatamCycle)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetActiveKhatamCycle indicates an expected call of GetActiveKhatamCycle.
+func (mr *MockPersonalMockRecorder) GetActiveKhatamCycle(ctx, userID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetActiveKhatamCycle", reflect.TypeOf((*MockPersonal)(nil).GetActiveKhatamCycle), ctx, userID)
 }
 
 // GetProgress mocks base method.
@@ -1721,6 +1751,38 @@ func (m *MockPersonal) GetQuranSurahProgress(ctx context.Context, userID string,
 func (mr *MockPersonalMockRecorder) GetQuranSurahProgress(ctx, userID, surahID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetQuranSurahProgress", reflect.TypeOf((*MockPersonal)(nil).GetQuranSurahProgress), ctx, userID, surahID)
+}
+
+// ListKhatamHistory mocks base method.
+func (m *MockPersonal) ListKhatamHistory(ctx context.Context, userID string, limit, offset int) ([]entity.QuranKhatamCycle, int, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListKhatamHistory", ctx, userID, limit, offset)
+	ret0, _ := ret[0].([]entity.QuranKhatamCycle)
+	ret1, _ := ret[1].(int)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
+}
+
+// ListKhatamHistory indicates an expected call of ListKhatamHistory.
+func (mr *MockPersonalMockRecorder) ListKhatamHistory(ctx, userID, limit, offset any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListKhatamHistory", reflect.TypeOf((*MockPersonal)(nil).ListKhatamHistory), ctx, userID, limit, offset)
+}
+
+// ListProgress mocks base method.
+func (m *MockPersonal) ListProgress(ctx context.Context, userID, lang string, limit, offset int) ([]entity.ContinueReadingEntry, int, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListProgress", ctx, userID, lang, limit, offset)
+	ret0, _ := ret[0].([]entity.ContinueReadingEntry)
+	ret1, _ := ret[1].(int)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
+}
+
+// ListProgress indicates an expected call of ListProgress.
+func (mr *MockPersonalMockRecorder) ListProgress(ctx, userID, lang, limit, offset any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListProgress", reflect.TypeOf((*MockPersonal)(nil).ListProgress), ctx, userID, lang, limit, offset)
 }
 
 // ListQuranSurahProgress mocks base method.
@@ -1769,19 +1831,34 @@ func (mr *MockPersonalMockRecorder) ListSavedItems(ctx, userID, itemType, bookID
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListSavedItems", reflect.TypeOf((*MockPersonal)(nil).ListSavedItems), ctx, userID, itemType, bookID, surahID, tag, limit, offset)
 }
 
-// SaveProgress mocks base method.
-func (m *MockPersonal) SaveProgress(ctx context.Context, userID string, bookID int, pageID, headingID *int, progressPercent *float64) (entity.ReadingProgress, error) {
+// MarkKhatamJuz mocks base method.
+func (m *MockPersonal) MarkKhatamJuz(ctx context.Context, userID string, juzNumber int) (entity.QuranKhatamCycle, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "SaveProgress", ctx, userID, bookID, pageID, headingID, progressPercent)
+	ret := m.ctrl.Call(m, "MarkKhatamJuz", ctx, userID, juzNumber)
+	ret0, _ := ret[0].(entity.QuranKhatamCycle)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// MarkKhatamJuz indicates an expected call of MarkKhatamJuz.
+func (mr *MockPersonalMockRecorder) MarkKhatamJuz(ctx, userID, juzNumber any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MarkKhatamJuz", reflect.TypeOf((*MockPersonal)(nil).MarkKhatamJuz), ctx, userID, juzNumber)
+}
+
+// SaveProgress mocks base method.
+func (m *MockPersonal) SaveProgress(ctx context.Context, userID string, bookID int, pageID, headingID *int, progressPercent *float64, clientObservedAt *time.Time) (entity.ReadingProgress, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SaveProgress", ctx, userID, bookID, pageID, headingID, progressPercent, clientObservedAt)
 	ret0, _ := ret[0].(entity.ReadingProgress)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // SaveProgress indicates an expected call of SaveProgress.
-func (mr *MockPersonalMockRecorder) SaveProgress(ctx, userID, bookID, pageID, headingID, progressPercent any) *gomock.Call {
+func (mr *MockPersonalMockRecorder) SaveProgress(ctx, userID, bookID, pageID, headingID, progressPercent, clientObservedAt any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SaveProgress", reflect.TypeOf((*MockPersonal)(nil).SaveProgress), ctx, userID, bookID, pageID, headingID, progressPercent)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SaveProgress", reflect.TypeOf((*MockPersonal)(nil).SaveProgress), ctx, userID, bookID, pageID, headingID, progressPercent, clientObservedAt)
 }
 
 // SaveQuranProgress mocks base method.
@@ -1799,28 +1876,59 @@ func (mr *MockPersonalMockRecorder) SaveQuranProgress(ctx, userID, ayahKey, clie
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SaveQuranProgress", reflect.TypeOf((*MockPersonal)(nil).SaveQuranProgress), ctx, userID, ayahKey, clientObservedAt)
 }
 
-// UpdateSavedItem mocks base method.
-func (m *MockPersonal) UpdateSavedItem(ctx context.Context, userID, savedItemID string, label, note *string, tags []string) (entity.SavedItem, error) {
+// StartKhatamCycle mocks base method.
+func (m *MockPersonal) StartKhatamCycle(ctx context.Context, userID string, notes *string) (entity.QuranKhatamCycle, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "UpdateSavedItem", ctx, userID, savedItemID, label, note, tags)
+	ret := m.ctrl.Call(m, "StartKhatamCycle", ctx, userID, notes)
+	ret0, _ := ret[0].(entity.QuranKhatamCycle)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// StartKhatamCycle indicates an expected call of StartKhatamCycle.
+func (mr *MockPersonalMockRecorder) StartKhatamCycle(ctx, userID, notes any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StartKhatamCycle", reflect.TypeOf((*MockPersonal)(nil).StartKhatamCycle), ctx, userID, notes)
+}
+
+// UnmarkKhatamJuz mocks base method.
+func (m *MockPersonal) UnmarkKhatamJuz(ctx context.Context, userID string, juzNumber int) (entity.QuranKhatamCycle, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UnmarkKhatamJuz", ctx, userID, juzNumber)
+	ret0, _ := ret[0].(entity.QuranKhatamCycle)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// UnmarkKhatamJuz indicates an expected call of UnmarkKhatamJuz.
+func (mr *MockPersonalMockRecorder) UnmarkKhatamJuz(ctx, userID, juzNumber any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UnmarkKhatamJuz", reflect.TypeOf((*MockPersonal)(nil).UnmarkKhatamJuz), ctx, userID, juzNumber)
+}
+
+// UpdateSavedItem mocks base method.
+func (m *MockPersonal) UpdateSavedItem(ctx context.Context, userID, savedItemID string, patch entity.SavedItemPatch) (entity.SavedItem, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateSavedItem", ctx, userID, savedItemID, patch)
 	ret0, _ := ret[0].(entity.SavedItem)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // UpdateSavedItem indicates an expected call of UpdateSavedItem.
-func (mr *MockPersonalMockRecorder) UpdateSavedItem(ctx, userID, savedItemID, label, note, tags any) *gomock.Call {
+func (mr *MockPersonalMockRecorder) UpdateSavedItem(ctx, userID, savedItemID, patch any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateSavedItem", reflect.TypeOf((*MockPersonal)(nil).UpdateSavedItem), ctx, userID, savedItemID, label, note, tags)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateSavedItem", reflect.TypeOf((*MockPersonal)(nil).UpdateSavedItem), ctx, userID, savedItemID, patch)
 }
 
 // UpsertSavedItem mocks base method.
-func (m *MockPersonal) UpsertSavedItem(ctx context.Context, userID string, item entity.SavedItem) (entity.SavedItem, error) {
+func (m *MockPersonal) UpsertSavedItem(ctx context.Context, userID string, item entity.SavedItem) (entity.SavedItem, bool, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "UpsertSavedItem", ctx, userID, item)
 	ret0, _ := ret[0].(entity.SavedItem)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
+	ret1, _ := ret[1].(bool)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
 }
 
 // UpsertSavedItem indicates an expected call of UpsertSavedItem.

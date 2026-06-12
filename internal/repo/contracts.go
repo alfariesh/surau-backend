@@ -328,15 +328,22 @@ type (
 	PersonalRepo interface {
 		GetProgress(ctx context.Context, userID string, bookID int) (entity.ReadingProgress, error)
 		SaveProgress(ctx context.Context, progress entity.ReadingProgress) (entity.ReadingProgress, error)
+		ListProgress(ctx context.Context, userID, lang string, limit, offset uint64) ([]entity.ContinueReadingEntry, int, error)
 		GetQuranProgress(ctx context.Context, userID string) (entity.QuranReadingProgress, error)
 		GetQuranSurahProgress(ctx context.Context, userID string, surahID int) (entity.QuranReadingProgress, error)
 		ListQuranSurahProgress(ctx context.Context, userID string) ([]entity.QuranReadingProgress, error)
 		SaveQuranProgress(ctx context.Context, progress entity.QuranReadingProgress) (entity.QuranReadingProgress, error)
 		ListSavedItems(ctx context.Context, userID string, filter SavedItemFilter) ([]entity.SavedItem, int, error)
-		UpsertSavedItem(ctx context.Context, item entity.SavedItem) (entity.SavedItem, error)
-		UpdateSavedItem(ctx context.Context, item entity.SavedItem) (entity.SavedItem, error)
+		UpsertSavedItem(ctx context.Context, item entity.SavedItem) (entity.SavedItem, bool, error)
+		UpdateSavedItem(ctx context.Context, userID, savedItemID string, patch entity.SavedItemPatch) (entity.SavedItem, error)
 		DeleteSavedItem(ctx context.Context, userID, savedItemID string) error
 		ListSavedItemTags(ctx context.Context, userID string) ([]string, error)
+		StartKhatamCycle(ctx context.Context, cycle entity.QuranKhatamCycle) (entity.QuranKhatamCycle, error)
+		GetActiveKhatamCycle(ctx context.Context, userID string) (entity.QuranKhatamCycle, error)
+		MarkKhatamJuz(ctx context.Context, userID string, juzNumber int) (entity.QuranKhatamCycle, error)
+		UnmarkKhatamJuz(ctx context.Context, userID string, juzNumber int) (entity.QuranKhatamCycle, error)
+		CompleteKhatamCycle(ctx context.Context, userID string) (entity.QuranKhatamCycle, error)
+		ListKhatamHistory(ctx context.Context, userID string, limit, offset uint64) ([]entity.QuranKhatamCycle, int, error)
 	}
 
 	// EditorialRepo -.

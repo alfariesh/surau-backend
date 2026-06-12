@@ -2,6 +2,7 @@ package usecase_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -30,24 +31,89 @@ func TestPersonalSaveProgressHeadingOnly(t *testing.T) {
 	uc, mockRepo := newPersonalUseCase(t)
 	headingID := 12
 	progressPercent := 33.5
+	observedAt := time.Date(2026, 1, 1, 0, 0, 0, 0, time.FixedZone("WIB", 7*60*60))
 
 	mockRepo.EXPECT().
-		SaveProgress(context.Background(), entity.ReadingProgress{
-			UserID:          "user-id",
-			BookID:          1,
-			HeadingID:       &headingID,
-			ProgressPercent: &progressPercent,
-		}).
+		SaveProgress(context.Background(), gomock.Any()).
 		DoAndReturn(func(_ context.Context, progress entity.ReadingProgress) (entity.ReadingProgress, error) {
+			assert.Equal(t, "user-id", progress.UserID)
+			assert.Equal(t, 1, progress.BookID)
+			assert.Nil(t, progress.PageID)
+			assert.Equal(t, &headingID, progress.HeadingID)
+			assert.Equal(t, &progressPercent, progress.ProgressPercent)
+			assert.Equal(t, observedAt.UTC(), progress.ObservedAt)
+
 			return progress, nil
 		})
 
-	progress, err := uc.SaveProgress(context.Background(), "user-id", 1, nil, &headingID, &progressPercent)
+	progress, err := uc.SaveProgress(context.Background(), "user-id", 1, nil, &headingID, &progressPercent, &observedAt)
 
 	require.NoError(t, err)
 	assert.Nil(t, progress.PageID)
 	assert.Equal(t, &headingID, progress.HeadingID)
 	assert.Equal(t, &progressPercent, progress.ProgressPercent)
+}
+
+func TestPersonalSaveProgressDefaultsObservedAt(t *testing.T) {
+	t.Parallel()
+
+	uc, mockRepo := newPersonalUseCase(t)
+
+	mockRepo.EXPECT().
+		SaveProgress(context.Background(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, progress entity.ReadingProgress) (entity.ReadingProgress, error) {
+			assert.WithinDuration(t, time.Now().UTC(), progress.ObservedAt, time.Minute)
+
+			return progress, nil
+		})
+
+	_, err := uc.SaveProgress(context.Background(), "user-id", 1, nil, nil, nil, nil)
+
+	require.NoError(t, err)
+}
+
+func TestPersonalSaveProgressRejectsFutureObservedAt(t *testing.T) {
+	t.Parallel()
+
+	uc, _ := newPersonalUseCase(t)
+
+	_, err := uc.SaveProgress(
+		context.Background(),
+		"user-id",
+		1,
+		nil,
+		nil,
+		nil,
+		new(time.Now().Add(10*time.Minute)),
+	)
+
+	require.ErrorIs(t, err, entity.ErrInvalidReadingProgress)
+}
+
+func TestPersonalListProgressNormalizesLangAndClampsPagination(t *testing.T) {
+	t.Parallel()
+
+	uc, mockRepo := newPersonalUseCase(t)
+
+	mockRepo.EXPECT().
+		ListProgress(context.Background(), "user-id", "id", uint64(200), uint64(10000)).
+		Return([]entity.ContinueReadingEntry{}, 0, nil)
+
+	entries, total, err := uc.ListProgress(context.Background(), "user-id", "", 999, 99999)
+
+	require.NoError(t, err)
+	assert.Empty(t, entries)
+	assert.Zero(t, total)
+}
+
+func TestPersonalListProgressRejectsUnsupportedLang(t *testing.T) {
+	t.Parallel()
+
+	uc, _ := newPersonalUseCase(t)
+
+	_, _, err := uc.ListProgress(context.Background(), "user-id", "fr", 10, 0)
+
+	require.ErrorIs(t, err, entity.ErrUnsupportedLanguage)
 }
 
 func TestPersonalSaveQuranProgressNormalizesAyahKey(t *testing.T) {
@@ -91,7 +157,7 @@ func TestPersonalSaveQuranProgressRejectsInvalidInput(t *testing.T) {
 		{
 			name:     "future observed at",
 			ayahKey:  "73:4",
-			observed: timePtr(time.Now().Add(10 * time.Minute)),
+			observed: new(time.Now().Add(10 * time.Minute)),
 			wantErr:  entity.ErrInvalidQuranProgress,
 		},
 	}
@@ -140,7 +206,7 @@ func TestPersonalUpsertSavedItemNormalizesQuranTags(t *testing.T) {
 
 	mockRepo.EXPECT().
 		UpsertSavedItem(context.Background(), gomock.Any()).
-		DoAndReturn(func(_ context.Context, item entity.SavedItem) (entity.SavedItem, error) {
+		DoAndReturn(func(_ context.Context, item entity.SavedItem) (entity.SavedItem, bool, error) {
 			require.NotEmpty(t, item.ID)
 			require.NotNil(t, item.SurahID)
 			require.NotNil(t, item.AyahKey)
@@ -150,21 +216,114 @@ func TestPersonalUpsertSavedItemNormalizesQuranTags(t *testing.T) {
 			assert.Equal(t, "73:4", *item.AyahKey)
 			assert.Equal(t, []string{"tafsir", "fiqh"}, item.Tags)
 
-			return item, nil
+			return item, true, nil
 		})
 
-	item, err := uc.UpsertSavedItem(context.Background(), "user-id", entity.SavedItem{
+	item, created, err := uc.UpsertSavedItem(context.Background(), "user-id", entity.SavedItem{
 		ItemType: entity.SavedItemTypeQuranAyah,
 		AyahKey:  &ayahKey,
 		Tags:     []string{" Tafsir ", "tafsir", "Fiqh", ""},
 	})
 
 	require.NoError(t, err)
+	assert.True(t, created)
 	assert.Equal(t, []string{"tafsir", "fiqh"}, item.Tags)
 }
 
-func timePtr(value time.Time) *time.Time {
-	return &value
+func TestPersonalUpsertSavedItemKeepsAbsentTagsNil(t *testing.T) {
+	t.Parallel()
+
+	uc, mockRepo := newPersonalUseCase(t)
+	ayahKey := "73:4"
+
+	mockRepo.EXPECT().
+		UpsertSavedItem(context.Background(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, item entity.SavedItem) (entity.SavedItem, bool, error) {
+			assert.Nil(t, item.Tags)
+
+			return item, false, nil
+		})
+
+	_, created, err := uc.UpsertSavedItem(context.Background(), "user-id", entity.SavedItem{
+		ItemType: entity.SavedItemTypeQuranAyah,
+		AyahKey:  &ayahKey,
+	})
+
+	require.NoError(t, err)
+	assert.False(t, created)
+}
+
+func TestPersonalUpdateSavedItemPatchSemantics(t *testing.T) {
+	t.Parallel()
+
+	t.Run("empty patch rejected", func(t *testing.T) {
+		t.Parallel()
+
+		uc, _ := newPersonalUseCase(t)
+
+		_, err := uc.UpdateSavedItem(context.Background(), "user-id", "saved-id", entity.SavedItemPatch{})
+
+		require.ErrorIs(t, err, entity.ErrInvalidSavedItem)
+	})
+
+	t.Run("label too long rejected", func(t *testing.T) {
+		t.Parallel()
+
+		uc, _ := newPersonalUseCase(t)
+		label := strings.Repeat("a", 256)
+
+		_, err := uc.UpdateSavedItem(context.Background(), "user-id", "saved-id", entity.SavedItemPatch{
+			Label:    &label,
+			LabelSet: true,
+		})
+
+		require.ErrorIs(t, err, entity.ErrInvalidSavedItem)
+	})
+
+	t.Run("explicit null tags clear to empty", func(t *testing.T) {
+		t.Parallel()
+
+		uc, mockRepo := newPersonalUseCase(t)
+
+		mockRepo.EXPECT().
+			UpdateSavedItem(context.Background(), "user-id", "saved-id", gomock.Any()).
+			DoAndReturn(func(_ context.Context, _, _ string, patch entity.SavedItemPatch) (entity.SavedItem, error) {
+				assert.True(t, patch.TagsSet)
+				assert.Equal(t, []string{}, patch.Tags)
+				assert.False(t, patch.LabelSet)
+				assert.False(t, patch.NoteSet)
+
+				return entity.SavedItem{ID: "saved-id"}, nil
+			})
+
+		_, err := uc.UpdateSavedItem(context.Background(), "user-id", "saved-id", entity.SavedItemPatch{
+			TagsSet: true,
+			Tags:    nil,
+		})
+
+		require.NoError(t, err)
+	})
+
+	t.Run("tags normalized", func(t *testing.T) {
+		t.Parallel()
+
+		uc, mockRepo := newPersonalUseCase(t)
+
+		mockRepo.EXPECT().
+			UpdateSavedItem(context.Background(), "user-id", "saved-id", gomock.Any()).
+			DoAndReturn(func(_ context.Context, _, _ string, patch entity.SavedItemPatch) (entity.SavedItem, error) {
+				assert.Equal(t, []string{"tafsir", "fiqh"}, patch.Tags)
+
+				return entity.SavedItem{ID: "saved-id"}, nil
+			})
+
+		_, err := uc.UpdateSavedItem(context.Background(), "user-id", "saved-id", entity.SavedItemPatch{
+			TagsSet: true,
+			Tags:    []string{" Tafsir ", "tafsir", "Fiqh", ""},
+		})
+
+		require.NoError(t, err)
+	})
 }
 
 func TestPersonalUpsertSavedItemNormalizesSingleAyahRange(t *testing.T) {
@@ -177,7 +336,7 @@ func TestPersonalUpsertSavedItemNormalizesSingleAyahRange(t *testing.T) {
 
 	mockRepo.EXPECT().
 		UpsertSavedItem(context.Background(), gomock.Any()).
-		DoAndReturn(func(_ context.Context, item entity.SavedItem) (entity.SavedItem, error) {
+		DoAndReturn(func(_ context.Context, item entity.SavedItem) (entity.SavedItem, bool, error) {
 			require.NotNil(t, item.SurahID)
 			require.NotNil(t, item.AyahKey)
 			assert.Equal(t, entity.SavedItemTypeQuranAyah, item.ItemType)
@@ -186,10 +345,10 @@ func TestPersonalUpsertSavedItemNormalizesSingleAyahRange(t *testing.T) {
 			assert.Nil(t, item.FromAyahNumber)
 			assert.Nil(t, item.ToAyahNumber)
 
-			return item, nil
+			return item, true, nil
 		})
 
-	item, err := uc.UpsertSavedItem(context.Background(), "user-id", entity.SavedItem{
+	item, _, err := uc.UpsertSavedItem(context.Background(), "user-id", entity.SavedItem{
 		ItemType:       entity.SavedItemTypeQuranRange,
 		SurahID:        &surahID,
 		FromAyahNumber: &fromAyah,
@@ -198,6 +357,77 @@ func TestPersonalUpsertSavedItemNormalizesSingleAyahRange(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Equal(t, entity.SavedItemTypeQuranAyah, item.ItemType)
+}
+
+func TestPersonalKhatamValidations(t *testing.T) {
+	t.Parallel()
+
+	t.Run("mark rejects out-of-range juz", func(t *testing.T) {
+		t.Parallel()
+
+		uc, _ := newPersonalUseCase(t)
+
+		_, err := uc.MarkKhatamJuz(context.Background(), "user-id", 0)
+		require.ErrorIs(t, err, entity.ErrInvalidJuzNumber)
+
+		_, err = uc.UnmarkKhatamJuz(context.Background(), "user-id", 31)
+		require.ErrorIs(t, err, entity.ErrInvalidJuzNumber)
+	})
+
+	t.Run("start trims notes and generates id", func(t *testing.T) {
+		t.Parallel()
+
+		uc, mockRepo := newPersonalUseCase(t)
+		notes := "  Khatam Ramadhan  "
+
+		mockRepo.EXPECT().
+			StartKhatamCycle(context.Background(), gomock.Any()).
+			DoAndReturn(func(_ context.Context, cycle entity.QuranKhatamCycle) (entity.QuranKhatamCycle, error) {
+				require.NotEmpty(t, cycle.ID)
+				assert.Equal(t, "user-id", cycle.UserID)
+				require.NotNil(t, cycle.Notes)
+				assert.Equal(t, "Khatam Ramadhan", *cycle.Notes)
+
+				return cycle, nil
+			})
+
+		_, err := uc.StartKhatamCycle(context.Background(), "user-id", &notes)
+
+		require.NoError(t, err)
+	})
+
+	t.Run("start drops empty notes", func(t *testing.T) {
+		t.Parallel()
+
+		uc, mockRepo := newPersonalUseCase(t)
+		notes := "   "
+
+		mockRepo.EXPECT().
+			StartKhatamCycle(context.Background(), gomock.Any()).
+			DoAndReturn(func(_ context.Context, cycle entity.QuranKhatamCycle) (entity.QuranKhatamCycle, error) {
+				assert.Nil(t, cycle.Notes)
+
+				return cycle, nil
+			})
+
+		_, err := uc.StartKhatamCycle(context.Background(), "user-id", &notes)
+
+		require.NoError(t, err)
+	})
+
+	t.Run("history clamps pagination", func(t *testing.T) {
+		t.Parallel()
+
+		uc, mockRepo := newPersonalUseCase(t)
+
+		mockRepo.EXPECT().
+			ListKhatamHistory(context.Background(), "user-id", uint64(200), uint64(0)).
+			Return([]entity.QuranKhatamCycle{}, 0, nil)
+
+		_, _, err := uc.ListKhatamHistory(context.Background(), "user-id", 999, -5)
+
+		require.NoError(t, err)
+	})
 }
 
 func TestPersonalListSavedItemsClampsPaginationAndNormalizesTag(t *testing.T) {

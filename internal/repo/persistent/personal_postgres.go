@@ -45,23 +45,80 @@ func (r *PersonalRepo) GetProgress(ctx context.Context, userID string, bookID in
 	return progress, nil
 }
 
-// SaveProgress upserts a user's progress for a book.
+// SaveProgress upserts a user's progress for a book without rolling back stale
+// observed events. Target validation and the monotonic upsert share one
+// statement so the location cannot be unpublished between check and write.
 func (r *PersonalRepo) SaveProgress(ctx context.Context, progress entity.ReadingProgress) (entity.ReadingProgress, error) {
-	if err := r.validateReaderLocation(ctx, progress.BookID, progress.PageID, progress.HeadingID, false); err != nil {
-		return entity.ReadingProgress{}, err
+	if progress.BookID <= 0 {
+		return entity.ReadingProgress{}, entity.ErrBookNotFound
+	}
+	if progress.PageID != nil && *progress.PageID <= 0 {
+		return entity.ReadingProgress{}, entity.ErrInvalidReaderLocation
+	}
+	if progress.HeadingID != nil && *progress.HeadingID <= 0 {
+		return entity.ReadingProgress{}, entity.ErrInvalidReaderLocation
+	}
+	if progress.ObservedAt.IsZero() {
+		progress.ObservedAt = time.Now().UTC()
 	}
 
 	sqlText := `
-INSERT INTO reading_progress (user_id, book_id, page_id, heading_id, progress_percent, updated_at)
-VALUES ($1, $2, $3, $4, $5, now())
-ON CONFLICT (user_id, book_id) DO UPDATE SET
-    page_id = EXCLUDED.page_id,
-    heading_id = EXCLUDED.heading_id,
-    progress_percent = EXCLUDED.progress_percent,
-    updated_at = now()
-RETURNING user_id, book_id, page_id, heading_id, progress_percent, updated_at`
+WITH checks AS (
+    SELECT
+        EXISTS (
+            SELECT 1
+            FROM books b
+            JOIN book_publications p ON p.book_id = b.id AND p.status = 'published'
+            WHERE b.id = $2 AND b.is_deleted = false
+        ) AS book_ok,
+        ($3::int IS NULL OR EXISTS (
+            SELECT 1 FROM book_pages WHERE book_id = $2 AND page_id = $3 AND is_deleted = false
+        )) AS page_ok,
+        ($4::int IS NULL OR EXISTS (
+            SELECT 1 FROM book_headings WHERE book_id = $2 AND heading_id = $4 AND is_deleted = false
+        )) AS heading_ok
+),
+upserted AS (
+    INSERT INTO reading_progress (user_id, book_id, page_id, heading_id, progress_percent, observed_at, updated_at)
+    SELECT $1, $2, $3, $4, $5, $6, now()
+    FROM checks
+    WHERE book_ok AND page_ok AND heading_ok
+    ON CONFLICT (user_id, book_id) DO UPDATE SET
+        page_id = CASE
+            WHEN reading_progress.observed_at <= EXCLUDED.observed_at THEN EXCLUDED.page_id
+            ELSE reading_progress.page_id
+        END,
+        heading_id = CASE
+            WHEN reading_progress.observed_at <= EXCLUDED.observed_at THEN EXCLUDED.heading_id
+            ELSE reading_progress.heading_id
+        END,
+        progress_percent = CASE
+            WHEN reading_progress.observed_at <= EXCLUDED.observed_at THEN EXCLUDED.progress_percent
+            ELSE reading_progress.progress_percent
+        END,
+        observed_at = GREATEST(reading_progress.observed_at, EXCLUDED.observed_at),
+        updated_at = CASE
+            WHEN reading_progress.observed_at <= EXCLUDED.observed_at THEN now()
+            ELSE reading_progress.updated_at
+        END
+    RETURNING user_id, book_id, page_id, heading_id, progress_percent, observed_at, updated_at
+)
+SELECT c.book_ok, c.page_ok, c.heading_ok,
+       u.user_id, u.book_id, u.page_id, u.heading_id, u.progress_percent, u.observed_at, u.updated_at
+FROM checks c
+LEFT JOIN upserted u ON true`
 
-	saved, err := scanProgress(r.Pool.QueryRow(
+	var (
+		bookOK, pageOK, headingOK bool
+		userID                    sql.NullString
+		bookID                    sql.NullInt64
+		pageID                    sql.NullInt64
+		headingID                 sql.NullInt64
+		progressPercent           sql.NullFloat64
+		observedAt                sql.NullTime
+		updatedAt                 sql.NullTime
+	)
+	if err := r.Pool.QueryRow(
 		ctx,
 		sqlText,
 		progress.UserID,
@@ -69,19 +126,137 @@ RETURNING user_id, book_id, page_id, heading_id, progress_percent, updated_at`
 		progress.PageID,
 		progress.HeadingID,
 		progress.ProgressPercent,
-	))
-	if err != nil {
-		return entity.ReadingProgress{}, fmt.Errorf("PersonalRepo - SaveProgress - scanProgress: %w", err)
+		progress.ObservedAt,
+	).Scan(
+		&bookOK, &pageOK, &headingOK,
+		&userID, &bookID, &pageID, &headingID, &progressPercent, &observedAt, &updatedAt,
+	); err != nil {
+		return entity.ReadingProgress{}, fmt.Errorf("PersonalRepo - SaveProgress - Scan: %w", err)
+	}
+
+	switch {
+	case !bookOK:
+		return entity.ReadingProgress{}, entity.ErrBookNotFound
+	case !pageOK:
+		return entity.ReadingProgress{}, entity.ErrPageNotFound
+	case !headingOK:
+		return entity.ReadingProgress{}, entity.ErrHeadingNotFound
+	case !userID.Valid:
+		return entity.ReadingProgress{}, fmt.Errorf("PersonalRepo - SaveProgress: %w", pgx.ErrNoRows)
+	}
+
+	saved := entity.ReadingProgress{
+		UserID:     userID.String,
+		BookID:     int(bookID.Int64),
+		PageID:     nullableInt(pageID),
+		HeadingID:  nullableInt(headingID),
+		ObservedAt: observedAt.Time,
+		UpdatedAt:  updatedAt.Time,
+	}
+	if progressPercent.Valid {
+		saved.ProgressPercent = &progressPercent.Float64
 	}
 
 	return saved, nil
 }
 
+// ListProgress returns a user's in-progress books ordered by recent activity,
+// enriched with light book metadata so clients can render a shelf directly.
+// Unpublished and deleted books drop off the list.
+func (r *PersonalRepo) ListProgress(
+	ctx context.Context,
+	userID, lang string,
+	limit, offset uint64,
+) ([]entity.ContinueReadingEntry, int, error) {
+	const countSQL = `
+SELECT COUNT(*)
+FROM reading_progress rp
+JOIN books b ON b.id = rp.book_id AND b.is_deleted = false
+JOIN book_publications p ON p.book_id = b.id AND p.status = 'published'
+WHERE rp.user_id = $1`
+
+	var total int
+	if err := r.Pool.QueryRow(ctx, countSQL, userID).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("PersonalRepo - ListProgress - count: %w", err)
+	}
+
+	const dataSQL = `
+SELECT rp.user_id,
+       rp.book_id,
+       rp.page_id,
+       rp.heading_id,
+       rp.progress_percent,
+       rp.observed_at,
+       rp.updated_at,
+       CASE WHEN bmt.book_id IS NOT NULL THEN bmt.display_title ELSE COALESCE(me.display_title, b.name) END AS book_name,
+       me.cover_url,
+       CASE WHEN at.author_id IS NOT NULL THEN at.name ELSE a.name END AS author_name
+FROM reading_progress rp
+JOIN books b ON b.id = rp.book_id AND b.is_deleted = false
+JOIN book_publications p ON p.book_id = b.id AND p.status = 'published'
+LEFT JOIN book_metadata_edits me ON me.book_id = b.id AND me.status = 'published'
+LEFT JOIN book_production_projects bpp
+    ON bpp.book_id = b.id AND bpp.lang = $2 AND bpp.workflow_status <> 'archived' AND $2 <> 'ar'
+LEFT JOIN book_metadata_translations bmt
+    ON bmt.book_id = b.id AND bmt.lang = $2 AND bmt.is_deleted = false AND bpp.publication_status = 'published'
+LEFT JOIN authors a ON a.id = b.author_id
+LEFT JOIN author_translations at
+    ON at.author_id = a.id AND at.lang = $2 AND at.is_deleted = false AND bpp.publication_status = 'published'
+WHERE rp.user_id = $1
+ORDER BY rp.updated_at DESC, rp.book_id ASC
+LIMIT $3 OFFSET $4`
+
+	rows, err := r.Pool.Query(ctx, dataSQL, userID, lang, limit, offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("PersonalRepo - ListProgress - r.Pool.Query: %w", err)
+	}
+	defer rows.Close()
+
+	entries := make([]entity.ContinueReadingEntry, 0, limit)
+	for rows.Next() {
+		var entry entity.ContinueReadingEntry
+		var pageID, headingID sql.NullInt64
+		var progressPercent sql.NullFloat64
+		var coverURL, authorName sql.NullString
+
+		if err := rows.Scan(
+			&entry.UserID,
+			&entry.BookID,
+			&pageID,
+			&headingID,
+			&progressPercent,
+			&entry.ObservedAt,
+			&entry.UpdatedAt,
+			&entry.Book.Name,
+			&coverURL,
+			&authorName,
+		); err != nil {
+			return nil, 0, fmt.Errorf("PersonalRepo - ListProgress - rows.Scan: %w", err)
+		}
+
+		entry.PageID = nullableInt(pageID)
+		entry.HeadingID = nullableInt(headingID)
+		if progressPercent.Valid {
+			entry.ProgressPercent = &progressPercent.Float64
+		}
+		entry.Book.BookID = entry.BookID
+		entry.Book.CoverURL = nullableString(coverURL)
+		entry.Book.AuthorName = nullableString(authorName)
+
+		entries = append(entries, entry)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("PersonalRepo - ListProgress - rows.Err: %w", err)
+	}
+
+	return entries, total, nil
+}
+
 // GetQuranProgress returns the most recently observed Quran resume position.
 func (r *PersonalRepo) GetQuranProgress(ctx context.Context, userID string) (entity.QuranReadingProgress, error) {
 	sqlText, args, err := r.quranProgressSelectBuilder().
-		Where(sq.Eq{"user_id": userID}).
-		OrderBy("observed_at DESC", "updated_at DESC", "surah_id ASC").
+		Where(sq.Eq{"qrp.user_id": userID}).
+		OrderBy("qrp.observed_at DESC", "qrp.updated_at DESC", "qrp.surah_id ASC").
 		Limit(1).
 		ToSql()
 	if err != nil {
@@ -107,7 +282,7 @@ func (r *PersonalRepo) GetQuranSurahProgress(
 	surahID int,
 ) (entity.QuranReadingProgress, error) {
 	sqlText, args, err := r.quranProgressSelectBuilder().
-		Where(sq.Eq{"user_id": userID, "surah_id": surahID}).
+		Where(sq.Eq{"qrp.user_id": userID, "qrp.surah_id": surahID}).
 		ToSql()
 	if err != nil {
 		return entity.QuranReadingProgress{}, fmt.Errorf("PersonalRepo - GetQuranSurahProgress - r.Builder: %w", err)
@@ -128,8 +303,8 @@ func (r *PersonalRepo) GetQuranSurahProgress(
 // ListQuranSurahProgress returns all per-surah Quran resume positions for a user.
 func (r *PersonalRepo) ListQuranSurahProgress(ctx context.Context, userID string) ([]entity.QuranReadingProgress, error) {
 	sqlText, args, err := r.quranProgressSelectBuilder().
-		Where(sq.Eq{"user_id": userID}).
-		OrderBy("observed_at DESC", "updated_at DESC", "surah_id ASC").
+		Where(sq.Eq{"qrp.user_id": userID}).
+		OrderBy("qrp.observed_at DESC", "qrp.updated_at DESC", "qrp.surah_id ASC").
 		ToSql()
 	if err != nil {
 		return nil, fmt.Errorf("PersonalRepo - ListQuranSurahProgress - r.Builder: %w", err)
@@ -176,31 +351,37 @@ WITH target AS (
     FROM quran_ayahs a
     JOIN quran_surahs s ON s.surah_id = a.surah_id
     WHERE a.ayah_key = $2
+),
+upserted AS (
+    INSERT INTO quran_reading_progress (
+        user_id, surah_id, ayah_number, ayah_key, position_percent, observed_at, updated_at
+    )
+    SELECT $1, surah_id, ayah_number, ayah_key, position_percent, $3, now()
+    FROM target
+    ON CONFLICT (user_id, surah_id) DO UPDATE SET
+        ayah_number = CASE
+            WHEN quran_reading_progress.observed_at <= EXCLUDED.observed_at THEN EXCLUDED.ayah_number
+            ELSE quran_reading_progress.ayah_number
+        END,
+        ayah_key = CASE
+            WHEN quran_reading_progress.observed_at <= EXCLUDED.observed_at THEN EXCLUDED.ayah_key
+            ELSE quran_reading_progress.ayah_key
+        END,
+        position_percent = CASE
+            WHEN quran_reading_progress.observed_at <= EXCLUDED.observed_at THEN EXCLUDED.position_percent
+            ELSE quran_reading_progress.position_percent
+        END,
+        observed_at = GREATEST(quran_reading_progress.observed_at, EXCLUDED.observed_at),
+        updated_at = CASE
+            WHEN quran_reading_progress.observed_at <= EXCLUDED.observed_at THEN now()
+            ELSE quran_reading_progress.updated_at
+        END
+    RETURNING user_id, surah_id, ayah_number, ayah_key, position_percent, observed_at, updated_at
 )
-INSERT INTO quran_reading_progress (
-    user_id, surah_id, ayah_number, ayah_key, position_percent, observed_at, updated_at
-)
-SELECT $1, surah_id, ayah_number, ayah_key, position_percent, $3, now()
-FROM target
-ON CONFLICT (user_id, surah_id) DO UPDATE SET
-    ayah_number = CASE
-        WHEN quran_reading_progress.observed_at <= EXCLUDED.observed_at THEN EXCLUDED.ayah_number
-        ELSE quran_reading_progress.ayah_number
-    END,
-    ayah_key = CASE
-        WHEN quran_reading_progress.observed_at <= EXCLUDED.observed_at THEN EXCLUDED.ayah_key
-        ELSE quran_reading_progress.ayah_key
-    END,
-    position_percent = CASE
-        WHEN quran_reading_progress.observed_at <= EXCLUDED.observed_at THEN EXCLUDED.position_percent
-        ELSE quran_reading_progress.position_percent
-    END,
-    observed_at = GREATEST(quran_reading_progress.observed_at, EXCLUDED.observed_at),
-    updated_at = CASE
-        WHEN quran_reading_progress.observed_at <= EXCLUDED.observed_at THEN now()
-        ELSE quran_reading_progress.updated_at
-    END
-RETURNING user_id, surah_id, ayah_number, ayah_key, position_percent, observed_at, updated_at`
+SELECT u.user_id, u.surah_id, u.ayah_number, u.ayah_key, u.position_percent, u.observed_at, u.updated_at,
+       a.page_number, a.juz_number, a.hizb_number
+FROM upserted u
+JOIN quran_ayahs a ON a.ayah_key = u.ayah_key`
 
 	saved, err := scanQuranProgress(r.Pool.QueryRow(
 		ctx,
@@ -225,7 +406,7 @@ func (r *PersonalRepo) ListSavedItems(ctx context.Context, userID string, filter
 	countBuilder := r.Builder.Select("COUNT(*)").From("saved_items").Where(sq.Eq{"user_id": userID})
 	dataBuilder := r.savedItemSelectBuilder().
 		Where(sq.Eq{"user_id": userID}).
-		OrderBy("updated_at DESC", "created_at DESC").
+		OrderBy("updated_at DESC", "created_at DESC", "id DESC").
 		Limit(filter.Limit).
 		Offset(filter.Offset)
 
@@ -281,30 +462,66 @@ func (r *PersonalRepo) ListSavedItems(ctx context.Context, userID string, filter
 }
 
 // UpsertSavedItem inserts or updates a saved item for the same target.
-func (r *PersonalRepo) UpsertSavedItem(ctx context.Context, item entity.SavedItem) (entity.SavedItem, error) {
-	if err := r.validateSavedItemTarget(ctx, item); err != nil {
-		return entity.SavedItem{}, err
-	}
+// Target validation and the upsert share one statement so the target cannot
+// be unpublished between check and write. On conflict only provided
+// (non-null) metadata overwrites the stored row; clearing is PATCH's job.
+// The returned bool reports whether a new row was created.
+func (r *PersonalRepo) UpsertSavedItem(ctx context.Context, item entity.SavedItem) (entity.SavedItem, bool, error) {
 	conflictTarget, err := savedItemConflictTarget(item.ItemType)
 	if err != nil {
-		return entity.SavedItem{}, err
+		return entity.SavedItem{}, false, err
+	}
+	checks, err := savedItemChecks(item.ItemType)
+	if err != nil {
+		return entity.SavedItem{}, false, err
 	}
 
 	sqlText := fmt.Sprintf(`
-INSERT INTO saved_items (
-    id, user_id, item_type, book_id, page_id, heading_id, surah_id, ayah_key,
-    from_ayah_number, to_ayah_number, label, note, tags, created_at, updated_at
+WITH checks AS (
+%s
+),
+upserted AS (
+    INSERT INTO saved_items (
+        id, user_id, item_type, book_id, page_id, heading_id, surah_id, ayah_key,
+        from_ayah_number, to_ayah_number, label, note, tags, created_at, updated_at
+    )
+    SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, COALESCE($13::text[], ARRAY[]::TEXT[]), now(), now()
+    FROM checks
+    WHERE primary_ok AND target_ok
+    ON CONFLICT %s DO UPDATE SET
+        label = COALESCE(EXCLUDED.label, saved_items.label),
+        note = COALESCE(EXCLUDED.note, saved_items.note),
+        tags = CASE WHEN $13::text[] IS NULL THEN saved_items.tags ELSE $13::text[] END,
+        updated_at = now()
+    RETURNING id, user_id, item_type, book_id, page_id, heading_id, surah_id, ayah_key,
+              from_ayah_number, to_ayah_number, label, note, tags, created_at, updated_at,
+              (xmax = 0) AS created
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, now(), now())
-ON CONFLICT %s DO UPDATE SET
-    label = EXCLUDED.label,
-    note = EXCLUDED.note,
-    tags = EXCLUDED.tags,
-    updated_at = now()
-RETURNING id, user_id, item_type, book_id, page_id, heading_id, surah_id, ayah_key,
-          from_ayah_number, to_ayah_number, label, note, tags, created_at, updated_at`, conflictTarget)
+SELECT c.primary_ok, c.target_ok,
+       u.id, u.user_id, u.item_type, u.book_id, u.page_id, u.heading_id, u.surah_id, u.ayah_key,
+       u.from_ayah_number, u.to_ayah_number, u.label, u.note, u.tags, u.created_at, u.updated_at, u.created
+FROM checks c
+LEFT JOIN upserted u ON true`, checks.sql, conflictTarget)
 
-	saved, err := scanSavedItem(r.Pool.QueryRow(
+	var (
+		primaryOK, targetOK bool
+		id, userID          sql.NullString
+		itemType            sql.NullString
+		bookID              sql.NullInt64
+		pageID              sql.NullInt64
+		headingID           sql.NullInt64
+		surahID             sql.NullInt64
+		ayahKey             sql.NullString
+		fromAyahNumber      sql.NullInt64
+		toAyahNumber        sql.NullInt64
+		label               sql.NullString
+		note                sql.NullString
+		tags                []string
+		createdAt           sql.NullTime
+		updatedAt           sql.NullTime
+		created             sql.NullBool
+	)
+	if err := r.Pool.QueryRow(
 		ctx,
 		sqlText,
 		item.ID,
@@ -320,27 +537,82 @@ RETURNING id, user_id, item_type, book_id, page_id, heading_id, surah_id, ayah_k
 		item.Label,
 		item.Note,
 		item.Tags,
-	))
-	if err != nil {
-		return entity.SavedItem{}, fmt.Errorf("PersonalRepo - UpsertSavedItem - scanSavedItem: %w", err)
+	).Scan(
+		&primaryOK, &targetOK,
+		&id, &userID, &itemType, &bookID, &pageID, &headingID, &surahID, &ayahKey,
+		&fromAyahNumber, &toAyahNumber, &label, &note, &tags, &createdAt, &updatedAt, &created,
+	); err != nil {
+		return entity.SavedItem{}, false, fmt.Errorf("PersonalRepo - UpsertSavedItem - Scan: %w", err)
 	}
 
-	return saved, nil
+	switch {
+	case !primaryOK:
+		return entity.SavedItem{}, false, checks.primaryErr
+	case !targetOK:
+		return entity.SavedItem{}, false, checks.targetErr
+	case !id.Valid:
+		return entity.SavedItem{}, false, fmt.Errorf("PersonalRepo - UpsertSavedItem: %w", pgx.ErrNoRows)
+	}
+
+	if tags == nil {
+		tags = []string{}
+	}
+
+	saved := entity.SavedItem{
+		ID:             id.String,
+		UserID:         userID.String,
+		ItemType:       itemType.String,
+		BookID:         nullableInt(bookID),
+		PageID:         nullableInt(pageID),
+		HeadingID:      nullableInt(headingID),
+		SurahID:        nullableInt(surahID),
+		AyahKey:        nullableString(ayahKey),
+		FromAyahNumber: nullableInt(fromAyahNumber),
+		ToAyahNumber:   nullableInt(toAyahNumber),
+		Label:          nullableString(label),
+		Note:           nullableString(note),
+		Tags:           tags,
+		CreatedAt:      createdAt.Time,
+		UpdatedAt:      updatedAt.Time,
+	}
+
+	return saved, created.Bool, nil
 }
 
-// UpdateSavedItem updates saved item metadata.
-func (r *PersonalRepo) UpdateSavedItem(ctx context.Context, item entity.SavedItem) (entity.SavedItem, error) {
-	sqlText := `
-UPDATE saved_items
-SET label = $3,
-    note = $4,
-    tags = $5,
-    updated_at = now()
-WHERE id = $1 AND user_id = $2
-RETURNING id, user_id, item_type, book_id, page_id, heading_id, surah_id, ayah_key,
-          from_ayah_number, to_ayah_number, label, note, tags, created_at, updated_at`
+// UpdateSavedItem applies a partial metadata update: only fields flagged as
+// set are written, so absent PATCH fields stay unchanged.
+func (r *PersonalRepo) UpdateSavedItem(
+	ctx context.Context,
+	userID, savedItemID string,
+	patch entity.SavedItemPatch,
+) (entity.SavedItem, error) {
+	builder := r.Builder.
+		Update("saved_items").
+		Set("updated_at", sq.Expr("now()")).
+		Where(sq.Eq{"id": savedItemID, "user_id": userID}).
+		Suffix(`RETURNING id, user_id, item_type, book_id, page_id, heading_id, surah_id, ayah_key,
+          from_ayah_number, to_ayah_number, label, note, tags, created_at, updated_at`)
 
-	updated, err := scanSavedItem(r.Pool.QueryRow(ctx, sqlText, item.ID, item.UserID, item.Label, item.Note, item.Tags))
+	if patch.LabelSet {
+		builder = builder.Set("label", patch.Label)
+	}
+	if patch.NoteSet {
+		builder = builder.Set("note", patch.Note)
+	}
+	if patch.TagsSet {
+		tags := patch.Tags
+		if tags == nil {
+			tags = []string{}
+		}
+		builder = builder.Set("tags", tags)
+	}
+
+	sqlText, args, err := builder.ToSql()
+	if err != nil {
+		return entity.SavedItem{}, fmt.Errorf("PersonalRepo - UpdateSavedItem - r.Builder: %w", err)
+	}
+
+	updated, err := scanSavedItem(r.Pool.QueryRow(ctx, sqlText, args...))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return entity.SavedItem{}, entity.ErrSavedItemNotFound
@@ -402,139 +674,74 @@ ORDER BY tag.value ASC`, userID)
 	return tags, nil
 }
 
-func (r *PersonalRepo) validateReaderLocation(ctx context.Context, bookID int, pageID, headingID *int, requireLocation bool) error {
-	if bookID <= 0 {
-		return entity.ErrBookNotFound
-	}
-	if requireLocation && pageID == nil && headingID == nil {
-		return entity.ErrInvalidReaderLocation
-	}
-	if pageID != nil && *pageID <= 0 {
-		return entity.ErrInvalidReaderLocation
-	}
-	if headingID != nil && *headingID <= 0 {
-		return entity.ErrInvalidReaderLocation
-	}
-
-	var exists bool
-	if err := r.Pool.QueryRow(ctx, `
-SELECT EXISTS (
-    SELECT 1
-    FROM books b
-    JOIN book_publications p ON p.book_id = b.id AND p.status = 'published'
-    WHERE b.id = $1 AND b.is_deleted = false
-)`,
-		bookID,
-	).Scan(&exists); err != nil {
-		return fmt.Errorf("PersonalRepo - validateReaderLocation - book: %w", err)
-	}
-	if !exists {
-		return entity.ErrBookNotFound
-	}
-
-	if pageID != nil {
-		if err := r.Pool.QueryRow(ctx, `
-SELECT EXISTS (
-    SELECT 1
-    FROM book_pages
-    WHERE book_id = $1 AND page_id = $2 AND is_deleted = false
-)`,
-			bookID,
-			*pageID,
-		).Scan(&exists); err != nil {
-			return fmt.Errorf("PersonalRepo - validateReaderLocation - page: %w", err)
-		}
-		if !exists {
-			return entity.ErrPageNotFound
-		}
-	}
-
-	if headingID != nil {
-		if err := r.Pool.QueryRow(ctx, `
-SELECT EXISTS (
-    SELECT 1
-    FROM book_headings
-    WHERE book_id = $1 AND heading_id = $2 AND is_deleted = false
-)`,
-			bookID,
-			*headingID,
-		).Scan(&exists); err != nil {
-			return fmt.Errorf("PersonalRepo - validateReaderLocation - heading: %w", err)
-		}
-		if !exists {
-			return entity.ErrHeadingNotFound
-		}
-	}
-
-	return nil
+// savedItemTargetChecks pairs the per-type validation CTE body with the
+// errors reported when its flags come back false. The SQL references the
+// shared upsert parameters: $4 book_id, $5 page_id, $6 heading_id,
+// $7 surah_id, $8 ayah_key, $9 from_ayah_number, $10 to_ayah_number.
+type savedItemTargetChecks struct {
+	sql        string
+	primaryErr error
+	targetErr  error
 }
 
-func (r *PersonalRepo) validateSavedItemTarget(ctx context.Context, item entity.SavedItem) error {
-	switch item.ItemType {
+func savedItemChecks(itemType string) (savedItemTargetChecks, error) {
+	switch itemType {
 	case entity.SavedItemTypeBookPage:
-		if item.BookID == nil || item.PageID == nil {
-			return entity.ErrInvalidSavedItem
-		}
-		return r.validateReaderLocation(ctx, *item.BookID, item.PageID, nil, true)
+		return savedItemTargetChecks{
+			sql: `    SELECT
+        EXISTS (
+            SELECT 1
+            FROM books b
+            JOIN book_publications p ON p.book_id = b.id AND p.status = 'published'
+            WHERE b.id = $4 AND b.is_deleted = false
+        ) AS primary_ok,
+        EXISTS (
+            SELECT 1 FROM book_pages WHERE book_id = $4 AND page_id = $5 AND is_deleted = false
+        ) AS target_ok`,
+			primaryErr: entity.ErrBookNotFound,
+			targetErr:  entity.ErrPageNotFound,
+		}, nil
 	case entity.SavedItemTypeBookHeading:
-		if item.BookID == nil || item.HeadingID == nil {
-			return entity.ErrInvalidSavedItem
-		}
-		return r.validateReaderLocation(ctx, *item.BookID, nil, item.HeadingID, true)
+		return savedItemTargetChecks{
+			sql: `    SELECT
+        EXISTS (
+            SELECT 1
+            FROM books b
+            JOIN book_publications p ON p.book_id = b.id AND p.status = 'published'
+            WHERE b.id = $4 AND b.is_deleted = false
+        ) AS primary_ok,
+        EXISTS (
+            SELECT 1 FROM book_headings WHERE book_id = $4 AND heading_id = $6 AND is_deleted = false
+        ) AS target_ok`,
+			primaryErr: entity.ErrBookNotFound,
+			targetErr:  entity.ErrHeadingNotFound,
+		}, nil
 	case entity.SavedItemTypeQuranAyah:
-		if item.AyahKey == nil || item.SurahID == nil {
-			return entity.ErrInvalidSavedItem
-		}
-
-		var exists bool
-		if err := r.Pool.QueryRow(ctx, `
-SELECT EXISTS (
-    SELECT 1
-    FROM quran_ayahs
-    WHERE ayah_key = $1 AND surah_id = $2
-)`, *item.AyahKey, *item.SurahID).Scan(&exists); err != nil {
-			return fmt.Errorf("PersonalRepo - validateSavedItemTarget - quran_ayah: %w", err)
-		}
-		if !exists {
-			return entity.ErrQuranAyahNotFound
-		}
+		return savedItemTargetChecks{
+			sql: `    SELECT
+        EXISTS (
+            SELECT 1 FROM quran_ayahs WHERE ayah_key = $8 AND surah_id = $7
+        ) AS primary_ok,
+        true AS target_ok`,
+			primaryErr: entity.ErrQuranAyahNotFound,
+			targetErr:  entity.ErrQuranAyahNotFound,
+		}, nil
 	case entity.SavedItemTypeQuranRange:
-		if item.SurahID == nil || item.FromAyahNumber == nil || item.ToAyahNumber == nil {
-			return entity.ErrInvalidSavedItem
-		}
-
-		var surahExists bool
-		if err := r.Pool.QueryRow(ctx, `
-SELECT EXISTS (
-    SELECT 1
-    FROM quran_surahs
-    WHERE surah_id = $1
-)`, *item.SurahID).Scan(&surahExists); err != nil {
-			return fmt.Errorf("PersonalRepo - validateSavedItemTarget - quran_surah: %w", err)
-		}
-		if !surahExists {
-			return entity.ErrQuranSurahNotFound
-		}
-
-		var ayahCount int
-		if err := r.Pool.QueryRow(ctx, `
-SELECT COUNT(*)::int
-FROM quran_ayahs
-WHERE surah_id = $1 AND ayah_number BETWEEN $2 AND $3`,
-			*item.SurahID,
-			*item.FromAyahNumber,
-			*item.ToAyahNumber,
-		).Scan(&ayahCount); err != nil {
-			return fmt.Errorf("PersonalRepo - validateSavedItemTarget - quran_range: %w", err)
-		}
-		if ayahCount != *item.ToAyahNumber-*item.FromAyahNumber+1 {
-			return entity.ErrQuranAyahNotFound
-		}
+		return savedItemTargetChecks{
+			sql: `    SELECT
+        EXISTS (
+            SELECT 1 FROM quran_surahs WHERE surah_id = $7
+        ) AS primary_ok,
+        (
+            (SELECT COUNT(*) FROM quran_ayahs WHERE surah_id = $7 AND ayah_number BETWEEN $9 AND $10)
+            = $10::int - $9::int + 1
+        ) AS target_ok`,
+			primaryErr: entity.ErrQuranSurahNotFound,
+			targetErr:  entity.ErrQuranAyahNotFound,
+		}, nil
 	default:
-		return entity.ErrInvalidSavedItem
+		return savedItemTargetChecks{}, entity.ErrInvalidSavedItem
 	}
-
-	return nil
 }
 
 func (r *PersonalRepo) progressSelectBuilder() sq.SelectBuilder {
@@ -544,20 +751,26 @@ func (r *PersonalRepo) progressSelectBuilder() sq.SelectBuilder {
 		"page_id",
 		"heading_id",
 		"progress_percent",
+		"observed_at",
 		"updated_at",
 	).From("reading_progress")
 }
 
 func (r *PersonalRepo) quranProgressSelectBuilder() sq.SelectBuilder {
 	return r.Builder.Select(
-		"user_id",
-		"surah_id",
-		"ayah_number",
-		"ayah_key",
-		"position_percent",
-		"observed_at",
-		"updated_at",
-	).From("quran_reading_progress")
+		"qrp.user_id",
+		"qrp.surah_id",
+		"qrp.ayah_number",
+		"qrp.ayah_key",
+		"qrp.position_percent",
+		"qrp.observed_at",
+		"qrp.updated_at",
+		"a.page_number",
+		"a.juz_number",
+		"a.hizb_number",
+	).
+		From("quran_reading_progress qrp").
+		LeftJoin("quran_ayahs a ON a.ayah_key = qrp.ayah_key")
 }
 
 func (r *PersonalRepo) savedItemSelectBuilder() sq.SelectBuilder {
@@ -606,6 +819,7 @@ func scanProgress(row rowScanner) (entity.ReadingProgress, error) {
 		&pageID,
 		&headingID,
 		&progressPercent,
+		&progress.ObservedAt,
 		&progress.UpdatedAt,
 	)
 	if err != nil {
@@ -623,6 +837,7 @@ func scanProgress(row rowScanner) (entity.ReadingProgress, error) {
 
 func scanQuranProgress(row rowScanner) (entity.QuranReadingProgress, error) {
 	var progress entity.QuranReadingProgress
+	var pageNumber, juzNumber, hizbNumber sql.NullInt64
 
 	err := row.Scan(
 		&progress.UserID,
@@ -632,10 +847,17 @@ func scanQuranProgress(row rowScanner) (entity.QuranReadingProgress, error) {
 		&progress.PositionPercent,
 		&progress.ObservedAt,
 		&progress.UpdatedAt,
+		&pageNumber,
+		&juzNumber,
+		&hizbNumber,
 	)
 	if err != nil {
 		return entity.QuranReadingProgress{}, err
 	}
+
+	progress.PageNumber = nullableInt(pageNumber)
+	progress.JuzNumber = nullableInt(juzNumber)
+	progress.HizbNumber = nullableInt(hizbNumber)
 
 	return progress, nil
 }
