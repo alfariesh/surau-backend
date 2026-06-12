@@ -151,6 +151,10 @@ func adminUsecaseError(ctx *fiber.Ctx, err error) error {
 		return adminErrorResponse(ctx, http.StatusBadRequest, "invalid role")
 	case errors.Is(err, entity.ErrUserNotFound):
 		return adminErrorResponse(ctx, http.StatusNotFound, "user not found")
+	case errors.Is(err, entity.ErrSelfRoleChange):
+		return adminErrorResponse(ctx, http.StatusConflict, "cannot change own role")
+	case errors.Is(err, entity.ErrLastAdmin):
+		return adminErrorResponse(ctx, http.StatusConflict, "cannot demote the last admin")
 	default:
 		return adminErrorResponse(ctx, http.StatusInternalServerError, "internal server error")
 	}

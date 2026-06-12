@@ -24,17 +24,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          # reviewdog diffs against the base branch; a shallow clone makes
+          # its git fetch flake ("shallow file has changed since we read it").
+          fetch-depth: 0
       - uses: reviewdog/action-yamllint@v1
         with:
           fail_level: error
           reporter: github-pr-review
-          yamllint_flags: '-d "{extends: default, rules: {truthy: disable}}" .'
+          yamllint_flags: '-c .yamllint.yml .'
 
   hadolint:
     name: runner / hadolint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - uses: reviewdog/action-hadolint@v1
         with:
           fail_level: error
@@ -63,6 +69,17 @@ jobs:
         uses: sonatype-nexus-community/nancy-github-action@main
         continue-on-error: true
 
+  govulncheck:
+    name: runner / govulncheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: 1.26
+      - name: govulncheck
+        run: go tool govulncheck ./...
+
   unit-tests:
     name: runner / tests / unit
     runs-on: ubuntu-latest
@@ -75,6 +92,28 @@ jobs:
         run: "make test"
       - name: Upload coverage report
         run: bash <(curl -s https://codecov.io/bash)
+
+  collab-server:
+    name: runner / collab-server
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: collab-server
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: collab-server/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Unit tests
+        run: npm test
+      - name: Build
+        run: npm run build
 
   integration-tests:
     name: runner / tests / integration

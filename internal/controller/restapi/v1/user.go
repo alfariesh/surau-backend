@@ -51,7 +51,7 @@ func (r *V1) register(ctx *fiber.Ctx) error {
 			return errorResponse(ctx, http.StatusBadRequest, "invalid request body")
 		}
 		if errors.Is(err, entity.ErrAuthRateLimited) {
-			return errorResponse(ctx, http.StatusTooManyRequests, "too many auth attempts")
+			return rateLimitedResponse(ctx, err)
 		}
 		if errors.Is(err, entity.ErrEmailDeliveryFailed) {
 			return errorResponse(ctx, http.StatusServiceUnavailable, "email delivery failed")
@@ -91,7 +91,7 @@ func (r *V1) login(ctx *fiber.Ctx) error {
 		return errorResponse(ctx, http.StatusBadRequest, "invalid request body")
 	}
 
-	token, err := r.u.Login(restAuthContext(ctx), body.Email, body.Password)
+	result, err := r.u.Login(restAuthContext(ctx), body.Email, body.Password)
 	if err != nil {
 		r.l.Error(err, "restapi - v1 - login")
 
@@ -104,14 +104,204 @@ func (r *V1) login(ctx *fiber.Ctx) error {
 		if errors.Is(err, entity.ErrEmailNotVerified) {
 			return errorResponse(ctx, http.StatusForbidden, "email not verified")
 		}
-		if errors.Is(err, entity.ErrAuthRateLimited) {
-			return errorResponse(ctx, http.StatusTooManyRequests, "too many auth attempts")
+
+		if errors.Is(err, entity.ErrAuthRateLimited) || errors.Is(err, entity.ErrAccountLocked) {
+			return rateLimitedResponse(ctx, err)
 		}
 
 		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
 	}
 
-	return ctx.Status(http.StatusOK).JSON(response.Token{Token: token})
+	return ctx.Status(http.StatusOK).JSON(response.NewToken(&result))
+}
+
+// @Summary     Refresh session
+// @Description Exchange a refresh token for a new access/refresh token pair
+// @ID          refresh-session
+// @Tags        auth
+// @Accept      json
+// @Produce     json
+// @Param       request body     request.RefreshToken true "Refresh token"
+// @Success     200     {object} response.Token
+// @Failure     400     {object} response.Error
+// @Failure     401     {object} response.Error
+// @Failure     429     {object} response.Error
+// @Failure     500     {object} response.Error
+// @Router      /auth/refresh [post]
+func (r *V1) refreshToken(ctx *fiber.Ctx) error {
+	var body request.RefreshToken
+
+	if err := ctx.BodyParser(&body); err != nil {
+		r.l.Error(err, "restapi - v1 - refreshToken")
+
+		return errorResponse(ctx, http.StatusBadRequest, "invalid request body")
+	}
+
+	if err := r.v.Struct(body); err != nil {
+		r.l.Error(err, "restapi - v1 - refreshToken")
+
+		return errorResponse(ctx, http.StatusBadRequest, "invalid request body")
+	}
+
+	result, err := r.u.RefreshSession(restAuthContext(ctx), body.RefreshToken)
+	if err != nil {
+		r.l.Error(err, "restapi - v1 - refreshToken")
+
+		if errors.Is(err, entity.ErrInvalidRefreshToken) {
+			return errorResponse(ctx, http.StatusUnauthorized, "invalid refresh token")
+		}
+
+		if errors.Is(err, entity.ErrInvalidAuthInput) {
+			return errorResponse(ctx, http.StatusBadRequest, "invalid request body")
+		}
+		if errors.Is(err, entity.ErrAuthRateLimited) {
+			return rateLimitedResponse(ctx, err)
+		}
+
+		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
+	}
+
+	return ctx.Status(http.StatusOK).JSON(response.NewToken(&result))
+}
+
+// @Summary     Logout
+// @Description Revoke the session behind a refresh token. Idempotent: unknown tokens return success.
+// @ID          logout
+// @Tags        auth
+// @Accept      json
+// @Produce     json
+// @Param       request body     request.Logout true "Refresh token"
+// @Success     200     {object} response.LoggedOut
+// @Failure     400     {object} response.Error
+// @Failure     429     {object} response.Error
+// @Failure     500     {object} response.Error
+// @Router      /auth/logout [post]
+func (r *V1) logout(ctx *fiber.Ctx) error {
+	var body request.Logout
+
+	if err := ctx.BodyParser(&body); err != nil {
+		r.l.Error(err, "restapi - v1 - logout")
+
+		return errorResponse(ctx, http.StatusBadRequest, "invalid request body")
+	}
+
+	if err := r.v.Struct(body); err != nil {
+		r.l.Error(err, "restapi - v1 - logout")
+
+		return errorResponse(ctx, http.StatusBadRequest, "invalid request body")
+	}
+
+	if err := r.u.Logout(restAuthContext(ctx), body.RefreshToken); err != nil {
+		r.l.Error(err, "restapi - v1 - logout")
+
+		if errors.Is(err, entity.ErrInvalidAuthInput) {
+			return errorResponse(ctx, http.StatusBadRequest, "invalid request body")
+		}
+
+		if errors.Is(err, entity.ErrAuthRateLimited) {
+			return rateLimitedResponse(ctx, err)
+		}
+
+		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
+	}
+
+	return ctx.Status(http.StatusOK).JSON(response.LoggedOut{LoggedOut: true})
+}
+
+// @Summary     Logout everywhere
+// @Description Revoke all of the current user's sessions and invalidate outstanding access tokens
+// @ID          logout-all
+// @Tags        auth
+// @Produce     json
+// @Success     200 {object} response.SessionsRevoked
+// @Failure     401 {object} response.Error
+// @Failure     500 {object} response.Error
+// @Security    BearerAuth
+// @Router      /auth/logout-all [post]
+func (r *V1) logoutAll(ctx *fiber.Ctx) error {
+	userID, ok := ctx.Locals("userID").(string)
+	if !ok || userID == "" {
+		return errorResponse(ctx, http.StatusUnauthorized, "unauthorized")
+	}
+
+	if err := r.u.LogoutAll(restAuthContext(ctx), userID); err != nil {
+		r.l.Error(err, "restapi - v1 - logoutAll")
+
+		if errors.Is(err, entity.ErrInvalidCredentials) || errors.Is(err, entity.ErrInvalidAuthInput) {
+			return errorResponse(ctx, http.StatusUnauthorized, "unauthorized")
+		}
+
+		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
+	}
+
+	return ctx.Status(http.StatusOK).JSON(response.SessionsRevoked{SessionsRevoked: true})
+}
+
+// @Summary     List active sessions
+// @Description List the current user's active devices/sessions (manage devices)
+// @ID          list-sessions
+// @Tags        auth
+// @Produce     json
+// @Success     200 {object} response.SessionList
+// @Failure     401 {object} response.Error
+// @Failure     429 {object} response.Error
+// @Failure     500 {object} response.Error
+// @Security    BearerAuth
+// @Router      /auth/sessions [get]
+func (r *V1) listSessions(ctx *fiber.Ctx) error {
+	userID, ok := ctx.Locals("userID").(string)
+	if !ok || userID == "" {
+		return errorResponse(ctx, http.StatusUnauthorized, "unauthorized")
+	}
+
+	sessions, err := r.u.ListSessions(restAuthContext(ctx), userID)
+	if err != nil {
+		r.l.Error(err, "restapi - v1 - listSessions")
+
+		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
+	}
+
+	currentFamilyID, _ := ctx.Locals("sessionID").(string) //nolint:errcheck // a missing session id only unsets is_current
+
+	return ctx.Status(http.StatusOK).JSON(response.NewSessionList(sessions, currentFamilyID))
+}
+
+// @Summary     Revoke a session
+// @Description Revoke one of the current user's sessions (sign out a single device)
+// @ID          revoke-session
+// @Tags        auth
+// @Produce     json
+// @Param       id  path     string true "Session ID"
+// @Success     200 {object} response.SessionRevoked
+// @Failure     401 {object} response.Error
+// @Failure     404 {object} response.Error
+// @Failure     429 {object} response.Error
+// @Failure     500 {object} response.Error
+// @Security    BearerAuth
+// @Router      /auth/sessions/{id} [delete]
+func (r *V1) revokeSession(ctx *fiber.Ctx) error {
+	userID, ok := ctx.Locals("userID").(string)
+	if !ok || userID == "" {
+		return errorResponse(ctx, http.StatusUnauthorized, "unauthorized")
+	}
+
+	sessionID := ctx.Params("id")
+
+	if err := r.u.RevokeSession(restAuthContext(ctx), userID, sessionID); err != nil {
+		r.l.Error(err, "restapi - v1 - revokeSession")
+
+		if errors.Is(err, entity.ErrInvalidAuthInput) {
+			return errorResponse(ctx, http.StatusBadRequest, "invalid request")
+		}
+
+		if errors.Is(err, entity.ErrAuthSessionNotFound) {
+			return errorResponse(ctx, http.StatusNotFound, "session not found")
+		}
+
+		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
+	}
+
+	return ctx.Status(http.StatusOK).JSON(response.SessionRevoked{SessionRevoked: true})
 }
 
 // @Summary     Verify email
@@ -150,7 +340,7 @@ func (r *V1) verifyEmail(ctx *fiber.Ctx) error {
 			return errorResponse(ctx, http.StatusBadRequest, "invalid verification token")
 		}
 		if errors.Is(err, entity.ErrAuthRateLimited) {
-			return errorResponse(ctx, http.StatusTooManyRequests, "too many auth attempts")
+			return rateLimitedResponse(ctx, err)
 		}
 
 		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
@@ -196,7 +386,7 @@ func (r *V1) resendVerification(ctx *fiber.Ctx) error {
 			return errorResponse(ctx, http.StatusTooManyRequests, "verification email recently sent")
 		}
 		if errors.Is(err, entity.ErrAuthRateLimited) {
-			return errorResponse(ctx, http.StatusTooManyRequests, "too many auth attempts")
+			return rateLimitedResponse(ctx, err)
 		}
 		if errors.Is(err, entity.ErrEmailDeliveryFailed) {
 			return errorResponse(ctx, http.StatusServiceUnavailable, "email delivery failed")
@@ -245,7 +435,7 @@ func (r *V1) forgotPassword(ctx *fiber.Ctx) error {
 			return errorResponse(ctx, http.StatusTooManyRequests, "password reset email recently sent")
 		}
 		if errors.Is(err, entity.ErrAuthRateLimited) {
-			return errorResponse(ctx, http.StatusTooManyRequests, "too many auth attempts")
+			return rateLimitedResponse(ctx, err)
 		}
 		if errors.Is(err, entity.ErrEmailDeliveryFailed) {
 			return errorResponse(ctx, http.StatusServiceUnavailable, "email delivery failed")
@@ -290,7 +480,7 @@ func (r *V1) resetPassword(ctx *fiber.Ctx) error {
 			return errorResponse(ctx, http.StatusBadRequest, "invalid request body")
 		}
 		if errors.Is(err, entity.ErrAuthRateLimited) {
-			return errorResponse(ctx, http.StatusTooManyRequests, "too many auth attempts")
+			return rateLimitedResponse(ctx, err)
 		}
 
 		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
@@ -332,7 +522,8 @@ func (r *V1) changePassword(ctx *fiber.Ctx) error {
 		return errorResponse(ctx, http.StatusBadRequest, "invalid request body")
 	}
 
-	if err := r.u.ChangePassword(restAuthContext(ctx), userID, body.CurrentPassword, body.NewPassword); err != nil {
+	result, err := r.u.ChangePassword(restAuthContext(ctx), userID, body.CurrentPassword, body.NewPassword)
+	if err != nil {
 		r.l.Error(err, "restapi - v1 - changePassword")
 
 		if errors.Is(err, entity.ErrInvalidAuthInput) {
@@ -342,13 +533,23 @@ func (r *V1) changePassword(ctx *fiber.Ctx) error {
 			return errorResponse(ctx, http.StatusUnauthorized, "invalid credentials")
 		}
 		if errors.Is(err, entity.ErrAuthRateLimited) {
-			return errorResponse(ctx, http.StatusTooManyRequests, "too many auth attempts")
+			return rateLimitedResponse(ctx, err)
 		}
 
 		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
 	}
 
-	return ctx.Status(http.StatusOK).JSON(response.PasswordChanged{PasswordChanged: true})
+	token := response.NewToken(&result)
+
+	return ctx.Status(http.StatusOK).JSON(response.PasswordChanged{
+		PasswordChanged: true,
+		Token:           token.Token,
+		AccessToken:     token.AccessToken,
+		RefreshToken:    token.RefreshToken,
+		TokenType:       token.TokenType,
+		ExpiresIn:       token.ExpiresIn,
+		SessionID:       token.SessionID,
+	})
 }
 
 // @Summary     Request email change
@@ -397,7 +598,7 @@ func (r *V1) requestEmailChange(ctx *fiber.Ctx) error {
 			return errorResponse(ctx, http.StatusConflict, "user already exists")
 		}
 		if errors.Is(err, entity.ErrEmailChangeRateLimited) || errors.Is(err, entity.ErrAuthRateLimited) {
-			return errorResponse(ctx, http.StatusTooManyRequests, "too many auth attempts")
+			return rateLimitedResponse(ctx, err)
 		}
 		if errors.Is(err, entity.ErrEmailDeliveryFailed) {
 			return errorResponse(ctx, http.StatusServiceUnavailable, "email delivery failed")
@@ -442,7 +643,8 @@ func (r *V1) verifyEmailChange(ctx *fiber.Ctx) error {
 		return errorResponse(ctx, http.StatusBadRequest, "invalid request body")
 	}
 
-	if err := r.u.VerifyEmailChange(restAuthContext(ctx), userID, body.Token, body.OTP); err != nil {
+	result, err := r.u.VerifyEmailChange(restAuthContext(ctx), userID, body.Token, body.OTP)
+	if err != nil {
 		r.l.Error(err, "restapi - v1 - verifyEmailChange")
 
 		if errors.Is(err, entity.ErrInvalidAuthInput) || errors.Is(err, entity.ErrInvalidEmailChangeToken) {
@@ -452,13 +654,23 @@ func (r *V1) verifyEmailChange(ctx *fiber.Ctx) error {
 			return errorResponse(ctx, http.StatusConflict, "user already exists")
 		}
 		if errors.Is(err, entity.ErrAuthRateLimited) {
-			return errorResponse(ctx, http.StatusTooManyRequests, "too many auth attempts")
+			return rateLimitedResponse(ctx, err)
 		}
 
 		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
 	}
 
-	return ctx.Status(http.StatusOK).JSON(response.EmailChanged{EmailChanged: true})
+	token := response.NewToken(&result)
+
+	return ctx.Status(http.StatusOK).JSON(response.EmailChanged{
+		EmailChanged: true,
+		Token:        token.Token,
+		AccessToken:  token.AccessToken,
+		RefreshToken: token.RefreshToken,
+		TokenType:    token.TokenType,
+		ExpiresIn:    token.ExpiresIn,
+		SessionID:    token.SessionID,
+	})
 }
 
 // @Summary     Delete account
@@ -503,13 +715,41 @@ func (r *V1) deleteAccount(ctx *fiber.Ctx) error {
 			return errorResponse(ctx, http.StatusUnauthorized, "invalid credentials")
 		}
 		if errors.Is(err, entity.ErrAuthRateLimited) {
-			return errorResponse(ctx, http.StatusTooManyRequests, "too many auth attempts")
+			return rateLimitedResponse(ctx, err)
 		}
 
 		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
 	}
 
 	return ctx.Status(http.StatusOK).JSON(response.AccountDeleted{AccountDeleted: true})
+}
+
+// @Summary     Introspect access token
+// @Description Return the authenticated identity (id, username, role, session) for the presented Bearer token. Built for service-to-service auth bridging (e.g. the collab websocket server): the Auth middleware has already verified signature, token_version and session revocation, so the response reflects live session state with no extra queries.
+// @ID          auth-introspect
+// @Tags        auth
+// @Produce     json
+// @Success     200 {object} response.Introspection
+// @Failure     401 {object} response.Error
+// @Security    BearerAuth
+// @Router      /auth/introspect [get]
+func (r *V1) introspect(ctx *fiber.Ctx) error {
+	user, ok := ctx.Locals("user").(entity.User)
+	if !ok {
+		return errorResponse(ctx, http.StatusUnauthorized, "unauthorized")
+	}
+
+	sessionID := ""
+	if value, ok := ctx.Locals("sessionID").(string); ok {
+		sessionID = value
+	}
+
+	return ctx.Status(http.StatusOK).JSON(response.Introspection{
+		UserID:    user.ID,
+		Username:  user.Username,
+		Role:      user.Role,
+		SessionID: sessionID,
+	})
 }
 
 // @Summary     Get profile

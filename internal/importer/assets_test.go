@@ -109,7 +109,7 @@ func TestReaderAssetValidate(t *testing.T) {
 				Lang:              "id",
 				Summary:           "Bab ini menjelaskan hadis sahih.",
 				SummaryStatus:     "reviewed",
-				SummaryReviewedBy: stringPtr("Editor A"),
+				SummaryReviewedBy: new("Editor A"),
 			},
 		},
 		{
@@ -130,7 +130,7 @@ func TestReaderAssetValidate(t *testing.T) {
 				Kind:         "book_metadata_translation",
 				BookID:       797,
 				Lang:         "id",
-				DisplayTitle: stringPtr("Judul Kitab"),
+				DisplayTitle: new("Judul Kitab"),
 			},
 		},
 		{
@@ -139,7 +139,7 @@ func TestReaderAssetValidate(t *testing.T) {
 				Kind:     "author_translation",
 				AuthorID: 177,
 				Lang:     "id",
-				Name:     stringPtr("Nama Penulis"),
+				Name:     new("Nama Penulis"),
 			},
 		},
 		{
@@ -148,7 +148,7 @@ func TestReaderAssetValidate(t *testing.T) {
 				Kind:       "category_translation",
 				CategoryID: 10,
 				Lang:       "id",
-				Name:       stringPtr("Ilmu Hadis"),
+				Name:       new("Ilmu Hadis"),
 			},
 		},
 		{
@@ -160,7 +160,7 @@ func TestReaderAssetValidate(t *testing.T) {
 				Lang:       "id",
 				Content:    "Terjemahan",
 				Status:     "reviewed",
-				ReviewedBy: stringPtr("Editor A"),
+				ReviewedBy: new("Editor A"),
 			},
 		},
 		{
@@ -238,6 +238,7 @@ func TestReaderAssetSampleJSONL(t *testing.T) {
 	require.Positive(t, count)
 }
 
+//go:fix inline
 func stringPtr(value string) *string {
-	return &value
+	return new(value)
 }

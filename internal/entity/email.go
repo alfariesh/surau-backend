@@ -333,4 +333,8 @@ type TransactionalEmailRequest struct {
 	Variables map[string]string
 	Fallback  EmailMessage
 	Critical  bool
+	// Async durably enqueues the message for the background dispatcher
+	// instead of calling the provider inside the request. Ignored when the
+	// email use case has no repository (direct-send fallback).
+	Async bool
 }

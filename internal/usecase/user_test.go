@@ -522,7 +522,7 @@ func TestLogin(t *testing.T) {
 		require.NoError(t, err)
 		assert.NotEmpty(t, token)
 
-		claims, err := jwt.New(testJWTSecret, time.Hour, jwt.DefaultIssuer, jwt.DefaultAudience).ParseTokenClaims(token)
+		claims, err := jwt.New(testJWTSecret, time.Hour, jwt.DefaultIssuer, jwt.DefaultAudience).ParseTokenClaims(token.AccessToken)
 		require.NoError(t, err)
 		assert.Equal(t, int64(3), claims.TokenVersion)
 	})
@@ -1090,7 +1090,7 @@ func TestChangePassword(t *testing.T) {
 				return entity.User{ID: "user-id-123", PasswordHash: passwordHash, TokenVersion: 2}, nil
 			})
 
-		err = uc.ChangePassword(context.Background(), "user-id-123", "oldpassword123", "newpassword123")
+		_, err = uc.ChangePassword(context.Background(), "user-id-123", "oldpassword123", "newpassword123")
 
 		require.NoError(t, err)
 	})
@@ -1105,7 +1105,7 @@ func TestChangePassword(t *testing.T) {
 		repo.EXPECT().GetByID(context.Background(), "user-id-123").
 			Return(entity.User{ID: "user-id-123", PasswordHash: string(oldHash)}, nil)
 
-		err = uc.ChangePassword(context.Background(), "user-id-123", "wrongpassword123", "newpassword123")
+		_, err = uc.ChangePassword(context.Background(), "user-id-123", "wrongpassword123", "newpassword123")
 
 		require.ErrorIs(t, err, entity.ErrInvalidCredentials)
 	})
@@ -1115,7 +1115,7 @@ func TestChangePassword(t *testing.T) {
 
 		uc, _, _ := newUserUseCase(t)
 
-		err := uc.ChangePassword(context.Background(), "user-id-123", "oldpassword123", "short")
+		_, err := uc.ChangePassword(context.Background(), "user-id-123", "oldpassword123", "short")
 
 		require.ErrorIs(t, err, entity.ErrInvalidAuthInput)
 	})
@@ -1276,7 +1276,7 @@ func TestEmailChange(t *testing.T) {
 				NewEmail: "new@example.com",
 			}, nil)
 
-		err := uc.VerifyEmailChange(context.Background(), "user-id-123", rawToken, "")
+		_, err := uc.VerifyEmailChange(context.Background(), "user-id-123", rawToken, "")
 
 		require.NoError(t, err)
 	})
@@ -1295,7 +1295,7 @@ func TestEmailChange(t *testing.T) {
 				ExpiresAt: time.Now().Add(time.Hour),
 			}, nil)
 
-		err := uc.VerifyEmailChange(context.Background(), "user-id-123", rawToken, "")
+		_, err := uc.VerifyEmailChange(context.Background(), "user-id-123", rawToken, "")
 
 		require.ErrorIs(t, err, entity.ErrInvalidEmailChangeToken)
 	})
@@ -1314,7 +1314,7 @@ func TestEmailChange(t *testing.T) {
 				ExpiresAt: time.Now().Add(-time.Minute),
 			}, nil)
 
-		err := uc.VerifyEmailChange(context.Background(), "user-id-123", rawToken, "")
+		_, err := uc.VerifyEmailChange(context.Background(), "user-id-123", rawToken, "")
 
 		require.ErrorIs(t, err, entity.ErrInvalidEmailChangeToken)
 	})
@@ -1335,7 +1335,7 @@ func TestEmailChange(t *testing.T) {
 				UsedAt:    &usedAt,
 			}, nil)
 
-		err := uc.VerifyEmailChange(context.Background(), "user-id-123", rawToken, "")
+		_, err := uc.VerifyEmailChange(context.Background(), "user-id-123", rawToken, "")
 
 		require.ErrorIs(t, err, entity.ErrInvalidEmailChangeToken)
 	})
@@ -1361,7 +1361,7 @@ func TestEmailChange(t *testing.T) {
 				NewEmail: "new@example.com",
 			}, nil)
 
-		err := uc.VerifyEmailChange(context.Background(), "user-id-123", "", "123456")
+		_, err := uc.VerifyEmailChange(context.Background(), "user-id-123", "", "123456")
 
 		require.NoError(t, err)
 	})
@@ -1383,7 +1383,7 @@ func TestEmailChange(t *testing.T) {
 				UsedAt:       &usedAt,
 			}, nil)
 
-		err := uc.VerifyEmailChange(context.Background(), "user-id-123", "", "123456")
+		_, err := uc.VerifyEmailChange(context.Background(), "user-id-123", "", "123456")
 
 		require.ErrorIs(t, err, entity.ErrInvalidEmailChangeToken)
 	})
@@ -1403,7 +1403,7 @@ func TestEmailChange(t *testing.T) {
 				ExpiresAt:    time.Now().Add(time.Hour),
 			}, nil)
 
-		err := uc.VerifyEmailChange(context.Background(), "user-id-123", "", "123456")
+		_, err := uc.VerifyEmailChange(context.Background(), "user-id-123", "", "123456")
 
 		require.ErrorIs(t, err, entity.ErrInvalidEmailChangeToken)
 	})
@@ -1517,7 +1517,7 @@ func TestAuthEmailNotifications(t *testing.T) {
 		})
 		emailSender.EXPECT().Send(context.Background(), gomock.Any()).Return(entity.EmailSendResult{}, errors.New("email down"))
 
-		err = uc.ChangePassword(context.Background(), "user-id-123", "oldpassword123", "newpassword123")
+		_, err = uc.ChangePassword(context.Background(), "user-id-123", "oldpassword123", "newpassword123")
 
 		require.NoError(t, err)
 	})
@@ -1549,7 +1549,7 @@ func TestAuthEmailNotifications(t *testing.T) {
 			},
 		)
 
-		err = uc.ChangePassword(context.Background(), "user-id-123", "oldpassword123", "newpassword123")
+		_, err = uc.ChangePassword(context.Background(), "user-id-123", "oldpassword123", "newpassword123")
 
 		require.NoError(t, err)
 	})
@@ -1581,7 +1581,7 @@ func TestAuthEmailNotifications(t *testing.T) {
 			},
 		)
 
-		err = uc.ChangePassword(context.Background(), "user-id-123", "oldpassword123", "newpassword123")
+		_, err = uc.ChangePassword(context.Background(), "user-id-123", "oldpassword123", "newpassword123")
 
 		require.NoError(t, err)
 	})
@@ -1689,7 +1689,7 @@ func TestAuthEmailNotifications(t *testing.T) {
 			},
 		)
 
-		err := uc.VerifyEmailChange(context.Background(), "user-id-123", rawToken, "")
+		_, err := uc.VerifyEmailChange(context.Background(), "user-id-123", rawToken, "")
 
 		require.NoError(t, err)
 	})

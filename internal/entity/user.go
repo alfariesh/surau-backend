@@ -289,3 +289,52 @@ type AuthNotificationCooldown struct {
 	KeyHash   string
 	ExpiresAt time.Time
 }
+
+// AuthSession stores one refresh-token generation. Rotations chain rows via
+// ReplacedByID and share FamilyID (the first row's ID), which is also the
+// "sid" claim embedded in access tokens.
+type AuthSession struct {
+	ID               string
+	FamilyID         string
+	UserID           string
+	RefreshTokenHash string
+	TokenVersion     int64
+	UserAgent        string
+	ClientIP         string
+	CreatedAt        time.Time
+	LastUsedAt       time.Time
+	ExpiresAt        time.Time
+	RevokedAt        *time.Time
+	ReplacedByID     *string
+}
+
+// LoginResult carries the access/refresh token pair issued at login, refresh,
+// password change, and email change.
+type LoginResult struct {
+	User             User
+	SessionID        string
+	AccessToken      string
+	AccessExpiresAt  time.Time
+	RefreshToken     string
+	RefreshExpiresAt time.Time
+}
+
+// AuthLoginLockout stores the progressive lockout state for one login key.
+type AuthLoginLockout struct {
+	KeyHash             string
+	ConsecutiveFailures int
+	LockedUntil         *time.Time
+	LastFailureAt       time.Time
+}
+
+// AuthCleanupResult reports per-table delete counts from one cleanup run.
+type AuthCleanupResult struct {
+	RateLimits            int64
+	VerificationTokens    int64
+	PasswordResetTokens   int64
+	EmailChangeTokens     int64
+	Sessions              int64
+	Lockouts              int64
+	NotificationCooldowns int64
+	AuditLogs             int64
+}

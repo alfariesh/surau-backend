@@ -13,6 +13,7 @@ import (
 	"net/mail"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -35,11 +36,24 @@ const (
 	verificationTokenBytes  = 32
 	passwordResetTokenBytes = 32
 	emailChangeTokenBytes   = 32
+	refreshTokenBytes       = 32
 	maxResetTokenInputBytes = 512
 	otpDigits               = 6
 	otpMaxValue             = 1000000
 	maxEmailUserAgentRunes  = 160
 	defaultSupportEmail     = "support@surau.org"
+
+	// passwordHashCost is the bcrypt cost for account passwords, raised above
+	// bcrypt.DefaultCost (10). Existing lower-cost hashes keep verifying
+	// because the cost is embedded in each hash.
+	passwordHashCost = 12
+	// otpHashCost stays at the bcrypt default: OTPs are 6-digit, short-lived,
+	// and rate-limited, so a higher cost only adds request latency.
+	otpHashCost = bcrypt.DefaultCost
+
+	// defaultAuthDataTTL is the 30-day default for refresh-token lifetime and
+	// auth row retention when no explicit option is configured.
+	defaultAuthDataTTL = 720 * time.Hour
 
 	// decoyLoginHash is a fixed bcrypt hash (cost 10) compared against during
 	// logins for unknown accounts so the response time matches a wrong-password
@@ -61,6 +75,11 @@ const (
 	authEventChangeEmailVerify  = "change_email_verify"
 	authEventAccountDelete      = "account_delete"
 	authEventRoleChange         = "role_change"
+	authEventSessionRefresh     = "session_refresh"
+	authEventLogout             = "logout"
+	authEventLogoutAll          = "logout_all"
+	authEventRefreshReuse       = "refresh_reuse_detected"
+	authEventSessionRevoke      = "session_revoke"
 	authEmailPasswordChanged    = "password_changed"
 	authEmailEmailVerified      = "email_verified"
 	authEmailNewLogin           = "new_login"
@@ -110,8 +129,17 @@ type UseCase struct {
 	supportEmail             string
 	rateLimiter              repo.AuthRateLimitRepo
 	auditLogger              repo.AuthAuditRepo
+	sessions                 repo.AuthSessionRepo
+	lockout                  repo.AuthLockoutRepo
+	maintenance              repo.AuthMaintenanceRepo
+	refreshTokenTTL          time.Duration
+	lockoutOptions           LockoutOptions
+	cleanup                  CleanupOptions
 	rateLimit                RateLimitOptions
 	emailNotifications       EmailNotificationOptions
+	alert                    AlertOptions
+	alertMu                  sync.Mutex
+	alertWatermark           time.Time
 }
 
 // TransactionalEmailService sends admin-managed transactional emails.
@@ -146,6 +174,26 @@ type RateLimitOptions struct {
 	ChangeEmailToken        RateLimitRule
 	DeleteAccountUser       RateLimitRule
 	DeleteAccountIP         RateLimitRule
+	RefreshToken            RateLimitRule
+	RefreshIP               RateLimitRule
+	VerifyEmailToken        RateLimitRule
+}
+
+// LockoutOptions configures progressive per-account login lockout.
+type LockoutOptions struct {
+	Enabled      bool
+	Threshold    int
+	BaseDuration time.Duration
+	Factor       int
+	MaxDuration  time.Duration
+}
+
+// CleanupOptions configures retention for the periodic auth-data cleanup.
+type CleanupOptions struct {
+	TokenRetention   time.Duration
+	SessionRetention time.Duration
+	// AuditRetention 0 keeps audit logs forever.
+	AuditRetention time.Duration
 }
 
 // EmailNotificationOptions configures best-effort auth security emails.
@@ -159,6 +207,14 @@ type EmailNotificationOptions struct {
 	EmailChangedEnabled    bool
 	AccountDeletedEnabled  bool
 	FailedLoginCooldown    time.Duration
+}
+
+// AlertOptions configures admin alerting for high-signal security events such
+// as refresh-token reuse. Recipients are explicit admin addresses; when empty,
+// the alerter falls back to every user with the admin role.
+type AlertOptions struct {
+	Enabled    bool
+	Recipients []string
 }
 
 // Options configures user auth email verification.
@@ -178,8 +234,15 @@ type Options struct {
 	EmailService             TransactionalEmailService
 	RateLimiter              repo.AuthRateLimitRepo
 	AuditLogger              repo.AuthAuditRepo
+	Sessions                 repo.AuthSessionRepo
+	Lockout                  repo.AuthLockoutRepo
+	Maintenance              repo.AuthMaintenanceRepo
+	RefreshTokenTTL          time.Duration
+	LockoutOptions           LockoutOptions
+	Cleanup                  CleanupOptions
 	RateLimit                RateLimitOptions
 	EmailNotifications       EmailNotificationOptions
+	Alert                    AlertOptions
 }
 
 // New -.
@@ -217,6 +280,11 @@ func New(r repo.UserRepo, j *jwt.Manager, emailSender repo.EmailSender, opts Opt
 		emailChangeCooldown = time.Minute
 	}
 
+	refreshTokenTTL := opts.RefreshTokenTTL
+	if refreshTokenTTL <= 0 {
+		refreshTokenTTL = defaultAuthDataTTL
+	}
+
 	return &UseCase{
 		repo:                     r,
 		jwt:                      j,
@@ -236,9 +304,33 @@ func New(r repo.UserRepo, j *jwt.Manager, emailSender repo.EmailSender, opts Opt
 		supportEmail:             normalizeSupportEmail(opts.SupportEmail),
 		rateLimiter:              opts.RateLimiter,
 		auditLogger:              opts.AuditLogger,
+		sessions:                 opts.Sessions,
+		lockout:                  opts.Lockout,
+		maintenance:              opts.Maintenance,
+		refreshTokenTTL:          refreshTokenTTL,
+		lockoutOptions:           normalizeLockoutOptions(opts.LockoutOptions),
+		cleanup:                  opts.Cleanup,
 		rateLimit:                normalizeRateLimitOptions(opts.RateLimit),
 		emailNotifications:       normalizeEmailNotificationOptions(opts.EmailNotifications),
+		alert:                    normalizeAlertOptions(opts.Alert),
+		// Seed the alert watermark at construction so the first scan only
+		// considers reuse events that happen after boot, never the backlog.
+		alertWatermark: time.Now().UTC(),
 	}
+}
+
+// normalizeAlertOptions trims and de-blanks the configured recipient list.
+func normalizeAlertOptions(opts AlertOptions) AlertOptions {
+	recipients := make([]string, 0, len(opts.Recipients))
+	for _, r := range opts.Recipients {
+		if trimmed := strings.TrimSpace(r); trimmed != "" {
+			recipients = append(recipients, trimmed)
+		}
+	}
+
+	opts.Recipients = recipients
+
+	return opts
 }
 
 // Register -.
@@ -262,9 +354,9 @@ func (uc *UseCase) Register(ctx context.Context, username, email, password strin
 		return entity.User{}, err
 	}
 
-	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	hash, err := hashPassword(password)
 	if err != nil {
-		return entity.User{}, fmt.Errorf("UserUseCase - Register - bcrypt.GenerateFromPassword: %w", err)
+		return entity.User{}, fmt.Errorf("UserUseCase - Register - hashPassword: %w", err)
 	}
 
 	now := time.Now().UTC()
@@ -274,7 +366,7 @@ func (uc *UseCase) Register(ctx context.Context, username, email, password strin
 		Username:      username,
 		Email:         email,
 		Role:          entity.UserRoleUser,
-		PasswordHash:  string(hash),
+		PasswordHash:  hash,
 		EmailVerified: false,
 		CreatedAt:     now,
 		UpdatedAt:     now,
@@ -380,6 +472,13 @@ func (uc *UseCase) SetRoleByEmail(
 		return entity.User{}, entity.ErrInvalidRole
 	}
 
+	// Self-demotion pairs with the repo's last-admin guard: an admin acting on
+	// their own account is either a no-op or a step toward locking out the
+	// admin API, so route both through another admin instead.
+	if actorEmail != "" && actorEmail == email {
+		return entity.User{}, entity.ErrSelfRoleChange
+	}
+
 	change, err := uc.repo.SetRoleByEmail(ctx, email, role)
 	if err == nil {
 		updated = change.User
@@ -393,7 +492,7 @@ func (uc *UseCase) SetRoleByEmail(
 }
 
 // Login -.
-func (uc *UseCase) Login(ctx context.Context, email, password string) (token string, err error) {
+func (uc *UseCase) Login(ctx context.Context, email, password string) (result entity.LoginResult, err error) {
 	auditEmail := strings.TrimSpace(email)
 	auditUserID := ""
 	defer func() {
@@ -402,12 +501,16 @@ func (uc *UseCase) Login(ctx context.Context, email, password string) (token str
 
 	email, err = validateLoginInput(email, password)
 	if err != nil {
-		return "", err
+		return entity.LoginResult{}, err
 	}
 	auditEmail = email
 
 	if err = uc.enforceLoginRateLimit(ctx, email); err != nil {
-		return "", err
+		return entity.LoginResult{}, err
+	}
+
+	if err := uc.checkLoginLockout(ctx, email); err != nil {
+		return entity.LoginResult{}, err
 	}
 
 	user, lookupErr := uc.repo.GetByEmail(ctx, email)
@@ -422,19 +525,25 @@ func (uc *UseCase) Login(ctx context.Context, email, password string) (token str
 	}
 
 	if bcrypt.CompareHashAndPassword([]byte(passwordHash), []byte(password)) != nil || lookupErr != nil {
-		return "", entity.ErrInvalidCredentials
+		// Failures count against the email key whether or not the account
+		// exists, so the lockout itself cannot be used to enumerate accounts.
+		uc.recordLoginFailure(ctx, email)
+
+		return entity.LoginResult{}, entity.ErrInvalidCredentials
 	}
 	if !user.EmailVerified {
-		return "", entity.ErrEmailNotVerified
+		return entity.LoginResult{}, entity.ErrEmailNotVerified
 	}
 
-	token, err = uc.jwt.GenerateToken(user.ID, user.TokenVersion)
+	uc.resetLoginLockout(ctx, email)
+
+	result, err = uc.issueSession(ctx, &user)
 	if err != nil {
-		return "", fmt.Errorf("UserUseCase - Login - uc.jwt.GenerateToken: %w", err)
+		return entity.LoginResult{}, err
 	}
 	uc.notifyNewLogin(ctx, user)
 
-	return token, nil
+	return result, nil
 }
 
 // GetUser -.
@@ -615,6 +724,13 @@ func (uc *UseCase) VerifyEmail(ctx context.Context, token, email, otp string) (e
 func (uc *UseCase) verifyEmailWithToken(ctx context.Context, token string) (entity.User, error) {
 	if len(token) > maxResetTokenInputBytes {
 		return entity.User{}, entity.ErrInvalidVerificationToken
+	}
+
+	if err := uc.enforceAuthRateLimit(ctx, authEventVerifyEmail, []rateLimitCheck{
+		{keyType: rateLimitKeyTypeToken, value: token, rule: uc.rateLimit.VerifyEmailToken},
+		{keyType: rateLimitKeyTypeIP, value: authmeta.From(ctx).ClientIP, rule: uc.rateLimit.VerifyEmailOTPIP},
+	}); err != nil {
+		return entity.User{}, err
 	}
 
 	tokenHash, err := hashVerificationToken(token)
@@ -855,12 +971,12 @@ func (uc *UseCase) ResetPassword(ctx context.Context, token, password string) (e
 		return entity.ErrInvalidPasswordResetToken
 	}
 
-	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	hash, err := hashPassword(password)
 	if err != nil {
-		return fmt.Errorf("UserUseCase - ResetPassword - bcrypt.GenerateFromPassword: %w", err)
+		return fmt.Errorf("UserUseCase - ResetPassword - hashPassword: %w", err)
 	}
 
-	resetUser, err := uc.repo.ResetPasswordWithToken(ctx, storedToken.ID, storedToken.UserID, string(hash))
+	resetUser, err := uc.repo.ResetPasswordWithToken(ctx, storedToken.ID, storedToken.UserID, hash)
 	if err != nil {
 		if errors.Is(err, entity.ErrInvalidPasswordResetToken) {
 			return err
@@ -875,8 +991,39 @@ func (uc *UseCase) ResetPassword(ctx context.Context, token, password string) (e
 	return nil
 }
 
-// ChangePassword updates the current user's password after verifying the current password.
-func (uc *UseCase) ChangePassword(ctx context.Context, userID, currentPassword, newPassword string) (err error) {
+// ChangePassword updates the current user's password after verifying the
+// current password. Existing sessions are revoked in the same transaction, so
+// a fresh session is issued and returned to keep the caller logged in.
+// userWithVerifiedPassword loads a user by ID and verifies the supplied
+// current password; both unknown users and wrong passwords collapse into
+// ErrInvalidCredentials.
+func (uc *UseCase) userWithVerifiedPassword(
+	ctx context.Context,
+	userID,
+	currentPassword string,
+) (entity.User, error) {
+	user, err := uc.repo.GetByID(ctx, userID)
+	if err != nil {
+		if errors.Is(err, entity.ErrUserNotFound) {
+			return entity.User{}, entity.ErrInvalidCredentials
+		}
+
+		return entity.User{}, fmt.Errorf("UserUseCase - userWithVerifiedPassword - uc.repo.GetByID: %w", err)
+	}
+
+	if err = bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(currentPassword)); err != nil {
+		return entity.User{}, entity.ErrInvalidCredentials
+	}
+
+	return user, nil
+}
+
+func (uc *UseCase) ChangePassword(
+	ctx context.Context,
+	userID,
+	currentPassword,
+	newPassword string,
+) (result entity.LoginResult, err error) {
 	auditUserID := strings.TrimSpace(userID)
 	auditEmail := ""
 	defer func() {
@@ -884,47 +1031,44 @@ func (uc *UseCase) ChangePassword(ctx context.Context, userID, currentPassword, 
 	}()
 
 	if strings.TrimSpace(userID) == "" || !validPassword(currentPassword) || !validPassword(newPassword) {
-		return entity.ErrInvalidAuthInput
+		return entity.LoginResult{}, entity.ErrInvalidAuthInput
 	}
 
 	if err = uc.enforceAuthRateLimit(ctx, authEventChangePassword, []rateLimitCheck{
 		{keyType: rateLimitKeyTypeUser, value: userID, rule: uc.rateLimit.ChangePasswordUser},
 		{keyType: rateLimitKeyTypeIP, value: authmeta.From(ctx).ClientIP, rule: uc.rateLimit.ChangePasswordIP},
 	}); err != nil {
-		return err
+		return entity.LoginResult{}, err
 	}
 
-	user, err := uc.repo.GetByID(ctx, userID)
+	user, err := uc.userWithVerifiedPassword(ctx, userID, currentPassword)
 	if err != nil {
-		if errors.Is(err, entity.ErrUserNotFound) {
-			return entity.ErrInvalidCredentials
-		}
-
-		return fmt.Errorf("UserUseCase - ChangePassword - uc.repo.GetByID: %w", err)
+		return entity.LoginResult{}, err
 	}
 	auditUserID = user.ID
 	auditEmail = user.Email
 
-	if err = bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(currentPassword)); err != nil {
-		return entity.ErrInvalidCredentials
-	}
-
-	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	hash, err := hashPassword(newPassword)
 	if err != nil {
-		return fmt.Errorf("UserUseCase - ChangePassword - bcrypt.GenerateFromPassword: %w", err)
+		return entity.LoginResult{}, fmt.Errorf("UserUseCase - ChangePassword - hashPassword: %w", err)
 	}
 
-	changedUser, err := uc.repo.ChangePassword(ctx, user.ID, string(hash))
+	changedUser, err := uc.repo.ChangePassword(ctx, user.ID, hash)
 	if err != nil {
 		if errors.Is(err, entity.ErrUserNotFound) {
-			return entity.ErrInvalidCredentials
+			return entity.LoginResult{}, entity.ErrInvalidCredentials
 		}
 
-		return fmt.Errorf("UserUseCase - ChangePassword - uc.repo.ChangePassword: %w", err)
+		return entity.LoginResult{}, fmt.Errorf("UserUseCase - ChangePassword - uc.repo.ChangePassword: %w", err)
+	}
+
+	result, err = uc.issueSession(ctx, &changedUser)
+	if err != nil {
+		return entity.LoginResult{}, err
 	}
 	uc.notifyPasswordChanged(ctx, changedUser)
 
-	return nil
+	return result, nil
 }
 
 // RequestEmailChange sends a verification link to a new email after password confirmation.
@@ -1001,8 +1145,15 @@ func (uc *UseCase) RequestEmailChange(ctx context.Context, userID, currentPasswo
 	return nil
 }
 
-// VerifyEmailChange updates a user's email using an authenticated one-time token or OTP.
-func (uc *UseCase) VerifyEmailChange(ctx context.Context, userID, token, otp string) (err error) {
+// VerifyEmailChange updates a user's email using an authenticated one-time
+// token or OTP. The email change revokes existing sessions in-transaction, so
+// a fresh session is issued and returned to keep the caller logged in.
+func (uc *UseCase) VerifyEmailChange(
+	ctx context.Context,
+	userID,
+	token,
+	otp string,
+) (login entity.LoginResult, err error) {
 	auditUserID := strings.TrimSpace(userID)
 	auditEmail := ""
 	defer func() {
@@ -1010,41 +1161,41 @@ func (uc *UseCase) VerifyEmailChange(ctx context.Context, userID, token, otp str
 	}()
 
 	if strings.TrimSpace(userID) == "" {
-		return entity.ErrInvalidAuthInput
+		return entity.LoginResult{}, entity.ErrInvalidAuthInput
 	}
 
 	token = strings.TrimSpace(token)
 	otp = strings.TrimSpace(otp)
-	if token != "" {
+
+	var result entity.EmailChangeResult
+
+	switch {
+	case token != "":
 		if otp != "" {
-			return entity.ErrInvalidAuthInput
+			return entity.LoginResult{}, entity.ErrInvalidAuthInput
 		}
-
-		var result entity.EmailChangeResult
 		result, err = uc.verifyEmailChangeWithToken(ctx, userID, token)
-		if err != nil {
-			return err
-		}
-		auditUserID = result.User.ID
-		auditEmail = result.NewEmail
-		uc.notifyEmailChanged(ctx, result.User, result.OldEmail)
-
-		return nil
-	}
-	if otp != "" {
-		var result entity.EmailChangeResult
+	case otp != "":
 		result, err = uc.verifyEmailChangeWithOTP(ctx, userID, otp)
-		if err != nil {
-			return err
-		}
-		auditUserID = result.User.ID
-		auditEmail = result.NewEmail
-		uc.notifyEmailChanged(ctx, result.User, result.OldEmail)
-
-		return nil
+	default:
+		return entity.LoginResult{}, entity.ErrInvalidAuthInput
 	}
 
-	return entity.ErrInvalidAuthInput
+	if err != nil {
+		return entity.LoginResult{}, err
+	}
+
+	auditUserID = result.User.ID
+	auditEmail = result.NewEmail
+
+	login, err = uc.issueSession(ctx, &result.User)
+	if err != nil {
+		return entity.LoginResult{}, err
+	}
+
+	uc.notifyEmailChanged(ctx, result.User, result.OldEmail)
+
+	return login, nil
 }
 
 func (uc *UseCase) verifyEmailChangeWithToken(
@@ -1561,15 +1712,18 @@ func normalizeRateLimitOptions(opts RateLimitOptions) RateLimitOptions {
 		VerifyEmailOTPIP:        RateLimitRule{Max: 30, Window: 15 * time.Minute},
 		ResendVerificationEmail: RateLimitRule{Max: 3, Window: time.Hour},
 		ResendVerificationIP:    RateLimitRule{Max: 20, Window: time.Hour},
-		ResetPasswordToken:      RateLimitRule{Max: 5, Window: 15 * time.Minute},
-		ResetPasswordIP:         RateLimitRule{Max: 30, Window: 15 * time.Minute},
-		ChangePasswordUser:      RateLimitRule{Max: 5, Window: 5 * time.Minute},
+		ResetPasswordToken:      RateLimitRule{Max: 5, Window: 15 * time.Minute},  //nolint:mnd // default rate-limit table,
+		ResetPasswordIP:         RateLimitRule{Max: 30, Window: 15 * time.Minute}, //nolint:mnd // default rate-limit table,
+		ChangePasswordUser:      RateLimitRule{Max: 5, Window: 5 * time.Minute},   //nolint:mnd // default rate-limit table,
 		ChangePasswordIP:        RateLimitRule{Max: 30, Window: 5 * time.Minute},
 		ChangeEmailUser:         RateLimitRule{Max: 3, Window: time.Hour},
 		ChangeEmailIP:           RateLimitRule{Max: 10, Window: time.Hour},
 		ChangeEmailToken:        RateLimitRule{Max: 5, Window: 15 * time.Minute},
 		DeleteAccountUser:       RateLimitRule{Max: 3, Window: time.Hour},
 		DeleteAccountIP:         RateLimitRule{Max: 10, Window: time.Hour},
+		RefreshToken:            RateLimitRule{Max: 5, Window: 15 * time.Minute},  //nolint:mnd // default rate-limit table,
+		RefreshIP:               RateLimitRule{Max: 60, Window: 15 * time.Minute}, //nolint:mnd // default rate-limit table,
+		VerifyEmailToken:        RateLimitRule{Max: 5, Window: 15 * time.Minute},  //nolint:mnd // default rate-limit table,
 	}
 
 	opts.LoginEmail = withDefaultRule(opts.LoginEmail, defaults.LoginEmail)
@@ -1591,6 +1745,29 @@ func normalizeRateLimitOptions(opts RateLimitOptions) RateLimitOptions {
 	opts.ChangeEmailToken = withDefaultRule(opts.ChangeEmailToken, defaults.ChangeEmailToken)
 	opts.DeleteAccountUser = withDefaultRule(opts.DeleteAccountUser, defaults.DeleteAccountUser)
 	opts.DeleteAccountIP = withDefaultRule(opts.DeleteAccountIP, defaults.DeleteAccountIP)
+	opts.RefreshToken = withDefaultRule(opts.RefreshToken, defaults.RefreshToken)
+	opts.RefreshIP = withDefaultRule(opts.RefreshIP, defaults.RefreshIP)
+	opts.VerifyEmailToken = withDefaultRule(opts.VerifyEmailToken, defaults.VerifyEmailToken)
+
+	return opts
+}
+
+func normalizeLockoutOptions(opts LockoutOptions) LockoutOptions {
+	if opts.Threshold <= 0 {
+		opts.Threshold = 5
+	}
+
+	if opts.BaseDuration <= 0 {
+		opts.BaseDuration = time.Minute
+	}
+
+	if opts.Factor <= 0 {
+		opts.Factor = 15
+	}
+
+	if opts.MaxDuration < opts.BaseDuration {
+		opts.MaxDuration = time.Hour
+	}
 
 	return opts
 }
@@ -1639,7 +1816,7 @@ func (uc *UseCase) enforceAuthRateLimit(ctx context.Context, action string, chec
 			return fmt.Errorf("UserUseCase - enforceAuthRateLimit - IncrementAuthRateLimit: %w", err)
 		}
 		if !result.Allowed {
-			return entity.ErrAuthRateLimited
+			return &entity.AuthRateLimitedError{RetryAfter: result.RetryAfter}
 		}
 	}
 
@@ -1680,7 +1857,7 @@ func (uc *UseCase) enforceLoginRateLimit(ctx context.Context, email string) erro
 				uc.notifySuspiciousFailedLogin(ctx, email)
 			}
 
-			return entity.ErrAuthRateLimited
+			return &entity.AuthRateLimitedError{RetryAfter: result.RetryAfter}
 		}
 	}
 
@@ -1764,6 +1941,16 @@ func auditErrorCode(err error) string {
 		return "user_already_exists"
 	case errors.Is(err, entity.ErrInvalidRole):
 		return "invalid_role"
+	case errors.Is(err, entity.ErrInvalidRefreshToken):
+		return "invalid_refresh_token"
+	case errors.Is(err, entity.ErrAuthSessionNotFound):
+		return "auth_session_not_found"
+	case errors.Is(err, entity.ErrAccountLocked):
+		return "account_locked"
+	case errors.Is(err, entity.ErrLastAdmin):
+		return "last_admin"
+	case errors.Is(err, entity.ErrSelfRoleChange):
+		return "self_role_change"
 	default:
 		return "internal_error"
 	}
@@ -1865,12 +2052,23 @@ func newOTPHash() (string, string, error) {
 	if err != nil {
 		return "", "", err
 	}
-	hash, err := bcrypt.GenerateFromPassword([]byte(otp), bcrypt.DefaultCost)
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(otp), otpHashCost)
 	if err != nil {
 		return "", "", fmt.Errorf("UserUseCase - newOTPHash - bcrypt.GenerateFromPassword: %w", err)
 	}
 
 	return otp, string(hash), nil
+}
+
+// hashPassword hashes account passwords with passwordHashCost.
+func hashPassword(password string) (string, error) {
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), passwordHashCost)
+	if err != nil {
+		return "", fmt.Errorf("bcrypt.GenerateFromPassword: %w", err)
+	}
+
+	return string(hash), nil
 }
 
 func newOTP() (string, error) {
@@ -2225,6 +2423,10 @@ func (uc *UseCase) sendAuthEmail(
 			Variables: variables,
 			Fallback:  message,
 			Critical:  critical,
+			// Critical auth emails (verification, password reset, email
+			// change) are queued for the dispatcher so provider outages
+			// cannot fail registration or reset requests.
+			Async: critical,
 		})
 	}
 
@@ -3118,7 +3320,8 @@ func authEmailHTML(view authEmailView) string {
 	if buttonLabel != "" && buttonURL != "" {
 		escapedButtonLabel := html.EscapeString(buttonLabel)
 		escapedButtonURL := html.EscapeString(buttonURL)
-		actionHTML = fmt.Sprintf(`
+		actionHTML = fmt.Sprintf(
+			`
 	                  <tr>
 	                    <td style="padding:26px 32px 0 32px;text-align:%s;">
 	                      <a href="%s" style="display:inline-block;border-radius:14px;background:#6f9368;color:#ffffff;font-size:15px;font-weight:700;line-height:20px;text-decoration:none;padding:14px 18px;">%s</a>
@@ -3157,7 +3360,8 @@ func authEmailHTML(view authEmailView) string {
 	}
 	socialHTML := authEmailSocialLinksHTML()
 
-	return fmt.Sprintf(`<!doctype html>
+	return fmt.Sprintf(
+		`<!doctype html>
 <html lang="%s" dir="%s">
   <head>
     <meta charset="utf-8">

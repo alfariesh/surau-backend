@@ -389,18 +389,26 @@ WHERE book_id = $1 AND status = 'draft'`
 	return edit, nil
 }
 
-// SaveMetadataDraft upserts metadata draft.
+// SaveMetadataDraft upserts metadata draft. A non-nil expected timestamp turns
+// the upsert into an atomic compare-and-swap on updated_at (412 semantics).
+// Each effective save records an immutable revision snapshot in the same
+// transaction.
 func (r *EditorialRepo) SaveMetadataDraft(
 	ctx context.Context,
 	actorID string,
 	edit entity.BookMetadataEdit,
+	expected *time.Time,
+	origin string,
 ) (entity.BookMetadataEdit, error) {
 	sqlText := `
 INSERT INTO book_metadata_edits (
     book_id, status, display_title, bibliography, hint, description, cover_url, category_id, notes,
     updated_by, updated_at
 )
-VALUES ($1, 'draft', $2, $3, $4, $5, $6, $7, $8, $9, now())
+SELECT $1, 'draft', $2, $3, $4, $5, $6, $7, $8, $9, now()
+WHERE $10::timestamptz IS NULL OR EXISTS (
+    SELECT 1 FROM book_metadata_edits WHERE book_id = $1 AND status = 'draft' AND updated_at = $10
+)
 ON CONFLICT (book_id, status) DO UPDATE SET
     display_title = EXCLUDED.display_title,
     bibliography = EXCLUDED.bibliography,
@@ -411,10 +419,17 @@ ON CONFLICT (book_id, status) DO UPDATE SET
     notes = EXCLUDED.notes,
     updated_by = EXCLUDED.updated_by,
     updated_at = now()
+WHERE $10::timestamptz IS NULL OR book_metadata_edits.updated_at = $10
 RETURNING book_id, status, display_title, bibliography, hint, description, cover_url, category_id, notes,
           updated_by, updated_at, published_at`
 
-	saved, err := scanMetadataEdit(r.Pool.QueryRow(
+	tx, err := r.Pool.Begin(ctx)
+	if err != nil {
+		return entity.BookMetadataEdit{}, fmt.Errorf("EditorialRepo - SaveMetadataDraft - begin: %w", err)
+	}
+	defer rollbackTx(ctx, tx)
+
+	saved, err := scanMetadataEdit(tx.QueryRow(
 		ctx,
 		sqlText,
 		edit.BookID,
@@ -426,9 +441,29 @@ RETURNING book_id, status, display_title, bibliography, hint, description, cover
 		edit.CategoryID,
 		edit.Notes,
 		actorID,
+		expected,
 	))
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) && expected != nil {
+			return entity.BookMetadataEdit{}, entity.ErrPreconditionFailed
+		}
+
 		return entity.BookMetadataEdit{}, fmt.Errorf("EditorialRepo - SaveMetadataDraft - scanMetadataEdit: %w", err)
+	}
+
+	err = insertSourceEditRevision(ctx, tx, &sourceEditRevision{
+		bookID:    saved.BookID,
+		assetType: entity.SourceEditAssetMetadata,
+		actorID:   actorID,
+		origin:    origin,
+		snapshot:  saved,
+	})
+	if err != nil {
+		return entity.BookMetadataEdit{}, fmt.Errorf("EditorialRepo - SaveMetadataDraft - revision: %w", err)
+	}
+
+	if err = tx.Commit(ctx); err != nil {
+		return entity.BookMetadataEdit{}, fmt.Errorf("EditorialRepo - SaveMetadataDraft - commit: %w", err)
 	}
 
 	_ = r.audit(ctx, actorID, "metadata.draft.save", edit.BookID, nil, nil, "", saved)
@@ -436,8 +471,14 @@ RETURNING book_id, status, display_title, bibliography, hint, description, cover
 	return saved, nil
 }
 
-// PublishMetadataDraft promotes metadata draft to published.
-func (r *EditorialRepo) PublishMetadataDraft(ctx context.Context, actorID string, bookID int) (entity.BookMetadataEdit, error) {
+// PublishMetadataDraft promotes metadata draft to published. A non-nil expected
+// timestamp requires the draft row to still carry that updated_at (412 semantics).
+func (r *EditorialRepo) PublishMetadataDraft(
+	ctx context.Context,
+	actorID string,
+	bookID int,
+	expected *time.Time,
+) (entity.BookMetadataEdit, error) {
 	sqlText := `
 INSERT INTO book_metadata_edits (
     book_id, status, display_title, bibliography, hint, description, cover_url, category_id, notes,
@@ -446,7 +487,7 @@ INSERT INTO book_metadata_edits (
 SELECT book_id, 'published', display_title, bibliography, hint, description, cover_url, category_id, notes,
        $2, now(), now()
 FROM book_metadata_edits
-WHERE book_id = $1 AND status = 'draft'
+WHERE book_id = $1 AND status = 'draft' AND ($3::timestamptz IS NULL OR updated_at = $3)
 ON CONFLICT (book_id, status) DO UPDATE SET
     display_title = EXCLUDED.display_title,
     bibliography = EXCLUDED.bibliography,
@@ -461,10 +502,11 @@ ON CONFLICT (book_id, status) DO UPDATE SET
 RETURNING book_id, status, display_title, bibliography, hint, description, cover_url, category_id, notes,
           updated_by, updated_at, published_at`
 
-	saved, err := scanMetadataEdit(r.Pool.QueryRow(ctx, sqlText, bookID, actorID))
+	saved, err := scanMetadataEdit(r.Pool.QueryRow(ctx, sqlText, bookID, actorID, expected))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return entity.BookMetadataEdit{}, entity.ErrDraftNotFound
+			return entity.BookMetadataEdit{}, r.disambiguatePublishMiss(ctx, expected, `
+SELECT EXISTS (SELECT 1 FROM book_metadata_edits WHERE book_id = $1 AND status = 'draft')`, bookID)
 		}
 
 		return entity.BookMetadataEdit{}, fmt.Errorf("EditorialRepo - PublishMetadataDraft - scanMetadataEdit: %w", err)
@@ -473,6 +515,30 @@ RETURNING book_id, status, display_title, bibliography, hint, description, cover
 	_ = r.audit(ctx, actorID, "metadata.draft.publish", bookID, nil, nil, "", saved)
 
 	return saved, nil
+}
+
+// disambiguatePublishMiss separates "draft missing" (404) from "draft moved on"
+// (412) after a zero-row conditional publish. Failure-path only.
+func (r *EditorialRepo) disambiguatePublishMiss(
+	ctx context.Context,
+	expected *time.Time,
+	existsSQL string,
+	args ...any,
+) error {
+	if expected == nil {
+		return entity.ErrDraftNotFound
+	}
+
+	var draftExists bool
+	if err := r.Pool.QueryRow(ctx, existsSQL, args...).Scan(&draftExists); err != nil {
+		return fmt.Errorf("EditorialRepo - disambiguatePublishMiss: %w", err)
+	}
+
+	if draftExists {
+		return entity.ErrPreconditionFailed
+	}
+
+	return entity.ErrDraftNotFound
 }
 
 // GetPageEdit returns raw page plus draft/published overrides.
@@ -504,35 +570,89 @@ WHERE book_id = $1 AND page_id = $2`
 	return entity.EditorialPageEdit{Raw: raw, Draft: draft, Published: published}, nil
 }
 
-// SavePageDraft upserts a page content draft.
-func (r *EditorialRepo) SavePageDraft(ctx context.Context, actorID string, edit entity.BookPageEdit) (entity.BookPageEdit, error) {
+// SavePageDraft upserts a page content draft. A non-nil expected timestamp turns
+// the upsert into an atomic compare-and-swap on updated_at (412 semantics). When
+// no draft row exists yet, expected must match the raw page's updated_at instead,
+// since GET hands out the raw timestamp as the ETag in that state. Each effective
+// save records an immutable revision snapshot in the same transaction.
+//
+//nolint:gocritic // value param mirrors the repo.EditorialRepo interface
+func (r *EditorialRepo) SavePageDraft(
+	ctx context.Context,
+	actorID string,
+	edit entity.BookPageEdit,
+	expected *time.Time,
+	origin string,
+) (entity.BookPageEdit, error) {
 	sqlText := `
 INSERT INTO book_page_edits (book_id, page_id, status, content_html, content_text, updated_by, updated_at)
-VALUES ($1, $2, 'draft', $3, $4, $5, now())
+SELECT $1, $2, 'draft', $3, $4, $5, now()
+WHERE $6::timestamptz IS NULL
+   OR EXISTS (SELECT 1 FROM book_page_edits WHERE book_id = $1 AND page_id = $2 AND status = 'draft' AND updated_at = $6)
+   OR (
+       NOT EXISTS (SELECT 1 FROM book_page_edits WHERE book_id = $1 AND page_id = $2 AND status = 'draft')
+       AND EXISTS (SELECT 1 FROM book_pages WHERE book_id = $1 AND page_id = $2 AND updated_at = $6)
+   )
 ON CONFLICT (book_id, page_id, status) DO UPDATE SET
     content_html = EXCLUDED.content_html,
     content_text = EXCLUDED.content_text,
     updated_by = EXCLUDED.updated_by,
     updated_at = now()
+WHERE $6::timestamptz IS NULL OR book_page_edits.updated_at = $6
 RETURNING book_id, page_id, status, content_html, content_text, updated_by, updated_at, published_at`
 
-	saved, err := scanPageEdit(r.Pool.QueryRow(ctx, sqlText, edit.BookID, edit.PageID, edit.ContentHTML, edit.ContentText, actorID))
+	tx, err := r.Pool.Begin(ctx)
 	if err != nil {
+		return entity.BookPageEdit{}, fmt.Errorf("EditorialRepo - SavePageDraft - begin: %w", err)
+	}
+	defer rollbackTx(ctx, tx)
+
+	saved, err := scanPageEdit(tx.QueryRow(ctx, sqlText, edit.BookID, edit.PageID, edit.ContentHTML, edit.ContentText, actorID, expected))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) && expected != nil {
+			return entity.BookPageEdit{}, entity.ErrPreconditionFailed
+		}
+
 		return entity.BookPageEdit{}, fmt.Errorf("EditorialRepo - SavePageDraft - scanPageEdit: %w", err)
 	}
 
-	_ = r.audit(ctx, actorID, "page.draft.save", edit.BookID, &edit.PageID, nil, "", nil)
+	err = insertSourceEditRevision(ctx, tx, &sourceEditRevision{
+		bookID:    saved.BookID,
+		assetType: entity.SourceEditAssetPage,
+		pageID:    &saved.PageID,
+		actorID:   actorID,
+		origin:    origin,
+		snapshot: map[string]any{
+			"content_html": saved.ContentHTML,
+			"content_text": saved.ContentText,
+		},
+	})
+	if err != nil {
+		return entity.BookPageEdit{}, fmt.Errorf("EditorialRepo - SavePageDraft - revision: %w", err)
+	}
+
+	if err = tx.Commit(ctx); err != nil {
+		return entity.BookPageEdit{}, fmt.Errorf("EditorialRepo - SavePageDraft - commit: %w", err)
+	}
+
+	_ = r.audit(ctx, actorID, "page.draft.save", edit.BookID, &edit.PageID, nil, "", map[string]any{"origin": origin}) //nolint:errcheck // audit is best-effort; the save already committed
 
 	return saved, nil
 }
 
-// PublishPageDraft promotes a page draft to published.
-func (r *EditorialRepo) PublishPageDraft(ctx context.Context, actorID string, bookID, pageID int) (entity.BookPageEdit, error) {
+// PublishPageDraft promotes a page draft to published. A non-nil expected
+// timestamp requires the draft row to still carry that updated_at (412 semantics).
+func (r *EditorialRepo) PublishPageDraft(
+	ctx context.Context,
+	actorID string,
+	bookID, pageID int,
+	expected *time.Time,
+) (entity.BookPageEdit, error) {
 	sqlText := `
 INSERT INTO book_page_edits (book_id, page_id, status, content_html, content_text, updated_by, updated_at, published_at)
 SELECT book_id, page_id, 'published', content_html, content_text, $3, now(), now()
 FROM book_page_edits
-WHERE book_id = $1 AND page_id = $2 AND status = 'draft'
+WHERE book_id = $1 AND page_id = $2 AND status = 'draft' AND ($4::timestamptz IS NULL OR updated_at = $4)
 ON CONFLICT (book_id, page_id, status) DO UPDATE SET
     content_html = EXCLUDED.content_html,
     content_text = EXCLUDED.content_text,
@@ -541,10 +661,11 @@ ON CONFLICT (book_id, page_id, status) DO UPDATE SET
     published_at = now()
 RETURNING book_id, page_id, status, content_html, content_text, updated_by, updated_at, published_at`
 
-	saved, err := scanPageEdit(r.Pool.QueryRow(ctx, sqlText, bookID, pageID, actorID))
+	saved, err := scanPageEdit(r.Pool.QueryRow(ctx, sqlText, bookID, pageID, actorID, expected))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return entity.BookPageEdit{}, entity.ErrDraftNotFound
+			return entity.BookPageEdit{}, r.disambiguatePublishMiss(ctx, expected, `
+SELECT EXISTS (SELECT 1 FROM book_page_edits WHERE book_id = $1 AND page_id = $2 AND status = 'draft')`, bookID, pageID)
 		}
 
 		return entity.BookPageEdit{}, fmt.Errorf("EditorialRepo - PublishPageDraft - scanPageEdit: %w", err)
@@ -574,20 +695,61 @@ WHERE book_id = $1 AND heading_id = $2 AND status = 'draft'`
 	return edit, nil
 }
 
-// SaveHeadingDraft upserts a heading draft.
-func (r *EditorialRepo) SaveHeadingDraft(ctx context.Context, actorID string, edit entity.BookHeadingEdit) (entity.BookHeadingEdit, error) {
+// SaveHeadingDraft upserts a heading draft. A non-nil expected timestamp turns
+// the upsert into an atomic compare-and-swap on updated_at (412 semantics).
+// Each effective save records an immutable revision snapshot in the same
+// transaction.
+//
+//nolint:gocritic // value param mirrors the repo.EditorialRepo interface
+func (r *EditorialRepo) SaveHeadingDraft(
+	ctx context.Context,
+	actorID string,
+	edit entity.BookHeadingEdit,
+	expected *time.Time,
+	origin string,
+) (entity.BookHeadingEdit, error) {
 	sqlText := `
 INSERT INTO book_heading_edits (book_id, heading_id, status, content, updated_by, updated_at)
-VALUES ($1, $2, 'draft', $3, $4, now())
+SELECT $1, $2, 'draft', $3, $4, now()
+WHERE $5::timestamptz IS NULL OR EXISTS (
+    SELECT 1 FROM book_heading_edits WHERE book_id = $1 AND heading_id = $2 AND status = 'draft' AND updated_at = $5
+)
 ON CONFLICT (book_id, heading_id, status) DO UPDATE SET
     content = EXCLUDED.content,
     updated_by = EXCLUDED.updated_by,
     updated_at = now()
+WHERE $5::timestamptz IS NULL OR book_heading_edits.updated_at = $5
 RETURNING book_id, heading_id, status, content, updated_by, updated_at, published_at`
 
-	saved, err := scanHeadingEdit(r.Pool.QueryRow(ctx, sqlText, edit.BookID, edit.HeadingID, edit.Content, actorID))
+	tx, err := r.Pool.Begin(ctx)
 	if err != nil {
+		return entity.BookHeadingEdit{}, fmt.Errorf("EditorialRepo - SaveHeadingDraft - begin: %w", err)
+	}
+	defer rollbackTx(ctx, tx)
+
+	saved, err := scanHeadingEdit(tx.QueryRow(ctx, sqlText, edit.BookID, edit.HeadingID, edit.Content, actorID, expected))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) && expected != nil {
+			return entity.BookHeadingEdit{}, entity.ErrPreconditionFailed
+		}
+
 		return entity.BookHeadingEdit{}, fmt.Errorf("EditorialRepo - SaveHeadingDraft - scanHeadingEdit: %w", err)
+	}
+
+	err = insertSourceEditRevision(ctx, tx, &sourceEditRevision{
+		bookID:    saved.BookID,
+		assetType: entity.SourceEditAssetHeading,
+		headingID: &saved.HeadingID,
+		actorID:   actorID,
+		origin:    origin,
+		snapshot:  map[string]any{"content": saved.Content},
+	})
+	if err != nil {
+		return entity.BookHeadingEdit{}, fmt.Errorf("EditorialRepo - SaveHeadingDraft - revision: %w", err)
+	}
+
+	if err = tx.Commit(ctx); err != nil {
+		return entity.BookHeadingEdit{}, fmt.Errorf("EditorialRepo - SaveHeadingDraft - commit: %w", err)
 	}
 
 	_ = r.audit(ctx, actorID, "heading.draft.save", edit.BookID, nil, &edit.HeadingID, "", saved)
@@ -595,13 +757,19 @@ RETURNING book_id, heading_id, status, content, updated_by, updated_at, publishe
 	return saved, nil
 }
 
-// PublishHeadingDraft promotes a heading draft to published.
-func (r *EditorialRepo) PublishHeadingDraft(ctx context.Context, actorID string, bookID, headingID int) (entity.BookHeadingEdit, error) {
+// PublishHeadingDraft promotes a heading draft to published. A non-nil expected
+// timestamp requires the draft row to still carry that updated_at (412 semantics).
+func (r *EditorialRepo) PublishHeadingDraft(
+	ctx context.Context,
+	actorID string,
+	bookID, headingID int,
+	expected *time.Time,
+) (entity.BookHeadingEdit, error) {
 	sqlText := `
 INSERT INTO book_heading_edits (book_id, heading_id, status, content, updated_by, updated_at, published_at)
 SELECT book_id, heading_id, 'published', content, $3, now(), now()
 FROM book_heading_edits
-WHERE book_id = $1 AND heading_id = $2 AND status = 'draft'
+WHERE book_id = $1 AND heading_id = $2 AND status = 'draft' AND ($4::timestamptz IS NULL OR updated_at = $4)
 ON CONFLICT (book_id, heading_id, status) DO UPDATE SET
     content = EXCLUDED.content,
     updated_by = EXCLUDED.updated_by,
@@ -609,10 +777,11 @@ ON CONFLICT (book_id, heading_id, status) DO UPDATE SET
     published_at = now()
 RETURNING book_id, heading_id, status, content, updated_by, updated_at, published_at`
 
-	saved, err := scanHeadingEdit(r.Pool.QueryRow(ctx, sqlText, bookID, headingID, actorID))
+	saved, err := scanHeadingEdit(r.Pool.QueryRow(ctx, sqlText, bookID, headingID, actorID, expected))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return entity.BookHeadingEdit{}, entity.ErrDraftNotFound
+			return entity.BookHeadingEdit{}, r.disambiguatePublishMiss(ctx, expected, `
+SELECT EXISTS (SELECT 1 FROM book_heading_edits WHERE book_id = $1 AND heading_id = $2 AND status = 'draft')`, bookID, headingID)
 		}
 
 		return entity.BookHeadingEdit{}, fmt.Errorf("EditorialRepo - PublishHeadingDraft - scanHeadingEdit: %w", err)
@@ -634,11 +803,10 @@ func (r *EditorialRepo) AddCollectionItem(
 	if err != nil {
 		return entity.BookCollectionItem{}, fmt.Errorf("EditorialRepo - AddCollectionItem - Begin: %w", err)
 	}
-	defer func() {
-		_ = tx.Rollback(ctx)
-	}()
+	defer rollbackTx(ctx, tx)
 
-	_, err = tx.Exec(ctx, `
+	_, err = tx.Exec(
+		ctx, `
 INSERT INTO book_collections (slug, title, created_by, updated_at)
 VALUES ($1, $1, $2, now())
 ON CONFLICT (slug) DO UPDATE SET updated_at = now()`,
@@ -959,6 +1127,9 @@ func (r *EditorialRepo) adminBookSelectBuilder() sq.SelectBuilder {
 			"NULL::TEXT AS reviewed_by",
 			"NULL::TIMESTAMPTZ AS reviewed_at",
 			"COALESCE(p.status, 'hidden') AS publication_status",
+			"COALESCE(p.status, 'hidden') AS catalog_publication_status",
+			"NULL::TEXT AS production_workflow_status",
+			"NULL::TEXT AS production_publication_status",
 			"COALESCE(p.featured, false) AS featured",
 			"p.sort_order",
 			"b.has_content",
@@ -974,6 +1145,7 @@ func (r *EditorialRepo) adminBookSelectBuilder() sq.SelectBuilder {
 			"'ar'::TEXT AS bibliography_lang",
 			"'ar'::TEXT AS hint_lang",
 			"'ar'::TEXT AS description_lang",
+			"NULL::TEXT AS production_status",
 		).
 		From("books b").
 		LeftJoin("book_publications p ON p.book_id = b.id").
@@ -1075,6 +1247,198 @@ WHERE book_id = $1 AND page_id = $2 AND status = $3`
 	return &edit, nil
 }
 
+// rollbackTx releases a transaction from a defer. Rollback after a successful
+// commit returns pgx.ErrTxClosed, the expected no-op; any other rollback error
+// means the connection itself broke, and the pool already discards broken
+// connections, so there is no recovery action to take here.
+func rollbackTx(ctx context.Context, tx pgx.Tx) {
+	_ = tx.Rollback(ctx)
+}
+
+// sourceEditRevision describes one snapshot to append to the source-edit
+// revision history.
+type sourceEditRevision struct {
+	bookID    int
+	assetType string
+	pageID    *int
+	headingID *int
+	actorID   string
+	origin    string
+	snapshot  any
+}
+
+const sourceEditRevisionKeep = 50
+
+// insertSourceEditRevision appends a revision snapshot inside the caller's
+// transaction. Identical consecutive snapshots are skipped so idle autosaves do
+// not churn versions, and the history tail is pruned to the most recent
+// sourceEditRevisionKeep entries. Version assignment is serialized by the draft
+// row lock taken by the preceding upsert in the same transaction.
+func insertSourceEditRevision(ctx context.Context, tx pgx.Tx, revision *sourceEditRevision) error {
+	payload, err := json.Marshal(revision.snapshot)
+	if err != nil {
+		return fmt.Errorf("marshal source edit revision: %w", err)
+	}
+
+	if revision.origin == "" {
+		revision.origin = entity.EditOriginREST
+	}
+
+	var version int
+
+	err = tx.QueryRow(
+		ctx, `
+WITH latest AS (
+    SELECT version, snapshot
+    FROM book_source_edit_revisions
+    WHERE book_id = $1
+      AND asset_type = $2
+      AND COALESCE(page_id, 0) = COALESCE($3::integer, 0)
+      AND COALESCE(heading_id, 0) = COALESCE($4::integer, 0)
+    ORDER BY version DESC
+    LIMIT 1
+)
+INSERT INTO book_source_edit_revisions (
+    id, book_id, asset_type, page_id, heading_id, version, actor_id, origin, snapshot, created_at
+)
+SELECT $5, $1, $2, $3, $4, COALESCE((SELECT version FROM latest), 0) + 1, $6, $7, $8::jsonb, now()
+WHERE NOT EXISTS (SELECT 1 FROM latest WHERE snapshot = $8::jsonb)
+RETURNING version`,
+		revision.bookID,
+		revision.assetType,
+		revision.pageID,
+		revision.headingID,
+		uuid.New().String(),
+		emptyStringNil(revision.actorID),
+		revision.origin,
+		string(payload),
+	).Scan(&version)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+
+		return fmt.Errorf("insert source edit revision: %w", err)
+	}
+
+	_, err = tx.Exec(
+		ctx, `
+DELETE FROM book_source_edit_revisions
+WHERE book_id = $1
+  AND asset_type = $2
+  AND COALESCE(page_id, 0) = COALESCE($3::integer, 0)
+  AND COALESCE(heading_id, 0) = COALESCE($4::integer, 0)
+  AND version <= $5::integer`,
+		revision.bookID,
+		revision.assetType,
+		revision.pageID,
+		revision.headingID,
+		version-sourceEditRevisionKeep,
+	)
+	if err != nil {
+		return fmt.Errorf("prune source edit revisions: %w", err)
+	}
+
+	return nil
+}
+
+// ListSourceEditRevisions returns the newest-first revision history for one
+// edited source resource.
+func (r *EditorialRepo) ListSourceEditRevisions(
+	ctx context.Context,
+	filter repo.SourceEditRevisionFilter,
+) ([]entity.BookSourceEditRevision, int, error) {
+	where := `
+WHERE book_id = $1
+  AND asset_type = $2
+  AND COALESCE(page_id, 0) = COALESCE($3::integer, 0)
+  AND COALESCE(heading_id, 0) = COALESCE($4::integer, 0)`
+
+	var total int
+
+	err := r.Pool.QueryRow(
+		ctx,
+		`SELECT COUNT(*) FROM book_source_edit_revisions`+where,
+		filter.BookID, filter.AssetType, filter.PageID, filter.HeadingID,
+	).Scan(&total)
+	if err != nil {
+		return nil, 0, fmt.Errorf("EditorialRepo - ListSourceEditRevisions - count: %w", err)
+	}
+
+	rows, err := r.Pool.Query(
+		ctx, `
+SELECT id, book_id, asset_type, page_id, heading_id, version, actor_id, origin, snapshot, created_at
+FROM book_source_edit_revisions`+where+`
+ORDER BY version DESC
+LIMIT $5 OFFSET $6`,
+		filter.BookID, filter.AssetType, filter.PageID, filter.HeadingID, filter.Limit, filter.Offset,
+	)
+	if err != nil {
+		return nil, 0, fmt.Errorf("EditorialRepo - ListSourceEditRevisions - query: %w", err)
+	}
+	defer rows.Close()
+
+	revisions := make([]entity.BookSourceEditRevision, 0)
+
+	for rows.Next() {
+		revision, scanErr := scanSourceEditRevision(rows)
+		if scanErr != nil {
+			return nil, 0, fmt.Errorf("EditorialRepo - ListSourceEditRevisions - scan: %w", scanErr)
+		}
+
+		revisions = append(revisions, revision)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("EditorialRepo - ListSourceEditRevisions - rows: %w", err)
+	}
+
+	return revisions, total, nil
+}
+
+// GetSourceEditRevision returns one revision by id.
+func (r *EditorialRepo) GetSourceEditRevision(ctx context.Context, revisionID string) (entity.BookSourceEditRevision, error) {
+	revision, err := scanSourceEditRevision(r.Pool.QueryRow(ctx, `
+SELECT id, book_id, asset_type, page_id, heading_id, version, actor_id, origin, snapshot, created_at
+FROM book_source_edit_revisions
+WHERE id = $1`, revisionID))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return entity.BookSourceEditRevision{}, entity.ErrDraftNotFound
+		}
+
+		return entity.BookSourceEditRevision{}, fmt.Errorf("EditorialRepo - GetSourceEditRevision - scan: %w", err)
+	}
+
+	return revision, nil
+}
+
+func scanSourceEditRevision(row rowScanner) (entity.BookSourceEditRevision, error) {
+	var revision entity.BookSourceEditRevision
+
+	var snapshot []byte
+
+	err := row.Scan(
+		&revision.ID,
+		&revision.BookID,
+		&revision.AssetType,
+		&revision.PageID,
+		&revision.HeadingID,
+		&revision.Version,
+		&revision.ActorID,
+		&revision.Origin,
+		&snapshot,
+		&revision.CreatedAt,
+	)
+	if err != nil {
+		return entity.BookSourceEditRevision{}, err
+	}
+
+	revision.Snapshot = json.RawMessage(snapshot)
+
+	return revision, nil
+}
+
 func emptyStringNil(value string) any {
 	if value == "" {
 		return nil
@@ -1110,7 +1474,8 @@ func (r *EditorialRepo) audit(
 		}
 	}
 
-	_, err = r.Pool.Exec(ctx, `
+	_, err = r.Pool.Exec(
+		ctx, `
 INSERT INTO admin_audit_logs (id, actor_id, action, book_id, page_id, heading_id, collection_slug, payload, created_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7, nullif($8, '')::jsonb, now())`,
 		uuid.New().String(),

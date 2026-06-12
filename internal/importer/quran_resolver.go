@@ -82,7 +82,8 @@ func ResolveQuranReferences(ctx context.Context, pool *pgxpool.Pool) (resolved i
 			metadata["mention_attributes"] = json.RawMessage(mention.Attributes)
 		}
 		metadataJSON, _ := json.Marshal(metadata)
-		batch.Queue(`
+		batch.Queue(
+			`
 INSERT INTO quran_book_references (
     id, book_id, page_id, heading_id, knowledge_mention_id, source_text,
     normalized_text, reference_kind, surah_id, from_ayah_number, to_ayah_number,

@@ -176,7 +176,8 @@ VALUES ($1, 'تصنيف الإنتاج', 1)`, productionFixtureCategoryID)
 	execFixtureSQL(t, ctx, tx, `
 INSERT INTO authors (id, name, biography, death_text, death_number)
 VALUES ($1, 'مؤلف الإنتاج', 'سيرة الإنتاج', '1445 هـ', 1445)`, productionFixtureAuthorID)
-	execFixtureSQL(t, ctx, tx, `
+	execFixtureSQL(
+		t, ctx, tx, `
 INSERT INTO books (
     id, name, category_id, author_id, type, printed, minor_release, major_release,
     bibliography, hint, pdf_links, metadata, source_date, has_content
@@ -189,13 +190,15 @@ VALUES ($1, 'كتاب الإنتاج', $2, $3, 1, 1, 0, 1, 'مصدر الإنت�
 	execFixtureSQL(t, ctx, tx, `
 INSERT INTO book_publications (book_id, status, featured, sort_order, published_at)
 VALUES ($1, 'published', false, 10, now())`, productionFixtureBookID)
-	execFixtureSQL(t, ctx, tx, `
+	execFixtureSQL(
+		t, ctx, tx, `
 INSERT INTO book_pages (book_id, page_id, content_html, content_text)
 VALUES ($1, 1, '<article><p>نص الإنتاج الأول.</p></article>', 'نص الإنتاج الأول.'),
        ($1, 2, '<article><p>نص الإنتاج الثاني.</p></article>', 'نص الإنتاج الثاني.')`,
 		productionFixtureBookID,
 	)
-	execFixtureSQL(t, ctx, tx, `
+	execFixtureSQL(
+		t, ctx, tx, `
 INSERT INTO book_headings (book_id, heading_id, parent_id, page_id, depth, ordinal, content)
 VALUES ($1, $2, NULL, 1, 0, 1, 'باب الإنتاج الأول'),
        ($1, $3, NULL, 2, 0, 2, 'باب الإنتاج الثاني')`,
@@ -203,7 +206,8 @@ VALUES ($1, $2, NULL, 1, 0, 1, 'باب الإنتاج الأول'),
 		productionFixtureHeadingOne,
 		productionFixtureHeadingTwo,
 	)
-	execFixtureSQL(t, ctx, tx, `
+	execFixtureSQL(
+		t, ctx, tx, `
 INSERT INTO book_heading_ranges (book_id, heading_id, start_page_id, end_page_id)
 VALUES ($1, $2, 1, 1),
        ($1, $3, 2, 2)`,

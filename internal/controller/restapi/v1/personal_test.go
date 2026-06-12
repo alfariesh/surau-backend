@@ -62,7 +62,7 @@ func TestSavedItemRoutes(t *testing.T) {
 			method:     http.MethodGet,
 			path:       "/v1/me/saved-items/tags",
 			wantStatus: http.StatusOK,
-			wantBody:   `"tags":["fiqh","tafsir"]`,
+			wantBody:   `"items":["fiqh","tafsir"]`,
 		},
 		{
 			name:       "update saved item",
@@ -98,7 +98,7 @@ func TestSavedItemRoutes(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			req := httptest.NewRequest(tt.method, tt.path, bytes.NewBufferString(tt.body))
+			req := httptest.NewRequestWithContext(t.Context(), tt.method, tt.path, bytes.NewBufferString(tt.body))
 			if tt.body != "" {
 				req.Header.Set("Content-Type", "application/json")
 			}
@@ -116,13 +116,98 @@ func TestSavedItemRoutes(t *testing.T) {
 	}
 }
 
+func TestSavedItemUpsertReturnsCreated(t *testing.T) {
+	t.Parallel()
+
+	app := newSavedItemsTestApp(&fakePersonal{}, true)
+
+	req := httptest.NewRequestWithContext(
+		t.Context(),
+		http.MethodPost,
+		"/v1/me/saved-items",
+		bytes.NewBufferString(`{"item_type":"quran_ayah","ayah_key":"73:4"}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := app.Test(req)
+
+	require.NoError(t, err)
+
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusCreated, resp.StatusCode)
+}
+
+func TestSavedItemPatchSemantics(t *testing.T) {
+	t.Parallel()
+
+	t.Run("tags only leaves label and note unset", func(t *testing.T) {
+		t.Parallel()
+
+		fake := &fakePersonal{item: entity.SavedItem{ID: "saved-id"}}
+		app := newSavedItemsTestApp(fake, true)
+
+		req := httptest.NewRequestWithContext(
+			t.Context(),
+			http.MethodPatch,
+			"/v1/me/saved-items/saved-id",
+			bytes.NewBufferString(`{"tags":["fiqh"]}`),
+		)
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := app.Test(req)
+
+		require.NoError(t, err)
+
+		defer resp.Body.Close()
+
+		assert.Equal(t, http.StatusOK, resp.StatusCode)
+		require.NotNil(t, fake.lastPatch)
+		assert.False(t, fake.lastPatch.LabelSet)
+		assert.False(t, fake.lastPatch.NoteSet)
+		assert.True(t, fake.lastPatch.TagsSet)
+		assert.Equal(t, []string{"fiqh"}, fake.lastPatch.Tags)
+	})
+
+	t.Run("explicit null clears label", func(t *testing.T) {
+		t.Parallel()
+
+		fake := &fakePersonal{item: entity.SavedItem{ID: "saved-id"}}
+		app := newSavedItemsTestApp(fake, true)
+
+		req := httptest.NewRequestWithContext(
+			t.Context(),
+			http.MethodPatch,
+			"/v1/me/saved-items/saved-id",
+			bytes.NewBufferString(`{"label":null}`),
+		)
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := app.Test(req)
+
+		require.NoError(t, err)
+
+		defer resp.Body.Close()
+
+		assert.Equal(t, http.StatusOK, resp.StatusCode)
+		require.NotNil(t, fake.lastPatch)
+		assert.True(t, fake.lastPatch.LabelSet)
+		assert.Nil(t, fake.lastPatch.Label)
+		assert.False(t, fake.lastPatch.NoteSet)
+		assert.False(t, fake.lastPatch.TagsSet)
+	})
+}
+
 func TestSavedItemRoutesRequireAuth(t *testing.T) {
 	t.Parallel()
 
 	app := newSavedItemsTestApp(&fakePersonal{}, false)
-	resp, err := app.Test(httptest.NewRequest(http.MethodGet, "/v1/me/saved-items", nil))
+	resp, err := app.Test(httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/v1/me/saved-items", nil))
 
 	require.NoError(t, err)
+
+	defer resp.Body.Close()
+
 	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 }
 
@@ -145,7 +230,7 @@ func TestSavedItemRoutesNotFound(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			req := httptest.NewRequest(tt.method, tt.path, bytes.NewBufferString(tt.body))
+			req := httptest.NewRequestWithContext(t.Context(), tt.method, tt.path, bytes.NewBufferString(tt.body))
 			if tt.body != "" {
 				req.Header.Set("Content-Type", "application/json")
 			}
@@ -204,7 +289,7 @@ func TestQuranProgressRoutes(t *testing.T) {
 			method:     http.MethodGet,
 			path:       "/v1/me/quran/progress/surahs",
 			wantStatus: http.StatusOK,
-			wantBody:   `"surahs"`,
+			wantBody:   `"items"`,
 		},
 		{
 			name:       "get quran surah progress",
@@ -234,7 +319,7 @@ func TestQuranProgressRoutes(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			req := httptest.NewRequest(tt.method, tt.path, bytes.NewBufferString(tt.body))
+			req := httptest.NewRequestWithContext(t.Context(), tt.method, tt.path, bytes.NewBufferString(tt.body))
 			if tt.body != "" {
 				req.Header.Set("Content-Type", "application/json")
 			}
@@ -252,6 +337,56 @@ func TestQuranProgressRoutes(t *testing.T) {
 	}
 }
 
+func TestContinueReadingRoute(t *testing.T) {
+	t.Parallel()
+
+	coverURL := "https://cdn.example/cover.jpg"
+	app := newPersonalTestApp(&fakePersonal{
+		continueReading: []entity.ContinueReadingEntry{
+			{
+				ReadingProgress: entity.ReadingProgress{UserID: "user-id", BookID: 797},
+				Book:            entity.ReadingProgressBookSummary{BookID: 797, Name: "صحيح البخاري", CoverURL: &coverURL},
+			},
+		},
+	}, true)
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/v1/me/progress?lang=id", http.NoBody)
+	resp, err := app.Test(req)
+	require.NoError(t, err)
+
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	assert.Contains(t, string(body), `"book_id":797`)
+	assert.Contains(t, string(body), `"cover_url":"https://cdn.example/cover.jpg"`)
+	assert.Contains(t, string(body), `"total":1`)
+}
+
+func TestKitabProgressSaveForwardsClientObservedAt(t *testing.T) {
+	t.Parallel()
+
+	app := newPersonalTestApp(&fakePersonal{}, true)
+
+	req := httptest.NewRequestWithContext(
+		t.Context(),
+		http.MethodPut,
+		"/v1/me/progress/797",
+		bytes.NewBufferString(`{"page_id":12,"progress_percent":50,"client_observed_at":"2026-01-01T00:00:00Z"}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := app.Test(req)
+
+	require.NoError(t, err)
+
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+}
+
 func TestQuranProgressRoutesRequireAuth(t *testing.T) {
 	t.Parallel()
 
@@ -266,13 +401,15 @@ func TestQuranProgressRoutesRequireAuth(t *testing.T) {
 		{name: "save", method: http.MethodPut, path: "/v1/me/quran/progress", body: `{"ayah_key":"73:4"}`},
 		{name: "list surahs", method: http.MethodGet, path: "/v1/me/quran/progress/surahs"},
 		{name: "get surah", method: http.MethodGet, path: "/v1/me/quran/progress/surahs/73"},
+		{name: "continue reading", method: http.MethodGet, path: "/v1/me/progress"},
+		{name: "save kitab progress", method: http.MethodPut, path: "/v1/me/progress/797", body: `{"page_id":12}`},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			req := httptest.NewRequest(tt.method, tt.path, bytes.NewBufferString(tt.body))
+			req := httptest.NewRequestWithContext(t.Context(), tt.method, tt.path, bytes.NewBufferString(tt.body))
 			if tt.body != "" {
 				req.Header.Set("Content-Type", "application/json")
 			}
@@ -289,9 +426,12 @@ func TestQuranProgressRoutesNotFound(t *testing.T) {
 	t.Parallel()
 
 	app := newPersonalTestApp(&fakePersonal{quranErr: entity.ErrProgressNotFound}, true)
-	resp, err := app.Test(httptest.NewRequest(http.MethodGet, "/v1/me/quran/progress", nil))
+	resp, err := app.Test(httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/v1/me/quran/progress", nil))
 
 	require.NoError(t, err)
+
+	defer resp.Body.Close()
+
 	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
 }
 
@@ -299,7 +439,7 @@ func TestQuranProgressRoutesAyahNotFound(t *testing.T) {
 	t.Parallel()
 
 	app := newPersonalTestApp(&fakePersonal{quranErr: entity.ErrQuranAyahNotFound}, true)
-	req := httptest.NewRequest(http.MethodPut, "/v1/me/quran/progress", bytes.NewBufferString(`{"ayah_key":"99:999"}`))
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPut, "/v1/me/quran/progress", bytes.NewBufferString(`{"ayah_key":"99:999"}`))
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := app.Test(req)
@@ -328,6 +468,11 @@ func newPersonalTestApp(personal *fakePersonal, authenticated bool) *fiber.App {
 			return ctx.Next()
 		})
 	}
+
+	app.Get("/v1/me/progress", controller.listProgress)
+	app.Get("/v1/me/progress/:book_id", controller.getProgress)
+	app.Put("/v1/me/progress/:book_id", controller.saveProgress)
+	app.Put("/v1/me/progress/:book_id/toc/:heading_id", controller.saveTOCProgress)
 	app.Get("/v1/me/saved-items", controller.listSavedItems)
 	app.Post("/v1/me/saved-items", controller.upsertSavedItem)
 	app.Get("/v1/me/saved-items/tags", controller.listSavedItemTags)
@@ -342,21 +487,54 @@ func newPersonalTestApp(personal *fakePersonal, authenticated bool) *fiber.App {
 }
 
 type fakePersonal struct {
-	item            entity.SavedItem
-	tags            []string
-	updateErr       error
-	deleteErr       error
-	quranProgress   entity.QuranReadingProgress
-	quranProgresses []entity.QuranReadingProgress
-	quranErr        error
+	item             entity.SavedItem
+	tags             []string
+	updateErr        error
+	deleteErr        error
+	quranProgress    entity.QuranReadingProgress
+	quranProgresses  []entity.QuranReadingProgress
+	quranErr         error
+	continueReading  []entity.ContinueReadingEntry
+	lastPatch        *entity.SavedItemPatch
+	khatamCycle      entity.QuranKhatamCycle
+	khatamHistory    []entity.QuranKhatamCycle
+	khatamErr        error
+	saveProgressErrs map[int]error
+	syncSnapshot     entity.PersonalSyncSnapshot
+	syncErr          error
+	lastSyncSince    *time.Time
+	streak           entity.ReadingStreak
+	activity         entity.ReadingActivitySummary
+	activityErr      error
 }
 
 func (f *fakePersonal) GetProgress(context.Context, string, int) (entity.ReadingProgress, error) {
 	return entity.ReadingProgress{}, nil
 }
 
-func (f *fakePersonal) SaveProgress(context.Context, string, int, *int, *int, *float64) (entity.ReadingProgress, error) {
-	return entity.ReadingProgress{}, nil
+func (f *fakePersonal) SaveProgress(
+	_ context.Context,
+	userID string,
+	bookID int,
+	pageID, headingID *int,
+	progressPercent *float64,
+	_ *time.Time,
+) (entity.ReadingProgress, error) {
+	if err, ok := f.saveProgressErrs[bookID]; ok {
+		return entity.ReadingProgress{}, err
+	}
+
+	return entity.ReadingProgress{
+		UserID:          userID,
+		BookID:          bookID,
+		PageID:          pageID,
+		HeadingID:       headingID,
+		ProgressPercent: progressPercent,
+	}, nil
+}
+
+func (f *fakePersonal) ListProgress(context.Context, string, string, int, int) ([]entity.ContinueReadingEntry, int, error) {
+	return f.continueReading, len(f.continueReading), nil
 }
 
 func (f *fakePersonal) GetQuranProgress(context.Context, string) (entity.QuranReadingProgress, error) {
@@ -410,17 +588,19 @@ func (f *fakePersonal) ListSavedItems(context.Context, string, string, *int, *in
 	return []entity.SavedItem{f.item}, 1, nil
 }
 
-func (f *fakePersonal) UpsertSavedItem(_ context.Context, userID string, item entity.SavedItem) (entity.SavedItem, error) {
+func (f *fakePersonal) UpsertSavedItem(_ context.Context, userID string, item entity.SavedItem) (entity.SavedItem, bool, error) { //nolint:gocritic // value param fixed by the usecase interface contract
 	if f.item.ID == "" {
 		item.ID = "saved-id"
 		item.UserID = userID
-		return item, nil
+
+		return item, true, nil
 	}
 
-	return f.item, nil
+	return f.item, false, nil
 }
 
-func (f *fakePersonal) UpdateSavedItem(context.Context, string, string, *string, *string, []string) (entity.SavedItem, error) {
+func (f *fakePersonal) UpdateSavedItem(_ context.Context, _, _ string, patch entity.SavedItemPatch) (entity.SavedItem, error) {
+	f.lastPatch = &patch
 	if f.updateErr != nil {
 		return entity.SavedItem{}, f.updateErr
 	}
@@ -434,4 +614,84 @@ func (f *fakePersonal) DeleteSavedItem(context.Context, string, string) error {
 
 func (f *fakePersonal) ListSavedItemTags(context.Context, string) ([]string, error) {
 	return f.tags, nil
+}
+
+func (f *fakePersonal) StartKhatamCycle(_ context.Context, userID string, notes *string) (entity.QuranKhatamCycle, error) {
+	if f.khatamErr != nil {
+		return entity.QuranKhatamCycle{}, f.khatamErr
+	}
+
+	return entity.QuranKhatamCycle{ID: "cycle-id", UserID: userID, Notes: notes, CompletedJuz: []int{}}, nil
+}
+
+func (f *fakePersonal) GetActiveKhatamCycle(context.Context, string) (entity.QuranKhatamCycle, error) {
+	if f.khatamErr != nil {
+		return entity.QuranKhatamCycle{}, f.khatamErr
+	}
+
+	return f.khatamCycle, nil
+}
+
+func (f *fakePersonal) MarkKhatamJuz(context.Context, string, int) (entity.QuranKhatamCycle, error) {
+	if f.khatamErr != nil {
+		return entity.QuranKhatamCycle{}, f.khatamErr
+	}
+
+	return f.khatamCycle, nil
+}
+
+func (f *fakePersonal) UnmarkKhatamJuz(context.Context, string, int) (entity.QuranKhatamCycle, error) {
+	if f.khatamErr != nil {
+		return entity.QuranKhatamCycle{}, f.khatamErr
+	}
+
+	return f.khatamCycle, nil
+}
+
+func (f *fakePersonal) CompleteKhatamCycle(context.Context, string) (entity.QuranKhatamCycle, error) {
+	if f.khatamErr != nil {
+		return entity.QuranKhatamCycle{}, f.khatamErr
+	}
+
+	return f.khatamCycle, nil
+}
+
+func (f *fakePersonal) ListKhatamHistory(context.Context, string, int, int) ([]entity.QuranKhatamCycle, int, error) {
+	if f.khatamErr != nil {
+		return nil, 0, f.khatamErr
+	}
+
+	return f.khatamHistory, len(f.khatamHistory), nil
+}
+
+func (f *fakePersonal) SyncPersonalData(_ context.Context, _ string, since *time.Time) (entity.PersonalSyncSnapshot, error) {
+	f.lastSyncSince = since
+	if f.syncErr != nil {
+		return entity.PersonalSyncSnapshot{}, f.syncErr
+	}
+
+	return f.syncSnapshot, nil
+}
+
+func (f *fakePersonal) GetReadingStreak(_ context.Context, _, today string) (entity.ReadingStreak, error) {
+	if f.activityErr != nil {
+		return entity.ReadingStreak{}, f.activityErr
+	}
+
+	streak := f.streak
+	streak.Today = today
+
+	return streak, nil
+}
+
+func (f *fakePersonal) GetReadingActivity(_ context.Context, _, from, to string) (entity.ReadingActivitySummary, error) {
+	if f.activityErr != nil {
+		return entity.ReadingActivitySummary{}, f.activityErr
+	}
+
+	summary := f.activity
+	summary.From = from
+	summary.To = to
+
+	return summary, nil
 }

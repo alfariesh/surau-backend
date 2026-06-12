@@ -10,8 +10,26 @@ REST + auth backend for an Islamic classical book reader. The service imports ra
 - JWT auth for profile, progress, and saved items
 - Cloudflare Email Service for transactional email verification and password reset
 - SQLite importer via `modernc.org/sqlite`
+- Optional realtime collaborative page editing via a Yjs/Hocuspocus sidecar (`collab-server/`, Node 22) — see [docs/collab.md](docs/collab.md)
 
 The runtime app no longer starts RabbitMQ, NATS, or gRPC. Legacy packages may still compile in the tree, but `cmd/app` wires only REST + Postgres + JWT.
+
+### Editorial source edits: concurrency & history
+
+- Draft saves use atomic optimistic locking enforced in SQL. Page draft writes
+  (`PUT .../pages/{page_id}/draft` and `POST .../publish`) **require**
+  `If-Match` with the ETag from the last GET — stale ETags get `412`, a missing
+  header gets `428`, `If-Match: *` is the explicit last-write-wins escape
+  hatch. Metadata/heading saves accept If-Match optionally but enforce it
+  atomically when present. The same applies to every production endpoint
+  (translation/summary/audio drafts, project PATCH/publish/unpublish/delete):
+  If-Match stays optional there — enrichment scripts save unconditionally —
+  but a provided ETag is enforced atomically (412 on staleness).
+- Every effective save snapshots into `book_source_edit_revisions`
+  (page/heading/metadata; deduplicated, last 50 kept per resource).
+  `GET /v1/editorial/books/{book_id}/pages/{page_id}/draft-revisions` lists
+  history; `POST .../draft-revisions/{revision_id}/restore` replays a snapshot
+  as a new draft.
 
 ## Main Endpoints
 
@@ -328,7 +346,7 @@ Catalog endpoints support an optional `lang` query parameter:
 
 Supported kitab languages are `ar`, `id`, and `en`; empty `lang` defaults to `id`, and region tags such as `en-US` normalize to `en`. Unsupported languages return `400 {"error":"unsupported language"}`.
 
-If a requested catalog translation does not exist, the API falls back to the raw Arabic metadata and includes `localization` metadata with `requested_lang`, `display_lang`, `is_fallback`, `available_langs`, per-field language hints, and nested `availability`. Section reader and TOC responses expose `requested_lang`, `title_lang`, `is_title_fallback`, `available_translation_langs`, `available_summary_langs`, `translation_missing`, and `availability.title|translation|summary|audio` action hints. Section translation content stays exact-language only: if `lang=en` is missing but `lang=id` exists, `translation` remains `null` and the frontend can offer `id` from `available_translation_langs`.
+If a requested catalog translation does not exist, the API falls back to the raw Arabic metadata and includes `localization` metadata with `requested_lang`, `display_lang`, `is_fallback`, `available_langs`, per-field language hints, and nested `availability`. Section reader and TOC responses expose `requested_lang`, `title_lang`, `is_title_fallback`, `available_translation_langs`, `available_summary_langs`, `translation_missing`, and `availability.title|translation|summary|audio` action hints. Section translation content stays exact-language only: if `lang=en` is missing but `lang=id` exists, `translation` remains `null` and the frontend can offer `id` from `available_translation_langs`. Reader book list items distinguish source catalog visibility (`catalog_published`) from target-language production visibility (`production_published`, `production_status`).
 
 See [docs/frontend-integration-contract.md](docs/frontend-integration-contract.md), [docs/user-onboarding-api.md](docs/user-onboarding-api.md), [docs/kitab-multilingual-api.md](docs/kitab-multilingual-api.md), and [docs/kitab-frontend-contract.md](docs/kitab-frontend-contract.md) before wiring FE fallback states.
 

@@ -21,7 +21,12 @@ type (
 	// User -.
 	User interface {
 		Register(ctx context.Context, username, email, password string) (entity.User, error)
-		Login(ctx context.Context, email, password string) (string, error)
+		Login(ctx context.Context, email, password string) (entity.LoginResult, error)
+		RefreshSession(ctx context.Context, refreshToken string) (entity.LoginResult, error)
+		Logout(ctx context.Context, refreshToken string) error
+		LogoutAll(ctx context.Context, userID string) error
+		ListSessions(ctx context.Context, userID string) ([]entity.AuthSession, error)
+		RevokeSession(ctx context.Context, userID, sessionID string) error
 		GetUser(ctx context.Context, userID string) (entity.User, error)
 		GetUserAccount(ctx context.Context, userID string) (entity.UserAccount, error)
 		AdminUsers(ctx context.Context, query, role string, emailVerified *bool, limit, offset int) ([]entity.UserAccount, int, error)
@@ -46,9 +51,9 @@ type (
 		ResendEmailVerification(ctx context.Context, email string) error
 		ForgotPassword(ctx context.Context, email string) error
 		ResetPassword(ctx context.Context, token, password string) error
-		ChangePassword(ctx context.Context, userID, currentPassword, newPassword string) error
+		ChangePassword(ctx context.Context, userID, currentPassword, newPassword string) (entity.LoginResult, error)
 		RequestEmailChange(ctx context.Context, userID, currentPassword, newEmail string) error
-		VerifyEmailChange(ctx context.Context, userID, token, otp string) error
+		VerifyEmailChange(ctx context.Context, userID, token, otp string) (entity.LoginResult, error)
 		DeleteAccount(ctx context.Context, userID, currentPassword string) error
 	}
 
@@ -242,16 +247,26 @@ type (
 	// Personal -.
 	Personal interface {
 		GetProgress(ctx context.Context, userID string, bookID int) (entity.ReadingProgress, error)
-		SaveProgress(ctx context.Context, userID string, bookID int, pageID, headingID *int, progressPercent *float64) (entity.ReadingProgress, error)
+		SaveProgress(ctx context.Context, userID string, bookID int, pageID, headingID *int, progressPercent *float64, clientObservedAt *time.Time) (entity.ReadingProgress, error)
+		ListProgress(ctx context.Context, userID, lang string, limit, offset int) ([]entity.ContinueReadingEntry, int, error)
 		GetQuranProgress(ctx context.Context, userID string) (entity.QuranReadingProgress, error)
 		GetQuranSurahProgress(ctx context.Context, userID string, surahID int) (entity.QuranReadingProgress, error)
 		ListQuranSurahProgress(ctx context.Context, userID string) ([]entity.QuranReadingProgress, error)
 		SaveQuranProgress(ctx context.Context, userID, ayahKey string, clientObservedAt *time.Time) (entity.QuranReadingProgress, error)
 		ListSavedItems(ctx context.Context, userID, itemType string, bookID, surahID *int, tag string, limit, offset int) ([]entity.SavedItem, int, error)
-		UpsertSavedItem(ctx context.Context, userID string, item entity.SavedItem) (entity.SavedItem, error)
-		UpdateSavedItem(ctx context.Context, userID, savedItemID string, label, note *string, tags []string) (entity.SavedItem, error)
+		UpsertSavedItem(ctx context.Context, userID string, item entity.SavedItem) (entity.SavedItem, bool, error)
+		UpdateSavedItem(ctx context.Context, userID, savedItemID string, patch entity.SavedItemPatch) (entity.SavedItem, error)
 		DeleteSavedItem(ctx context.Context, userID, savedItemID string) error
 		ListSavedItemTags(ctx context.Context, userID string) ([]string, error)
+		StartKhatamCycle(ctx context.Context, userID string, notes *string) (entity.QuranKhatamCycle, error)
+		GetActiveKhatamCycle(ctx context.Context, userID string) (entity.QuranKhatamCycle, error)
+		MarkKhatamJuz(ctx context.Context, userID string, juzNumber int) (entity.QuranKhatamCycle, error)
+		UnmarkKhatamJuz(ctx context.Context, userID string, juzNumber int) (entity.QuranKhatamCycle, error)
+		CompleteKhatamCycle(ctx context.Context, userID string) (entity.QuranKhatamCycle, error)
+		ListKhatamHistory(ctx context.Context, userID string, limit, offset int) ([]entity.QuranKhatamCycle, int, error)
+		SyncPersonalData(ctx context.Context, userID string, since *time.Time) (entity.PersonalSyncSnapshot, error)
+		GetReadingStreak(ctx context.Context, userID, today string) (entity.ReadingStreak, error)
+		GetReadingActivity(ctx context.Context, userID, from, to string) (entity.ReadingActivitySummary, error)
 	}
 
 	// Editorial -.
@@ -260,14 +275,16 @@ type (
 		ProductionCandidates(ctx context.Context, lang, query string, categoryID, authorID *int, hasContent *bool, unstarted bool, limit, offset int) ([]entity.BookProductionCandidate, int, error)
 		UpdatePublication(ctx context.Context, actorID string, bookID int, status string, featured bool, sortOrder *int) (entity.BookPublication, error)
 		GetMetadataDraft(ctx context.Context, bookID int) (entity.BookMetadataEdit, error)
-		SaveMetadataDraft(ctx context.Context, actorID string, edit entity.BookMetadataEdit) (entity.BookMetadataEdit, error)
-		PublishMetadataDraft(ctx context.Context, actorID string, bookID int) (entity.BookMetadataEdit, error)
+		SaveMetadataDraft(ctx context.Context, actorID string, edit entity.BookMetadataEdit, expected *time.Time, origin string) (entity.BookMetadataEdit, error)
+		PublishMetadataDraft(ctx context.Context, actorID string, bookID int, expected *time.Time) (entity.BookMetadataEdit, error)
 		GetPageEdit(ctx context.Context, bookID, pageID int) (entity.EditorialPageEdit, error)
-		SavePageDraft(ctx context.Context, actorID string, edit entity.BookPageEdit) (entity.BookPageEdit, error)
-		PublishPageDraft(ctx context.Context, actorID string, bookID, pageID int) (entity.BookPageEdit, error)
+		SavePageDraft(ctx context.Context, actorID string, edit entity.BookPageEdit, expected *time.Time, origin string) (entity.BookPageEdit, error)
+		PublishPageDraft(ctx context.Context, actorID string, bookID, pageID int, expected *time.Time) (entity.BookPageEdit, error)
+		PageDraftRevisions(ctx context.Context, bookID, pageID, limit, offset int) ([]entity.BookSourceEditRevision, int, error)
+		RestorePageDraftRevision(ctx context.Context, actorID string, bookID, pageID int, revisionID string) (entity.BookPageEdit, error)
 		GetHeadingDraft(ctx context.Context, bookID, headingID int) (entity.BookHeadingEdit, error)
-		SaveHeadingDraft(ctx context.Context, actorID string, edit entity.BookHeadingEdit) (entity.BookHeadingEdit, error)
-		PublishHeadingDraft(ctx context.Context, actorID string, bookID, headingID int) (entity.BookHeadingEdit, error)
+		SaveHeadingDraft(ctx context.Context, actorID string, edit entity.BookHeadingEdit, expected *time.Time, origin string) (entity.BookHeadingEdit, error)
+		PublishHeadingDraft(ctx context.Context, actorID string, bookID, headingID int, expected *time.Time) (entity.BookHeadingEdit, error)
 		AddCollectionItem(ctx context.Context, actorID, slug string, bookID int, sortOrder *int) (entity.BookCollectionItem, error)
 		TranslationFeedbacks(ctx context.Context, bookID, headingID *int, lang, vote, status string, limit, offset int) ([]entity.EditorialTranslationFeedback, int, error)
 		TranslationFeedbackSummary(ctx context.Context, bookID, headingID *int, lang, vote, status string, limit int) (entity.EditorialTranslationFeedbackSummary, error)
@@ -284,29 +301,29 @@ type (
 		ProductionDraftRevisions(ctx context.Context, projectID, assetType string, headingID *int, limit, offset int) ([]entity.BookProductionDraftRevision, int, error)
 		RestoreProductionDraftRevision(ctx context.Context, actorID, projectID, revisionID string) (entity.BookProductionDraftRevision, error)
 		ProductionPublishCheck(ctx context.Context, projectID string) (entity.BookProductionPublishCheck, error)
-		UpdateProductionProject(ctx context.Context, actorID, projectID string, patch entity.BookProductionProjectPatch) (entity.BookProductionProject, error)
+		UpdateProductionProject(ctx context.Context, actorID, projectID string, patch entity.BookProductionProjectPatch, expected *time.Time) (entity.BookProductionProject, error)
 		ProductionCompleteness(ctx context.Context, projectID string) (entity.BookProductionCompleteness, error)
 		GetMetadataTranslationDraft(ctx context.Context, projectID string) (entity.BookMetadataTranslationEdit, error)
-		SaveMetadataTranslationDraft(ctx context.Context, actorID, projectID string, edit entity.BookMetadataTranslationEdit) (entity.BookMetadataTranslationEdit, error)
-		DeleteMetadataTranslationDraft(ctx context.Context, actorID, projectID string) error
+		SaveMetadataTranslationDraft(ctx context.Context, actorID, projectID string, edit entity.BookMetadataTranslationEdit, expected *time.Time) (entity.BookMetadataTranslationEdit, error)
+		DeleteMetadataTranslationDraft(ctx context.Context, actorID, projectID string, expected *time.Time) error
 		GetAuthorTranslationDraft(ctx context.Context, projectID string) (entity.AuthorTranslationEdit, error)
-		SaveAuthorTranslationDraft(ctx context.Context, actorID, projectID string, edit entity.AuthorTranslationEdit) (entity.AuthorTranslationEdit, error)
-		DeleteAuthorTranslationDraft(ctx context.Context, actorID, projectID string) error
+		SaveAuthorTranslationDraft(ctx context.Context, actorID, projectID string, edit entity.AuthorTranslationEdit, expected *time.Time) (entity.AuthorTranslationEdit, error)
+		DeleteAuthorTranslationDraft(ctx context.Context, actorID, projectID string, expected *time.Time) error
 		GetCategoryTranslationDraft(ctx context.Context, projectID string) (entity.CategoryTranslationEdit, error)
-		SaveCategoryTranslationDraft(ctx context.Context, actorID, projectID string, edit entity.CategoryTranslationEdit) (entity.CategoryTranslationEdit, error)
-		DeleteCategoryTranslationDraft(ctx context.Context, actorID, projectID string) error
+		SaveCategoryTranslationDraft(ctx context.Context, actorID, projectID string, edit entity.CategoryTranslationEdit, expected *time.Time) (entity.CategoryTranslationEdit, error)
+		DeleteCategoryTranslationDraft(ctx context.Context, actorID, projectID string, expected *time.Time) error
 		GetSectionTranslationDraft(ctx context.Context, projectID string, headingID int) (entity.SectionTranslationEdit, error)
-		SaveSectionTranslationDraft(ctx context.Context, actorID, projectID string, edit entity.SectionTranslationEdit) (entity.SectionTranslationEdit, error)
-		DeleteSectionTranslationDraft(ctx context.Context, actorID, projectID string, headingID int) error
+		SaveSectionTranslationDraft(ctx context.Context, actorID, projectID string, edit entity.SectionTranslationEdit, expected *time.Time) (entity.SectionTranslationEdit, error)
+		DeleteSectionTranslationDraft(ctx context.Context, actorID, projectID string, headingID int, expected *time.Time) error
 		GetHeadingSummaryDraft(ctx context.Context, projectID string, headingID int) (entity.HeadingSummaryEdit, error)
-		SaveHeadingSummaryDraft(ctx context.Context, actorID, projectID string, edit entity.HeadingSummaryEdit) (entity.HeadingSummaryEdit, error)
-		DeleteHeadingSummaryDraft(ctx context.Context, actorID, projectID string, headingID int) error
+		SaveHeadingSummaryDraft(ctx context.Context, actorID, projectID string, edit entity.HeadingSummaryEdit, expected *time.Time) (entity.HeadingSummaryEdit, error)
+		DeleteHeadingSummaryDraft(ctx context.Context, actorID, projectID string, headingID int, expected *time.Time) error
 		GetSectionAudioDraft(ctx context.Context, projectID string, headingID int) (entity.SectionAudioEdit, error)
-		SaveSectionAudioDraft(ctx context.Context, actorID, projectID string, edit entity.SectionAudioEdit) (entity.SectionAudioEdit, error)
-		DeleteSectionAudioDraft(ctx context.Context, actorID, projectID string, headingID int) error
+		SaveSectionAudioDraft(ctx context.Context, actorID, projectID string, edit entity.SectionAudioEdit, expected *time.Time) (entity.SectionAudioEdit, error)
+		DeleteSectionAudioDraft(ctx context.Context, actorID, projectID string, headingID int, expected *time.Time) error
 		ReviewProductionAsset(ctx context.Context, actorID, projectID, assetType string, headingID *int, decision string, note *string) error
-		PublishProductionProject(ctx context.Context, actorID, projectID string) (entity.BookProductionProject, error)
-		UnpublishProductionProject(ctx context.Context, actorID, projectID string) (entity.BookProductionProject, error)
+		PublishProductionProject(ctx context.Context, actorID, projectID string, expected *time.Time) (entity.BookProductionProject, error)
+		UnpublishProductionProject(ctx context.Context, actorID, projectID string, expected *time.Time) (entity.BookProductionProject, error)
 		DeleteFinalProductionAsset(ctx context.Context, actorID, projectID, assetType string, headingID *int, reason *string) error
 	}
 )

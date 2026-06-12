@@ -40,7 +40,7 @@ func (r *V1) editorialListBooks(ctx *fiber.Ctx) error {
 		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
 	}
 
-	return ctx.Status(http.StatusOK).JSON(response.BookList{Books: books, Total: total})
+	return ctx.Status(http.StatusOK).JSON(response.BookList{Items: books, Total: total})
 }
 
 func (r *V1) editorialUpdatePublication(ctx *fiber.Ctx) error {

@@ -1,6 +1,6 @@
 # Mobile Backend Integration Guide
 
-Last updated: 2026-06-04
+Last updated: 2026-06-12
 
 Dokumen ini adalah panduan utama untuk implementasi mobile app Islamic Surau dari backend ini. Fokusnya adalah kebutuhan FE mobile: urutan API call per screen, auth, data shape yang penting, strategi cache, error handling, dan behavior UI saat data terjemahan/audio belum lengkap.
 
@@ -42,6 +42,8 @@ Protected endpoint wajib memakai:
 Authorization: Bearer <token>
 ```
 
+Response otomatis dikompresi (gzip/brotli) bila client mengirim header `Accept-Encoding`; HTTP client standar menangani ini otomatis tanpa konfigurasi tambahan.
+
 Health check untuk environment/debug:
 
 | Method | Path | Auth | Kegunaan |
@@ -54,7 +56,7 @@ Health check untuk environment/debug:
 
 Hal-hal yang paling mudah membuat FE mobile salah kontrak:
 
-- Tidak semua list response memakai wrapper `items`. Beberapa endpoint mengembalikan array langsung.
+- BREAKING: semua list endpoint user-facing sekarang memakai envelope seragam `{"items": [...], "total": <int>}`. Tidak ada lagi response bare array atau key khusus seperti `books`, `results`, `references`, `authors`, `pages`, `surahs`, `tags`, dan `cycles`.
 - Endpoint `DELETE /v1/me/saved-items/{id}` sukses dengan `204 No Content`, jadi client wrapper harus bisa menerima body kosong.
 - `GET /v1/me/progress/{book_id}`, `GET /v1/me/quran/progress`, dan `GET /v1/me/quran/progress/surahs/{surah_id}` bisa `404` saat user belum punya progress. Treat sebagai "belum ada resume", bukan fatal error.
 - Query boolean paling aman dikirim sebagai `true` atau `false`. Nilai non-boolean seperti `include_audio=yes` menghasilkan `400`.
@@ -66,22 +68,28 @@ Response shape ringkas:
 
 | Endpoint | Response shape |
 | --- | --- |
-| `GET /v1/categories` | `Category[]` array langsung |
-| `GET /v1/quran/surahs` | `QuranSurah[]` array langsung |
-| `GET /v1/quran/recitations` | `QuranRecitation[]` array langsung |
-| `GET /v1/quran/translation-sources` | `QuranTranslationSource[]` array langsung |
-| `GET /v1/quran/juz`, `/hizbs` | `QuranNavigationSegment[]` array langsung |
-| `GET /v1/quran/.../ayahs` | `QuranAyah[]` array langsung |
-| `GET /v1/books/{book_id}/toc` | `BookTOCNode[]` array langsung |
-| `GET /v1/books/{book_id}/headings` | `BookHeading[]` array langsung |
-| `GET /v1/authors` | `{ "authors": Author[], "total": number }` |
-| `GET /v1/books` | `{ "books": Book[], "total": number, "stats": BookCatalogStats }` |
-| `GET /v1/books/{book_id}/pages` | `{ "pages": BookPage[], "total": number }` |
-| `GET /v1/quran/search` | `{ "results": QuranSearchResult[], "total": number }` |
-| `GET /v1/books/{book_id}/quran-references` | `{ "references": BookQuranReference[], "total": number }` |
+| `GET /v1/categories` | `{ "items": Category[], "total": number }` |
+| `GET /v1/quran/surahs` | `{ "items": QuranSurah[], "total": number }` |
+| `GET /v1/quran/recitations` | `{ "items": QuranRecitation[], "total": number }` |
+| `GET /v1/quran/translation-sources` | `{ "items": QuranTranslationSource[], "total": number }` |
+| `GET /v1/quran/juz`, `/hizbs` | `{ "items": QuranNavigationSegment[], "total": number }` |
+| `GET /v1/quran/.../ayahs` | `{ "items": QuranAyah[], "total": number }` (juga saat `view=reader_minimal`) |
+| `GET /v1/books/{book_id}/toc` | `{ "items": BookTOCNode[], "total": number }` (`children` tetap nested di tiap item) |
+| `GET /v1/books/{book_id}/headings` | `{ "items": BookHeading[], "total": number }` |
+| `GET /v1/authors` | `{ "items": Author[], "total": number }` |
+| `GET /v1/books` | `{ "items": Book[], "total": number, "stats": BookCatalogStats }` |
+| `GET /v1/books/{book_id}/pages` | `{ "items": BookPage[], "total": number }` |
+| `GET /v1/quran/search` | `{ "items": QuranSearchResult[], "total": number }` |
+| `GET /v1/books/{book_id}/quran-references` | `{ "items": BookQuranReference[], "total": number }` |
 | `GET /v1/me/saved-items` | `{ "items": SavedItem[], "total": number }` |
-| `GET /v1/me/saved-items/tags` | `{ "tags": string[] }` |
-| `GET /v1/me/quran/progress/surahs` | `{ "surahs": QuranReadingProgress[] }` |
+| `GET /v1/me/saved-items/tags` | `{ "items": string[], "total": number }` |
+| `GET /v1/me/quran/progress/surahs` | `{ "items": QuranReadingProgress[], "total": number }` |
+| `GET /v1/me/progress` | `{ "items": ContinueReadingEntry[], "total": number }` |
+| `GET /v1/me/quran/khatam/history` | `{ "items": QuranKhatamCycle[], "total": number }` |
+| `GET /v1/me/sync` | `PersonalSyncSnapshot` (object, lihat bagian Delta Sync) |
+| `POST /v1/me/progress/batch` | `{ "kitab": BatchResult[], "quran": BatchResult[] }` per entri |
+
+Untuk list berpaginasi (`limit`/`offset`), `total` adalah jumlah seluruh match, bukan hanya isi page saat ini. Untuk list penuh tanpa paginasi, `total` sama dengan panjang `items`. Endpoint object (detail, audio manifest, `/v1/me/sync`, activity, profile) tidak berubah.
 
 ## 2. Error Contract
 
@@ -110,7 +118,7 @@ Mobile sebaiknya branch berdasarkan HTTP status terlebih dahulu:
 | `412` | `If-Match` stale pada editorial mutation | Refresh resource lalu minta user retry/merge. |
 | `429` | Rate limit | Tampilkan cooldown dan retry setelah jeda. |
 | `500` | Server error | Retry manual, logging client. |
-| `503` | Service dependency bermasalah, misalnya email delivery | Tampilkan pesan retry. |
+| `503` | Backend gagal meng-queue pekerjaan kritikal, misalnya email auth gagal disimpan ke antrian (DB bermasalah) | Tampilkan pesan retry. |
 
 Minimal client wrapper:
 
@@ -201,7 +209,7 @@ export function resolveContentLang(input: {
 
 ## 4. Auth Flow
 
-Mobile auth memakai JWT Bearer token. Tidak ada refresh token, cookie auth, session DB, MFA, atau logout server-side.
+Mobile auth memakai JWT Bearer token. Tidak ada cookie auth atau MFA. Endpoint session/refresh yang lebih baru (`POST /v1/auth/refresh`, `POST /v1/auth/logout`, `GET/DELETE /v1/auth/sessions`) belum tercakup di dokumen ini — cek `docs/auth-frontend.md` dan `/swagger/index.html`.
 
 Endpoint ringkas:
 
@@ -223,9 +231,10 @@ Auth gotchas:
 - Register sukses membuat user `email_verified=false`; user baru belum bisa login sebelum verify email.
 - Login user yang belum verified mengembalikan `403 {"error":"email not verified"}`. Mobile harus tampilkan screen "cek email" dan tombol resend.
 - `POST /v1/auth/resend-verification` dan `POST /v1/auth/forgot-password` sengaja memakai response `202 {"accepted":true}`.
+- Email verification/reset/change-email tidak dikirim synchronous di dalam request: backend menyimpannya ke antrian durable, lalu dispatcher background mengirimkannya (default tick 15 detik, biasanya tiba dalam ~15-30 detik). Setelah register, tampilkan copy "cek email kamu; email bisa butuh sampai ±30 detik untuk tiba". `503 email delivery failed` sekarang hanya muncul bila backend gagal menyimpan email ke antrian (kegagalan DB) — provider email yang down/lambat tidak lagi menggagalkan signup atau menambah latensi.
 - Email verification dan change-email email berisi link dan OTP 6 digit. OTP default berlaku `10m`; memakai OTP atau link akan menghabiskan verifikasi yang sama.
 - `POST /v1/auth/change-email/verify` tetap butuh Bearer token user yang sedang login. Jika deep link membuka app dari cold start, restore session dulu sebelum submit token.
-- Backend tidak punya refresh token. Saat protected endpoint mengembalikan `401`, hapus token lokal dan minta login ulang.
+- Dokumen ini belum mencakup flow refresh token. Saat protected endpoint mengembalikan `401`, hapus token lokal dan minta login ulang.
 - Setelah reset password, change password, change email, atau delete account, JWT lama akan invalid.
 - Jangan trim password. Password valid `8..72` bytes, bukan karakter.
 - FE baru sebaiknya pakai `name` atau `display_name` saat register. `username` masih diterima untuk kompatibilitas client lama.
@@ -542,7 +551,7 @@ Display rules:
 - Untuk ayah list reader baru, prefer `view=reader_minimal`; `translation` dan `audio` akan omitted ketika tidak diminta atau tidak tersedia.
 - Untuk `lang=ar`, backend mengembalikan Arabic-only mode: translation `null`, dan translation tab sebaiknya disembunyikan.
 - Jangan render Indonesian sebagai fallback English. Gunakan `available_translation_langs` untuk menawarkan switch bahasa.
-- Search result response adalah `{results,total}`; setiap `result.ayah` tetap mengikuti exact requested-language display rules.
+- Search result response adalah `{items,total}`; setiap `item.ayah` tetap mengikuti exact requested-language display rules.
 - Surah info HTML ada di `surah.info.text_html` dan hanya ada jika single-surah endpoint dipakai atau `include_info=true`.
 
 Audio rules:
@@ -685,16 +694,49 @@ export type QuranReadingProgress = {
   ayah_number: number;
   ayah_key: string;
   position_percent: number;
+  page_number?: number | null; // halaman mushaf, dari metadata ayah
+  juz_number?: number | null;
+  hizb_number?: number | null;
   observed_at: string;
   updated_at: string;
 };
 ```
+
+`page_number`, `juz_number`, dan `hizb_number` di-resolve backend dari metadata ayah sehingga FE bisa langsung resume per halaman/juz tanpa lookup tambahan.
 
 Mobile save strategy:
 
 - Save saat user berhenti scroll beberapa detik, pindah ayah aktif, pause audio, background app, atau keluar screen.
 - Debounce 2-5 detik.
 - Kirim `client_observed_at` agar event lama tidak menimpa progress baru.
+
+### Khatam Tracking
+
+| Method | Path | Auth | Kegunaan |
+| --- | --- | --- | --- |
+| `POST` | `/v1/me/quran/khatam` | Bearer | Mulai cycle khatam baru (`201`; `409` jika sudah ada cycle aktif). Body opsional `{ "notes": string }`. |
+| `GET` | `/v1/me/quran/khatam` | Bearer | Cycle aktif + juz yang sudah selesai (`404` jika tidak ada). |
+| `PUT` | `/v1/me/quran/khatam/juz/{juz_number}` | Bearer | Tandai juz 1-30 selesai (idempotent). |
+| `DELETE` | `/v1/me/quran/khatam/juz/{juz_number}` | Bearer | Batalkan tanda juz (idempotent). |
+| `POST` | `/v1/me/quran/khatam/complete` | Bearer | Selesaikan cycle. Wajib 30 juz lengkap; `409 {"error":"khatam cycle incomplete"}` jika belum. |
+| `GET` | `/v1/me/quran/khatam/history` | Bearer | Riwayat khatam selesai (limit/offset). |
+
+```ts
+export type QuranKhatamCycle = {
+  id: string;
+  user_id: string;
+  started_at: string;
+  completed_at?: string | null;
+  notes?: string | null;
+  completed_juz: number[]; // sorted ascending
+  juz_count: number; // 0-30
+  percent: number; // juz_count / 30 * 100, 2 desimal
+  created_at: string;
+  updated_at: string;
+};
+```
+
+Catatan UX: menandai juz ke-30 TIDAK otomatis menyelesaikan cycle — FE sebaiknya menampilkan prompt "Selesaikan khatam?" saat `juz_count === 30`, lalu memanggil endpoint complete. Ini menjaga tanda juz tetap bisa dibatalkan sebelum konfirmasi.
 
 ## 7. Kitab Reader
 
@@ -959,6 +1001,7 @@ Protected endpoint:
 
 | Method | Path | Auth | Kegunaan |
 | --- | --- | --- | --- |
+| `GET` | `/v1/me/progress?lang=id&limit=50&offset=0` | Bearer | Continue-reading shelf: semua kitab yang sedang dibaca, urut aktivitas terbaru, dengan metadata buku ringan. |
 | `GET` | `/v1/me/progress/{book_id}` | Bearer | Ambil progress kitab. |
 | `PUT` | `/v1/me/progress/{book_id}` | Bearer | Simpan progress by page/heading. |
 | `PUT` | `/v1/me/progress/{book_id}/toc/{heading_id}` | Bearer | Simpan progress TOC section. |
@@ -971,7 +1014,8 @@ Save progress request:
 {
   "page_id": 12,
   "heading_id": 10,
-  "progress_percent": 32.5
+  "progress_percent": 32.5,
+  "client_observed_at": "2026-06-01T10:00:00Z"
 }
 ```
 
@@ -979,7 +1023,8 @@ Save TOC progress request:
 
 ```json
 {
-  "progress_percent": 32.5
+  "progress_percent": 32.5,
+  "client_observed_at": "2026-06-01T10:00:00Z"
 }
 ```
 
@@ -992,7 +1037,17 @@ export type ReadingProgress = {
   page_id?: number | null;
   heading_id?: number | null;
   progress_percent?: number | null;
+  observed_at: string;
   updated_at: string;
+};
+
+export type ContinueReadingEntry = ReadingProgress & {
+  book: {
+    book_id: number;
+    name: string; // judul ter-resolve sesuai lang (fallback Arab)
+    cover_url?: string | null;
+    author_name?: string | null;
+  };
 };
 ```
 
@@ -1001,7 +1056,9 @@ Mobile save strategy:
 - Save saat heading aktif berubah, scroll idle, app background, atau keluar reader.
 - Debounce 2-5 detik.
 - Jangan spam setiap scroll pixel.
+- Kirim `client_observed_at` (sama seperti progress Quran): event dengan timestamp lebih lama tidak akan menimpa posisi yang lebih baru, jadi retry/offline sync aman.
 - Jika user guest, simpan progress lokal dan sync setelah login jika produk menginginkan.
+- Buku yang di-unpublish otomatis hilang dari shelf continue-reading.
 
 ## 10. Saved Items / Bookmarks
 
@@ -1024,7 +1081,8 @@ Saved item rules:
 - Jika `quran_range` punya `from_ayah_number === to_ayah_number`, backend menormalisasi menjadi `quran_ayah`.
 - Tags di-trim, lowercase, dedupe, max `20` tags, max `64` char per tag.
 - `label` max `255`, `note` max `2000`.
-- `POST /v1/me/saved-items` bersifat upsert target yang sama; gunakan response sebagai source of truth.
+- `POST /v1/me/saved-items` bersifat upsert target yang sama: `201` saat item baru dibuat, `200` saat item lama di-update. Field `label`/`note`/`tags` yang TIDAK dikirim tidak akan menimpa nilai tersimpan — re-bookmark target yang sama tanpa note tidak menghapus note lama. POST tidak bisa menghapus metadata; gunakan PATCH.
+- `PATCH /v1/me/saved-items/{id}` adalah partial update murni: field yang tidak dikirim tetap, `null` eksplisit menghapus field (`{"label": null}` menghapus label; `{"tags": null}` mengosongkan tags), dan body tanpa field yang dikenal ditolak `400`.
 - `DELETE` sukses mengembalikan `204` tanpa body.
 
 Types:
@@ -1179,14 +1237,120 @@ Offline write queue:
 
 - Aman untuk queue: progress save, saved item create/update/delete, preference update.
 - Setiap queued write perlu timestamp lokal dan retry policy.
-- Untuk progress Quran, selalu kirim `client_observed_at`.
+- Untuk progress Quran maupun kitab, selalu kirim `client_observed_at`.
 - Untuk delete saved item, jangan re-create item lama dari stale queue.
+
+### Delta Sync (pull) — `GET /v1/me/sync`
+
+| Method | Path | Auth | Kegunaan |
+| --- | --- | --- | --- |
+| `GET` | `/v1/me/sync?since=<RFC3339>` | Bearer | Satu payload delta: progress kitab + Quran, saved items, khatam. Tanpa `since` = full snapshot. |
+
+```ts
+export type PersonalSyncSnapshot = {
+  server_time: string; // simpan sebagai cursor `since` untuk sync berikutnya
+  since?: string | null; // echo cursor yang diminta
+  reading_progress: ReadingProgress[];
+  quran_progress: QuranReadingProgress[];
+  saved_items: SavedItem[];
+  saved_item_ids: string[]; // SEMUA id saved-item user saat ini (KOSONG saat full resync, lihat bawah)
+  saved_items_full_resync?: boolean; // true bila saved item > 10000; saved_item_ids dikirim kosong
+  khatam_cycles: QuranKhatamCycle[];
+};
+```
+
+Aturan klien:
+
+- Simpan `server_time` dari response sebagai `since` berikutnya. Jangan pakai jam lokal device.
+- Delivery bersifat **at-least-once**: server memakai overlap window ±60 detik, jadi baris yang sama bisa terkirim ulang. Terapkan payload sebagai upsert idempotent by key (`book_id`, `surah_id`, saved item `id`, cycle `id`).
+- Rekonsiliasi delete: hapus saved item lokal yang id-nya tidak ada di `saved_item_ids` (list ini lengkap, bukan delta).
+- Pengecualian: bila `saved_items_full_resync: true`, user punya lebih dari 10000 saved item dan `saved_item_ids` sengaja dikirim KOSONG. Jangan delete-by-absence pada kondisi ini — rebuild store saved-items lokal dengan paging `GET /v1/me/saved-items`.
+- `since` lebih dari ~5 menit di masa depan ditolak `400 {"error":"invalid since"}`.
+- Lakukan full sync (tanpa `since`) saat login pertama, setelah restore backup, atau saat state lokal dicurigai korup.
+
+### Replay Queue (push) — `POST /v1/me/progress/batch`
+
+| Method | Path | Auth | Kegunaan |
+| --- | --- | --- | --- |
+| `POST` | `/v1/me/progress/batch` | Bearer | Replay antrian autosave offline sekali jalan (max 100 entri kitab + 100 entri Quran). |
+
+Request:
+
+```json
+{
+  "kitab": [
+    { "book_id": 797, "page_id": 12, "progress_percent": 32.5, "client_observed_at": "2026-06-12T01:00:00Z" }
+  ],
+  "quran": [
+    { "ayah_key": "73:4", "client_observed_at": "2026-06-12T01:05:00Z" }
+  ]
+}
+```
+
+Response — hasil per entri, urutan sama dengan request:
+
+```json
+{
+  "kitab": [
+    { "status": "ok", "progress": { "book_id": 797, "page_id": 12 } },
+    { "status": "error", "error": "book not found" }
+  ],
+  "quran": [
+    { "status": "ok", "progress": { "ayah_key": "73:4", "juz_number": 29 } }
+  ]
+}
+```
+
+Aturan klien:
+
+- Kirim antrian apa adanya, urutan bebas — upsert monotonic `observed_at` di server menjamin entri stale/duplikat tidak memundurkan posisi.
+- Entri `status: "error"` (mis. buku sudah di-unpublish) boleh langsung di-drop dari queue; jangan retry selamanya.
+- Batch dihitung 1 request oleh rate limiter `/me` (240 write/menit), jadi jauh lebih hemat daripada replay satu-satu.
+- Untuk saved items, tetap replay per-item via `POST/PATCH/DELETE /v1/me/saved-items` (idempotent by target), lalu tutup dengan `GET /v1/me/sync` untuk rekonsiliasi.
+
+Alur rekomendasi saat app kembali online: flush queue (`POST /v1/me/progress/batch` + replay saved-items) → `GET /v1/me/sync?since=<cursor terakhir>` → simpan `server_time` baru.
+
+### Streak & Statistik Membaca
+
+Aktivitas harian dicatat **otomatis** oleh backend setiap kali progress disimpan (single PUT maupun batch) — FE tidak perlu menulis apa pun. Hari aktivitas mengikuti **tanggal lokal device** yang terbawa di offset `client_observed_at` (mis. `2026-06-12T23:50:00+07:00` dihitung 12 Juni, bukan 13 Juni UTC), dan replay offline mengisi mundur hari ketika bacaan benar-benar terjadi. Karena itu **selalu kirim `client_observed_at` dengan offset lokal device**, bukan dinormalisasi ke `Z`.
+
+| Method | Path | Auth | Kegunaan |
+| --- | --- | --- | --- |
+| `GET` | `/v1/me/activity?from=YYYY-MM-DD&to=YYYY-MM-DD` | Bearer | Bucket harian + agregat untuk heatmap/statistik. Default 30 hari terakhir; max 366 hari. |
+| `GET` | `/v1/me/activity/streak?today=YYYY-MM-DD` | Bearer | Streak hari beruntun. Kirim `today` = tanggal lokal device. |
+
+```ts
+export type ReadingActivitySummary = {
+  from: string;
+  to: string;
+  active_days: number;
+  quran_ayahs_read: number;   // aproksimasi: delta maju dalam surah yang sama
+  kitab_pages_read: number;   // aproksimasi: delta maju halaman dalam kitab yang sama
+  quran_active_days: number;
+  kitab_active_days: number;
+  days: { date: string; quran_ayahs_read: number; kitab_pages_read: number; quran_events: number; kitab_events: number }[];
+};
+
+export type ReadingStreak = {
+  current_streak_days: number; // run beruntun yang berakhir hari ini ATAU kemarin
+  longest_streak_days: number;
+  total_active_days: number;
+  last_active_date?: string | null;
+  today: string;
+  active_today: boolean;
+};
+```
+
+Catatan:
+
+- Streak tidak langsung putus di pergantian hari: run yang berakhir **kemarin** masih dihitung `current_streak_days` sampai hari ini lewat tanpa membaca. Tampilkan "baca sekarang untuk menjaga streak" saat `active_today === false` dan `current_streak_days > 0`.
+- `quran_ayahs_read`/`kitab_pages_read` adalah aproksimasi untuk pembacaan linier (lompatan antar surah/mundur dihitung 0 tapi tetap menandai hari aktif via events). Jangan jual angka ini sebagai hitungan presisi.
+- `today` dan `from`/`to` divalidasi ±2 hari dari tanggal server (UTC); di luar itu `400`.
+- Data activity tidak ikut payload `/v1/me/sync` (derived, milik server) — fetch saat layar statistik dibuka.
 
 ## 13. Pagination and Lists
 
-List endpoint di backend ini tidak memakai satu bentuk seragam. Cek response shape di section `1.1`.
-
-Paginated private/admin-like list sering memakai:
+Semua list endpoint user-facing memakai envelope seragam (cek pemetaan per endpoint di section `1.1`):
 
 ```json
 {
@@ -1195,25 +1359,7 @@ Paginated private/admin-like list sering memakai:
 }
 ```
 
-Reader public list sering memakai domain-specific key:
-
-```json
-{
-  "books": [],
-  "total": 42
-}
-```
-
-Sebagian lightweight list mengembalikan array langsung:
-
-```json
-[
-  {
-    "surah_id": 1,
-    "ayah_count": 7
-  }
-]
-```
+Hanya `GET /v1/books` yang menambahkan sibling `stats` di samping `items` dan `total`. Untuk list berpaginasi, `total` adalah jumlah seluruh match; untuk list penuh tanpa paginasi, `total` sama dengan panjang `items`.
 
 Mobile convention:
 

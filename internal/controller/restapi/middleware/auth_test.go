@@ -28,7 +28,7 @@ func newTestAppWithUser(t *testing.T, user entity.User) (*fiber.App, *jwt.Manage
 	jwtManager := jwt.New("0123456789abcdef0123456789abcdef", time.Hour, jwt.DefaultIssuer, jwt.DefaultAudience)
 
 	app := fiber.New()
-	app.Use(middleware.Auth(jwtManager, stubUserUseCase{user: user}))
+	app.Use(middleware.Auth(jwtManager, &stubUserUseCase{user: user}))
 	app.Get("/test", func(c *fiber.Ctx) error {
 		userID, ok := c.Locals("userID").(string)
 		if !ok {

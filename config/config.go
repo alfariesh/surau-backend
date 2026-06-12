@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/mail"
 	"net/url"
@@ -14,20 +15,87 @@ import (
 const (
 	EmailDeliveryModeCloudflare = "cloudflare"
 	EmailDeliveryModeLog        = "log"
+
+	minCollabServiceTokenBytes = 32
 )
+
+// errConfig is the static root of every configuration validation error.
+var errConfig = errors.New("config error")
+
+func configError(msg string) error {
+	return fmt.Errorf("%w: %s", errConfig, msg)
+}
+
+func configErrorf(format string, args ...any) error {
+	return fmt.Errorf("%w: %s", errConfig, fmt.Sprintf(format, args...))
+}
+
+func validateAuthLockout(lockout authLockout) error {
+	if !lockout.Enabled {
+		return nil
+	}
+
+	if lockout.Threshold <= 0 {
+		return configError("AUTH_LOCKOUT_THRESHOLD must be positive")
+	}
+
+	if lockout.Factor <= 0 {
+		return configError("AUTH_LOCKOUT_FACTOR must be positive")
+	}
+
+	if lockout.BaseDuration <= 0 {
+		return configError("AUTH_LOCKOUT_BASE_DURATION must be positive")
+	}
+
+	if lockout.MaxDuration < lockout.BaseDuration {
+		return configError("AUTH_LOCKOUT_MAX_DURATION must be at least AUTH_LOCKOUT_BASE_DURATION")
+	}
+
+	return nil
+}
+
+func validateAuthCleanup(cleanup authCleanup) error {
+	if !cleanup.Enabled {
+		return nil
+	}
+
+	if cleanup.Interval <= 0 {
+		return configError("AUTH_CLEANUP_INTERVAL must be positive")
+	}
+
+	if cleanup.TokenRetention <= 0 {
+		return configError("AUTH_CLEANUP_TOKEN_RETENTION must be positive")
+	}
+
+	if cleanup.SessionRetention <= 0 {
+		return configError("AUTH_CLEANUP_SESSION_RETENTION must be positive")
+	}
+
+	if cleanup.AuditRetention < 0 {
+		return configError("AUTH_CLEANUP_AUDIT_RETENTION must not be negative")
+	}
+
+	return nil
+}
 
 type (
 	// Config -.
 	Config struct {
 		App           app
 		HTTP          http
+		CORS          cors
+		Security      security
 		Log           log
 		PG            pg
 		JWT           jwt
 		Email         email
 		AuthRateLimit authRateLimit
+		AuthLockout   authLockout
+		AuthCleanup   authCleanup
 		AuthEmail     authEmail
+		AuthAlert     authAlert
 		RAG           rag
+		Collab        collab
 		Metrics       metrics
 		Swagger       swagger
 	}
@@ -40,10 +108,34 @@ type (
 
 	// HTTP -.
 	http struct {
-		Port           string   `env:"HTTP_PORT,required"`
-		UsePreforkMode bool     `env:"HTTP_USE_PREFORK_MODE" envDefault:"false"`
-		ProxyHeader    string   `env:"HTTP_PROXY_HEADER" envDefault:"X-Real-IP"`
-		TrustedProxies []string `env:"HTTP_TRUSTED_PROXIES" envSeparator:","`
+		Port               string   `env:"HTTP_PORT,required"`
+		UsePreforkMode     bool     `env:"HTTP_USE_PREFORK_MODE" envDefault:"false"`
+		ProxyHeader        string   `env:"HTTP_PROXY_HEADER" envDefault:"X-Real-IP"`
+		TrustedProxies     []string `env:"HTTP_TRUSTED_PROXIES" envSeparator:","`
+		BodyLimitBytes     int      `env:"HTTP_BODY_LIMIT_BYTES" envDefault:"4194304"`
+		CompressionEnabled bool     `env:"HTTP_COMPRESSION_ENABLED" envDefault:"true"`
+	}
+
+	// CORS configures cross-origin resource sharing for browser clients.
+	// An empty AllowedOrigins list leaves the CORS middleware unregistered
+	// (same-origin clients only).
+	cors struct {
+		AllowedOrigins []string `env:"CORS_ALLOWED_ORIGINS" envSeparator:","`
+	}
+
+	// Security configures HTTP security response headers. HSTSSeconds 0
+	// disables Strict-Transport-Security (only enable behind TLS).
+	security struct {
+		HeadersEnabled bool `env:"SECURITY_HEADERS_ENABLED" envDefault:"true"`
+		HSTSSeconds    int  `env:"SECURITY_HSTS_SECONDS" envDefault:"0"`
+	}
+
+	// Collab configures the realtime collaborative editing bridge. When
+	// enabled, the app exposes /internal/collab endpoints (service-token
+	// guarded) that the collab-server uses to seed and persist page drafts.
+	collab struct {
+		Enabled      bool   `env:"COLLAB_ENABLED" envDefault:"false"`
+		ServiceToken string `env:"COLLAB_SERVICE_TOKEN"`
 	}
 
 	// Log -.
@@ -53,16 +145,23 @@ type (
 
 	// PG -.
 	pg struct {
-		PoolMax int    `env:"PG_POOL_MAX,required"`
+		PoolMax int    `env:"PG_POOL_MAX" envDefault:"10"`
 		URL     string `env:"PG_URL,required"`
+		// Zero keeps the pgxpool default for either setting.
+		MaxConnLifetime time.Duration `env:"PG_MAX_CONN_LIFETIME" envDefault:"1h"`
+		MaxConnIdleTime time.Duration `env:"PG_MAX_CONN_IDLE_TIME" envDefault:"30m"`
 	}
 
 	// JWT -.
 	jwt struct {
-		Secret      string        `env:"JWT_SECRET,required"`
-		TokenExpiry time.Duration `env:"JWT_TOKEN_EXPIRY" envDefault:"24h"`
-		Issuer      string        `env:"JWT_ISSUER" envDefault:"surau-backend"`
-		Audience    string        `env:"JWT_AUDIENCE" envDefault:"surau-api"`
+		Secret string `env:"JWT_SECRET,required"`
+		// TokenExpiry is the legacy single-token TTL; signing now uses
+		// AccessTokenExpiry. Kept validated for env back-compat.
+		TokenExpiry        time.Duration `env:"JWT_TOKEN_EXPIRY" envDefault:"24h"`
+		AccessTokenExpiry  time.Duration `env:"JWT_ACCESS_TOKEN_EXPIRY" envDefault:"15m"`
+		RefreshTokenExpiry time.Duration `env:"JWT_REFRESH_TOKEN_EXPIRY" envDefault:"720h"`
+		Issuer             string        `env:"JWT_ISSUER" envDefault:"surau-backend"`
+		Audience           string        `env:"JWT_AUDIENCE" envDefault:"surau-api"`
 	}
 
 	// Email -.
@@ -97,6 +196,11 @@ type (
 		CloudflareEventPollingLookback time.Duration `env:"EMAIL_CLOUDFLARE_EVENT_POLLING_LOOKBACK" envDefault:"30m"`
 		CloudflareEventPollingLimit    int           `env:"EMAIL_CLOUDFLARE_EVENT_POLLING_LIMIT" envDefault:"100"`
 		HTTPTimeout                    time.Duration `env:"EMAIL_HTTP_TIMEOUT" envDefault:"10s"`
+		// DispatchInterval paces the background dispatcher that delivers
+		// queued transactional and campaign emails; auth emails are enqueued,
+		// so this bounds their worst-case delivery latency.
+		DispatchInterval time.Duration `env:"EMAIL_DISPATCH_INTERVAL" envDefault:"15s"`
+		DispatchBatch    int           `env:"EMAIL_DISPATCH_BATCH" envDefault:"20"`
 	}
 
 	// AuthRateLimit -.
@@ -140,6 +244,31 @@ type (
 		DeleteAccountUserWindow       time.Duration `env:"AUTH_RATE_LIMIT_DELETE_ACCOUNT_USER_WINDOW" envDefault:"1h"`
 		DeleteAccountIPMax            int           `env:"AUTH_RATE_LIMIT_DELETE_ACCOUNT_IP_MAX" envDefault:"10"`
 		DeleteAccountIPWindow         time.Duration `env:"AUTH_RATE_LIMIT_DELETE_ACCOUNT_IP_WINDOW" envDefault:"1h"`
+		RefreshTokenMax               int           `env:"AUTH_RATE_LIMIT_REFRESH_TOKEN_MAX" envDefault:"5"`
+		RefreshTokenWindow            time.Duration `env:"AUTH_RATE_LIMIT_REFRESH_TOKEN_WINDOW" envDefault:"15m"`
+		RefreshIPMax                  int           `env:"AUTH_RATE_LIMIT_REFRESH_IP_MAX" envDefault:"60"`
+		RefreshIPWindow               time.Duration `env:"AUTH_RATE_LIMIT_REFRESH_IP_WINDOW" envDefault:"15m"`
+		VerifyEmailTokenMax           int           `env:"AUTH_RATE_LIMIT_VERIFY_EMAIL_TOKEN_MAX" envDefault:"5"`
+		VerifyEmailTokenWindow        time.Duration `env:"AUTH_RATE_LIMIT_VERIFY_EMAIL_TOKEN_WINDOW" envDefault:"15m"`
+	}
+
+	// AuthLockout -.
+	authLockout struct {
+		Enabled      bool          `env:"AUTH_LOCKOUT_ENABLED" envDefault:"true"`
+		Threshold    int           `env:"AUTH_LOCKOUT_THRESHOLD" envDefault:"5"`
+		BaseDuration time.Duration `env:"AUTH_LOCKOUT_BASE_DURATION" envDefault:"1m"`
+		Factor       int           `env:"AUTH_LOCKOUT_FACTOR" envDefault:"15"`
+		MaxDuration  time.Duration `env:"AUTH_LOCKOUT_MAX_DURATION" envDefault:"1h"`
+	}
+
+	// AuthCleanup -.
+	authCleanup struct {
+		Enabled          bool          `env:"AUTH_CLEANUP_ENABLED" envDefault:"true"`
+		Interval         time.Duration `env:"AUTH_CLEANUP_INTERVAL" envDefault:"6h"`
+		TokenRetention   time.Duration `env:"AUTH_CLEANUP_TOKEN_RETENTION" envDefault:"720h"`
+		SessionRetention time.Duration `env:"AUTH_CLEANUP_SESSION_RETENTION" envDefault:"720h"`
+		// AuditRetention 0 keeps audit logs forever.
+		AuditRetention time.Duration `env:"AUTH_CLEANUP_AUDIT_RETENTION" envDefault:"0"`
 	}
 
 	// AuthEmail -.
@@ -153,6 +282,14 @@ type (
 		RoleChangedEnabled     bool          `env:"AUTH_ROLE_CHANGED_EMAIL_ENABLED" envDefault:"true"`
 		EmailChangedEnabled    bool          `env:"AUTH_EMAIL_CHANGED_EMAIL_ENABLED" envDefault:"true"`
 		AccountDeletedEnabled  bool          `env:"AUTH_ACCOUNT_DELETED_EMAIL_ENABLED" envDefault:"true"`
+	}
+
+	// AuthAlert configures admin alerting for high-signal security events
+	// (currently refresh-token reuse).
+	authAlert struct {
+		Enabled    bool          `env:"AUTH_ALERT_ENABLED" envDefault:"false"`
+		Interval   time.Duration `env:"AUTH_ALERT_INTERVAL" envDefault:"5m"`
+		Recipients []string      `env:"AUTH_ALERT_RECIPIENTS" envSeparator:","`
 	}
 
 	// RAG -.
@@ -186,16 +323,63 @@ type (
 func NewConfig() (*Config, error) {
 	cfg := &Config{}
 	if err := env.Parse(cfg); err != nil {
-		return nil, fmt.Errorf("config error: %w", err)
+		return nil, fmt.Errorf("%w: %w", errConfig, err)
 	}
 	if cfg.PG.PoolMax < 1 || cfg.PG.PoolMax > 100 {
-		return nil, fmt.Errorf("config error: PG_POOL_MAX must be between 1 and 100")
+		return nil, configError("PG_POOL_MAX must be between 1 and 100")
+	}
+
+	if cfg.PG.MaxConnLifetime < 0 {
+		return nil, configError("PG_MAX_CONN_LIFETIME must not be negative")
+	}
+
+	if cfg.PG.MaxConnIdleTime < 0 {
+		return nil, configError("PG_MAX_CONN_IDLE_TIME must not be negative")
+	}
+
+	if cfg.HTTP.BodyLimitBytes <= 0 {
+		return nil, configError("HTTP_BODY_LIMIT_BYTES must be positive")
+	}
+
+	for i, origin := range cfg.CORS.AllowedOrigins {
+		cfg.CORS.AllowedOrigins[i] = strings.TrimSpace(origin)
+		if !validCORSOrigin(cfg.CORS.AllowedOrigins[i]) {
+			return nil, configError("CORS_ALLOWED_ORIGINS entries must be * or absolute http(s) origins without a path")
+		}
+	}
+
+	if cfg.Security.HSTSSeconds < 0 {
+		return nil, configError("SECURITY_HSTS_SECONDS must not be negative")
+	}
+
+	if cfg.Collab.Enabled && len(cfg.Collab.ServiceToken) < minCollabServiceTokenBytes {
+		return nil, configError("COLLAB_SERVICE_TOKEN must be at least 32 bytes when COLLAB_ENABLED is true")
 	}
 	if len(cfg.JWT.Secret) < 32 {
-		return nil, fmt.Errorf("config error: JWT_SECRET must be at least 32 bytes")
+		return nil, configError("JWT_SECRET must be at least 32 bytes")
 	}
 	if cfg.JWT.TokenExpiry <= 0 || cfg.JWT.TokenExpiry > 24*time.Hour {
-		return nil, fmt.Errorf("config error: JWT_TOKEN_EXPIRY must be positive and no more than 24h")
+		return nil, configError("JWT_TOKEN_EXPIRY must be positive and no more than 24h")
+	}
+
+	if cfg.JWT.AccessTokenExpiry <= 0 || cfg.JWT.AccessTokenExpiry > 24*time.Hour {
+		return nil, configError("JWT_ACCESS_TOKEN_EXPIRY must be positive and no more than 24h")
+	}
+
+	if cfg.JWT.RefreshTokenExpiry < cfg.JWT.AccessTokenExpiry || cfg.JWT.RefreshTokenExpiry > 8760*time.Hour {
+		return nil, configError("JWT_REFRESH_TOKEN_EXPIRY must be at least JWT_ACCESS_TOKEN_EXPIRY and no more than 8760h")
+	}
+
+	if err := validateAuthLockout(cfg.AuthLockout); err != nil {
+		return nil, err
+	}
+
+	if err := validateAuthCleanup(cfg.AuthCleanup); err != nil {
+		return nil, err
+	}
+
+	if cfg.AuthAlert.Enabled && cfg.AuthAlert.Interval <= 0 {
+		return nil, configError("AUTH_ALERT_INTERVAL must be positive")
 	}
 	cfg.Email.CloudflareAccountID = strings.TrimSpace(cfg.Email.CloudflareAccountID)
 	cfg.Email.CloudflareAPIToken = strings.TrimSpace(cfg.Email.CloudflareAPIToken)
@@ -214,10 +398,10 @@ func NewConfig() (*Config, error) {
 	cfg.Email.CloudflareZoneID = strings.TrimSpace(cfg.Email.CloudflareZoneID)
 	cfg.Email.CloudflareAnalyticsAPIToken = strings.TrimSpace(cfg.Email.CloudflareAnalyticsAPIToken)
 	if cfg.Email.UnsubscribeTokenKeyID == "" {
-		return nil, fmt.Errorf("config error: EMAIL_UNSUBSCRIBE_TOKEN_KEY_ID must not be empty")
+		return nil, configError("EMAIL_UNSUBSCRIBE_TOKEN_KEY_ID must not be empty")
 	}
 	if !validUnsubscribeTokenKeyID(cfg.Email.UnsubscribeTokenKeyID) {
-		return nil, fmt.Errorf("config error: EMAIL_UNSUBSCRIBE_TOKEN_KEY_ID contains unsupported characters")
+		return nil, configError("EMAIL_UNSUBSCRIBE_TOKEN_KEY_ID contains unsupported characters")
 	}
 	if err := validateUnsubscribeTokenSecrets(
 		cfg.Email.UnsubscribeTokenKeyID,
@@ -229,78 +413,86 @@ func NewConfig() (*Config, error) {
 	switch cfg.Email.DeliveryMode {
 	case EmailDeliveryModeCloudflare:
 		if strings.TrimSpace(cfg.Email.CloudflareAccountID) == "" {
-			return nil, fmt.Errorf("config error: CF_EMAIL_ACCOUNT_ID is required")
+			return nil, configError("CF_EMAIL_ACCOUNT_ID is required")
 		}
 		if strings.TrimSpace(cfg.Email.CloudflareAPIToken) == "" {
-			return nil, fmt.Errorf("config error: CF_EMAIL_API_TOKEN is required")
+			return nil, configError("CF_EMAIL_API_TOKEN is required")
 		}
 		if !validEmailAddress(cfg.Email.FromAddress) {
-			return nil, fmt.Errorf("config error: EMAIL_FROM_ADDRESS must be a valid email address")
+			return nil, configError("EMAIL_FROM_ADDRESS must be a valid email address")
 		}
 	case EmailDeliveryModeLog:
 		if cfg.Email.FromAddress != "" && !validEmailAddress(cfg.Email.FromAddress) {
-			return nil, fmt.Errorf("config error: EMAIL_FROM_ADDRESS must be a valid email address")
+			return nil, configError("EMAIL_FROM_ADDRESS must be a valid email address")
 		}
 	default:
-		return nil, fmt.Errorf("config error: EMAIL_DELIVERY_MODE must be cloudflare or log")
+		return nil, configError("EMAIL_DELIVERY_MODE must be cloudflare or log")
 	}
 	if cfg.Email.ReplyTo != "" && !validEmailAddress(cfg.Email.ReplyTo) {
-		return nil, fmt.Errorf("config error: EMAIL_REPLY_TO must be a valid email address")
+		return nil, configError("EMAIL_REPLY_TO must be a valid email address")
 	}
 	if !validAbsoluteHTTPURL(cfg.Email.VerifyFrontendURL) {
-		return nil, fmt.Errorf("config error: EMAIL_VERIFY_FRONTEND_URL must be an absolute http(s) URL")
+		return nil, configError("EMAIL_VERIFY_FRONTEND_URL must be an absolute http(s) URL")
 	}
 	if !validAbsoluteHTTPURL(cfg.Email.PasswordResetFrontendURL) {
-		return nil, fmt.Errorf("config error: PASSWORD_RESET_FRONTEND_URL must be an absolute http(s) URL")
+		return nil, configError("PASSWORD_RESET_FRONTEND_URL must be an absolute http(s) URL")
 	}
 	if !validAbsoluteHTTPURL(cfg.Email.EmailChangeFrontendURL) {
-		return nil, fmt.Errorf("config error: EMAIL_CHANGE_FRONTEND_URL must be an absolute http(s) URL")
+		return nil, configError("EMAIL_CHANGE_FRONTEND_URL must be an absolute http(s) URL")
 	}
 	if cfg.Email.UnsubscribeFrontendURL != "" && !validAbsoluteHTTPURL(cfg.Email.UnsubscribeFrontendURL) {
-		return nil, fmt.Errorf("config error: EMAIL_UNSUBSCRIBE_FRONTEND_URL must be an absolute http(s) URL")
+		return nil, configError("EMAIL_UNSUBSCRIBE_FRONTEND_URL must be an absolute http(s) URL")
 	}
 	if cfg.Email.UnsubscribePublicURL != "" && !validAbsoluteHTTPURL(cfg.Email.UnsubscribePublicURL) {
-		return nil, fmt.Errorf("config error: EMAIL_UNSUBSCRIBE_PUBLIC_URL must be an absolute http(s) URL")
+		return nil, configError("EMAIL_UNSUBSCRIBE_PUBLIC_URL must be an absolute http(s) URL")
 	}
 	if cfg.Email.VerificationTTL <= 0 {
-		return nil, fmt.Errorf("config error: EMAIL_VERIFICATION_TTL must be positive")
+		return nil, configError("EMAIL_VERIFICATION_TTL must be positive")
 	}
 	if cfg.Email.VerificationOTPTTL <= 0 {
-		return nil, fmt.Errorf("config error: EMAIL_VERIFICATION_OTP_TTL must be positive")
+		return nil, configError("EMAIL_VERIFICATION_OTP_TTL must be positive")
 	}
 	if cfg.Email.ResendCooldown <= 0 {
-		return nil, fmt.Errorf("config error: EMAIL_RESEND_COOLDOWN must be positive")
+		return nil, configError("EMAIL_RESEND_COOLDOWN must be positive")
 	}
 	if cfg.Email.PasswordResetTTL <= 0 {
-		return nil, fmt.Errorf("config error: PASSWORD_RESET_TTL must be positive")
+		return nil, configError("PASSWORD_RESET_TTL must be positive")
 	}
 	if cfg.Email.PasswordResetCooldown <= 0 {
-		return nil, fmt.Errorf("config error: PASSWORD_RESET_RESEND_COOLDOWN must be positive")
+		return nil, configError("PASSWORD_RESET_RESEND_COOLDOWN must be positive")
 	}
 	if cfg.Email.EmailChangeTTL <= 0 {
-		return nil, fmt.Errorf("config error: EMAIL_CHANGE_TTL must be positive")
+		return nil, configError("EMAIL_CHANGE_TTL must be positive")
 	}
 	if cfg.Email.EmailChangeOTPTTL <= 0 {
-		return nil, fmt.Errorf("config error: EMAIL_CHANGE_OTP_TTL must be positive")
+		return nil, configError("EMAIL_CHANGE_OTP_TTL must be positive")
 	}
 	if cfg.Email.EmailChangeCooldown <= 0 {
-		return nil, fmt.Errorf("config error: EMAIL_CHANGE_RESEND_COOLDOWN must be positive")
+		return nil, configError("EMAIL_CHANGE_RESEND_COOLDOWN must be positive")
 	}
 	if cfg.Email.HTTPTimeout <= 0 {
-		return nil, fmt.Errorf("config error: EMAIL_HTTP_TIMEOUT must be positive")
+		return nil, configError("EMAIL_HTTP_TIMEOUT must be positive")
+	}
+
+	if cfg.Email.DispatchInterval <= 0 {
+		return nil, configError("EMAIL_DISPATCH_INTERVAL must be positive")
+	}
+
+	if cfg.Email.DispatchBatch <= 0 {
+		return nil, configError("EMAIL_DISPATCH_BATCH must be positive")
 	}
 	if cfg.Email.CloudflareEventPollingInterval <= 0 {
-		return nil, fmt.Errorf("config error: EMAIL_CLOUDFLARE_EVENT_POLLING_INTERVAL must be positive")
+		return nil, configError("EMAIL_CLOUDFLARE_EVENT_POLLING_INTERVAL must be positive")
 	}
 	if cfg.Email.CloudflareEventPollingLookback <= 0 {
-		return nil, fmt.Errorf("config error: EMAIL_CLOUDFLARE_EVENT_POLLING_LOOKBACK must be positive")
+		return nil, configError("EMAIL_CLOUDFLARE_EVENT_POLLING_LOOKBACK must be positive")
 	}
 	if cfg.Email.CloudflareEventPollingLimit <= 0 || cfg.Email.CloudflareEventPollingLimit > 1000 {
-		return nil, fmt.Errorf("config error: EMAIL_CLOUDFLARE_EVENT_POLLING_LIMIT must be between 1 and 1000")
+		return nil, configError("EMAIL_CLOUDFLARE_EVENT_POLLING_LIMIT must be between 1 and 1000")
 	}
 	if cfg.Email.CloudflareEventPollingEnabled && cfg.Email.DeliveryMode == EmailDeliveryModeCloudflare {
 		if cfg.Email.CloudflareZoneID == "" {
-			return nil, fmt.Errorf("config error: EMAIL_CLOUDFLARE_ZONE_ID is required when event polling is enabled")
+			return nil, configError("EMAIL_CLOUDFLARE_ZONE_ID is required when event polling is enabled")
 		}
 		if cfg.Email.CloudflareAnalyticsAPIToken == "" {
 			return nil, fmt.Errorf(
@@ -311,7 +503,7 @@ func NewConfig() (*Config, error) {
 	if cfg.AuthEmail.NotificationsEnabled &&
 		cfg.AuthEmail.FailedLoginEnabled &&
 		cfg.AuthEmail.FailedLoginCooldown <= 0 {
-		return nil, fmt.Errorf("config error: AUTH_FAILED_LOGIN_EMAIL_COOLDOWN must be positive")
+		return nil, configError("AUTH_FAILED_LOGIN_EMAIL_COOLDOWN must be positive")
 	}
 	if cfg.AuthRateLimit.Enabled {
 		if err := validatePositiveInt("AUTH_RATE_LIMIT_LOGIN_EMAIL_MAX", cfg.AuthRateLimit.LoginEmailMax); err != nil {
@@ -428,30 +620,54 @@ func NewConfig() (*Config, error) {
 		if err := validatePositiveDuration("AUTH_RATE_LIMIT_DELETE_ACCOUNT_IP_WINDOW", cfg.AuthRateLimit.DeleteAccountIPWindow); err != nil {
 			return nil, err
 		}
+
+		if err := validatePositiveInt("AUTH_RATE_LIMIT_REFRESH_TOKEN_MAX", cfg.AuthRateLimit.RefreshTokenMax); err != nil {
+			return nil, err
+		}
+
+		if err := validatePositiveDuration("AUTH_RATE_LIMIT_REFRESH_TOKEN_WINDOW", cfg.AuthRateLimit.RefreshTokenWindow); err != nil {
+			return nil, err
+		}
+
+		if err := validatePositiveInt("AUTH_RATE_LIMIT_REFRESH_IP_MAX", cfg.AuthRateLimit.RefreshIPMax); err != nil {
+			return nil, err
+		}
+
+		if err := validatePositiveDuration("AUTH_RATE_LIMIT_REFRESH_IP_WINDOW", cfg.AuthRateLimit.RefreshIPWindow); err != nil {
+			return nil, err
+		}
+
+		if err := validatePositiveInt("AUTH_RATE_LIMIT_VERIFY_EMAIL_TOKEN_MAX", cfg.AuthRateLimit.VerifyEmailTokenMax); err != nil {
+			return nil, err
+		}
+
+		if err := validatePositiveDuration("AUTH_RATE_LIMIT_VERIFY_EMAIL_TOKEN_WINDOW", cfg.AuthRateLimit.VerifyEmailTokenWindow); err != nil {
+			return nil, err
+		}
 	}
 	if cfg.RAG.LLMTimeout <= 0 {
-		return nil, fmt.Errorf("config error: RAG_LLM_TIMEOUT must be positive")
+		return nil, configError("RAG_LLM_TIMEOUT must be positive")
 	}
 	if cfg.RAG.LLMMaxTokens < 1 {
-		return nil, fmt.Errorf("config error: RAG_LLM_MAX_TOKENS must be positive")
+		return nil, configError("RAG_LLM_MAX_TOKENS must be positive")
 	}
 	if cfg.RAG.MaxContextPages < 1 {
-		return nil, fmt.Errorf("config error: RAG_MAX_CONTEXT_PAGES must be positive")
+		return nil, configError("RAG_MAX_CONTEXT_PAGES must be positive")
 	}
 	if cfg.RAG.TreeFullMaxNodes < 1 {
-		return nil, fmt.Errorf("config error: RAG_TREE_FULL_MAX_NODES must be positive")
+		return nil, configError("RAG_TREE_FULL_MAX_NODES must be positive")
 	}
 	if cfg.RAG.TreeBlockMaxNodes < 1 {
-		return nil, fmt.Errorf("config error: RAG_TREE_BLOCK_MAX_NODES must be positive")
+		return nil, configError("RAG_TREE_BLOCK_MAX_NODES must be positive")
 	}
 	if cfg.RAG.TreeBeamSize < 1 {
-		return nil, fmt.Errorf("config error: RAG_TREE_BEAM_SIZE must be positive")
+		return nil, configError("RAG_TREE_BEAM_SIZE must be positive")
 	}
 	if cfg.RAG.TreeMaxTurns < 1 {
-		return nil, fmt.Errorf("config error: RAG_TREE_MAX_TURNS must be positive")
+		return nil, configError("RAG_TREE_MAX_TURNS must be positive")
 	}
 	if cfg.RAG.TreeMaxBlocksPerTurn < 1 {
-		return nil, fmt.Errorf("config error: RAG_TREE_MAX_BLOCKS_PER_TURN must be positive")
+		return nil, configError("RAG_TREE_MAX_BLOCKS_PER_TURN must be positive")
 	}
 
 	return cfg, nil
@@ -474,6 +690,27 @@ func validAbsoluteHTTPURL(value string) bool {
 	}
 
 	return parsedURL.IsAbs() && (parsedURL.Scheme == "http" || parsedURL.Scheme == "https") && parsedURL.Host != ""
+}
+
+// validCORSOrigin accepts the wildcard or a bare scheme://host[:port] origin
+// (no path, query, fragment, or userinfo).
+func validCORSOrigin(value string) bool {
+	if value == "*" {
+		return true
+	}
+
+	parsedURL, err := url.Parse(value)
+	if err != nil {
+		return false
+	}
+
+	return parsedURL.IsAbs() &&
+		(parsedURL.Scheme == "http" || parsedURL.Scheme == "https") &&
+		parsedURL.Host != "" &&
+		parsedURL.Path == "" &&
+		parsedURL.RawQuery == "" &&
+		parsedURL.Fragment == "" &&
+		parsedURL.User == nil
 }
 
 func validUnsubscribeTokenKeyID(value string) bool {
@@ -505,21 +742,21 @@ func validateUnsubscribeTokenSecrets(keyID, currentSecret, rawSecrets string) er
 
 	secrets := map[string]string{}
 	if err := json.Unmarshal([]byte(rawSecrets), &secrets); err != nil {
-		return fmt.Errorf("config error: EMAIL_UNSUBSCRIBE_TOKEN_SECRETS must be a JSON object")
+		return configError("EMAIL_UNSUBSCRIBE_TOKEN_SECRETS must be a JSON object")
 	}
 	if len(secrets) == 0 {
-		return fmt.Errorf("config error: EMAIL_UNSUBSCRIBE_TOKEN_SECRETS must not be empty")
+		return configError("EMAIL_UNSUBSCRIBE_TOKEN_SECRETS must not be empty")
 	}
 	for key, secret := range secrets {
 		if !validUnsubscribeTokenKeyID(key) {
-			return fmt.Errorf("config error: EMAIL_UNSUBSCRIBE_TOKEN_SECRETS contains invalid key id")
+			return configError("EMAIL_UNSUBSCRIBE_TOKEN_SECRETS contains invalid key id")
 		}
 		if strings.TrimSpace(secret) == "" {
-			return fmt.Errorf("config error: EMAIL_UNSUBSCRIBE_TOKEN_SECRETS contains empty secret")
+			return configError("EMAIL_UNSUBSCRIBE_TOKEN_SECRETS contains empty secret")
 		}
 	}
 	if strings.TrimSpace(secrets[keyID]) == "" && currentSecret == "" {
-		return fmt.Errorf("config error: EMAIL_UNSUBSCRIBE_TOKEN_SECRETS must include EMAIL_UNSUBSCRIBE_TOKEN_KEY_ID or EMAIL_UNSUBSCRIBE_TOKEN_SECRET must be set")
+		return configError("EMAIL_UNSUBSCRIBE_TOKEN_SECRETS must include EMAIL_UNSUBSCRIBE_TOKEN_KEY_ID or EMAIL_UNSUBSCRIBE_TOKEN_SECRET must be set")
 	}
 
 	return nil
@@ -527,7 +764,7 @@ func validateUnsubscribeTokenSecrets(keyID, currentSecret, rawSecrets string) er
 
 func validatePositiveInt(name string, value int) error {
 	if value <= 0 {
-		return fmt.Errorf("config error: %s must be positive", name)
+		return configErrorf("%s must be positive", name)
 	}
 
 	return nil
@@ -535,7 +772,7 @@ func validatePositiveInt(name string, value int) error {
 
 func validatePositiveDuration(name string, value time.Duration) error {
 	if value <= 0 {
-		return fmt.Errorf("config error: %s must be positive", name)
+		return configErrorf("%s must be positive", name)
 	}
 
 	return nil

@@ -4,14 +4,16 @@ import "time"
 
 // SaveProgress -.
 type SaveProgress struct {
-	PageID          *int     `json:"page_id"           validate:"omitempty,min=1"        example:"12"`
-	HeadingID       *int     `json:"heading_id"        validate:"omitempty,min=1"        example:"10"`
-	ProgressPercent *float64 `json:"progress_percent"  validate:"omitempty,min=0,max=100" example:"32.5"`
+	PageID           *int       `json:"page_id"            validate:"omitempty,min=1"         example:"12"`
+	HeadingID        *int       `json:"heading_id"         validate:"omitempty,min=1"         example:"10"`
+	ProgressPercent  *float64   `json:"progress_percent"   validate:"omitempty,min=0,max=100" example:"32.5"`
+	ClientObservedAt *time.Time `json:"client_observed_at" validate:"omitempty"               example:"2026-01-01T00:00:00Z"`
 } // @name v1.SaveProgress
 
 // SaveTOCProgress -.
 type SaveTOCProgress struct {
-	ProgressPercent *float64 `json:"progress_percent" validate:"omitempty,min=0,max=100" example:"32.5"`
+	ProgressPercent  *float64   `json:"progress_percent"   validate:"omitempty,min=0,max=100" example:"32.5"`
+	ClientObservedAt *time.Time `json:"client_observed_at" validate:"omitempty"               example:"2026-01-01T00:00:00Z"`
 } // @name v1.SaveTOCProgress
 
 // SaveQuranProgress -.
@@ -35,12 +37,42 @@ type UpsertSavedItem struct {
 	Tags           []string `json:"tags"             validate:"omitempty"`
 } // @name v1.UpsertSavedItem
 
-// UpdateSavedItem -.
+// UpdateSavedItem is a true partial update: absent fields stay unchanged,
+// explicit null clears. Length limits are enforced in the usecase because
+// validator tags cannot see through Optional.
 type UpdateSavedItem struct {
-	Label *string  `json:"label" validate:"omitempty,max=255"`
-	Note  *string  `json:"note"  validate:"omitempty,max=2000"`
-	Tags  []string `json:"tags"  validate:"omitempty"`
+	Label Optional[string]   `json:"label" swaggertype:"string"`
+	Note  Optional[string]   `json:"note"  swaggertype:"string"`
+	Tags  Optional[[]string] `json:"tags"  swaggertype:"array,string"`
 } // @name v1.UpdateSavedItem
+
+// StartKhatamCycle -.
+type StartKhatamCycle struct {
+	Notes *string `json:"notes" validate:"omitempty,max=2000" example:"Khatam Ramadhan"`
+} // @name v1.StartKhatamCycle
+
+// BatchProgress replays an offline autosave queue in one request. Entries
+// are processed in order; the monotonic observed_at upserts make stale or
+// duplicated entries harmless.
+type BatchProgress struct {
+	Kitab []BatchKitabProgress `json:"kitab" validate:"omitempty,max=100,dive"`
+	Quran []BatchQuranProgress `json:"quran" validate:"omitempty,max=100,dive"`
+} // @name v1.BatchProgress
+
+// BatchKitabProgress -.
+type BatchKitabProgress struct {
+	BookID           int        `json:"book_id"            validate:"required,min=1"          example:"797"`
+	PageID           *int       `json:"page_id"            validate:"omitempty,min=1"         example:"12"`
+	HeadingID        *int       `json:"heading_id"         validate:"omitempty,min=1"         example:"10"`
+	ProgressPercent  *float64   `json:"progress_percent"   validate:"omitempty,min=0,max=100" example:"32.5"`
+	ClientObservedAt *time.Time `json:"client_observed_at" validate:"omitempty"               example:"2026-01-01T00:00:00Z"`
+} // @name v1.BatchKitabProgress
+
+// BatchQuranProgress -.
+type BatchQuranProgress struct {
+	AyahKey          string     `json:"ayah_key"           validate:"required,max=16" example:"73:4"`
+	ClientObservedAt *time.Time `json:"client_observed_at" validate:"omitempty"       example:"2026-01-01T00:00:00Z"`
+} // @name v1.BatchQuranProgress
 
 // CreateTranslationFeedback -.
 type CreateTranslationFeedback struct {

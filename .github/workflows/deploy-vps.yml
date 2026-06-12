@@ -46,17 +46,30 @@ jobs:
           git fetch origin "$DEPLOY_BRANCH"
           git checkout "$DEPLOY_BRANCH"
           git reset --hard "origin/$DEPLOY_BRANCH"
-          sudo docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build app
+
+          # Collaborative editing is opt-in: when .env.production enables it,
+          # deploy and health-check the collab websocket service too.
+          PROFILE_ARGS=()
+          SERVICES=(app)
+          COLLAB_CHECK=""
+          if grep -q '^COLLAB_ENABLED=true' .env.production; then
+            PROFILE_ARGS=(--profile collab)
+            SERVICES+=(collab)
+            COLLAB_CHECK="http://127.0.0.1:8090/healthz"
+          fi
+
+          sudo docker compose --env-file .env.production -f docker-compose.prod.yml "${PROFILE_ARGS[@]}" up -d --build "${SERVICES[@]}"
           sudo docker image prune -f
           for attempt in {1..30}; do
             if curl -fsS http://127.0.0.1:8080/healthz >/dev/null &&
-               curl -fsS http://127.0.0.1:8080/readyz >/dev/null; then
+               curl -fsS http://127.0.0.1:8080/readyz >/dev/null &&
+               { [ -z "$COLLAB_CHECK" ] || curl -fsS "$COLLAB_CHECK" >/dev/null; }; then
               exit 0
             fi
 
             sleep 2
           done
 
-          sudo docker compose --env-file .env.production -f docker-compose.prod.yml logs --tail=120 app
+          sudo docker compose --env-file .env.production -f docker-compose.prod.yml "${PROFILE_ARGS[@]}" logs --tail=120 "${SERVICES[@]}"
           exit 1
           REMOTE

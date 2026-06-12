@@ -22,8 +22,9 @@ type UserRepo struct {
 	*postgres.Postgres
 }
 
-const userReturningColumns = "id, username, email, role, password_hash, email_verified, token_version, created_at, updated_at"
-const userAccountSelectColumns = `
+const (
+	userReturningColumns     = "id, username, email, role, password_hash, email_verified, token_version, created_at, updated_at"
+	userAccountSelectColumns = `
     u.id,
     u.username,
     u.email,
@@ -52,6 +53,7 @@ const userAccountSelectColumns = `
     pref.quran_recitation_id,
     COALESCE(pref.created_at, u.created_at),
     COALESCE(pref.updated_at, u.updated_at)`
+)
 
 // NewUserRepo -.
 func NewUserRepo(pg *postgres.Postgres) *UserRepo {
@@ -402,27 +404,59 @@ ON CONFLICT (user_id) DO UPDATE SET
 
 // SetRoleByEmail updates one user's role by email.
 func (r *UserRepo) SetRoleByEmail(ctx context.Context, email, role string) (entity.UserRoleChange, error) {
-	const query = `
-WITH existing AS (
-    SELECT id, role AS previous_role
-    FROM users
-    WHERE email = $1 AND deleted_at IS NULL
-    FOR UPDATE
-),
-updated AS (
-    UPDATE users u
-    SET role = $2,
-        updated_at = now()
-    FROM existing e
-    WHERE u.id = e.id
-    RETURNING u.id, u.username, u.email, u.role, u.password_hash, u.email_verified,
-              u.token_version, u.created_at, u.updated_at, e.previous_role
-)
-SELECT id, username, email, role, password_hash, email_verified, token_version, created_at, updated_at, previous_role
-FROM updated`
+	tx, err := r.Pool.Begin(ctx)
+	if err != nil {
+		return entity.UserRoleChange{}, fmt.Errorf("UserRepo - SetRoleByEmail - r.Pool.Begin: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	var (
+		targetID     string
+		previousRole string
+	)
+
+	err = tx.QueryRow(
+		ctx,
+		"SELECT id, role FROM users WHERE email = $1 AND deleted_at IS NULL FOR UPDATE",
+		email,
+	).Scan(&targetID, &previousRole)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return entity.UserRoleChange{}, entity.ErrUserNotFound
+		}
+
+		return entity.UserRoleChange{}, fmt.Errorf("UserRepo - SetRoleByEmail - lock user: %w", err)
+	}
+
+	// Demoting the last remaining admin would lock everyone out of the admin
+	// API; recovery would require direct DB access or the CLI escape hatch.
+	if previousRole == entity.UserRoleAdmin && role != entity.UserRoleAdmin {
+		var adminCount int
+
+		err = tx.QueryRow(
+			ctx,
+			"SELECT count(*) FROM users WHERE role = $1 AND deleted_at IS NULL",
+			entity.UserRoleAdmin,
+		).Scan(&adminCount)
+		if err != nil {
+			return entity.UserRoleChange{}, fmt.Errorf("UserRepo - SetRoleByEmail - count admins: %w", err)
+		}
+
+		if adminCount <= 1 {
+			return entity.UserRoleChange{}, entity.ErrLastAdmin
+		}
+	}
+
+	const updateQuery = `
+UPDATE users
+SET role = $2,
+    updated_at = now()
+WHERE id = $1
+RETURNING id, username, email, role, password_hash, email_verified, token_version, created_at, updated_at`
 
 	var change entity.UserRoleChange
-	err := r.Pool.QueryRow(ctx, query, email, role).
+
+	err = tx.QueryRow(ctx, updateQuery, targetID, role).
 		Scan(
 			&change.User.ID,
 			&change.User.Username,
@@ -433,16 +467,17 @@ FROM updated`
 			&change.User.TokenVersion,
 			&change.User.CreatedAt,
 			&change.User.UpdatedAt,
-			&change.PreviousRole,
 		)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return entity.UserRoleChange{}, entity.ErrUserNotFound
-		}
-
-		return entity.UserRoleChange{}, fmt.Errorf("UserRepo - SetRoleByEmail - r.Pool.QueryRow: %w", err)
+		return entity.UserRoleChange{}, fmt.Errorf("UserRepo - SetRoleByEmail - update QueryRow: %w", err)
 	}
+
+	change.PreviousRole = previousRole
 	change.NewRole = change.User.Role
+
+	if err = tx.Commit(ctx); err != nil {
+		return entity.UserRoleChange{}, fmt.Errorf("UserRepo - SetRoleByEmail - tx.Commit: %w", err)
+	}
 
 	return change, nil
 }
@@ -499,6 +534,10 @@ func (r *UserRepo) ChangePassword(ctx context.Context, userID, passwordHash stri
 	}
 	if _, err = tx.Exec(ctx, revokeSQL, revokeArgs...); err != nil {
 		return entity.User{}, fmt.Errorf("UserRepo - ChangePassword - revoke Exec: %w", err)
+	}
+
+	if err = revokeAuthSessionsInTx(ctx, tx, userID); err != nil {
+		return entity.User{}, fmt.Errorf("UserRepo - ChangePassword - %w", err)
 	}
 
 	if err = tx.Commit(ctx); err != nil {
@@ -846,6 +885,10 @@ func (r *UserRepo) ResetPasswordWithToken(ctx context.Context, tokenID, userID, 
 		return entity.User{}, fmt.Errorf("UserRepo - ResetPasswordWithToken - revoke Exec: %w", err)
 	}
 
+	if err = revokeAuthSessionsInTx(ctx, tx, userID); err != nil {
+		return entity.User{}, fmt.Errorf("UserRepo - ResetPasswordWithToken - %w", err)
+	}
+
 	if err = tx.Commit(ctx); err != nil {
 		return entity.User{}, fmt.Errorf("UserRepo - ResetPasswordWithToken - tx.Commit: %w", err)
 	}
@@ -1043,6 +1086,10 @@ func (r *UserRepo) ChangeEmailWithToken(
 		return entity.EmailChangeResult{}, fmt.Errorf("UserRepo - ChangeEmailWithToken - revoke Exec: %w", err)
 	}
 
+	if err = revokeAuthSessionsInTx(ctx, tx, userID); err != nil {
+		return entity.EmailChangeResult{}, fmt.Errorf("UserRepo - ChangeEmailWithToken - %w", err)
+	}
+
 	if err = tx.Commit(ctx); err != nil {
 		return entity.EmailChangeResult{}, fmt.Errorf("UserRepo - ChangeEmailWithToken - tx.Commit: %w", err)
 	}
@@ -1098,6 +1145,7 @@ WHERE id = $1
 		"DELETE FROM email_verification_tokens WHERE user_id = $1",
 		"DELETE FROM password_reset_tokens WHERE user_id = $1",
 		"DELETE FROM email_change_tokens WHERE user_id = $1",
+		"DELETE FROM auth_sessions WHERE user_id = $1",
 		"DELETE FROM auth_login_fingerprints WHERE user_id = $1",
 		"UPDATE auth_audit_logs SET email = NULL, client_ip = NULL, user_agent = NULL WHERE user_id = $1",
 	}
@@ -1155,10 +1203,7 @@ RETURNING count, expires_at`
 		return entity.AuthRateLimitResult{}, fmt.Errorf("UserRepo - IncrementAuthRateLimit - QueryRow: %w", err)
 	}
 
-	retryAfter := time.Until(expiresAt)
-	if retryAfter < 0 {
-		retryAfter = 0
-	}
+	retryAfter := max(time.Until(expiresAt), 0)
 
 	return entity.AuthRateLimitResult{
 		Allowed:    count <= limit.MaxAttempts,
@@ -1203,6 +1248,108 @@ func (r *UserRepo) StoreAuthAuditLog(ctx context.Context, log entity.AuthAuditLo
 	}
 
 	return nil
+}
+
+// ListAuthAuditEventsSince returns audit rows for one event type created after
+// since, oldest first. Used by the refresh-reuse alerter to find new events.
+func (r *UserRepo) ListAuthAuditEventsSince(
+	ctx context.Context,
+	event string,
+	since time.Time,
+	limit int,
+) ([]entity.AuthAuditLog, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+
+	sqlText, args, err := r.Builder.
+		Select("id, event, status, user_id, email, client_ip, user_agent, error_code, metadata, created_at").
+		From("auth_audit_logs").
+		Where(sq.Eq{"event": event}).
+		Where(sq.Gt{"created_at": since}).
+		OrderBy("created_at ASC").
+		Limit(uint64(limit)).
+		ToSql()
+	if err != nil {
+		return nil, fmt.Errorf("UserRepo - ListAuthAuditEventsSince - Builder: %w", err)
+	}
+
+	rows, err := r.Pool.Query(ctx, sqlText, args...)
+	if err != nil {
+		return nil, fmt.Errorf("UserRepo - ListAuthAuditEventsSince - Query: %w", err)
+	}
+	defer rows.Close()
+
+	logs := make([]entity.AuthAuditLog, 0)
+
+	for rows.Next() {
+		item, scanErr := scanAuthAuditLog(rows)
+		if scanErr != nil {
+			return nil, fmt.Errorf("UserRepo - ListAuthAuditEventsSince - scanAuthAuditLog: %w", scanErr)
+		}
+
+		logs = append(logs, item)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("UserRepo - ListAuthAuditEventsSince - rows.Err: %w", err)
+	}
+
+	return logs, nil
+}
+
+func scanAuthAuditLog(row rowScanner) (entity.AuthAuditLog, error) {
+	var (
+		log          entity.AuthAuditLog
+		userID       *string
+		email        *string
+		clientIP     *string
+		userAgent    *string
+		errorCode    *string
+		metadataJSON []byte
+	)
+
+	err := row.Scan(
+		&log.ID,
+		&log.Event,
+		&log.Status,
+		&userID,
+		&email,
+		&clientIP,
+		&userAgent,
+		&errorCode,
+		&metadataJSON,
+		&log.CreatedAt,
+	)
+	if err != nil {
+		return entity.AuthAuditLog{}, err
+	}
+
+	if userID != nil {
+		log.UserID = *userID
+	}
+
+	if email != nil {
+		log.Email = *email
+	}
+
+	if clientIP != nil {
+		log.ClientIP = *clientIP
+	}
+
+	if userAgent != nil {
+		log.UserAgent = *userAgent
+	}
+
+	if errorCode != nil {
+		log.ErrorCode = *errorCode
+	}
+
+	if len(metadataJSON) > 0 {
+		_ = json.Unmarshal(metadataJSON, &log.Metadata) //nolint:errcheck // malformed audit metadata degrades to empty, never fails the read
+	}
+
+	return log, nil
 }
 
 // RecordAuthLoginFingerprint stores a login fingerprint and reports whether it is new.

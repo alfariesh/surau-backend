@@ -36,7 +36,8 @@ func main() {
 		log.Fatalf("import failed: %v", err)
 	}
 
-	fmt.Printf("run_id=%s release=%s books=%d pages=%d headings=%d skipped=%d checksum=%s\n",
+	fmt.Printf(
+		"run_id=%s release=%s books=%d pages=%d headings=%d skipped=%d checksum=%s\n",
 		stats.RunID,
 		stats.ReleaseKey,
 		stats.ImportedBooks,

@@ -254,7 +254,8 @@ func importCategories(ctx context.Context, pool *pgxpool.Pool, db *stdsql.DB) er
 			return fmt.Errorf("scan category: %w", err)
 		}
 
-		batch.Queue(`
+		batch.Queue(
+			`
 INSERT INTO categories (id, name, display_order, is_deleted, updated_at)
 VALUES ($1, $2, $3, $4, now())
 ON CONFLICT (id) DO UPDATE SET
@@ -296,7 +297,8 @@ func importAuthors(ctx context.Context, pool *pgxpool.Pool, db *stdsql.DB) error
 			return fmt.Errorf("scan author: %w", err)
 		}
 
-		batch.Queue(`
+		batch.Queue(
+			`
 INSERT INTO authors (id, name, biography, death_text, death_number, is_deleted, updated_at)
 VALUES ($1, $2, $3, $4, $5, $6, now())
 ON CONFLICT (id) DO UPDATE SET
@@ -385,7 +387,8 @@ FROM book`)
 			b.SourceDate = metadataDate
 		}
 
-		batch.Queue(`
+		batch.Queue(
+			`
 INSERT INTO books (
     id, name, category_id, author_id, type, printed, minor_release, major_release,
     bibliography, hint, pdf_links, metadata, source_date, is_deleted, updated_at
@@ -644,7 +647,8 @@ func importBookContent(
 
 	pageBatch := &pgx.Batch{}
 	for _, page := range pages {
-		pageBatch.Queue(`
+		pageBatch.Queue(
+			`
 INSERT INTO book_pages (book_id, page_id, part, printed_page, number, content_html, content_text, services, is_deleted, updated_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7, nullif($8, '')::jsonb, $9, now())
 ON CONFLICT (book_id, page_id) DO UPDATE SET
@@ -683,7 +687,8 @@ ON CONFLICT (book_id, page_id) DO UPDATE SET
 	for _, heading := range decorated {
 		parentID := intPtrOrNil(heading.ParentID)
 		headingIDs = append(headingIDs, heading.ID)
-		headingBatch.Queue(`
+		headingBatch.Queue(
+			`
 INSERT INTO book_headings (book_id, heading_id, parent_id, page_id, depth, ordinal, content, is_deleted, updated_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now())
 ON CONFLICT (book_id, heading_id) DO UPDATE SET
@@ -717,7 +722,8 @@ ON CONFLICT (book_id, heading_id) DO UPDATE SET
 
 	rangeBatch := &pgx.Batch{}
 	for _, headingRange := range ranges {
-		rangeBatch.Queue(`
+		rangeBatch.Queue(
+			`
 INSERT INTO book_heading_ranges (book_id, heading_id, start_page_id, end_page_id, start_anchor, end_anchor, updated_at)
 VALUES ($1, $2, $3, $4, $5, $6, now())
 ON CONFLICT (book_id, heading_id) DO UPDATE SET
@@ -751,7 +757,8 @@ ON CONFLICT (book_id, heading_id) DO UPDATE SET
 }
 
 func upsertReleaseAndRun(ctx context.Context, pool *pgxpool.Pool, opts Options, stats Stats) error {
-	_, err := pool.Exec(ctx, `
+	_, err := pool.Exec(
+		ctx, `
 INSERT INTO source_releases (release_key, source_dir, master_checksum, created_at)
 VALUES ($1, $2, $3, now())
 ON CONFLICT (release_key) DO UPDATE SET
@@ -770,7 +777,8 @@ ON CONFLICT (release_key) DO UPDATE SET
 		mode = "sample"
 	}
 
-	_, err = pool.Exec(ctx, `
+	_, err = pool.Exec(
+		ctx, `
 INSERT INTO import_runs (id, release_key, mode, source_dir, status, started_at, master_checksum)
 VALUES ($1, $2, $3, $4, 'running', $5, $6)`,
 		stats.RunID,
@@ -789,7 +797,9 @@ VALUES ($1, $2, $3, $4, 'running', $5, $6)`,
 
 func finishRun(ctx context.Context, pool *pgxpool.Pool, stats Stats, status string) error {
 	errs, _ := json.Marshal(stats.Errors)
-	_, err := pool.Exec(ctx, `
+
+	_, err := pool.Exec(
+		ctx, `
 UPDATE import_runs SET
     status = $2,
     finished_at = $3,

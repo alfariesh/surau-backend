@@ -102,6 +102,12 @@ definitions:
         type: string
       bibliography:
         type: string
+      catalog_publication_status:
+        example: published
+        type: string
+      catalog_published:
+        example: true
+        type: boolean
       category_id:
         example: 10
         type: integer
@@ -150,6 +156,18 @@ definitions:
       printed:
         example: 1
         type: integer
+      production_publication_status:
+        example: hidden
+        type: string
+      production_published:
+        example: false
+        type: boolean
+      production_status:
+        example: candidate
+        type: string
+      production_workflow_status:
+        example: drafting
+        type: string
       publication_status:
         example: published
         type: string
@@ -184,15 +202,24 @@ definitions:
         items:
           $ref: '#/definitions/entity.BookCategoryStat'
         type: array
+      catalog_published_count:
+        example: 120
+        type: integer
       category_count:
         example: 12
         type: integer
       coverage_count:
         example: 25
         type: integer
+      production_published_count:
+        example: 25
+        type: integer
       published_count:
         example: 120
         type: integer
+      scope:
+        example: catalog_global
+        type: string
       total_books:
         example: 120
         type: integer
@@ -202,12 +229,18 @@ definitions:
     type: object
   entity.BookCategoryStat:
     properties:
+      catalog_published_count:
+        example: 20
+        type: integer
       category_id:
         example: 10
         type: integer
       category_name:
         type: string
       coverage_count:
+        example: 8
+        type: integer
+      production_published_count:
         example: 8
         type: integer
       published_count:
@@ -361,6 +394,30 @@ definitions:
         type: object
       updated_at:
         example: "2026-01-01T00:00:00Z"
+        type: string
+    type: object
+  entity.BookPageEdit:
+    properties:
+      book_id:
+        example: 797
+        type: integer
+      content_html:
+        type: string
+      content_text:
+        type: string
+      page_id:
+        example: 1
+        type: integer
+      published_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      status:
+        example: draft
+        type: string
+      updated_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      updated_by:
         type: string
     type: object
   entity.BookProductionBlocking:
@@ -883,6 +940,37 @@ definitions:
         example: false
         type: boolean
     type: object
+  entity.BookSourceEditRevision:
+    properties:
+      actor_id:
+        type: string
+      asset_type:
+        example: page
+        type: string
+      book_id:
+        example: 797
+        type: integer
+      created_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      heading_id:
+        example: 10
+        type: integer
+      id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      origin:
+        example: rest
+        type: string
+      page_id:
+        example: 1
+        type: integer
+      snapshot:
+        type: object
+      version:
+        example: 3
+        type: integer
+    type: object
   entity.BookTOCLink:
     properties:
       availability:
@@ -1233,6 +1321,32 @@ definitions:
         example: "2026-01-01T00:00:00Z"
         type: string
       updated_by:
+        type: string
+    type: object
+  entity.ContinueReadingEntry:
+    properties:
+      book:
+        $ref: '#/definitions/entity.ReadingProgressBookSummary'
+      book_id:
+        example: 797
+        type: integer
+      heading_id:
+        example: 10
+        type: integer
+      observed_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      page_id:
+        example: 12
+        type: integer
+      progress_percent:
+        example: 32.5
+        type: number
+      updated_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      user_id:
+        example: 550e8400-e29b-41d4-a716-446655440000
         type: string
     type: object
   entity.EditorialMissingQuranAsset:
@@ -1712,6 +1826,37 @@ definitions:
         example: en
         type: string
     type: object
+  entity.PersonalSyncSnapshot:
+    properties:
+      khatam_cycles:
+        items:
+          $ref: '#/definitions/entity.QuranKhatamCycle'
+        type: array
+      quran_progress:
+        items:
+          $ref: '#/definitions/entity.QuranReadingProgress'
+        type: array
+      reading_progress:
+        items:
+          $ref: '#/definitions/entity.ReadingProgress'
+        type: array
+      saved_item_ids:
+        items:
+          type: string
+        type: array
+      saved_items:
+        items:
+          $ref: '#/definitions/entity.SavedItem'
+        type: array
+      saved_items_full_resync:
+        type: boolean
+      server_time:
+        example: "2026-06-12T03:00:00Z"
+        type: string
+      since:
+        example: "2026-06-11T00:00:00Z"
+        type: string
+    type: object
   entity.ProductionAssetStatus:
     properties:
       asset_type:
@@ -1876,6 +2021,40 @@ definitions:
       translation:
         $ref: '#/definitions/entity.AvailabilityDecision'
     type: object
+  entity.QuranKhatamCycle:
+    properties:
+      completed_at:
+        example: "2026-02-01T00:00:00Z"
+        type: string
+      completed_juz:
+        items:
+          type: integer
+        type: array
+      created_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      juz_count:
+        example: 17
+        type: integer
+      notes:
+        example: Khatam Ramadhan
+        type: string
+      percent:
+        example: 56.67
+        type: number
+      started_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      updated_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      user_id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+    type: object
   entity.QuranNavigationBoundary:
     properties:
       ayah_key:
@@ -1915,9 +2094,18 @@ definitions:
       ayah_number:
         example: 4
         type: integer
+      hizb_number:
+        example: 57
+        type: integer
+      juz_number:
+        example: 29
+        type: integer
       observed_at:
         example: "2026-01-01T00:00:00Z"
         type: string
+      page_number:
+        example: 574
+        type: integer
       position_percent:
         example: 25
         type: number
@@ -2184,6 +2372,112 @@ definitions:
         $ref: '#/definitions/entity.AvailabilityDecision'
       translation:
         $ref: '#/definitions/entity.AvailabilityDecision'
+    type: object
+  entity.ReadingActivityDay:
+    properties:
+      date:
+        example: "2026-06-12"
+        type: string
+      kitab_events:
+        example: 2
+        type: integer
+      kitab_pages_read:
+        example: 4
+        type: integer
+      quran_ayahs_read:
+        example: 25
+        type: integer
+      quran_events:
+        example: 6
+        type: integer
+    type: object
+  entity.ReadingActivitySummary:
+    properties:
+      active_days:
+        example: 12
+        type: integer
+      days:
+        items:
+          $ref: '#/definitions/entity.ReadingActivityDay'
+        type: array
+      from:
+        example: "2026-05-14"
+        type: string
+      kitab_active_days:
+        example: 5
+        type: integer
+      kitab_pages_read:
+        example: 45
+        type: integer
+      quran_active_days:
+        example: 10
+        type: integer
+      quran_ayahs_read:
+        example: 230
+        type: integer
+      to:
+        example: "2026-06-12"
+        type: string
+    type: object
+  entity.ReadingProgress:
+    properties:
+      book_id:
+        example: 797
+        type: integer
+      heading_id:
+        example: 10
+        type: integer
+      observed_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      page_id:
+        example: 12
+        type: integer
+      progress_percent:
+        example: 32.5
+        type: number
+      updated_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      user_id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+    type: object
+  entity.ReadingProgressBookSummary:
+    properties:
+      author_name:
+        example: الإمام البخاري
+        type: string
+      book_id:
+        example: 797
+        type: integer
+      cover_url:
+        example: https://cdn.example/cover.jpg
+        type: string
+      name:
+        example: صحيح البخاري
+        type: string
+    type: object
+  entity.ReadingStreak:
+    properties:
+      active_today:
+        example: true
+        type: boolean
+      current_streak_days:
+        example: 5
+        type: integer
+      last_active_date:
+        example: "2026-06-12"
+        type: string
+      longest_streak_days:
+        example: 12
+        type: integer
+      today:
+        example: "2026-06-12"
+        type: string
+      total_active_days:
+        example: 40
+        type: integer
     type: object
   entity.SavedItem:
     properties:
@@ -2680,7 +2974,7 @@ definitions:
     type: object
   v1.AuthorList:
     properties:
-      authors:
+      items:
         items:
           $ref: '#/definitions/entity.Author'
         type: array
@@ -2688,9 +2982,108 @@ definitions:
         example: 42
         type: integer
     type: object
+  v1.BatchKitabProgress:
+    properties:
+      book_id:
+        example: 797
+        minimum: 1
+        type: integer
+      client_observed_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      heading_id:
+        example: 10
+        minimum: 1
+        type: integer
+      page_id:
+        example: 12
+        minimum: 1
+        type: integer
+      progress_percent:
+        example: 32.5
+        maximum: 100
+        minimum: 0
+        type: number
+    required:
+    - book_id
+    type: object
+  v1.BatchKitabProgressResult:
+    properties:
+      error:
+        example: book not found
+        type: string
+      progress:
+        $ref: '#/definitions/entity.ReadingProgress'
+      status:
+        enum:
+        - ok
+        - error
+        example: ok
+        type: string
+    type: object
+  v1.BatchProgress:
+    properties:
+      kitab:
+        items:
+          $ref: '#/definitions/v1.BatchKitabProgress'
+        maxItems: 100
+        type: array
+      quran:
+        items:
+          $ref: '#/definitions/v1.BatchQuranProgress'
+        maxItems: 100
+        type: array
+    type: object
+  v1.BatchProgressResults:
+    properties:
+      kitab:
+        items:
+          $ref: '#/definitions/v1.BatchKitabProgressResult'
+        type: array
+      quran:
+        items:
+          $ref: '#/definitions/v1.BatchQuranProgressResult'
+        type: array
+    type: object
+  v1.BatchQuranProgress:
+    properties:
+      ayah_key:
+        example: "73:4"
+        maxLength: 16
+        type: string
+      client_observed_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+    required:
+    - ayah_key
+    type: object
+  v1.BatchQuranProgressResult:
+    properties:
+      error:
+        example: quran ayah not found
+        type: string
+      progress:
+        $ref: '#/definitions/entity.QuranReadingProgress'
+      status:
+        enum:
+        - ok
+        - error
+        example: ok
+        type: string
+    type: object
+  v1.BookHeadingList:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/entity.BookHeading'
+        type: array
+      total:
+        example: 42
+        type: integer
+    type: object
   v1.BookList:
     properties:
-      books:
+      items:
         items:
           $ref: '#/definitions/entity.Book'
         type: array
@@ -2702,7 +3095,7 @@ definitions:
     type: object
   v1.BookQuranReferenceList:
     properties:
-      references:
+      items:
         items:
           $ref: '#/definitions/entity.BookQuranReference'
         type: array
@@ -2731,6 +3124,26 @@ definitions:
     required:
     - question
     type: object
+  v1.BookTOCList:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/entity.BookTOCNode'
+        type: array
+      total:
+        example: 12
+        type: integer
+    type: object
+  v1.CategoryList:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/entity.Category'
+        type: array
+      total:
+        example: 12
+        type: integer
+    type: object
   v1.ChangePassword:
     properties:
       current_password:
@@ -2746,6 +3159,16 @@ definitions:
     required:
     - current_password
     - new_password
+    type: object
+  v1.ContinueReadingList:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/entity.ContinueReadingEntry'
+        type: array
+      total:
+        example: 3
+        type: integer
     type: object
   v1.CreateProductionProject:
     properties:
@@ -2938,9 +3361,27 @@ definitions:
     type: object
   v1.EmailChanged:
     properties:
+      access_token:
+        example: eyJhbGciOiJIUzI1NiIs...
+        type: string
       email_changed:
         example: true
         type: boolean
+      expires_in:
+        example: 900
+        type: integer
+      refresh_token:
+        example: 3q2-7w8X9yZ0aB1cD2eF3g...
+        type: string
+      session_id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      token:
+        example: eyJhbGciOiJIUzI1NiIs...
+        type: string
+      token_type:
+        example: Bearer
+        type: string
     type: object
   v1.EmailDeliveryEventList:
     properties:
@@ -3188,6 +3629,9 @@ definitions:
       request_id:
         example: 550e8400-e29b-41d4-a716-446655440000
         type: string
+      retry_after:
+        example: 60
+        type: integer
     type: object
   v1.ForgotPassword:
     properties:
@@ -3196,6 +3640,37 @@ definitions:
         type: string
     required:
     - email
+    type: object
+  v1.Introspection:
+    properties:
+      role:
+        example: editor
+        type: string
+      session_id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      user_id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      username:
+        example: johndoe
+        type: string
+    type: object
+  v1.KhatamHistory:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/entity.QuranKhatamCycle'
+        type: array
+      total:
+        example: 2
+        type: integer
+    type: object
+  v1.LoggedOut:
+    properties:
+      logged_out:
+        example: true
+        type: boolean
     type: object
   v1.Login:
     properties:
@@ -3211,9 +3686,18 @@ definitions:
     - email
     - password
     type: object
+  v1.Logout:
+    properties:
+      refresh_token:
+        example: 3q2-7w8X9yZ0aB1cD2eF3g...
+        maxLength: 512
+        type: string
+    required:
+    - refresh_token
+    type: object
   v1.PageList:
     properties:
-      pages:
+      items:
         items:
           $ref: '#/definitions/entity.BookPage'
         type: array
@@ -3223,9 +3707,27 @@ definitions:
     type: object
   v1.PasswordChanged:
     properties:
+      access_token:
+        example: eyJhbGciOiJIUzI1NiIs...
+        type: string
+      expires_in:
+        example: 900
+        type: integer
       password_changed:
         example: true
         type: boolean
+      refresh_token:
+        example: 3q2-7w8X9yZ0aB1cD2eF3g...
+        type: string
+      session_id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      token:
+        example: eyJhbGciOiJIUzI1NiIs...
+        type: string
+      token_type:
+        example: Bearer
+        type: string
     type: object
   v1.PasswordReset:
     properties:
@@ -3313,12 +3815,35 @@ definitions:
         example: 42
         type: integer
     type: object
+  v1.QuranAyahList:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/entity.QuranAyah'
+        type: array
+      total:
+        example: 7
+        type: integer
+    type: object
+  v1.QuranNavigationSegmentList:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/entity.QuranNavigationSegment'
+        type: array
+      total:
+        example: 30
+        type: integer
+    type: object
   v1.QuranProgressList:
     properties:
-      surahs:
+      items:
         items:
           $ref: '#/definitions/entity.QuranReadingProgress'
         type: array
+      total:
+        example: 3
+        type: integer
     type: object
   v1.QuranReaderAyah:
     properties:
@@ -3384,6 +3909,16 @@ definitions:
       url:
         type: string
     type: object
+  v1.QuranReaderAyahList:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/v1.QuranReaderAyah'
+        type: array
+      total:
+        example: 7
+        type: integer
+    type: object
   v1.QuranReaderAyahTranslation:
     properties:
       text:
@@ -3394,9 +3929,19 @@ definitions:
       text:
         type: string
     type: object
+  v1.QuranRecitationList:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/entity.QuranRecitation'
+        type: array
+      total:
+        example: 3
+        type: integer
+    type: object
   v1.QuranSearchList:
     properties:
-      results:
+      items:
         items:
           $ref: '#/definitions/entity.QuranSearchResult'
         type: array
@@ -3485,6 +4030,35 @@ definitions:
         type: string
       url:
         type: string
+    type: object
+  v1.QuranSurahList:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/entity.QuranSurah'
+        type: array
+      total:
+        example: 114
+        type: integer
+    type: object
+  v1.QuranTranslationSourceList:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/entity.QuranTranslationSource'
+        type: array
+      total:
+        example: 2
+        type: integer
+    type: object
+  v1.RefreshToken:
+    properties:
+      refresh_token:
+        example: 3q2-7w8X9yZ0aB1cD2eF3g...
+        maxLength: 512
+        type: string
+    required:
+    - refresh_token
     type: object
   v1.Register:
     properties:
@@ -3642,6 +4216,25 @@ definitions:
     required:
     - display_title
     type: object
+  v1.SaveProgress:
+    properties:
+      client_observed_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      heading_id:
+        example: 10
+        minimum: 1
+        type: integer
+      page_id:
+        example: 12
+        minimum: 1
+        type: integer
+      progress_percent:
+        example: 32.5
+        maximum: 100
+        minimum: 0
+        type: number
+    type: object
   v1.SaveQuranProgress:
     properties:
       ayah_key:
@@ -3676,6 +4269,7 @@ definitions:
   v1.SaveSectionTranslationDraft:
     properties:
       content:
+        maxLength: 200000
         type: string
       metadata:
         type: object
@@ -3687,6 +4281,17 @@ definitions:
         type: string
     required:
     - content
+    type: object
+  v1.SaveTOCProgress:
+    properties:
+      client_observed_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      progress_percent:
+        example: 32.5
+        maximum: 100
+        minimum: 0
+        type: number
     type: object
   v1.SavedItemList:
     properties:
@@ -3700,10 +4305,62 @@ definitions:
     type: object
   v1.SavedItemTags:
     properties:
-      tags:
+      items:
+        example:
+        - tafsir
+        - favorit
         items:
           type: string
         type: array
+      total:
+        example: 2
+        type: integer
+    type: object
+  v1.SessionInfo:
+    properties:
+      client_ip:
+        example: 203.0.113.42
+        type: string
+      created_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      expires_at:
+        example: "2026-02-01T00:00:00Z"
+        type: string
+      id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      is_current:
+        example: true
+        type: boolean
+      last_used_at:
+        example: "2026-01-02T08:30:00Z"
+        type: string
+      user_agent:
+        example: Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)
+        type: string
+    type: object
+  v1.SessionList:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/v1.SessionInfo'
+        type: array
+      total:
+        example: 2
+        type: integer
+    type: object
+  v1.SessionRevoked:
+    properties:
+      session_revoked:
+        example: true
+        type: boolean
+    type: object
+  v1.SessionsRevoked:
+    properties:
+      sessions_revoked:
+        example: true
+        type: boolean
     type: object
   v1.SetUserRole:
     properties:
@@ -3717,6 +4374,23 @@ definitions:
     - email
     - role
     type: object
+  v1.SourceEditRevisionList:
+    properties:
+      revisions:
+        items:
+          $ref: '#/definitions/entity.BookSourceEditRevision'
+        type: array
+      total:
+        example: 42
+        type: integer
+    type: object
+  v1.StartKhatamCycle:
+    properties:
+      notes:
+        example: Khatam Ramadhan
+        maxLength: 2000
+        type: string
+    type: object
   v1.TaskList:
     properties:
       tasks:
@@ -3729,8 +4403,23 @@ definitions:
     type: object
   v1.Token:
     properties:
+      access_token:
+        example: eyJhbGciOiJIUzI1NiIs...
+        type: string
+      expires_in:
+        example: 900
+        type: integer
+      refresh_token:
+        example: 3q2-7w8X9yZ0aB1cD2eF3g...
+        type: string
+      session_id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
       token:
         example: eyJhbGciOiJIUzI1NiIs...
+        type: string
+      token_type:
+        example: Bearer
         type: string
     type: object
   v1.TransitionTask:
@@ -3788,10 +4477,8 @@ definitions:
   v1.UpdateSavedItem:
     properties:
       label:
-        maxLength: 255
         type: string
       note:
-        maxLength: 2000
         type: string
       tags:
         items:
@@ -5787,6 +6474,30 @@ paths:
       summary: Forgot password
       tags:
       - auth
+  /auth/introspect:
+    get:
+      description: 'Return the authenticated identity (id, username, role, session)
+        for the presented Bearer token. Built for service-to-service auth bridging
+        (e.g. the collab websocket server): the Auth middleware has already verified
+        signature, token_version and session revocation, so the response reflects
+        live session state with no extra queries.'
+      operationId: auth-introspect
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.Introspection'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Introspect access token
+      tags:
+      - auth
   /auth/login:
     post:
       consumes:
@@ -5824,6 +6535,106 @@ paths:
           schema:
             $ref: '#/definitions/v1.Error'
       summary: Login
+      tags:
+      - auth
+  /auth/logout:
+    post:
+      consumes:
+      - application/json
+      description: 'Revoke the session behind a refresh token. Idempotent: unknown
+        tokens return success.'
+      operationId: logout
+      parameters:
+      - description: Refresh token
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.Logout'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.LoggedOut'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      summary: Logout
+      tags:
+      - auth
+  /auth/logout-all:
+    post:
+      description: Revoke all of the current user's sessions and invalidate outstanding
+        access tokens
+      operationId: logout-all
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.SessionsRevoked'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Logout everywhere
+      tags:
+      - auth
+  /auth/refresh:
+    post:
+      consumes:
+      - application/json
+      description: Exchange a refresh token for a new access/refresh token pair
+      operationId: refresh-session
+      parameters:
+      - description: Refresh token
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.RefreshToken'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.Token'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      summary: Refresh session
       tags:
       - auth
   /auth/register:
@@ -5929,6 +6740,72 @@ paths:
           schema:
             $ref: '#/definitions/v1.Error'
       summary: Reset password
+      tags:
+      - auth
+  /auth/sessions:
+    get:
+      description: List the current user's active devices/sessions (manage devices)
+      operationId: list-sessions
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.SessionList'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: List active sessions
+      tags:
+      - auth
+  /auth/sessions/{id}:
+    delete:
+      description: Revoke one of the current user's sessions (sign out a single device)
+      operationId: revoke-session
+      parameters:
+      - description: Session ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.SessionRevoked'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Revoke a session
       tags:
       - auth
   /auth/verify-email:
@@ -6121,9 +6998,7 @@ paths:
         "200":
           description: OK
           schema:
-            items:
-              $ref: '#/definitions/entity.BookHeading'
-            type: array
+            $ref: '#/definitions/v1.BookHeadingList'
         "400":
           description: Bad Request
           schema:
@@ -6397,9 +7272,7 @@ paths:
         "200":
           description: OK
           schema:
-            items:
-              $ref: '#/definitions/entity.BookTOCNode'
-            type: array
+            $ref: '#/definitions/v1.BookTOCList'
         "400":
           description: Bad Request
           schema:
@@ -6576,9 +7449,7 @@ paths:
         "200":
           description: OK
           schema:
-            items:
-              $ref: '#/definitions/entity.Category'
-            type: array
+            $ref: '#/definitions/v1.CategoryList'
         "400":
           description: Bad Request
           schema:
@@ -6679,6 +7550,115 @@ paths:
       security:
       - BearerAuth: []
       summary: Get source metadata draft
+      tags:
+      - editorial
+  /editorial/books/{book_id}/pages/{page_id}/draft-revisions:
+    get:
+      description: List the newest-first revision history for one page draft. Requires
+        editor or admin role.
+      operationId: editorial-list-page-draft-revisions
+      parameters:
+      - description: Book ID
+        in: path
+        name: book_id
+        required: true
+        type: integer
+      - description: Page ID
+        in: path
+        name: page_id
+        required: true
+        type: integer
+      - description: Page size (default 50, max 200)
+        in: query
+        name: limit
+        type: integer
+      - description: Offset
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.SourceEditRevisionList'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: List page draft revisions
+      tags:
+      - editorial
+  /editorial/books/{book_id}/pages/{page_id}/draft-revisions/{revision_id}/restore:
+    post:
+      description: Replay a previous page draft snapshot as the current draft; the
+        restore creates a new revision. Requires editor or admin role.
+      operationId: editorial-restore-page-draft-revision
+      parameters:
+      - description: Book ID
+        in: path
+        name: book_id
+        required: true
+        type: integer
+      - description: Page ID
+        in: path
+        name: page_id
+        required: true
+        type: integer
+      - description: Revision ID
+        in: path
+        name: revision_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.BookPageEdit'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Restore page draft revision
       tags:
       - editorial
   /editorial/production-activity:
@@ -8639,6 +9619,519 @@ paths:
       summary: Ingest Cloudflare email bounce webhook
       tags:
       - email
+  /me/activity:
+    get:
+      description: Return daily reading-activity buckets and an aggregate for [from,
+        to]. Defaults to the last 30 days ending at to (or the server's UTC date).
+        Activity days follow the local calendar date of each save's client_observed_at
+        offset. Max range 366 days.
+      operationId: get-reading-activity
+      parameters:
+      - description: Start date (YYYY-MM-DD)
+        example: "2026-05-14"
+        in: query
+        name: from
+        type: string
+      - description: End date (YYYY-MM-DD), defaults to today
+        example: "2026-06-12"
+        in: query
+        name: to
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.ReadingActivitySummary'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Get reading activity
+      tags:
+      - me
+  /me/activity/streak:
+    get:
+      description: Return the consecutive-day reading streak. Pass today as the client's
+        local date so the day boundary matches the device; the current streak counts
+        runs ending today or yesterday.
+      operationId: get-reading-streak
+      parameters:
+      - description: Client local date (YYYY-MM-DD), defaults to server UTC date
+        example: "2026-06-12"
+        in: query
+        name: today
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.ReadingStreak'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Get reading streak
+      tags:
+      - me
+  /me/progress:
+    get:
+      description: Return the authenticated user's in-progress books ordered by recent
+        activity (continue-reading shelf), enriched with light book metadata.
+      operationId: list-progress
+      parameters:
+      - default: id
+        description: 'Language code: ar, id, or en'
+        in: query
+        name: lang
+        type: string
+      - default: 50
+        description: Limit
+        in: query
+        name: limit
+        type: integer
+      - default: 0
+        description: Offset
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.ContinueReadingList'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: List reading progress
+      tags:
+      - me
+  /me/progress/{book_id}:
+    get:
+      description: Return the authenticated user's reading position for one book.
+      operationId: get-progress
+      parameters:
+      - description: Book ID
+        in: path
+        name: book_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.ReadingProgress'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Get reading progress
+      tags:
+      - me
+    put:
+      consumes:
+      - application/json
+      description: Upsert the authenticated user's reading position for one book.
+        Older client_observed_at events do not roll back progress.
+      operationId: save-progress
+      parameters:
+      - description: Book ID
+        in: path
+        name: book_id
+        required: true
+        type: integer
+      - description: Reading position
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.SaveProgress'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.ReadingProgress'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Save reading progress
+      tags:
+      - me
+  /me/progress/{book_id}/toc/{heading_id}:
+    put:
+      consumes:
+      - application/json
+      description: Upsert the authenticated user's reading position at a TOC heading.
+        Older client_observed_at events do not roll back progress.
+      operationId: save-toc-progress
+      parameters:
+      - description: Book ID
+        in: path
+        name: book_id
+        required: true
+        type: integer
+      - description: Heading ID
+        in: path
+        name: heading_id
+        required: true
+        type: integer
+      - description: Reading position
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.SaveTOCProgress'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.ReadingProgress'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Save TOC reading progress
+      tags:
+      - me
+  /me/progress/batch:
+    post:
+      consumes:
+      - application/json
+      description: Replay an offline autosave queue in one request (max 100 kitab
+        and 100 Quran entries). Entries are processed in order and reported one-to-one
+        in the response; stale client_observed_at entries are accepted but never roll
+        progress back. Domain failures (e.g. deleted book) mark only that entry as
+        error.
+      operationId: batch-save-progress
+      parameters:
+      - description: Offline progress queue
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.BatchProgress'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.BatchProgressResults'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Batch save reading progress
+      tags:
+      - me
+  /me/quran/khatam:
+    get:
+      description: Return the authenticated user's active khatam cycle with completed
+        juz marks.
+      operationId: get-active-khatam-cycle
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.QuranKhatamCycle'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Get active khatam cycle
+      tags:
+      - me
+    post:
+      consumes:
+      - application/json
+      description: Start a new Quran khatam cycle. Only one active cycle is allowed
+        per user.
+      operationId: start-khatam-cycle
+      parameters:
+      - description: Optional cycle notes
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/v1.StartKhatamCycle'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/entity.QuranKhatamCycle'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Start khatam cycle
+      tags:
+      - me
+  /me/quran/khatam/complete:
+    post:
+      description: Complete the active khatam cycle. Requires all 30 juz to be marked;
+        marking the 30th juz does not auto-complete so accidental marks stay reversible.
+      operationId: complete-khatam-cycle
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.QuranKhatamCycle'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Complete khatam cycle
+      tags:
+      - me
+  /me/quran/khatam/history:
+    get:
+      description: Return the authenticated user's completed khatam cycles ordered
+        by completion recency.
+      operationId: list-khatam-history
+      parameters:
+      - default: 50
+        description: Limit
+        in: query
+        name: limit
+        type: integer
+      - default: 0
+        description: Offset
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.KhatamHistory'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: List khatam history
+      tags:
+      - me
+  /me/quran/khatam/juz/{juz_number}:
+    delete:
+      description: Remove one juz mark (1-30) from the active khatam cycle. Idempotent.
+      operationId: unmark-khatam-juz
+      parameters:
+      - description: Juz number (1-30)
+        in: path
+        name: juz_number
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.QuranKhatamCycle'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Unmark khatam juz
+      tags:
+      - me
+    put:
+      description: Mark one juz (1-30) as completed on the active khatam cycle. Idempotent.
+      operationId: mark-khatam-juz
+      parameters:
+      - description: Juz number (1-30)
+        in: path
+        name: juz_number
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.QuranKhatamCycle'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Mark khatam juz
+      tags:
+      - me
   /me/quran/progress:
     get:
       description: Return the authenticated user's latest Quran resume position across
@@ -8837,7 +10330,9 @@ paths:
       consumes:
       - application/json
       description: Save a Quran ayah/range or kitab page/heading. Posting the same
-        target updates label, note, and tags.
+        target updates provided metadata only; absent label/note/tags never clear
+        stored values (clearing is PATCH's job). Returns 201 when a new item is created,
+        200 when an existing one is updated.
       operationId: upsert-saved-item
       parameters:
       - description: Saved item target and metadata
@@ -8851,6 +10346,10 @@ paths:
       responses:
         "200":
           description: OK
+          schema:
+            $ref: '#/definitions/entity.SavedItem'
+        "201":
+          description: Created
           schema:
             $ref: '#/definitions/entity.SavedItem'
         "400":
@@ -8905,7 +10404,9 @@ paths:
     patch:
       consumes:
       - application/json
-      description: Update label, note, and tags for one private saved item.
+      description: Partially update label, note, and tags for one private saved item.
+        Absent fields stay unchanged; explicit null clears a field. A body without
+        any known field is rejected.
       operationId: update-saved-item
       parameters:
       - description: Saved item ID
@@ -8970,6 +10471,47 @@ paths:
       security:
       - BearerAuth: []
       summary: List saved item tags
+      tags:
+      - me
+  /me/sync:
+    get:
+      description: Return reading progress (kitab and Quran), saved items, and khatam
+        cycles changed at or after the since cursor; omit since for a full snapshot.
+        Delivery is at-least-once (a server-side overlap window re-sends recent rows),
+        so clients must upsert idempotently by key and store server_time as the next
+        cursor. saved_item_ids lists every current saved-item ID for delete reconciliation;
+        when saved_items_full_resync=true the ID list was over the server cap (10000)
+        and arrives empty — rebuild the local saved-items store by paging GET /me/saved-items
+        instead of deleting by absence.
+      operationId: sync-personal-data
+      parameters:
+      - description: RFC3339 cursor from the previous response's server_time
+        example: "2026-06-11T00:00:00Z"
+        in: query
+        name: since
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.PersonalSyncSnapshot'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Sync personal reader data
       tags:
       - me
   /quran/ayahs/{ayah_key}:
@@ -9040,9 +10582,7 @@ paths:
         "200":
           description: OK
           schema:
-            items:
-              $ref: '#/definitions/entity.QuranNavigationSegment'
-            type: array
+            $ref: '#/definitions/v1.QuranNavigationSegmentList'
         "400":
           description: Bad Request
           schema:
@@ -9105,9 +10645,7 @@ paths:
         "200":
           description: OK
           schema:
-            items:
-              $ref: '#/definitions/entity.QuranAyah'
-            type: array
+            $ref: '#/definitions/v1.QuranAyahList'
         "400":
           description: Bad Request
           schema:
@@ -9139,9 +10677,7 @@ paths:
         "200":
           description: OK
           schema:
-            items:
-              $ref: '#/definitions/entity.QuranNavigationSegment'
-            type: array
+            $ref: '#/definitions/v1.QuranNavigationSegmentList'
         "400":
           description: Bad Request
           schema:
@@ -9204,9 +10740,7 @@ paths:
         "200":
           description: OK
           schema:
-            items:
-              $ref: '#/definitions/entity.QuranAyah'
-            type: array
+            $ref: '#/definitions/v1.QuranAyahList'
         "400":
           description: Bad Request
           schema:
@@ -9234,9 +10768,7 @@ paths:
         "200":
           description: OK
           schema:
-            items:
-              $ref: '#/definitions/entity.QuranRecitation'
-            type: array
+            $ref: '#/definitions/v1.QuranRecitationList'
         "500":
           description: Internal Server Error
           schema:
@@ -9311,9 +10843,7 @@ paths:
         "200":
           description: OK
           schema:
-            items:
-              $ref: '#/definitions/entity.QuranSurah'
-            type: array
+            $ref: '#/definitions/v1.QuranSurahList'
         "400":
           description: Bad Request
           schema:
@@ -9462,9 +10992,7 @@ paths:
         "200":
           description: OK
           schema:
-            items:
-              $ref: '#/definitions/entity.QuranAyah'
-            type: array
+            $ref: '#/definitions/v1.QuranAyahList'
         "400":
           description: Bad Request
           schema:
@@ -9497,9 +11025,7 @@ paths:
         "200":
           description: OK
           schema:
-            items:
-              $ref: '#/definitions/entity.QuranTranslationSource'
-            type: array
+            $ref: '#/definitions/v1.QuranTranslationSourceList'
         "400":
           description: Bad Request
           schema:

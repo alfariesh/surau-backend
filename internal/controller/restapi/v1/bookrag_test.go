@@ -20,7 +20,7 @@ func TestAskBookRAGBadRequest(t *testing.T) {
 	t.Parallel()
 
 	app := newBookRAGTestApp(&fakeBookRAG{})
-	req := httptest.NewRequest(http.MethodPost, "/v1/books/797/rag", bytes.NewBufferString(`{"question":""}`))
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/v1/books/797/rag", bytes.NewBufferString(`{"question":""}`))
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := app.Test(req)
@@ -42,7 +42,8 @@ func TestAskBookRAG(t *testing.T) {
 			},
 		},
 	})
-	req := httptest.NewRequest(
+	req := httptest.NewRequestWithContext(
+		t.Context(),
 		http.MethodPost,
 		"/v1/books/797/rag?lang=id",
 		bytes.NewBufferString(`{"question":"Apa definisi hadis sahih?","max_citations":5}`),
@@ -62,7 +63,8 @@ func TestAskBookRAGUnsupportedLanguage(t *testing.T) {
 	t.Parallel()
 
 	app := newBookRAGTestApp(&fakeBookRAG{err: entity.ErrUnsupportedLanguage})
-	req := httptest.NewRequest(
+	req := httptest.NewRequestWithContext(
+		t.Context(),
 		http.MethodPost,
 		"/v1/books/797/rag?lang=fr",
 		bytes.NewBufferString(`{"question":"Apa definisi hadis sahih?"}`),
@@ -82,7 +84,8 @@ func TestAskBookRAGStream(t *testing.T) {
 	t.Parallel()
 
 	app := newBookRAGTestApp(&fakeBookRAG{stream: true})
-	req := httptest.NewRequest(
+	req := httptest.NewRequestWithContext(
+		t.Context(),
 		http.MethodPost,
 		"/v1/books/797/rag",
 		bytes.NewBufferString(`{"question":"Apa definisi hadis sahih?","stream":true}`),

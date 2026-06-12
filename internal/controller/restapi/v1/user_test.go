@@ -187,7 +187,7 @@ func TestAuthRoutesEmailVerificationErrors(t *testing.T) {
 			t.Parallel()
 
 			app := newAuthTestApp(tt.user)
-			req := httptest.NewRequest(tt.method, tt.path, bytes.NewBufferString(tt.body))
+			req := httptest.NewRequestWithContext(t.Context(), tt.method, tt.path, bytes.NewBufferString(tt.body))
 			req.Header.Set("Content-Type", "application/json")
 
 			resp, err := app.Test(req)
@@ -196,6 +196,162 @@ func TestAuthRoutesEmailVerificationErrors(t *testing.T) {
 			assert.Equal(t, tt.wantStatus, resp.StatusCode)
 		})
 	}
+}
+
+func TestAuthSessionRoutes(t *testing.T) {
+	t.Parallel()
+
+	t.Run("login returns access and refresh tokens with legacy alias", func(t *testing.T) {
+		t.Parallel()
+
+		app := newAuthTestApp(&fakeAuthUser{})
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/auth/login",
+			bytes.NewBufferString(`{"email":"test@example.com","password":"password123"}`))
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := app.Test(req)
+		require.NoError(t, err)
+
+		defer resp.Body.Close()
+
+		assert.Equal(t, http.StatusOK, resp.StatusCode)
+
+		body := readTestBody(t, resp)
+		assert.Contains(t, body, `"token":"token"`)
+		assert.Contains(t, body, `"access_token":"token"`)
+		assert.Contains(t, body, `"refresh_token":"refresh-token"`)
+		assert.Contains(t, body, `"token_type":"Bearer"`)
+		assert.Contains(t, body, `"expires_in"`)
+	})
+
+	t.Run("refresh returns new token pair", func(t *testing.T) {
+		t.Parallel()
+
+		app := newAuthTestApp(&fakeAuthUser{})
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/auth/refresh",
+			bytes.NewBufferString(`{"refresh_token":"some-refresh-token"}`))
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := app.Test(req)
+		require.NoError(t, err)
+
+		defer resp.Body.Close()
+
+		assert.Equal(t, http.StatusOK, resp.StatusCode)
+
+		body := readTestBody(t, resp)
+		assert.Contains(t, body, `"access_token":"token"`)
+		assert.Contains(t, body, `"refresh_token":"refresh-token"`)
+	})
+
+	t.Run("refresh invalid token returns 401", func(t *testing.T) {
+		t.Parallel()
+
+		app := newAuthTestApp(&fakeAuthUser{refreshErr: entity.ErrInvalidRefreshToken})
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/auth/refresh",
+			bytes.NewBufferString(`{"refresh_token":"bad-token"}`))
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := app.Test(req)
+		require.NoError(t, err)
+
+		defer resp.Body.Close()
+
+		assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+	})
+
+	t.Run("refresh rate limited sets Retry-After", func(t *testing.T) {
+		t.Parallel()
+
+		app := newAuthTestApp(&fakeAuthUser{
+			refreshErr: &entity.AuthRateLimitedError{RetryAfter: 90 * time.Second},
+		})
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/auth/refresh",
+			bytes.NewBufferString(`{"refresh_token":"some-refresh-token"}`))
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := app.Test(req)
+		require.NoError(t, err)
+
+		defer resp.Body.Close()
+
+		assert.Equal(t, http.StatusTooManyRequests, resp.StatusCode)
+		assert.Equal(t, "90", resp.Header.Get("Retry-After"))
+		assert.Contains(t, readTestBody(t, resp), `"retry_after":90`)
+	})
+
+	t.Run("logout returns 200", func(t *testing.T) {
+		t.Parallel()
+
+		app := newAuthTestApp(&fakeAuthUser{})
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/auth/logout",
+			bytes.NewBufferString(`{"refresh_token":"some-refresh-token"}`))
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := app.Test(req)
+		require.NoError(t, err)
+
+		defer resp.Body.Close()
+
+		assert.Equal(t, http.StatusOK, resp.StatusCode)
+		assert.Contains(t, readTestBody(t, resp), `"logged_out":true`)
+	})
+
+	t.Run("logout-all returns 200", func(t *testing.T) {
+		t.Parallel()
+
+		app := newAuthTestApp(&fakeAuthUser{})
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/auth/logout-all", http.NoBody)
+
+		resp, err := app.Test(req)
+		require.NoError(t, err)
+
+		defer resp.Body.Close()
+
+		assert.Equal(t, http.StatusOK, resp.StatusCode)
+		assert.Contains(t, readTestBody(t, resp), `"sessions_revoked":true`)
+	})
+
+	t.Run("change password returns fresh token pair", func(t *testing.T) {
+		t.Parallel()
+
+		app := newAuthTestApp(&fakeAuthUser{})
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/auth/change-password",
+			bytes.NewBufferString(`{"current_password":"oldpassword123","new_password":"newpassword123"}`))
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := app.Test(req)
+		require.NoError(t, err)
+
+		defer resp.Body.Close()
+
+		assert.Equal(t, http.StatusOK, resp.StatusCode)
+
+		body := readTestBody(t, resp)
+		assert.Contains(t, body, `"password_changed":true`)
+		assert.Contains(t, body, `"access_token":"token"`)
+		assert.Contains(t, body, `"refresh_token":"refresh-token"`)
+	})
+
+	t.Run("verify email change returns fresh token pair", func(t *testing.T) {
+		t.Parallel()
+
+		app := newAuthTestApp(&fakeAuthUser{})
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/auth/change-email/verify",
+			bytes.NewBufferString(`{"token":"valid"}`))
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := app.Test(req)
+		require.NoError(t, err)
+
+		defer resp.Body.Close()
+
+		assert.Equal(t, http.StatusOK, resp.StatusCode)
+
+		body := readTestBody(t, resp)
+		assert.Contains(t, body, `"email_changed":true`)
+		assert.Contains(t, body, `"refresh_token":"refresh-token"`)
+	})
 }
 
 func TestUserProfileAndPreferenceRoutes(t *testing.T) {
@@ -270,7 +426,7 @@ func TestUserProfileAndPreferenceRoutes(t *testing.T) {
 			t.Parallel()
 
 			app := newAuthTestApp(tt.user)
-			req := httptest.NewRequest(tt.method, tt.path, bytes.NewBufferString(tt.body))
+			req := httptest.NewRequestWithContext(t.Context(), tt.method, tt.path, bytes.NewBufferString(tt.body))
 			req.Header.Set("Content-Type", "application/json")
 
 			resp, err := app.Test(req)
@@ -316,6 +472,13 @@ func newAuthTestApp(user *fakeAuthUser) *fiber.App {
 	}
 	app.Post("/auth/register", controller.register)
 	app.Post("/auth/login", controller.login)
+	app.Post("/auth/refresh", controller.refreshToken)
+	app.Post("/auth/logout", controller.logout)
+	app.Post("/auth/logout-all", func(ctx *fiber.Ctx) error {
+		ctx.Locals("userID", "user-id-123")
+
+		return controller.logoutAll(ctx)
+	})
 	app.Post("/auth/verify-email", controller.verifyEmail)
 	app.Post("/auth/resend-verification", controller.resendVerification)
 	app.Post("/auth/forgot-password", controller.forgotPassword)
@@ -360,6 +523,17 @@ func newAuthTestApp(user *fakeAuthUser) *fiber.App {
 
 		return controller.updatePreferences(ctx)
 	})
+	app.Get("/auth/sessions", func(ctx *fiber.Ctx) error {
+		ctx.Locals("userID", "user-id-123")
+		ctx.Locals("sessionID", "fam-current")
+
+		return controller.listSessions(ctx)
+	})
+	app.Delete("/auth/sessions/:id", func(ctx *fiber.Ctx) error {
+		ctx.Locals("userID", "user-id-123")
+
+		return controller.revokeSession(ctx)
+	})
 
 	return app
 }
@@ -383,24 +557,74 @@ type fakeAuthUser struct {
 	requestEmailChangeErr error
 	verifyEmailChangeErr  error
 	deleteAccountErr      error
+	refreshErr            error
+	logoutErr             error
+	logoutAllErr          error
+	listSessionsErr       error
+	revokeSessionErr      error
 
-	roleActorID    string
-	roleActorEmail string
-	roleEmail      string
-	role           string
-	roleUser       entity.User
+	sessions          []entity.AuthSession
+	revokeSessionUser string
+	revokeSessionID   string
+	roleActorID       string
+	roleActorEmail    string
+	roleEmail         string
+	role              string
+	roleUser          entity.User
 }
 
 func (f *fakeAuthUser) Register(context.Context, string, string, string) (entity.User, error) {
 	return entity.User{ID: "user-id-123"}, f.registerErr
 }
 
-func (f *fakeAuthUser) Login(context.Context, string, string) (string, error) {
+func (f *fakeAuthUser) Login(context.Context, string, string) (entity.LoginResult, error) {
 	if f.loginErr != nil {
-		return "", f.loginErr
+		return entity.LoginResult{}, f.loginErr
 	}
 
-	return "token", nil
+	return testLoginResult(), nil
+}
+
+func (f *fakeAuthUser) RefreshSession(context.Context, string) (entity.LoginResult, error) {
+	if f.refreshErr != nil {
+		return entity.LoginResult{}, f.refreshErr
+	}
+
+	return testLoginResult(), nil
+}
+
+func (f *fakeAuthUser) Logout(context.Context, string) error {
+	return f.logoutErr
+}
+
+func (f *fakeAuthUser) LogoutAll(context.Context, string) error {
+	return f.logoutAllErr
+}
+
+func (f *fakeAuthUser) ListSessions(_ context.Context, _ string) ([]entity.AuthSession, error) {
+	if f.listSessionsErr != nil {
+		return nil, f.listSessionsErr
+	}
+
+	return f.sessions, nil
+}
+
+func (f *fakeAuthUser) RevokeSession(_ context.Context, userID, sessionID string) error {
+	f.revokeSessionUser = userID
+	f.revokeSessionID = sessionID
+
+	return f.revokeSessionErr
+}
+
+func testLoginResult() entity.LoginResult {
+	return entity.LoginResult{
+		User:             entity.User{ID: "user-id-123"},
+		SessionID:        "session-id-123",
+		AccessToken:      "token",
+		AccessExpiresAt:  time.Now().Add(15 * time.Minute),
+		RefreshToken:     "refresh-token",
+		RefreshExpiresAt: time.Now().Add(720 * time.Hour),
+	}
 }
 
 func (f *fakeAuthUser) GetUser(context.Context, string) (entity.User, error) {
@@ -535,16 +759,24 @@ func (f *fakeAuthUser) ResetPassword(context.Context, string, string) error {
 	return f.resetErr
 }
 
-func (f *fakeAuthUser) ChangePassword(context.Context, string, string, string) error {
-	return f.changeErr
+func (f *fakeAuthUser) ChangePassword(context.Context, string, string, string) (entity.LoginResult, error) {
+	if f.changeErr != nil {
+		return entity.LoginResult{}, f.changeErr
+	}
+
+	return testLoginResult(), nil
 }
 
 func (f *fakeAuthUser) RequestEmailChange(context.Context, string, string, string) error {
 	return f.requestEmailChangeErr
 }
 
-func (f *fakeAuthUser) VerifyEmailChange(context.Context, string, string, string) error {
-	return f.verifyEmailChangeErr
+func (f *fakeAuthUser) VerifyEmailChange(context.Context, string, string, string) (entity.LoginResult, error) {
+	if f.verifyEmailChangeErr != nil {
+		return entity.LoginResult{}, f.verifyEmailChangeErr
+	}
+
+	return testLoginResult(), nil
 }
 
 func (f *fakeAuthUser) DeleteAccount(context.Context, string, string) error {

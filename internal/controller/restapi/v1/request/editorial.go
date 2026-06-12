@@ -22,13 +22,24 @@ type SaveMetadataDraft struct {
 
 // SavePageDraft -.
 type SavePageDraft struct {
-	ContentHTML string `json:"content_html" validate:"required"`
+	ContentHTML string `json:"content_html" validate:"required,max=300000"`
 } // @name v1.SavePageDraft
 
 // SaveHeadingDraft -.
 type SaveHeadingDraft struct {
 	Content string `json:"content" validate:"required,max=2000"`
 } // @name v1.SaveHeadingDraft
+
+// CollabSavePageDraft is the internal payload the collab server uses to sync
+// a merged collaborative document into the page draft pipeline. actor_id is
+// the last mutating editor; contributors lists everyone connected during the
+// debounce window (recorded for attribution, not authorization — the service
+// token is the trust boundary).
+type CollabSavePageDraft struct {
+	ContentHTML  string   `json:"content_html" validate:"required,max=300000"`
+	ActorID      string   `json:"actor_id" validate:"required,uuid"`
+	Contributors []string `json:"contributors" validate:"omitempty,dive,uuid"`
+} // @name v1.CollabSavePageDraft
 
 // AddCollectionItem -.
 type AddCollectionItem struct {
@@ -86,7 +97,7 @@ type SaveCategoryTranslationDraft struct {
 // SaveSectionTranslationDraft -.
 type SaveSectionTranslationDraft struct {
 	Title    *string         `json:"title" validate:"omitempty,max=1000"`
-	Content  string          `json:"content" validate:"required"`
+	Content  string          `json:"content" validate:"required,max=200000"`
 	Source   *string         `json:"source" validate:"omitempty,max=255"`
 	Metadata json.RawMessage `json:"metadata" swaggertype:"object"`
 } // @name v1.SaveSectionTranslationDraft

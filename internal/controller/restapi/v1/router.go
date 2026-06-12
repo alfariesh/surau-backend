@@ -14,6 +14,17 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/limiter"
 )
 
+// editorialSavesPerMinute caps per-user editorial draft writes (autosave bursts).
+const editorialSavesPerMinute = 120
+
+// personalWritesPerMinute caps per-user personal writes (progress autosave,
+// saved items, khatam) so reader clients cannot hammer the database.
+const personalWritesPerMinute = 240
+
+// sessionRequestsPerMinute caps per-user session listing/revocation, the only
+// protected auth endpoints without a DB-backed limit in the use case.
+const sessionRequestsPerMinute = 30
+
 // NewRoutes -.
 func NewRoutes(
 	apiV1Group fiber.Router,
@@ -46,6 +57,8 @@ func NewRoutes(
 	{
 		authGroup.Post("/register", r.register)
 		authGroup.Post("/login", r.login)
+		authGroup.Post("/refresh", r.refreshToken)
+		authGroup.Post("/logout", r.logout)
 		authGroup.Post("/verify-email", r.verifyEmail)
 		authGroup.Post("/resend-verification", r.resendVerification)
 		authGroup.Post("/forgot-password", r.forgotPassword)
@@ -104,12 +117,20 @@ func NewRoutes(
 	// Protected routes
 	protected := apiV1Group.Group("", middleware.Auth(jwtManager, u))
 
+	// One shared per-user budget for session listing/revocation; in-memory
+	// store is fine (single instance, prefork off) like the other limiters.
+	sessionLimiter := newSessionLimiter()
+
 	protectedAuthGroup := protected.Group("/auth")
 	{
+		protectedAuthGroup.Get("/introspect", r.introspect)
 		protectedAuthGroup.Post("/change-password", r.changePassword)
 		protectedAuthGroup.Post("/change-email/request", r.requestEmailChange)
 		protectedAuthGroup.Post("/change-email/verify", r.verifyEmailChange)
 		protectedAuthGroup.Post("/delete-account", r.deleteAccount)
+		protectedAuthGroup.Post("/logout-all", r.logoutAll)
+		protectedAuthGroup.Get("/sessions", sessionLimiter, r.listSessions)
+		protectedAuthGroup.Delete("/sessions/:id", sessionLimiter, r.revokeSession)
 	}
 
 	userGroup := protected.Group("/user")
@@ -122,8 +143,35 @@ func NewRoutes(
 		userGroup.Patch("/email-preferences", r.updateEmailPreferences)
 	}
 
-	meGroup := protected.Group("/me")
+	// One shared per-user budget across all personal writes. GETs stay
+	// uncounted. In-memory store is fine: single instance, prefork off.
+	personalWriteLimiter := limiter.New(limiter.Config{
+		Max:        personalWritesPerMinute,
+		Expiration: time.Minute,
+		KeyGenerator: func(ctx *fiber.Ctx) string {
+			if userID, ok := ctx.Locals("userID").(string); ok && userID != "" {
+				return userID
+			}
+
+			return ctx.IP()
+		},
+		Next: func(ctx *fiber.Ctx) bool {
+			switch ctx.Method() {
+			case fiber.MethodPut, fiber.MethodPost, fiber.MethodPatch, fiber.MethodDelete:
+				return false
+			}
+
+			return true
+		},
+	})
+
+	meGroup := protected.Group("/me", personalWriteLimiter)
 	{
+		meGroup.Get("/sync", r.syncPersonalData)
+		meGroup.Get("/activity", r.getReadingActivity)
+		meGroup.Get("/activity/streak", r.getReadingStreak)
+		meGroup.Get("/progress", r.listProgress)
+		meGroup.Post("/progress/batch", r.batchSaveProgress)
 		meGroup.Get("/progress/:book_id", r.getProgress)
 		meGroup.Put("/progress/:book_id", r.saveProgress)
 		meGroup.Put("/progress/:book_id/toc/:heading_id", r.saveTOCProgress)
@@ -131,6 +179,12 @@ func NewRoutes(
 		meGroup.Put("/quran/progress", r.saveQuranProgress)
 		meGroup.Get("/quran/progress/surahs", r.listQuranSurahProgress)
 		meGroup.Get("/quran/progress/surahs/:surah_id", r.getQuranSurahProgress)
+		meGroup.Post("/quran/khatam", r.startKhatamCycle)
+		meGroup.Get("/quran/khatam", r.getActiveKhatamCycle)
+		meGroup.Get("/quran/khatam/history", r.listKhatamHistory)
+		meGroup.Post("/quran/khatam/complete", r.completeKhatamCycle)
+		meGroup.Put("/quran/khatam/juz/:juz_number", r.markKhatamJuz)
+		meGroup.Delete("/quran/khatam/juz/:juz_number", r.unmarkKhatamJuz)
 		meGroup.Get("/saved-items", r.listSavedItems)
 		meGroup.Post("/saved-items", r.upsertSavedItem)
 		meGroup.Get("/saved-items/tags", r.listSavedItemTags)
@@ -138,7 +192,25 @@ func NewRoutes(
 		meGroup.Delete("/saved-items/:id", r.deleteSavedItem)
 	}
 
-	editorialGroup := protected.Group("/editorial")
+	// One shared per-user budget across all editorial draft saves so autosave
+	// bursts cannot monopolize the database. In-memory store is fine: single
+	// instance, prefork off.
+	editorialSaveLimiter := limiter.New(limiter.Config{
+		Max:        editorialSavesPerMinute,
+		Expiration: time.Minute,
+		KeyGenerator: func(ctx *fiber.Ctx) string {
+			if userID, ok := ctx.Locals("userID").(string); ok && userID != "" {
+				return userID
+			}
+
+			return ctx.IP()
+		},
+		Next: func(ctx *fiber.Ctx) bool {
+			return ctx.Method() != fiber.MethodPut
+		},
+	})
+
+	editorialGroup := protected.Group("/editorial", editorialSaveLimiter)
 	{
 		editorialReviewGroup := editorialGroup.Group(
 			"",
@@ -187,6 +259,8 @@ func NewRoutes(
 		editorialReviewGroup.Put("/books/:book_id/metadata-draft", r.editorialSaveMetadataDraft)
 		editorialReviewGroup.Get("/books/:book_id/pages/:page_id", r.editorialGetPageEdit)
 		editorialReviewGroup.Put("/books/:book_id/pages/:page_id/draft", r.editorialSavePageDraft)
+		editorialReviewGroup.Get("/books/:book_id/pages/:page_id/draft-revisions", r.editorialListPageDraftRevisions)
+		editorialReviewGroup.Post("/books/:book_id/pages/:page_id/draft-revisions/:revision_id/restore", r.editorialRestorePageDraftRevision)
 		editorialReviewGroup.Get("/books/:book_id/headings/:heading_id/draft", r.editorialGetHeadingDraft)
 		editorialReviewGroup.Put("/books/:book_id/headings/:heading_id/draft", r.editorialSaveHeadingDraft)
 
@@ -243,4 +317,20 @@ func NewRoutes(
 			emailGroup.Post("/campaigns/:id/cancel", r.adminEmailCancelCampaign)
 		}
 	}
+}
+
+// newSessionLimiter caps per-user session listing/revocation requests; the
+// key falls back to the client IP when no authenticated user is present.
+func newSessionLimiter() fiber.Handler {
+	return limiter.New(limiter.Config{
+		Max:        sessionRequestsPerMinute,
+		Expiration: time.Minute,
+		KeyGenerator: func(ctx *fiber.Ctx) string {
+			if userID, ok := ctx.Locals("userID").(string); ok && userID != "" {
+				return userID
+			}
+
+			return ctx.IP()
+		},
+	})
 }

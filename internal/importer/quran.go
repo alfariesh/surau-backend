@@ -721,12 +721,12 @@ func fillAyahNavigation(assets *quranAssetSet) {
 		}
 		if ayah.JuzNumber == nil {
 			if number, ok := quranDivisionNumber(ayah.SurahID, ayah.AyahNumber, quranCanonicalJuzStarts); ok {
-				ayah.JuzNumber = intPtr(number)
+				ayah.JuzNumber = new(number)
 			}
 		}
 		if ayah.HizbNumber == nil {
 			if number, ok := quranDivisionNumber(ayah.SurahID, ayah.AyahNumber, quranCanonicalHizbStarts); ok {
-				ayah.HizbNumber = intPtr(number)
+				ayah.HizbNumber = new(number)
 			}
 		}
 	}
@@ -752,8 +752,9 @@ func compareAyahPosition(leftSurahID, leftAyahNumber, rightSurahID, rightAyahNum
 	return leftAyahNumber - rightAyahNumber
 }
 
+//go:fix inline
 func intPtr(value int) *int {
-	return &value
+	return new(value)
 }
 
 func parseTranslationSimple(path string, assets *quranAssetSet) error {
@@ -1052,7 +1053,8 @@ func importQuranAssets(ctx context.Context, pool *pgxpool.Pool, opts QuranAssetO
 
 	batch := &pgx.Batch{}
 	for _, surah := range assets.surahs {
-		batch.Queue(`
+		batch.Queue(
+			`
 INSERT INTO quran_surahs (
     surah_id, name_arabic, name_latin, name_translation, revelation_type, ayah_count, metadata, updated_at
 )
@@ -1084,7 +1086,8 @@ ON CONFLICT (surah_id) DO UPDATE SET
 
 	batch = &pgx.Batch{}
 	for _, ayah := range assets.ayahs {
-		batch.Queue(`
+		batch.Queue(
+			`
 INSERT INTO quran_ayahs (
     surah_id, ayah_number, ayah_key, text_qpc_hafs, text_imlaei_simple, search_text,
     script_type, font_family, page_number, juz_number, hizb_number, metadata, updated_at
@@ -1147,7 +1150,8 @@ func upsertQuranSurahInfos(
 
 	batch := &pgx.Batch{}
 	for _, info := range assets.surahInfos {
-		batch.Queue(`
+		batch.Queue(
+			`
 INSERT INTO quran_surah_infos (
     surah_id, lang, surah_name, text_html, short_text, source_name, source_url,
     qul_resource_id, format, license_status, checksum, metadata, imported_at, updated_at
@@ -1263,7 +1267,9 @@ func insertQuranImportRuns(ctx context.Context, pool *pgxpool.Pool, opts QuranAs
 		if checksum == "" {
 			continue
 		}
-		batch.Queue(`
+
+		batch.Queue(
+			`
 INSERT INTO quran_import_runs (
     id, source_name, source_url, qul_resource_id, resource_type, format,
     checksum, license_status, metadata, dry_run, imported_at, created_at
@@ -1305,7 +1311,8 @@ func upsertQuranTranslationSource(
 	}
 	metadataJSON, _ := json.Marshal(metadata)
 
-	_, err := pool.Exec(ctx, `
+	_, err := pool.Exec(
+		ctx, `
 INSERT INTO quran_translation_sources (
     id, lang, name, source_url, qul_resource_id, format, license_status,
     checksum, metadata, imported_at, updated_at
@@ -1347,7 +1354,8 @@ func upsertQuranTranslations(
 ) error {
 	batch := &pgx.Batch{}
 	for _, translation := range assets.translations {
-		batch.Queue(`
+		batch.Queue(
+			`
 INSERT INTO quran_ayah_translations (
     source_id, surah_id, ayah_number, ayah_key, lang, text, footnotes, chunks, metadata, updated_at
 )
@@ -1390,7 +1398,8 @@ func upsertQuranTransliterations(
 
 	sourceBatch := &pgx.Batch{}
 	for _, source := range assets.transliterationSources {
-		sourceBatch.Queue(`
+		sourceBatch.Queue(
+			`
 INSERT INTO quran_transliteration_sources (
     id, lang, name, source_url, format, license_status, checksum, metadata, imported_at, updated_at
 )
@@ -1421,7 +1430,8 @@ ON CONFLICT (id) DO UPDATE SET
 
 	transliterationBatch := &pgx.Batch{}
 	for _, transliteration := range assets.transliterations {
-		transliterationBatch.Queue(`
+		transliterationBatch.Queue(
+			`
 INSERT INTO quran_ayah_transliterations (
     source_id, surah_id, ayah_number, ayah_key, lang, text, metadata, updated_at
 )
@@ -1459,7 +1469,8 @@ func upsertQuranAudio(
 
 	batch := &pgx.Batch{}
 	for _, recitation := range assets.recitations {
-		batch.Queue(`
+		batch.Queue(
+			`
 INSERT INTO quran_recitations (
     id, name, reciter_name, style, mode, source_url, qul_resource_id, format,
     license_status, checksum, metadata, imported_at, updated_at
@@ -1496,7 +1507,8 @@ ON CONFLICT (id) DO UPDATE SET
 
 	batch = &pgx.Batch{}
 	for _, track := range assets.audioTracks {
-		batch.Queue(`
+		batch.Queue(
+			`
 INSERT INTO quran_audio_tracks (
     recitation_id, track_type, track_key, surah_id, ayah_number, audio_url,
     duration_ms, duration_seconds, mime_type, metadata, updated_at
@@ -1527,7 +1539,8 @@ ON CONFLICT (recitation_id, track_type, track_key) DO UPDATE SET
 
 	batch = &pgx.Batch{}
 	for _, segment := range assets.audioSegments {
-		batch.Queue(`
+		batch.Queue(
+			`
 INSERT INTO quran_audio_segments (
     recitation_id, track_type, track_key, surah_id, ayah_number, segment_index,
     timestamp_from_ms, timestamp_to_ms, duration_ms, metadata, updated_at

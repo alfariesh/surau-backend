@@ -132,11 +132,52 @@ services:
       RAG_TREE_BEAM_SIZE: ${RAG_TREE_BEAM_SIZE:-3}
       RAG_TREE_MAX_TURNS: ${RAG_TREE_MAX_TURNS:-6}
       RAG_TREE_MAX_BLOCKS_PER_TURN: ${RAG_TREE_MAX_BLOCKS_PER_TURN:-6}
+      HTTP_BODY_LIMIT_BYTES: ${HTTP_BODY_LIMIT_BYTES:-4194304}
+      # Realtime collaborative editing bridge (see docs/collab.md). When
+      # enabled, also start the collab service: compose --profile collab up.
+      COLLAB_ENABLED: ${COLLAB_ENABLED:-false}
+      COLLAB_SERVICE_TOKEN: ${COLLAB_SERVICE_TOKEN:-}
     depends_on:
       db:
         condition: service_healthy
     ports:
       - "${APP_BIND_ADDR:-127.0.0.1}:${APP_PUBLISHED_PORT:-8080}:8080"
+    networks:
+      - internal
+
+  # Realtime collaborative editing websocket server (Yjs/Hocuspocus).
+  # Opt-in: docker compose --profile collab up -d --build app collab
+  # Caddy must proxy /collab to 127.0.0.1:8090 and return 404 for /internal
+  # (see docs/collab.md, Operations).
+  collab:
+    image: ${COLLAB_IMAGE:-surau-collab:latest}
+    build:
+      context: ./collab-server
+      dockerfile: Dockerfile
+    profiles:
+      - collab
+    restart: unless-stopped
+    environment:
+      COLLAB_PORT: "8090"
+      COLLAB_PG_URL: ${PG_URL:?set PG_URL}
+      COLLAB_GO_API_URL: http://app:8080
+      COLLAB_SERVICE_TOKEN: ${COLLAB_SERVICE_TOKEN:?set COLLAB_SERVICE_TOKEN}
+      COLLAB_DEBOUNCE_MS: ${COLLAB_DEBOUNCE_MS:-3000}
+      COLLAB_DEBOUNCE_MAX_MS: ${COLLAB_DEBOUNCE_MAX_MS:-10000}
+      COLLAB_TOKEN_GRACE_MS: ${COLLAB_TOKEN_GRACE_MS:-30000}
+      COLLAB_LOG_LEVEL: ${LOG_LEVEL:-info}
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8090/healthz').then((r) => process.exit(r.status === 200 ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    depends_on:
+      db:
+        condition: service_healthy
+      app:
+        condition: service_started
+    ports:
+      - "${COLLAB_BIND_ADDR:-127.0.0.1}:${COLLAB_PUBLISHED_PORT:-8090}:8090"
     networks:
       - internal
 

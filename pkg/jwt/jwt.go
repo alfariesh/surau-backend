@@ -35,10 +35,12 @@ type Manager struct {
 type TokenClaims struct {
 	UserID       string
 	TokenVersion int64
+	SessionID    string
 }
 
 type registeredClaims struct {
-	TokenVersion int64 `json:"token_version"`
+	TokenVersion int64  `json:"token_version"`
+	SessionID    string `json:"sid,omitempty"`
 	jwtlib.RegisteredClaims
 }
 
@@ -61,21 +63,31 @@ func New(secret string, duration time.Duration, issuer, audience string) *Manage
 
 // GenerateToken creates a new JWT token for the given user ID.
 func (m *Manager) GenerateToken(userID string, tokenVersion ...int64) (string, error) {
-	if strings.TrimSpace(userID) == "" {
-		return "", ErrEmptySubject
-	}
-
 	version := int64(0)
 	if len(tokenVersion) > 0 {
 		version = tokenVersion[0]
 	}
 
+	token, _, err := m.GenerateSessionToken(userID, version, "")
+
+	return token, err
+}
+
+// GenerateSessionToken creates an access token bound to a session family and
+// returns the token with its expiry time.
+func (m *Manager) GenerateSessionToken(userID string, tokenVersion int64, sessionID string) (string, time.Time, error) {
+	if strings.TrimSpace(userID) == "" {
+		return "", time.Time{}, ErrEmptySubject
+	}
+
 	now := time.Now().UTC()
+	expiresAt := now.Add(m.duration)
 	token := jwtlib.NewWithClaims(jwtlib.SigningMethodHS256, registeredClaims{
-		TokenVersion: version,
+		TokenVersion: tokenVersion,
+		SessionID:    sessionID,
 		RegisteredClaims: jwtlib.RegisteredClaims{
 			Subject:   userID,
-			ExpiresAt: jwtlib.NewNumericDate(now.Add(m.duration)),
+			ExpiresAt: jwtlib.NewNumericDate(expiresAt),
 			IssuedAt:  jwtlib.NewNumericDate(now),
 			ID:        uuid.NewString(),
 			Issuer:    m.issuer,
@@ -85,10 +97,10 @@ func (m *Manager) GenerateToken(userID string, tokenVersion ...int64) (string, e
 
 	tokenString, err := token.SignedString([]byte(m.secret))
 	if err != nil {
-		return "", fmt.Errorf("jwt - GenerateToken - token.SignedString: %w", err)
+		return "", time.Time{}, fmt.Errorf("jwt - GenerateSessionToken - token.SignedString: %w", err)
 	}
 
-	return tokenString, nil
+	return tokenString, expiresAt, nil
 }
 
 // ParseToken validates a JWT token and returns the user ID.
@@ -135,5 +147,6 @@ func (m *Manager) ParseTokenClaims(tokenString string) (TokenClaims, error) {
 	return TokenClaims{
 		UserID:       sub,
 		TokenVersion: claims.TokenVersion,
+		SessionID:    claims.SessionID,
 	}, nil
 }

@@ -6,12 +6,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	sq "github.com/Masterminds/squirrel"
 	"github.com/evrone/go-clean-template/internal/entity"
 	"github.com/evrone/go-clean-template/internal/repo"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"golang.org/x/sync/errgroup"
 )
 
 type productionQuerier interface {
@@ -160,12 +162,14 @@ func (r *EditorialRepo) UpdateProductionProject(
 	actorID,
 	projectID string,
 	patch entity.BookProductionProjectPatch,
+	expected *time.Time,
 ) (entity.BookProductionProject, error) {
 	builder := r.Builder.
 		Update("book_production_projects").
 		Set("updated_by", actorID).
 		Set("updated_at", sq.Expr("now()")).
 		Where(sq.Eq{"id": projectID}).
+		Where("(?::timestamptz IS NULL OR updated_at = ?)", expected, expected).
 		Suffix(`RETURNING id, book_id, lang, workflow_status, publication_status, requires_review,
           requires_audio, priority, owner_id, notes, created_by, updated_by, published_by,
           created_at, updated_at, published_at, archived_at`)
@@ -201,6 +205,18 @@ func (r *EditorialRepo) UpdateProductionProject(
 	project, err := scanProductionProject(r.Pool.QueryRow(ctx, sqlText, args...))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
+			// Zero rows under a non-nil expected can mean either a stale
+			// precondition or a missing project — disambiguate once.
+			if expected != nil {
+				var exists bool
+				if existsErr := r.Pool.QueryRow(
+					ctx,
+					`SELECT EXISTS (SELECT 1 FROM book_production_projects WHERE id = $1)`, projectID,
+				).Scan(&exists); existsErr == nil && exists {
+					return entity.BookProductionProject{}, entity.ErrPreconditionFailed
+				}
+			}
+
 			return entity.BookProductionProject{}, entity.ErrProductionProjectNotFound
 		}
 
@@ -228,13 +244,12 @@ func (r *EditorialRepo) ProductionCompleteness(
 }
 
 // ProductionWorkspace returns a compact production dashboard for one project.
+// After the two ordered fetches (project, then book for author/category ids)
+// the remaining independent lookups run concurrently — they previously executed
+// as 6+ sequential round trips, which dominated workspace latency. pgxpool is
+// safe for concurrent use; parallelism is bounded by the pool size.
 func (r *EditorialRepo) ProductionWorkspace(ctx context.Context, projectID string) (entity.BookProductionWorkspace, error) {
 	project, err := r.GetProductionProject(ctx, projectID)
-	if err != nil {
-		return entity.BookProductionWorkspace{}, err
-	}
-
-	completeness, err := r.productionCompleteness(ctx, r.Pool, project)
 	if err != nil {
 		return entity.BookProductionWorkspace{}, err
 	}
@@ -244,77 +259,116 @@ func (r *EditorialRepo) ProductionWorkspace(ctx context.Context, projectID strin
 		return entity.BookProductionWorkspace{}, err
 	}
 
-	metadataFinal := productionFinalExists(ctx, r.Pool, `
+	var (
+		completeness entity.BookProductionCompleteness
+		metadata     entity.ProductionAssetStatus
+		author       *entity.ProductionAssetStatus
+		category     *entity.ProductionAssetStatus
+		headings     []entity.BookProductionWorkspaceHeading
+	)
+
+	group, groupCtx := errgroup.WithContext(ctx)
+
+	group.Go(func() error {
+		var completenessErr error
+
+		completeness, completenessErr = r.productionCompleteness(groupCtx, r.Pool, project)
+
+		return completenessErr
+	})
+
+	group.Go(func() error {
+		metadataFinal := productionFinalExists(groupCtx, r.Pool, `
 SELECT EXISTS (
     SELECT 1
     FROM book_metadata_translations
     WHERE book_id = $1 AND lang = $2 AND is_deleted = false
 )`, project.BookID, project.Lang)
-	metadata, err := productionScalarAssetStatus(
-		ctx,
-		r.Pool,
-		project,
-		entity.ProductionAssetBookMetadata,
-		true,
-		"book_metadata_translation_edits",
-		"NULLIF(BTRIM(display_title), '') IS NOT NULL",
-		metadataFinal,
-	)
-	if err != nil {
-		return entity.BookProductionWorkspace{}, err
-	}
 
-	var author *entity.ProductionAssetStatus
+		var metadataErr error
+
+		metadata, metadataErr = productionScalarAssetStatus(
+			groupCtx,
+			r.Pool,
+			project,
+			entity.ProductionAssetBookMetadata,
+			true,
+			"book_metadata_translation_edits",
+			"NULLIF(BTRIM(display_title), '') IS NOT NULL",
+			metadataFinal,
+		)
+
+		return metadataErr
+	})
+
 	if book.AuthorID != nil {
-		authorFinal := productionFinalExists(ctx, r.Pool, `
+		group.Go(func() error {
+			authorFinal := productionFinalExists(groupCtx, r.Pool, `
 SELECT EXISTS (
     SELECT 1
     FROM author_translations
     WHERE author_id = $1 AND lang = $2 AND is_deleted = false
 )`, *book.AuthorID, project.Lang)
-		authorStatus, statusErr := productionScalarAssetStatus(
-			ctx,
-			r.Pool,
-			project,
-			entity.ProductionAssetAuthorMetadata,
-			true,
-			"author_translation_edits",
-			"NULLIF(BTRIM(name), '') IS NOT NULL",
-			authorFinal,
-		)
-		if statusErr != nil {
-			return entity.BookProductionWorkspace{}, statusErr
-		}
-		author = &authorStatus
+
+			authorStatus, statusErr := productionScalarAssetStatus(
+				groupCtx,
+				r.Pool,
+				project,
+				entity.ProductionAssetAuthorMetadata,
+				true,
+				"author_translation_edits",
+				"NULLIF(BTRIM(name), '') IS NOT NULL",
+				authorFinal,
+			)
+			if statusErr != nil {
+				return statusErr
+			}
+
+			author = &authorStatus
+
+			return nil
+		})
 	}
 
-	var category *entity.ProductionAssetStatus
 	if book.CategoryID != nil {
-		categoryFinal := productionFinalExists(ctx, r.Pool, `
+		group.Go(func() error {
+			categoryFinal := productionFinalExists(groupCtx, r.Pool, `
 SELECT EXISTS (
     SELECT 1
     FROM category_translations
     WHERE category_id = $1 AND lang = $2 AND is_deleted = false
 )`, *book.CategoryID, project.Lang)
-		categoryStatus, statusErr := productionScalarAssetStatus(
-			ctx,
-			r.Pool,
-			project,
-			entity.ProductionAssetCategoryMetadata,
-			true,
-			"category_translation_edits",
-			"NULLIF(BTRIM(name), '') IS NOT NULL",
-			categoryFinal,
-		)
-		if statusErr != nil {
-			return entity.BookProductionWorkspace{}, statusErr
-		}
-		category = &categoryStatus
+
+			categoryStatus, statusErr := productionScalarAssetStatus(
+				groupCtx,
+				r.Pool,
+				project,
+				entity.ProductionAssetCategoryMetadata,
+				true,
+				"category_translation_edits",
+				"NULLIF(BTRIM(name), '') IS NOT NULL",
+				categoryFinal,
+			)
+			if statusErr != nil {
+				return statusErr
+			}
+
+			category = &categoryStatus
+
+			return nil
+		})
 	}
 
-	headings, err := productionWorkspaceHeadings(ctx, r.Pool, project)
-	if err != nil {
-		return entity.BookProductionWorkspace{}, err
+	group.Go(func() error {
+		var headingsErr error
+
+		headings, headingsErr = productionWorkspaceHeadings(groupCtx, r.Pool, project)
+
+		return headingsErr
+	})
+
+	if waitErr := group.Wait(); waitErr != nil {
+		return entity.BookProductionWorkspace{}, waitErr
 	}
 
 	return entity.BookProductionWorkspace{
@@ -509,9 +563,7 @@ func (r *EditorialRepo) RestoreProductionDraftRevision(
 	if err != nil {
 		return entity.BookProductionDraftRevision{}, fmt.Errorf("EditorialRepo - RestoreProductionDraftRevision - begin: %w", err)
 	}
-	defer func() {
-		_ = tx.Rollback(ctx)
-	}()
+	defer rollbackTx(ctx, tx)
 
 	if _, err = lockProductionProject(ctx, tx, projectID); err != nil {
 		return entity.BookProductionDraftRevision{}, err
@@ -606,16 +658,19 @@ func (r *EditorialRepo) SaveMetadataTranslationDraft(
 	actorID,
 	projectID string,
 	edit entity.BookMetadataTranslationEdit,
+	expected *time.Time,
 ) (entity.BookMetadataTranslationEdit, error) {
 	tx, err := r.Pool.Begin(ctx)
 	if err != nil {
 		return entity.BookMetadataTranslationEdit{}, fmt.Errorf("EditorialRepo - SaveMetadataTranslationDraft - begin: %w", err)
 	}
-	defer func() {
-		_ = tx.Rollback(ctx)
-	}()
+	defer rollbackTx(ctx, tx)
 
 	if _, err = lockProductionProject(ctx, tx, projectID); err != nil {
+		return entity.BookMetadataTranslationEdit{}, err
+	}
+
+	if err := ensureProductionDraftExpected(ctx, tx, expected, "book_metadata_translation_edits", "project_id = $1", projectID); err != nil {
 		return entity.BookMetadataTranslationEdit{}, err
 	}
 
@@ -677,8 +732,8 @@ RETURNING project_id, display_title, bibliography, hint, description, source, me
 	return saved, nil
 }
 
-func (r *EditorialRepo) DeleteMetadataTranslationDraft(ctx context.Context, actorID, projectID string) error {
-	return r.deleteProductionDraft(ctx, actorID, projectID, entity.ProductionAssetBookMetadata, nil, "book_metadata_translation_edits", "project_id = $1", projectID)
+func (r *EditorialRepo) DeleteMetadataTranslationDraft(ctx context.Context, actorID, projectID string, expected *time.Time) error {
+	return r.deleteProductionDraft(ctx, actorID, projectID, entity.ProductionAssetBookMetadata, nil, expected, "book_metadata_translation_edits", "project_id = $1", projectID)
 }
 
 func (r *EditorialRepo) GetAuthorTranslationDraft(ctx context.Context, projectID string) (entity.AuthorTranslationEdit, error) {
@@ -694,16 +749,19 @@ func (r *EditorialRepo) SaveAuthorTranslationDraft(
 	actorID,
 	projectID string,
 	edit entity.AuthorTranslationEdit,
+	expected *time.Time,
 ) (entity.AuthorTranslationEdit, error) {
 	tx, err := r.Pool.Begin(ctx)
 	if err != nil {
 		return entity.AuthorTranslationEdit{}, fmt.Errorf("EditorialRepo - SaveAuthorTranslationDraft - begin: %w", err)
 	}
-	defer func() {
-		_ = tx.Rollback(ctx)
-	}()
+	defer rollbackTx(ctx, tx)
 
 	if _, err = lockProductionProject(ctx, tx, projectID); err != nil {
+		return entity.AuthorTranslationEdit{}, err
+	}
+
+	if err := ensureProductionDraftExpected(ctx, tx, expected, "author_translation_edits", "project_id = $1", projectID); err != nil {
 		return entity.AuthorTranslationEdit{}, err
 	}
 
@@ -762,8 +820,8 @@ RETURNING project_id, name, biography, death_text, source, metadata, review_stat
 	return saved, nil
 }
 
-func (r *EditorialRepo) DeleteAuthorTranslationDraft(ctx context.Context, actorID, projectID string) error {
-	return r.deleteProductionDraft(ctx, actorID, projectID, entity.ProductionAssetAuthorMetadata, nil, "author_translation_edits", "project_id = $1", projectID)
+func (r *EditorialRepo) DeleteAuthorTranslationDraft(ctx context.Context, actorID, projectID string, expected *time.Time) error {
+	return r.deleteProductionDraft(ctx, actorID, projectID, entity.ProductionAssetAuthorMetadata, nil, expected, "author_translation_edits", "project_id = $1", projectID)
 }
 
 func (r *EditorialRepo) GetCategoryTranslationDraft(ctx context.Context, projectID string) (entity.CategoryTranslationEdit, error) {
@@ -778,16 +836,19 @@ func (r *EditorialRepo) SaveCategoryTranslationDraft(
 	actorID,
 	projectID string,
 	edit entity.CategoryTranslationEdit,
+	expected *time.Time,
 ) (entity.CategoryTranslationEdit, error) {
 	tx, err := r.Pool.Begin(ctx)
 	if err != nil {
 		return entity.CategoryTranslationEdit{}, fmt.Errorf("EditorialRepo - SaveCategoryTranslationDraft - begin: %w", err)
 	}
-	defer func() {
-		_ = tx.Rollback(ctx)
-	}()
+	defer rollbackTx(ctx, tx)
 
 	if _, err = lockProductionProject(ctx, tx, projectID); err != nil {
+		return entity.CategoryTranslationEdit{}, err
+	}
+
+	if err := ensureProductionDraftExpected(ctx, tx, expected, "category_translation_edits", "project_id = $1", projectID); err != nil {
 		return entity.CategoryTranslationEdit{}, err
 	}
 
@@ -841,8 +902,8 @@ RETURNING project_id, name, source, metadata, review_status, review_note, update
 	return saved, nil
 }
 
-func (r *EditorialRepo) DeleteCategoryTranslationDraft(ctx context.Context, actorID, projectID string) error {
-	return r.deleteProductionDraft(ctx, actorID, projectID, entity.ProductionAssetCategoryMetadata, nil, "category_translation_edits", "project_id = $1", projectID)
+func (r *EditorialRepo) DeleteCategoryTranslationDraft(ctx context.Context, actorID, projectID string, expected *time.Time) error {
+	return r.deleteProductionDraft(ctx, actorID, projectID, entity.ProductionAssetCategoryMetadata, nil, expected, "category_translation_edits", "project_id = $1", projectID)
 }
 
 func (r *EditorialRepo) GetSectionTranslationDraft(
@@ -862,16 +923,19 @@ func (r *EditorialRepo) SaveSectionTranslationDraft(
 	actorID,
 	projectID string,
 	edit entity.SectionTranslationEdit,
+	expected *time.Time,
 ) (entity.SectionTranslationEdit, error) {
 	tx, err := r.Pool.Begin(ctx)
 	if err != nil {
 		return entity.SectionTranslationEdit{}, fmt.Errorf("EditorialRepo - SaveSectionTranslationDraft - begin: %w", err)
 	}
-	defer func() {
-		_ = tx.Rollback(ctx)
-	}()
+	defer rollbackTx(ctx, tx)
 
 	if _, err = lockProductionProject(ctx, tx, projectID); err != nil {
+		return entity.SectionTranslationEdit{}, err
+	}
+
+	if err := ensureProductionDraftExpected(ctx, tx, expected, "section_translation_edits", "project_id = $1 AND heading_id = $2", projectID, edit.HeadingID); err != nil {
 		return entity.SectionTranslationEdit{}, err
 	}
 	if err = ensureProjectHeadingWithQuerier(ctx, tx, projectID, edit.HeadingID); err != nil {
@@ -933,8 +997,8 @@ RETURNING project_id, heading_id, title, content, source, metadata, review_statu
 	return saved, nil
 }
 
-func (r *EditorialRepo) DeleteSectionTranslationDraft(ctx context.Context, actorID, projectID string, headingID int) error {
-	return r.deleteProductionDraft(ctx, actorID, projectID, entity.ProductionAssetSectionTranslation, &headingID, "section_translation_edits", "project_id = $1 AND heading_id = $2", projectID, headingID)
+func (r *EditorialRepo) DeleteSectionTranslationDraft(ctx context.Context, actorID, projectID string, headingID int, expected *time.Time) error {
+	return r.deleteProductionDraft(ctx, actorID, projectID, entity.ProductionAssetSectionTranslation, &headingID, expected, "section_translation_edits", "project_id = $1 AND heading_id = $2", projectID, headingID)
 }
 
 func (r *EditorialRepo) GetHeadingSummaryDraft(
@@ -954,16 +1018,19 @@ func (r *EditorialRepo) SaveHeadingSummaryDraft(
 	actorID,
 	projectID string,
 	edit entity.HeadingSummaryEdit,
+	expected *time.Time,
 ) (entity.HeadingSummaryEdit, error) {
 	tx, err := r.Pool.Begin(ctx)
 	if err != nil {
 		return entity.HeadingSummaryEdit{}, fmt.Errorf("EditorialRepo - SaveHeadingSummaryDraft - begin: %w", err)
 	}
-	defer func() {
-		_ = tx.Rollback(ctx)
-	}()
+	defer rollbackTx(ctx, tx)
 
 	if _, err = lockProductionProject(ctx, tx, projectID); err != nil {
+		return entity.HeadingSummaryEdit{}, err
+	}
+
+	if err := ensureProductionDraftExpected(ctx, tx, expected, "heading_summary_edits", "project_id = $1 AND heading_id = $2", projectID, edit.HeadingID); err != nil {
 		return entity.HeadingSummaryEdit{}, err
 	}
 	if err = ensureProjectHeadingWithQuerier(ctx, tx, projectID, edit.HeadingID); err != nil {
@@ -1023,8 +1090,8 @@ RETURNING project_id, heading_id, summary, source, metadata, review_status,
 	return saved, nil
 }
 
-func (r *EditorialRepo) DeleteHeadingSummaryDraft(ctx context.Context, actorID, projectID string, headingID int) error {
-	return r.deleteProductionDraft(ctx, actorID, projectID, entity.ProductionAssetHeadingSummary, &headingID, "heading_summary_edits", "project_id = $1 AND heading_id = $2", projectID, headingID)
+func (r *EditorialRepo) DeleteHeadingSummaryDraft(ctx context.Context, actorID, projectID string, headingID int, expected *time.Time) error {
+	return r.deleteProductionDraft(ctx, actorID, projectID, entity.ProductionAssetHeadingSummary, &headingID, expected, "heading_summary_edits", "project_id = $1 AND heading_id = $2", projectID, headingID)
 }
 
 func (r *EditorialRepo) GetSectionAudioDraft(
@@ -1044,16 +1111,19 @@ func (r *EditorialRepo) SaveSectionAudioDraft(
 	actorID,
 	projectID string,
 	edit entity.SectionAudioEdit,
+	expected *time.Time,
 ) (entity.SectionAudioEdit, error) {
 	tx, err := r.Pool.Begin(ctx)
 	if err != nil {
 		return entity.SectionAudioEdit{}, fmt.Errorf("EditorialRepo - SaveSectionAudioDraft - begin: %w", err)
 	}
-	defer func() {
-		_ = tx.Rollback(ctx)
-	}()
+	defer rollbackTx(ctx, tx)
 
 	if _, err = lockProductionProject(ctx, tx, projectID); err != nil {
+		return entity.SectionAudioEdit{}, err
+	}
+
+	if err := ensureProductionDraftExpected(ctx, tx, expected, "section_audio_edits", "project_id = $1 AND heading_id = $2", projectID, edit.HeadingID); err != nil {
 		return entity.SectionAudioEdit{}, err
 	}
 	if err = ensureProjectHeadingWithQuerier(ctx, tx, projectID, edit.HeadingID); err != nil {
@@ -1118,8 +1188,8 @@ RETURNING project_id, heading_id, url, narrator, duration_seconds, mime_type, me
 	return saved, nil
 }
 
-func (r *EditorialRepo) DeleteSectionAudioDraft(ctx context.Context, actorID, projectID string, headingID int) error {
-	return r.deleteProductionDraft(ctx, actorID, projectID, entity.ProductionAssetSectionAudio, &headingID, "section_audio_edits", "project_id = $1 AND heading_id = $2", projectID, headingID)
+func (r *EditorialRepo) DeleteSectionAudioDraft(ctx context.Context, actorID, projectID string, headingID int, expected *time.Time) error {
+	return r.deleteProductionDraft(ctx, actorID, projectID, entity.ProductionAssetSectionAudio, &headingID, expected, "section_audio_edits", "project_id = $1 AND heading_id = $2", projectID, headingID)
 }
 
 // ReviewProductionAsset changes review status for one draft asset.
@@ -1180,14 +1250,13 @@ func (r *EditorialRepo) PublishProductionProject(
 	ctx context.Context,
 	actorID,
 	projectID string,
+	expected *time.Time,
 ) (entity.BookProductionProject, error) {
 	tx, err := r.Pool.Begin(ctx)
 	if err != nil {
 		return entity.BookProductionProject{}, fmt.Errorf("EditorialRepo - PublishProductionProject - begin: %w", err)
 	}
-	defer func() {
-		_ = tx.Rollback(ctx)
-	}()
+	defer rollbackTx(ctx, tx)
 
 	project, err := scanProductionProject(tx.QueryRow(ctx, `
 SELECT id, book_id, lang, workflow_status, publication_status, requires_review,
@@ -1202,6 +1271,11 @@ FOR UPDATE`, projectID))
 		}
 
 		return entity.BookProductionProject{}, fmt.Errorf("EditorialRepo - PublishProductionProject - lock: %w", err)
+	}
+
+	// The row is locked (FOR UPDATE); comparing here is race-free.
+	if expected != nil && !project.UpdatedAt.Equal(*expected) {
+		return entity.BookProductionProject{}, entity.ErrPreconditionFailed
 	}
 
 	completeness, err := r.productionCompleteness(ctx, tx, project)
@@ -1248,6 +1322,7 @@ func (r *EditorialRepo) UnpublishProductionProject(
 	ctx context.Context,
 	actorID,
 	projectID string,
+	expected *time.Time,
 ) (entity.BookProductionProject, error) {
 	project, err := scanProductionProject(r.Pool.QueryRow(ctx, `
 UPDATE book_production_projects
@@ -1255,12 +1330,24 @@ SET publication_status = 'hidden',
     workflow_status = CASE WHEN workflow_status = 'published' THEN 'ready' ELSE workflow_status END,
     updated_by = $2,
     updated_at = now()
-WHERE id = $1
+WHERE id = $1 AND ($3::timestamptz IS NULL OR updated_at = $3)
 RETURNING id, book_id, lang, workflow_status, publication_status, requires_review,
           requires_audio, priority, owner_id, notes, created_by, updated_by, published_by,
-          created_at, updated_at, published_at, archived_at`, projectID, actorID))
+          created_at, updated_at, published_at, archived_at`, projectID, actorID, expected))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
+			// Zero rows under a non-nil expected can mean either a stale
+			// precondition or a missing project — disambiguate once.
+			if expected != nil {
+				var exists bool
+				if existsErr := r.Pool.QueryRow(
+					ctx,
+					`SELECT EXISTS (SELECT 1 FROM book_production_projects WHERE id = $1)`, projectID,
+				).Scan(&exists); existsErr == nil && exists {
+					return entity.BookProductionProject{}, entity.ErrPreconditionFailed
+				}
+			}
+
 			return entity.BookProductionProject{}, entity.ErrProductionProjectNotFound
 		}
 
@@ -1963,15 +2050,31 @@ func (r *EditorialRepo) deleteProductionDraft(
 	projectID,
 	assetType string,
 	headingID *int,
+	expected *time.Time,
 	table,
 	where string,
 	args ...any,
 ) error {
-	result, err := r.Pool.Exec(ctx, fmt.Sprintf("DELETE FROM %s WHERE %s", table, where), args...)
+	// The expected gate rides inside the DELETE so the precondition check and
+	// the delete are one atomic statement.
+	gated := fmt.Sprintf("DELETE FROM %s WHERE %s AND ($%d::timestamptz IS NULL OR updated_at = $%d)",
+		table, where, len(args)+1, len(args)+1)
+
+	result, err := r.Pool.Exec(ctx, gated, append(append([]any{}, args...), expected)...)
 	if err != nil {
 		return fmt.Errorf("delete production draft: %w", err)
 	}
 	if result.RowsAffected() == 0 {
+		if expected != nil {
+			var exists bool
+			if existsErr := r.Pool.QueryRow(
+				ctx,
+				fmt.Sprintf("SELECT EXISTS (SELECT 1 FROM %s WHERE %s)", table, where), args...,
+			).Scan(&exists); existsErr == nil && exists {
+				return entity.ErrPreconditionFailed
+			}
+		}
+
 		return entity.ErrDraftNotFound
 	}
 
@@ -2367,7 +2470,7 @@ func productionAssetStatusFromScan(
 	return status
 }
 
-func productionAssetComplete(required bool, exists bool, contentOK bool, reviewStatus *string, requiresReview bool) bool {
+func productionAssetComplete(required, exists, contentOK bool, reviewStatus *string, requiresReview bool) bool {
 	if !required {
 		return true
 	}
@@ -2396,6 +2499,41 @@ func jsonString(raw entity.RawJSON) string {
 	}
 
 	return string(raw)
+}
+
+// ensureProductionDraftExpected enforces optimistic concurrency for one
+// production draft row. It must run after lockProductionProject in the same
+// transaction: the project row lock serializes every mutation of the project's
+// assets, so a plain read-and-compare here is race-free. A nil expected skips
+// the check; expecting a version of a draft that does not exist fails the
+// precondition.
+func ensureProductionDraftExpected(
+	ctx context.Context,
+	tx pgx.Tx,
+	expected *time.Time,
+	table, where string,
+	args ...any,
+) error {
+	if expected == nil {
+		return nil
+	}
+
+	var updatedAt time.Time
+
+	err := tx.QueryRow(ctx, "SELECT updated_at FROM "+table+" WHERE "+where, args...).Scan(&updatedAt)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return entity.ErrPreconditionFailed
+		}
+
+		return fmt.Errorf("ensure production draft expected: %w", err)
+	}
+
+	if !updatedAt.Equal(*expected) {
+		return entity.ErrPreconditionFailed
+	}
+
+	return nil
 }
 
 func lockProductionProject(ctx context.Context, tx pgx.Tx, projectID string) (entity.BookProductionProject, error) {
@@ -2458,7 +2596,8 @@ func insertProductionDraftRevision(
 		return entity.BookProductionDraftRevision{}, fmt.Errorf("marshal production draft revision: %w", err)
 	}
 
-	revision, err := scanProductionDraftRevision(tx.QueryRow(ctx, `
+	revision, err := scanProductionDraftRevision(tx.QueryRow(
+		ctx, `
 WITH next_version AS (
     SELECT COALESCE(MAX(version), 0) + 1 AS version
     FROM book_production_draft_revisions
@@ -2717,7 +2856,8 @@ func (r *EditorialRepo) recordProductionEvent(
 		}
 	}
 
-	_, err = r.Pool.Exec(ctx, `
+	_, err = r.Pool.Exec(
+		ctx, `
 INSERT INTO book_production_events (
     id, project_id, actor_id, event_type, asset_type, heading_id, note, payload, created_at
 )

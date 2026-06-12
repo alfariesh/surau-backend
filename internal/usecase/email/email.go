@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"html"
+	"maps"
 	"net/mail"
 	"net/url"
 	"strings"
@@ -243,9 +244,45 @@ func (uc *UseCase) SendTransactional(ctx context.Context, req entity.Transaction
 		return fmt.Errorf("EmailUseCase - SendTransactional - GetPublishedEmailTemplateVersion: %w", err)
 	}
 
+	if req.Async {
+		return uc.enqueueTransactional(ctx, message)
+	}
+
 	_, err = uc.sendAndLog(ctx, message, "", "")
 
 	return err
+}
+
+// enqueueTransactional durably queues a transactional message for the
+// background dispatcher instead of calling the provider in-request.
+// Suppression and permanent-bounce handling run at dispatch time
+// (retryTransactionalMessage), matching the synchronous path's outcome.
+//
+//nolint:gocritic // message passed by value to match sendAndLog's signature
+func (uc *UseCase) enqueueTransactional(ctx context.Context, message entity.EmailMessage) error {
+	messageLog, err := uc.createMessageLog(
+		ctx,
+		message,
+		entity.EmailCategoryTransactional,
+		"",
+		"",
+		entity.EmailMessageStatusQueued,
+		0,
+		"",
+		"",
+		nil,
+	)
+	if err != nil {
+		return fmt.Errorf("EmailUseCase - enqueueTransactional - createMessageLog: %w", err)
+	}
+
+	// scheduled_at must be set for the dispatcher to claim the row; attempts
+	// stays 0 so a first dispatch failure starts the regular retry ladder.
+	if _, err = uc.repo.ScheduleEmailMessageRetry(ctx, messageLog.ID, 0, "", "", time.Now().UTC()); err != nil {
+		return fmt.Errorf("EmailUseCase - enqueueTransactional - ScheduleEmailMessageRetry: %w", err)
+	}
+
+	return nil
 }
 
 func (uc *UseCase) Templates(
@@ -2044,7 +2081,8 @@ func emailHTML(view emailView) string {
 	}
 	supportEmail := normalizeSupportEmail(view.SupportEmail)
 
-	return fmt.Sprintf(`<!doctype html>
+	return fmt.Sprintf(
+		`<!doctype html>
 <html lang="%s" dir="%s">
   <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>%s</title></head>
   <body style="margin:0;padding:0;background:#f6f5ef;color:#25241f;font-family:Arial,sans-serif;direction:%s;">
@@ -2462,9 +2500,7 @@ func normalizeVariables(values []string) []string {
 
 func cloneMap(values map[string]string) map[string]string {
 	cloned := map[string]string{}
-	for key, value := range values {
-		cloned[key] = value
-	}
+	maps.Copy(cloned, values)
 
 	return cloned
 }

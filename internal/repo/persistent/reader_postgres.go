@@ -44,11 +44,15 @@ WITH published_books AS (
 covered_books AS (
     SELECT DISTINCT book_id
     FROM book_production_projects
-    WHERE publication_status = 'published'
+    WHERE lang = $1
+      AND publication_status = 'published'
       AND workflow_status <> 'archived'
+      AND $1 <> 'ar'
 )
 SELECT COUNT(*)::INT AS total_books,
        COUNT(*)::INT AS published_count,
+       COUNT(*)::INT AS catalog_published_count,
+       COUNT(DISTINCT cb.book_id)::INT AS production_published_count,
        COUNT(DISTINCT author_id)::INT AS author_count,
        COUNT(DISTINCT category_id)::INT AS category_count,
        COUNT(*) FILTER (WHERE has_content)::INT AS with_content_count,
@@ -68,13 +72,17 @@ WITH published_books AS (
 covered_books AS (
     SELECT DISTINCT book_id
     FROM book_production_projects
-    WHERE publication_status = 'published'
+    WHERE lang = $1
+      AND publication_status = 'published'
       AND workflow_status <> 'archived'
+      AND $1 <> 'ar'
 )
 SELECT pb.category_id,
        CASE WHEN $1 <> 'ar' AND ct.category_id IS NOT NULL THEN ct.name ELSE c.name END AS category_name,
        COUNT(*)::INT AS total,
        COUNT(*)::INT AS published_count,
+       COUNT(*)::INT AS catalog_published_count,
+       COUNT(DISTINCT cb.book_id)::INT AS production_published_count,
        COUNT(DISTINCT cb.book_id)::INT AS coverage_count
 FROM published_books pb
 LEFT JOIN categories c ON c.id = pb.category_id
@@ -337,12 +345,12 @@ func (r *ReaderRepo) ListBooks(ctx context.Context, filter repo.BookFilter) ([]e
 		From("books b").
 		Join("book_publications p ON p.book_id = b.id AND p.status = 'published'").
 		LeftJoin("book_metadata_edits me ON me.book_id = b.id AND me.status = 'published'").
-		LeftJoin("book_production_projects bpp ON bpp.book_id = b.id AND bpp.lang = ? AND bpp.publication_status = 'published' AND bpp.workflow_status <> 'archived' AND ? <> 'ar'", filter.Lang, filter.Lang).
-		LeftJoin("book_metadata_translations bmt ON bmt.book_id = b.id AND bmt.lang = ? AND bmt.is_deleted = false AND bpp.id IS NOT NULL", filter.Lang).
+		LeftJoin("book_production_projects bpp ON bpp.book_id = b.id AND bpp.lang = ? AND bpp.workflow_status <> 'archived' AND ? <> 'ar'", filter.Lang, filter.Lang).
+		LeftJoin("book_metadata_translations bmt ON bmt.book_id = b.id AND bmt.lang = ? AND bmt.is_deleted = false AND bpp.publication_status = 'published'", filter.Lang).
 		LeftJoin("authors a ON a.id = b.author_id").
-		LeftJoin("author_translations at ON at.author_id = a.id AND at.lang = ? AND at.is_deleted = false AND bpp.id IS NOT NULL", filter.Lang).
+		LeftJoin("author_translations at ON at.author_id = a.id AND at.lang = ? AND at.is_deleted = false AND bpp.publication_status = 'published'", filter.Lang).
 		LeftJoin("categories c ON c.id = COALESCE(me.category_id, b.category_id)").
-		LeftJoin("category_translations ct ON ct.category_id = c.id AND ct.lang = ? AND ct.is_deleted = false AND bpp.id IS NOT NULL", filter.Lang).
+		LeftJoin("category_translations ct ON ct.category_id = c.id AND ct.lang = ? AND ct.is_deleted = false AND bpp.publication_status = 'published'", filter.Lang).
 		Where(sq.Eq{"b.is_deleted": false})
 
 	dataBuilder := r.bookSelectBuilder(filter.Lang).
@@ -394,8 +402,11 @@ func (r *ReaderRepo) ListBooks(ctx context.Context, filter repo.BookFilter) ([]e
 
 // GetBookCatalogStats returns full published catalog aggregate counts.
 func (r *ReaderRepo) GetBookCatalogStats(ctx context.Context, lang string) (entity.BookCatalogStats, error) {
-	stats := entity.BookCatalogStats{ByCategory: []entity.BookCategoryStat{}}
-	if err := r.scanBookCatalogTotals(ctx, &stats); err != nil {
+	stats := entity.BookCatalogStats{
+		Scope:      "catalog_global",
+		ByCategory: []entity.BookCategoryStat{},
+	}
+	if err := r.scanBookCatalogTotals(ctx, lang, &stats); err != nil {
 		return entity.BookCatalogStats{}, err
 	}
 
@@ -409,10 +420,12 @@ func (r *ReaderRepo) GetBookCatalogStats(ctx context.Context, lang string) (enti
 	return stats, nil
 }
 
-func (r *ReaderRepo) scanBookCatalogTotals(ctx context.Context, stats *entity.BookCatalogStats) error {
-	err := r.Pool.QueryRow(ctx, bookCatalogStatsTotalsSQL).Scan(
+func (r *ReaderRepo) scanBookCatalogTotals(ctx context.Context, lang string, stats *entity.BookCatalogStats) error {
+	err := r.Pool.QueryRow(ctx, bookCatalogStatsTotalsSQL, lang).Scan(
 		&stats.TotalBooks,
 		&stats.PublishedCount,
+		&stats.CatalogPublishedCount,
+		&stats.ProductionPublishedCount,
 		&stats.AuthorCount,
 		&stats.CategoryCount,
 		&stats.WithContentCount,
@@ -446,6 +459,8 @@ func (r *ReaderRepo) bookCatalogCategoryStats(ctx context.Context, lang string) 
 			&categoryName,
 			&item.Total,
 			&item.PublishedCount,
+			&item.CatalogPublishedCount,
+			&item.ProductionPublishedCount,
 			&item.CoverageCount,
 		); err != nil {
 			return nil, fmt.Errorf("ReaderRepo - GetBookCatalogStats - scan category: %w", err)
@@ -656,45 +671,48 @@ LEFT JOIN book_heading_summaries bhs_lang
     ON bhs_lang.book_id = h.book_id AND bhs_lang.heading_id = h.heading_id AND bhs_lang.lang = $2 AND bhs_lang.is_deleted = false AND ($2 = 'ar' OR bpp.id IS NOT NULL)
 LEFT JOIN book_heading_summaries bhs_ar
     ON bhs_ar.book_id = h.book_id AND bhs_ar.heading_id = h.heading_id AND bhs_ar.lang = 'ar' AND bhs_ar.is_deleted = false
-LEFT JOIN LATERAL (
-    SELECT array_agg(st_lang.lang ORDER BY st_lang.lang) AS available_langs
+LEFT JOIN (
+    SELECT st_lang.heading_id,
+           array_agg(st_lang.lang ORDER BY st_lang.lang) AS available_langs
     FROM section_translations st_lang
     LEFT JOIN book_production_projects bpp_lang
       ON bpp_lang.book_id = st_lang.book_id
      AND bpp_lang.lang = st_lang.lang
      AND bpp_lang.publication_status = 'published'
      AND bpp_lang.workflow_status <> 'archived'
-    WHERE st_lang.book_id = h.book_id
-      AND st_lang.heading_id = h.heading_id
+    WHERE st_lang.book_id = $1
       AND st_lang.is_deleted = false
       AND (st_lang.lang = 'ar' OR bpp_lang.id IS NOT NULL)
-) st_av ON true
-LEFT JOIN LATERAL (
-    SELECT array_agg(bhs_langs.lang ORDER BY bhs_langs.lang) AS available_langs
+    GROUP BY st_lang.heading_id
+) st_av ON st_av.heading_id = h.heading_id
+LEFT JOIN (
+    SELECT bhs_langs.heading_id,
+           array_agg(bhs_langs.lang ORDER BY bhs_langs.lang) AS available_langs
     FROM book_heading_summaries bhs_langs
     LEFT JOIN book_production_projects bpp_lang
       ON bpp_lang.book_id = bhs_langs.book_id
      AND bpp_lang.lang = bhs_langs.lang
      AND bpp_lang.publication_status = 'published'
      AND bpp_lang.workflow_status <> 'archived'
-    WHERE bhs_langs.book_id = h.book_id
-      AND bhs_langs.heading_id = h.heading_id
+    WHERE bhs_langs.book_id = $1
       AND bhs_langs.is_deleted = false
       AND (bhs_langs.lang = 'ar' OR bpp_lang.id IS NOT NULL)
-) bhs_av ON true
-LEFT JOIN LATERAL (
-    SELECT array_agg(sa_lang.lang ORDER BY sa_lang.lang) AS available_langs
+    GROUP BY bhs_langs.heading_id
+) bhs_av ON bhs_av.heading_id = h.heading_id
+LEFT JOIN (
+    SELECT sa_lang.heading_id,
+           array_agg(sa_lang.lang ORDER BY sa_lang.lang) AS available_langs
     FROM section_audio sa_lang
     LEFT JOIN book_production_projects bpp_lang
       ON bpp_lang.book_id = sa_lang.book_id
      AND bpp_lang.lang = sa_lang.lang
      AND bpp_lang.publication_status = 'published'
      AND bpp_lang.workflow_status <> 'archived'
-    WHERE sa_lang.book_id = h.book_id
-      AND sa_lang.heading_id = h.heading_id
+    WHERE sa_lang.book_id = $1
       AND sa_lang.is_deleted = false
       AND (sa_lang.lang = 'ar' OR bpp_lang.id IS NOT NULL)
-) sa_av ON true
+    GROUP BY sa_lang.heading_id
+) sa_av ON sa_av.heading_id = h.heading_id
 LEFT JOIN section_audio sa
     ON sa.book_id = h.book_id AND sa.heading_id = h.heading_id AND sa.lang = $2 AND sa.is_deleted = false AND ($2 = 'ar' OR bpp.id IS NOT NULL)
 WHERE h.book_id = $1 AND h.is_deleted = false
@@ -1129,6 +1147,9 @@ func (r *ReaderRepo) bookSelectBuilder(lang string) sq.SelectBuilder {
 			"bmt.reviewed_by",
 			"bmt.reviewed_at",
 			"p.status AS publication_status",
+			"p.status AS catalog_publication_status",
+			"bpp.workflow_status AS production_workflow_status",
+			"bpp.publication_status AS production_publication_status",
 			"p.featured",
 			"p.sort_order",
 			"b.has_content",
@@ -1169,11 +1190,20 @@ func (r *ReaderRepo) bookSelectBuilder(lang string) sq.SelectBuilder {
 			lang,
 			lang,
 		)).
+		Column(sq.Expr(
+			`CASE
+					WHEN ? = 'ar' THEN 'source'
+					WHEN bpp.id IS NULL THEN 'candidate'
+					WHEN bpp.publication_status = 'published' THEN 'published'
+					ELSE bpp.workflow_status
+				END AS production_status`,
+			lang,
+		)).
 		From("books b").
 		Join("book_publications p ON p.book_id = b.id AND p.status = 'published'").
 		LeftJoin("book_metadata_edits me ON me.book_id = b.id AND me.status = 'published'").
-		LeftJoin("book_production_projects bpp ON bpp.book_id = b.id AND bpp.lang = ? AND bpp.publication_status = 'published' AND bpp.workflow_status <> 'archived' AND ? <> 'ar'", lang, lang).
-		LeftJoin("book_metadata_translations bmt ON bmt.book_id = b.id AND bmt.lang = ? AND bmt.is_deleted = false AND bpp.id IS NOT NULL", lang).
+		LeftJoin("book_production_projects bpp ON bpp.book_id = b.id AND bpp.lang = ? AND bpp.workflow_status <> 'archived' AND ? <> 'ar'", lang, lang).
+		LeftJoin("book_metadata_translations bmt ON bmt.book_id = b.id AND bmt.lang = ? AND bmt.is_deleted = false AND bpp.publication_status = 'published'", lang).
 		LeftJoin(`LATERAL (
 			SELECT array_agg(bmt_lang.lang ORDER BY bmt_lang.lang) AS available_langs
 			FROM book_metadata_translations bmt_lang
@@ -1184,11 +1214,11 @@ func (r *ReaderRepo) bookSelectBuilder(lang string) sq.SelectBuilder {
 			 AND bpp_lang.workflow_status <> 'archived'
 			WHERE bmt_lang.book_id = b.id
 			  AND bmt_lang.is_deleted = false
-		) bmt_av ON true`).
+			) bmt_av ON true`).
 		LeftJoin("authors a ON a.id = b.author_id").
-		LeftJoin("author_translations at ON at.author_id = a.id AND at.lang = ? AND at.is_deleted = false AND bpp.id IS NOT NULL", lang).
+		LeftJoin("author_translations at ON at.author_id = a.id AND at.lang = ? AND at.is_deleted = false AND bpp.publication_status = 'published'", lang).
 		LeftJoin("categories c ON c.id = COALESCE(me.category_id, b.category_id)").
-		LeftJoin("category_translations ct ON ct.category_id = c.id AND ct.lang = ? AND ct.is_deleted = false AND bpp.id IS NOT NULL", lang)
+		LeftJoin("category_translations ct ON ct.category_id = c.id AND ct.lang = ? AND ct.is_deleted = false AND bpp.publication_status = 'published'", lang)
 }
 
 func (r *ReaderRepo) pageSelectBuilder() sq.SelectBuilder {
@@ -1514,7 +1544,7 @@ func bookArabicSearchCondition(baseCondition string, args []any, query string) (
 		OR ` + normalizedArabicSQL("c.name") + ` ILIKE ?)`
 	searchArgs = args
 
-	for i := 0; i < 6; i++ {
+	for range 6 {
 		searchArgs = append(searchArgs, readerArabicSearchMarks, readerArabicVariantFrom, readerArabicVariantTo, normalizedLike)
 	}
 
@@ -1621,38 +1651,44 @@ func scanAuthor(row rowScanner) (entity.Author, error) {
 }
 
 func scanBook(row rowScanner) (entity.Book, error) {
-	var book entity.Book
-	var categoryID sql.NullInt64
-	var categoryName sql.NullString
-	var authorID sql.NullInt64
-	var authorName sql.NullString
-	var bookType sql.NullInt64
-	var printed sql.NullInt64
-	var minorRelease sql.NullInt64
-	var majorRelease sql.NullInt64
-	var bibliography sql.NullString
-	var hint sql.NullString
-	var pdfLinks []byte
-	var metadata []byte
-	var sourceDate sql.NullString
-	var description sql.NullString
-	var coverURL sql.NullString
-	var editorialNotes sql.NullString
-	var translationStatus sql.NullString
-	var reviewedBy sql.NullString
-	var reviewedAt sql.NullTime
-	var publicationStatus sql.NullString
-	var sortOrder sql.NullInt64
-	var requestedLang string
-	var displayLang string
-	var isFallback bool
-	var availableLangs []string
-	var nameLang string
-	var categoryNameLang string
-	var authorNameLang string
-	var bibliographyLang string
-	var hintLang string
-	var descriptionLang string
+	var (
+		book                        entity.Book
+		categoryID                  sql.NullInt64
+		categoryName                sql.NullString
+		authorID                    sql.NullInt64
+		authorName                  sql.NullString
+		bookType                    sql.NullInt64
+		printed                     sql.NullInt64
+		minorRelease                sql.NullInt64
+		majorRelease                sql.NullInt64
+		bibliography                sql.NullString
+		hint                        sql.NullString
+		pdfLinks                    []byte
+		metadata                    []byte
+		sourceDate                  sql.NullString
+		description                 sql.NullString
+		coverURL                    sql.NullString
+		editorialNotes              sql.NullString
+		translationStatus           sql.NullString
+		reviewedBy                  sql.NullString
+		reviewedAt                  sql.NullTime
+		publicationStatus           sql.NullString
+		catalogPublicationStatus    sql.NullString
+		productionWorkflowStatus    sql.NullString
+		productionPublicationStatus sql.NullString
+		sortOrder                   sql.NullInt64
+		requestedLang               string
+		displayLang                 string
+		isFallback                  bool
+		availableLangs              []string
+		nameLang                    string
+		categoryNameLang            string
+		authorNameLang              string
+		bibliographyLang            string
+		hintLang                    string
+		descriptionLang             string
+		productionStatus            sql.NullString
+	)
 
 	err := row.Scan(
 		&book.ID,
@@ -1677,6 +1713,9 @@ func scanBook(row rowScanner) (entity.Book, error) {
 		&reviewedBy,
 		&reviewedAt,
 		&publicationStatus,
+		&catalogPublicationStatus,
+		&productionWorkflowStatus,
+		&productionPublicationStatus,
 		&book.Featured,
 		&sortOrder,
 		&book.HasContent,
@@ -1692,6 +1731,7 @@ func scanBook(row rowScanner) (entity.Book, error) {
 		&bibliographyLang,
 		&hintLang,
 		&descriptionLang,
+		&productionStatus,
 	)
 	if err != nil {
 		return entity.Book{}, err
@@ -1717,6 +1757,13 @@ func scanBook(row rowScanner) (entity.Book, error) {
 	book.TranslationReviewedBy = nullableString(reviewedBy)
 	book.TranslationReviewedAt = nullableTime(reviewedAt)
 	book.PublicationStatus = nullableString(publicationStatus)
+	book.CatalogPublicationStatus = nullableString(catalogPublicationStatus)
+	book.CatalogPublished = catalogPublicationStatus.Valid && catalogPublicationStatus.String == entity.PublicationStatusPublished
+	book.ProductionWorkflowStatus = nullableString(productionWorkflowStatus)
+	book.ProductionPublicationStatus = nullableString(productionPublicationStatus)
+	book.ProductionPublished = productionPublicationStatus.Valid &&
+		productionPublicationStatus.String == entity.ProductionPublicationPublished
+	book.ProductionStatus = nullableString(productionStatus)
 	book.SortOrder = nullableInt(sortOrder)
 	book.Localization = localizationMeta(
 		requestedLang,
