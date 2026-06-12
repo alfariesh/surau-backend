@@ -21,6 +21,10 @@ const editorialSavesPerMinute = 120
 // saved items, khatam) so reader clients cannot hammer the database.
 const personalWritesPerMinute = 240
 
+// sessionRequestsPerMinute caps per-user session listing/revocation, the only
+// protected auth endpoints without a DB-backed limit in the use case.
+const sessionRequestsPerMinute = 30
+
 // NewRoutes -.
 func NewRoutes(
 	apiV1Group fiber.Router,
@@ -113,6 +117,10 @@ func NewRoutes(
 	// Protected routes
 	protected := apiV1Group.Group("", middleware.Auth(jwtManager, u))
 
+	// One shared per-user budget for session listing/revocation; in-memory
+	// store is fine (single instance, prefork off) like the other limiters.
+	sessionLimiter := newSessionLimiter()
+
 	protectedAuthGroup := protected.Group("/auth")
 	{
 		protectedAuthGroup.Get("/introspect", r.introspect)
@@ -121,8 +129,8 @@ func NewRoutes(
 		protectedAuthGroup.Post("/change-email/verify", r.verifyEmailChange)
 		protectedAuthGroup.Post("/delete-account", r.deleteAccount)
 		protectedAuthGroup.Post("/logout-all", r.logoutAll)
-		protectedAuthGroup.Get("/sessions", r.listSessions)
-		protectedAuthGroup.Delete("/sessions/:id", r.revokeSession)
+		protectedAuthGroup.Get("/sessions", sessionLimiter, r.listSessions)
+		protectedAuthGroup.Delete("/sessions/:id", sessionLimiter, r.revokeSession)
 	}
 
 	userGroup := protected.Group("/user")
@@ -309,4 +317,20 @@ func NewRoutes(
 			emailGroup.Post("/campaigns/:id/cancel", r.adminEmailCancelCampaign)
 		}
 	}
+}
+
+// newSessionLimiter caps per-user session listing/revocation requests; the
+// key falls back to the client IP when no authenticated user is present.
+func newSessionLimiter() fiber.Handler {
+	return limiter.New(limiter.Config{
+		Max:        sessionRequestsPerMinute,
+		Expiration: time.Minute,
+		KeyGenerator: func(ctx *fiber.Ctx) string {
+			if userID, ok := ctx.Locals("userID").(string); ok && userID != "" {
+				return userID
+			}
+
+			return ctx.IP()
+		},
+	})
 }

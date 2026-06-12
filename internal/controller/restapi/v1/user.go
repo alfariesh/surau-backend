@@ -241,6 +241,7 @@ func (r *V1) logoutAll(ctx *fiber.Ctx) error {
 // @Produce     json
 // @Success     200 {object} response.SessionList
 // @Failure     401 {object} response.Error
+// @Failure     429 {object} response.Error
 // @Failure     500 {object} response.Error
 // @Security    BearerAuth
 // @Router      /auth/sessions [get]
@@ -271,6 +272,7 @@ func (r *V1) listSessions(ctx *fiber.Ctx) error {
 // @Success     200 {object} response.SessionRevoked
 // @Failure     401 {object} response.Error
 // @Failure     404 {object} response.Error
+// @Failure     429 {object} response.Error
 // @Failure     500 {object} response.Error
 // @Security    BearerAuth
 // @Router      /auth/sessions/{id} [delete]
