@@ -2972,7 +2972,7 @@ definitions:
     type: object
   v1.AuthorList:
     properties:
-      authors:
+      items:
         items:
           $ref: '#/definitions/entity.Author'
         type: array
@@ -3069,9 +3069,19 @@ definitions:
         example: ok
         type: string
     type: object
+  v1.BookHeadingList:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/entity.BookHeading'
+        type: array
+      total:
+        example: 42
+        type: integer
+    type: object
   v1.BookList:
     properties:
-      books:
+      items:
         items:
           $ref: '#/definitions/entity.Book'
         type: array
@@ -3083,7 +3093,7 @@ definitions:
     type: object
   v1.BookQuranReferenceList:
     properties:
-      references:
+      items:
         items:
           $ref: '#/definitions/entity.BookQuranReference'
         type: array
@@ -3111,6 +3121,26 @@ definitions:
         type: boolean
     required:
     - question
+    type: object
+  v1.BookTOCList:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/entity.BookTOCNode'
+        type: array
+      total:
+        example: 12
+        type: integer
+    type: object
+  v1.CategoryList:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/entity.Category'
+        type: array
+      total:
+        example: 12
+        type: integer
     type: object
   v1.ChangePassword:
     properties:
@@ -3626,7 +3656,7 @@ definitions:
     type: object
   v1.KhatamHistory:
     properties:
-      cycles:
+      items:
         items:
           $ref: '#/definitions/entity.QuranKhatamCycle'
         type: array
@@ -3665,7 +3695,7 @@ definitions:
     type: object
   v1.PageList:
     properties:
-      pages:
+      items:
         items:
           $ref: '#/definitions/entity.BookPage'
         type: array
@@ -3783,12 +3813,35 @@ definitions:
         example: 42
         type: integer
     type: object
+  v1.QuranAyahList:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/entity.QuranAyah'
+        type: array
+      total:
+        example: 7
+        type: integer
+    type: object
+  v1.QuranNavigationSegmentList:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/entity.QuranNavigationSegment'
+        type: array
+      total:
+        example: 30
+        type: integer
+    type: object
   v1.QuranProgressList:
     properties:
-      surahs:
+      items:
         items:
           $ref: '#/definitions/entity.QuranReadingProgress'
         type: array
+      total:
+        example: 3
+        type: integer
     type: object
   v1.QuranReaderAyah:
     properties:
@@ -3854,6 +3907,16 @@ definitions:
       url:
         type: string
     type: object
+  v1.QuranReaderAyahList:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/v1.QuranReaderAyah'
+        type: array
+      total:
+        example: 7
+        type: integer
+    type: object
   v1.QuranReaderAyahTranslation:
     properties:
       text:
@@ -3864,9 +3927,19 @@ definitions:
       text:
         type: string
     type: object
+  v1.QuranRecitationList:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/entity.QuranRecitation'
+        type: array
+      total:
+        example: 3
+        type: integer
+    type: object
   v1.QuranSearchList:
     properties:
-      results:
+      items:
         items:
           $ref: '#/definitions/entity.QuranSearchResult'
         type: array
@@ -3955,6 +4028,26 @@ definitions:
         type: string
       url:
         type: string
+    type: object
+  v1.QuranSurahList:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/entity.QuranSurah'
+        type: array
+      total:
+        example: 114
+        type: integer
+    type: object
+  v1.QuranTranslationSourceList:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/entity.QuranTranslationSource'
+        type: array
+      total:
+        example: 2
+        type: integer
     type: object
   v1.RefreshToken:
     properties:
@@ -4210,10 +4303,16 @@ definitions:
     type: object
   v1.SavedItemTags:
     properties:
-      tags:
+      items:
+        example:
+        - tafsir
+        - favorit
         items:
           type: string
         type: array
+      total:
+        example: 2
+        type: integer
     type: object
   v1.SessionInfo:
     properties:
@@ -4241,10 +4340,13 @@ definitions:
     type: object
   v1.SessionList:
     properties:
-      sessions:
+      items:
         items:
           $ref: '#/definitions/v1.SessionInfo'
         type: array
+      total:
+        example: 2
+        type: integer
     type: object
   v1.SessionRevoked:
     properties:
@@ -6886,9 +6988,7 @@ paths:
         "200":
           description: OK
           schema:
-            items:
-              $ref: '#/definitions/entity.BookHeading'
-            type: array
+            $ref: '#/definitions/v1.BookHeadingList'
         "400":
           description: Bad Request
           schema:
@@ -7162,9 +7262,7 @@ paths:
         "200":
           description: OK
           schema:
-            items:
-              $ref: '#/definitions/entity.BookTOCNode'
-            type: array
+            $ref: '#/definitions/v1.BookTOCList'
         "400":
           description: Bad Request
           schema:
@@ -7341,9 +7439,7 @@ paths:
         "200":
           description: OK
           schema:
-            items:
-              $ref: '#/definitions/entity.Category'
-            type: array
+            $ref: '#/definitions/v1.CategoryList'
         "400":
           description: Bad Request
           schema:
@@ -10474,9 +10570,7 @@ paths:
         "200":
           description: OK
           schema:
-            items:
-              $ref: '#/definitions/entity.QuranNavigationSegment'
-            type: array
+            $ref: '#/definitions/v1.QuranNavigationSegmentList'
         "400":
           description: Bad Request
           schema:
@@ -10539,9 +10633,7 @@ paths:
         "200":
           description: OK
           schema:
-            items:
-              $ref: '#/definitions/entity.QuranAyah'
-            type: array
+            $ref: '#/definitions/v1.QuranAyahList'
         "400":
           description: Bad Request
           schema:
@@ -10573,9 +10665,7 @@ paths:
         "200":
           description: OK
           schema:
-            items:
-              $ref: '#/definitions/entity.QuranNavigationSegment'
-            type: array
+            $ref: '#/definitions/v1.QuranNavigationSegmentList'
         "400":
           description: Bad Request
           schema:
@@ -10638,9 +10728,7 @@ paths:
         "200":
           description: OK
           schema:
-            items:
-              $ref: '#/definitions/entity.QuranAyah'
-            type: array
+            $ref: '#/definitions/v1.QuranAyahList'
         "400":
           description: Bad Request
           schema:
@@ -10668,9 +10756,7 @@ paths:
         "200":
           description: OK
           schema:
-            items:
-              $ref: '#/definitions/entity.QuranRecitation'
-            type: array
+            $ref: '#/definitions/v1.QuranRecitationList'
         "500":
           description: Internal Server Error
           schema:
@@ -10745,9 +10831,7 @@ paths:
         "200":
           description: OK
           schema:
-            items:
-              $ref: '#/definitions/entity.QuranSurah'
-            type: array
+            $ref: '#/definitions/v1.QuranSurahList'
         "400":
           description: Bad Request
           schema:
@@ -10896,9 +10980,7 @@ paths:
         "200":
           description: OK
           schema:
-            items:
-              $ref: '#/definitions/entity.QuranAyah'
-            type: array
+            $ref: '#/definitions/v1.QuranAyahList'
         "400":
           description: Bad Request
           schema:
@@ -10931,9 +11013,7 @@ paths:
         "200":
           description: OK
           schema:
-            items:
-              $ref: '#/definitions/entity.QuranTranslationSource'
-            type: array
+            $ref: '#/definitions/v1.QuranTranslationSourceList'
         "400":
           description: Bad Request
           schema:

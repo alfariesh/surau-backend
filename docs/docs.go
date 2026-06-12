@@ -3515,10 +3515,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/entity.BookHeading"
-                            }
+                            "$ref": "#/definitions/v1.BookHeadingList"
                         }
                     },
                     "400": {
@@ -3910,10 +3907,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/entity.BookTOCNode"
-                            }
+                            "$ref": "#/definitions/v1.BookTOCList"
                         }
                     },
                     "400": {
@@ -4166,10 +4160,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/entity.Category"
-                            }
+                            "$ref": "#/definitions/v1.CategoryList"
                         }
                     },
                     "400": {
@@ -8851,10 +8842,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/entity.QuranNavigationSegment"
-                            }
+                            "$ref": "#/definitions/v1.QuranNavigationSegmentList"
                         }
                     },
                     "400": {
@@ -8941,10 +8929,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/entity.QuranAyah"
-                            }
+                            "$ref": "#/definitions/v1.QuranAyahList"
                         }
                     },
                     "400": {
@@ -8992,10 +8977,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/entity.QuranNavigationSegment"
-                            }
+                            "$ref": "#/definitions/v1.QuranNavigationSegmentList"
                         }
                     },
                     "400": {
@@ -9082,10 +9064,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/entity.QuranAyah"
-                            }
+                            "$ref": "#/definitions/v1.QuranAyahList"
                         }
                     },
                     "400": {
@@ -9124,10 +9103,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/entity.QuranRecitation"
-                            }
+                            "$ref": "#/definitions/v1.QuranRecitationList"
                         }
                     },
                     "500": {
@@ -9233,10 +9209,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/entity.QuranSurah"
-                            }
+                            "$ref": "#/definitions/v1.QuranSurahList"
                         }
                     },
                     "400": {
@@ -9448,10 +9421,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/entity.QuranAyah"
-                            }
+                            "$ref": "#/definitions/v1.QuranAyahList"
                         }
                     },
                     "400": {
@@ -9499,10 +9469,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/entity.QuranTranslationSource"
-                            }
+                            "$ref": "#/definitions/v1.QuranTranslationSourceList"
                         }
                     },
                     "400": {
@@ -14544,7 +14511,7 @@ const docTemplate = `{
         "v1.AuthorList": {
             "type": "object",
             "properties": {
-                "authors": {
+                "items": {
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/entity.Author"
@@ -14682,10 +14649,25 @@ const docTemplate = `{
                 }
             }
         },
+        "v1.BookHeadingList": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.BookHeading"
+                    }
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 42
+                }
+            }
+        },
         "v1.BookList": {
             "type": "object",
             "properties": {
-                "books": {
+                "items": {
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/entity.Book"
@@ -14703,7 +14685,7 @@ const docTemplate = `{
         "v1.BookQuranReferenceList": {
             "type": "object",
             "properties": {
-                "references": {
+                "items": {
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/entity.BookQuranReference"
@@ -14740,6 +14722,36 @@ const docTemplate = `{
                 "stream": {
                     "type": "boolean",
                     "example": false
+                }
+            }
+        },
+        "v1.BookTOCList": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.BookTOCNode"
+                    }
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 12
+                }
+            }
+        },
+        "v1.CategoryList": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.Category"
+                    }
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 12
                 }
             }
         },
@@ -15472,7 +15484,7 @@ const docTemplate = `{
         "v1.KhatamHistory": {
             "type": "object",
             "properties": {
-                "cycles": {
+                "items": {
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/entity.QuranKhatamCycle"
@@ -15528,7 +15540,7 @@ const docTemplate = `{
         "v1.PageList": {
             "type": "object",
             "properties": {
-                "pages": {
+                "items": {
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/entity.BookPage"
@@ -15699,14 +15711,48 @@ const docTemplate = `{
                 }
             }
         },
+        "v1.QuranAyahList": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.QuranAyah"
+                    }
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 7
+                }
+            }
+        },
+        "v1.QuranNavigationSegmentList": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.QuranNavigationSegment"
+                    }
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 30
+                }
+            }
+        },
         "v1.QuranProgressList": {
             "type": "object",
             "properties": {
-                "surahs": {
+                "items": {
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/entity.QuranReadingProgress"
                     }
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 3
                 }
             }
         },
@@ -15801,6 +15847,21 @@ const docTemplate = `{
                 }
             }
         },
+        "v1.QuranReaderAyahList": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/v1.QuranReaderAyah"
+                    }
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 7
+                }
+            }
+        },
         "v1.QuranReaderAyahTranslation": {
             "type": "object",
             "properties": {
@@ -15817,10 +15878,25 @@ const docTemplate = `{
                 }
             }
         },
+        "v1.QuranRecitationList": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.QuranRecitation"
+                    }
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 3
+                }
+            }
+        },
         "v1.QuranSearchList": {
             "type": "object",
             "properties": {
-                "results": {
+                "items": {
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/entity.QuranSearchResult"
@@ -15944,6 +16020,36 @@ const docTemplate = `{
                 },
                 "url": {
                     "type": "string"
+                }
+            }
+        },
+        "v1.QuranSurahList": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.QuranSurah"
+                    }
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 114
+                }
+            }
+        },
+        "v1.QuranTranslationSourceList": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.QuranTranslationSource"
+                    }
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 2
                 }
             }
         },
@@ -16301,11 +16407,19 @@ const docTemplate = `{
         "v1.SavedItemTags": {
             "type": "object",
             "properties": {
-                "tags": {
+                "items": {
                     "type": "array",
                     "items": {
                         "type": "string"
-                    }
+                    },
+                    "example": [
+                        "tafsir",
+                        "favorit"
+                    ]
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 2
                 }
             }
         },
@@ -16345,11 +16459,15 @@ const docTemplate = `{
         "v1.SessionList": {
             "type": "object",
             "properties": {
-                "sessions": {
+                "items": {
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/v1.SessionInfo"
                     }
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 2
                 }
             }
         },
