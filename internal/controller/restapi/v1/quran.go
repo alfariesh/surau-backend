@@ -23,7 +23,7 @@ const (
 // @Produce     json
 // @Param       lang         query    string false "Language code" default(id)
 // @Param       include_info query    bool   false "Include surah info HTML" default(false)
-// @Success     200          {array}  entity.QuranSurah
+// @Success     200          {object} response.QuranSurahList
 // @Failure     400          {object} response.Error
 // @Failure     500          {object} response.Error
 // @Router      /quran/surahs [get]
@@ -41,7 +41,7 @@ func (r *V1) listQuranSurahs(ctx *fiber.Ctx) error {
 		return r.quranErrorResponse(ctx, err)
 	}
 
-	return ctx.Status(http.StatusOK).JSON(surahs)
+	return ctx.Status(http.StatusOK).JSON(response.QuranSurahList{Items: surahs, Total: len(surahs)})
 }
 
 // @Summary     Get Quran surah
@@ -77,7 +77,7 @@ func (r *V1) getQuranSurah(ctx *fiber.Ctx) error {
 // @ID          list-quran-recitations
 // @Tags        quran
 // @Produce     json
-// @Success     200 {array}  entity.QuranRecitation
+// @Success     200 {object} response.QuranRecitationList
 // @Failure     500 {object} response.Error
 // @Router      /quran/recitations [get]
 func (r *V1) listQuranRecitations(ctx *fiber.Ctx) error {
@@ -88,7 +88,7 @@ func (r *V1) listQuranRecitations(ctx *fiber.Ctx) error {
 		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
 	}
 
-	return ctx.Status(http.StatusOK).JSON(recitations)
+	return ctx.Status(http.StatusOK).JSON(response.QuranRecitationList{Items: recitations, Total: len(recitations)})
 }
 
 // @Summary     Get Quran surah audio manifest
@@ -125,7 +125,7 @@ func (r *V1) getQuranSurahAudio(ctx *fiber.Ctx) error {
 // @Tags        quran
 // @Produce     json
 // @Param       lang query string false "Language code: ar, id, or en" default(id)
-// @Success     200  {array} entity.QuranTranslationSource
+// @Success     200  {object} response.QuranTranslationSourceList
 // @Failure     400  {object} response.Error
 // @Failure     500  {object} response.Error
 // @Router      /quran/translation-sources [get]
@@ -137,7 +137,7 @@ func (r *V1) listQuranTranslationSources(ctx *fiber.Ctx) error {
 		return r.quranErrorResponse(ctx, err)
 	}
 
-	return ctx.Status(http.StatusOK).JSON(sources)
+	return ctx.Status(http.StatusOK).JSON(response.QuranTranslationSourceList{Items: sources, Total: len(sources)})
 }
 
 // @Summary     List Quran juz
@@ -146,7 +146,7 @@ func (r *V1) listQuranTranslationSources(ctx *fiber.Ctx) error {
 // @Tags        quran
 // @Produce     json
 // @Param       lang query string false "Language code" default(id)
-// @Success     200  {array} entity.QuranNavigationSegment
+// @Success     200  {object} response.QuranNavigationSegmentList
 // @Failure     400  {object} response.Error
 // @Failure     500  {object} response.Error
 // @Router      /quran/juz [get]
@@ -158,7 +158,7 @@ func (r *V1) listQuranJuz(ctx *fiber.Ctx) error {
 		return r.quranErrorResponse(ctx, err)
 	}
 
-	return ctx.Status(http.StatusOK).JSON(segments)
+	return ctx.Status(http.StatusOK).JSON(response.QuranNavigationSegmentList{Items: segments, Total: len(segments)})
 }
 
 // @Summary     List Quran ayahs in a juz
@@ -173,8 +173,8 @@ func (r *V1) listQuranJuz(ctx *fiber.Ctx) error {
 // @Param       include_audio       query    bool   false "Include audio track and timestamp segments" default(false)
 // @Param       recitation_id       query    string false "Recitation ID. Defaults to the playable default recitation when include_audio=true."
 // @Param       view                query    string false "Response view. Empty/full returns the existing QuranAyah shape; reader_minimal returns v1.QuranReaderAyah." Enums(full,reader_minimal)
-// @Success     200                 {array}  response.QuranReaderAyah
-// @Success     200                 {array}  entity.QuranAyah
+// @Success     200                 {object} response.QuranReaderAyahList
+// @Success     200                 {object} response.QuranAyahList
 // @Failure     400                 {object} response.Error
 // @Failure     404                 {object} response.Error
 // @Failure     500                 {object} response.Error
@@ -199,7 +199,7 @@ func (r *V1) listQuranJuzAyahs(ctx *fiber.Ctx) error {
 // @Tags        quran
 // @Produce     json
 // @Param       lang query string false "Language code" default(id)
-// @Success     200  {array} entity.QuranNavigationSegment
+// @Success     200  {object} response.QuranNavigationSegmentList
 // @Failure     400  {object} response.Error
 // @Failure     500  {object} response.Error
 // @Router      /quran/hizbs [get]
@@ -211,7 +211,7 @@ func (r *V1) listQuranHizbs(ctx *fiber.Ctx) error {
 		return r.quranErrorResponse(ctx, err)
 	}
 
-	return ctx.Status(http.StatusOK).JSON(segments)
+	return ctx.Status(http.StatusOK).JSON(response.QuranNavigationSegmentList{Items: segments, Total: len(segments)})
 }
 
 // @Summary     List Quran ayahs in a hizb
@@ -226,8 +226,8 @@ func (r *V1) listQuranHizbs(ctx *fiber.Ctx) error {
 // @Param       include_audio       query    bool   false "Include audio track and timestamp segments" default(false)
 // @Param       recitation_id       query    string false "Recitation ID. Defaults to the playable default recitation when include_audio=true."
 // @Param       view                query    string false "Response view. Empty/full returns the existing QuranAyah shape; reader_minimal returns v1.QuranReaderAyah." Enums(full,reader_minimal)
-// @Success     200                 {array}  response.QuranReaderAyah
-// @Success     200                 {array}  entity.QuranAyah
+// @Success     200                 {object} response.QuranReaderAyahList
+// @Success     200                 {object} response.QuranAyahList
 // @Failure     400                 {object} response.Error
 // @Failure     404                 {object} response.Error
 // @Failure     500                 {object} response.Error
@@ -299,8 +299,8 @@ func (r *V1) getQuranAyah(ctx *fiber.Ctx) error {
 // @Param       include_audio      query    bool   false "Include audio track and timestamp segments" default(false)
 // @Param       recitation_id      query    string false "Recitation ID. Defaults to the playable default recitation when include_audio=true."
 // @Param       view               query    string false "Response view. Empty/full returns the existing QuranAyah shape; reader_minimal returns v1.QuranReaderAyah." Enums(full,reader_minimal)
-// @Success     200                {array}  response.QuranReaderAyah
-// @Success     200                {array}  entity.QuranAyah
+// @Success     200                {object} response.QuranReaderAyahList
+// @Success     200                {object} response.QuranAyahList
 // @Failure     400                {object} response.Error
 // @Failure     404                {object} response.Error
 // @Failure     500                {object} response.Error
@@ -393,7 +393,7 @@ func (r *V1) searchQuran(ctx *fiber.Ctx) error {
 		return r.quranErrorResponse(ctx, err)
 	}
 
-	return ctx.Status(http.StatusOK).JSON(response.QuranSearchList{Results: results, Total: total})
+	return ctx.Status(http.StatusOK).JSON(response.QuranSearchList{Items: results, Total: total})
 }
 
 // @Summary     List book Quran references
@@ -438,7 +438,7 @@ func (r *V1) listBookQuranReferences(ctx *fiber.Ctx) error {
 		return r.quranErrorResponse(ctx, err)
 	}
 
-	return ctx.Status(http.StatusOK).JSON(response.BookQuranReferenceList{References: references, Total: total})
+	return ctx.Status(http.StatusOK).JSON(response.BookQuranReferenceList{Items: references, Total: total})
 }
 
 type quranNavigationAyahLoader func(
@@ -508,10 +508,12 @@ func quranAyahListView(ctx *fiber.Ctx) (string, error) {
 
 func quranAyahListResponse(ctx *fiber.Ctx, ayahs []entity.QuranAyah, view string) error {
 	if view == quranAyahViewReaderMinimal {
-		return ctx.Status(http.StatusOK).JSON(response.QuranReaderAyahs(ayahs))
+		items := response.QuranReaderAyahs(ayahs)
+
+		return ctx.Status(http.StatusOK).JSON(response.QuranReaderAyahList{Items: items, Total: len(items)})
 	}
 
-	return ctx.Status(http.StatusOK).JSON(ayahs)
+	return ctx.Status(http.StatusOK).JSON(response.QuranAyahList{Items: ayahs, Total: len(ayahs)})
 }
 
 func (r *V1) quranErrorResponse(ctx *fiber.Ctx, err error) error {

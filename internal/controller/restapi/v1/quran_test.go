@@ -49,8 +49,8 @@ func TestQuranRoutes(t *testing.T) {
 		{name: "surahs invalid include info", path: "/v1/quran/surahs?include_info=wat", wantStatus: http.StatusBadRequest, wantBody: `"invalid include_info"`},
 		{name: "surah ayahs", path: "/v1/quran/surahs/73/ayahs?from=1&to=1&recitation_id=rec-1", wantStatus: http.StatusOK, wantBody: `"text_qpc_hafs"`},
 		{name: "surah ayahs invalid view", path: "/v1/quran/surahs/73/ayahs?view=compact", wantStatus: http.StatusBadRequest, wantBody: `"invalid view"`},
-		{name: "search", path: "/v1/quran/search?q=muzammil", wantStatus: http.StatusOK, wantBody: `"results"`},
-		{name: "book refs", path: "/v1/books/797/quran-references", wantStatus: http.StatusOK, wantBody: `"references"`},
+		{name: "search", path: "/v1/quran/search?q=muzammil", wantStatus: http.StatusOK, wantBody: `"items"`},
+		{name: "book refs", path: "/v1/books/797/quran-references", wantStatus: http.StatusOK, wantBody: `"items"`},
 		{name: "unsupported lang", path: "/v1/quran/ayahs/73:1?lang=fr", wantStatus: http.StatusBadRequest, wantBody: `"unsupported language"`},
 		{name: "unknown translation source", path: "/v1/quran/ayahs/73:1?translation_source=bad-source", wantStatus: http.StatusNotFound, wantBody: `"quran translation source not found"`},
 	}

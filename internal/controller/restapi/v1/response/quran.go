@@ -215,12 +215,48 @@ func readerAudioSegments(segments []entity.QuranAudioSegment) []QuranReaderAyahA
 
 // QuranSearchList -.
 type QuranSearchList struct {
-	Results []entity.QuranSearchResult `json:"results"`
-	Total   int                        `json:"total" example:"42"`
+	Items []entity.QuranSearchResult `json:"items"`
+	Total int                        `json:"total" example:"42"`
 } // @name v1.QuranSearchList
 
 // BookQuranReferenceList -.
 type BookQuranReferenceList struct {
-	References []entity.BookQuranReference `json:"references"`
-	Total      int                         `json:"total" example:"42"`
+	Items []entity.BookQuranReference `json:"items"`
+	Total int                         `json:"total" example:"42"`
 } // @name v1.BookQuranReferenceList
+
+// QuranSurahList -.
+type QuranSurahList struct {
+	Items []entity.QuranSurah `json:"items"`
+	Total int                 `json:"total" example:"114"`
+} // @name v1.QuranSurahList
+
+// QuranRecitationList -.
+type QuranRecitationList struct {
+	Items []entity.QuranRecitation `json:"items"`
+	Total int                      `json:"total" example:"3"`
+} // @name v1.QuranRecitationList
+
+// QuranTranslationSourceList -.
+type QuranTranslationSourceList struct {
+	Items []entity.QuranTranslationSource `json:"items"`
+	Total int                             `json:"total" example:"2"`
+} // @name v1.QuranTranslationSourceList
+
+// QuranNavigationSegmentList holds juz or hizb divisions.
+type QuranNavigationSegmentList struct {
+	Items []entity.QuranNavigationSegment `json:"items"`
+	Total int                             `json:"total" example:"30"`
+} // @name v1.QuranNavigationSegmentList
+
+// QuranAyahList -.
+type QuranAyahList struct {
+	Items []entity.QuranAyah `json:"items"`
+	Total int                `json:"total" example:"7"`
+} // @name v1.QuranAyahList
+
+// QuranReaderAyahList -.
+type QuranReaderAyahList struct {
+	Items []QuranReaderAyah `json:"items"`
+	Total int               `json:"total" example:"7"`
+} // @name v1.QuranReaderAyahList

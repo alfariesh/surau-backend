@@ -289,7 +289,7 @@ func (r *V1) listQuranSurahProgress(ctx *fiber.Ctx) error {
 		return quranProgressErrorResponse(ctx, err)
 	}
 
-	return ctx.Status(http.StatusOK).JSON(response.QuranProgressList{Surahs: progress})
+	return ctx.Status(http.StatusOK).JSON(response.QuranProgressList{Items: progress, Total: len(progress)})
 }
 
 // @Summary     Get Quran surah progress
@@ -533,7 +533,7 @@ func (r *V1) listSavedItemTags(ctx *fiber.Ctx) error {
 		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
 	}
 
-	return ctx.Status(http.StatusOK).JSON(response.SavedItemTags{Tags: tags})
+	return ctx.Status(http.StatusOK).JSON(response.SavedItemTags{Items: tags, Total: len(tags)})
 }
 
 func readerLocationErrorResponse(ctx *fiber.Ctx, err error) error {

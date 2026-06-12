@@ -22,7 +22,7 @@ const maxEmbeddedQuranReferences = 200
 // @Tags        kitab
 // @Produce     json
 // @Param       lang query    string false "Language code: ar, id, or en" default(id)
-// @Success     200  {array}  entity.Category
+// @Success     200  {object} response.CategoryList
 // @Failure     400  {object} response.Error
 // @Failure     500  {object} response.Error
 // @Router      /categories [get]
@@ -38,7 +38,7 @@ func (r *V1) listCategories(ctx *fiber.Ctx) error {
 		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
 	}
 
-	return ctx.Status(http.StatusOK).JSON(categories)
+	return ctx.Status(http.StatusOK).JSON(response.CategoryList{Items: categories, Total: len(categories)})
 }
 
 // @Summary     List kitab authors
@@ -72,7 +72,7 @@ func (r *V1) listAuthors(ctx *fiber.Ctx) error {
 		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
 	}
 
-	return ctx.Status(http.StatusOK).JSON(response.AuthorList{Authors: authors, Total: total})
+	return ctx.Status(http.StatusOK).JSON(response.AuthorList{Items: authors, Total: total})
 }
 
 // @Summary     List kitab books
@@ -138,7 +138,7 @@ func (r *V1) listBooks(ctx *fiber.Ctx) error {
 		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
 	}
 
-	return ctx.Status(http.StatusOK).JSON(response.BookList{Books: books, Total: total, Stats: stats})
+	return ctx.Status(http.StatusOK).JSON(response.BookList{Items: books, Total: total, Stats: stats})
 }
 
 // @Summary     Get kitab book
@@ -322,7 +322,7 @@ func (r *V1) listBookPages(ctx *fiber.Ctx) error {
 		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
 	}
 
-	return ctx.Status(http.StatusOK).JSON(response.PageList{Pages: pages, Total: total})
+	return ctx.Status(http.StatusOK).JSON(response.PageList{Items: pages, Total: total})
 }
 
 // @Summary     Get kitab page
@@ -369,7 +369,7 @@ func (r *V1) getBookPage(ctx *fiber.Ctx) error {
 // @Produce     json
 // @Param       book_id path     int    true  "Book ID"
 // @Param       q       query    string false "Search heading title"
-// @Success     200     {array}  entity.BookHeading
+// @Success     200     {object} response.BookHeadingList
 // @Failure     400     {object} response.Error
 // @Failure     500     {object} response.Error
 // @Router      /books/{book_id}/headings [get]
@@ -386,7 +386,7 @@ func (r *V1) listBookHeadings(ctx *fiber.Ctx) error {
 		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
 	}
 
-	return ctx.Status(http.StatusOK).JSON(headings)
+	return ctx.Status(http.StatusOK).JSON(response.BookHeadingList{Items: headings, Total: len(headings)})
 }
 
 // @Summary     Get kitab section
@@ -439,7 +439,7 @@ func (r *V1) getBookSection(ctx *fiber.Ctx) error {
 // @Param       book_id       path     int    true  "Book ID"
 // @Param       lang          query    string false "Language code: ar, id, or en" default(id)
 // @Param       include_audio query    bool   false "Include audio metadata" default(false)
-// @Success     200           {array}  entity.BookTOCNode
+// @Success     200           {object} response.BookTOCList
 // @Failure     400           {object} response.Error
 // @Failure     404           {object} response.Error
 // @Failure     500           {object} response.Error
@@ -475,7 +475,7 @@ func (r *V1) listBookTOC(ctx *fiber.Ctx) error {
 		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
 	}
 
-	return ctx.Status(http.StatusOK).JSON(toc)
+	return ctx.Status(http.StatusOK).JSON(response.BookTOCList{Items: toc, Total: len(toc)})
 }
 
 // @Summary     Read kitab TOC section

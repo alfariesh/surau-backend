@@ -171,7 +171,7 @@ func (r *V1) listKhatamHistory(ctx *fiber.Ctx) error {
 		return khatamErrorResponse(ctx, err)
 	}
 
-	return ctx.Status(http.StatusOK).JSON(response.KhatamHistory{Cycles: cycles, Total: total})
+	return ctx.Status(http.StatusOK).JSON(response.KhatamHistory{Items: cycles, Total: total})
 }
 
 func (r *V1) applyKhatamJuz(

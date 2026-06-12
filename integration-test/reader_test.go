@@ -680,7 +680,7 @@ type bookResponse struct {
 }
 
 type bookListResponse struct {
-	Books []bookResponse `json:"books"`
+	Books []bookResponse `json:"items"`
 	Total int            `json:"total"`
 }
 
@@ -810,13 +810,15 @@ func getTOC(t *testing.T, lang string) []tocNode {
 	t.Helper()
 
 	resp := doJSON(t, http.MethodGet, fmt.Sprintf("%s/v1/books/%d/toc?lang=%s", baseURL(), fixtureBookID, lang), nil, "")
-	var toc []tocNode
-	decodeAndClose(t, resp, &toc)
+	var tocList struct {
+		Items []tocNode `json:"items"`
+	}
+	decodeAndClose(t, resp, &tocList)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("get toc %s expected 200, got %d", lang, resp.StatusCode)
 	}
 
-	return toc
+	return tocList.Items
 }
 
 func getTOCRead(t *testing.T, lang string) tocReadResponse {

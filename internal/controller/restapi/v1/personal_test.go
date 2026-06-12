@@ -62,7 +62,7 @@ func TestSavedItemRoutes(t *testing.T) {
 			method:     http.MethodGet,
 			path:       "/v1/me/saved-items/tags",
 			wantStatus: http.StatusOK,
-			wantBody:   `"tags":["fiqh","tafsir"]`,
+			wantBody:   `"items":["fiqh","tafsir"]`,
 		},
 		{
 			name:       "update saved item",
@@ -274,7 +274,7 @@ func TestQuranProgressRoutes(t *testing.T) {
 			method:     http.MethodGet,
 			path:       "/v1/me/quran/progress/surahs",
 			wantStatus: http.StatusOK,
-			wantBody:   `"surahs"`,
+			wantBody:   `"items"`,
 		},
 		{
 			name:       "get quran surah progress",

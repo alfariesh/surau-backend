@@ -20,7 +20,8 @@ type SessionInfo struct {
 
 // SessionList is the response for GET /auth/sessions.
 type SessionList struct {
-	Sessions []SessionInfo `json:"sessions"`
+	Items []SessionInfo `json:"items"`
+	Total int           `json:"total" example:"2"`
 } // @name v1.SessionList
 
 // SessionRevoked is the response for DELETE /auth/sessions/:id.
@@ -44,5 +45,5 @@ func NewSessionList(sessions []entity.AuthSession, currentFamilyID string) Sessi
 		})
 	}
 
-	return SessionList{Sessions: items}
+	return SessionList{Items: items, Total: len(items)}
 }

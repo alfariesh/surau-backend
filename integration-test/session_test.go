@@ -22,7 +22,7 @@ type sessionInfo struct {
 }
 
 type sessionListResponse struct {
-	Sessions []sessionInfo `json:"sessions"`
+	Sessions []sessionInfo `json:"items"`
 }
 
 // registerVerifiedUser registers a fresh user, marks it verified, and returns

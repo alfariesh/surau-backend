@@ -383,7 +383,7 @@ type quranAudioSegmentResponse struct {
 }
 
 type quranSearchResponse struct {
-	Results []quranSearchResult `json:"results"`
+	Results []quranSearchResult `json:"items"`
 	Total   int                 `json:"total"`
 }
 
@@ -395,7 +395,7 @@ type quranSearchResult struct {
 }
 
 type bookQuranReferencesResponse struct {
-	References []bookQuranReferenceResponse `json:"references"`
+	References []bookQuranReferenceResponse `json:"items"`
 	Total      int                          `json:"total"`
 }
 
@@ -438,13 +438,15 @@ func getQuranTranslationSources(t *testing.T, lang string) []quranTranslationSou
 	t.Helper()
 
 	resp := doJSON(t, http.MethodGet, fmt.Sprintf("%s/v1/quran/translation-sources?lang=%s", baseURL(), lang), nil, "")
-	var sources []quranTranslationSourceResponse
-	decodeAndClose(t, resp, &sources)
+	var sourceList struct {
+		Items []quranTranslationSourceResponse `json:"items"`
+	}
+	decodeAndClose(t, resp, &sourceList)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("get quran translation sources %s expected 200, got %d", lang, resp.StatusCode)
 	}
 
-	return sources
+	return sourceList.Items
 }
 
 func findQuranTranslationSource(sources []quranTranslationSourceResponse, id string) *quranTranslationSourceResponse {
