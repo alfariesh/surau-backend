@@ -30,6 +30,8 @@ Edit `.env.production`:
 - Pastikan domain `EMAIL_FROM_ADDRESS` sudah onboard di Cloudflare Email Service untuk Email Sending.
 - Biarkan `APP_BIND_ADDR=127.0.0.1` jika reverse proxy ada di server yang sama.
 - Biarkan `APP_PUBLISHED_PORT=8080`, kecuali port 8080 sudah dipakai service lain.
+- Isi `CORS_ALLOWED_ORIGINS` dengan origin web frontend (mis. `https://surau.org`); kosongkan jika belum ada client browser. Aplikasi mobile native tidak butuh CORS.
+- Konfigurasi reverse proxy (Nginx/Caddy) agar membalas 404 untuk `/internal` dan `/metrics` — keduanya hanya untuk jaringan privat (nginx dev sudah melakukannya di `nginx/nginx.conf`).
 
 Jika memakai database cloud, ganti `PG_URL` ke URL provider. Untuk database yang wajib SSL, pakai `?sslmode=require`.
 Jika password database berisi karakter khusus seperti `@`, `#`, `/`, atau `:`, encode password tersebut di `PG_URL`.

@@ -11,8 +11,6 @@ tool (
 	github.com/swaggo/swag/cmd/swag
 	go.uber.org/mock/mockgen
 	golang.org/x/vuln/cmd/govulncheck
-	google.golang.org/grpc/cmd/protoc-gen-go-grpc
-	google.golang.org/protobuf/cmd/protoc-gen-go
 	mvdan.cc/gofumpt
 )
 
@@ -29,8 +27,6 @@ require (
 	github.com/golang-migrate/migrate/v4 v4.19.1
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.9.2
-	github.com/nats-io/nats.go v1.52.0
-	github.com/rabbitmq/amqp091-go v1.11.0
 	github.com/rs/zerolog v1.35.1
 	github.com/stretchr/testify v1.11.1
 	github.com/swaggo/swag v1.16.6
@@ -38,8 +34,6 @@ require (
 	golang.org/x/crypto v0.51.0
 	golang.org/x/net v0.54.0
 	golang.org/x/sync v0.20.0
-	google.golang.org/grpc v1.81.1
-	google.golang.org/protobuf v1.36.11
 	modernc.org/sqlite v1.50.1
 )
 
@@ -297,8 +291,6 @@ require (
 	github.com/mutecomm/go-sqlcipher/v4 v4.4.0 // indirect
 	github.com/nakabonne/nestif v0.3.1 // indirect
 	github.com/nakagami/firebirdsql v0.0.0-20190310045651-3c02a58cfed8 // indirect
-	github.com/nats-io/nkeys v0.4.15 // indirect
-	github.com/nats-io/nuid v1.0.1 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
 	github.com/neo4j/neo4j-go-driver v1.8.1-0.20200803113522-b626aa943eba // indirect
 	github.com/nishanths/exhaustive v0.12.0 // indirect
@@ -415,7 +407,8 @@ require (
 	google.golang.org/genproto v0.0.0-20250603155806-513f23925822 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260226221140-a57be14db171 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260511170946-3700d4141b60 // indirect
-	google.golang.org/grpc/cmd/protoc-gen-go-grpc v1.6.2 // indirect
+	google.golang.org/grpc v1.81.1 // indirect
+	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
