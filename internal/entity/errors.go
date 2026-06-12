@@ -83,6 +83,7 @@ var (
 	ErrKhatamCycleActiveExists         = errors.New("active khatam cycle already exists")
 	ErrKhatamCycleIncomplete           = errors.New("khatam cycle incomplete")
 	ErrInvalidJuzNumber                = errors.New("invalid juz number")
+	ErrInvalidSyncSince                = errors.New("invalid sync since")
 )
 
 // AuthRateLimitedError carries the retry-after hint computed by the rate

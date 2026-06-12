@@ -7480,6 +7480,64 @@
                 ]
             }
         },
+        "/me/progress/batch": {
+            "post": {
+                "description": "Replay an offline autosave queue in one request (max 100 kitab and 100 Quran entries). Entries are processed in order and reported one-to-one in the response; stale client_observed_at entries are accepted but never roll progress back. Domain failures (e.g. deleted book) mark only that entry as error.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "me"
+                ],
+                "summary": "Batch save reading progress",
+                "operationId": "batch-save-progress",
+                "parameters": [
+                    {
+                        "description": "Offline progress queue",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.BatchProgress"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.BatchProgressResults"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
         "/me/progress/{book_id}": {
             "get": {
                 "description": "Return the authenticated user's reading position for one book.",
@@ -8505,6 +8563,59 @@
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/me/sync": {
+            "get": {
+                "description": "Return reading progress (kitab and Quran), saved items, and khatam cycles changed at or after the since cursor; omit since for a full snapshot. Delivery is at-least-once (a server-side overlap window re-sends recent rows), so clients must upsert idempotently by key and store server_time as the next cursor. saved_item_ids always lists every current saved-item ID for delete reconciliation.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "me"
+                ],
+                "summary": "Sync personal reader data",
+                "operationId": "sync-personal-data",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "example": "2026-06-11T00:00:00Z",
+                        "description": "RFC3339 cursor from the previous response's server_time",
+                        "name": "since",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.PersonalSyncSnapshot"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
                         "schema": {
                             "$ref": "#/definitions/v1.Error"
                         }
@@ -12699,6 +12810,49 @@
                 }
             }
         },
+        "entity.PersonalSyncSnapshot": {
+            "type": "object",
+            "properties": {
+                "khatam_cycles": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.QuranKhatamCycle"
+                    }
+                },
+                "quran_progress": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.QuranReadingProgress"
+                    }
+                },
+                "reading_progress": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.ReadingProgress"
+                    }
+                },
+                "saved_item_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "saved_items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.SavedItem"
+                    }
+                },
+                "server_time": {
+                    "type": "string",
+                    "example": "2026-06-12T03:00:00Z"
+                },
+                "since": {
+                    "type": "string",
+                    "example": "2026-06-11T00:00:00Z"
+                }
+            }
+        },
         "entity.ProductionAssetStatus": {
             "type": "object",
             "properties": {
@@ -14187,6 +14341,132 @@
                 "total": {
                     "type": "integer",
                     "example": 42
+                }
+            }
+        },
+        "v1.BatchKitabProgress": {
+            "type": "object",
+            "required": [
+                "book_id"
+            ],
+            "properties": {
+                "book_id": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "example": 797
+                },
+                "client_observed_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "heading_id": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "example": 10
+                },
+                "page_id": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "example": 12
+                },
+                "progress_percent": {
+                    "type": "number",
+                    "maximum": 100,
+                    "minimum": 0,
+                    "example": 32.5
+                }
+            }
+        },
+        "v1.BatchKitabProgressResult": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string",
+                    "example": "book not found"
+                },
+                "progress": {
+                    "$ref": "#/definitions/entity.ReadingProgress"
+                },
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "ok",
+                        "error"
+                    ],
+                    "example": "ok"
+                }
+            }
+        },
+        "v1.BatchProgress": {
+            "type": "object",
+            "properties": {
+                "kitab": {
+                    "type": "array",
+                    "maxItems": 100,
+                    "items": {
+                        "$ref": "#/definitions/v1.BatchKitabProgress"
+                    }
+                },
+                "quran": {
+                    "type": "array",
+                    "maxItems": 100,
+                    "items": {
+                        "$ref": "#/definitions/v1.BatchQuranProgress"
+                    }
+                }
+            }
+        },
+        "v1.BatchProgressResults": {
+            "type": "object",
+            "properties": {
+                "kitab": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/v1.BatchKitabProgressResult"
+                    }
+                },
+                "quran": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/v1.BatchQuranProgressResult"
+                    }
+                }
+            }
+        },
+        "v1.BatchQuranProgress": {
+            "type": "object",
+            "required": [
+                "ayah_key"
+            ],
+            "properties": {
+                "ayah_key": {
+                    "type": "string",
+                    "maxLength": 16,
+                    "example": "73:4"
+                },
+                "client_observed_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                }
+            }
+        },
+        "v1.BatchQuranProgressResult": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string",
+                    "example": "quran ayah not found"
+                },
+                "progress": {
+                    "$ref": "#/definitions/entity.QuranReadingProgress"
+                },
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "ok",
+                        "error"
+                    ],
+                    "example": "ok"
                 }
             }
         },

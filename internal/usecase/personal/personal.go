@@ -287,6 +287,24 @@ func (uc *UseCase) ListKhatamHistory(
 	return uc.repo.ListKhatamHistory(ctx, userID, clampLimit(limit), clampOffset(offset))
 }
 
+// SyncPersonalData returns the user's personal reader state changed since the
+// given cursor, or a full snapshot when since is nil.
+func (uc *UseCase) SyncPersonalData(
+	ctx context.Context,
+	userID string,
+	since *time.Time,
+) (entity.PersonalSyncSnapshot, error) {
+	if since != nil {
+		normalized := since.UTC()
+		if normalized.IsZero() || normalized.After(time.Now().UTC().Add(progressFutureTolerance)) {
+			return entity.PersonalSyncSnapshot{}, entity.ErrInvalidSyncSince
+		}
+		since = &normalized
+	}
+
+	return uc.repo.SyncSnapshot(ctx, userID, since)
+}
+
 func clampLimit(limit int) uint64 {
 	if limit <= 0 {
 		return defaultLimit

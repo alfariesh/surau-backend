@@ -1891,6 +1891,21 @@ func (mr *MockPersonalMockRecorder) StartKhatamCycle(ctx, userID, notes any) *go
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StartKhatamCycle", reflect.TypeOf((*MockPersonal)(nil).StartKhatamCycle), ctx, userID, notes)
 }
 
+// SyncPersonalData mocks base method.
+func (m *MockPersonal) SyncPersonalData(ctx context.Context, userID string, since *time.Time) (entity.PersonalSyncSnapshot, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SyncPersonalData", ctx, userID, since)
+	ret0, _ := ret[0].(entity.PersonalSyncSnapshot)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// SyncPersonalData indicates an expected call of SyncPersonalData.
+func (mr *MockPersonalMockRecorder) SyncPersonalData(ctx, userID, since any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SyncPersonalData", reflect.TypeOf((*MockPersonal)(nil).SyncPersonalData), ctx, userID, since)
+}
+
 // UnmarkKhatamJuz mocks base method.
 func (m *MockPersonal) UnmarkKhatamJuz(ctx context.Context, userID string, juzNumber int) (entity.QuranKhatamCycle, error) {
 	m.ctrl.T.Helper()

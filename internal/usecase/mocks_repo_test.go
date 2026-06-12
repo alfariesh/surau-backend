@@ -2498,6 +2498,21 @@ func (mr *MockPersonalRepoMockRecorder) StartKhatamCycle(ctx, cycle any) *gomock
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StartKhatamCycle", reflect.TypeOf((*MockPersonalRepo)(nil).StartKhatamCycle), ctx, cycle)
 }
 
+// SyncSnapshot mocks base method.
+func (m *MockPersonalRepo) SyncSnapshot(ctx context.Context, userID string, since *time.Time) (entity.PersonalSyncSnapshot, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SyncSnapshot", ctx, userID, since)
+	ret0, _ := ret[0].(entity.PersonalSyncSnapshot)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// SyncSnapshot indicates an expected call of SyncSnapshot.
+func (mr *MockPersonalRepoMockRecorder) SyncSnapshot(ctx, userID, since any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SyncSnapshot", reflect.TypeOf((*MockPersonalRepo)(nil).SyncSnapshot), ctx, userID, since)
+}
+
 // UnmarkKhatamJuz mocks base method.
 func (m *MockPersonalRepo) UnmarkKhatamJuz(ctx context.Context, userID string, juzNumber int) (entity.QuranKhatamCycle, error) {
 	m.ctrl.T.Helper()

@@ -1826,6 +1826,35 @@ definitions:
         example: en
         type: string
     type: object
+  entity.PersonalSyncSnapshot:
+    properties:
+      khatam_cycles:
+        items:
+          $ref: '#/definitions/entity.QuranKhatamCycle'
+        type: array
+      quran_progress:
+        items:
+          $ref: '#/definitions/entity.QuranReadingProgress'
+        type: array
+      reading_progress:
+        items:
+          $ref: '#/definitions/entity.ReadingProgress'
+        type: array
+      saved_item_ids:
+        items:
+          type: string
+        type: array
+      saved_items:
+        items:
+          $ref: '#/definitions/entity.SavedItem'
+        type: array
+      server_time:
+        example: "2026-06-12T03:00:00Z"
+        type: string
+      since:
+        example: "2026-06-11T00:00:00Z"
+        type: string
+    type: object
   entity.ProductionAssetStatus:
     properties:
       asset_type:
@@ -2883,6 +2912,95 @@ definitions:
       total:
         example: 42
         type: integer
+    type: object
+  v1.BatchKitabProgress:
+    properties:
+      book_id:
+        example: 797
+        minimum: 1
+        type: integer
+      client_observed_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      heading_id:
+        example: 10
+        minimum: 1
+        type: integer
+      page_id:
+        example: 12
+        minimum: 1
+        type: integer
+      progress_percent:
+        example: 32.5
+        maximum: 100
+        minimum: 0
+        type: number
+    required:
+    - book_id
+    type: object
+  v1.BatchKitabProgressResult:
+    properties:
+      error:
+        example: book not found
+        type: string
+      progress:
+        $ref: '#/definitions/entity.ReadingProgress'
+      status:
+        enum:
+        - ok
+        - error
+        example: ok
+        type: string
+    type: object
+  v1.BatchProgress:
+    properties:
+      kitab:
+        items:
+          $ref: '#/definitions/v1.BatchKitabProgress'
+        maxItems: 100
+        type: array
+      quran:
+        items:
+          $ref: '#/definitions/v1.BatchQuranProgress'
+        maxItems: 100
+        type: array
+    type: object
+  v1.BatchProgressResults:
+    properties:
+      kitab:
+        items:
+          $ref: '#/definitions/v1.BatchKitabProgressResult'
+        type: array
+      quran:
+        items:
+          $ref: '#/definitions/v1.BatchQuranProgressResult'
+        type: array
+    type: object
+  v1.BatchQuranProgress:
+    properties:
+      ayah_key:
+        example: "73:4"
+        maxLength: 16
+        type: string
+      client_observed_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+    required:
+    - ayah_key
+    type: object
+  v1.BatchQuranProgressResult:
+    properties:
+      error:
+        example: quran ayah not found
+        type: string
+      progress:
+        $ref: '#/definitions/entity.QuranReadingProgress'
+      status:
+        enum:
+        - ok
+        - error
+        example: ok
+        type: string
     type: object
   v1.BookList:
     properties:
@@ -9509,6 +9627,47 @@ paths:
       summary: Save TOC reading progress
       tags:
       - me
+  /me/progress/batch:
+    post:
+      consumes:
+      - application/json
+      description: Replay an offline autosave queue in one request (max 100 kitab
+        and 100 Quran entries). Entries are processed in order and reported one-to-one
+        in the response; stale client_observed_at entries are accepted but never roll
+        progress back. Domain failures (e.g. deleted book) mark only that entry as
+        error.
+      operationId: batch-save-progress
+      parameters:
+      - description: Offline progress queue
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.BatchProgress'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.BatchProgressResults'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Batch save reading progress
+      tags:
+      - me
   /me/quran/khatam:
     get:
       description: Return the authenticated user's active khatam cycle with completed
@@ -10061,6 +10220,45 @@ paths:
       security:
       - BearerAuth: []
       summary: List saved item tags
+      tags:
+      - me
+  /me/sync:
+    get:
+      description: Return reading progress (kitab and Quran), saved items, and khatam
+        cycles changed at or after the since cursor; omit since for a full snapshot.
+        Delivery is at-least-once (a server-side overlap window re-sends recent rows),
+        so clients must upsert idempotently by key and store server_time as the next
+        cursor. saved_item_ids always lists every current saved-item ID for delete
+        reconciliation.
+      operationId: sync-personal-data
+      parameters:
+      - description: RFC3339 cursor from the previous response's server_time
+        example: "2026-06-11T00:00:00Z"
+        in: query
+        name: since
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.PersonalSyncSnapshot'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Sync personal reader data
       tags:
       - me
   /quran/ayahs/{ayah_key}:

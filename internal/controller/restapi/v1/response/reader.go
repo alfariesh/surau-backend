@@ -49,6 +49,26 @@ type KhatamHistory struct {
 	Total  int                       `json:"total" example:"2"`
 } // @name v1.KhatamHistory
 
+// BatchKitabProgressResult is one per-entry outcome of a batch replay.
+type BatchKitabProgressResult struct {
+	Status   string                  `json:"status"             example:"ok" enums:"ok,error"`
+	Error    *string                 `json:"error,omitempty"    example:"book not found"`
+	Progress *entity.ReadingProgress `json:"progress,omitempty"`
+} // @name v1.BatchKitabProgressResult
+
+// BatchQuranProgressResult is one per-entry outcome of a batch replay.
+type BatchQuranProgressResult struct {
+	Status   string                       `json:"status"             example:"ok" enums:"ok,error"`
+	Error    *string                      `json:"error,omitempty"    example:"quran ayah not found"`
+	Progress *entity.QuranReadingProgress `json:"progress,omitempty"`
+} // @name v1.BatchQuranProgressResult
+
+// BatchProgressResults mirrors the request entry order one-to-one.
+type BatchProgressResults struct {
+	Kitab []BatchKitabProgressResult `json:"kitab"`
+	Quran []BatchQuranProgressResult `json:"quran"`
+} // @name v1.BatchProgressResults
+
 // TranslationFeedbackList -.
 type TranslationFeedbackList struct {
 	Feedbacks []entity.EditorialTranslationFeedback `json:"feedbacks"`

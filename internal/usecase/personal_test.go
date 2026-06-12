@@ -359,6 +359,55 @@ func TestPersonalUpsertSavedItemNormalizesSingleAyahRange(t *testing.T) {
 	assert.Equal(t, entity.SavedItemTypeQuranAyah, item.ItemType)
 }
 
+func TestPersonalSyncPersonalData(t *testing.T) {
+	t.Parallel()
+
+	t.Run("nil since passes through", func(t *testing.T) {
+		t.Parallel()
+
+		uc, mockRepo := newPersonalUseCase(t)
+
+		mockRepo.EXPECT().
+			SyncSnapshot(context.Background(), "user-id", nil).
+			Return(entity.PersonalSyncSnapshot{}, nil)
+
+		_, err := uc.SyncPersonalData(context.Background(), "user-id", nil)
+
+		require.NoError(t, err)
+	})
+
+	t.Run("since normalized to UTC", func(t *testing.T) {
+		t.Parallel()
+
+		uc, mockRepo := newPersonalUseCase(t)
+		since := time.Date(2026, 6, 11, 7, 0, 0, 0, time.FixedZone("WIB", 7*60*60))
+
+		mockRepo.EXPECT().
+			SyncSnapshot(context.Background(), "user-id", gomock.Any()).
+			DoAndReturn(func(_ context.Context, _ string, got *time.Time) (entity.PersonalSyncSnapshot, error) {
+				require.NotNil(t, got)
+				assert.Equal(t, time.Date(2026, 6, 11, 0, 0, 0, 0, time.UTC), *got)
+
+				return entity.PersonalSyncSnapshot{}, nil
+			})
+
+		_, err := uc.SyncPersonalData(context.Background(), "user-id", &since)
+
+		require.NoError(t, err)
+	})
+
+	t.Run("future since rejected", func(t *testing.T) {
+		t.Parallel()
+
+		uc, _ := newPersonalUseCase(t)
+		future := time.Now().Add(10 * time.Minute)
+
+		_, err := uc.SyncPersonalData(context.Background(), "user-id", &future)
+
+		require.ErrorIs(t, err, entity.ErrInvalidSyncSince)
+	})
+}
+
 func TestPersonalKhatamValidations(t *testing.T) {
 	t.Parallel()
 

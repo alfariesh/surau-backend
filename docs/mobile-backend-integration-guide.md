@@ -84,6 +84,8 @@ Response shape ringkas:
 | `GET /v1/me/quran/progress/surahs` | `{ "surahs": QuranReadingProgress[] }` |
 | `GET /v1/me/progress` | `{ "items": ContinueReadingEntry[], "total": number }` |
 | `GET /v1/me/quran/khatam/history` | `{ "cycles": QuranKhatamCycle[], "total": number }` |
+| `GET /v1/me/sync` | `PersonalSyncSnapshot` (lihat bagian Delta Sync) |
+| `POST /v1/me/progress/batch` | `{ "kitab": BatchResult[], "quran": BatchResult[] }` per entri |
 
 ## 2. Error Contract
 
@@ -1230,8 +1232,76 @@ Offline write queue:
 
 - Aman untuk queue: progress save, saved item create/update/delete, preference update.
 - Setiap queued write perlu timestamp lokal dan retry policy.
-- Untuk progress Quran, selalu kirim `client_observed_at`.
+- Untuk progress Quran maupun kitab, selalu kirim `client_observed_at`.
 - Untuk delete saved item, jangan re-create item lama dari stale queue.
+
+### Delta Sync (pull) — `GET /v1/me/sync`
+
+| Method | Path | Auth | Kegunaan |
+| --- | --- | --- | --- |
+| `GET` | `/v1/me/sync?since=<RFC3339>` | Bearer | Satu payload delta: progress kitab + Quran, saved items, khatam. Tanpa `since` = full snapshot. |
+
+```ts
+export type PersonalSyncSnapshot = {
+  server_time: string; // simpan sebagai cursor `since` untuk sync berikutnya
+  since?: string | null; // echo cursor yang diminta
+  reading_progress: ReadingProgress[];
+  quran_progress: QuranReadingProgress[];
+  saved_items: SavedItem[];
+  saved_item_ids: string[]; // SEMUA id saved-item user saat ini
+  khatam_cycles: QuranKhatamCycle[];
+};
+```
+
+Aturan klien:
+
+- Simpan `server_time` dari response sebagai `since` berikutnya. Jangan pakai jam lokal device.
+- Delivery bersifat **at-least-once**: server memakai overlap window ±60 detik, jadi baris yang sama bisa terkirim ulang. Terapkan payload sebagai upsert idempotent by key (`book_id`, `surah_id`, saved item `id`, cycle `id`).
+- Rekonsiliasi delete: hapus saved item lokal yang id-nya tidak ada di `saved_item_ids` (list ini selalu lengkap, bukan delta).
+- `since` lebih dari ~5 menit di masa depan ditolak `400 {"error":"invalid since"}`.
+- Lakukan full sync (tanpa `since`) saat login pertama, setelah restore backup, atau saat state lokal dicurigai korup.
+
+### Replay Queue (push) — `POST /v1/me/progress/batch`
+
+| Method | Path | Auth | Kegunaan |
+| --- | --- | --- | --- |
+| `POST` | `/v1/me/progress/batch` | Bearer | Replay antrian autosave offline sekali jalan (max 100 entri kitab + 100 entri Quran). |
+
+Request:
+
+```json
+{
+  "kitab": [
+    { "book_id": 797, "page_id": 12, "progress_percent": 32.5, "client_observed_at": "2026-06-12T01:00:00Z" }
+  ],
+  "quran": [
+    { "ayah_key": "73:4", "client_observed_at": "2026-06-12T01:05:00Z" }
+  ]
+}
+```
+
+Response — hasil per entri, urutan sama dengan request:
+
+```json
+{
+  "kitab": [
+    { "status": "ok", "progress": { "book_id": 797, "page_id": 12 } },
+    { "status": "error", "error": "book not found" }
+  ],
+  "quran": [
+    { "status": "ok", "progress": { "ayah_key": "73:4", "juz_number": 29 } }
+  ]
+}
+```
+
+Aturan klien:
+
+- Kirim antrian apa adanya, urutan bebas — upsert monotonic `observed_at` di server menjamin entri stale/duplikat tidak memundurkan posisi.
+- Entri `status: "error"` (mis. buku sudah di-unpublish) boleh langsung di-drop dari queue; jangan retry selamanya.
+- Batch dihitung 1 request oleh rate limiter `/me` (240 write/menit), jadi jauh lebih hemat daripada replay satu-satu.
+- Untuk saved items, tetap replay per-item via `POST/PATCH/DELETE /v1/me/saved-items` (idempotent by target), lalu tutup dengan `GET /v1/me/sync` untuk rekonsiliasi.
+
+Alur rekomendasi saat app kembali online: flush queue (`POST /v1/me/progress/batch` + replay saved-items) → `GET /v1/me/sync?since=<cursor terakhir>` → simpan `server_time` baru.
 
 ## 13. Pagination and Lists
 

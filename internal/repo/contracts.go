@@ -344,6 +344,7 @@ type (
 		UnmarkKhatamJuz(ctx context.Context, userID string, juzNumber int) (entity.QuranKhatamCycle, error)
 		CompleteKhatamCycle(ctx context.Context, userID string) (entity.QuranKhatamCycle, error)
 		ListKhatamHistory(ctx context.Context, userID string, limit, offset uint64) ([]entity.QuranKhatamCycle, int, error)
+		SyncSnapshot(ctx context.Context, userID string, since *time.Time) (entity.PersonalSyncSnapshot, error)
 	}
 
 	// EditorialRepo -.

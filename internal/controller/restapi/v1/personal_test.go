@@ -461,26 +461,47 @@ func newPersonalTestApp(personal *fakePersonal, authenticated bool) *fiber.App {
 }
 
 type fakePersonal struct {
-	item            entity.SavedItem
-	tags            []string
-	updateErr       error
-	deleteErr       error
-	quranProgress   entity.QuranReadingProgress
-	quranProgresses []entity.QuranReadingProgress
-	quranErr        error
-	continueReading []entity.ContinueReadingEntry
-	lastPatch       *entity.SavedItemPatch
-	khatamCycle     entity.QuranKhatamCycle
-	khatamHistory   []entity.QuranKhatamCycle
-	khatamErr       error
+	item             entity.SavedItem
+	tags             []string
+	updateErr        error
+	deleteErr        error
+	quranProgress    entity.QuranReadingProgress
+	quranProgresses  []entity.QuranReadingProgress
+	quranErr         error
+	continueReading  []entity.ContinueReadingEntry
+	lastPatch        *entity.SavedItemPatch
+	khatamCycle      entity.QuranKhatamCycle
+	khatamHistory    []entity.QuranKhatamCycle
+	khatamErr        error
+	saveProgressErrs map[int]error
+	syncSnapshot     entity.PersonalSyncSnapshot
+	syncErr          error
+	lastSyncSince    *time.Time
 }
 
 func (f *fakePersonal) GetProgress(context.Context, string, int) (entity.ReadingProgress, error) {
 	return entity.ReadingProgress{}, nil
 }
 
-func (f *fakePersonal) SaveProgress(context.Context, string, int, *int, *int, *float64, *time.Time) (entity.ReadingProgress, error) {
-	return entity.ReadingProgress{}, nil
+func (f *fakePersonal) SaveProgress(
+	_ context.Context,
+	userID string,
+	bookID int,
+	pageID, headingID *int,
+	progressPercent *float64,
+	_ *time.Time,
+) (entity.ReadingProgress, error) {
+	if err, ok := f.saveProgressErrs[bookID]; ok {
+		return entity.ReadingProgress{}, err
+	}
+
+	return entity.ReadingProgress{
+		UserID:          userID,
+		BookID:          bookID,
+		PageID:          pageID,
+		HeadingID:       headingID,
+		ProgressPercent: progressPercent,
+	}, nil
 }
 
 func (f *fakePersonal) ListProgress(context.Context, string, string, int, int) ([]entity.ContinueReadingEntry, int, error) {
@@ -611,4 +632,13 @@ func (f *fakePersonal) ListKhatamHistory(context.Context, string, int, int) ([]e
 	}
 
 	return f.khatamHistory, len(f.khatamHistory), nil
+}
+
+func (f *fakePersonal) SyncPersonalData(_ context.Context, _ string, since *time.Time) (entity.PersonalSyncSnapshot, error) {
+	f.lastSyncSince = since
+	if f.syncErr != nil {
+		return entity.PersonalSyncSnapshot{}, f.syncErr
+	}
+
+	return f.syncSnapshot, nil
 }
