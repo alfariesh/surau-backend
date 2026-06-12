@@ -22,8 +22,9 @@ type UserRepo struct {
 	*postgres.Postgres
 }
 
-const userReturningColumns = "id, username, email, role, password_hash, email_verified, token_version, created_at, updated_at"
-const userAccountSelectColumns = `
+const (
+	userReturningColumns     = "id, username, email, role, password_hash, email_verified, token_version, created_at, updated_at"
+	userAccountSelectColumns = `
     u.id,
     u.username,
     u.email,
@@ -52,6 +53,7 @@ const userAccountSelectColumns = `
     pref.quran_recitation_id,
     COALESCE(pref.created_at, u.created_at),
     COALESCE(pref.updated_at, u.updated_at)`
+)
 
 // NewUserRepo -.
 func NewUserRepo(pg *postgres.Postgres) *UserRepo {
@@ -1196,10 +1198,7 @@ RETURNING count, expires_at`
 		return entity.AuthRateLimitResult{}, fmt.Errorf("UserRepo - IncrementAuthRateLimit - QueryRow: %w", err)
 	}
 
-	retryAfter := time.Until(expiresAt)
-	if retryAfter < 0 {
-		retryAfter = 0
-	}
+	retryAfter := max(time.Until(expiresAt), 0)
 
 	return entity.AuthRateLimitResult{
 		Allowed:    count <= limit.MaxAttempts,

@@ -49,7 +49,8 @@ func main() {
 	// it is the recovery escape hatch when no working admin account remains.
 	var user entity.User
 	var previousRole string
-	err = pool.QueryRow(ctx, `
+	err = pool.QueryRow(
+		ctx, `
 WITH existing AS (
     SELECT id, role AS previous_role
     FROM users
@@ -70,7 +71,8 @@ RETURNING u.id, u.username, u.email, u.role, e.previous_role, u.created_at, u.up
 
 	if previousRole == entity.UserRoleAdmin && normalizedRole != entity.UserRoleAdmin {
 		var adminCount int
-		if err = pool.QueryRow(ctx,
+		if err = pool.QueryRow(
+			ctx,
 			"SELECT count(*) FROM users WHERE role = $1 AND deleted_at IS NULL",
 			entity.UserRoleAdmin,
 		).Scan(&adminCount); err == nil && adminCount == 0 {
@@ -88,7 +90,8 @@ RETURNING u.id, u.username, u.email, u.role, e.previous_role, u.created_at, u.up
 	if err != nil {
 		fatalf("marshal audit metadata: %v", err)
 	}
-	_, err = pool.Exec(ctx, `
+	_, err = pool.Exec(
+		ctx, `
 INSERT INTO auth_audit_logs (id, event, status, user_id, email, error_code, metadata, created_at)
 VALUES ($1, 'role_change', 'success', $2, $3, '', $4, now())`,
 		uuid.NewString(),

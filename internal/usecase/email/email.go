@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"html"
+	"maps"
 	"net/mail"
 	"net/url"
 	"strings"
@@ -2044,7 +2045,8 @@ func emailHTML(view emailView) string {
 	}
 	supportEmail := normalizeSupportEmail(view.SupportEmail)
 
-	return fmt.Sprintf(`<!doctype html>
+	return fmt.Sprintf(
+		`<!doctype html>
 <html lang="%s" dir="%s">
   <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>%s</title></head>
   <body style="margin:0;padding:0;background:#f6f5ef;color:#25241f;font-family:Arial,sans-serif;direction:%s;">
@@ -2462,9 +2464,7 @@ func normalizeVariables(values []string) []string {
 
 func cloneMap(values map[string]string) map[string]string {
 	cloned := map[string]string{}
-	for key, value := range values {
-		cloned[key] = value
-	}
+	maps.Copy(cloned, values)
 
 	return cloned
 }

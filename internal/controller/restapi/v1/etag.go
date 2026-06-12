@@ -58,7 +58,7 @@ func parseIfMatch(ctx *fiber.Ctx) (expected *time.Time, present, ok bool) {
 		return nil, false, true
 	}
 
-	for _, candidate := range strings.Split(header, ",") {
+	for candidate := range strings.SplitSeq(header, ",") {
 		candidate = strings.TrimSpace(candidate)
 		if candidate == "*" {
 			return nil, true, true

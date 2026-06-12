@@ -209,7 +209,8 @@ func importAssets(ctx context.Context, pool *pgxpool.Pool, reader io.Reader) (As
 			stats.Translations++
 			status := normalizeTranslationStatus(asset.Status)
 			reviewedAt := reviewedAtOrNow(status, asset.ReviewedAt)
-			batch.Queue(`
+			batch.Queue(
+				`
 INSERT INTO section_translations (
     book_id, heading_id, lang, title, content, source, translation_status,
     reviewed_by, reviewed_at, metadata, updated_at
@@ -240,7 +241,8 @@ ON CONFLICT (book_id, heading_id, lang) DO UPDATE SET
 			status := normalizeSummaryStatus(asset.SummaryStatus, asset.Status)
 			reviewedBy := firstNonBlankPtr(asset.SummaryReviewedBy, asset.ReviewedBy)
 			reviewedAt := reviewedAtOrNow(status, firstNonNilTime(asset.SummaryReviewedAt, asset.ReviewedAt))
-			batch.Queue(`
+			batch.Queue(
+				`
 INSERT INTO book_heading_summaries (
     book_id, heading_id, lang, summary, source, summary_status,
     reviewed_by, reviewed_at, metadata, updated_at
@@ -266,7 +268,8 @@ ON CONFLICT (book_id, heading_id, lang) DO UPDATE SET
 			)
 		case "audio":
 			stats.Audio++
-			batch.Queue(`
+			batch.Queue(
+				`
 INSERT INTO section_audio (book_id, heading_id, lang, url, narrator, duration_seconds, mime_type, metadata, updated_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7, nullif($8, '')::jsonb, now())
 ON CONFLICT (book_id, heading_id, lang) DO UPDATE SET
@@ -290,7 +293,8 @@ ON CONFLICT (book_id, heading_id, lang) DO UPDATE SET
 			displayTitle := firstNonBlankPtr(asset.DisplayTitle, asset.Title, asset.Name)
 			status := normalizeTranslationStatus(asset.Status)
 			reviewedAt := reviewedAtOrNow(status, asset.ReviewedAt)
-			batch.Queue(`
+			batch.Queue(
+				`
 INSERT INTO book_metadata_translations (
     book_id, lang, display_title, bibliography, hint, description, source,
     translation_status, reviewed_by, reviewed_at, metadata, updated_at
@@ -323,7 +327,8 @@ ON CONFLICT (book_id, lang) DO UPDATE SET
 			stats.AuthorTranslations++
 			status := normalizeTranslationStatus(asset.Status)
 			reviewedAt := reviewedAtOrNow(status, asset.ReviewedAt)
-			batch.Queue(`
+			batch.Queue(
+				`
 INSERT INTO author_translations (
     author_id, lang, name, biography, death_text, source, translation_status,
     reviewed_by, reviewed_at, metadata, updated_at
@@ -354,7 +359,8 @@ ON CONFLICT (author_id, lang) DO UPDATE SET
 			stats.CategoryTranslations++
 			status := normalizeTranslationStatus(asset.Status)
 			reviewedAt := reviewedAtOrNow(status, asset.ReviewedAt)
-			batch.Queue(`
+			batch.Queue(
+				`
 INSERT INTO category_translations (
     category_id, lang, name, source, translation_status, reviewed_by,
     reviewed_at, metadata, updated_at

@@ -194,7 +194,6 @@ func TestEditorialProductionPermissionMatrix(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -457,10 +456,10 @@ func TestEditorialSaveSourceMetadataDraftIncludesBibliographyAndHint(t *testing.
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	assert.Equal(t, 1, editorial.saveMetadataDraftCalls)
 	assert.Equal(t, 797, editorial.savedMetadataDraft.BookID)
-	assert.Equal(t, ptrString("New title"), editorial.savedMetadataDraft.DisplayTitle)
-	assert.Equal(t, ptrString("New bibliography"), editorial.savedMetadataDraft.Bibliography)
-	assert.Equal(t, ptrString("New hint"), editorial.savedMetadataDraft.Hint)
-	assert.Equal(t, ptrString("New description"), editorial.savedMetadataDraft.Description)
+	assert.Equal(t, new("New title"), editorial.savedMetadataDraft.DisplayTitle)
+	assert.Equal(t, new("New bibliography"), editorial.savedMetadataDraft.Bibliography)
+	assert.Equal(t, new("New hint"), editorial.savedMetadataDraft.Hint)
+	assert.Equal(t, new("New description"), editorial.savedMetadataDraft.Description)
 }
 
 func TestEditorialPublishProductionProjectRejectsStaleIfMatch(t *testing.T) {
@@ -821,6 +820,7 @@ func (f *fakeProductionEditorial) GetHeadingDraft(
 	return entity.BookHeadingEdit{BookID: 797, HeadingID: 10, Status: entity.EditStatusDraft}, nil
 }
 
+//go:fix inline
 func ptrString(value string) *string {
-	return &value
+	return new(value)
 }

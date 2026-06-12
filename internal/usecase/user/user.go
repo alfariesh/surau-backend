@@ -3266,7 +3266,8 @@ func authEmailHTML(view authEmailView) string {
 	if buttonLabel != "" && buttonURL != "" {
 		escapedButtonLabel := html.EscapeString(buttonLabel)
 		escapedButtonURL := html.EscapeString(buttonURL)
-		actionHTML = fmt.Sprintf(`
+		actionHTML = fmt.Sprintf(
+			`
 	                  <tr>
 	                    <td style="padding:26px 32px 0 32px;text-align:%s;">
 	                      <a href="%s" style="display:inline-block;border-radius:14px;background:#6f9368;color:#ffffff;font-size:15px;font-weight:700;line-height:20px;text-decoration:none;padding:14px 18px;">%s</a>
@@ -3305,7 +3306,8 @@ func authEmailHTML(view authEmailView) string {
 	}
 	socialHTML := authEmailSocialLinksHTML()
 
-	return fmt.Sprintf(`<!doctype html>
+	return fmt.Sprintf(
+		`<!doctype html>
 <html lang="%s" dir="%s">
   <head>
     <meta charset="utf-8">

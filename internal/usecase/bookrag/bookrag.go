@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -686,10 +687,8 @@ func retrievalQueries(question string) []string {
 		if query == "" {
 			return
 		}
-		for _, existing := range queries {
-			if existing == query {
-				return
-			}
+		if slices.Contains(queries, query) {
+			return
 		}
 		queries = append(queries, query)
 	}
@@ -848,14 +847,8 @@ func trimFallbackQuote(segment string, query string) string {
 func quoteAroundByteIndex(value string, index int, maxRunes int) string {
 	runes := []rune(value)
 	runeIndex := len([]rune(value[:index]))
-	start := runeIndex - maxRunes/3
-	if start < 0 {
-		start = 0
-	}
-	end := start + maxRunes
-	if end > len(runes) {
-		end = len(runes)
-	}
+	start := max(runeIndex-maxRunes/3, 0)
+	end := min(start+maxRunes, len(runes))
 	if end-start > maxRunes {
 		start = end - maxRunes
 	}
@@ -1216,10 +1209,7 @@ func splitHeadingBlocks(ids []int, blockSize int) [][]int {
 
 	blocks := make([][]int, 0, (len(ids)/blockSize)+1)
 	for start := 0; start < len(ids); start += blockSize {
-		end := start + blockSize
-		if end > len(ids) {
-			end = len(ids)
-		}
+		end := min(start+blockSize, len(ids))
 		blocks = append(blocks, ids[start:end])
 	}
 
@@ -1674,10 +1664,7 @@ func splitAnswerChunks(answer string, maxRunes int) []string {
 
 	chunks := make([]string, 0, (len(runes)/maxRunes)+1)
 	for start := 0; start < len(runes); start += maxRunes {
-		end := start + maxRunes
-		if end > len(runes) {
-			end = len(runes)
-		}
+		end := min(start+maxRunes, len(runes))
 		chunks = append(chunks, string(runes[start:end]))
 	}
 

@@ -714,7 +714,7 @@ func TestSendCampaignNowProcessesAllBatchesAndUsesMetadata(t *testing.T) {
 
 	const recipientCount = defaultBatchSize + 1
 	audience := make([]entity.EmailAudienceRecipient, 0, recipientCount)
-	for i := 0; i < recipientCount; i++ {
+	for i := range recipientCount {
 		audience = append(audience, entity.EmailAudienceRecipient{
 			UserID: fmt.Sprintf("user-id-%d", i+1),
 			Email:  fmt.Sprintf("user%d@example.com", i+1),

@@ -19,10 +19,7 @@ type Token struct {
 
 // NewToken builds the token payload from a usecase login result.
 func NewToken(result entity.LoginResult) Token {
-	expiresIn := int64(time.Until(result.AccessExpiresAt).Seconds())
-	if expiresIn < 0 {
-		expiresIn = 0
-	}
+	expiresIn := max(int64(time.Until(result.AccessExpiresAt).Seconds()), 0)
 
 	return Token{
 		Token:        result.AccessToken,

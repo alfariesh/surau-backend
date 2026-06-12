@@ -192,7 +192,8 @@ func run(ctx context.Context, opts fetchOptions) error {
 		return err
 	}
 
-	fmt.Printf("surahs=%d ayahs=%d translation=%s checksum=%s transliteration=%s checksum=%s\n",
+	fmt.Printf(
+		"surahs=%d ayahs=%d translation=%s checksum=%s transliteration=%s checksum=%s\n",
 		len(surahs),
 		len(translationRows),
 		translationPath,

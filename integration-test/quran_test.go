@@ -222,12 +222,14 @@ func seedMultilingualQuranFixture(t *testing.T) {
 	execFixtureSQL(t, ctx, tx, `DELETE FROM quran_ayahs WHERE surah_id = $1`, fixtureQuranSurahID)
 	execFixtureSQL(t, ctx, tx, `DELETE FROM quran_surahs WHERE surah_id = $1`, fixtureQuranSurahID)
 
-	execFixtureSQL(t, ctx, tx, `
+	execFixtureSQL(
+		t, ctx, tx, `
 INSERT INTO quran_surahs (surah_id, name_arabic, name_latin, name_translation, revelation_type, ayah_count, metadata)
 VALUES ($1, 'الناس', 'An-Nas Fixture', 'Manusia Fixture', 'makkiyah', 1, '{}'::jsonb)`,
 		fixtureQuranSurahID,
 	)
-	execFixtureSQL(t, ctx, tx, `
+	execFixtureSQL(
+		t, ctx, tx, `
 INSERT INTO quran_surah_infos (
     surah_id, lang, surah_name, text_html, short_text, source_name, source_url,
     qul_resource_id, format, license_status, checksum, metadata, imported_at
@@ -237,7 +239,8 @@ VALUES ($1, 'id', 'An-Nas Fixture', '<p>Info fixture Indonesia</p>', 'Info pende
         'html', 'permitted', 'fixture-info-checksum', '{}'::jsonb, now())`,
 		fixtureQuranSurahID,
 	)
-	execFixtureSQL(t, ctx, tx, `
+	execFixtureSQL(
+		t, ctx, tx, `
 INSERT INTO quran_ayahs (
     surah_id, ayah_number, ayah_key, text_qpc_hafs, text_imlaei_simple, search_text,
     script_type, font_family, page_number, juz_number, hizb_number, metadata
@@ -248,7 +251,8 @@ VALUES ($1, $2, $3, 'قُلْ أَعُوذُ بِرَبِّ النَّاسِ', '
 		fixtureQuranAyahNumber,
 		fixtureQuranAyahKey,
 	)
-	execFixtureSQL(t, ctx, tx, `
+	execFixtureSQL(
+		t, ctx, tx, `
 INSERT INTO quran_translation_sources (
     id, lang, name, translator, source_url, qul_resource_id, format,
     license_status, checksum, metadata, imported_at
@@ -258,7 +262,8 @@ VALUES ($1, 'id', 'Fixture Indonesian Source', 'Translator Fixture',
         'permitted', 'fixture-source-checksum', '{}'::jsonb, now())`,
 		fixtureQuranSourceID,
 	)
-	execFixtureSQL(t, ctx, tx, `
+	execFixtureSQL(
+		t, ctx, tx, `
 INSERT INTO quran_ayah_translations (
     source_id, surah_id, ayah_number, ayah_key, lang, text, footnotes, chunks, metadata
 )
@@ -268,7 +273,8 @@ VALUES ($1, $2, $3, $4, 'id', 'Terjemah fixture Indonesia', '[]'::jsonb, '[]'::j
 		fixtureQuranAyahNumber,
 		fixtureQuranAyahKey,
 	)
-	execFixtureSQL(t, ctx, tx, `
+	execFixtureSQL(
+		t, ctx, tx, `
 INSERT INTO quran_recitations (
     id, name, reciter_name, style, mode, source_url, qul_resource_id,
     format, license_status, checksum, metadata, imported_at
@@ -278,7 +284,8 @@ VALUES ($1, 'Fixture Recitation', 'Reciter Fixture', 'murattal', 'ayah',
         'permitted', 'fixture-recitation-checksum', '{}'::jsonb, now())`,
 		fixtureQuranRecitationID,
 	)
-	execFixtureSQL(t, ctx, tx, `
+	execFixtureSQL(
+		t, ctx, tx, `
 INSERT INTO quran_audio_tracks (
     recitation_id, track_type, track_key, surah_id, ayah_number, audio_url,
     r2_key, public_url, duration_ms, duration_seconds, mime_type, metadata
@@ -290,7 +297,8 @@ VALUES ($1, 'ayah', $2, $3, $4, 'https://example.test/source-audio.mp3',
 		fixtureQuranSurahID,
 		fixtureQuranAyahNumber,
 	)
-	execFixtureSQL(t, ctx, tx, `
+	execFixtureSQL(
+		t, ctx, tx, `
 INSERT INTO quran_book_references (
     id, book_id, page_id, heading_id, source_text, normalized_text, reference_kind,
     surah_id, from_ayah_number, to_ayah_number, from_ayah_key, to_ayah_key,

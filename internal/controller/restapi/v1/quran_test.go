@@ -301,7 +301,7 @@ func (f *fakeQuran) SurahAudio(_ context.Context, surahID int, recitationID stri
 			Name:             "Reciter",
 			DisplayName:      reciterName,
 			ReciterName:      &reciterName,
-			Style:            stringPtr("murattal"),
+			Style:            new("murattal"),
 			Mode:             "ayah",
 			TrackCount:       6236,
 			PublicTrackCount: 6236,
@@ -315,7 +315,7 @@ func (f *fakeQuran) SurahAudio(_ context.Context, surahID int, recitationID stri
 			TrackKey:     "73:1",
 			SurahID:      surahID,
 			AyahNumber:   &ayahNumber,
-			PublicURL:    stringPtr("https://cdn.example/73-1.mp3"),
+			PublicURL:    new("https://cdn.example/73-1.mp3"),
 			DurationMS:   &duration,
 			MIMEType:     &mimeType,
 			Segments: []entity.QuranAudioSegment{{
@@ -545,8 +545,9 @@ func fakeQuranAyah(surahID int, includeTranslation, includeAudio bool, recitatio
 	return ayah
 }
 
+//go:fix inline
 func stringPtr(value string) *string {
-	return &value
+	return new(value)
 }
 
 func fakeQuranAudioTrack(surahID, ayahNumber int, recitationID string) entity.QuranAudioTrack {
