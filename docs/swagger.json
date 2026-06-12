@@ -7413,6 +7413,119 @@
                 }
             }
         },
+        "/me/activity": {
+            "get": {
+                "description": "Return daily reading-activity buckets and an aggregate for [from, to]. Defaults to the last 30 days ending at to (or the server's UTC date). Activity days follow the local calendar date of each save's client_observed_at offset. Max range 366 days.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "me"
+                ],
+                "summary": "Get reading activity",
+                "operationId": "get-reading-activity",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "example": "2026-05-14",
+                        "description": "Start date (YYYY-MM-DD)",
+                        "name": "from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "example": "2026-06-12",
+                        "description": "End date (YYYY-MM-DD), defaults to today",
+                        "name": "to",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.ReadingActivitySummary"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/me/activity/streak": {
+            "get": {
+                "description": "Return the consecutive-day reading streak. Pass today as the client's local date so the day boundary matches the device; the current streak counts runs ending today or yesterday.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "me"
+                ],
+                "summary": "Get reading streak",
+                "operationId": "get-reading-streak",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "example": "2026-06-12",
+                        "description": "Client local date (YYYY-MM-DD), defaults to server UTC date",
+                        "name": "today",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.ReadingStreak"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
         "/me/progress": {
             "get": {
                 "description": "Return the authenticated user's in-progress books ordered by recent activity (continue-reading shelf), enriched with light book metadata.",
@@ -13580,6 +13693,70 @@
                 }
             }
         },
+        "entity.ReadingActivityDay": {
+            "type": "object",
+            "properties": {
+                "date": {
+                    "type": "string",
+                    "example": "2026-06-12"
+                },
+                "kitab_events": {
+                    "type": "integer",
+                    "example": 2
+                },
+                "kitab_pages_read": {
+                    "type": "integer",
+                    "example": 4
+                },
+                "quran_ayahs_read": {
+                    "type": "integer",
+                    "example": 25
+                },
+                "quran_events": {
+                    "type": "integer",
+                    "example": 6
+                }
+            }
+        },
+        "entity.ReadingActivitySummary": {
+            "type": "object",
+            "properties": {
+                "active_days": {
+                    "type": "integer",
+                    "example": 12
+                },
+                "days": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.ReadingActivityDay"
+                    }
+                },
+                "from": {
+                    "type": "string",
+                    "example": "2026-05-14"
+                },
+                "kitab_active_days": {
+                    "type": "integer",
+                    "example": 5
+                },
+                "kitab_pages_read": {
+                    "type": "integer",
+                    "example": 45
+                },
+                "quran_active_days": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "quran_ayahs_read": {
+                    "type": "integer",
+                    "example": 230
+                },
+                "to": {
+                    "type": "string",
+                    "example": "2026-06-12"
+                }
+            }
+        },
         "entity.ReadingProgress": {
             "type": "object",
             "properties": {
@@ -13631,6 +13808,35 @@
                 "name": {
                     "type": "string",
                     "example": "صحيح البخاري"
+                }
+            }
+        },
+        "entity.ReadingStreak": {
+            "type": "object",
+            "properties": {
+                "active_today": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "current_streak_days": {
+                    "type": "integer",
+                    "example": 5
+                },
+                "last_active_date": {
+                    "type": "string",
+                    "example": "2026-06-12"
+                },
+                "longest_streak_days": {
+                    "type": "integer",
+                    "example": 12
+                },
+                "today": {
+                    "type": "string",
+                    "example": "2026-06-12"
+                },
+                "total_active_days": {
+                    "type": "integer",
+                    "example": 40
                 }
             }
         },

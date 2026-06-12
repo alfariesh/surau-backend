@@ -160,6 +160,8 @@ func NewRoutes(
 	meGroup := protected.Group("/me", personalWriteLimiter)
 	{
 		meGroup.Get("/sync", r.syncPersonalData)
+		meGroup.Get("/activity", r.getReadingActivity)
+		meGroup.Get("/activity/streak", r.getReadingStreak)
 		meGroup.Get("/progress", r.listProgress)
 		meGroup.Post("/progress/batch", r.batchSaveProgress)
 		meGroup.Get("/progress/:book_id", r.getProgress)

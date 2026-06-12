@@ -477,6 +477,9 @@ type fakePersonal struct {
 	syncSnapshot     entity.PersonalSyncSnapshot
 	syncErr          error
 	lastSyncSince    *time.Time
+	streak           entity.ReadingStreak
+	activity         entity.ReadingActivitySummary
+	activityErr      error
 }
 
 func (f *fakePersonal) GetProgress(context.Context, string, int) (entity.ReadingProgress, error) {
@@ -641,4 +644,27 @@ func (f *fakePersonal) SyncPersonalData(_ context.Context, _ string, since *time
 	}
 
 	return f.syncSnapshot, nil
+}
+
+func (f *fakePersonal) GetReadingStreak(_ context.Context, _, today string) (entity.ReadingStreak, error) {
+	if f.activityErr != nil {
+		return entity.ReadingStreak{}, f.activityErr
+	}
+
+	streak := f.streak
+	streak.Today = today
+
+	return streak, nil
+}
+
+func (f *fakePersonal) GetReadingActivity(_ context.Context, _, from, to string) (entity.ReadingActivitySummary, error) {
+	if f.activityErr != nil {
+		return entity.ReadingActivitySummary{}, f.activityErr
+	}
+
+	summary := f.activity
+	summary.From = from
+	summary.To = to
+
+	return summary, nil
 }

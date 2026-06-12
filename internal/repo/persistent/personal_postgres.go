@@ -78,6 +78,9 @@ WITH checks AS (
             SELECT 1 FROM book_headings WHERE book_id = $2 AND heading_id = $4 AND is_deleted = false
         )) AS heading_ok
 ),
+old AS (
+    SELECT page_id FROM reading_progress WHERE user_id = $1 AND book_id = $2
+),
 upserted AS (
     INSERT INTO reading_progress (user_id, book_id, page_id, heading_id, progress_percent, observed_at, updated_at)
     SELECT $1, $2, $3, $4, $5, $6, now()
@@ -102,6 +105,22 @@ upserted AS (
             ELSE reading_progress.updated_at
         END
     RETURNING user_id, book_id, page_id, heading_id, progress_percent, observed_at, updated_at
+),
+activity AS (
+    INSERT INTO reading_activity (user_id, activity_date, kitab_pages_read, kitab_events, updated_at)
+    SELECT $1, $7::date,
+           CASE
+               WHEN u.page_id IS NULL THEN 0
+               ELSE GREATEST(u.page_id - COALESCE(o.page_id, u.page_id - 1), 0)
+           END,
+           1,
+           now()
+    FROM upserted u
+    LEFT JOIN old o ON true
+    ON CONFLICT (user_id, activity_date) DO UPDATE SET
+        kitab_pages_read = reading_activity.kitab_pages_read + EXCLUDED.kitab_pages_read,
+        kitab_events = reading_activity.kitab_events + EXCLUDED.kitab_events,
+        updated_at = now()
 )
 SELECT c.book_ok, c.page_ok, c.heading_ok,
        u.user_id, u.book_id, u.page_id, u.heading_id, u.progress_percent, u.observed_at, u.updated_at
@@ -127,6 +146,7 @@ LEFT JOIN upserted u ON true`
 		progress.HeadingID,
 		progress.ProgressPercent,
 		progress.ObservedAt,
+		activityDate(progress.ObservedAt),
 	).Scan(
 		&bookOK, &pageOK, &headingOK,
 		&userID, &bookID, &pageID, &headingID, &progressPercent, &observedAt, &updatedAt,
@@ -352,6 +372,11 @@ WITH target AS (
     JOIN quran_surahs s ON s.surah_id = a.surah_id
     WHERE a.ayah_key = $2
 ),
+old AS (
+    SELECT ayah_number
+    FROM quran_reading_progress
+    WHERE user_id = $1 AND surah_id = (SELECT surah_id FROM target)
+),
 upserted AS (
     INSERT INTO quran_reading_progress (
         user_id, surah_id, ayah_number, ayah_key, position_percent, observed_at, updated_at
@@ -377,6 +402,19 @@ upserted AS (
             ELSE quran_reading_progress.updated_at
         END
     RETURNING user_id, surah_id, ayah_number, ayah_key, position_percent, observed_at, updated_at
+),
+activity AS (
+    INSERT INTO reading_activity (user_id, activity_date, quran_ayahs_read, quran_events, updated_at)
+    SELECT $1, $4::date,
+           GREATEST(u.ayah_number - COALESCE(o.ayah_number, u.ayah_number - 1), 0),
+           1,
+           now()
+    FROM upserted u
+    LEFT JOIN old o ON true
+    ON CONFLICT (user_id, activity_date) DO UPDATE SET
+        quran_ayahs_read = reading_activity.quran_ayahs_read + EXCLUDED.quran_ayahs_read,
+        quran_events = reading_activity.quran_events + EXCLUDED.quran_events,
+        updated_at = now()
 )
 SELECT u.user_id, u.surah_id, u.ayah_number, u.ayah_key, u.position_percent, u.observed_at, u.updated_at,
        a.page_number, a.juz_number, a.hizb_number
@@ -389,6 +427,7 @@ JOIN quran_ayahs a ON a.ayah_key = u.ayah_key`
 		progress.UserID,
 		progress.AyahKey,
 		progress.ObservedAt,
+		activityDate(progress.ObservedAt),
 	))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -911,6 +950,14 @@ func scanSavedItem(row rowScanner) (entity.SavedItem, error) {
 	item.Tags = tags
 
 	return item, nil
+}
+
+// activityDate buckets an event into the calendar date of its own UTC
+// offset: client_observed_at keeps the device's local offset, so local
+// reading days drive streaks and statistics, and offline replays backfill
+// the day the reading actually happened.
+func activityDate(observedAt time.Time) string {
+	return observedAt.Format("2006-01-02")
 }
 
 func savedItemConflictTarget(itemType string) (string, error) {

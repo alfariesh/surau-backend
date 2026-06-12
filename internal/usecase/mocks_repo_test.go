@@ -2360,6 +2360,36 @@ func (mr *MockPersonalRepoMockRecorder) GetQuranSurahProgress(ctx, userID, surah
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetQuranSurahProgress", reflect.TypeOf((*MockPersonalRepo)(nil).GetQuranSurahProgress), ctx, userID, surahID)
 }
 
+// GetReadingActivity mocks base method.
+func (m *MockPersonalRepo) GetReadingActivity(ctx context.Context, userID, from, to string) (entity.ReadingActivitySummary, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetReadingActivity", ctx, userID, from, to)
+	ret0, _ := ret[0].(entity.ReadingActivitySummary)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetReadingActivity indicates an expected call of GetReadingActivity.
+func (mr *MockPersonalRepoMockRecorder) GetReadingActivity(ctx, userID, from, to any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetReadingActivity", reflect.TypeOf((*MockPersonalRepo)(nil).GetReadingActivity), ctx, userID, from, to)
+}
+
+// GetReadingStreak mocks base method.
+func (m *MockPersonalRepo) GetReadingStreak(ctx context.Context, userID, today string) (entity.ReadingStreak, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetReadingStreak", ctx, userID, today)
+	ret0, _ := ret[0].(entity.ReadingStreak)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetReadingStreak indicates an expected call of GetReadingStreak.
+func (mr *MockPersonalRepoMockRecorder) GetReadingStreak(ctx, userID, today any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetReadingStreak", reflect.TypeOf((*MockPersonalRepo)(nil).GetReadingStreak), ctx, userID, today)
+}
+
 // ListKhatamHistory mocks base method.
 func (m *MockPersonalRepo) ListKhatamHistory(ctx context.Context, userID string, limit, offset uint64) ([]entity.QuranKhatamCycle, int, error) {
 	m.ctrl.T.Helper()

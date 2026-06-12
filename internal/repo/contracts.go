@@ -345,6 +345,8 @@ type (
 		CompleteKhatamCycle(ctx context.Context, userID string) (entity.QuranKhatamCycle, error)
 		ListKhatamHistory(ctx context.Context, userID string, limit, offset uint64) ([]entity.QuranKhatamCycle, int, error)
 		SyncSnapshot(ctx context.Context, userID string, since *time.Time) (entity.PersonalSyncSnapshot, error)
+		GetReadingStreak(ctx context.Context, userID, today string) (entity.ReadingStreak, error)
+		GetReadingActivity(ctx context.Context, userID, from, to string) (entity.ReadingActivitySummary, error)
 	}
 
 	// EditorialRepo -.

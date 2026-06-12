@@ -1303,6 +1303,44 @@ Aturan klien:
 
 Alur rekomendasi saat app kembali online: flush queue (`POST /v1/me/progress/batch` + replay saved-items) → `GET /v1/me/sync?since=<cursor terakhir>` → simpan `server_time` baru.
 
+### Streak & Statistik Membaca
+
+Aktivitas harian dicatat **otomatis** oleh backend setiap kali progress disimpan (single PUT maupun batch) — FE tidak perlu menulis apa pun. Hari aktivitas mengikuti **tanggal lokal device** yang terbawa di offset `client_observed_at` (mis. `2026-06-12T23:50:00+07:00` dihitung 12 Juni, bukan 13 Juni UTC), dan replay offline mengisi mundur hari ketika bacaan benar-benar terjadi. Karena itu **selalu kirim `client_observed_at` dengan offset lokal device**, bukan dinormalisasi ke `Z`.
+
+| Method | Path | Auth | Kegunaan |
+| --- | --- | --- | --- |
+| `GET` | `/v1/me/activity?from=YYYY-MM-DD&to=YYYY-MM-DD` | Bearer | Bucket harian + agregat untuk heatmap/statistik. Default 30 hari terakhir; max 366 hari. |
+| `GET` | `/v1/me/activity/streak?today=YYYY-MM-DD` | Bearer | Streak hari beruntun. Kirim `today` = tanggal lokal device. |
+
+```ts
+export type ReadingActivitySummary = {
+  from: string;
+  to: string;
+  active_days: number;
+  quran_ayahs_read: number;   // aproksimasi: delta maju dalam surah yang sama
+  kitab_pages_read: number;   // aproksimasi: delta maju halaman dalam kitab yang sama
+  quran_active_days: number;
+  kitab_active_days: number;
+  days: { date: string; quran_ayahs_read: number; kitab_pages_read: number; quran_events: number; kitab_events: number }[];
+};
+
+export type ReadingStreak = {
+  current_streak_days: number; // run beruntun yang berakhir hari ini ATAU kemarin
+  longest_streak_days: number;
+  total_active_days: number;
+  last_active_date?: string | null;
+  today: string;
+  active_today: boolean;
+};
+```
+
+Catatan:
+
+- Streak tidak langsung putus di pergantian hari: run yang berakhir **kemarin** masih dihitung `current_streak_days` sampai hari ini lewat tanpa membaca. Tampilkan "baca sekarang untuk menjaga streak" saat `active_today === false` dan `current_streak_days > 0`.
+- `quran_ayahs_read`/`kitab_pages_read` adalah aproksimasi untuk pembacaan linier (lompatan antar surah/mundur dihitung 0 tapi tetap menandai hari aktif via events). Jangan jual angka ini sebagai hitungan presisi.
+- `today` dan `from`/`to` divalidasi ±2 hari dari tanggal server (UTC); di luar itu `400`.
+- Data activity tidak ikut payload `/v1/me/sync` (derived, milik server) — fetch saat layar statistik dibuka.
+
 ## 13. Pagination and Lists
 
 List endpoint di backend ini tidak memakai satu bentuk seragam. Cek response shape di section `1.1`.

@@ -26,6 +26,10 @@ const (
 	maxNoteLength  = 2000
 
 	progressFutureTolerance = 5 * time.Minute
+
+	activityDateLayout       = "2006-01-02"
+	activityDefaultRangeDays = 30
+	activityMaxRangeDays     = 366
 )
 
 // UseCase provides authenticated reader operations.
@@ -305,6 +309,70 @@ func (uc *UseCase) SyncPersonalData(
 	return uc.repo.SyncSnapshot(ctx, userID, since)
 }
 
+// GetReadingStreak returns the user's reading streak relative to the
+// client's local date (defaults to the server's UTC date).
+func (uc *UseCase) GetReadingStreak(ctx context.Context, userID, today string) (entity.ReadingStreak, error) {
+	normalizedToday, err := resolveActivityDate(today)
+	if err != nil {
+		return entity.ReadingStreak{}, err
+	}
+
+	return uc.repo.GetReadingStreak(ctx, userID, normalizedToday)
+}
+
+// GetReadingActivity returns daily activity buckets plus an aggregate for
+// [from, to]; defaults to the most recent activityDefaultRangeDays days.
+func (uc *UseCase) GetReadingActivity(
+	ctx context.Context,
+	userID, from, to string,
+) (entity.ReadingActivitySummary, error) {
+	normalizedTo, err := resolveActivityDate(to)
+	if err != nil {
+		return entity.ReadingActivitySummary{}, err
+	}
+
+	toDate, err := time.Parse(activityDateLayout, normalizedTo)
+	if err != nil {
+		return entity.ReadingActivitySummary{}, entity.ErrInvalidActivityDate
+	}
+
+	normalizedFrom := strings.TrimSpace(from)
+	if normalizedFrom == "" {
+		normalizedFrom = toDate.AddDate(0, 0, -(activityDefaultRangeDays - 1)).Format(activityDateLayout)
+	}
+	fromDate, err := time.Parse(activityDateLayout, normalizedFrom)
+	if err != nil {
+		return entity.ReadingActivitySummary{}, entity.ErrInvalidActivityDate
+	}
+
+	if fromDate.After(toDate) || toDate.Sub(fromDate) > activityMaxRangeDays*24*time.Hour {
+		return entity.ReadingActivitySummary{}, entity.ErrInvalidActivityRange
+	}
+
+	return uc.repo.GetReadingActivity(ctx, userID, normalizedFrom, normalizedTo)
+}
+
+// resolveActivityDate validates a client-supplied local calendar date. Empty
+// defaults to the server's UTC date; dates further than two days from it are
+// rejected (no real timezone is that far away).
+func resolveActivityDate(date string) (string, error) {
+	serverToday := time.Now().UTC().Truncate(24 * time.Hour)
+	date = strings.TrimSpace(date)
+	if date == "" {
+		return serverToday.Format(activityDateLayout), nil
+	}
+
+	parsed, err := time.Parse(activityDateLayout, date)
+	if err != nil {
+		return "", entity.ErrInvalidActivityDate
+	}
+	if parsed.After(serverToday.Add(2*24*time.Hour)) || parsed.Before(serverToday.Add(-2*24*time.Hour)) {
+		return "", entity.ErrInvalidActivityDate
+	}
+
+	return parsed.Format(activityDateLayout), nil
+}
+
 func clampLimit(limit int) uint64 {
 	if limit <= 0 {
 		return defaultLimit
@@ -331,12 +399,14 @@ func clampOffset(offset int) uint64 {
 
 // resolveObservedAt validates the client-supplied event time used by the
 // monotonic progress upserts. The reported false means the time is zero or
-// further in the future than the shared tolerance allows.
+// further in the future than the shared tolerance allows. The original UTC
+// offset is preserved: instant comparisons are zone-agnostic, and the offset
+// carries the client's local calendar date for reading-activity bucketing.
 func resolveObservedAt(clientObservedAt *time.Time) (time.Time, bool) {
 	now := time.Now().UTC()
 	observedAt := now
 	if clientObservedAt != nil {
-		observedAt = clientObservedAt.UTC()
+		observedAt = *clientObservedAt
 	}
 	if observedAt.IsZero() || observedAt.After(now.Add(progressFutureTolerance)) {
 		return time.Time{}, false

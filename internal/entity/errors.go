@@ -84,6 +84,8 @@ var (
 	ErrKhatamCycleIncomplete           = errors.New("khatam cycle incomplete")
 	ErrInvalidJuzNumber                = errors.New("invalid juz number")
 	ErrInvalidSyncSince                = errors.New("invalid sync since")
+	ErrInvalidActivityDate             = errors.New("invalid activity date")
+	ErrInvalidActivityRange            = errors.New("invalid activity range")
 )
 
 // AuthRateLimitedError carries the retry-after hint computed by the rate

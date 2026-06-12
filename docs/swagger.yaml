@@ -2371,6 +2371,52 @@ definitions:
       translation:
         $ref: '#/definitions/entity.AvailabilityDecision'
     type: object
+  entity.ReadingActivityDay:
+    properties:
+      date:
+        example: "2026-06-12"
+        type: string
+      kitab_events:
+        example: 2
+        type: integer
+      kitab_pages_read:
+        example: 4
+        type: integer
+      quran_ayahs_read:
+        example: 25
+        type: integer
+      quran_events:
+        example: 6
+        type: integer
+    type: object
+  entity.ReadingActivitySummary:
+    properties:
+      active_days:
+        example: 12
+        type: integer
+      days:
+        items:
+          $ref: '#/definitions/entity.ReadingActivityDay'
+        type: array
+      from:
+        example: "2026-05-14"
+        type: string
+      kitab_active_days:
+        example: 5
+        type: integer
+      kitab_pages_read:
+        example: 45
+        type: integer
+      quran_active_days:
+        example: 10
+        type: integer
+      quran_ayahs_read:
+        example: 230
+        type: integer
+      to:
+        example: "2026-06-12"
+        type: string
+    type: object
   entity.ReadingProgress:
     properties:
       book_id:
@@ -2409,6 +2455,27 @@ definitions:
       name:
         example: صحيح البخاري
         type: string
+    type: object
+  entity.ReadingStreak:
+    properties:
+      active_today:
+        example: true
+        type: boolean
+      current_streak_days:
+        example: 5
+        type: integer
+      last_active_date:
+        example: "2026-06-12"
+        type: string
+      longest_streak_days:
+        example: 12
+        type: integer
+      today:
+        example: "2026-06-12"
+        type: string
+      total_active_days:
+        example: 40
+        type: integer
     type: object
   entity.SavedItem:
     properties:
@@ -9446,6 +9513,84 @@ paths:
       summary: Ingest Cloudflare email bounce webhook
       tags:
       - email
+  /me/activity:
+    get:
+      description: Return daily reading-activity buckets and an aggregate for [from,
+        to]. Defaults to the last 30 days ending at to (or the server's UTC date).
+        Activity days follow the local calendar date of each save's client_observed_at
+        offset. Max range 366 days.
+      operationId: get-reading-activity
+      parameters:
+      - description: Start date (YYYY-MM-DD)
+        example: "2026-05-14"
+        in: query
+        name: from
+        type: string
+      - description: End date (YYYY-MM-DD), defaults to today
+        example: "2026-06-12"
+        in: query
+        name: to
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.ReadingActivitySummary'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Get reading activity
+      tags:
+      - me
+  /me/activity/streak:
+    get:
+      description: Return the consecutive-day reading streak. Pass today as the client's
+        local date so the day boundary matches the device; the current streak counts
+        runs ending today or yesterday.
+      operationId: get-reading-streak
+      parameters:
+      - description: Client local date (YYYY-MM-DD), defaults to server UTC date
+        example: "2026-06-12"
+        in: query
+        name: today
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.ReadingStreak'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Get reading streak
+      tags:
+      - me
   /me/progress:
     get:
       description: Return the authenticated user's in-progress books ordered by recent

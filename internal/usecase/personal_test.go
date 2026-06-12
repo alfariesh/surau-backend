@@ -41,7 +41,9 @@ func TestPersonalSaveProgressHeadingOnly(t *testing.T) {
 			assert.Nil(t, progress.PageID)
 			assert.Equal(t, &headingID, progress.HeadingID)
 			assert.Equal(t, &progressPercent, progress.ProgressPercent)
-			assert.Equal(t, observedAt.UTC(), progress.ObservedAt)
+			// The instant matches while the original offset is preserved for
+			// local-date activity bucketing.
+			assert.True(t, observedAt.Equal(progress.ObservedAt))
 
 			return progress, nil
 		})
@@ -129,7 +131,7 @@ func TestPersonalSaveQuranProgressNormalizesAyahKey(t *testing.T) {
 			assert.Equal(t, 73, progress.SurahID)
 			assert.Equal(t, 4, progress.AyahNumber)
 			assert.Equal(t, "73:4", progress.AyahKey)
-			assert.Equal(t, observedAt.UTC(), progress.ObservedAt)
+			assert.True(t, observedAt.Equal(progress.ObservedAt))
 
 			return progress, nil
 		})
@@ -405,6 +407,69 @@ func TestPersonalSyncPersonalData(t *testing.T) {
 		_, err := uc.SyncPersonalData(context.Background(), "user-id", &future)
 
 		require.ErrorIs(t, err, entity.ErrInvalidSyncSince)
+	})
+}
+
+func TestPersonalReadingActivityValidations(t *testing.T) {
+	t.Parallel()
+
+	t.Run("streak defaults today to server UTC date", func(t *testing.T) {
+		t.Parallel()
+
+		uc, mockRepo := newPersonalUseCase(t)
+		expectedToday := time.Now().UTC().Format("2006-01-02")
+
+		mockRepo.EXPECT().
+			GetReadingStreak(context.Background(), "user-id", expectedToday).
+			Return(entity.ReadingStreak{Today: expectedToday}, nil)
+
+		streak, err := uc.GetReadingStreak(context.Background(), "user-id", "")
+
+		require.NoError(t, err)
+		assert.Equal(t, expectedToday, streak.Today)
+	})
+
+	t.Run("streak rejects malformed and far dates", func(t *testing.T) {
+		t.Parallel()
+
+		uc, _ := newPersonalUseCase(t)
+
+		_, err := uc.GetReadingStreak(context.Background(), "user-id", "12-06-2026")
+		require.ErrorIs(t, err, entity.ErrInvalidActivityDate)
+
+		farFuture := time.Now().UTC().AddDate(0, 0, 5).Format("2006-01-02")
+		_, err = uc.GetReadingStreak(context.Background(), "user-id", farFuture)
+		require.ErrorIs(t, err, entity.ErrInvalidActivityDate)
+	})
+
+	t.Run("activity defaults to last 30 days", func(t *testing.T) {
+		t.Parallel()
+
+		uc, mockRepo := newPersonalUseCase(t)
+		today := time.Now().UTC()
+		expectedTo := today.Format("2006-01-02")
+		expectedFrom := today.AddDate(0, 0, -29).Format("2006-01-02")
+
+		mockRepo.EXPECT().
+			GetReadingActivity(context.Background(), "user-id", expectedFrom, expectedTo).
+			Return(entity.ReadingActivitySummary{From: expectedFrom, To: expectedTo}, nil)
+
+		_, err := uc.GetReadingActivity(context.Background(), "user-id", "", "")
+
+		require.NoError(t, err)
+	})
+
+	t.Run("activity rejects inverted and oversized ranges", func(t *testing.T) {
+		t.Parallel()
+
+		uc, _ := newPersonalUseCase(t)
+		today := time.Now().UTC().Format("2006-01-02")
+
+		_, err := uc.GetReadingActivity(context.Background(), "user-id", "2099-01-01", today)
+		require.ErrorIs(t, err, entity.ErrInvalidActivityRange)
+
+		_, err = uc.GetReadingActivity(context.Background(), "user-id", "2020-01-01", today)
+		require.ErrorIs(t, err, entity.ErrInvalidActivityRange)
 	})
 }
 
