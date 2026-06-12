@@ -43,6 +43,14 @@ const (
 	maxEmailUserAgentRunes  = 160
 	defaultSupportEmail     = "support@surau.org"
 
+	// passwordHashCost is the bcrypt cost for account passwords, raised above
+	// bcrypt.DefaultCost (10). Existing lower-cost hashes keep verifying
+	// because the cost is embedded in each hash.
+	passwordHashCost = 12
+	// otpHashCost stays at the bcrypt default: OTPs are 6-digit, short-lived,
+	// and rate-limited, so a higher cost only adds request latency.
+	otpHashCost = bcrypt.DefaultCost
+
 	// decoyLoginHash is a fixed bcrypt hash (cost 10) compared against during
 	// logins for unknown accounts so the response time matches a wrong-password
 	// attempt. This keeps login timing constant and defends against user
@@ -340,9 +348,9 @@ func (uc *UseCase) Register(ctx context.Context, username, email, password strin
 		return entity.User{}, err
 	}
 
-	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	hash, err := hashPassword(password)
 	if err != nil {
-		return entity.User{}, fmt.Errorf("UserUseCase - Register - bcrypt.GenerateFromPassword: %w", err)
+		return entity.User{}, fmt.Errorf("UserUseCase - Register - hashPassword: %w", err)
 	}
 
 	now := time.Now().UTC()
@@ -352,7 +360,7 @@ func (uc *UseCase) Register(ctx context.Context, username, email, password strin
 		Username:      username,
 		Email:         email,
 		Role:          entity.UserRoleUser,
-		PasswordHash:  string(hash),
+		PasswordHash:  hash,
 		EmailVerified: false,
 		CreatedAt:     now,
 		UpdatedAt:     now,
@@ -955,12 +963,12 @@ func (uc *UseCase) ResetPassword(ctx context.Context, token, password string) (e
 		return entity.ErrInvalidPasswordResetToken
 	}
 
-	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	hash, err := hashPassword(password)
 	if err != nil {
-		return fmt.Errorf("UserUseCase - ResetPassword - bcrypt.GenerateFromPassword: %w", err)
+		return fmt.Errorf("UserUseCase - ResetPassword - hashPassword: %w", err)
 	}
 
-	resetUser, err := uc.repo.ResetPasswordWithToken(ctx, storedToken.ID, storedToken.UserID, string(hash))
+	resetUser, err := uc.repo.ResetPasswordWithToken(ctx, storedToken.ID, storedToken.UserID, hash)
 	if err != nil {
 		if errors.Is(err, entity.ErrInvalidPasswordResetToken) {
 			return err
@@ -1016,12 +1024,12 @@ func (uc *UseCase) ChangePassword(
 		return entity.LoginResult{}, entity.ErrInvalidCredentials
 	}
 
-	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	hash, err := hashPassword(newPassword)
 	if err != nil {
-		return entity.LoginResult{}, fmt.Errorf("UserUseCase - ChangePassword - bcrypt.GenerateFromPassword: %w", err)
+		return entity.LoginResult{}, fmt.Errorf("UserUseCase - ChangePassword - hashPassword: %w", err)
 	}
 
-	changedUser, err := uc.repo.ChangePassword(ctx, user.ID, string(hash))
+	changedUser, err := uc.repo.ChangePassword(ctx, user.ID, hash)
 	if err != nil {
 		if errors.Is(err, entity.ErrUserNotFound) {
 			return entity.LoginResult{}, entity.ErrInvalidCredentials
@@ -2013,12 +2021,22 @@ func newOTPHash() (string, string, error) {
 	if err != nil {
 		return "", "", err
 	}
-	hash, err := bcrypt.GenerateFromPassword([]byte(otp), bcrypt.DefaultCost)
+	hash, err := bcrypt.GenerateFromPassword([]byte(otp), otpHashCost)
 	if err != nil {
 		return "", "", fmt.Errorf("UserUseCase - newOTPHash - bcrypt.GenerateFromPassword: %w", err)
 	}
 
 	return otp, string(hash), nil
+}
+
+// hashPassword hashes account passwords with passwordHashCost.
+func hashPassword(password string) (string, error) {
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), passwordHashCost)
+	if err != nil {
+		return "", fmt.Errorf("bcrypt.GenerateFromPassword: %w", err)
+	}
+
+	return string(hash), nil
 }
 
 func newOTP() (string, error) {

@@ -23,6 +23,8 @@ type (
 	Config struct {
 		App           app
 		HTTP          http
+		CORS          cors
+		Security      security
 		Log           log
 		PG            pg
 		JWT           jwt
@@ -46,11 +48,26 @@ type (
 
 	// HTTP -.
 	http struct {
-		Port           string   `env:"HTTP_PORT,required"`
-		UsePreforkMode bool     `env:"HTTP_USE_PREFORK_MODE" envDefault:"false"`
-		ProxyHeader    string   `env:"HTTP_PROXY_HEADER" envDefault:"X-Real-IP"`
-		TrustedProxies []string `env:"HTTP_TRUSTED_PROXIES" envSeparator:","`
-		BodyLimitBytes int      `env:"HTTP_BODY_LIMIT_BYTES" envDefault:"4194304"`
+		Port               string   `env:"HTTP_PORT,required"`
+		UsePreforkMode     bool     `env:"HTTP_USE_PREFORK_MODE" envDefault:"false"`
+		ProxyHeader        string   `env:"HTTP_PROXY_HEADER" envDefault:"X-Real-IP"`
+		TrustedProxies     []string `env:"HTTP_TRUSTED_PROXIES" envSeparator:","`
+		BodyLimitBytes     int      `env:"HTTP_BODY_LIMIT_BYTES" envDefault:"4194304"`
+		CompressionEnabled bool     `env:"HTTP_COMPRESSION_ENABLED" envDefault:"true"`
+	}
+
+	// CORS configures cross-origin resource sharing for browser clients.
+	// An empty AllowedOrigins list leaves the CORS middleware unregistered
+	// (same-origin clients only).
+	cors struct {
+		AllowedOrigins []string `env:"CORS_ALLOWED_ORIGINS" envSeparator:","`
+	}
+
+	// Security configures HTTP security response headers. HSTSSeconds 0
+	// disables Strict-Transport-Security (only enable behind TLS).
+	security struct {
+		HeadersEnabled bool `env:"SECURITY_HEADERS_ENABLED" envDefault:"true"`
+		HSTSSeconds    int  `env:"SECURITY_HSTS_SECONDS" envDefault:"0"`
 	}
 
 	// Collab configures the realtime collaborative editing bridge. When
@@ -246,6 +263,17 @@ func NewConfig() (*Config, error) {
 
 	if cfg.HTTP.BodyLimitBytes <= 0 {
 		return nil, fmt.Errorf("config error: HTTP_BODY_LIMIT_BYTES must be positive") //nolint:err113 // matches the file's uniform config-error style
+	}
+
+	for i, origin := range cfg.CORS.AllowedOrigins {
+		cfg.CORS.AllowedOrigins[i] = strings.TrimSpace(origin)
+		if !validCORSOrigin(cfg.CORS.AllowedOrigins[i]) {
+			return nil, fmt.Errorf("config error: CORS_ALLOWED_ORIGINS entries must be * or absolute http(s) origins without a path") //nolint:err113 // matches the file's uniform config-error style
+		}
+	}
+
+	if cfg.Security.HSTSSeconds < 0 {
+		return nil, fmt.Errorf("config error: SECURITY_HSTS_SECONDS must not be negative") //nolint:err113 // matches the file's uniform config-error style
 	}
 
 	if cfg.Collab.Enabled && len(cfg.Collab.ServiceToken) < minCollabServiceTokenBytes {
@@ -589,6 +617,27 @@ func validAbsoluteHTTPURL(value string) bool {
 	}
 
 	return parsedURL.IsAbs() && (parsedURL.Scheme == "http" || parsedURL.Scheme == "https") && parsedURL.Host != ""
+}
+
+// validCORSOrigin accepts the wildcard or a bare scheme://host[:port] origin
+// (no path, query, fragment, or userinfo).
+func validCORSOrigin(value string) bool {
+	if value == "*" {
+		return true
+	}
+
+	parsedURL, err := url.Parse(value)
+	if err != nil {
+		return false
+	}
+
+	return parsedURL.IsAbs() &&
+		(parsedURL.Scheme == "http" || parsedURL.Scheme == "https") &&
+		parsedURL.Host != "" &&
+		parsedURL.Path == "" &&
+		parsedURL.RawQuery == "" &&
+		parsedURL.Fragment == "" &&
+		parsedURL.User == nil
 }
 
 func validUnsubscribeTokenKeyID(value string) bool {

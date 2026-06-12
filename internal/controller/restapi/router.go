@@ -3,6 +3,7 @@ package restapi
 import (
 	"context"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/ansrivas/fiberprometheus/v2"
@@ -14,8 +15,15 @@ import (
 	"github.com/evrone/go-clean-template/pkg/jwt"
 	"github.com/evrone/go-clean-template/pkg/logger"
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/compress"
+	"github.com/gofiber/fiber/v2/middleware/cors"
+	"github.com/gofiber/fiber/v2/middleware/helmet"
 	"github.com/gofiber/swagger"
 )
+
+// corsPreflightMaxAgeSeconds is how long browsers may cache a preflight
+// response (Access-Control-Max-Age).
+const corsPreflightMaxAgeSeconds = 3600
 
 type databasePinger interface {
 	Ping(context.Context) error
@@ -50,6 +58,29 @@ func NewRouter(
 	app.Use(middleware.RequestID())
 	app.Use(middleware.Logger(l))
 	app.Use(middleware.Recovery(l))
+
+	// Security headers, CORS, and response compression. Helmet first so its
+	// headers reach every response, CORS before routing so browser preflights
+	// are answered, compress last so all bodies are encoded.
+	if cfg.Security.HeadersEnabled {
+		app.Use(helmet.New(helmet.Config{HSTSMaxAge: cfg.Security.HSTSSeconds}))
+	}
+
+	if len(cfg.CORS.AllowedOrigins) > 0 {
+		app.Use(cors.New(cors.Config{
+			AllowOrigins: strings.Join(cfg.CORS.AllowedOrigins, ","),
+			AllowMethods: "GET,POST,PUT,PATCH,DELETE,OPTIONS",
+			AllowHeaders: "Authorization,Content-Type,X-Request-ID",
+			// AllowCredentials stays false: auth uses bearer tokens, not
+			// cookies, and fiber panics on wildcard origins with credentials.
+			ExposeHeaders: "ETag,Retry-After,X-Request-ID",
+			MaxAge:        corsPreflightMaxAgeSeconds,
+		}))
+	}
+
+	if cfg.HTTP.CompressionEnabled {
+		app.Use(compress.New())
+	}
 
 	// Prometheus metrics
 	if cfg.Metrics.Enabled {
