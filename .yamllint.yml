@@ -8,6 +8,9 @@ ignore: |
 
 rules:
   truthy: disable
+  # No file in this repo uses the --- document-start marker, and the
+  # reviewdog action escalates this warning to a failure on new files.
+  document-start: disable
   # Compose env values, URLs, and workflow run lines legitimately run long.
   line-length:
     max: 160
