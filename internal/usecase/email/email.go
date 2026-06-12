@@ -244,9 +244,45 @@ func (uc *UseCase) SendTransactional(ctx context.Context, req entity.Transaction
 		return fmt.Errorf("EmailUseCase - SendTransactional - GetPublishedEmailTemplateVersion: %w", err)
 	}
 
+	if req.Async {
+		return uc.enqueueTransactional(ctx, message)
+	}
+
 	_, err = uc.sendAndLog(ctx, message, "", "")
 
 	return err
+}
+
+// enqueueTransactional durably queues a transactional message for the
+// background dispatcher instead of calling the provider in-request.
+// Suppression and permanent-bounce handling run at dispatch time
+// (retryTransactionalMessage), matching the synchronous path's outcome.
+//
+//nolint:gocritic // message passed by value to match sendAndLog's signature
+func (uc *UseCase) enqueueTransactional(ctx context.Context, message entity.EmailMessage) error {
+	messageLog, err := uc.createMessageLog(
+		ctx,
+		message,
+		entity.EmailCategoryTransactional,
+		"",
+		"",
+		entity.EmailMessageStatusQueued,
+		0,
+		"",
+		"",
+		nil,
+	)
+	if err != nil {
+		return fmt.Errorf("EmailUseCase - enqueueTransactional - createMessageLog: %w", err)
+	}
+
+	// scheduled_at must be set for the dispatcher to claim the row; attempts
+	// stays 0 so a first dispatch failure starts the regular retry ladder.
+	if _, err = uc.repo.ScheduleEmailMessageRetry(ctx, messageLog.ID, 0, "", "", time.Now().UTC()); err != nil {
+		return fmt.Errorf("EmailUseCase - enqueueTransactional - ScheduleEmailMessageRetry: %w", err)
+	}
+
+	return nil
 }
 
 func (uc *UseCase) Templates(

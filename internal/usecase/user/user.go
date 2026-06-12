@@ -2391,6 +2391,10 @@ func (uc *UseCase) sendAuthEmail(
 			Variables: variables,
 			Fallback:  message,
 			Critical:  critical,
+			// Critical auth emails (verification, password reset, email
+			// change) are queued for the dispatcher so provider outages
+			// cannot fail registration or reset requests.
+			Async: critical,
 		})
 	}
 

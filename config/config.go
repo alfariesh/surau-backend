@@ -133,6 +133,11 @@ type (
 		CloudflareEventPollingLookback time.Duration `env:"EMAIL_CLOUDFLARE_EVENT_POLLING_LOOKBACK" envDefault:"30m"`
 		CloudflareEventPollingLimit    int           `env:"EMAIL_CLOUDFLARE_EVENT_POLLING_LIMIT" envDefault:"100"`
 		HTTPTimeout                    time.Duration `env:"EMAIL_HTTP_TIMEOUT" envDefault:"10s"`
+		// DispatchInterval paces the background dispatcher that delivers
+		// queued transactional and campaign emails; auth emails are enqueued,
+		// so this bounds their worst-case delivery latency.
+		DispatchInterval time.Duration `env:"EMAIL_DISPATCH_INTERVAL" envDefault:"15s"`
+		DispatchBatch    int           `env:"EMAIL_DISPATCH_BATCH" envDefault:"20"`
 	}
 
 	// AuthRateLimit -.
@@ -413,6 +418,12 @@ func NewConfig() (*Config, error) {
 	}
 	if cfg.Email.HTTPTimeout <= 0 {
 		return nil, fmt.Errorf("config error: EMAIL_HTTP_TIMEOUT must be positive")
+	}
+	if cfg.Email.DispatchInterval <= 0 {
+		return nil, fmt.Errorf("config error: EMAIL_DISPATCH_INTERVAL must be positive") //nolint:err113 // matches the file's uniform config-error style
+	}
+	if cfg.Email.DispatchBatch <= 0 {
+		return nil, fmt.Errorf("config error: EMAIL_DISPATCH_BATCH must be positive") //nolint:err113 // matches the file's uniform config-error style
 	}
 	if cfg.Email.CloudflareEventPollingInterval <= 0 {
 		return nil, fmt.Errorf("config error: EMAIL_CLOUDFLARE_EVENT_POLLING_INTERVAL must be positive")

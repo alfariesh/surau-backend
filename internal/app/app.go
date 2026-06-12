@@ -357,7 +357,7 @@ func (s *servers) startServers(cfg *config.Config, emailUC *emailusecase.UseCase
 		dispatchCtx, cancel := context.WithCancel(context.Background())
 		s.emailDispatcherStop = cancel
 		go func() {
-			ticker := time.NewTicker(time.Minute)
+			ticker := time.NewTicker(cfg.Email.DispatchInterval)
 			defer ticker.Stop()
 			var pollTicker *time.Ticker
 			var pollC <-chan time.Time
@@ -371,10 +371,10 @@ func (s *servers) startServers(cfg *config.Config, emailUC *emailusecase.UseCase
 				case <-dispatchCtx.Done():
 					return
 				case <-ticker.C:
-					if err := emailUC.DispatchDueCampaigns(dispatchCtx, 20); err != nil {
+					if err := emailUC.DispatchDueCampaigns(dispatchCtx, cfg.Email.DispatchBatch); err != nil {
 						l.Error(fmt.Errorf("app - email dispatcher: %w", err))
 					}
-					if err := emailUC.DispatchDueTransactionalEmails(dispatchCtx, 20); err != nil {
+					if err := emailUC.DispatchDueTransactionalEmails(dispatchCtx, cfg.Email.DispatchBatch); err != nil {
 						l.Error(fmt.Errorf("app - transactional email dispatcher: %w", err))
 					}
 				case <-pollC:

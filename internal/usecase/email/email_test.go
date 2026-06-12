@@ -509,6 +509,66 @@ func TestSendTransactionalCriticalTemplateRenderFallback(t *testing.T) {
 	assert.NotEmpty(t, stub.createdMessages[0].Metadata["template_render_error"])
 }
 
+func TestSendTransactionalAsyncEnqueuesWithoutSending(t *testing.T) {
+	t.Parallel()
+
+	stub := &emailRepoStub{}
+	sender := &emailSenderStub{}
+	uc := New(stub, sender, Options{})
+	start := time.Now().UTC()
+
+	err := uc.SendTransactional(t.Context(), entity.TransactionalEmailRequest{
+		Key:      entity.EmailTemplateKeyVerification,
+		To:       "user@example.com",
+		Lang:     contentlang.Default,
+		Critical: true,
+		Async:    true,
+		Fallback: entity.EmailMessage{
+			To:      "user@example.com",
+			Subject: "Verify",
+			Text:    "Verify",
+		},
+	})
+
+	require.NoError(t, err)
+	assert.Empty(t, sender.sent)
+	require.Len(t, stub.createdMessages, 1)
+	assert.Equal(t, entity.EmailMessageStatusQueued, stub.createdMessages[0].Status)
+	require.Len(t, stub.scheduledRetries, 1)
+	retry := stub.scheduledRetries[0]
+	assert.Equal(t, 0, retry.Attempts)
+	assert.Empty(t, retry.Error)
+	require.NotNil(t, retry.ScheduledAt)
+	assert.WithinDuration(t, start, *retry.ScheduledAt, 2*time.Second)
+}
+
+func TestSendTransactionalAsyncSuppressedNonCriticalStaysQueuedForDispatcher(t *testing.T) {
+	t.Parallel()
+
+	stub := &emailRepoStub{suppressed: true}
+	sender := &emailSenderStub{}
+	uc := New(stub, sender, Options{})
+
+	err := uc.SendTransactional(t.Context(), entity.TransactionalEmailRequest{
+		Key:   entity.EmailTemplateKeyVerification,
+		To:    "user@example.com",
+		Lang:  contentlang.Default,
+		Async: true,
+		Fallback: entity.EmailMessage{
+			To:      "user@example.com",
+			Subject: "Verify",
+			Text:    "Verify",
+		},
+	})
+
+	// Suppression is evaluated by the dispatcher at delivery time
+	// (retryTransactionalMessage), so the enqueue itself succeeds and the
+	// provider is never called in-request.
+	require.NoError(t, err)
+	assert.Empty(t, sender.sent)
+	require.Len(t, stub.scheduledRetries, 1)
+}
+
 func TestSendTransactionalTransientFailureQueuesRetryAndReturnsSuccess(t *testing.T) {
 	t.Parallel()
 
