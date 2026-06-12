@@ -3174,6 +3174,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/v1.Error"
                         }
                     },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
@@ -3223,6 +3229,12 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
                         "schema": {
                             "$ref": "#/definitions/v1.Error"
                         }
@@ -8693,7 +8705,7 @@ const docTemplate = `{
         },
         "/me/sync": {
             "get": {
-                "description": "Return reading progress (kitab and Quran), saved items, and khatam cycles changed at or after the since cursor; omit since for a full snapshot. Delivery is at-least-once (a server-side overlap window re-sends recent rows), so clients must upsert idempotently by key and store server_time as the next cursor. saved_item_ids always lists every current saved-item ID for delete reconciliation.",
+                "description": "Return reading progress (kitab and Quran), saved items, and khatam cycles changed at or after the since cursor; omit since for a full snapshot. Delivery is at-least-once (a server-side overlap window re-sends recent rows), so clients must upsert idempotently by key and store server_time as the next cursor. saved_item_ids lists every current saved-item ID for delete reconciliation; when saved_items_full_resync=true the ID list was over the server cap (10000) and arrives empty — rebuild the local saved-items store by paging GET /me/saved-items instead of deleting by absence.",
                 "produces": [
                     "application/json"
                 ],
@@ -12928,6 +12940,9 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/entity.SavedItem"
                     }
+                },
+                "saved_items_full_resync": {
+                    "type": "boolean"
                 },
                 "server_time": {
                     "type": "string",

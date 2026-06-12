@@ -1,6 +1,6 @@
 # Quran API Contract
 
-Last updated: 2026-06-04
+Last updated: 2026-06-12
 
 This document is the FE-facing contract for the Quran backend. It covers the public Quran read APIs, response shapes, audio behavior, errors, and the recommended fetch flow. The Quran domain is standalone: Quran rows live in dedicated Quran tables and are linked to kitab data only through Quran reference records.
 
@@ -22,6 +22,7 @@ For the shared kitab + Quran FE integration guide, see `docs/frontend-integratio
 - Base path: `/v1`
 - Auth: public Quran endpoints do not require bearer auth.
 - Content type: JSON.
+- List endpoints return a uniform envelope `{"items": [...], "total": <int>}` (breaking change from earlier bare arrays and bespoke keys like `results`/`references`). For paginated lists `total` is the unbounded match count; for full lists it equals `items.length`. Object endpoints (single surah, single ayah, audio manifest) are unchanged.
 - Default language: `id`.
 - Default translation source: language-specific. For Indonesian the preferred default is `qul-kfgqpc-id-simple` when imported; for other languages the backend chooses the highest-coverage source deterministically.
 - Canonical ayah key: `{surah_id}:{ayah_number}`, for example `73:4`.
@@ -279,42 +280,45 @@ Use this for a surah index, picker, sidebar, or Quran home screen.
 Status: `200`
 
 ```json
-[
-  {
-    "surah_id": 1,
-    "name_arabic": "الفاتحة",
-    "name_latin": "Al-Fatihah",
-    "name_translation": "Pembukaan",
-    "revelation_type": "makkiyah",
-    "ayah_count": 7,
-    "localization": {
-      "requested_lang": "id",
-      "display_lang": "id",
-      "is_fallback": false,
-      "available_langs": ["en", "id"],
-      "field_langs": {
-        "name_arabic": "ar",
-        "name_latin": "ar",
-        "name_translation": "id",
-        "info": "id"
-      },
-      "availability": {
-        "action": "show_requested",
-        "reason": "exact_available",
+{
+  "items": [
+    {
+      "surah_id": 1,
+      "name_arabic": "الفاتحة",
+      "name_latin": "Al-Fatihah",
+      "name_translation": "Pembukaan",
+      "revelation_type": "makkiyah",
+      "ayah_count": 7,
+      "localization": {
         "requested_lang": "id",
         "display_lang": "id",
         "is_fallback": false,
-        "missing": false,
-        "available_langs": ["en", "id"]
-      }
-    },
-    "metadata": {},
-    "updated_at": "2026-05-28T00:00:00Z"
-  }
-]
+        "available_langs": ["en", "id"],
+        "field_langs": {
+          "name_arabic": "ar",
+          "name_latin": "ar",
+          "name_translation": "id",
+          "info": "id"
+        },
+        "availability": {
+          "action": "show_requested",
+          "reason": "exact_available",
+          "requested_lang": "id",
+          "display_lang": "id",
+          "is_fallback": false,
+          "missing": false,
+          "available_langs": ["en", "id"]
+        }
+      },
+      "metadata": {},
+      "updated_at": "2026-05-28T00:00:00Z"
+    }
+  ],
+  "total": 114
+}
 ```
 
-When `include_info=true`, each surah may include:
+When `include_info=true`, each item may include:
 
 ```json
 {
@@ -456,29 +460,32 @@ Use this before showing audio reciter options or before storing a user's preferr
 Status: `200`
 
 ```json
-[
-  {
-    "id": "qul-ayah-recitation-mishari-rashid-al-afasy-murattal-hafs-953",
-    "name": "QUL ayah recitation mishari rashid al afasy murattal hafs 953",
-    "reciter_name": "Mishari Rashid Al-Afasy",
-    "style": "murattal",
-    "mode": "ayah",
-    "source_url": "https://qul.tarteel.ai/...",
-    "qul_resource_id": "953",
-    "format": "json",
-    "license_status": "needs_review",
-    "checksum": "...",
-    "track_count": 6236,
-    "public_track_count": 0,
-    "playable_track_count": 6236,
-    "has_public_audio": false,
-    "has_playable_audio": true,
-    "is_default": true,
-    "metadata": {},
-    "imported_at": "2026-05-28T00:00:00Z",
-    "updated_at": "2026-05-28T00:00:00Z"
-  }
-]
+{
+  "items": [
+    {
+      "id": "qul-ayah-recitation-mishari-rashid-al-afasy-murattal-hafs-953",
+      "name": "QUL ayah recitation mishari rashid al afasy murattal hafs 953",
+      "reciter_name": "Mishari Rashid Al-Afasy",
+      "style": "murattal",
+      "mode": "ayah",
+      "source_url": "https://qul.tarteel.ai/...",
+      "qul_resource_id": "953",
+      "format": "json",
+      "license_status": "needs_review",
+      "checksum": "...",
+      "track_count": 6236,
+      "public_track_count": 0,
+      "playable_track_count": 6236,
+      "has_public_audio": false,
+      "has_playable_audio": true,
+      "is_default": true,
+      "metadata": {},
+      "imported_at": "2026-05-28T00:00:00Z",
+      "updated_at": "2026-05-28T00:00:00Z"
+    }
+  ],
+  "total": 1
+}
 ```
 
 ### Field Notes
@@ -554,28 +561,31 @@ Use this before rendering translation source pickers or deciding whether a reque
 Status: `200`
 
 ```json
-[
-  {
-    "id": "qul-kfgqpc-id-simple",
-    "lang": "id",
-    "name": "King Fahad Quran Complex",
-    "source_url": "https://qul.tarteel.ai/resources/translation/173",
-    "qul_resource_id": "173",
-    "format": "simple.json",
-    "license_status": "needs_review",
-    "coverage": {
-      "translated_ayahs": 6236,
-      "total_ayahs": 6236,
-      "percent": 100
-    },
-    "is_default": true,
-    "metadata": {},
-    "updated_at": "2026-05-29T00:00:00Z"
-  }
-]
+{
+  "items": [
+    {
+      "id": "qul-kfgqpc-id-simple",
+      "lang": "id",
+      "name": "King Fahad Quran Complex",
+      "source_url": "https://qul.tarteel.ai/resources/translation/173",
+      "qul_resource_id": "173",
+      "format": "simple.json",
+      "license_status": "needs_review",
+      "coverage": {
+        "translated_ayahs": 6236,
+        "total_ayahs": 6236,
+        "percent": 100
+      },
+      "is_default": true,
+      "metadata": {},
+      "updated_at": "2026-05-29T00:00:00Z"
+    }
+  ],
+  "total": 1
+}
 ```
 
-For `lang=ar`, the response is an empty array because Arabic is source text, not a translation source.
+For `lang=ar`, `items` is empty and `total` is `0` because Arabic is source text, not a translation source.
 
 ### 5. Get One Ayah
 
@@ -791,7 +801,7 @@ If the selected/default recitation is `mode="surah"`, the audio item can be a fu
 GET /v1/quran/surahs/{surah_id}/ayahs?from=&to=&lang=id&include_translation=true&include_audio=false&recitation_id=&view=
 ```
 
-Use this for the main Quran reader screen. The default response stays the full `QuranAyah[]` shape. Pass `view=reader_minimal` for the compact reader payload.
+Use this for the main Quran reader screen. The response is `{"items": [...], "total": <int>}`; with the default view each item is a full `QuranAyah`. Pass `view=reader_minimal` for the compact reader payload.
 
 ### Query Params
 
@@ -804,7 +814,7 @@ Use this for the main Quran reader screen. The default response stays the full `
 | `include_translation` | boolean | `true` | Set false for Arabic-only views. |
 | `include_audio` | boolean | `false` | Adds audio tracks when true. |
 | `recitation_id` | string | empty | If empty and audio is requested, backend uses default recitation. |
-| `view` | string | `full` | `full` or empty returns the existing `QuranAyah[]`; `reader_minimal` returns compact reader fields only. |
+| `view` | string | `full` | `full` or empty returns full `QuranAyah` items; `reader_minimal` returns compact reader fields only. |
 
 ### Range Behavior
 
@@ -821,58 +831,64 @@ Use this for the main Quran reader screen. The default response stays the full `
 Status: `200`
 
 ```json
-[
-  {
-    "surah_id": 73,
-    "ayah_number": 1,
-    "ayah_key": "73:1",
-    "text_qpc_hafs": "يَٰٓأَيُّهَا ٱلْمُزَّمِّلُ",
-    "text_imlaei_simple": "يا أيها المزمل",
-    "translation": {
-      "source_id": "qul-kfgqpc-id-simple",
-      "lang": "id",
-      "text": "Wahai orang yang berselimut!"
-    },
-    "updated_at": "2026-05-28T00:00:00Z"
-  }
-]
+{
+  "items": [
+    {
+      "surah_id": 73,
+      "ayah_number": 1,
+      "ayah_key": "73:1",
+      "text_qpc_hafs": "يَٰٓأَيُّهَا ٱلْمُزَّمِّلُ",
+      "text_imlaei_simple": "يا أيها المزمل",
+      "translation": {
+        "source_id": "qul-kfgqpc-id-simple",
+        "lang": "id",
+        "text": "Wahai orang yang berselimut!"
+      },
+      "updated_at": "2026-05-28T00:00:00Z"
+    }
+  ],
+  "total": 20
+}
 ```
 
 ### Reader Minimal Response
 
-When `view=reader_minimal`, each ayah omits import/debug/localization/search fields and returns only reader-display data:
+When `view=reader_minimal`, each item omits import/debug/localization/search fields and returns only reader-display data (the `{items,total}` envelope stays the same):
 
 ```json
-[
-  {
-    "surah_id": 73,
-    "ayah_number": 1,
-    "ayah_key": "73:1",
-    "text_qpc_hafs": "يَٰٓأَيُّهَا ٱلْمُزَّمِّلُ",
-    "juz_number": 29,
-    "page_number": 574,
-    "translation": {
-      "text": "Wahai orang yang berselimut!"
-    },
-    "audio": [
-      {
-        "recitation_id": "qul-ayah-recitation-mishari-rashid-al-afasy-murattal-hafs-953",
-        "track_type": "ayah",
-        "track_key": "73:1",
-        "url": "https://cdn.example/quran/73-1.mp3",
-        "segments": [
-          {
-            "segment_index": 1,
-            "ayah_key": "73:1",
-            "timestamp_from_ms": 1200,
-            "timestamp_to_ms": 4200,
-            "duration_ms": 3000
-          }
-        ]
-      }
-    ]
-  }
-]
+{
+  "items": [
+    {
+      "surah_id": 73,
+      "ayah_number": 1,
+      "ayah_key": "73:1",
+      "text_qpc_hafs": "يَٰٓأَيُّهَا ٱلْمُزَّمِّلُ",
+      "juz_number": 29,
+      "page_number": 574,
+      "translation": {
+        "text": "Wahai orang yang berselimut!"
+      },
+      "audio": [
+        {
+          "recitation_id": "qul-ayah-recitation-mishari-rashid-al-afasy-murattal-hafs-953",
+          "track_type": "ayah",
+          "track_key": "73:1",
+          "url": "https://cdn.example/quran/73-1.mp3",
+          "segments": [
+            {
+              "segment_index": 1,
+              "ayah_key": "73:1",
+              "timestamp_from_ms": 1200,
+              "timestamp_to_ms": 4200,
+              "duration_ms": 3000
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "total": 20
+}
 ```
 
 `translation` is omitted when translation is not requested or not available. `audio` is omitted when `include_audio=false` or no playable URL exists. Audio `url` is already resolved from `public_url` fallback to source `audio_url`.
@@ -905,25 +921,28 @@ Use these for segmented navigation without downloading ayah text. The data comes
 Status: `200`
 
 ```json
-[
-  {
-    "kind": "juz",
-    "number": 1,
-    "ayah_count": 148,
-    "start": {
-      "surah_id": 1,
-      "ayah_number": 1,
-      "ayah_key": "1:1",
-      "surah_name": "Al-Fatihah"
-    },
-    "end": {
-      "surah_id": 2,
-      "ayah_number": 141,
-      "ayah_key": "2:141",
-      "surah_name": "Al-Baqarah"
+{
+  "items": [
+    {
+      "kind": "juz",
+      "number": 1,
+      "ayah_count": 148,
+      "start": {
+        "surah_id": 1,
+        "ayah_number": 1,
+        "ayah_key": "1:1",
+        "surah_name": "Al-Fatihah"
+      },
+      "end": {
+        "surah_id": 2,
+        "ayah_number": 141,
+        "ayah_key": "2:141",
+        "surah_name": "Al-Baqarah"
+      }
     }
-  }
-]
+  ],
+  "total": 30
+}
 ```
 
 `kind` is either `juz` or `hizb`. `surah_name` is lightweight and language-aware: Arabic mode prefers Arabic names, while `id/en` prefer imported surah info names when available.
@@ -946,7 +965,7 @@ These endpoints return the same full or `reader_minimal` ayah shape and audio be
 | `include_translation` | boolean | `true` | Set false for Arabic-only views. |
 | `include_audio` | boolean | `false` | Adds audio tracks when true. |
 | `recitation_id` | string | empty | If empty and audio is requested, backend uses default recitation. |
-| `view` | string | `full` | `full` or empty returns the existing `QuranAyah[]`; `reader_minimal` returns compact reader fields only. |
+| `view` | string | `full` | `full` or empty returns full `QuranAyah` items; `reader_minimal` returns compact reader fields only. |
 
 ### Errors
 
@@ -984,7 +1003,7 @@ Status: `200`
 
 ```json
 {
-  "results": [
+  "items": [
     {
       "ayah": {
         "surah_id": 1,
@@ -1049,7 +1068,7 @@ Status: `200`
 
 ```json
 {
-  "references": [
+  "items": [
     {
       "id": "550e8400-e29b-41d4-a716-446655440000",
       "book_id": 797,
@@ -1153,6 +1172,8 @@ Response:
 ```
 
 ## Response Shape Reference
+
+List endpoints wrap the item shapes below in the shared `{ "items": [...], "total": number }` envelope; the types describe one item.
 
 ### QuranSurah
 

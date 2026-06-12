@@ -1,6 +1,6 @@
 # Frontend Integration Contract
 
-Last updated: 2026-06-09
+Last updated: 2026-06-12
 
 This is the main FE integration entrypoint for kitab reader and Quran reader.
 Use it together with:
@@ -59,6 +59,23 @@ export function selectedContentLang(input: {
 }
 ```
 
+## Shared List Envelope
+
+Every user-facing list endpoint returns the same envelope (breaking change from the earlier mix of bare arrays and bespoke keys like `books`, `results`, `references`, `authors`, `pages`):
+
+```json
+{
+  "items": [],
+  "total": 42
+}
+```
+
+- Covers categories, authors, books, pages, headings, TOC, Quran surahs/recitations/translation-sources/juz/hizbs/ayah lists, Quran search, book Quran references, and the `/v1/me` lists (progress, saved items, saved-item tags, surah progress, khatam history).
+- `GET /v1/books` keeps its `stats` sibling next to `items` and `total`.
+- TOC items still nest `children` inside each item.
+- For paginated lists, `total` is the unbounded match count; for full lists it equals `items.length`.
+- Object endpoints (detail pages, audio manifests, `/v1/me/sync` snapshot, activity, profile) are unchanged.
+
 ## User Bootstrap and Onboarding
 
 After login or app startup with a stored token:
@@ -97,6 +114,8 @@ Email addresses are case-insensitive. The backend trims and lowercases the email
 - Expect every `email` field in responses (profile, register, account) to be lowercase. Compare against the API value, not the raw user input.
 - Failed login and registering an already-used email return a generic error and never reveal whether an email exists. Do not branch UI on account existence.
 - Auth endpoints are rate limited per client IP and per email/account. On `429 too many auth attempts`, show a retry-later state and back off; do not retry immediately.
+- Verification and reset emails are queued and delivered asynchronously by a background dispatcher (typically within ~15-30 seconds), so tell the user the email may take up to ~30 seconds to arrive. `503 email delivery failed` now only means the backend could not durably queue the message; email-provider outages no longer fail signup or add latency.
+- Browser clients: the API serves CORS itself for origins listed in the backend `CORS_ALLOWED_ORIGINS` env (dev defaults allow `http://localhost:3000` and `http://localhost:3005`); a web frontend on another origin must be added there. `AllowCredentials` is `false` — auth is pure Bearer token, never cookies — so do not send `credentials: "include"`. Allowed request headers are `Authorization`, `Content-Type`, and `X-Request-ID`; exposed response headers are `ETag`, `Retry-After`, and `X-Request-ID`.
 
 Request/response shapes and status codes are unchanged; see `/swagger/index.html` on a running backend for full auth schemas.
 

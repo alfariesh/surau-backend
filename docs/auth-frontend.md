@@ -6,8 +6,8 @@ Dokumen ini adalah kontrak integrasi auth untuk frontend Surau. Fokus utama fron
 
 - Auth memakai JWT Bearer token.
 - Login sukses selalu mengembalikan shape yang sama: `{ "token": "..." }`.
-- Tidak ada refresh token, cookie auth, session DB, MFA, atau logout server-side.
-- Email verification, reset password, dan change email dikirim memakai Cloudflare Email Service dari backend.
+- Tidak ada cookie auth atau MFA. Endpoint session/refresh yang lebih baru (`POST /v1/auth/refresh`, `POST /v1/auth/logout`, `GET/DELETE /v1/auth/sessions`) belum tercakup penuh di dokumen ini — cek `/swagger/index.html` untuk skemanya.
+- Email verification, reset password, dan change email di-queue secara durable oleh backend, lalu dikirim asynchronous oleh dispatcher background memakai Cloudflare Email Service (default tick 15 detik; email biasanya tiba dalam ~15-30 detik).
 - User baru belum bisa login sampai email verified.
 - Reset password, change password, change email, dan delete account akan membuat semua JWT lama invalid.
 - Profile response berisi user auth + `profile`, `preferences`, dan `onboarding_required`.
@@ -38,7 +38,7 @@ Content-Type: application/json
 Accept: application/json
 ```
 
-Karena backend memakai Bearer token, frontend tidak perlu mengirim cookie credentials. Pada `fetch`, default `credentials: "same-origin"` aman untuk same-origin. Untuk cross-origin API, gunakan default atau `credentials: "omit"` kecuali ada kebutuhan lain di luar auth ini.
+Karena backend memakai Bearer token, frontend tidak perlu mengirim cookie credentials. Pada `fetch`, default `credentials: "same-origin"` aman untuk same-origin. Untuk cross-origin API, gunakan default atau `credentials: "omit"`. CORS backend berjalan dengan `AllowCredentials: false` — auth murni Bearer token, bukan cookie — jadi jangan memakai `credentials: "include"`.
 
 Protected endpoint wajib memakai:
 
@@ -202,8 +202,8 @@ Use `GET /v1/admin/users?role=editor` as the editor lookup for assigning product
 1. User submit register form.
 2. FE panggil `POST /v1/auth/register`.
 3. Backend membuat user dengan `email_verified=false`.
-4. Backend mengirim email verification via Cloudflare.
-5. FE tampilkan screen "cek email" dan tombol resend.
+4. Backend meng-queue email verification; dispatcher background mengirimkannya via Cloudflare, biasanya dalam ~15-30 detik.
+5. FE tampilkan screen "cek email" dan tombol resend, dengan copy bahwa email bisa butuh sampai ±30 detik untuk tiba.
 6. Link email membuka halaman FE: `${EMAIL_VERIFY_FRONTEND_URL}?token=<token>`.
 7. Halaman FE membaca query param `token`.
 8. FE panggil `POST /v1/auth/verify-email`.
@@ -249,10 +249,10 @@ Error penting:
 | `400` | `invalid request body` | Tampilkan validasi field. |
 | `409` | `user already exists` | Arahkan ke login atau forgot password. |
 | `429` | `too many auth attempts` | Tampilkan cooldown. |
-| `503` | `email delivery failed` | User bisa coba resend verification. |
+| `503` | `email delivery failed` | Backend gagal menyimpan email ke antrian. User bisa coba resend verification. |
 | `500` | `internal server error` | Tampilkan pesan umum. |
 
-Catatan `503`: user mungkin sudah tersimpan sebagai unverified, tetapi email gagal dikirim. FE sebaiknya tetap menyediakan form resend verification.
+Catatan `503`: email verification di-queue, bukan dikirim langsung di dalam request. `503 email delivery failed` sekarang hanya terjadi bila backend gagal menyimpan email ke antrian durable (kegagalan database) — provider email yang down/lambat tidak lagi menggagalkan register atau menambah latensi. Pada kasus `503`, user mungkin sudah tersimpan sebagai unverified, jadi FE sebaiknya tetap menyediakan form resend verification.
 
 ### Verify Email
 
@@ -333,10 +333,10 @@ Error penting:
 | `400` | `invalid request body` | Email invalid. |
 | `429` | `verification email recently sent` | Tampilkan cooldown resend. |
 | `429` | `too many auth attempts` | Tampilkan cooldown umum. |
-| `503` | `email delivery failed` | Tampilkan gagal kirim email. |
+| `503` | `email delivery failed` | Backend gagal menyimpan email ke antrian (kegagalan database). Tampilkan pesan coba lagi. |
 | `500` | `internal server error` | Tampilkan pesan umum. |
 
-Untuk mengurangi account probing, backend juga mengembalikan `202 accepted` bila email tidak ditemukan atau sudah verified. FE jangan menampilkan pesan seperti "email tidak ditemukan" untuk flow ini.
+`202 accepted` berarti email sudah masuk antrian kirim; email biasanya tiba dalam ~15-30 detik. Untuk mengurangi account probing, backend juga mengembalikan `202 accepted` bila email tidak ditemukan atau sudah verified. FE jangan menampilkan pesan seperti "email tidak ditemukan" untuk flow ini.
 
 ## Flow Login
 
@@ -529,7 +529,7 @@ Error penting:
 
 1. User submit email di halaman forgot password.
 2. FE panggil `POST /v1/auth/forgot-password`.
-3. Backend membuat token reset dan mengirim email.
+3. Backend membuat token reset dan meng-queue email reset; dispatcher background mengirimkannya, biasanya dalam ~15-30 detik.
 4. FE selalu tampilkan pesan netral: "Jika email terdaftar, link reset akan dikirim."
 5. Link email membuka halaman FE: `${PASSWORD_RESET_FRONTEND_URL}?token=<token>`.
 
@@ -561,7 +561,7 @@ Error penting:
 | `400` | `invalid request body` | Email invalid. |
 | `429` | `password reset email recently sent` | Tampilkan cooldown. |
 | `429` | `too many auth attempts` | Tampilkan cooldown umum. |
-| `503` | `email delivery failed` | Tampilkan gagal kirim email. |
+| `503` | `email delivery failed` | Backend gagal menyimpan email ke antrian (kegagalan database). Tampilkan pesan coba lagi. |
 | `500` | `internal server error` | Tampilkan pesan umum. |
 
 Backend mengembalikan `202 accepted` untuk email yang tidak ditemukan supaya tidak ada account probing. FE jangan membedakan email terdaftar dan tidak terdaftar.
@@ -654,7 +654,7 @@ Error penting:
 
 ## Flow Change Email
 
-Change email adalah flow protected dua langkah. User harus login dan memasukkan current password. Link verifikasi dikirim ke email baru, lalu FE memanggil endpoint verify dengan Bearer token user yang sama. Jika user membuka link tanpa session valid, arahkan ke login lalu lanjutkan verify setelah login.
+Change email adalah flow protected dua langkah. User harus login dan memasukkan current password. Link verifikasi di-queue dan dikirim ke email baru (biasanya tiba dalam ~15-30 detik), lalu FE memanggil endpoint verify dengan Bearer token user yang sama. Jika user membuka link tanpa session valid, arahkan ke login lalu lanjutkan verify setelah login.
 
 ### Request Change Email
 
@@ -722,7 +722,7 @@ Error penting:
 | `401` | `invalid or expired token` | Clear token, redirect login. |
 | `409` | `user already exists` | Email baru sudah dipakai akun lain. |
 | `429` | `too many auth attempts` | Tampilkan cooldown. |
-| `503` | `email delivery failed` | Tampilkan gagal kirim email. |
+| `503` | `email delivery failed` | Backend gagal menyimpan email ke antrian (kegagalan database). Tampilkan pesan coba lagi. |
 
 ## Flow Delete Account
 
@@ -776,7 +776,7 @@ Frontend behavior:
 - Pada protected request yang mendapat `401`, clear token lokal.
 - Redirect ke login atau tampilkan session expired.
 - Jangan retry otomatis dengan token yang sama.
-- Tidak ada refresh token untuk memperoleh token baru. User harus login ulang.
+- Dokumen ini tidak mencakup flow refresh token; tanpa refresh, user harus login ulang untuk memperoleh token baru (lihat `/swagger/index.html` untuk `POST /v1/auth/refresh`).
 
 ## Rate Limit Behavior
 
@@ -796,12 +796,12 @@ Default yang perlu diketahui FE:
 | Change email verify | `5/token/15m`, `10/ip/1h` |
 | Delete account | `3/user/1h`, `10/ip/1h` |
 
-Jika kena limit, REST mengembalikan `429`.
-
-Backend belum mengirim header `Retry-After`, jadi FE sebaiknya memakai copy umum:
+Jika kena limit, REST mengembalikan `429`. Response `429` menyertakan header `Retry-After` (detik) dan field `retry_after` di body bila limiter bisa menghitung sisa jendela; header ini di-expose ke browser lewat CORS, jadi FE bisa memakainya untuk countdown. Fallback copy umum:
 
 - "Terlalu banyak percobaan. Coba lagi beberapa saat."
 - Untuk resend/forgot, disable tombol selama minimal 60 detik setelah request sukses atau rate-limited.
+
+Endpoint session management (`GET /v1/auth/sessions` dan `DELETE /v1/auth/sessions/{id}`) dibatasi terpisah: 30 request/menit per user, dengan `429` + header `Retry-After` saat melebihi batas. List sessions memakai envelope `{ "items": [...], "total": number }`.
 
 ## Recommended Frontend Routes
 
@@ -840,9 +840,9 @@ Checklist staging/production sebelum buka auth publik:
 - `EMAIL_VERIFY_FRONTEND_URL` mengarah ke route verify email frontend production.
 - `PASSWORD_RESET_FRONTEND_URL` mengarah ke route reset password frontend production.
 - `EMAIL_CHANGE_FRONTEND_URL` mengarah ke route change email frontend production.
-- Origin frontend production diizinkan oleh layer CORS yang dipakai deployment.
-- Preflight CORS mengizinkan header `Authorization` dan `Content-Type`.
-- Preflight CORS mengizinkan method auth/profile: `GET`, `POST`, `PATCH`, dan `OPTIONS`.
+- Origin frontend production terdaftar di env backend `CORS_ALLOWED_ORIGINS` — CORS sekarang dilayani backend sendiri. Default dev mengizinkan `http://localhost:3000` dan `http://localhost:3005`; origin web lain harus ditambahkan ke env tersebut.
+- Request header yang diizinkan CORS backend: `Authorization`, `Content-Type`, `X-Request-ID`. Response header yang di-expose: `ETag`, `Retry-After`, `X-Request-ID`.
+- `AllowCredentials` selalu `false`; backend juga mengirim security headers standar (helmet) — tidak ada aksi FE yang dibutuhkan.
 
 ## Recommended Auth State
 
@@ -1163,7 +1163,7 @@ Mapping copy yang disarankan:
 - Ambil profile dari backend setelah login dan saat app bootstrap.
 - Tampilkan state loading saat bootstrap agar halaman protected tidak flicker.
 - Pakai HTTPS di production.
-- Jika browser memblokir request karena CORS, deployment backend perlu mengizinkan origin frontend serta header `Authorization` dan `Content-Type`.
+- Jika browser memblokir request karena CORS, tambahkan origin frontend ke env backend `CORS_ALLOWED_ORIGINS` (default dev: `http://localhost:3000`, `http://localhost:3005`). Header `Authorization`, `Content-Type`, dan `X-Request-ID` sudah diizinkan backend.
 
 ## QA Checklist FE
 

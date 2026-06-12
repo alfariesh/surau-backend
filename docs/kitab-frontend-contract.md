@@ -1,6 +1,6 @@
 # Kitab Frontend Integration Contract
 
-Last updated: 2026-05-29
+Last updated: 2026-06-12
 
 This guide is the frontend-facing companion to `docs/kitab-multilingual-api.md`.
 Use the backend `availability` objects as the source of truth for UI behavior.
@@ -14,6 +14,7 @@ For a shared kitab + Quran integration entrypoint, see `docs/frontend-integratio
 - Region tags are accepted by the backend (`en-US -> en`, `id-ID -> id`, `ar-SA -> ar`).
 - Unsupported explicit language returns `400 {"error":"unsupported language"}`.
 - Catalog display can fall back to Arabic/source metadata.
+- User-facing list endpoints (categories, authors, books, pages, headings, TOC, Quran references) return a uniform `{ "items": [...], "total": number }` envelope; `GET /v1/books` keeps a `stats` sibling, and TOC items still nest `children` inside each item. Unwrap `items` before mapping.
 - Section translation content is exact-language only. Missing `lang=en` returns `translation: null` even if `id` exists.
 - Translation feedback is exact-language only. Do not show feedback controls unless `translation` is non-null and `translation.lang === selectedLang`.
 
@@ -156,7 +157,8 @@ export function getBook(bookId: number, lang: KitabLang) {
 }
 
 export function getBookTOC(bookId: number, lang: KitabLang) {
-  return getJSON(`/v1/books/${bookId}/toc?lang=${lang}`);
+  // List endpoints return { items, total }; TOC nodes nest children inside each item.
+  return getJSON<{ items: unknown[]; total: number }>(`/v1/books/${bookId}/toc?lang=${lang}`);
 }
 
 export function readTOCSection(bookId: number, headingId: number, lang: KitabLang) {
