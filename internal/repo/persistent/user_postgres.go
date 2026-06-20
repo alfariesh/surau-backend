@@ -51,6 +51,9 @@ const (
     pref.daily_goal_minutes,
     pref.quran_translation_source_id,
     pref.quran_recitation_id,
+    COALESCE(pref.notify_daily_reminders, TRUE),
+    COALESCE(pref.notify_streak_reminders, TRUE),
+    COALESCE(pref.notify_khatam_milestones, TRUE),
     COALESCE(pref.created_at, u.created_at),
     COALESCE(pref.updated_at, u.updated_at)`
 )
@@ -366,9 +369,12 @@ INSERT INTO user_preferences (
     daily_goal_minutes,
     quran_translation_source_id,
     quran_recitation_id,
+    notify_daily_reminders,
+    notify_streak_reminders,
+    notify_khatam_milestones,
     created_at,
     updated_at
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now(), now())
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, now(), now())
 ON CONFLICT (user_id) DO UPDATE SET
     preferred_ui_lang = EXCLUDED.preferred_ui_lang,
     preferred_content_lang = EXCLUDED.preferred_content_lang,
@@ -379,6 +385,9 @@ ON CONFLICT (user_id) DO UPDATE SET
     daily_goal_minutes = EXCLUDED.daily_goal_minutes,
     quran_translation_source_id = EXCLUDED.quran_translation_source_id,
     quran_recitation_id = EXCLUDED.quran_recitation_id,
+    notify_daily_reminders = EXCLUDED.notify_daily_reminders,
+    notify_streak_reminders = EXCLUDED.notify_streak_reminders,
+    notify_khatam_milestones = EXCLUDED.notify_khatam_milestones,
     updated_at = now()`
 
 	_, err := r.Pool.Exec(
@@ -394,6 +403,9 @@ ON CONFLICT (user_id) DO UPDATE SET
 		preferences.DailyGoalMinutes,
 		nullableStringPtrArg(preferences.QuranTranslationSourceID),
 		nullableStringPtrArg(preferences.QuranRecitationID),
+		preferences.NotifyDailyReminders,
+		preferences.NotifyStreakReminders,
+		preferences.NotifyKhatamMilestones,
 	)
 	if err != nil {
 		return fmt.Errorf("UserRepo - UpsertPreferences - Exec: %w", err)
@@ -1528,6 +1540,9 @@ func scanUserAccountRow(row rowScanner) (entity.UserAccount, error) {
 		&dailyGoalMinutes,
 		&quranTranslationSourceID,
 		&quranRecitationID,
+		&account.Preferences.NotifyDailyReminders,
+		&account.Preferences.NotifyStreakReminders,
+		&account.Preferences.NotifyKhatamMilestones,
 		&account.Preferences.CreatedAt,
 		&account.Preferences.UpdatedAt,
 	)

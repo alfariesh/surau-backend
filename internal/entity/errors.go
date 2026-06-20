@@ -86,6 +86,7 @@ var (
 	ErrInvalidSyncSince                = errors.New("invalid sync since")
 	ErrInvalidActivityDate             = errors.New("invalid activity date")
 	ErrInvalidActivityRange            = errors.New("invalid activity range")
+	ErrPushDeliveryFailed              = errors.New("push delivery failed")
 )
 
 // AuthRateLimitedError carries the retry-after hint computed by the rate

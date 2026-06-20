@@ -98,6 +98,7 @@ type (
 		Collab        collab
 		Metrics       metrics
 		Swagger       swagger
+		OneSignal     oneSignal
 	}
 
 	// App -.
@@ -201,6 +202,16 @@ type (
 		// so this bounds their worst-case delivery latency.
 		DispatchInterval time.Duration `env:"EMAIL_DISPATCH_INTERVAL" envDefault:"15s"`
 		DispatchBatch    int           `env:"EMAIL_DISPATCH_BATCH" envDefault:"20"`
+	}
+
+	// OneSignal -. Push-notification delivery via the OneSignal REST API. Disabled by default so the
+	// app builds and runs without credentials; the REST API key is a secret and must never be committed.
+	oneSignal struct {
+		Enabled          bool          `env:"ONESIGNAL_ENABLED" envDefault:"false"`
+		AppID            string        `env:"ONESIGNAL_APP_ID"`
+		RESTAPIKey       string        `env:"ONESIGNAL_REST_API_KEY"`
+		HTTPTimeout      time.Duration `env:"ONESIGNAL_HTTP_TIMEOUT" envDefault:"10s"`
+		ReminderInterval time.Duration `env:"ONESIGNAL_REMINDER_INTERVAL" envDefault:"1h"`
 	}
 
 	// AuthRateLimit -.
@@ -668,6 +679,20 @@ func NewConfig() (*Config, error) {
 	}
 	if cfg.RAG.TreeMaxBlocksPerTurn < 1 {
 		return nil, configError("RAG_TREE_MAX_BLOCKS_PER_TURN must be positive")
+	}
+	if cfg.OneSignal.Enabled {
+		if strings.TrimSpace(cfg.OneSignal.AppID) == "" {
+			return nil, configError("ONESIGNAL_APP_ID is required when ONESIGNAL_ENABLED is true")
+		}
+		if strings.TrimSpace(cfg.OneSignal.RESTAPIKey) == "" {
+			return nil, configError("ONESIGNAL_REST_API_KEY is required when ONESIGNAL_ENABLED is true")
+		}
+		if cfg.OneSignal.HTTPTimeout <= 0 {
+			return nil, configError("ONESIGNAL_HTTP_TIMEOUT must be positive")
+		}
+		if cfg.OneSignal.ReminderInterval <= 0 {
+			return nil, configError("ONESIGNAL_REMINDER_INTERVAL must be positive")
+		}
 	}
 
 	return cfg, nil

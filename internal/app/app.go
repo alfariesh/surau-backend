@@ -19,6 +19,7 @@ import (
 	"github.com/evrone/go-clean-template/internal/usecase/bookrag"
 	"github.com/evrone/go-clean-template/internal/usecase/editorial"
 	emailusecase "github.com/evrone/go-clean-template/internal/usecase/email"
+	"github.com/evrone/go-clean-template/internal/usecase/notification"
 	"github.com/evrone/go-clean-template/internal/usecase/personal"
 	"github.com/evrone/go-clean-template/internal/usecase/quran"
 	"github.com/evrone/go-clean-template/internal/usecase/reader"
@@ -30,23 +31,25 @@ import (
 )
 
 type useCases struct {
-	user      *user.UseCase
-	reader    *reader.UseCase
-	bookRAG   *bookrag.UseCase
-	quran     *quran.UseCase
-	personal  *personal.UseCase
-	editorial *editorial.UseCase
-	email     *emailusecase.UseCase
+	user         *user.UseCase
+	reader       *reader.UseCase
+	bookRAG      *bookrag.UseCase
+	quran        *quran.UseCase
+	personal     *personal.UseCase
+	editorial    *editorial.UseCase
+	email        *emailusecase.UseCase
+	notification *notification.UseCase
 }
 
 type servers struct {
-	http                *httpserver.Server
-	emailDispatcherStop context.CancelFunc
-	authCleanupStop     context.CancelFunc
-	authAlertStop       context.CancelFunc
+	http                     *httpserver.Server
+	emailDispatcherStop      context.CancelFunc
+	authCleanupStop          context.CancelFunc
+	authAlertStop            context.CancelFunc
+	notificationReminderStop context.CancelFunc
 }
 
-func initUseCases(cfg *config.Config, pg *postgres.Postgres, jwtManager *jwt.Manager) useCases {
+func initUseCases(cfg *config.Config, pg *postgres.Postgres, jwtManager *jwt.Manager, l logger.Interface) useCases {
 	userRepo := persistent.NewUserRepo(pg)
 	readerRepo := persistent.NewReaderRepo(pg)
 	bookRAGRepo := persistent.NewBookRAGRepo(pg)
@@ -104,6 +107,30 @@ func initUseCases(cfg *config.Config, pg *postgres.Postgres, jwtManager *jwt.Man
 		lockoutRepo = userRepo
 	}
 
+	// OneSignal push notifications. When disabled, the notifier and the typed-interface handles stay
+	// nil so the khatam/login hooks and the reminder cron are no-ops. Keeping the handles as the
+	// consumer interface types (not the concrete *UseCase) avoids the nil-pointer-in-interface trap.
+	var notificationUC *notification.UseCase
+	var (
+		khatamNotifier personal.Notifier
+		loginNotifier  user.PushNotifier
+	)
+	if cfg.OneSignal.Enabled {
+		notificationUC = notification.New(
+			userRepo,
+			userRepo,
+			personalRepo,
+			webapi.NewOneSignalClient(webapi.OneSignalOptions{
+				AppID:      cfg.OneSignal.AppID,
+				RESTAPIKey: cfg.OneSignal.RESTAPIKey,
+				Timeout:    cfg.OneSignal.HTTPTimeout,
+			}),
+			l,
+		)
+		khatamNotifier = notificationUC
+		loginNotifier = notificationUC
+	}
+
 	return useCases{
 		user: user.New(userRepo, jwtManager, emailSender, user.Options{
 			VerifyFrontendURL:        cfg.Email.VerifyFrontendURL,
@@ -119,6 +146,7 @@ func initUseCases(cfg *config.Config, pg *postgres.Postgres, jwtManager *jwt.Man
 			EmailChangeCooldown:      cfg.Email.EmailChangeCooldown,
 			SupportEmail:             cfg.Email.ReplyTo,
 			EmailService:             emailUC,
+			PushNotifier:             loginNotifier,
 			RateLimiter:              rateLimiter,
 			AuditLogger:              userRepo,
 			Sessions:                 userRepo,
@@ -252,10 +280,11 @@ func initUseCases(cfg *config.Config, pg *postgres.Postgres, jwtManager *jwt.Man
 			TreeMaxTurns:         cfg.RAG.TreeMaxTurns,
 			TreeMaxBlocksPerTurn: cfg.RAG.TreeMaxBlocksPerTurn,
 		}),
-		quran:     quran.New(quranRepo),
-		personal:  personal.New(personalRepo),
-		editorial: editorial.New(editorialRepo),
-		email:     emailUC,
+		quran:        quran.New(quranRepo),
+		personal:     personal.New(personalRepo, khatamNotifier),
+		editorial:    editorial.New(editorialRepo),
+		email:        emailUC,
+		notification: notificationUC,
 	}
 }
 
@@ -293,12 +322,25 @@ func initServers(cfg *config.Config, pg *postgres.Postgres, uc useCases, jwtMana
 // alert passes, so restarts do not postpone them by a full interval.
 const backgroundInitialDelay = 30 * time.Second
 
-func (s *servers) startServers(cfg *config.Config, emailUC *emailusecase.UseCase, userUC *user.UseCase, l logger.Interface) {
+func (s *servers) startServers(
+	cfg *config.Config,
+	emailUC *emailusecase.UseCase,
+	userUC *user.UseCase,
+	notificationUC *notification.UseCase,
+	l logger.Interface,
+) {
 	if userUC != nil && cfg.AuthCleanup.Enabled {
 		cleanupCtx, cancel := context.WithCancel(context.Background())
 		s.authCleanupStop = cancel
 
 		go runAuthCleanupLoop(cleanupCtx, cfg.AuthCleanup.Interval, userUC, l)
+	}
+
+	if notificationUC != nil && cfg.OneSignal.Enabled {
+		reminderCtx, cancel := context.WithCancel(context.Background())
+		s.notificationReminderStop = cancel
+
+		go runNotificationReminderLoop(reminderCtx, cfg.OneSignal.ReminderInterval, notificationUC, l)
 	}
 
 	if userUC != nil && cfg.AuthAlert.Enabled {
@@ -380,6 +422,39 @@ func runAuthAlertLoop(ctx context.Context, interval time.Duration, userUC *user.
 	}
 }
 
+func runNotificationReminderLoop(
+	ctx context.Context,
+	interval time.Duration,
+	notificationUC *notification.UseCase,
+	l logger.Interface,
+) {
+	initialDelay := time.NewTimer(backgroundInitialDelay)
+	defer initialDelay.Stop()
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-initialDelay.C:
+		case <-ticker.C:
+		}
+
+		sent, err := notificationUC.DispatchReminders(ctx)
+		if err != nil {
+			l.Error(fmt.Errorf("app - reminder dispatch: %w", err))
+
+			continue
+		}
+
+		if sent > 0 {
+			l.Info("app - reminder dispatch: sent %d streak reminder(s)", sent)
+		}
+	}
+}
+
 func runEmailDispatchLoop(ctx context.Context, cfg *config.Config, emailUC *emailusecase.UseCase, l logger.Interface) {
 	ticker := time.NewTicker(cfg.Email.DispatchInterval)
 	defer ticker.Stop()
@@ -443,6 +518,10 @@ func (s *servers) shutdownServers(l logger.Interface) {
 	if s.authAlertStop != nil {
 		s.authAlertStop()
 	}
+
+	if s.notificationReminderStop != nil {
+		s.notificationReminderStop()
+	}
 	if err := s.http.Shutdown(); err != nil {
 		l.Error(fmt.Errorf("app - Run - httpServer.Shutdown: %w", err))
 	}
@@ -468,9 +547,9 @@ func Run(cfg *config.Config) {
 	// opaque session tokens with their own configured expiry.
 	jwtManager := jwt.New(cfg.JWT.Secret, cfg.JWT.AccessTokenExpiry, cfg.JWT.Issuer, cfg.JWT.Audience)
 
-	uc := initUseCases(cfg, pg, jwtManager)
+	uc := initUseCases(cfg, pg, jwtManager, l)
 	s := initServers(cfg, pg, uc, jwtManager, l)
-	s.startServers(cfg, uc.email, uc.user, l)
+	s.startServers(cfg, uc.email, uc.user, uc.notification, l)
 	s.waitForShutdown(l)
 }
 
