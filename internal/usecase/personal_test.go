@@ -20,7 +20,7 @@ func newPersonalUseCase(t *testing.T) (*personal.UseCase, *MockPersonalRepo) {
 	ctrl := gomock.NewController(t)
 
 	mockRepo := NewMockPersonalRepo(ctrl)
-	useCase := personal.New(mockRepo)
+	useCase := personal.New(mockRepo, nil)
 
 	return useCase, mockRepo
 }

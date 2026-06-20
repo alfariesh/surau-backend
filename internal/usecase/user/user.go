@@ -115,6 +115,7 @@ type UseCase struct {
 	jwt                      *jwt.Manager
 	emailSender              repo.EmailSender
 	emailService             TransactionalEmailService
+	pushNotifier             PushNotifier
 	verifyFrontendURL        string
 	verificationTTL          time.Duration
 	verificationOTPTTL       time.Duration
@@ -140,6 +141,12 @@ type UseCase struct {
 	alert                    AlertOptions
 	alertMu                  sync.Mutex
 	alertWatermark           time.Time
+}
+
+// PushNotifier sends a fire-and-forget security push when a new device signs in. Implemented by
+// the notification usecase; nil when push notifications are disabled.
+type PushNotifier interface {
+	NotifyNewLogin(ctx context.Context, userID, device, clientIP string)
 }
 
 // TransactionalEmailService sends admin-managed transactional emails.
@@ -232,6 +239,7 @@ type Options struct {
 	EmailChangeCooldown      time.Duration
 	SupportEmail             string
 	EmailService             TransactionalEmailService
+	PushNotifier             PushNotifier
 	RateLimiter              repo.AuthRateLimitRepo
 	AuditLogger              repo.AuthAuditRepo
 	Sessions                 repo.AuthSessionRepo
@@ -290,6 +298,7 @@ func New(r repo.UserRepo, j *jwt.Manager, emailSender repo.EmailSender, opts Opt
 		jwt:                      j,
 		emailSender:              emailSender,
 		emailService:             opts.EmailService,
+		pushNotifier:             opts.PushNotifier,
 		verifyFrontendURL:        opts.VerifyFrontendURL,
 		verificationTTL:          verificationTTL,
 		verificationOTPTTL:       verificationOTPTTL,
@@ -1433,6 +1442,15 @@ func applyPreferencePatch(preferences *entity.UserPreferences, patch entity.User
 	if patch.QuranRecitationID != nil {
 		preferences.QuranRecitationID = cleanOptionalString(patch.QuranRecitationID)
 	}
+	if patch.NotifyDailyReminders != nil {
+		preferences.NotifyDailyReminders = *patch.NotifyDailyReminders
+	}
+	if patch.NotifyStreakReminders != nil {
+		preferences.NotifyStreakReminders = *patch.NotifyStreakReminders
+	}
+	if patch.NotifyKhatamMilestones != nil {
+		preferences.NotifyKhatamMilestones = *patch.NotifyKhatamMilestones
+	}
 
 	return nil
 }
@@ -2341,6 +2359,9 @@ func (uc *UseCase) notifyNewLogin(ctx context.Context, user entity.User) {
 		variables,
 		newLoginEmailContent(emailCtx, details),
 	)
+	if uc.pushNotifier != nil {
+		uc.pushNotifier.NotifyNewLogin(ctx, user.ID, device, clientIP)
+	}
 }
 
 func (uc *UseCase) notifySuspiciousFailedLogin(ctx context.Context, email string) {

@@ -968,6 +968,9 @@ func preferencesPatchRequestToEntity(body request.UserPreferencesPatch) entity.U
 		DailyGoalMinutes:         body.DailyGoalMinutes,
 		QuranTranslationSourceID: body.QuranTranslationSourceID,
 		QuranRecitationID:        body.QuranRecitationID,
+		NotifyDailyReminders:     body.NotifyDailyReminders,
+		NotifyStreakReminders:    body.NotifyStreakReminders,
+		NotifyKhatamMilestones:   body.NotifyKhatamMilestones,
 	}
 }
 

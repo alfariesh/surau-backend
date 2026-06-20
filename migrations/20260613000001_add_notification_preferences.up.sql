@@ -1,0 +1,4 @@
+ALTER TABLE user_preferences
+    ADD COLUMN IF NOT EXISTS notify_daily_reminders BOOLEAN NOT NULL DEFAULT TRUE,
+    ADD COLUMN IF NOT EXISTS notify_streak_reminders BOOLEAN NOT NULL DEFAULT TRUE,
+    ADD COLUMN IF NOT EXISTS notify_khatam_milestones BOOLEAN NOT NULL DEFAULT TRUE;

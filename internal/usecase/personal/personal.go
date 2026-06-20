@@ -33,14 +33,22 @@ const (
 	hoursPerDay              = 24
 )
 
-// UseCase provides authenticated reader operations.
-type UseCase struct {
-	repo repo.PersonalRepo
+// Notifier fires fire-and-forget push notifications for khatam events. Implemented by the
+// notification usecase; nil when push notifications are disabled.
+type Notifier interface {
+	NotifyKhatamCompleted(ctx context.Context, userID string)
+	NotifyKhatamMilestone(ctx context.Context, userID string, juzCount int)
 }
 
-// New creates a personal usecase.
-func New(r repo.PersonalRepo) *UseCase {
-	return &UseCase{repo: r}
+// UseCase provides authenticated reader operations.
+type UseCase struct {
+	repo     repo.PersonalRepo
+	notifier Notifier
+}
+
+// New creates a personal usecase. notifier may be nil when push notifications are disabled.
+func New(r repo.PersonalRepo, notifier Notifier) *UseCase {
+	return &UseCase{repo: r, notifier: notifier}
 }
 
 // GetProgress returns one user's progress for a book.
@@ -271,7 +279,12 @@ func (uc *UseCase) MarkKhatamJuz(ctx context.Context, userID string, juzNumber i
 		return entity.QuranKhatamCycle{}, entity.ErrInvalidJuzNumber
 	}
 
-	return uc.repo.MarkKhatamJuz(ctx, userID, juzNumber)
+	cycle, err := uc.repo.MarkKhatamJuz(ctx, userID, juzNumber)
+	if err == nil && uc.notifier != nil {
+		uc.notifier.NotifyKhatamMilestone(ctx, userID, cycle.JuzCount)
+	}
+
+	return cycle, err
 }
 
 // UnmarkKhatamJuz removes one juz mark from the active cycle (idempotent).
@@ -286,7 +299,12 @@ func (uc *UseCase) UnmarkKhatamJuz(ctx context.Context, userID string, juzNumber
 // CompleteKhatamCycle completes the active cycle once all 30 juz are marked.
 // Completion is explicit so an accidental final mark stays reversible.
 func (uc *UseCase) CompleteKhatamCycle(ctx context.Context, userID string) (entity.QuranKhatamCycle, error) {
-	return uc.repo.CompleteKhatamCycle(ctx, userID)
+	cycle, err := uc.repo.CompleteKhatamCycle(ctx, userID)
+	if err == nil && uc.notifier != nil {
+		uc.notifier.NotifyKhatamCompleted(ctx, userID)
+	}
+
+	return cycle, err
 }
 
 // ListKhatamHistory returns completed khatam cycles.

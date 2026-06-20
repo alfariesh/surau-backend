@@ -107,4 +107,7 @@ type UserPreferencesPatch struct {
 	DailyGoalMinutes         *int      `json:"daily_goal_minutes"          validate:"omitempty,min=1,max=1440" example:"15"`
 	QuranTranslationSourceID *string   `json:"quran_translation_source_id" validate:"omitempty,max=255"`
 	QuranRecitationID        *string   `json:"quran_recitation_id"         validate:"omitempty,max=255"`
+	NotifyDailyReminders     *bool     `json:"notify_daily_reminders"`
+	NotifyStreakReminders    *bool     `json:"notify_streak_reminders"`
+	NotifyKhatamMilestones   *bool     `json:"notify_khatam_milestones"`
 } // @name v1.UserPreferencesPatch

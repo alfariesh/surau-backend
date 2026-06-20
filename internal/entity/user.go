@@ -98,6 +98,9 @@ type UserPreferences struct {
 	DailyGoalMinutes         *int      `json:"daily_goal_minutes,omitempty" example:"15"`
 	QuranTranslationSourceID *string   `json:"quran_translation_source_id,omitempty"`
 	QuranRecitationID        *string   `json:"quran_recitation_id,omitempty"`
+	NotifyDailyReminders     bool      `json:"notify_daily_reminders"       example:"true"`
+	NotifyStreakReminders    bool      `json:"notify_streak_reminders"      example:"true"`
+	NotifyKhatamMilestones   bool      `json:"notify_khatam_milestones"     example:"true"`
 	CreatedAt                time.Time `json:"created_at"                   example:"2026-01-01T00:00:00Z"`
 	UpdatedAt                time.Time `json:"updated_at"                   example:"2026-01-01T00:00:00Z"`
 } // @name entity.UserPreferences
@@ -162,6 +165,9 @@ type UserPreferencesPatch struct {
 	DailyGoalMinutes         *int
 	QuranTranslationSourceID *string
 	QuranRecitationID        *string
+	NotifyDailyReminders     *bool
+	NotifyStreakReminders    *bool
+	NotifyKhatamMilestones   *bool
 }
 
 // UserProfilePatch stores optional profile changes after onboarding.
@@ -186,15 +192,18 @@ func DefaultUserProfile(userID string, now time.Time) UserProfile {
 // DefaultUserPreferences returns the initial reader preferences for a new account.
 func DefaultUserPreferences(userID string, now time.Time) UserPreferences {
 	return UserPreferences{
-		UserID:               userID,
-		PreferredUILang:      UserPreferredLangDefault,
-		PreferredContentLang: UserPreferredLangDefault,
-		FallbackLangs:        []string{UserPreferredLangDefault},
-		ArabicLevel:          UserArabicLevelNone,
-		ReaderMode:           UserReaderModeArabicTranslation,
-		Interests:            []string{},
-		CreatedAt:            now,
-		UpdatedAt:            now,
+		UserID:                 userID,
+		PreferredUILang:        UserPreferredLangDefault,
+		PreferredContentLang:   UserPreferredLangDefault,
+		FallbackLangs:          []string{UserPreferredLangDefault},
+		ArabicLevel:            UserArabicLevelNone,
+		ReaderMode:             UserReaderModeArabicTranslation,
+		Interests:              []string{},
+		NotifyDailyReminders:   true,
+		NotifyStreakReminders:  true,
+		NotifyKhatamMilestones: true,
+		CreatedAt:              now,
+		UpdatedAt:              now,
 	}
 }
 
