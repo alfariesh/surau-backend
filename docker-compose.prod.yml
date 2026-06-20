@@ -147,6 +147,13 @@ services:
       # enabled, also start the collab service: compose --profile collab up.
       COLLAB_ENABLED: ${COLLAB_ENABLED:-false}
       COLLAB_SERVICE_TOKEN: ${COLLAB_SERVICE_TOKEN:-}
+      # OneSignal push notifications. Disabled unless ONESIGNAL_ENABLED=true and a REST API key are
+      # set in .env.production; the App ID is public.
+      ONESIGNAL_ENABLED: ${ONESIGNAL_ENABLED:-false}
+      ONESIGNAL_APP_ID: ${ONESIGNAL_APP_ID:-}
+      ONESIGNAL_REST_API_KEY: ${ONESIGNAL_REST_API_KEY:-}
+      ONESIGNAL_HTTP_TIMEOUT: ${ONESIGNAL_HTTP_TIMEOUT:-10s}
+      ONESIGNAL_REMINDER_INTERVAL: ${ONESIGNAL_REMINDER_INTERVAL:-1h}
     depends_on:
       db:
         condition: service_healthy
