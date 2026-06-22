@@ -1,11 +1,65 @@
 package persistent
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/evrone/go-clean-template/internal/entity"
 	"github.com/stretchr/testify/assert"
 )
+
+// TestQuranSurahSelectSQLColumnCountMatchesScan guards the SELECT/scan coupling:
+// quranSurahSelectSQL must emit exactly the number of top-level columns that
+// scanQuranSurah reads, identical across includeInfo / includeEditorialHTML so the
+// NULL-fallback and real branches stay aligned. Bump expectedColumns ONLY together
+// with the scan target list in scanQuranSurah.
+func TestQuranSurahSelectSQLColumnCountMatchesScan(t *testing.T) {
+	t.Parallel()
+
+	const expectedColumns = 40
+
+	for _, includeInfo := range []bool{false, true} {
+		for _, includeEditorialHTML := range []bool{false, true} {
+			query := quranSurahSelectSQL("", includeInfo, includeEditorialHTML)
+			got := topLevelSelectColumnCount(t, query)
+			assert.Equalf(t, expectedColumns, got,
+				"includeInfo=%v includeEditorialHTML=%v: SELECT column count must equal scanQuranSurah targets",
+				includeInfo, includeEditorialHTML)
+		}
+	}
+}
+
+// topLevelSelectColumnCount counts comma-separated columns in the SELECT...FROM
+// clause at parenthesis depth 0, so commas inside GREATEST/COALESCE/array_agg are
+// not miscounted.
+func topLevelSelectColumnCount(t *testing.T, query string) int {
+	t.Helper()
+
+	upper := strings.ToUpper(query)
+	selectIdx := strings.Index(upper, "SELECT ")
+	fromIdx := strings.Index(upper, "\nFROM ")
+	if selectIdx < 0 || fromIdx < 0 || fromIdx <= selectIdx {
+		t.Fatalf("could not locate SELECT...FROM in query")
+	}
+
+	clause := query[selectIdx+len("SELECT ") : fromIdx]
+	depth := 0
+	columns := 1
+	for _, r := range clause {
+		switch r {
+		case '(':
+			depth++
+		case ')':
+			depth--
+		case ',':
+			if depth == 0 {
+				columns++
+			}
+		}
+	}
+
+	return columns
+}
 
 func TestMarkDefaultRecitationPrefersFullPublicAyah(t *testing.T) {
 	t.Parallel()

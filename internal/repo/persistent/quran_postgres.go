@@ -154,7 +154,7 @@ func NewQuranRepo(pg *postgres.Postgres) *QuranRepo {
 
 // ListSurahs returns imported surahs in mushaf order.
 func (r *QuranRepo) ListSurahs(ctx context.Context, lang string, includeInfo bool) ([]entity.QuranSurah, error) {
-	rows, err := r.Pool.Query(ctx, quranSurahSelectSQL("\nORDER BY s.surah_id ASC", includeInfo), lang)
+	rows, err := r.Pool.Query(ctx, quranSurahSelectSQL("\nORDER BY s.surah_id ASC", includeInfo, false), lang)
 	if err != nil {
 		return nil, fmt.Errorf("QuranRepo - ListSurahs - Query: %w", err)
 	}
@@ -179,7 +179,7 @@ func (r *QuranRepo) ListSurahs(ctx context.Context, lang string, includeInfo boo
 // GetSurah returns one imported surah with language-specific info.
 func (r *QuranRepo) GetSurah(ctx context.Context, surahID int, lang string) (entity.QuranSurah, error) {
 	surah, err := scanQuranSurah(r.Pool.QueryRow(ctx, quranSurahSelectSQL(`
-WHERE s.surah_id = $2`, true), lang, surahID))
+WHERE s.surah_id = $2`, true, true), lang, surahID))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return entity.QuranSurah{}, entity.ErrQuranSurahNotFound
@@ -1042,7 +1042,7 @@ filtered AS (
       AND ($3::INT IS NULL OR surah_id = $3)
 )`
 
-func quranSurahSelectSQL(where string, includeInfo bool) string {
+func quranSurahSelectSQL(where string, includeInfo, includeEditorialHTML bool) string {
 	infoColumns := `
        NULL::text AS lang,
        NULL::text AS surah_name,
@@ -1077,18 +1077,50 @@ func quranSurahSelectSQL(where string, includeInfo bool) string {
 LEFT JOIN quran_surah_infos si ON si.surah_id = s.surah_id AND si.lang = $1`
 	}
 
+	// Editorial HTML is heavy (keutamaan/asbabun/pokok kandungan). It is selected
+	// only for detail reads (GetSurah); list reads (ListSurahs) keep it NULL so a
+	// 114-row include_info payload stays under the edge cache's MAX_CACHE_BYTES.
+	// Light editorial metadata (slug/meta/license/freshness) is always selected
+	// because the sitemap and listings need it. The column COUNT is constant
+	// across both flags so scanQuranSurah aligns either way.
+	editorialHTMLColumns := `
+       NULL::text AS ed_keutamaan_html,
+       NULL::text AS ed_asbabun_nuzul_html,
+       NULL::text AS ed_pokok_kandungan_html`
+	if includeEditorialHTML {
+		editorialHTMLColumns = `
+       ed.keutamaan_html AS ed_keutamaan_html,
+       ed.asbabun_nuzul_html AS ed_asbabun_nuzul_html,
+       ed.pokok_kandungan_html AS ed_pokok_kandungan_html`
+	}
+
 	return `
 SELECT s.surah_id,
+       s.slug,
        s.name_arabic,
        s.name_latin,
        s.name_translation,
        s.revelation_type,
        s.ayah_count,
+       s.chronological_order,
+       s.ruku_count,
        s.metadata,
-       s.updated_at,` + infoColumns + `,
+       s.updated_at,
+       GREATEST(s.updated_at, COALESCE(ed.updated_at, s.updated_at)) AS content_updated_at,` + infoColumns + `,
+       ed.lang AS ed_lang,
+       ed.meta_title AS ed_meta_title,
+       ed.meta_description AS ed_meta_description,
+       ed.arti_nama AS ed_arti_nama,` + editorialHTMLColumns + `,
+       ed.author_name AS ed_author_name,
+       ed.reviewed_by AS ed_reviewed_by,
+       ed.reviewed_at AS ed_reviewed_at,
+       ed.license_status AS ed_license_status,
+       ed.created_at AS ed_created_at,
+       ed.updated_at AS ed_updated_at,
        $1::text AS requested_lang,
        COALESCE(av.available_langs, ARRAY[]::TEXT[]) AS available_info_langs
 FROM quran_surahs s` + infoJoin + `
+LEFT JOIN quran_surah_editorial ed ON ed.surah_id = s.surah_id AND ed.lang = $1
 LEFT JOIN LATERAL (
     SELECT array_agg(DISTINCT lang ORDER BY lang) AS available_langs
     FROM quran_surah_infos
@@ -1970,11 +2002,15 @@ func scanQuranTranslationSource(row rowScanner) (entity.QuranTranslationSource, 
 
 func scanQuranSurah(row rowScanner) (entity.QuranSurah, error) {
 	var surah entity.QuranSurah
+	var slug sql.NullString
 	var nameArabic sql.NullString
 	var nameLatin sql.NullString
 	var nameTranslation sql.NullString
 	var revelationType sql.NullString
+	var chronologicalOrder sql.NullInt64
+	var rukuCount sql.NullInt64
 	var metadata []byte
+	var contentUpdatedAt sql.NullTime
 	var infoLang sql.NullString
 	var infoSurahName sql.NullString
 	var infoTextHTML sql.NullString
@@ -1988,18 +2024,35 @@ func scanQuranSurah(row rowScanner) (entity.QuranSurah, error) {
 	var infoMetadata []byte
 	var infoImportedAt sql.NullTime
 	var infoUpdatedAt sql.NullTime
+	var edLang sql.NullString
+	var edMetaTitle sql.NullString
+	var edMetaDescription sql.NullString
+	var edArtiNama sql.NullString
+	var edKeutamaan sql.NullString
+	var edAsbabun sql.NullString
+	var edPokok sql.NullString
+	var edAuthorName sql.NullString
+	var edReviewedBy sql.NullString
+	var edReviewedAt sql.NullTime
+	var edLicenseStatus sql.NullString
+	var edCreatedAt sql.NullTime
+	var edUpdatedAt sql.NullTime
 	var requestedLang string
 	var availableInfoLangs []string
 
 	err := row.Scan(
 		&surah.SurahID,
+		&slug,
 		&nameArabic,
 		&nameLatin,
 		&nameTranslation,
 		&revelationType,
 		&surah.AyahCount,
+		&chronologicalOrder,
+		&rukuCount,
 		&metadata,
 		&surah.UpdatedAt,
+		&contentUpdatedAt,
 		&infoLang,
 		&infoSurahName,
 		&infoTextHTML,
@@ -2013,6 +2066,19 @@ func scanQuranSurah(row rowScanner) (entity.QuranSurah, error) {
 		&infoMetadata,
 		&infoImportedAt,
 		&infoUpdatedAt,
+		&edLang,
+		&edMetaTitle,
+		&edMetaDescription,
+		&edArtiNama,
+		&edKeutamaan,
+		&edAsbabun,
+		&edPokok,
+		&edAuthorName,
+		&edReviewedBy,
+		&edReviewedAt,
+		&edLicenseStatus,
+		&edCreatedAt,
+		&edUpdatedAt,
 		&requestedLang,
 		&availableInfoLangs,
 	)
@@ -2020,11 +2086,15 @@ func scanQuranSurah(row rowScanner) (entity.QuranSurah, error) {
 		return entity.QuranSurah{}, err
 	}
 
+	surah.Slug = nullableString(slug)
 	surah.NameArabic = nullableString(nameArabic)
 	surah.NameLatin = nullableString(nameLatin)
 	surah.NameTranslation = nullableString(nameTranslation)
 	surah.RevelationType = nullableString(revelationType)
+	surah.ChronologicalOrder = nullableInt(chronologicalOrder)
+	surah.RukuCount = nullableInt(rukuCount)
 	surah.Metadata = entity.RawJSON(metadata)
+	surah.ContentUpdatedAt = nullableTime(contentUpdatedAt)
 	if infoLang.Valid {
 		info := &entity.QuranSurahInfo{
 			Lang:          infoLang.String,
@@ -2044,6 +2114,42 @@ func scanQuranSurah(row rowScanner) (entity.QuranSurah, error) {
 			info.UpdatedAt = infoUpdatedAt.Time
 		}
 		surah.Info = info
+	}
+	if edLang.Valid {
+		editorial := &entity.QuranSurahEditorial{
+			Lang:            edLang.String,
+			MetaTitle:       nullableString(edMetaTitle),
+			MetaDescription: nullableString(edMetaDescription),
+			ArtiNama:        nullableString(edArtiNama),
+			AuthorName:      nullableString(edAuthorName),
+			ReviewedBy:      nullableString(edReviewedBy),
+			ReviewedAt:      nullableTime(edReviewedAt),
+			LicenseStatus:   edLicenseStatus.String,
+		}
+		// HTML is sanitized on read (as TextHTML is); empties are omitted so the
+		// frontend's "has editorial content" index gate is not tripped by "".
+		if edKeutamaan.Valid {
+			if sanitized := readerutil.SanitizeHTML(edKeutamaan.String); sanitized != "" {
+				editorial.Keutamaan = &sanitized
+			}
+		}
+		if edAsbabun.Valid {
+			if sanitized := readerutil.SanitizeHTML(edAsbabun.String); sanitized != "" {
+				editorial.AsbabunNuzul = &sanitized
+			}
+		}
+		if edPokok.Valid {
+			if sanitized := readerutil.SanitizeHTML(edPokok.String); sanitized != "" {
+				editorial.PokokKandungan = &sanitized
+			}
+		}
+		if edCreatedAt.Valid {
+			editorial.CreatedAt = edCreatedAt.Time
+		}
+		if edUpdatedAt.Valid {
+			editorial.UpdatedAt = edUpdatedAt.Time
+		}
+		surah.Editorial = editorial
 	}
 	displayLang := contentlang.Arabic
 	isFallback := requestedLang != contentlang.Arabic
