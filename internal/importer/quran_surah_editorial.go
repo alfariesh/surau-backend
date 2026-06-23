@@ -49,6 +49,16 @@ type quranSurahEditorialRecord struct {
 	LicenseStatus      *string    `json:"license_status"`
 }
 
+// allowedEditorialLicenseStatuses mirrors the quran_surah_editorial_license_status_check
+// DB constraint, so a bad value fails with a clear message instead of an opaque 23514.
+var allowedEditorialLicenseStatuses = map[string]bool{
+	"unknown":       true,
+	"needs_review":  true,
+	"permitted":     true,
+	"restricted":    true,
+	"public_domain": true,
+}
+
 // RunQuranSurahEditorialImport parses editorial JSON files and upserts them into
 // quran_surahs (slug/chronological_order/ruku_count) and quran_surah_editorial
 // (per-language editorial + SEO copy) within a single transaction. Self-authored
@@ -88,6 +98,11 @@ func RunQuranSurahEditorialImport(ctx context.Context, opts QuranSurahEditorialO
 		if rec.LicenseStatus == nil || strings.TrimSpace(*rec.LicenseStatus) == "" {
 			needsReview := "needs_review"
 			rec.LicenseStatus = &needsReview
+		} else if !allowedEditorialLicenseStatuses[*rec.LicenseStatus] {
+			return QuranSurahEditorialStats{}, fmt.Errorf(
+				"surah %d: invalid license_status %q (expected unknown, needs_review, permitted, restricted, or public_domain)",
+				rec.SurahID, *rec.LicenseStatus,
+			)
 		}
 		if rec.Slug != nil || rec.ChronologicalOrder != nil || rec.RukuCount != nil {
 			surahSeen[rec.SurahID] = struct{}{}
@@ -120,7 +135,7 @@ func RunQuranSurahEditorialImport(ctx context.Context, opts QuranSurahEditorialO
 		rec := records[i]
 
 		if rec.Slug != nil || rec.ChronologicalOrder != nil || rec.RukuCount != nil {
-			if _, err := tx.Exec(ctx, `
+			tag, err := tx.Exec(ctx, `
 UPDATE quran_surahs SET
     slug = COALESCE($2, slug),
     chronological_order = COALESCE($3, chronological_order),
@@ -128,8 +143,12 @@ UPDATE quran_surahs SET
     updated_at = now()
 WHERE surah_id = $1`,
 				rec.SurahID, rec.Slug, rec.ChronologicalOrder, rec.RukuCount,
-			); err != nil {
+			)
+			if err != nil {
 				return QuranSurahEditorialStats{}, surahEditorialExecError("surah", rec, err)
+			}
+			if tag.RowsAffected() == 0 {
+				return QuranSurahEditorialStats{}, fmt.Errorf("surah %d not found in quran_surahs", rec.SurahID)
 			}
 		}
 

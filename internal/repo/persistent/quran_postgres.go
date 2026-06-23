@@ -1082,7 +1082,8 @@ LEFT JOIN quran_surah_infos si ON si.surah_id = s.surah_id AND si.lang = $1`
 	// 114-row include_info payload stays under the edge cache's MAX_CACHE_BYTES.
 	// Light editorial metadata (slug/meta/license/freshness) is always selected
 	// because the sitemap and listings need it. The column COUNT is constant
-	// across both flags so scanQuranSurah aligns either way.
+	// across both flags so scanQuranSurah aligns either way. Only permitted
+	// (reviewed) editorial is joined, so unreviewed drafts never leave the API.
 	editorialHTMLColumns := `
        NULL::text AS ed_keutamaan_html,
        NULL::text AS ed_asbabun_nuzul_html,
@@ -1120,7 +1121,7 @@ SELECT s.surah_id,
        $1::text AS requested_lang,
        COALESCE(av.available_langs, ARRAY[]::TEXT[]) AS available_info_langs
 FROM quran_surahs s` + infoJoin + `
-LEFT JOIN quran_surah_editorial ed ON ed.surah_id = s.surah_id AND ed.lang = $1
+LEFT JOIN quran_surah_editorial ed ON ed.surah_id = s.surah_id AND ed.lang = $1 AND ed.license_status = 'permitted'
 LEFT JOIN LATERAL (
     SELECT array_agg(DISTINCT lang ORDER BY lang) AS available_langs
     FROM quran_surah_infos

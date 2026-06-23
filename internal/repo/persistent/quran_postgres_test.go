@@ -13,6 +13,10 @@ import (
 // scanQuranSurah reads, identical across includeInfo / includeEditorialHTML so the
 // NULL-fallback and real branches stay aligned. Bump expectedColumns ONLY together
 // with the scan target list in scanQuranSurah.
+//
+// NOTE: this counts top-level SELECT columns only; it catches added/removed
+// columns (the common mistake) but NOT a same-typed reorder — keep the SELECT and
+// scan order in sync by hand.
 func TestQuranSurahSelectSQLColumnCountMatchesScan(t *testing.T) {
 	t.Parallel()
 
