@@ -59,6 +59,25 @@ Surah info is exact-language only. If `lang=en` info is not imported, `info` is 
 
 `info.text_html` is sanitized by backend, but FE should still render it only in the Quran info area, not inside arbitrary user-controlled HTML containers.
 
+### Surah Editorial (SEO/SGE)
+
+Surah-level editorial enrichment powers the public `/surah/{slug}` SEO pages.
+
+Surah-level fields (language-independent, on every surah object):
+
+- `slug` — canonical, stable URL slug (e.g. `al-mulk`). Language-independent. Backfilled from `name_latin`; treat as stable (changing it breaks live URLs).
+- `chronological_order` — order of revelation (`1`–`114`), nullable.
+- `ruku_count` — number of ruku, nullable.
+- `content_updated_at` — `GREATEST(surah, editorial)` for the requested lang. Use it as the sitemap `lastmod` so editorial edits move freshness; falls back to surah `updated_at` when no editorial.
+
+`editorial` (per-language object, present **only when reviewed**):
+
+- Returned **only when `license_status = 'permitted'`** — unreviewed/draft copy is never exposed by the API (the gate is in the backend, not just the FE).
+- Heavy HTML (`keutamaan_html`, `asbabun_nuzul_html`, `pokok_kandungan_html`) is returned **only on the detail endpoint** `GET /v1/quran/surahs/{surah_id}`. The list endpoint (`?include_info`) carries only the **light** editorial metadata (`meta_title`, `meta_description`, `arti_nama`, `license_status`, `created_at`, `updated_at`) so the 114-row payload stays under the edge-cache limit.
+- Fields: `meta_title`, `meta_description` (SEO), `arti_nama`, the three `*_html` bodies, `author_name`/`reviewed_by`/`reviewed_at` (E-E-A-T), `license_status`, `created_at`, `updated_at`.
+- HTML is backend-sanitized on read; render only inside the editorial area.
+- Populate via the CLI loader `cmd/import-quran-surah-editorial` (see README).
+
 ### Multilingual Availability
 
 Quran uses the same `lang` contract as kitab reader:
@@ -289,6 +308,9 @@ Status: `200`
       "name_translation": "Pembukaan",
       "revelation_type": "makkiyah",
       "ayah_count": 7,
+      "slug": "al-fatihah",
+      "chronological_order": 5,
+      "ruku_count": 1,
       "localization": {
         "requested_lang": "id",
         "display_lang": "id",
@@ -311,6 +333,7 @@ Status: `200`
         }
       },
       "metadata": {},
+      "content_updated_at": "2026-05-28T00:00:00Z",
       "updated_at": "2026-05-28T00:00:00Z"
     }
   ],
@@ -400,11 +423,14 @@ Status: `200`
 ```json
 {
   "surah_id": 73,
+  "slug": "al-muzzammil",
   "name_arabic": "المزمل",
   "name_latin": "Al-Muzzammil",
   "name_translation": "Orang yang Berselimut",
   "revelation_type": "makkiyah",
   "ayah_count": 20,
+  "chronological_order": 3,
+  "ruku_count": 2,
   "info": {
     "lang": "id",
     "surah_name": "Al-Muzzammil",
@@ -413,6 +439,21 @@ Status: `200`
     "format": "json",
     "license_status": "needs_review",
     "updated_at": "2026-05-28T00:00:00Z"
+  },
+  "editorial": {
+    "lang": "id",
+    "meta_title": "Surah Al-Muzzammil: Keutamaan, Asbabun Nuzul & Pokok Kandungan",
+    "meta_description": "Keutamaan Surah Al-Muzzammil, asbabun nuzul, dan ringkasan kandungannya.",
+    "arti_nama": "Orang yang Berselimut",
+    "keutamaan_html": "<p>...</p>",
+    "asbabun_nuzul_html": "<p>...</p>",
+    "pokok_kandungan_html": "<p>...</p>",
+    "author_name": "Tim Surau",
+    "reviewed_by": "Ustadz Fulan, Lc.",
+    "reviewed_at": "2026-06-23T00:00:00Z",
+    "license_status": "permitted",
+    "created_at": "2026-06-23T00:00:00Z",
+    "updated_at": "2026-06-23T00:00:00Z"
   },
   "localization": {
     "requested_lang": "id",
@@ -436,6 +477,7 @@ Status: `200`
     }
   },
   "metadata": {},
+  "content_updated_at": "2026-06-23T00:00:00Z",
   "updated_at": "2026-05-28T00:00:00Z"
 }
 ```

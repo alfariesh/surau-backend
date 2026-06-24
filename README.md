@@ -310,6 +310,43 @@ go run ./cmd/sync-quran-audio-r2 \
 
 Use `--dry-run` to validate manifest and recitation counts without writing. The sync is idempotent: it upserts missing recitations/tracks from the manifest, applies clean display metadata when `--recitation-metadata-json` is provided, and updates `r2_key/public_url`. If `--public-base-url` is omitted, the command updates `r2_key` only and leaves existing `public_url` values unchanged.
 
+## Import Surah Editorial (SEO/SGE)
+
+Surah-level editorial enrichment (keutamaan, asbabun nuzul, pokok kandungan, SEO meta) for the public `/surah/{slug}` pages is self-authored and loaded from JSON — independent of the QUL import above:
+
+```sh
+PG_URL='postgres://user:myAwEsOm3pa55@w0rd@localhost:5432/db' \
+go run ./cmd/import-quran-surah-editorial \
+  --editorial-json=/path/to/al-mulk.id.json \
+  --editorial-json=/path/to/al-fatihah.id.json
+```
+
+Each file is an array of records keyed by `surah_id` + `lang`:
+
+```json
+[
+  {
+    "surah_id": 67,
+    "lang": "id",
+    "slug": "al-mulk",
+    "chronological_order": 77,
+    "ruku_count": 2,
+    "meta_title": "Surah Al-Mulk: Keutamaan, Asbabun Nuzul & Pokok Kandungan",
+    "meta_description": "Keutamaan Surah Al-Mulk, asbabun nuzul, dan ringkasan kandungannya.",
+    "arti_nama": "Kerajaan",
+    "keutamaan_html": "<p>...</p>",
+    "asbabun_nuzul_html": "<p>...</p>",
+    "pokok_kandungan_html": "<p>...</p>",
+    "author_name": "Tim Surau",
+    "reviewed_by": "Ustadz Fulan, Lc.",
+    "reviewed_at": "2026-06-23T00:00:00Z",
+    "license_status": "permitted"
+  }
+]
+```
+
+Only `surah_id` and `lang` are required; every other field is optional and uses a COALESCE upsert (an absent field keeps the existing value on re-import). `slug`/`chronological_order`/`ruku_count` update the `quran_surahs` row; the rest update `quran_surah_editorial` for that language. `license_status` defaults to `needs_review` — **set it to `permitted` to publish**, since the API and the public `/surah/{slug}` page only expose and index editorial that is `permitted`. `--editorial-json` is repeatable; use `--dry-run` to parse and count without writing.
+
 ## Generate Test Translations with DeepSeek
 
 For quick multilingual reader testing, `scripts/translate_reader_assets.py` fetches Arabic TOC sections from the local backend and writes importer-compatible translation JSONL.
