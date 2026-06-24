@@ -13453,6 +13453,18 @@ const docTemplate = `{
                     "type": "integer",
                     "example": 20
                 },
+                "chronological_order": {
+                    "type": "integer",
+                    "example": 3
+                },
+                "content_updated_at": {
+                    "description": "ContentUpdatedAt is GREATEST(surah, editorial) for the requested lang; use\nit as the SEO sitemap lastmod so editorial edits actually advance freshness.",
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "editorial": {
+                    "$ref": "#/definitions/entity.QuranSurahEditorial"
+                },
                 "info": {
                     "$ref": "#/definitions/entity.QuranSurahInfo"
                 },
@@ -13478,9 +13490,67 @@ const docTemplate = `{
                     "type": "string",
                     "example": "makkiyah"
                 },
+                "ruku_count": {
+                    "type": "integer",
+                    "example": 2
+                },
+                "slug": {
+                    "type": "string",
+                    "example": "al-muzzammil"
+                },
                 "surah_id": {
                     "type": "integer",
                     "example": 73
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                }
+            }
+        },
+        "entity.QuranSurahEditorial": {
+            "type": "object",
+            "properties": {
+                "arti_nama": {
+                    "type": "string",
+                    "example": "Orang yang Berselimut"
+                },
+                "asbabun_nuzul_html": {
+                    "type": "string"
+                },
+                "author_name": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "keutamaan_html": {
+                    "type": "string"
+                },
+                "lang": {
+                    "type": "string",
+                    "example": "id"
+                },
+                "license_status": {
+                    "type": "string",
+                    "example": "needs_review"
+                },
+                "meta_description": {
+                    "type": "string"
+                },
+                "meta_title": {
+                    "type": "string"
+                },
+                "pokok_kandungan_html": {
+                    "type": "string"
+                },
+                "reviewed_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "reviewed_by": {
+                    "type": "string"
                 },
                 "updated_at": {
                     "type": "string",
@@ -14405,6 +14475,18 @@ const docTemplate = `{
                         "tafsir",
                         "hadith"
                     ]
+                },
+                "notify_daily_reminders": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "notify_khatam_milestones": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "notify_streak_reminders": {
+                    "type": "boolean",
+                    "example": true
                 },
                 "preferred_content_lang": {
                     "type": "string",
@@ -16879,6 +16961,15 @@ const docTemplate = `{
                         "tafsir",
                         "hadith"
                     ]
+                },
+                "notify_daily_reminders": {
+                    "type": "boolean"
+                },
+                "notify_khatam_milestones": {
+                    "type": "boolean"
+                },
+                "notify_streak_reminders": {
+                    "type": "boolean"
                 },
                 "preferred_content_lang": {
                     "type": "string",
