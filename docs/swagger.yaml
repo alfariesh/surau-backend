@@ -2213,6 +2213,17 @@ definitions:
       ayah_count:
         example: 20
         type: integer
+      chronological_order:
+        example: 3
+        type: integer
+      content_updated_at:
+        description: |-
+          ContentUpdatedAt is GREATEST(surah, editorial) for the requested lang; use
+          it as the SEO sitemap lastmod so editorial edits actually advance freshness.
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      editorial:
+        $ref: '#/definitions/entity.QuranSurahEditorial'
       info:
         $ref: '#/definitions/entity.QuranSurahInfo'
       localization:
@@ -2231,9 +2242,50 @@ definitions:
       revelation_type:
         example: makkiyah
         type: string
+      ruku_count:
+        example: 2
+        type: integer
+      slug:
+        example: al-muzzammil
+        type: string
       surah_id:
         example: 73
         type: integer
+      updated_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+    type: object
+  entity.QuranSurahEditorial:
+    properties:
+      arti_nama:
+        example: Orang yang Berselimut
+        type: string
+      asbabun_nuzul_html:
+        type: string
+      author_name:
+        type: string
+      created_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      keutamaan_html:
+        type: string
+      lang:
+        example: id
+        type: string
+      license_status:
+        example: needs_review
+        type: string
+      meta_description:
+        type: string
+      meta_title:
+        type: string
+      pokok_kandungan_html:
+        type: string
+      reviewed_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      reviewed_by:
+        type: string
       updated_at:
         example: "2026-01-01T00:00:00Z"
         type: string
@@ -2890,6 +2942,15 @@ definitions:
         items:
           type: string
         type: array
+      notify_daily_reminders:
+        example: true
+        type: boolean
+      notify_khatam_milestones:
+        example: true
+        type: boolean
+      notify_streak_reminders:
+        example: true
+        type: boolean
       preferred_content_lang:
         example: id
         type: string
@@ -4637,6 +4698,12 @@ definitions:
           type: string
         maxItems: 20
         type: array
+      notify_daily_reminders:
+        type: boolean
+      notify_khatam_milestones:
+        type: boolean
+      notify_streak_reminders:
+        type: boolean
       preferred_content_lang:
         example: id
         maxLength: 16
