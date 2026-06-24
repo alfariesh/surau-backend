@@ -4,16 +4,23 @@ import "time"
 
 // QuranSurah describes one Quran surah plus imported QUL metadata.
 type QuranSurah struct {
-	SurahID         int              `json:"surah_id" example:"73"`
-	NameArabic      *string          `json:"name_arabic,omitempty" example:"المزمل"`
-	NameLatin       *string          `json:"name_latin,omitempty" example:"Al-Muzzammil"`
-	NameTranslation *string          `json:"name_translation,omitempty" example:"Orang yang Berselimut"`
-	RevelationType  *string          `json:"revelation_type,omitempty" example:"makkiyah"`
-	AyahCount       int              `json:"ayah_count" example:"20"`
-	Info            *QuranSurahInfo  `json:"info,omitempty"`
-	Localization    LocalizationMeta `json:"localization"`
-	Metadata        RawJSON          `json:"metadata,omitempty" swaggertype:"object"`
-	UpdatedAt       time.Time        `json:"updated_at" example:"2026-01-01T00:00:00Z"`
+	SurahID            int                  `json:"surah_id" example:"73"`
+	Slug               *string              `json:"slug,omitempty" example:"al-muzzammil"`
+	NameArabic         *string              `json:"name_arabic,omitempty" example:"المزمل"`
+	NameLatin          *string              `json:"name_latin,omitempty" example:"Al-Muzzammil"`
+	NameTranslation    *string              `json:"name_translation,omitempty" example:"Orang yang Berselimut"`
+	RevelationType     *string              `json:"revelation_type,omitempty" example:"makkiyah"`
+	AyahCount          int                  `json:"ayah_count" example:"20"`
+	ChronologicalOrder *int                 `json:"chronological_order,omitempty" example:"3"`
+	RukuCount          *int                 `json:"ruku_count,omitempty" example:"2"`
+	Info               *QuranSurahInfo      `json:"info,omitempty"`
+	Editorial          *QuranSurahEditorial `json:"editorial,omitempty"`
+	Localization       LocalizationMeta     `json:"localization"`
+	Metadata           RawJSON              `json:"metadata,omitempty" swaggertype:"object"`
+	// ContentUpdatedAt is GREATEST(surah, editorial) for the requested lang; use
+	// it as the SEO sitemap lastmod so editorial edits actually advance freshness.
+	ContentUpdatedAt *time.Time `json:"content_updated_at,omitempty" example:"2026-01-01T00:00:00Z"`
+	UpdatedAt        time.Time  `json:"updated_at" example:"2026-01-01T00:00:00Z"`
 } // @name entity.QuranSurah
 
 // QuranSurahInfo stores language-specific imported background information for one surah.
@@ -32,6 +39,25 @@ type QuranSurahInfo struct {
 	ImportedAt    *time.Time `json:"imported_at,omitempty" example:"2026-01-01T00:00:00Z"`
 	UpdatedAt     time.Time  `json:"updated_at" example:"2026-01-01T00:00:00Z"`
 } // @name entity.QuranSurahInfo
+
+// QuranSurahEditorial holds language-specific editorial + SEO copy for one surah
+// (keutamaan, asbabun nuzul, pokok kandungan, meta title/description). Authored
+// in-house and reviewed before publish; license_status defaults to needs_review.
+type QuranSurahEditorial struct {
+	Lang            string     `json:"lang" example:"id"`
+	MetaTitle       *string    `json:"meta_title,omitempty"`
+	MetaDescription *string    `json:"meta_description,omitempty"`
+	ArtiNama        *string    `json:"arti_nama,omitempty" example:"Orang yang Berselimut"`
+	Keutamaan       *string    `json:"keutamaan_html,omitempty"`
+	AsbabunNuzul    *string    `json:"asbabun_nuzul_html,omitempty"`
+	PokokKandungan  *string    `json:"pokok_kandungan_html,omitempty"`
+	AuthorName      *string    `json:"author_name,omitempty"`
+	ReviewedBy      *string    `json:"reviewed_by,omitempty"`
+	ReviewedAt      *time.Time `json:"reviewed_at,omitempty" example:"2026-01-01T00:00:00Z"`
+	LicenseStatus   string     `json:"license_status" example:"needs_review"`
+	CreatedAt       time.Time  `json:"created_at" example:"2026-01-01T00:00:00Z"`
+	UpdatedAt       time.Time  `json:"updated_at" example:"2026-01-01T00:00:00Z"`
+} // @name entity.QuranSurahEditorial
 
 // QuranTranslation is one ayah translation from an imported source.
 type QuranTranslation struct {
