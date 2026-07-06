@@ -69,8 +69,10 @@ jobs:
           # the very first deploy when the db container does not exist yet.
           if [ -n "$(sudo docker compose --env-file .env.production -f docker-compose.prod.yml ps -q db)" ]; then
             echo "Snapshotting DB before migrate..."
+            # </dev/null is load-bearing: `exec -T` otherwise consumes this script's
+            # stdin (the ssh heredoc), swallowing every command after the snapshot.
             sudo docker compose --env-file .env.production -f docker-compose.prod.yml exec -T db \
-              sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB"' | gzip > db-predeploy-backup.sql.gz
+              sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB"' </dev/null | gzip > db-predeploy-backup.sql.gz
             echo "DB snapshot written: $(du -h db-predeploy-backup.sql.gz | cut -f1)"
           else
             echo "db container not running yet (first deploy?) — skipping pre-deploy snapshot"
