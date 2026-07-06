@@ -153,9 +153,12 @@ func TestQuranMultilingualContract(t *testing.T) {
 	if allMissing.Total != 4 {
 		t.Fatalf("admin quran missing total = %d items %+v", allMissing.Total, allMissing.Items)
 	}
-	for _, assetType := range []string{"audio_public", "ayah_translation", "surah_info", "translation_source"} {
+	for _, assetType := range []string{"ayah_translation", "surah_info", "translation_source"} {
 		assertMissingCount(t, allMissing.Counts, assetType, "en", 1)
 	}
+	// audio_public is language-independent (quran_audio_tracks has no lang column), so
+	// its missing-asset count is emitted once with an empty target_lang, not per lang.
+	assertMissingCount(t, allMissing.Counts, "audio_public", "", 1)
 
 	resp = doJSON(t, http.MethodGet, baseURL()+"/v1/editorial/quran/missing-assets?target_lang=en&asset_type=ayah_translation&surah_id=114", nil, adminToken)
 	var missingTranslations missingQuranAssetsResponse
