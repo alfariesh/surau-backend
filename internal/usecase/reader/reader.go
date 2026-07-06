@@ -95,7 +95,7 @@ func (uc *UseCase) Book(ctx context.Context, bookID int, lang string) (entity.Bo
 }
 
 // Pages returns paginated pages for a book.
-func (uc *UseCase) Pages(ctx context.Context, bookID int, limit, offset int) ([]entity.BookPage, int, error) {
+func (uc *UseCase) Pages(ctx context.Context, bookID, limit, offset int) ([]entity.BookPage, int, error) {
 	return uc.repo.ListBookPages(ctx, bookID, repo.PageFilter{
 		Limit:  clampLimit(limit),
 		Offset: clampOffset(offset),

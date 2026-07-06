@@ -234,7 +234,9 @@ func newQuranTestApp(quran usecase.Quran) *fiber.App {
 	return app
 }
 
-type fakeQuran struct{}
+type fakeQuran struct {
+	editorial bool
+}
 
 type captureBookReferencesQuran struct {
 	*fakeQuran
@@ -353,9 +355,10 @@ func (f *fakeQuran) JuzAyahs(
 	_ string,
 	_ bool,
 	includeAudio bool,
+	includeEditorial bool,
 	recitationID string,
 ) ([]entity.QuranAyah, error) {
-	return fakeNavigationAyahs("juz", juzNumber, includeAudio, recitationID)
+	return fakeNavigationAyahs("juz", juzNumber, includeAudio, includeEditorial, recitationID)
 }
 
 func (f *fakeQuran) Hizbs(_ context.Context, _ string) ([]entity.QuranNavigationSegment, error) {
@@ -369,13 +372,14 @@ func (f *fakeQuran) HizbAyahs(
 	_ string,
 	_ bool,
 	includeAudio bool,
+	includeEditorial bool,
 	recitationID string,
 ) ([]entity.QuranAyah, error) {
 	if hizbNumber == 58 {
 		return nil, entity.ErrQuranNavigationNotFound
 	}
 
-	return fakeNavigationAyahs("hizb", hizbNumber, includeAudio, recitationID)
+	return fakeNavigationAyahs("hizb", hizbNumber, includeAudio, includeEditorial, recitationID)
 }
 
 func (f *fakeQuran) Ayah(
@@ -398,6 +402,9 @@ func (f *fakeQuran) Ayah(
 
 	ayah := fakeQuranAyah(73, true, includeAudio, recitationID)
 	ayah.AyahKey = ayahKey
+	if f.editorial {
+		ayah.Editorial = fakeAyahEditorial()
+	}
 
 	return ayah, nil
 }
@@ -411,9 +418,15 @@ func (f *fakeQuran) SurahAyahs(
 	_ string,
 	includeTranslation bool,
 	includeAudio bool,
+	includeEditorial bool,
 	recitationID string,
 ) ([]entity.QuranAyah, error) {
-	return []entity.QuranAyah{fakeQuranAyah(surahID, includeTranslation, includeAudio, recitationID)}, nil
+	ayah := fakeQuranAyah(surahID, includeTranslation, includeAudio, recitationID)
+	if f.editorial && includeEditorial {
+		ayah.Editorial = fakeAyahEditorial()
+	}
+
+	return []entity.QuranAyah{ayah}, nil
 }
 
 func (f *fakeQuran) Search(
@@ -488,12 +501,16 @@ func fakeNavigationSegment(kind string, number int) entity.QuranNavigationSegmen
 	}
 }
 
-func fakeNavigationAyahs(kind string, number int, includeAudio bool, recitationID string) ([]entity.QuranAyah, error) {
+func fakeNavigationAyahs(kind string, number int, includeAudio, includeEditorial bool, recitationID string) ([]entity.QuranAyah, error) {
 	ayah := fakeQuranAyah(73, true, includeAudio, recitationID)
 	if kind == "juz" {
 		ayah.JuzNumber = &number
 	} else {
 		ayah.HizbNumber = &number
+	}
+
+	if includeEditorial {
+		ayah.Editorial = &entity.QuranAyahEditorial{}
 	}
 
 	return []entity.QuranAyah{ayah}, nil
@@ -543,6 +560,106 @@ func fakeQuranAyah(surahID int, includeTranslation, includeAudio bool, recitatio
 	}
 
 	return ayah
+}
+
+func fakeAyahEditorial() *entity.QuranAyahEditorial {
+	metaTitle := "Ayat Kursi: Ayat Terbesar"
+	metaDescription := "Ayat terbesar dalam Al-Quran."
+	intisari := "<p>Sepuluh kalimat keagungan Allah.</p>"
+	keutamaan := "<ul><li>Ayat terbesar.</li></ul>"
+	tafsirRange := "255"
+
+	return &entity.QuranAyahEditorial{
+		Lang:            "id",
+		MetaTitle:       &metaTitle,
+		MetaDescription: &metaDescription,
+		Intisari:        &intisari,
+		Keutamaan:       &keutamaan,
+		FAQ:             []entity.QuranAyahEditorialFAQ{{Question: "Kapan dibaca?", AnswerHTML: "<p>Setelah shalat.</p>"}},
+		TafsirRange:     &tafsirRange,
+		LicenseStatus:   "permitted",
+	}
+}
+
+// TestQuranAyahEditorialExposure locks in the per-ayah editorial API contract: the
+// full views (ayah detail + surah ayahs) serialize the editorial object, while the
+// compact reader_minimal view omits it. Guards against silent regression of the
+// editorial pass-through and confirms the controller skips editorial for reader_minimal.
+func TestQuranAyahEditorialExposure(t *testing.T) {
+	t.Parallel()
+
+	app := newQuranTestApp(&fakeQuran{editorial: true})
+
+	tests := []struct {
+		name        string
+		path        string
+		wantBody    []string
+		wantNotBody []string
+	}{
+		{
+			name: "ayah detail includes editorial with heavy fields",
+			path: "/v1/quran/ayahs/73:1",
+			wantBody: []string{
+				`"editorial"`,
+				`"meta_title":"Ayat Kursi: Ayat Terbesar"`,
+				`"intisari_html"`,
+				`"keutamaan_html"`,
+				`"faq"`,
+				`"question":"Kapan dibaca?"`,
+				`"answer_html"`,
+				`"tafsir_range":"255"`,
+				`"license_status":"permitted"`,
+			},
+		},
+		{
+			name: "surah ayahs full view includes editorial",
+			path: "/v1/quran/surahs/73/ayahs",
+			wantBody: []string{
+				`"editorial"`,
+				`"meta_title":"Ayat Kursi: Ayat Terbesar"`,
+			},
+		},
+		{
+			name:        "reader_minimal view omits editorial",
+			path:        "/v1/quran/surahs/73/ayahs?view=reader_minimal",
+			wantNotBody: []string{`"editorial"`, `"meta_title"`},
+		},
+		{
+			// F09 regression: juz/hizb full view can now carry editorial (it was
+			// previously hard-coded off in the navigation repo path).
+			name:     "juz ayahs full view includes editorial",
+			path:     "/v1/quran/juz/29/ayahs",
+			wantBody: []string{`"editorial"`},
+		},
+		{
+			name:        "juz ayahs reader_minimal omits editorial",
+			path:        "/v1/quran/juz/29/ayahs?view=reader_minimal",
+			wantNotBody: []string{`"editorial"`},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			resp, err := app.Test(httptest.NewRequestWithContext(t.Context(), http.MethodGet, tt.path, http.NoBody))
+			require.NoError(t, err)
+
+			defer resp.Body.Close()
+
+			assert.Equal(t, http.StatusOK, resp.StatusCode)
+			body, err := io.ReadAll(resp.Body)
+			require.NoError(t, err)
+
+			for _, want := range tt.wantBody {
+				assert.Contains(t, string(body), want)
+			}
+
+			for _, notWant := range tt.wantNotBody {
+				assert.NotContains(t, string(body), notWant)
+			}
+		})
+	}
 }
 
 //go:fix inline

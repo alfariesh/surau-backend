@@ -438,7 +438,7 @@ func validateSummaryStatus(summaryStatus string, summaryReviewedBy *string, lega
 	}
 }
 
-func normalizeSummaryStatus(summaryStatus string, legacyStatus string) string {
+func normalizeSummaryStatus(summaryStatus, legacyStatus string) string {
 	summaryStatus = strings.ToLower(strings.TrimSpace(summaryStatus))
 	if summaryStatus != "" {
 		return summaryStatus

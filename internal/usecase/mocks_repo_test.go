@@ -2142,18 +2142,18 @@ func (mr *MockQuranRepoMockRecorder) ListMissingQuranAssets(ctx, filter any) *go
 }
 
 // ListNavigationAyahs mocks base method.
-func (m *MockQuranRepo) ListNavigationAyahs(ctx context.Context, kind string, number int, lang, translationSource string, includeTranslation, includeAudio bool, recitationID string) ([]entity.QuranAyah, error) {
+func (m *MockQuranRepo) ListNavigationAyahs(ctx context.Context, kind string, number int, lang, translationSource string, includeTranslation, includeAudio, includeEditorial bool, recitationID string) ([]entity.QuranAyah, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ListNavigationAyahs", ctx, kind, number, lang, translationSource, includeTranslation, includeAudio, recitationID)
+	ret := m.ctrl.Call(m, "ListNavigationAyahs", ctx, kind, number, lang, translationSource, includeTranslation, includeAudio, includeEditorial, recitationID)
 	ret0, _ := ret[0].([]entity.QuranAyah)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // ListNavigationAyahs indicates an expected call of ListNavigationAyahs.
-func (mr *MockQuranRepoMockRecorder) ListNavigationAyahs(ctx, kind, number, lang, translationSource, includeTranslation, includeAudio, recitationID any) *gomock.Call {
+func (mr *MockQuranRepoMockRecorder) ListNavigationAyahs(ctx, kind, number, lang, translationSource, includeTranslation, includeAudio, includeEditorial, recitationID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListNavigationAyahs", reflect.TypeOf((*MockQuranRepo)(nil).ListNavigationAyahs), ctx, kind, number, lang, translationSource, includeTranslation, includeAudio, recitationID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListNavigationAyahs", reflect.TypeOf((*MockQuranRepo)(nil).ListNavigationAyahs), ctx, kind, number, lang, translationSource, includeTranslation, includeAudio, includeEditorial, recitationID)
 }
 
 // ListNavigationSegments mocks base method.
@@ -2187,18 +2187,18 @@ func (mr *MockQuranRepoMockRecorder) ListRecitations(ctx any) *gomock.Call {
 }
 
 // ListSurahAyahs mocks base method.
-func (m *MockQuranRepo) ListSurahAyahs(ctx context.Context, surahID, fromAyah, toAyah int, lang, translationSource string, includeTranslation, includeAudio bool, recitationID string) ([]entity.QuranAyah, error) {
+func (m *MockQuranRepo) ListSurahAyahs(ctx context.Context, surahID, fromAyah, toAyah int, lang, translationSource string, includeTranslation, includeAudio, includeEditorial bool, recitationID string) ([]entity.QuranAyah, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ListSurahAyahs", ctx, surahID, fromAyah, toAyah, lang, translationSource, includeTranslation, includeAudio, recitationID)
+	ret := m.ctrl.Call(m, "ListSurahAyahs", ctx, surahID, fromAyah, toAyah, lang, translationSource, includeTranslation, includeAudio, includeEditorial, recitationID)
 	ret0, _ := ret[0].([]entity.QuranAyah)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // ListSurahAyahs indicates an expected call of ListSurahAyahs.
-func (mr *MockQuranRepoMockRecorder) ListSurahAyahs(ctx, surahID, fromAyah, toAyah, lang, translationSource, includeTranslation, includeAudio, recitationID any) *gomock.Call {
+func (mr *MockQuranRepoMockRecorder) ListSurahAyahs(ctx, surahID, fromAyah, toAyah, lang, translationSource, includeTranslation, includeAudio, includeEditorial, recitationID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListSurahAyahs", reflect.TypeOf((*MockQuranRepo)(nil).ListSurahAyahs), ctx, surahID, fromAyah, toAyah, lang, translationSource, includeTranslation, includeAudio, recitationID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListSurahAyahs", reflect.TypeOf((*MockQuranRepo)(nil).ListSurahAyahs), ctx, surahID, fromAyah, toAyah, lang, translationSource, includeTranslation, includeAudio, includeEditorial, recitationID)
 }
 
 // ListSurahs mocks base method.
@@ -2469,12 +2469,13 @@ func (mr *MockPersonalRepoMockRecorder) ListSavedItems(ctx, userID, filter any) 
 }
 
 // MarkKhatamJuz mocks base method.
-func (m *MockPersonalRepo) MarkKhatamJuz(ctx context.Context, userID string, juzNumber int) (entity.QuranKhatamCycle, error) {
+func (m *MockPersonalRepo) MarkKhatamJuz(ctx context.Context, userID string, juzNumber int) (entity.QuranKhatamCycle, bool, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "MarkKhatamJuz", ctx, userID, juzNumber)
 	ret0, _ := ret[0].(entity.QuranKhatamCycle)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
+	ret1, _ := ret[1].(bool)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
 }
 
 // MarkKhatamJuz indicates an expected call of MarkKhatamJuz.
@@ -2544,12 +2545,13 @@ func (mr *MockPersonalRepoMockRecorder) SyncSnapshot(ctx, userID, since any) *go
 }
 
 // UnmarkKhatamJuz mocks base method.
-func (m *MockPersonalRepo) UnmarkKhatamJuz(ctx context.Context, userID string, juzNumber int) (entity.QuranKhatamCycle, error) {
+func (m *MockPersonalRepo) UnmarkKhatamJuz(ctx context.Context, userID string, juzNumber int) (entity.QuranKhatamCycle, bool, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "UnmarkKhatamJuz", ctx, userID, juzNumber)
 	ret0, _ := ret[0].(entity.QuranKhatamCycle)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
+	ret1, _ := ret[1].(bool)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
 }
 
 // UnmarkKhatamJuz indicates an expected call of UnmarkKhatamJuz.

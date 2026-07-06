@@ -54,7 +54,6 @@ type QuranAudioR2SyncStats struct {
 	Recitations int
 	Tracks      int
 	Updated     int
-	Missing     int
 	PublicURLs  int
 	DryRun      bool
 }

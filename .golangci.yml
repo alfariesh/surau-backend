@@ -134,6 +134,11 @@ linters:
       - linters:
           - forbidigo
         path: ^cmd/
+      # Importer validation errors are operator-facing console messages, never
+      # matched programmatically with errors.Is, so dynamic error strings are fine.
+      - linters:
+          - err113
+        path: internal/importer
     paths:
       - bin/
       - third_party$

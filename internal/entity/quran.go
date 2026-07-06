@@ -59,6 +59,33 @@ type QuranSurahEditorial struct {
 	UpdatedAt       time.Time  `json:"updated_at" example:"2026-01-01T00:00:00Z"`
 } // @name entity.QuranSurahEditorial
 
+// QuranAyahEditorialFAQ is one SEO FAQ entry for an ayah. answer_html is
+// author-supplied and sanitized on read.
+type QuranAyahEditorialFAQ struct {
+	Question   string `json:"question"`
+	AnswerHTML string `json:"answer_html"`
+} // @name entity.QuranAyahEditorialFAQ
+
+// QuranAyahEditorial holds in-house per-ayah SEO/editorial copy (intisari,
+// keutamaan, FAQ, tafsir range, meta title/description). Authored in-house and
+// reviewed before publish; license_status defaults to needs_review. Heavy
+// HTML/FAQ fields are populated only on the single-ayah detail read; list reads
+// carry the light meta only to stay under the edge cache size limit.
+type QuranAyahEditorial struct {
+	Lang            string                  `json:"lang" example:"id"`
+	MetaTitle       *string                 `json:"meta_title,omitempty"`
+	MetaDescription *string                 `json:"meta_description,omitempty"`
+	Intisari        *string                 `json:"intisari_html,omitempty"`
+	Keutamaan       *string                 `json:"keutamaan_html,omitempty"`
+	FAQ             []QuranAyahEditorialFAQ `json:"faq,omitempty"`
+	TafsirRange     *string                 `json:"tafsir_range,omitempty" example:"255"`
+	AuthorName      *string                 `json:"author_name,omitempty"`
+	ReviewedBy      *string                 `json:"reviewed_by,omitempty"`
+	ReviewedAt      *time.Time              `json:"reviewed_at,omitempty" example:"2026-01-01T00:00:00Z"`
+	LicenseStatus   string                  `json:"license_status" example:"permitted"`
+	UpdatedAt       time.Time               `json:"updated_at" example:"2026-01-01T00:00:00Z"`
+} // @name entity.QuranAyahEditorial
+
 // QuranTranslation is one ayah translation from an imported source.
 type QuranTranslation struct {
 	SourceID  string    `json:"source_id" example:"kemenag-id-translation"`
@@ -209,7 +236,11 @@ type QuranAyah struct {
 	TranslationMissing        bool                  `json:"translation_missing" example:"true"`
 	Availability              QuranAyahAvailability `json:"availability"`
 	Metadata                  RawJSON               `json:"metadata,omitempty" swaggertype:"object"`
-	UpdatedAt                 time.Time             `json:"updated_at" example:"2026-01-01T00:00:00Z"`
+	Editorial                 *QuranAyahEditorial   `json:"editorial,omitempty"`
+	// ContentUpdatedAt is GREATEST(ayah, editorial) for the requested lang; use it
+	// as the per-ayah SEO sitemap lastmod so editorial edits advance freshness.
+	ContentUpdatedAt *time.Time `json:"content_updated_at,omitempty" example:"2026-01-01T00:00:00Z"`
+	UpdatedAt        time.Time  `json:"updated_at" example:"2026-01-01T00:00:00Z"`
 } // @name entity.QuranAyah
 
 // QuranAyahAvailability groups display decisions for ayah translation and audio.

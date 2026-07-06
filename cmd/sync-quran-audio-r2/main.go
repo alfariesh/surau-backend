@@ -26,11 +26,10 @@ func main() {
 	}
 
 	fmt.Printf(
-		"recitations=%d tracks=%d updated=%d missing=%d public_urls=%d dry_run=%t\n",
+		"recitations=%d tracks=%d updated=%d public_urls=%d dry_run=%t\n",
 		stats.Recitations,
 		stats.Tracks,
 		stats.Updated,
-		stats.Missing,
 		stats.PublicURLs,
 		stats.DryRun,
 	)

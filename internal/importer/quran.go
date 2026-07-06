@@ -609,7 +609,7 @@ func parseSurahNames(path string, assets *quranAssetSet) error {
 	return nil
 }
 
-func parseSurahInfo(path string, langOverride string, assets *quranAssetSet) error {
+func parseSurahInfo(path, langOverride string, assets *quranAssetSet) error {
 	raw, checksum, err := readAssetFile(path)
 	if err != nil {
 		return fmt.Errorf("read surah info: %w", err)
@@ -660,7 +660,8 @@ func parseSurahInfo(path string, langOverride string, assets *quranAssetSet) err
 	return nil
 }
 
-func parseScriptResource(path string, scriptKind string, assets *quranAssetSet) error {
+//nolint:gocognit,gocyclo,cyclop // linear per-row parse with distinct guards for each script field
+func parseScriptResource(path, scriptKind string, assets *quranAssetSet) error {
 	raw, checksum, err := readAssetFile(path)
 	if err != nil {
 		return fmt.Errorf("read %s script: %w", scriptKind, err)
@@ -1383,6 +1384,19 @@ ON CONFLICT (source_id, surah_id, ayah_number) DO UPDATE SET
 		return fmt.Errorf("upsert quran translations: %w", err)
 	}
 
+	// Keep the denormalized coverage_count fresh so the read path resolves the
+	// default source via a tiny lookup instead of a full GROUP BY aggregate.
+	if opts.TranslationSourceID != "" {
+		if _, err := pool.Exec(ctx, `
+UPDATE quran_translation_sources
+SET coverage_count = (
+    SELECT COUNT(*) FROM quran_ayah_translations WHERE source_id = $1
+)
+WHERE id = $1`, opts.TranslationSourceID); err != nil {
+			return fmt.Errorf("refresh translation source coverage: %w", err)
+		}
+	}
+
 	return nil
 }
 
@@ -1452,6 +1466,19 @@ ON CONFLICT (source_id, surah_id, ayah_number) DO UPDATE SET
 	}
 	if err := execBatch(ctx, pool, transliterationBatch); err != nil {
 		return fmt.Errorf("upsert quran transliterations: %w", err)
+	}
+
+	// Refresh denormalized coverage_count for each imported source (read path
+	// uses it to pick the default source without a per-request aggregate).
+	for _, source := range assets.transliterationSources {
+		if _, err := pool.Exec(ctx, `
+UPDATE quran_transliteration_sources
+SET coverage_count = (
+    SELECT COUNT(*) FROM quran_ayah_transliterations WHERE source_id = $1
+)
+WHERE id = $1`, source.ID); err != nil {
+			return fmt.Errorf("refresh transliteration source coverage: %w", err)
+		}
 	}
 
 	return nil

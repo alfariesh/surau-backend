@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	sq "github.com/Masterminds/squirrel"
@@ -545,7 +546,16 @@ upserted AS (
         label = COALESCE(EXCLUDED.label, saved_items.label),
         note = COALESCE(EXCLUDED.note, saved_items.note),
         tags = CASE WHEN $13::text[] IS NULL THEN saved_items.tags ELSE $13::text[] END,
-        updated_at = now()
+        -- Keep updated_at (and thus the sync cursor) stable on an idempotent re-save:
+        -- only advance it when the effective label/note/tags actually change. The row
+        -- is still rewritten so RETURNING/created stay correct.
+        updated_at = CASE
+            WHEN saved_items.label IS DISTINCT FROM COALESCE(EXCLUDED.label, saved_items.label)
+              OR saved_items.note IS DISTINCT FROM COALESCE(EXCLUDED.note, saved_items.note)
+              OR saved_items.tags IS DISTINCT FROM (CASE WHEN $13::text[] IS NULL THEN saved_items.tags ELSE $13::text[] END)
+            THEN now()
+            ELSE saved_items.updated_at
+        END
     RETURNING id, user_id, item_type, book_id, page_id, heading_id, surah_id, ayah_key,
               from_ayah_number, to_ayah_number, label, note, tags, created_at, updated_at,
               (xmax = 0) AS created
@@ -641,17 +651,32 @@ func (r *PersonalRepo) UpdateSavedItem(
 ) (entity.SavedItem, error) {
 	builder := r.Builder.
 		Update("saved_items").
-		Set("updated_at", sq.Expr("now()")).
 		Where(sq.Eq{"id": savedItemID, "user_id": userID}).
 		Suffix(`RETURNING id, user_id, item_type, book_id, page_id, heading_id, surah_id, ayah_key,
           from_ayah_number, to_ayah_number, label, note, tags, created_at, updated_at`)
 
+	// Set the patched fields and, in the same statement, advance updated_at only when a
+	// set field's new value actually differs from the stored one — so a PATCH re-sending
+	// identical values is a no-op for the sync cursor. SET expressions reference the OLD
+	// row, so each comparison is stored-vs-incoming. updated_at is added LAST so its
+	// placeholders order after the field SETs.
+	var (
+		changeConds []string
+		changeArgs  []any
+	)
+
 	if patch.LabelSet {
 		builder = builder.Set("label", patch.Label)
+
+		changeConds = append(changeConds, "label IS DISTINCT FROM ?")
+		changeArgs = append(changeArgs, patch.Label)
 	}
 
 	if patch.NoteSet {
 		builder = builder.Set("note", patch.Note)
+
+		changeConds = append(changeConds, "note IS DISTINCT FROM ?")
+		changeArgs = append(changeArgs, patch.Note)
 	}
 
 	if patch.TagsSet {
@@ -661,6 +686,16 @@ func (r *PersonalRepo) UpdateSavedItem(
 		}
 
 		builder = builder.Set("tags", tags)
+
+		changeConds = append(changeConds, "tags IS DISTINCT FROM ?::text[]")
+		changeArgs = append(changeArgs, tags)
+	}
+
+	if len(changeConds) > 0 {
+		builder = builder.Set("updated_at", sq.Expr(
+			"CASE WHEN "+strings.Join(changeConds, " OR ")+" THEN now() ELSE updated_at END",
+			changeArgs...,
+		))
 	}
 
 	sqlText, args, err := builder.ToSql()

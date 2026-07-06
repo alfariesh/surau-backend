@@ -276,7 +276,7 @@ func assertNavigation(t *testing.T, ayah *quranAyahImport, juzNumber, hizbNumber
 	assert.Equal(t, hizbNumber, *ayah.HizbNumber)
 }
 
-func writeQuranFixture(t *testing.T, dir string, name string, content string) string {
+func writeQuranFixture(t *testing.T, dir, name, content string) string {
 	t.Helper()
 
 	path := filepath.Join(dir, name)
@@ -285,7 +285,7 @@ func writeQuranFixture(t *testing.T, dir string, name string, content string) st
 	return path
 }
 
-func writeQuranZipFixture(t *testing.T, dir string, name string, filesAndContent ...string) string {
+func writeQuranZipFixture(t *testing.T, dir, name string, filesAndContent ...string) string {
 	t.Helper()
 	require.Zero(t, len(filesAndContent)%2)
 

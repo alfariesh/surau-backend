@@ -85,13 +85,13 @@ func TestUseCase_NavigationValidatesRangesAndNormalizes(t *testing.T) {
 	assert.Equal(t, "juz", repository.navigationKind)
 	assert.Equal(t, contentlang.English, repository.navigationLang)
 
-	_, err = uc.JuzAyahs(context.Background(), 0, "id", "", true, false, "")
+	_, err = uc.JuzAyahs(context.Background(), 0, "id", "", true, false, false, "")
 	require.ErrorIs(t, err, entity.ErrInvalidQuranRange)
 
-	_, err = uc.JuzAyahs(context.Background(), 31, "id", "", true, false, "")
+	_, err = uc.JuzAyahs(context.Background(), 31, "id", "", true, false, false, "")
 	require.ErrorIs(t, err, entity.ErrInvalidQuranRange)
 
-	_, err = uc.JuzAyahs(context.Background(), 29, "", " source ", false, true, " rec ")
+	_, err = uc.JuzAyahs(context.Background(), 29, "", " source ", false, true, true, " rec ")
 	require.NoError(t, err)
 	assert.Equal(t, "juz", repository.navigationAyahsKind)
 	assert.Equal(t, 29, repository.navigationAyahsNumber)
@@ -101,7 +101,7 @@ func TestUseCase_NavigationValidatesRangesAndNormalizes(t *testing.T) {
 	assert.True(t, repository.navigationAyahsIncludeAudio)
 	assert.Equal(t, "rec", repository.navigationAyahsRecitationID)
 
-	_, err = uc.HizbAyahs(context.Background(), 61, "id", "", true, false, "")
+	_, err = uc.HizbAyahs(context.Background(), 61, "id", "", true, false, false, "")
 	require.ErrorIs(t, err, entity.ErrInvalidQuranRange)
 }
 
@@ -208,7 +208,7 @@ func (r *quranRepoStub) ListTranslationSources(context.Context, string) ([]entit
 	return []entity.QuranTranslationSource{}, nil
 }
 
-func (r *quranRepoStub) ListNavigationSegments(_ context.Context, kind string, lang string) ([]entity.QuranNavigationSegment, error) {
+func (r *quranRepoStub) ListNavigationSegments(_ context.Context, kind, lang string) ([]entity.QuranNavigationSegment, error) {
 	r.navigationKind = kind
 	r.navigationLang = lang
 
@@ -241,6 +241,7 @@ func (r *quranRepoStub) ListSurahAyahs(
 	string,
 	bool,
 	bool,
+	bool,
 	string,
 ) ([]entity.QuranAyah, error) {
 	return []entity.QuranAyah{}, nil
@@ -254,6 +255,7 @@ func (r *quranRepoStub) ListNavigationAyahs(
 	translationSource string,
 	includeTranslation bool,
 	includeAudio bool,
+	_ bool,
 	recitationID string,
 ) ([]entity.QuranAyah, error) {
 	r.navigationAyahsKind = kind

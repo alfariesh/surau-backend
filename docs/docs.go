@@ -3658,7 +3658,7 @@ const docTemplate = `{
         },
         "/books/{book_id}/quran-references": {
             "get": {
-                "description": "List Quran references linked to a public kitab. Defaults to approved references.",
+                "description": "List approved Quran references linked to a public kitab. This public endpoint only ever returns approved references.",
                 "produces": [
                     "application/json"
                 ],
@@ -3686,21 +3686,6 @@ const docTemplate = `{
                         "default": "id",
                         "description": "Language code",
                         "name": "lang",
-                        "in": "query"
-                    },
-                    {
-                        "enum": [
-                            "approved",
-                            "pending",
-                            "rejected",
-                            "ambiguous",
-                            "needs_review",
-                            "all"
-                        ],
-                        "type": "string",
-                        "default": "approved",
-                        "description": "Review status",
-                        "name": "status",
                         "in": "query"
                     },
                     {
@@ -13126,6 +13111,14 @@ const docTemplate = `{
                     "type": "integer",
                     "example": 4
                 },
+                "content_updated_at": {
+                    "description": "ContentUpdatedAt is GREATEST(ayah, editorial) for the requested lang; use it\nas the per-ayah SEO sitemap lastmod so editorial edits advance freshness.",
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "editorial": {
+                    "$ref": "#/definitions/entity.QuranAyahEditorial"
+                },
                 "font_family": {
                     "type": "string"
                 },
@@ -13185,6 +13178,66 @@ const docTemplate = `{
                 },
                 "translation": {
                     "$ref": "#/definitions/entity.AvailabilityDecision"
+                }
+            }
+        },
+        "entity.QuranAyahEditorial": {
+            "type": "object",
+            "properties": {
+                "author_name": {
+                    "type": "string"
+                },
+                "faq": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.QuranAyahEditorialFAQ"
+                    }
+                },
+                "intisari_html": {
+                    "type": "string"
+                },
+                "keutamaan_html": {
+                    "type": "string"
+                },
+                "lang": {
+                    "type": "string",
+                    "example": "id"
+                },
+                "license_status": {
+                    "type": "string",
+                    "example": "permitted"
+                },
+                "meta_description": {
+                    "type": "string"
+                },
+                "meta_title": {
+                    "type": "string"
+                },
+                "reviewed_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "reviewed_by": {
+                    "type": "string"
+                },
+                "tafsir_range": {
+                    "type": "string",
+                    "example": "255"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                }
+            }
+        },
+        "entity.QuranAyahEditorialFAQ": {
+            "type": "object",
+            "properties": {
+                "answer_html": {
+                    "type": "string"
+                },
+                "question": {
+                    "type": "string"
                 }
             }
         },
