@@ -105,6 +105,9 @@ type (
 	app struct {
 		Name    string `env:"APP_NAME,required"`
 		Version string `env:"APP_VERSION,required"`
+		// Env is the deployment environment (dev/prod), surfaced by GET /version so a
+		// deploy can be verified and clients can tell which backend they hit.
+		Env string `env:"APP_ENV" envDefault:"dev"`
 	}
 
 	// HTTP -.

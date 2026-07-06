@@ -1,0 +1,25 @@
+# Caddy reverse-proxy template for the surau backend VPS (dev and prod).
+# Copy to /etc/caddy/Caddyfile on the VPS and replace {$DOMAIN}:
+#   prod VPS:  api.surau.org
+#   dev  VPS:  dev-api.surau.org
+#
+# The site sits behind Cloudflare (CF -> Caddy -> app). TLS uses a Cloudflare
+# Origin Certificate (long-lived, trusted by CF Full(strict)); point tls at the
+# cert/key you installed. SECURITY: restrict :443 to Cloudflare IP ranges so the
+# CF-Connecting-IP header cannot be spoofed by hitting the origin directly.
+
+{$DOMAIN} {
+	tls /etc/caddy/certs/origin.pem /etc/caddy/certs/origin.key
+
+	# Never expose the internal service surface or metrics through the edge.
+	@internal path /internal/* /metrics /metrics/*
+	respond @internal 404
+
+	# Realtime collaborative editing websocket (only when the collab service runs).
+	handle_path /collab* {
+		reverse_proxy 127.0.0.1:8090
+	}
+
+	# Everything else -> the Go API.
+	reverse_proxy 127.0.0.1:8080
+}
