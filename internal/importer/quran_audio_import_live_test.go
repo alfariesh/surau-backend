@@ -2,6 +2,7 @@ package importer
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"testing"
@@ -68,6 +69,9 @@ ON CONFLICT (surah_id, ayah_number) DO NOTHING`, surahID, n, fmt.Sprintf("%d:%d"
 	}
 
 	opts := QuranAssetOptions{LicenseStatus: "permitted"}
+	// metadata columns are NOT NULL; the real parser always sets them, so the hand-built
+	// assets below must too (nullif('','')::jsonb would otherwise write NULL).
+	meta := json.RawMessage("{}")
 
 	recitationExists := func() bool {
 		var exists bool
@@ -79,18 +83,18 @@ ON CONFLICT (surah_id, ayah_number) DO NOTHING`, surahID, n, fmt.Sprintf("%d:%d"
 	t.Run("segment FK failure rolls back recitation + tracks", func(t *testing.T) {
 		assets := quranAssetSet{
 			recitations: map[string]*quranRecitationImport{
-				recID: {ID: recID, Name: "TX Test", Mode: "ayah", Format: "json"},
+				recID: {ID: recID, Name: "TX Test", Mode: "ayah", Format: "json", Metadata: meta},
 			},
 			audioTracks: map[string]*quranAudioTrackImport{
 				recID + ":ayah:113:901": {
 					RecitationID: recID, TrackType: "ayah", TrackKey: "113:901",
-					SurahID: surahID, AyahNumber: ayahPtr(901), AudioURL: audioURLPtr("https://example.test/901.mp3"),
+					SurahID: surahID, AyahNumber: ayahPtr(901), AudioURL: audioURLPtr("https://example.test/901.mp3"), Metadata: meta,
 				},
 			},
 			// This segment points at track_key "113:902", which was NOT inserted as a
 			// track → FK violation on quran_audio_segments → the whole import must abort.
 			audioSegments: []quranAudioSegmentImport{
-				{RecitationID: recID, TrackType: "ayah", TrackKey: "113:902", SurahID: surahID, AyahNumber: 902, SegmentIndex: 1, TimestampFromMS: 0, TimestampToMS: 100},
+				{RecitationID: recID, TrackType: "ayah", TrackKey: "113:902", SurahID: surahID, AyahNumber: 902, SegmentIndex: 1, TimestampFromMS: 0, TimestampToMS: 100, Metadata: meta},
 			},
 		}
 
@@ -102,16 +106,16 @@ ON CONFLICT (surah_id, ayah_number) DO NOTHING`, surahID, n, fmt.Sprintf("%d:%d"
 	t.Run("valid import commits recitation + track + segment", func(t *testing.T) {
 		assets := quranAssetSet{
 			recitations: map[string]*quranRecitationImport{
-				recID: {ID: recID, Name: "TX Test", Mode: "ayah", Format: "json"},
+				recID: {ID: recID, Name: "TX Test", Mode: "ayah", Format: "json", Metadata: meta},
 			},
 			audioTracks: map[string]*quranAudioTrackImport{
 				recID + ":ayah:113:901": {
 					RecitationID: recID, TrackType: "ayah", TrackKey: "113:901",
-					SurahID: surahID, AyahNumber: ayahPtr(901), AudioURL: audioURLPtr("https://example.test/901.mp3"),
+					SurahID: surahID, AyahNumber: ayahPtr(901), AudioURL: audioURLPtr("https://example.test/901.mp3"), Metadata: meta,
 				},
 			},
 			audioSegments: []quranAudioSegmentImport{
-				{RecitationID: recID, TrackType: "ayah", TrackKey: "113:901", SurahID: surahID, AyahNumber: 901, SegmentIndex: 1, TimestampFromMS: 0, TimestampToMS: 100},
+				{RecitationID: recID, TrackType: "ayah", TrackKey: "113:901", SurahID: surahID, AyahNumber: 901, SegmentIndex: 1, TimestampFromMS: 0, TimestampToMS: 100, Metadata: meta},
 			},
 		}
 
