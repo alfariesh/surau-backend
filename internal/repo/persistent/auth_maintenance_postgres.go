@@ -3,10 +3,15 @@ package persistent
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/evrone/go-clean-template/internal/entity"
 	"github.com/evrone/go-clean-template/internal/repo"
 )
+
+// lockoutStaleWindow is how long after the last failed login a lockout counter is
+// considered stale and eligible for cleanup.
+const lockoutStaleWindow = 24 * time.Hour
 
 // CleanupAuthData deletes expired auth rows in one pass: spent rate-limit
 // windows, used/expired one-time tokens past retention, dead sessions past
@@ -55,8 +60,8 @@ func (r *UserRepo) CleanupAuthData(
 		},
 		{
 			&result.Lockouts,
-			"DELETE FROM auth_login_lockouts WHERE last_failure_at <= $1 - INTERVAL '24 hours' AND (locked_until IS NULL OR locked_until <= $1)",
-			[]any{now},
+			"DELETE FROM auth_login_lockouts WHERE last_failure_at <= $1 AND (locked_until IS NULL OR locked_until <= $2)",
+			[]any{now.Add(-lockoutStaleWindow), now},
 		},
 		{
 			&result.NotificationCooldowns,
