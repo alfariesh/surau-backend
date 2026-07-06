@@ -101,3 +101,33 @@ docker compose --env-file .env.production -f docker-compose.prod.yml logs -f app
 ## Catatan data
 
 Database disimpan di Docker volume `surau-backend-prod_db_data`, dimount ke `/var/lib/postgresql` sesuai layout image PostgreSQL 18. Jangan jalankan `docker compose down -v` di production kecuali memang ingin menghapus data.
+
+## Keamanan migration (auto-migrate saat boot)
+
+Aplikasi auto-migrate saat boot (build `-tags migrate`). Pipeline deploy (`.github/workflows/deploy-vps.yml`) sudah: (1) `pg_dump` snapshot ke `db-predeploy-backup.sql.gz` sebelum build/migrate, dan (2) `docker image prune` HANYA setelah `/readyz` hijau (biar image lama masih ada untuk rollback bila deploy gagal). `migrate.go` menolak auto-migrate bila schema DIRTY dan mencetak langkah pemulihan.
+
+### Preflight WAJIB sebelum deploy migration constraint baru
+
+Migration yang membuat UNIQUE index (mis. `chronological_order` di `20260628000001`) memvalidasi baris existing saat dibuat; kalau ada duplikat, migration abort → boot gagal → schema DIRTY. Jalankan preflight ini di prod dulu (semua harus 0 baris):
+
+```sh
+docker compose --env-file .env.production -f docker-compose.prod.yml exec -T db \
+  psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c \
+  "SELECT chronological_order, count(*) FROM quran_surahs WHERE chronological_order IS NOT NULL GROUP BY 1 HAVING count(*)>1;
+   SELECT count(*) FROM quran_surahs WHERE slug = '';"
+```
+
+### Pemulihan schema DIRTY
+
+Kalau boot gagal dengan pesan `schema is DIRTY at version N`:
+
+```sh
+# 1. Inspeksi & perbaiki data/schema penyebab migration gagal.
+# 2. Restore snapshot bila perlu:
+gunzip -c db-predeploy-backup.sql.gz | \
+  docker compose --env-file .env.production -f docker-compose.prod.yml exec -T db \
+  psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"
+# 3. Set ulang versi ke migration terakhir yang sukses (JANGAN force sembarangan):
+migrate -path migrations -database "$PG_URL" force <last-good-version>
+# 4. Deploy ulang.
+```

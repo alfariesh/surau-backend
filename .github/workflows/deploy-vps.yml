@@ -58,12 +58,28 @@ jobs:
             COLLAB_CHECK="http://127.0.0.1:8090/healthz"
           fi
 
+          # Snapshot the DB before the new image auto-migrates on boot, so a bad
+          # migration can be rolled back (gunzip -c db-predeploy-backup.sql.gz |
+          # docker compose exec -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB").
+          # No backup, no deploy — but skip cleanly on the very first deploy when the
+          # db container does not exist yet.
+          if [ -n "$(sudo docker compose --env-file .env.production -f docker-compose.prod.yml ps -q db)" ]; then
+            echo "Snapshotting DB before migrate..."
+            sudo docker compose --env-file .env.production -f docker-compose.prod.yml exec -T db \
+              sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB"' | gzip > db-predeploy-backup.sql.gz
+            echo "DB snapshot written: $(du -h db-predeploy-backup.sql.gz | cut -f1)"
+          else
+            echo "db container not running yet (first deploy?) — skipping pre-deploy snapshot"
+          fi
+
           sudo docker compose --env-file .env.production -f docker-compose.prod.yml "${PROFILE_ARGS[@]}" up -d --build "${SERVICES[@]}"
-          sudo docker image prune -f
           for attempt in {1..30}; do
             if curl -fsS http://127.0.0.1:8080/healthz >/dev/null &&
                curl -fsS http://127.0.0.1:8080/readyz >/dev/null &&
                { [ -z "$COLLAB_CHECK" ] || curl -fsS "$COLLAB_CHECK" >/dev/null; }; then
+              # Reclaim old images ONLY after the new release is proven healthy, so a
+              # failed deploy can still roll back to the previous image.
+              sudo docker image prune -f
               exit 0
             fi
 
