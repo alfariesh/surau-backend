@@ -86,8 +86,8 @@ jobs:
           # guaranteed to run. A plain `up --build` can rebuild yet leave the OLD
           # container in place, which the health check would then pass — masking a
           # non-deploy.
-          sudo docker compose --env-file .env.production -f docker-compose.prod.yml "${PROFILE_ARGS[@]}" build "${SERVICES[@]}"
-          sudo docker compose --env-file .env.production -f docker-compose.prod.yml "${PROFILE_ARGS[@]}" up -d --force-recreate "${SERVICES[@]}"
+          sudo -E docker compose --env-file .env.production -f docker-compose.prod.yml "${PROFILE_ARGS[@]}" build "${SERVICES[@]}"
+          sudo -E docker compose --env-file .env.production -f docker-compose.prod.yml "${PROFILE_ARGS[@]}" up -d --force-recreate "${SERVICES[@]}"
           for attempt in {1..30}; do
             # Assert /version reports the version we just deployed, so a container that
             # did not roll over is caught instead of looking healthy.
