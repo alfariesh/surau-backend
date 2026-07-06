@@ -1473,6 +1473,15 @@ func upsertQuranAudio(
 		return nil
 	}
 
+	// One transaction for recitations -> tracks -> segments so a mid-import failure
+	// can't leave a "playable" recitation whose tracks have no segments (which would
+	// then be served as the default while per-ayah audio is empty).
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("upsert quran audio: begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
 	batch := &pgx.Batch{}
 	for _, recitation := range assets.recitations {
 		batch.Queue(
@@ -1507,7 +1516,8 @@ ON CONFLICT (id) DO UPDATE SET
 			stringOrEmpty(recitation.Metadata),
 		)
 	}
-	if err := execBatch(ctx, pool, batch); err != nil {
+
+	if err := execTxBatch(ctx, tx, batch); err != nil {
 		return fmt.Errorf("upsert quran recitations: %w", err)
 	}
 
@@ -1539,7 +1549,8 @@ ON CONFLICT (recitation_id, track_type, track_key) DO UPDATE SET
 			stringOrEmpty(track.Metadata),
 		)
 	}
-	if err := execBatch(ctx, pool, batch); err != nil {
+
+	if err := execTxBatch(ctx, tx, batch); err != nil {
 		return fmt.Errorf("upsert quran audio tracks: %w", err)
 	}
 
@@ -1570,8 +1581,13 @@ ON CONFLICT (recitation_id, track_type, track_key, ayah_number, segment_index) D
 			stringOrEmpty(segment.Metadata),
 		)
 	}
-	if err := execBatch(ctx, pool, batch); err != nil {
+
+	if err := execTxBatch(ctx, tx, batch); err != nil {
 		return fmt.Errorf("upsert quran audio segments: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("upsert quran audio: commit tx: %w", err)
 	}
 
 	return nil
