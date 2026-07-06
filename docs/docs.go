@@ -13383,6 +13383,11 @@ const docTemplate = `{
                 "checksum": {
                     "type": "string"
                 },
+                "coverage_percent": {
+                    "description": "CoveragePercent is the fraction (0..1) of the corpus this recitation can play:\nplayable tracks over all ayahs (mode=ayah) or over 114 surahs (mode=surah). It\ndrives default-recitation selection so a near-empty recitation can't win.",
+                    "type": "number",
+                    "example": 1
+                },
                 "default_priority": {
                     "type": "integer",
                     "example": 0
@@ -16061,7 +16066,13 @@ const docTemplate = `{
         "v1.QuranSurahAudioManifest": {
             "type": "object",
             "properties": {
+                "has_full_surah_audio": {
+                    "description": "HasFullSurahAudio is true when a playable full-surah track covers the surah even\nwithout per-ayah segments (mode \"surah\").",
+                    "type": "boolean",
+                    "example": false
+                },
                 "missing_ayah_keys": {
+                    "description": "MissingAyahKeys are ayahs with no playable audio at all (empty when a full-surah\ntrack is present).",
                     "type": "array",
                     "items": {
                         "type": "string"
@@ -16073,6 +16084,13 @@ const docTemplate = `{
                 },
                 "recitation": {
                     "$ref": "#/definitions/v1.QuranSurahAudioRecitation"
+                },
+                "segment_missing_ayah_keys": {
+                    "description": "SegmentMissingAyahKeys are ayahs the full-surah audio covers but cannot seek to.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "surah_id": {
                     "type": "integer",
@@ -16089,6 +16107,11 @@ const docTemplate = `{
         "v1.QuranSurahAudioRecitation": {
             "type": "object",
             "properties": {
+                "coverage_percent": {
+                    "description": "CoveragePercent (0..1) is how much of the surah/corpus this recitation can play;\nlets the client see when an explicitly requested recitation is only partly synced.",
+                    "type": "number",
+                    "example": 1
+                },
                 "display_name": {
                     "type": "string",
                     "example": "Mishari Rashid Al-Afasy"
