@@ -153,6 +153,7 @@ func TestQuranMultilingualContract(t *testing.T) {
 	if allMissing.Total != 4 {
 		t.Fatalf("admin quran missing total = %d items %+v", allMissing.Total, allMissing.Items)
 	}
+
 	for _, assetType := range []string{"ayah_translation", "surah_info", "translation_source"} {
 		assertMissingCount(t, allMissing.Counts, assetType, "en", 1)
 	}
