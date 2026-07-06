@@ -2,6 +2,7 @@ package persistent
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"testing"
 
@@ -56,8 +57,8 @@ func TestLiveDefaultRecitationPrefersFullerCoverage(t *testing.T) {
 
 	for _, n := range ayahNumbers {
 		_, err = pg.Pool.Exec(ctx,
-			`INSERT INTO quran_ayahs (surah_id, ayah_number, ayah_key, metadata) VALUES ($1, $2, $1::text || ':' || $2::text, '{}'::jsonb) ON CONFLICT DO NOTHING`,
-			surahID, n)
+			`INSERT INTO quran_ayahs (surah_id, ayah_number, ayah_key, metadata) VALUES ($1, $2, $3, '{}'::jsonb) ON CONFLICT DO NOTHING`,
+			surahID, n, fmt.Sprintf("%d:%d", surahID, n))
 		require.NoError(t, err)
 	}
 
@@ -69,8 +70,8 @@ func TestLiveDefaultRecitationPrefersFullerCoverage(t *testing.T) {
 		for _, n := range playableAyahs {
 			_, err := pg.Pool.Exec(ctx,
 				`INSERT INTO quran_audio_tracks (recitation_id, track_type, track_key, surah_id, ayah_number, audio_url)
-				 VALUES ($1, 'ayah', $2::text || ':' || $3::text, $2, $3, 'https://example.test/' || $3::text || '.mp3')`,
-				id, surahID, n)
+				 VALUES ($1, 'ayah', $2, $3, $4, $5)`,
+				id, fmt.Sprintf("%d:%d", surahID, n), surahID, n, fmt.Sprintf("https://example.test/%d.mp3", n))
 			require.NoError(t, err)
 		}
 	}

@@ -2,6 +2,7 @@ package persistent
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"sync"
 	"testing"
@@ -42,7 +43,7 @@ func TestLiveSaveQuranProgressNoDoubleCount(t *testing.T) {
 
 	for _, n := range []int{1, 20} {
 		_, err = pg.Pool.Exec(ctx,
-			`INSERT INTO quran_ayahs (surah_id, ayah_number, ayah_key) VALUES (2, $1, '2:' || $1::text) ON CONFLICT (surah_id, ayah_number) DO NOTHING`, n)
+			`INSERT INTO quran_ayahs (surah_id, ayah_number, ayah_key) VALUES (2, $1, $2) ON CONFLICT (surah_id, ayah_number) DO NOTHING`, n, fmt.Sprintf("2:%d", n))
 		require.NoError(t, err)
 	}
 
