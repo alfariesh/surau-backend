@@ -2,6 +2,7 @@ package persistent
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"testing"
 
@@ -59,8 +60,8 @@ func TestLiveCoverageCountTrigger(t *testing.T) {
 	for _, n := range ayahNumbers {
 		_, err = pg.Pool.Exec(ctx, `
 INSERT INTO quran_ayahs (surah_id, ayah_number, ayah_key, metadata)
-VALUES ($1, $2, $1::text || ':' || $2::text, '{}'::jsonb)
-ON CONFLICT (surah_id, ayah_number) DO NOTHING`, surahID, n)
+VALUES ($1, $2, $3, '{}'::jsonb)
+ON CONFLICT (surah_id, ayah_number) DO NOTHING`, surahID, n, fmt.Sprintf("%d:%d", surahID, n))
 		require.NoError(t, err)
 	}
 
@@ -82,7 +83,7 @@ VALUES ($1, 'id', 'Coverage Trigger Test', 'json', 'permitted', 0)`, sourceID)
 	for _, n := range ayahNumbers {
 		_, err = pg.Pool.Exec(ctx, `
 INSERT INTO quran_ayah_translations (source_id, surah_id, ayah_number, ayah_key, lang, text)
-VALUES ($1, $2, $3, $2::text || ':' || $3::text, 'id', 'terjemah')`, sourceID, surahID, n)
+VALUES ($1, $2, $3, $4, 'id', 'terjemah')`, sourceID, surahID, n, fmt.Sprintf("%d:%d", surahID, n))
 		require.NoError(t, err)
 	}
 
