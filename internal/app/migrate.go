@@ -49,10 +49,28 @@ func init() {
 		log.Fatalf("Migrate: postgres connect error: %s", err)
 	}
 
-	err = m.Up()
 	defer m.Close()
+
+	// Refuse to auto-migrate over a DIRTY schema (a previous migration aborted
+	// mid-way). Auto-forcing would silently skip a real migration, so instead fail
+	// with the exact recovery steps — otherwise the container just crash-loops on a
+	// cryptic "Dirty database" error with no guidance.
+	if version, dirty, verr := m.Version(); verr != nil {
+		if !errors.Is(verr, migrate.ErrNilVersion) {
+			log.Fatalf("Migrate: cannot read schema version: %s", verr)
+		}
+		// ErrNilVersion: no migration has ever run on this database — nothing to check.
+	} else if dirty {
+		log.Fatalf("Migrate: schema is DIRTY at version %d — a previous migration aborted "+
+			"mid-way. Do NOT redeploy blindly. Inspect that migration, fix the data/schema, "+
+			"then run `migrate -path migrations -database $PG_URL force <last-good-version>` "+
+			"and redeploy. Refusing to auto-migrate.", version)
+	}
+
+	err = m.Up()
 	if err != nil && !errors.Is(err, migrate.ErrNoChange) {
-		log.Fatalf("Migrate: up error: %s", err)
+		log.Fatalf("Migrate: up error: %s (if this left the schema dirty, see the DIRTY "+
+			"recovery steps above before redeploying)", err)
 	}
 
 	if errors.Is(err, migrate.ErrNoChange) {
