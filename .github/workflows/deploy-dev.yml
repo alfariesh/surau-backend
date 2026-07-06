@@ -76,15 +76,19 @@ jobs:
             echo "db container not running yet (first deploy?) — skipping pre-deploy snapshot"
           fi
 
-          # Bound build-cache growth so a full disk can't silently fail the build. A
-          # failed build leaves the OLD container running, which the health check below
-          # would otherwise pass — masking a non-deploy.
+          # Bound build-cache growth so a full disk can't fail the build.
           sudo docker builder prune -f --filter 'until=72h' >/dev/null 2>&1 || true
 
-          sudo docker compose --env-file .env.production -f docker-compose.prod.yml "${PROFILE_ARGS[@]}" up -d --build "${SERVICES[@]}"
+          # Build explicitly so a build error (e.g. disk full) fails the deploy loudly,
+          # then --force-recreate so the freshly built image AND the new APP_VERSION are
+          # guaranteed to run. A plain `up --build` can rebuild yet leave the OLD
+          # container in place, which the health check would then pass — masking a
+          # non-deploy.
+          sudo docker compose --env-file .env.production -f docker-compose.prod.yml "${PROFILE_ARGS[@]}" build "${SERVICES[@]}"
+          sudo docker compose --env-file .env.production -f docker-compose.prod.yml "${PROFILE_ARGS[@]}" up -d --force-recreate "${SERVICES[@]}"
           for attempt in {1..30}; do
-            # Also assert /version reports the version we just deployed, so a build that
-            # did not roll out (e.g. disk full) fails loudly instead of looking healthy.
+            # Assert /version reports the version we just deployed, so a container that
+            # did not roll over is caught instead of looking healthy.
             if curl -fsS http://127.0.0.1:8080/healthz >/dev/null &&
                curl -fsS http://127.0.0.1:8080/readyz >/dev/null &&
                curl -fsS http://127.0.0.1:8080/version | grep -q "\"version\":\"$APP_VERSION\"" &&
