@@ -27,6 +27,7 @@ services:
     environment:
       APP_NAME: ${APP_NAME:?set APP_NAME}
       APP_VERSION: ${APP_VERSION:?set APP_VERSION}
+      APP_ENV: ${APP_ENV:-prod}
       HTTP_PORT: ${HTTP_PORT:-8080}
       HTTP_USE_PREFORK_MODE: ${HTTP_USE_PREFORK_MODE:-false}
       # Behind Cloudflare -> Caddy -> app: resolve the real visitor IP from

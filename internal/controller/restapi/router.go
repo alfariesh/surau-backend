@@ -94,6 +94,16 @@ func NewRouter(
 		app.Get("/swagger/*", swagger.HandlerDefault)
 	}
 
+	// Build/version info — public, so a deploy can be verified (which version/env is
+	// live) and clients can report the backend they are talking to.
+	app.Get("/version", func(ctx *fiber.Ctx) error {
+		return ctx.Status(http.StatusOK).JSON(fiber.Map{
+			"name":    cfg.App.Name,
+			"version": cfg.App.Version,
+			"env":     cfg.App.Env,
+		})
+	})
+
 	// K8s probes
 	app.Get("/healthz", func(ctx *fiber.Ctx) error { return ctx.SendStatus(http.StatusOK) })
 	app.Get("/readyz", func(ctx *fiber.Ctx) error {

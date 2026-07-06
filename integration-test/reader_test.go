@@ -62,6 +62,25 @@ func TestReaderRESTSmoke(t *testing.T) {
 		t.Fatalf("health expected 200, got %d", resp.StatusCode)
 	}
 
+	// /version reports name/version/env so deploys can be verified per environment.
+	versionResp := doJSON(t, http.MethodGet, baseURL()+"/version", nil, "")
+
+	var version struct {
+		Name    string `json:"name"`
+		Version string `json:"version"`
+		Env     string `json:"env"`
+	}
+
+	decodeAndClose(t, versionResp, &version)
+
+	if versionResp.StatusCode != http.StatusOK {
+		t.Fatalf("version expected 200, got %d", versionResp.StatusCode)
+	}
+
+	if version.Name == "" || version.Version == "" || version.Env == "" {
+		t.Fatalf("version fields must be populated, got %+v", version)
+	}
+
 	for _, path := range []string{"/v1/categories", "/v1/authors", "/v1/books"} {
 		resp = doJSON(t, http.MethodGet, baseURL()+path, nil, "")
 		resp.Body.Close()

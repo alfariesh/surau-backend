@@ -1,6 +1,28 @@
 # Deploy VPS dengan Docker Compose
 
-Dokumen ini untuk deployment sederhana di satu server VPS dengan domain `api.surau.org`: aplikasi Go berjalan sebagai container, PostgreSQL berjalan sebagai container, dan port aplikasi hanya dibuka ke `127.0.0.1:8080` agar bisa diletakkan di belakang Nginx/Caddy/Cloudflare Tunnel.
+Dokumen ini untuk deployment di VPS: aplikasi Go berjalan sebagai container, PostgreSQL berjalan sebagai container, dan port aplikasi hanya dibuka ke `127.0.0.1:8080` agar bisa diletakkan di belakang Caddy/Cloudflare.
+
+## Environments & release flow (dev + prod)
+
+Ada DUA VPS terpisah, di-deploy oleh dua GitHub Actions workflow:
+
+| Env | Trigger | Workflow | Domain | Secrets |
+|-----|---------|----------|--------|---------|
+| **dev** | push ke `main` (auto) | `.github/workflows/deploy-dev.yml` | `dev-api.surau.org` | `DEV_VPS_*` |
+| **prod** | push tag `api-vX.Y.Z` (auto) | `.github/workflows/deploy-prod.yml` | `api.surau.org` | `PROD_VPS_*` |
+
+- **`main` = trunk.** Feature branch → PR (CI gate) → merge `main` → auto-deploy ke DEV VPS. `APP_VERSION=dev-<short-sha>`, `APP_ENV=dev`.
+- **Rilis prod = tag.** Prod HANYA berubah saat kamu cut tag dari `main`:
+  ```sh
+  git tag -a api-v0.8.0 -m "API v0.8.0"
+  git push origin api-v0.8.0
+  ```
+  Workflow prod checkout commit di tag itu (detached HEAD), deploy ke PROD VPS (`APP_VERSION=0.8.0`, `APP_ENV=prod`), lalu buat GitHub Release otomatis. **Rollback** = deploy ulang tag sebelumnya (`git push origin api-v0.7.x` ulang, atau `workflow_dispatch`) atau restore `db-predeploy-backup.sql.gz`.
+- **Verifikasi env:** `curl https://api.surau.org/version` → `{"name","version","env":"prod"}`; `curl https://dev-api.surau.org/version` → `env:"dev"`.
+- Kedua VPS pakai `docker-compose.prod.yml` + `.env.production` masing-masing (nilai beda: dev pakai `LOG_LEVEL=debug`, `SWAGGER_ENABLED=true`, `EMAIL_DELIVERY_MODE=log`, `ONESIGNAL_ENABLED=false`; prod pakai nilai produksi). Reverse proxy: `deploy/Caddyfile.tmpl` (ganti `{$DOMAIN}` per host).
+- **Secrets GitHub** (Settings → Secrets → Actions): `DEV_VPS_HOST/USER/DEPLOY_PATH/SSH_PRIVATE_KEY` + `PROD_VPS_HOST/USER/DEPLOY_PATH/SSH_PRIVATE_KEY`.
+
+Bagian di bawah = langkah setup satu VPS (berlaku untuk dev maupun prod).
 
 ## 1. Siapkan server
 
