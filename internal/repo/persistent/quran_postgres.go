@@ -242,9 +242,11 @@ WHERE s.surah_id = $2`, true, true), lang, surahID))
 }
 
 // ListRecitations returns imported recitation resources with track coverage.
-func (r *QuranRepo) ListRecitations(ctx context.Context) ([]entity.QuranRecitation, error) {
-	rows, err := r.Pool.Query(ctx, `
-SELECT r.id,
+// quranRecitationSelectColumns is the shared SELECT list feeding scanQuranRecitation.
+// ListRecitations and getVisibleRecitation MUST both use it (with quranRecitationFromJoin)
+// so the column set — including the coverage_percent CASE — can never drift out of sync
+// with the scan targets. Guarded by TestQuranRecitationSelectColumnCountMatchesScan.
+const quranRecitationSelectColumns = `r.id,
        r.name,
        COALESCE(NULLIF(r.display_name, ''), NULLIF(r.reciter_name, ''), r.name) AS display_name,
        r.reciter_name,
@@ -280,14 +282,20 @@ SELECT r.id,
                                 / 114.0
                ELSE 0
            END,
-       0)::float8 AS coverage_percent
-FROM quran_recitations r
+       0)::float8 AS coverage_percent`
+
+// quranRecitationFromJoin is the shared FROM/JOIN for the two recitation reads above.
+const quranRecitationFromJoin = `FROM quran_recitations r
 LEFT JOIN quran_audio_tracks t ON t.recitation_id = r.id
 LEFT JOIN (
     SELECT recitation_id, COUNT(*)::int AS segment_count
     FROM quran_audio_segments
     GROUP BY recitation_id
-) sc ON sc.recitation_id = r.id
+) sc ON sc.recitation_id = r.id`
+
+func (r *QuranRepo) ListRecitations(ctx context.Context) ([]entity.QuranRecitation, error) {
+	rows, err := r.Pool.Query(ctx, `SELECT `+quranRecitationSelectColumns+`
+`+quranRecitationFromJoin+`
 WHERE r.is_visible = TRUE
 GROUP BY r.id, sc.segment_count
 ORDER BY r.sort_order ASC,
@@ -1634,49 +1642,8 @@ WHERE (
 
 func (r *QuranRepo) getVisibleRecitation(ctx context.Context, recitationID string) (entity.QuranRecitation, error) {
 	row := r.Pool.QueryRow(
-		ctx, `
-SELECT r.id,
-       r.name,
-       COALESCE(NULLIF(r.display_name, ''), NULLIF(r.reciter_name, ''), r.name) AS display_name,
-       r.reciter_name,
-       r.style,
-       r.mode,
-       r.source_url,
-       r.qul_resource_id,
-       r.format,
-       r.license_status,
-       r.checksum,
-       r.metadata,
-       r.imported_at,
-       r.updated_at,
-       r.sort_order,
-       r.default_priority,
-       r.is_visible,
-       COUNT(t.recitation_id)::int AS track_count,
-       COUNT(NULLIF(t.public_url, ''))::int AS public_track_count,
-       COUNT(
-           CASE
-               WHEN COALESCE(NULLIF(t.public_url, ''), NULLIF(t.audio_url, '')) IS NOT NULL THEN 1
-           END
-       )::int AS playable_track_count,
-       COALESCE(sc.segment_count, 0)::int AS segment_count,
-       -- Coverage_percent must match ListRecitations (both feed scanQuranRecitation).
-       COALESCE(
-           CASE r.mode
-               WHEN 'ayah' THEN COUNT(CASE WHEN COALESCE(NULLIF(t.public_url, ''), NULLIF(t.audio_url, '')) IS NOT NULL THEN 1 END)::float8
-                                / NULLIF((SELECT COUNT(*) FROM quran_ayahs), 0)
-               WHEN 'surah' THEN COUNT(CASE WHEN COALESCE(NULLIF(t.public_url, ''), NULLIF(t.audio_url, '')) IS NOT NULL THEN 1 END)::float8
-                                / 114.0
-               ELSE 0
-           END,
-       0)::float8 AS coverage_percent
-FROM quran_recitations r
-LEFT JOIN quran_audio_tracks t ON t.recitation_id = r.id
-LEFT JOIN (
-    SELECT recitation_id, COUNT(*)::int AS segment_count
-    FROM quran_audio_segments
-    GROUP BY recitation_id
-) sc ON sc.recitation_id = r.id
+		ctx, `SELECT `+quranRecitationSelectColumns+`
+`+quranRecitationFromJoin+`
 WHERE r.id = $1 AND r.is_visible = TRUE
 GROUP BY r.id, sc.segment_count`,
 		recitationID,
