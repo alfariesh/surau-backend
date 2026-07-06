@@ -136,6 +136,20 @@ func topLevelSelectColumnCount(t *testing.T, query string) int {
 	return columns
 }
 
+// TestQuranRecitationSelectColumnCountMatchesScan guards the recitation SELECT/scan
+// coupling: ListRecitations and getVisibleRecitation share quranRecitationSelectColumns,
+// which must emit exactly the number of top-level columns scanQuranRecitation reads.
+// Bump expectedColumns ONLY together with the scan target list in scanQuranRecitation.
+func TestQuranRecitationSelectColumnCountMatchesScan(t *testing.T) {
+	t.Parallel()
+
+	const expectedColumns = 22
+
+	got := topLevelSelectColumnCount(t, "SELECT "+quranRecitationSelectColumns+"\nFROM quran_recitations")
+	assert.Equal(t, expectedColumns, got,
+		"recitation SELECT column count must equal scanQuranRecitation targets")
+}
+
 func TestMarkDefaultRecitationPrefersFullPublicAyah(t *testing.T) {
 	t.Parallel()
 

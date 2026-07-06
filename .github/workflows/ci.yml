@@ -93,6 +93,43 @@ jobs:
       - name: Upload coverage report
         run: bash <(curl -s https://codecov.io/bash)
 
+  # Runs the SURAU_LIVE_PG-gated live tests (self-seeding DB invariants: coverage_count
+  # triggers, audio-import atomicity, progress double-count, default recitation, editorial
+  # idempotency) against a real Postgres so they are a true CI gate, not skipped.
+  live-tests:
+    name: runner / tests / live
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18.4-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PG_URL: "postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable"
+      SURAU_LIVE_PG: "postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable"
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: 1.26
+      - name: Install migrate CLI (postgres driver)
+        run: go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.19.1
+      - name: Apply migrations
+        run: migrate -path migrations -database "$PG_URL" up
+      - name: Live tests
+        # -p 1 serializes the two packages so they do not race on the shared DB;
+        # -skip excludes the read-path test that expects a pre-seeded corpus.
+        run: go test -p 1 -race -run TestLive -skip TestLiveAyahEditorialReadPath ./internal/repo/persistent/ ./internal/importer/
+
   collab-server:
     name: runner / collab-server
     runs-on: ubuntu-latest
