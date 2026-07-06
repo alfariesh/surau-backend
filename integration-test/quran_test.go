@@ -197,6 +197,93 @@ func TestQuranMultilingualContract(t *testing.T) {
 	if errorBody.Error != "invalid asset type" {
 		t.Fatalf("admin quran missing invalid asset_type error = %q", errorBody.Error)
 	}
+
+	assertQuranBacklogFixes(t)
+}
+
+// assertQuranBacklogFixes covers the correctness-backlog increment end-to-end against
+// the real DB: F20 (ayah range validated vs ayah_count), G10 (search total on an
+// out-of-range page), and F01/F11 (coverage-aware recitation + track-vs-segment
+// manifest). The fixture surah 114 has ayah_count=1 and one playable ayah track.
+func assertQuranBacklogFixes(t *testing.T) {
+	t.Helper()
+
+	var errorBody struct {
+		Error string `json:"error"`
+	}
+
+	// F20: from past the surah length is a 400, not a 200 + empty list.
+	resp := doJSON(t, http.MethodGet, fmt.Sprintf("%s/v1/quran/surahs/%d/ayahs?from=2", baseURL(), fixtureQuranSurahID), nil, "")
+	decodeAndClose(t, resp, &errorBody)
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("out-of-range ayah from expected 400, got %d", resp.StatusCode)
+	}
+
+	if errorBody.Error != "invalid quran range" {
+		t.Fatalf("out-of-range ayah from error = %q", errorBody.Error)
+	}
+
+	// F20: the in-range full read still works.
+	resp = doJSON(t, http.MethodGet, fmt.Sprintf("%s/v1/quran/surahs/%d/ayahs?from=1&to=1", baseURL(), fixtureQuranSurahID), nil, "")
+	resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("in-range ayah read expected 200, got %d", resp.StatusCode)
+	}
+
+	// G10: a page past the last match must still report the real total, not 0.
+	resp = doJSON(t, http.MethodGet, baseURL()+"/v1/quran/search?q=Terjemah+fixture&lang=en&offset=100", nil, "")
+
+	var offsetSearch quranSearchResponse
+
+	decodeAndClose(t, resp, &offsetSearch)
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("out-of-range search expected 200, got %d", resp.StatusCode)
+	}
+
+	if offsetSearch.Total != 1 || len(offsetSearch.Results) != 0 {
+		t.Fatalf("out-of-range search total/results = %d / %d (want 1 / 0)", offsetSearch.Total, len(offsetSearch.Results))
+	}
+
+	// F01 + F11: the manifest exposes the recitation coverage and separates
+	// track-missing from segment-missing. Surah 114 has one playable ayah track
+	// covering 114:1, so nothing is missing and it is an ayah-mode manifest.
+	resp = doJSON(t, http.MethodGet, fmt.Sprintf("%s/v1/quran/surahs/%d/audio", baseURL(), fixtureQuranSurahID), nil, "")
+
+	var manifest struct {
+		Mode                   string   `json:"mode"`
+		HasFullSurahAudio      bool     `json:"has_full_surah_audio"`
+		MissingAyahKeys        []string `json:"missing_ayah_keys"`
+		SegmentMissingAyahKeys []string `json:"segment_missing_ayah_keys"`
+		Recitation             struct {
+			ID              string  `json:"id"`
+			CoveragePercent float64 `json:"coverage_percent"`
+		} `json:"recitation"`
+	}
+
+	decodeAndClose(t, resp, &manifest)
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("surah audio manifest expected 200, got %d", resp.StatusCode)
+	}
+
+	if manifest.Recitation.ID != fixtureQuranRecitationID {
+		t.Fatalf("manifest recitation = %q, want %q", manifest.Recitation.ID, fixtureQuranRecitationID)
+	}
+
+	if manifest.Recitation.CoveragePercent <= 0 {
+		t.Fatalf("manifest recitation coverage_percent = %v, want > 0", manifest.Recitation.CoveragePercent)
+	}
+
+	if len(manifest.MissingAyahKeys) != 0 {
+		t.Fatalf("manifest missing_ayah_keys = %+v, want empty (114:1 has a playable track)", manifest.MissingAyahKeys)
+	}
+
+	if manifest.HasFullSurahAudio {
+		t.Fatal("ayah-mode manifest must not set has_full_surah_audio")
+	}
 }
 
 func seedMultilingualQuranFixture(t *testing.T) {

@@ -140,13 +140,15 @@ func TestMarkDefaultRecitationPrefersFullPublicAyah(t *testing.T) {
 	t.Parallel()
 
 	recitations := []entity.QuranRecitation{
-		{ID: "surah-public", Name: "A", Mode: "surah", TrackCount: 114, PublicTrackCount: 114, PlayableTrackCount: 114, HasPublicAudio: true, HasPlayableAudio: true},
-		{ID: "ayah-partial", Name: "A", Mode: "ayah", TrackCount: 6236, PublicTrackCount: 2, PlayableTrackCount: 2, HasPublicAudio: false, HasPlayableAudio: false},
-		{ID: "ayah-public", Name: "B", Mode: "ayah", TrackCount: 6236, PublicTrackCount: 6236, PlayableTrackCount: 6236, HasPublicAudio: true, HasPlayableAudio: true},
+		{ID: "surah-public", Name: "A", Mode: "surah", TrackCount: 114, PublicTrackCount: 114, PlayableTrackCount: 114, CoveragePercent: 1, HasPublicAudio: true, HasPlayableAudio: true},
+		{ID: "ayah-partial", Name: "A", Mode: "ayah", TrackCount: 6236, PublicTrackCount: 2, PlayableTrackCount: 2, CoveragePercent: 2.0 / 6236.0, HasPublicAudio: false, HasPlayableAudio: false},
+		{ID: "ayah-public", Name: "B", Mode: "ayah", TrackCount: 6236, PublicTrackCount: 6236, PlayableTrackCount: 6236, CoveragePercent: 1, HasPublicAudio: true, HasPlayableAudio: true},
 	}
 
 	markDefaultRecitation(recitations)
 
+	// Two recitations are fully covered (surah-public, ayah-public); the ayah mode wins
+	// the coverage tie, and the barely-covered ayah-partial never beats them.
 	assert.False(t, recitations[0].IsDefault)
 	assert.False(t, recitations[1].IsDefault)
 	assert.True(t, recitations[2].IsDefault)
@@ -188,11 +190,30 @@ func TestMarkDefaultRecitationAcceptsSourceAudioFallback(t *testing.T) {
 	assert.True(t, recitations[0].IsDefault)
 }
 
-func TestMarkDefaultRecitationLeavesNoDefaultWithoutFullPlayableAudio(t *testing.T) {
+func TestMarkDefaultRecitationPicksMostCompleteWhenAllPartial(t *testing.T) {
 	t.Parallel()
 
+	// No recitation is fully playable, but one has audio and the other has none. The
+	// old rule (require every track playable) left NO default here, which wrongly
+	// excluded a mostly-complete recitation. Now the recitation with playable coverage
+	// wins over the empty one.
 	recitations := []entity.QuranRecitation{
-		{ID: "ayah-partial", Name: "A", Mode: "ayah", TrackCount: 6236, PublicTrackCount: 2, PlayableTrackCount: 2, HasPublicAudio: false, HasPlayableAudio: false},
+		{ID: "ayah-partial", Name: "A", Mode: "ayah", TrackCount: 6236, PublicTrackCount: 6000, PlayableTrackCount: 6000, CoveragePercent: 6000.0 / 6236.0, HasPublicAudio: false, HasPlayableAudio: false},
+		{ID: "surah-empty", Name: "B", Mode: "surah", TrackCount: 0, PublicTrackCount: 0, PlayableTrackCount: 0, CoveragePercent: 0, HasPublicAudio: false, HasPlayableAudio: false},
+	}
+
+	markDefaultRecitation(recitations)
+
+	assert.True(t, recitations[0].IsDefault)
+	assert.False(t, recitations[1].IsDefault)
+}
+
+func TestMarkDefaultRecitationLeavesNoDefaultWithoutPlayableAudio(t *testing.T) {
+	t.Parallel()
+
+	// Nothing has a playable track → no default at all.
+	recitations := []entity.QuranRecitation{
+		{ID: "ayah-empty", Name: "A", Mode: "ayah", TrackCount: 6236, PublicTrackCount: 0, PlayableTrackCount: 0, HasPublicAudio: false, HasPlayableAudio: false},
 		{ID: "surah-empty", Name: "B", Mode: "surah", TrackCount: 0, PublicTrackCount: 0, PlayableTrackCount: 0, HasPublicAudio: false, HasPlayableAudio: false},
 	}
 
@@ -224,32 +245,62 @@ func TestQuranAudioTrackLessNaturalAyahOrder(t *testing.T) {
 	assert.False(t, quranAudioTrackLess(&track10, &track2))
 }
 
-func TestMissingManifestAyahKeys(t *testing.T) {
+func TestManifestAudioCoverage(t *testing.T) {
 	t.Parallel()
 
 	publicURL := "https://cdn.example/1.mp3"
 	ayahNumber := 1
-	assert.Equal(
-		t,
-		[]string{"1:2"},
-		missingManifestAyahKeys([]string{"1:1", "1:2"}, "ayah", []entity.QuranAudioTrack{{
+
+	// Ayah mode: an ayah with no playable track is genuinely missing.
+	missing, segmentMissing, hasFull := manifestAudioCoverage(
+		[]string{"1:1", "1:2"}, "ayah", []entity.QuranAudioTrack{{
 			TrackType:  "ayah",
 			TrackKey:   "1:1",
 			AyahNumber: &ayahNumber,
 			PublicURL:  &publicURL,
-		}}),
+		}},
 	)
+	assert.Equal(t, []string{"1:2"}, missing)
+	assert.Empty(t, segmentMissing)
+	assert.False(t, hasFull)
 
-	assert.Equal(
-		t,
-		[]string{"1:2"},
-		missingManifestAyahKeys([]string{"1:1", "1:2"}, "surah", []entity.QuranAudioTrack{{
+	// Surah mode with a playable full-surah track + one segment: the full-surah audio
+	// covers every ayah (missing is empty), only 1:2 lacks a per-ayah seek offset.
+	missing, segmentMissing, hasFull = manifestAudioCoverage(
+		[]string{"1:1", "1:2"}, "surah", []entity.QuranAudioTrack{{
 			TrackType: "surah",
 			TrackKey:  "1",
 			PublicURL: &publicURL,
 			Segments:  []entity.QuranAudioSegment{{AyahKey: "1:1"}},
-		}}),
+		}},
 	)
+	assert.Empty(t, missing)
+	assert.Equal(t, []string{"1:2"}, segmentMissing)
+	assert.True(t, hasFull)
+
+	// Surah mode, playable full-surah track, no segments at all: audio still plays for
+	// the whole surah, so nothing is "missing" — every ayah is only segment-missing.
+	missing, segmentMissing, hasFull = manifestAudioCoverage(
+		[]string{"1:1", "1:2"}, "surah", []entity.QuranAudioTrack{{
+			TrackType: "surah",
+			TrackKey:  "1",
+			PublicURL: &publicURL,
+		}},
+	)
+	assert.Empty(t, missing)
+	assert.Equal(t, []string{"1:1", "1:2"}, segmentMissing)
+	assert.True(t, hasFull)
+
+	// Surah mode with no playable track: the whole surah has no audio.
+	missing, segmentMissing, hasFull = manifestAudioCoverage(
+		[]string{"1:1", "1:2"}, "surah", []entity.QuranAudioTrack{{
+			TrackType: "surah",
+			TrackKey:  "1",
+		}},
+	)
+	assert.Equal(t, []string{"1:1", "1:2"}, missing)
+	assert.Empty(t, segmentMissing)
+	assert.False(t, hasFull)
 }
 
 func TestQuranNavigationColumnAllowlist(t *testing.T) {
