@@ -83,7 +83,13 @@ WITH checks AS (
         )) AS heading_ok
 ),
 old AS (
+    -- FOR UPDATE row-locks the existing progress row so concurrent saves for the
+    -- same (user, book) serialize here; each then computes the activity delta off the
+    -- other's committed page_id instead of a shared stale baseline (which double-counts
+    -- kitab_pages_read). A brand-new row has nothing to lock, but that first-save race
+    -- is benign — the delta is 1 and observed_at/GREATEST still guard the position.
     SELECT page_id FROM reading_progress WHERE user_id = $1 AND book_id = $2
+    FOR UPDATE
 ),
 upserted AS (
     INSERT INTO reading_progress (user_id, book_id, page_id, heading_id, progress_percent, observed_at, updated_at)
@@ -385,9 +391,13 @@ WITH target AS (
     WHERE a.ayah_key = $2
 ),
 old AS (
+    -- FOR UPDATE serializes concurrent same-(user, surah) saves so each computes the
+    -- activity delta off the other's committed ayah_number, not a shared stale baseline
+    -- (which double-counts quran_ayahs_read). See SaveProgress for the first-save note.
     SELECT ayah_number
     FROM quran_reading_progress
     WHERE user_id = $1 AND surah_id = (SELECT surah_id FROM target)
+    FOR UPDATE
 ),
 upserted AS (
     INSERT INTO quran_reading_progress (
