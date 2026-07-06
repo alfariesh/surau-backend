@@ -43,8 +43,10 @@ func TestResolveEditorialLicense(t *testing.T) {
 			status, override, err := resolveEditorialLicense(tt.raw)
 			if tt.wantErr {
 				require.Error(t, err)
+
 				return
 			}
+
 			require.NoError(t, err)
 			assert.Equal(t, tt.wantStatus, status)
 			assert.Equal(t, tt.wantOverride, override)

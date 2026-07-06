@@ -55,6 +55,8 @@ type quranReferenceResolution struct {
 }
 
 // ResolveQuranReferences links quran_reference knowledge mentions to Quran rows.
+//
+//nolint:funlen // sequential resolve pipeline kept in one place for a readable top-to-bottom flow
 func ResolveQuranReferences(ctx context.Context, pool *pgxpool.Pool) (resolved, skipped int, err error) {
 	surahAliases, err := loadSurahAliases(ctx, pool)
 	if err != nil {

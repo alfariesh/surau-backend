@@ -298,6 +298,7 @@ LIMIT $2 OFFSET $3`, khatamCycleColumns, khatamMarksLateral)
 
 func scanKhatamCycle(row rowScanner) (entity.QuranKhatamCycle, error) {
 	cycle, _, err := scanKhatamCycleRow(row, false)
+
 	return cycle, err
 }
 

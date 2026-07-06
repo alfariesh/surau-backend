@@ -230,7 +230,7 @@ func fetchAyahs(ctx context.Context, client *http.Client, opts fetchOptions, sur
 	return response.Data, nil
 }
 
-func fetchJSON(ctx context.Context, client *http.Client, opts fetchOptions, endpoint, referer string, target any) error {
+func fetchJSON(ctx context.Context, client *http.Client, opts fetchOptions, endpoint, referer string, target any) error { //nolint:gocritic // opts is read-only config; copy cost is irrelevant for a network fetch
 	requestURL := opts.BaseURL + "/" + strings.TrimLeft(endpoint, "/")
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
 	if err != nil {

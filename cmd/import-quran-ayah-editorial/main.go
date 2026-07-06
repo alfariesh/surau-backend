@@ -18,17 +18,21 @@ func (f *repeatedStringFlag) String() string {
 
 func (f *repeatedStringFlag) Set(value string) error {
 	*f = append(*f, value)
+
 	return nil
 }
 
 func main() {
-	var opts importer.QuranAyahEditorialOptions
-	var paths repeatedStringFlag
+	var (
+		opts  importer.QuranAyahEditorialOptions
+		paths repeatedStringFlag
+	)
 
 	flag.StringVar(&opts.PostgresURL, "pg-url", os.Getenv("PG_URL"), "PostgreSQL URL")
 	flag.Var(&paths, "ayah-editorial-json", "per-ayah editorial JSON file; repeat for multiple files")
 	flag.BoolVar(&opts.DryRun, "dry-run", false, "parse files and print counts without writing")
 	flag.Parse()
+
 	opts.Paths = []string(paths)
 
 	stats, err := importer.RunQuranAyahEditorialImport(context.Background(), opts)

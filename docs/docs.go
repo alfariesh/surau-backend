@@ -3658,7 +3658,7 @@ const docTemplate = `{
         },
         "/books/{book_id}/quran-references": {
             "get": {
-                "description": "List Quran references linked to a public kitab. Defaults to approved references.",
+                "description": "List approved Quran references linked to a public kitab. This public endpoint only ever returns approved references.",
                 "produces": [
                     "application/json"
                 ],
@@ -3686,21 +3686,6 @@ const docTemplate = `{
                         "default": "id",
                         "description": "Language code",
                         "name": "lang",
-                        "in": "query"
-                    },
-                    {
-                        "enum": [
-                            "approved",
-                            "pending",
-                            "rejected",
-                            "ambiguous",
-                            "needs_review",
-                            "all"
-                        ],
-                        "type": "string",
-                        "default": "approved",
-                        "description": "Review status",
-                        "name": "status",
                         "in": "query"
                     },
                     {

@@ -52,6 +52,7 @@ func TestLiveSurahEditorialImport(t *testing.T) {
 			ctx,
 			`SELECT checksum, reviewed_by, updated_at FROM quran_surah_editorial WHERE surah_id=113 AND lang='id'`,
 		).Scan(&checksum, &reviewedBy, &updatedAt))
+
 		return checksum, reviewedBy, updatedAt
 	}
 
@@ -97,6 +98,7 @@ func TestRunQuranSurahEditorialImportValidation(t *testing.T) {
 		t.Helper()
 		path := filepath.Join(t.TempDir(), "se.json")
 		require.NoError(t, os.WriteFile(path, []byte(body), 0o600))
+
 		return path
 	}
 

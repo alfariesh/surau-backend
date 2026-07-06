@@ -20,11 +20,13 @@ func resolveEditorialLicense(raw *string) (status string, override bool, err err
 	if raw == nil || strings.TrimSpace(*raw) == "" {
 		return entity.LicenseStatusNeedsReview, false, nil
 	}
+
 	s := strings.TrimSpace(*raw)
 	if !entity.IsValidEditorialLicenseStatus(s) {
 		return "", false, fmt.Errorf(
 			"invalid license_status %q (expected unknown, needs_review, permitted, restricted, or public_domain)", s,
 		)
 	}
+
 	return s, s != entity.LicenseStatusNeedsReview, nil
 }

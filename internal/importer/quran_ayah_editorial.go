@@ -67,9 +67,11 @@ type quranAyahEditorialRecord struct {
 
 const maxAyahNumber = 286 // Al-Baqarah; cheap upper bound for dry-run validation.
 
+const numSurahs = 114
+
 const ayahEditorialUpsertBatchSize = 1000
 
-var tafsirRangeRe = regexp.MustCompile(`^[0-9]+(-[0-9]+)?$`)
+var tafsirRangeRe = regexp.MustCompile(`^\d+(-\d+)?$`)
 
 const quranAyahEditorialUpsertSQL = `
 INSERT INTO quran_ayah_editorial (
@@ -117,10 +119,13 @@ WHERE EXCLUDED.checksum IS DISTINCT FROM quran_ayah_editorial.checksum
 // RunQuranAyahEditorialImport parses per-ayah editorial JSON files and upserts them
 // into quran_ayah_editorial in one transaction (batched). Self-authored content, so
 // it does NOT write quran_import_runs.
+//
+//nolint:gocognit,gocyclo,cyclop,funlen // linear import pipeline (validate opts -> parse -> range-check -> batch upsert); each branch is a distinct guard, not tangled logic
 func RunQuranAyahEditorialImport(ctx context.Context, opts QuranAyahEditorialOptions) (QuranAyahEditorialStats, error) {
 	if len(opts.Paths) == 0 {
 		return QuranAyahEditorialStats{}, errors.New("at least one -ayah-editorial-json path is required")
 	}
+
 	if !opts.DryRun && strings.TrimSpace(opts.PostgresURL) == "" {
 		return QuranAyahEditorialStats{}, errors.New("postgres URL is required")
 	}
@@ -151,11 +156,12 @@ func RunQuranAyahEditorialImport(ctx context.Context, opts QuranAyahEditorialOpt
 	if err != nil {
 		return QuranAyahEditorialStats{}, err
 	}
+
 	for i := range records {
 		rec := &records[i]
-		if max, ok := ayahMax[rec.SurahID]; ok && rec.AyahNumber > max {
+		if maxAyah, ok := ayahMax[rec.SurahID]; ok && rec.AyahNumber > maxAyah {
 			return QuranAyahEditorialStats{}, fmt.Errorf(
-				"ayah %d:%d out of range (surah %d has %d ayat)", rec.SurahID, rec.AyahNumber, rec.SurahID, max,
+				"ayah %d:%d out of range (surah %d has %d ayat)", rec.SurahID, rec.AyahNumber, rec.SurahID, maxAyah,
 			)
 		}
 	}
@@ -173,6 +179,7 @@ func RunQuranAyahEditorialImport(ctx context.Context, opts QuranAyahEditorialOpt
 		}
 
 		batch := &pgx.Batch{}
+
 		for i := start; i < end; i++ {
 			rec := records[i]
 			batch.Queue(
@@ -189,14 +196,17 @@ func RunQuranAyahEditorialImport(ctx context.Context, opts QuranAyahEditorialOpt
 			tag, execErr := br.Exec()
 			if execErr != nil {
 				_ = br.Close()
+
 				return QuranAyahEditorialStats{}, ayahEditorialExecError(records[i], execErr)
 			}
+
 			if tag.RowsAffected() > 0 {
 				stats.Upserted++
 			} else {
 				stats.Skipped++
 			}
 		}
+
 		if closeErr := br.Close(); closeErr != nil {
 			return QuranAyahEditorialStats{}, fmt.Errorf("batch close: %w", closeErr)
 		}
@@ -215,32 +225,40 @@ func parseQuranAyahEditorialFiles(paths []string) ([]quranAyahEditorialRecord, e
 	// Fail fast on a duplicate (surah_id, ayah_number, lang) across all files: two
 	// records for the same key would silently last-write-wins inside the batch.
 	seen := make(map[string]string)
+
 	for _, path := range paths {
 		raw, _, err := readAssetFile(path)
 		if err != nil {
 			return nil, fmt.Errorf("reading %s: %w", path, err)
 		}
+
 		var rawRecords []json.RawMessage
 		if err := json.Unmarshal(raw, &rawRecords); err != nil {
 			return nil, fmt.Errorf("parsing %s: %w", path, err)
 		}
+
 		for idx, rawRec := range rawRecords {
 			rec, err := decodeQuranAyahEditorialRecord(rawRec)
 			if err != nil {
 				return nil, fmt.Errorf("%s record %d: %w", path, idx, err)
 			}
+
 			key := fmt.Sprintf("%d:%d:%s", rec.SurahID, rec.AyahNumber, rec.Lang)
 			if first, dup := seen[key]; dup {
 				return nil, fmt.Errorf("%s record %d: duplicate ayah %d:%d lang %s (already defined at %s)",
 					path, idx, rec.SurahID, rec.AyahNumber, rec.Lang, first)
 			}
+
 			seen[key] = fmt.Sprintf("%s record %d", path, idx)
+
 			records = append(records, rec)
 		}
 	}
+
 	return records, nil
 }
 
+//nolint:gocognit,gocyclo,cyclop // a flat sequence of independent field validations (surah/ayah/lang/faq/tafsir_range)
 func decodeQuranAyahEditorialRecord(rawRec json.RawMessage) (quranAyahEditorialRecord, error) {
 	// Reject reproduced tafsir: the enrich contract emits tafsir_range (a pointer),
 	// never the tafsir body.
@@ -248,6 +266,7 @@ func decodeQuranAyahEditorialRecord(rawRec json.RawMessage) (quranAyahEditorialR
 	if err := json.Unmarshal(rawRec, &probe); err != nil {
 		return quranAyahEditorialRecord{}, fmt.Errorf("not a JSON object: %w", err)
 	}
+
 	if _, ok := probe["tafsir_html"]; ok {
 		return quranAyahEditorialRecord{}, errors.New("forbidden field tafsir_html (this layer is SEO enrichment, not the tafsir body)")
 	}
@@ -257,6 +276,7 @@ func decodeQuranAyahEditorialRecord(rawRec json.RawMessage) (quranAyahEditorialR
 	// a hard error, not a silent no-op that the COALESCE upsert hides.
 	dec := json.NewDecoder(bytes.NewReader(rawRec))
 	dec.DisallowUnknownFields()
+
 	if err := dec.Decode(&rec); err != nil {
 		return quranAyahEditorialRecord{}, err
 	}
@@ -267,13 +287,16 @@ func decodeQuranAyahEditorialRecord(rawRec json.RawMessage) (quranAyahEditorialR
 	if rec.SurahID < 1 || rec.SurahID > 114 {
 		return quranAyahEditorialRecord{}, fmt.Errorf("invalid surah_id %d (expected 1-114)", rec.SurahID)
 	}
+
 	if rec.AyahNumber < 1 || rec.AyahNumber > maxAyahNumber {
 		return quranAyahEditorialRecord{}, fmt.Errorf("invalid ayah_number %d (expected 1-%d)", rec.AyahNumber, maxAyahNumber)
 	}
+
 	lang, err := contentlang.Normalize(rec.Lang)
 	if err != nil {
 		return quranAyahEditorialRecord{}, fmt.Errorf("invalid lang %q: %w", rec.Lang, err)
 	}
+
 	rec.Lang = lang
 
 	for j, item := range rec.FAQ {
@@ -281,6 +304,7 @@ func decodeQuranAyahEditorialRecord(rawRec json.RawMessage) (quranAyahEditorialR
 			return quranAyahEditorialRecord{}, fmt.Errorf("faq[%d] needs both question and answer_html", j)
 		}
 	}
+
 	if rec.TafsirRange != nil && !tafsirRangeRe.MatchString(*rec.TafsirRange) {
 		return quranAyahEditorialRecord{}, fmt.Errorf("invalid tafsir_range %q (expected N or N-M)", *rec.TafsirRange)
 	}
@@ -300,22 +324,25 @@ func decodeQuranAyahEditorialRecord(rawRec json.RawMessage) (quranAyahEditorialR
 		if err != nil {
 			return quranAyahEditorialRecord{}, fmt.Errorf("marshaling faq: %w", err)
 		}
+
 		rec.faqJSON = b
 	}
 
 	rec.checksum = ayahEditorialChecksum(rec)
+
 	return rec, nil
 }
 
 // ayahEditorialChecksum hashes only the content-bearing fields (NOT license or
 // provenance), so a provenance-only change or a publish (needs_review->permitted)
 // does not bump updated_at / the sitemap lastmod.
-func ayahEditorialChecksum(rec quranAyahEditorialRecord) string {
+func ayahEditorialChecksum(rec quranAyahEditorialRecord) string { //nolint:gocritic // small value struct; a copy here is negligible on the import path
 	h := sha256.New()
 	writeOpt := func(p *string) {
 		if p != nil {
 			h.Write([]byte(*p))
 		}
+
 		h.Write([]byte{0})
 	}
 	writeOpt(rec.MetaTitle)
@@ -330,8 +357,10 @@ func ayahEditorialChecksum(rec quranAyahEditorialRecord) string {
 	} else {
 		h.Write([]byte{0})
 	}
+
 	h.Write([]byte{0})
 	writeOpt(rec.TafsirRange)
+
 	return hex.EncodeToString(h.Sum(nil))
 }
 
@@ -344,18 +373,21 @@ func loadAyahMaxNumbers(ctx context.Context, pool *pgxpool.Pool) (map[int]int, e
 	}
 	defer rows.Close()
 
-	out := make(map[int]int, 114)
+	out := make(map[int]int, numSurahs)
+
 	for rows.Next() {
 		var surahID, maxAyah int
 		if err := rows.Scan(&surahID, &maxAyah); err != nil {
 			return nil, fmt.Errorf("scanning ayah counts: %w", err)
 		}
+
 		out[surahID] = maxAyah
 	}
+
 	return out, rows.Err()
 }
 
-func ayahEditorialExecError(rec quranAyahEditorialRecord, err error) error {
+func ayahEditorialExecError(rec quranAyahEditorialRecord, err error) error { //nolint:gocritic // small value struct; a copy here is negligible on the error path
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) {
 		switch pgErr.Code {
@@ -366,5 +398,6 @@ func ayahEditorialExecError(rec quranAyahEditorialRecord, err error) error {
 				rec.SurahID, rec.AyahNumber, rec.Lang, err)
 		}
 	}
+
 	return fmt.Errorf("ayah %d:%d lang %s upsert: %w", rec.SurahID, rec.AyahNumber, rec.Lang, err)
 }

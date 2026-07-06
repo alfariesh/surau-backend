@@ -65,44 +65,53 @@ func RunQuranSurahEditorialImport(ctx context.Context, opts QuranSurahEditorialO
 	if len(opts.Paths) == 0 {
 		return QuranSurahEditorialStats{}, errors.New("at least one -editorial-json path is required")
 	}
+
 	if !opts.DryRun && strings.TrimSpace(opts.PostgresURL) == "" {
 		return QuranSurahEditorialStats{}, errors.New("postgres URL is required")
 	}
 
 	records := make([]quranSurahEditorialRecord, 0)
+
 	for _, path := range opts.Paths {
 		raw, _, err := readAssetFile(path)
 		if err != nil {
 			return QuranSurahEditorialStats{}, fmt.Errorf("reading %s: %w", path, err)
 		}
+
 		var rawRecords []json.RawMessage
 		if err := json.Unmarshal(raw, &rawRecords); err != nil {
 			return QuranSurahEditorialStats{}, fmt.Errorf("parsing %s: %w", path, err)
 		}
+
 		for idx, rawRec := range rawRecords {
 			var rec quranSurahEditorialRecord
 			// Strict decode: a typo'd content key must be a hard error, not a silent
 			// no-op the COALESCE upsert hides.
 			dec := json.NewDecoder(bytes.NewReader(rawRec))
 			dec.DisallowUnknownFields()
+
 			if err := dec.Decode(&rec); err != nil {
 				return QuranSurahEditorialStats{}, fmt.Errorf("%s record %d: %w", path, idx, err)
 			}
+
 			records = append(records, rec)
 		}
 	}
 
 	surahSeen := make(map[int]struct{})
 	editorialSeen := make(map[string]struct{})
+
 	for i := range records {
 		rec := &records[i]
 		if rec.SurahID < 1 || rec.SurahID > 114 {
 			return QuranSurahEditorialStats{}, fmt.Errorf("invalid surah_id %d (expected 1-114)", rec.SurahID)
 		}
+
 		lang, err := contentlang.Normalize(rec.Lang)
 		if err != nil {
 			return QuranSurahEditorialStats{}, fmt.Errorf("surah %d: invalid lang %q: %w", rec.SurahID, rec.Lang, err)
 		}
+
 		rec.Lang = lang
 		// Fail fast on a duplicate (surah_id, lang) so two records can't silently
 		// last-write-wins within the same transaction.
@@ -110,11 +119,14 @@ func RunQuranSurahEditorialImport(ctx context.Context, opts QuranSurahEditorialO
 		if _, dup := editorialSeen[key]; dup {
 			return QuranSurahEditorialStats{}, fmt.Errorf("duplicate surah %d lang %s editorial record", rec.SurahID, rec.Lang)
 		}
+
 		editorialSeen[key] = struct{}{}
+
 		rec.license, rec.licenseOverride, err = resolveEditorialLicense(rec.LicenseStatus)
 		if err != nil {
 			return QuranSurahEditorialStats{}, fmt.Errorf("surah %d: %w", rec.SurahID, err)
 		}
+
 		rec.checksum = surahEditorialChecksum(*rec)
 		if rec.Slug != nil || rec.ChronologicalOrder != nil || rec.RukuCount != nil {
 			surahSeen[rec.SurahID] = struct{}{}
@@ -160,6 +172,7 @@ WHERE surah_id = $1`,
 			if err != nil {
 				return QuranSurahEditorialStats{}, surahEditorialExecError("surah", rec, err)
 			}
+
 			if tag.RowsAffected() == 0 {
 				return QuranSurahEditorialStats{}, fmt.Errorf("surah %d not found in quran_surahs", rec.SurahID)
 			}
@@ -227,12 +240,13 @@ func surahEditorialExecError(stage string, rec quranSurahEditorialRecord, err er
 // surahEditorialChecksum hashes only the content-bearing fields (NOT license or
 // provenance), so a no-op re-import or a publish does not bump updated_at / the
 // sitemap lastmod.
-func surahEditorialChecksum(rec quranSurahEditorialRecord) string {
+func surahEditorialChecksum(rec quranSurahEditorialRecord) string { //nolint:gocritic // small value struct; a copy here is negligible on the import path
 	h := sha256.New()
 	writeOpt := func(p *string) {
 		if p != nil {
 			h.Write([]byte(*p))
 		}
+
 		h.Write([]byte{0})
 	}
 	writeOpt(rec.MetaTitle)
@@ -241,5 +255,6 @@ func surahEditorialChecksum(rec quranSurahEditorialRecord) string {
 	writeOpt(rec.KeutamaanHTML)
 	writeOpt(rec.AsbabunNuzulHTML)
 	writeOpt(rec.PokokKandunganHTML)
+
 	return hex.EncodeToString(h.Sum(nil))
 }

@@ -7203,8 +7203,8 @@ paths:
       - kitab
   /books/{book_id}/quran-references:
     get:
-      description: List Quran references linked to a public kitab. Defaults to approved
-        references.
+      description: List approved Quran references linked to a public kitab. This public
+        endpoint only ever returns approved references.
       operationId: list-book-quran-references
       parameters:
       - description: Book ID
@@ -7220,18 +7220,6 @@ paths:
         description: Language code
         in: query
         name: lang
-        type: string
-      - default: approved
-        description: Review status
-        enum:
-        - approved
-        - pending
-        - rejected
-        - ambiguous
-        - needs_review
-        - all
-        in: query
-        name: status
         type: string
       - default: 50
         description: Limit

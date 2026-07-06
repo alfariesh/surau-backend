@@ -660,17 +660,21 @@ func (r *PersonalRepo) UpdateSavedItem(
 	// identical values is a no-op for the sync cursor. SET expressions reference the OLD
 	// row, so each comparison is stored-vs-incoming. updated_at is added LAST so its
 	// placeholders order after the field SETs.
-	var changeConds []string
-	var changeArgs []any
+	var (
+		changeConds []string
+		changeArgs  []any
+	)
 
 	if patch.LabelSet {
 		builder = builder.Set("label", patch.Label)
+
 		changeConds = append(changeConds, "label IS DISTINCT FROM ?")
 		changeArgs = append(changeArgs, patch.Label)
 	}
 
 	if patch.NoteSet {
 		builder = builder.Set("note", patch.Note)
+
 		changeConds = append(changeConds, "note IS DISTINCT FROM ?")
 		changeArgs = append(changeArgs, patch.Note)
 	}
@@ -682,6 +686,7 @@ func (r *PersonalRepo) UpdateSavedItem(
 		}
 
 		builder = builder.Set("tags", tags)
+
 		changeConds = append(changeConds, "tags IS DISTINCT FROM ?::text[]")
 		changeArgs = append(changeArgs, tags)
 	}

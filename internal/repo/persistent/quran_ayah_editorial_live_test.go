@@ -17,6 +17,8 @@ import (
 // it never runs in normal `go test ./...`.
 //
 //	SURAU_LIVE_PG=postgres://... go test ./internal/repo/persistent/ -run TestLiveAyahEditorialReadPath -v
+//
+//nolint:paralleltest // serial live-DB read-path integration checks over shared seeded rows (gated on SURAU_LIVE_PG)
 func TestLiveAyahEditorialReadPath(t *testing.T) {
 	url := os.Getenv("SURAU_LIVE_PG")
 	if url == "" {
@@ -25,7 +27,9 @@ func TestLiveAyahEditorialReadPath(t *testing.T) {
 
 	pg, err := postgres.New(url)
 	require.NoError(t, err)
+
 	defer pg.Close()
+
 	repo := NewQuranRepo(pg)
 	ctx := context.Background()
 
@@ -48,6 +52,7 @@ func TestLiveAyahEditorialReadPath(t *testing.T) {
 		ayahs, err := repo.ListSurahAyahs(ctx, 113, 0, 0, "id", "", false, false, true, "")
 		require.NoError(t, err)
 		require.NotEmpty(t, ayahs)
+
 		for _, a := range ayahs {
 			assert.Nilf(t, a.Editorial, "ayah %s is needs_review and must NOT leak editorial", a.AyahKey)
 		}

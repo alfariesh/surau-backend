@@ -508,6 +508,7 @@ func fakeNavigationAyahs(kind string, number int, includeAudio, includeEditorial
 	} else {
 		ayah.HizbNumber = &number
 	}
+
 	if includeEditorial {
 		ayah.Editorial = &entity.QuranAyahEditorial{}
 	}
@@ -649,9 +650,11 @@ func TestQuranAyahEditorialExposure(t *testing.T) {
 			assert.Equal(t, http.StatusOK, resp.StatusCode)
 			body, err := io.ReadAll(resp.Body)
 			require.NoError(t, err)
+
 			for _, want := range tt.wantBody {
 				assert.Contains(t, string(body), want)
 			}
+
 			for _, notWant := range tt.wantNotBody {
 				assert.NotContains(t, string(body), notWant)
 			}

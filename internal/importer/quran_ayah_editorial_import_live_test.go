@@ -50,6 +50,7 @@ func TestLiveAyahEditorialImport(t *testing.T) {
 		require.NoError(t, os.WriteFile(path, []byte(body), 0o600))
 		stats, err := RunQuranAyahEditorialImport(ctx, QuranAyahEditorialOptions{PostgresURL: url, Paths: []string{path}})
 		require.NoError(t, err)
+
 		return stats
 	}
 	read := func(t *testing.T) (faqLen int, reviewedBy *string, updatedAt time.Time) {
@@ -58,6 +59,7 @@ func TestLiveAyahEditorialImport(t *testing.T) {
 			ctx,
 			`SELECT jsonb_array_length(faq), reviewed_by, updated_at FROM quran_ayah_editorial WHERE surah_id=2 AND ayah_number=255 AND lang='id'`,
 		).Scan(&faqLen, &reviewedBy, &updatedAt))
+
 		return faqLen, reviewedBy, updatedAt
 	}
 

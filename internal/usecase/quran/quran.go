@@ -21,6 +21,10 @@ const (
 	// 10000 is far beyond any real page over the fixed ~6236-ayah corpus.
 	maxOffset = 10000
 
+	// minSearchQueryRunes: shorter queries degenerate into broad ILIKE scans with no
+	// usable trigrams, so they short-circuit before reaching the repo.
+	minSearchQueryRunes = 2
+
 	navigationKindJuz  = "juz"
 	navigationKindHizb = "hizb"
 )
@@ -81,6 +85,7 @@ func (uc *UseCase) TranslationSources(ctx context.Context, lang string) ([]entit
 	if err != nil {
 		return nil, err
 	}
+
 	if contentlang.IsArabic(normalizedLang) {
 		return []entity.QuranTranslationSource{}, nil
 	}
@@ -209,12 +214,15 @@ func (uc *UseCase) SurahAyahs(
 	if surahID <= 0 || surahID > 114 {
 		return nil, entity.ErrQuranSurahNotFound
 	}
+
 	if fromAyah < 0 || toAyah < 0 {
 		return nil, entity.ErrInvalidQuranRange
 	}
+
 	if fromAyah == 0 && toAyah > 0 {
 		fromAyah = 1
 	}
+
 	if fromAyah > 0 && toAyah > 0 && toAyah < fromAyah {
 		return nil, entity.ErrInvalidQuranRange
 	}
@@ -277,7 +285,7 @@ func (uc *UseCase) Search(ctx context.Context, query, lang string, limit, offset
 	// A 0–1 rune query degenerates to a broad ILIKE '%x%' scan with no usable
 	// trigrams; short-circuit (the repo also guards the empty case).
 	trimmed := strings.TrimSpace(query)
-	if utf8.RuneCountInString(trimmed) < 2 {
+	if utf8.RuneCountInString(trimmed) < minSearchQueryRunes {
 		return []entity.QuranSearchResult{}, 0, nil
 	}
 
@@ -345,6 +353,7 @@ func clampLimit(limit int) uint64 {
 	if limit <= 0 {
 		return defaultLimit
 	}
+
 	if limit > maxLimit {
 		return maxLimit
 	}
@@ -356,6 +365,7 @@ func clampOffset(offset int) uint64 {
 	if offset < 0 {
 		return 0
 	}
+
 	if offset > maxOffset {
 		return maxOffset
 	}
@@ -365,6 +375,7 @@ func clampOffset(offset int) uint64 {
 
 func normalizeTranslationSource(source string) string {
 	source = strings.TrimSpace(source)
+
 	return source
 }
 
@@ -390,6 +401,7 @@ func missingQuranAssetFilter(
 ) (repo.MissingQuranAssetFilter, error) {
 	targetLang = strings.TrimSpace(targetLang)
 	targetLangs := []string{contentlang.Default, contentlang.English}
+
 	if targetLang != "" {
 		normalized, err := contentlang.Normalize(targetLang)
 		if err != nil || normalized == contentlang.Arabic {

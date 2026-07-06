@@ -34,6 +34,7 @@ func TestAyahEditorialChecksumContentOnly(t *testing.T) {
 
 	t.Run("license change does not move checksum", func(t *testing.T) {
 		t.Parallel()
+
 		rec := base
 		rec.license = "permitted"
 		rec.LicenseStatus = strptr("permitted")
@@ -42,6 +43,7 @@ func TestAyahEditorialChecksumContentOnly(t *testing.T) {
 
 	t.Run("provenance change does not move checksum", func(t *testing.T) {
 		t.Parallel()
+
 		rec := base
 		rec.AuthorName = strptr("Someone Else")
 		rec.ReviewedBy = strptr("reviewer")
@@ -50,6 +52,7 @@ func TestAyahEditorialChecksumContentOnly(t *testing.T) {
 
 	t.Run("content change moves checksum", func(t *testing.T) {
 		t.Parallel()
+
 		rec := base
 		rec.MetaTitle = strptr("Ayat Kursi (revisi)")
 		assert.NotEqual(t, baseSum, ayahEditorialChecksum(rec))
@@ -57,6 +60,7 @@ func TestAyahEditorialChecksumContentOnly(t *testing.T) {
 
 	t.Run("faq change moves checksum", func(t *testing.T) {
 		t.Parallel()
+
 		rec := base
 		rec.faqJSON = []byte(`[{"question":"q2","answer_html":"<p>a2</p>"}]`)
 		assert.NotEqual(t, baseSum, ayahEditorialChecksum(rec))
@@ -127,11 +131,14 @@ func TestDecodeQuranAyahEditorialRecordValidations(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
+
 			_, err := decodeQuranAyahEditorialRecord(json.RawMessage(tt.raw))
 			if tt.ok {
 				require.NoError(t, err)
+
 				return
 			}
+
 			require.Error(t, err)
 		})
 	}

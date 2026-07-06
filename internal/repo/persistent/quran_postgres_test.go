@@ -95,10 +95,12 @@ var editorialAliasRe = regexp.MustCompile(`AS (ed_[a-z_]+|content_updated_at)`)
 // in the order they appear in the query.
 func editorialColumnAliases(query string) []string {
 	matches := editorialAliasRe.FindAllStringSubmatch(query, -1)
+
 	out := make([]string, 0, len(matches))
 	for _, m := range matches {
 		out = append(out, m[1])
 	}
+
 	return out
 }
 

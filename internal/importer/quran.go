@@ -660,6 +660,7 @@ func parseSurahInfo(path, langOverride string, assets *quranAssetSet) error {
 	return nil
 }
 
+//nolint:gocognit,gocyclo,cyclop // linear per-row parse with distinct guards for each script field
 func parseScriptResource(path, scriptKind string, assets *quranAssetSet) error {
 	raw, checksum, err := readAssetFile(path)
 	if err != nil {

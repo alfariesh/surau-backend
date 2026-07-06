@@ -14,6 +14,8 @@ const (
 // editorialLicenseStatuses is the allow-list shared by the editorial importers,
 // mirroring the *_license_status_check DB constraints so a bad value fails with a
 // clear message instead of an opaque 23514.
+//
+//nolint:gochecknoglobals // immutable allow-list mirroring the DB CHECK constraint
 var editorialLicenseStatuses = map[string]bool{
 	LicenseStatusUnknown:      true,
 	LicenseStatusNeedsReview:  true,

@@ -15,6 +15,7 @@ import (
 // registers a cascading cleanup. Gated callers must already have SURAU_LIVE_PG.
 func seedLiveUser(t *testing.T, pg *postgres.Postgres, userID, suffix string) {
 	t.Helper()
+
 	_, err := pg.Pool.Exec(context.Background(),
 		`INSERT INTO users (id, username, email, password_hash) VALUES ($1, $2, $3, 'x')
 		 ON CONFLICT (id) DO NOTHING`,
