@@ -2,6 +2,7 @@ package importer
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"testing"
 
@@ -61,8 +62,8 @@ func TestLiveQuranAudioImportAtomicity(t *testing.T) {
 	for _, n := range ayahNumbers {
 		_, err = pg.Pool.Exec(ctx, `
 INSERT INTO quran_ayahs (surah_id, ayah_number, ayah_key, metadata)
-VALUES ($1, $2, $1::text || ':' || $2::text, '{}'::jsonb)
-ON CONFLICT (surah_id, ayah_number) DO NOTHING`, surahID, n)
+VALUES ($1, $2, $3, '{}'::jsonb)
+ON CONFLICT (surah_id, ayah_number) DO NOTHING`, surahID, n, fmt.Sprintf("%d:%d", surahID, n))
 		require.NoError(t, err)
 	}
 
