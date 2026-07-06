@@ -1,0 +1,94 @@
+name: Deploy Dev
+
+# Trunk deploy: every merge to main auto-deploys to the DEV VPS (dev-api.surau.org).
+# Prod is deployed separately from api-v* tags (see deploy-prod.yml).
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-dev
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy backend to DEV VPS
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      VPS_HOST: ${{ secrets.DEV_VPS_HOST }}
+      VPS_USER: ${{ secrets.DEV_VPS_USER }}
+      VPS_DEPLOY_PATH: ${{ secrets.DEV_VPS_DEPLOY_PATH }}
+      VPS_SSH_PRIVATE_KEY: ${{ secrets.DEV_VPS_SSH_PRIVATE_KEY }}
+      DEPLOY_BRANCH: main
+    steps:
+      - name: Deploy over SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          : "${VPS_HOST:?Set the DEV_VPS_HOST repository secret}"
+          : "${VPS_USER:?Set the DEV_VPS_USER repository secret}"
+          : "${VPS_DEPLOY_PATH:?Set the DEV_VPS_DEPLOY_PATH repository secret}"
+          : "${VPS_SSH_PRIVATE_KEY:?Set the DEV_VPS_SSH_PRIVATE_KEY repository secret}"
+
+          # Dev version is the short commit sha so /version pins the exact build.
+          APP_VERSION="dev-${GITHUB_SHA::7}"
+
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$VPS_SSH_PRIVATE_KEY" > ~/.ssh/surau_deploy_key
+          chmod 600 ~/.ssh/surau_deploy_key
+          ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
+
+          ssh -i ~/.ssh/surau_deploy_key -o IdentitiesOnly=yes "$VPS_USER@$VPS_HOST" \
+            "DEPLOY_BRANCH='$DEPLOY_BRANCH' DEPLOY_PATH='$VPS_DEPLOY_PATH' APP_VERSION='$APP_VERSION' APP_ENV='dev' bash -s" <<'REMOTE'
+          set -euo pipefail
+          export APP_VERSION APP_ENV
+
+          cd "$DEPLOY_PATH"
+          git fetch origin "$DEPLOY_BRANCH"
+          git checkout "$DEPLOY_BRANCH"
+          git reset --hard "origin/$DEPLOY_BRANCH"
+
+          # Collaborative editing is opt-in: when .env.production enables it,
+          # deploy and health-check the collab websocket service too.
+          PROFILE_ARGS=()
+          SERVICES=(app)
+          COLLAB_CHECK=""
+          if grep -q '^COLLAB_ENABLED=true' .env.production; then
+            PROFILE_ARGS=(--profile collab)
+            SERVICES+=(collab)
+            COLLAB_CHECK="http://127.0.0.1:8090/healthz"
+          fi
+
+          # Snapshot the DB before the new image auto-migrates on boot, so a bad
+          # migration can be rolled back. No backup, no deploy — but skip cleanly on
+          # the very first deploy when the db container does not exist yet.
+          if [ -n "$(sudo docker compose --env-file .env.production -f docker-compose.prod.yml ps -q db)" ]; then
+            echo "Snapshotting DB before migrate..."
+            sudo docker compose --env-file .env.production -f docker-compose.prod.yml exec -T db \
+              sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB"' | gzip > db-predeploy-backup.sql.gz
+            echo "DB snapshot written: $(du -h db-predeploy-backup.sql.gz | cut -f1)"
+          else
+            echo "db container not running yet (first deploy?) — skipping pre-deploy snapshot"
+          fi
+
+          sudo docker compose --env-file .env.production -f docker-compose.prod.yml "${PROFILE_ARGS[@]}" up -d --build "${SERVICES[@]}"
+          for attempt in {1..30}; do
+            if curl -fsS http://127.0.0.1:8080/healthz >/dev/null &&
+               curl -fsS http://127.0.0.1:8080/readyz >/dev/null &&
+               { [ -z "$COLLAB_CHECK" ] || curl -fsS "$COLLAB_CHECK" >/dev/null; }; then
+              # Reclaim old images ONLY after the new release is proven healthy.
+              sudo docker image prune -f
+              exit 0
+            fi
+
+            sleep 2
+          done
+
+          sudo docker compose --env-file .env.production -f docker-compose.prod.yml "${PROFILE_ARGS[@]}" logs --tail=120 "${SERVICES[@]}"
+          exit 1
+          REMOTE

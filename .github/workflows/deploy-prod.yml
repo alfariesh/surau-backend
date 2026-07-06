@@ -1,36 +1,43 @@
-name: Deploy VPS
+name: Deploy Prod
 
+# Release deploy: pushing an api-vX.Y.Z tag auto-deploys that exact commit to the
+# PROD VPS (api.surau.org) and cuts a GitHub Release. Prod only changes when you tag.
 on:
   push:
-    branches:
-      - main
-  workflow_dispatch:
+    tags:
+      - 'api-v*'
 
 concurrency:
-  group: deploy-vps
+  group: deploy-prod
   cancel-in-progress: false
+
+permissions:
+  contents: write
 
 jobs:
   deploy:
-    name: Deploy backend to VPS
+    name: Deploy backend to PROD VPS
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
-      VPS_HOST: ${{ secrets.VPS_HOST }}
-      VPS_USER: ${{ secrets.VPS_USER }}
-      VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
-      VPS_SSH_PRIVATE_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
-      DEPLOY_BRANCH: main
+      VPS_HOST: ${{ secrets.PROD_VPS_HOST }}
+      VPS_USER: ${{ secrets.PROD_VPS_USER }}
+      VPS_DEPLOY_PATH: ${{ secrets.PROD_VPS_DEPLOY_PATH }}
+      VPS_SSH_PRIVATE_KEY: ${{ secrets.PROD_VPS_SSH_PRIVATE_KEY }}
+      DEPLOY_TAG: ${{ github.ref_name }}
     steps:
-      - name: Deploy over SSH
+      - name: Deploy tag over SSH
         shell: bash
         run: |
           set -euo pipefail
 
-          : "${VPS_HOST:?Set the VPS_HOST repository secret}"
-          : "${VPS_USER:?Set the VPS_USER repository secret}"
-          : "${VPS_DEPLOY_PATH:?Set the VPS_DEPLOY_PATH repository secret}"
-          : "${VPS_SSH_PRIVATE_KEY:?Set the VPS_SSH_PRIVATE_KEY repository secret}"
+          : "${VPS_HOST:?Set the PROD_VPS_HOST repository secret}"
+          : "${VPS_USER:?Set the PROD_VPS_USER repository secret}"
+          : "${VPS_DEPLOY_PATH:?Set the PROD_VPS_DEPLOY_PATH repository secret}"
+          : "${VPS_SSH_PRIVATE_KEY:?Set the PROD_VPS_SSH_PRIVATE_KEY repository secret}"
+
+          # Version is the tag without the api-v prefix, e.g. api-v0.8.0 -> 0.8.0.
+          APP_VERSION="${DEPLOY_TAG#api-v}"
 
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
@@ -39,16 +46,15 @@ jobs:
           ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
 
           ssh -i ~/.ssh/surau_deploy_key -o IdentitiesOnly=yes "$VPS_USER@$VPS_HOST" \
-            "DEPLOY_BRANCH='$DEPLOY_BRANCH' DEPLOY_PATH='$VPS_DEPLOY_PATH' bash -s" <<'REMOTE'
+            "DEPLOY_TAG='$DEPLOY_TAG' DEPLOY_PATH='$VPS_DEPLOY_PATH' APP_VERSION='$APP_VERSION' APP_ENV='prod' bash -s" <<'REMOTE'
           set -euo pipefail
+          export APP_VERSION APP_ENV
 
           cd "$DEPLOY_PATH"
-          git fetch origin "$DEPLOY_BRANCH"
-          git checkout "$DEPLOY_BRANCH"
-          git reset --hard "origin/$DEPLOY_BRANCH"
+          # Deploy the exact tagged commit (detached HEAD), not a branch tip.
+          git fetch --tags --force origin
+          git checkout --force "refs/tags/$DEPLOY_TAG"
 
-          # Collaborative editing is opt-in: when .env.production enables it,
-          # deploy and health-check the collab websocket service too.
           PROFILE_ARGS=()
           SERVICES=(app)
           COLLAB_CHECK=""
@@ -59,10 +65,8 @@ jobs:
           fi
 
           # Snapshot the DB before the new image auto-migrates on boot, so a bad
-          # migration can be rolled back (gunzip -c db-predeploy-backup.sql.gz |
-          # docker compose exec -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB").
-          # No backup, no deploy — but skip cleanly on the very first deploy when the
-          # db container does not exist yet.
+          # migration can be rolled back. No backup, no deploy — skip only on the very
+          # first deploy when the db container does not exist yet.
           if [ -n "$(sudo docker compose --env-file .env.production -f docker-compose.prod.yml ps -q db)" ]; then
             echo "Snapshotting DB before migrate..."
             sudo docker compose --env-file .env.production -f docker-compose.prod.yml exec -T db \
@@ -77,8 +81,7 @@ jobs:
             if curl -fsS http://127.0.0.1:8080/healthz >/dev/null &&
                curl -fsS http://127.0.0.1:8080/readyz >/dev/null &&
                { [ -z "$COLLAB_CHECK" ] || curl -fsS "$COLLAB_CHECK" >/dev/null; }; then
-              # Reclaim old images ONLY after the new release is proven healthy, so a
-              # failed deploy can still roll back to the previous image.
+              # Reclaim old images ONLY after the new release is proven healthy.
               sudo docker image prune -f
               exit 0
             fi
@@ -89,3 +92,10 @@ jobs:
           sudo docker compose --env-file .env.production -f docker-compose.prod.yml "${PROFILE_ARGS[@]}" logs --tail=120 "${SERVICES[@]}"
           exit 1
           REMOTE
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          generate_release_notes: true
