@@ -100,11 +100,32 @@ func RunQuranSurahEditorialImport(ctx context.Context, opts QuranSurahEditorialO
 
 	surahSeen := make(map[int]struct{})
 	editorialSeen := make(map[string]struct{})
+	chronoSeen := make(map[int]struct{})
 
 	for i := range records {
 		rec := &records[i]
 		if rec.SurahID < 1 || rec.SurahID > 114 {
 			return QuranSurahEditorialStats{}, fmt.Errorf("invalid surah_id %d (expected 1-114)", rec.SurahID)
+		}
+
+		// Reject values the surah SEO constraints (20260628000001) forbid, with a
+		// clearer per-record message than a raw constraint violation at COMMIT.
+		if rec.Slug != nil && strings.TrimSpace(*rec.Slug) == "" {
+			return QuranSurahEditorialStats{}, fmt.Errorf("surah %d: slug must not be empty", rec.SurahID)
+		}
+
+		if rec.RukuCount != nil && *rec.RukuCount < 1 {
+			return QuranSurahEditorialStats{}, fmt.Errorf("surah %d: ruku_count must be >= 1, got %d", rec.SurahID, *rec.RukuCount)
+		}
+
+		// chronological_order is a 1-114 permutation; catch an in-run duplicate before
+		// it hits the unique index (the index also guards duplicates across runs).
+		if rec.ChronologicalOrder != nil {
+			if _, dup := chronoSeen[*rec.ChronologicalOrder]; dup {
+				return QuranSurahEditorialStats{}, fmt.Errorf("chronological_order %d appears in more than one record", *rec.ChronologicalOrder)
+			}
+
+			chronoSeen[*rec.ChronologicalOrder] = struct{}{}
 		}
 
 		lang, err := contentlang.Normalize(rec.Lang)

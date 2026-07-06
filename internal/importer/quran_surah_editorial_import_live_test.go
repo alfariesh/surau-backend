@@ -120,4 +120,34 @@ func TestRunQuranSurahEditorialImportValidation(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "duplicate")
 	})
+
+	t.Run("empty slug rejected", func(t *testing.T) {
+		t.Parallel()
+		_, err := RunQuranSurahEditorialImport(context.Background(), QuranSurahEditorialOptions{
+			DryRun: true,
+			Paths:  []string{write(t, `[{"surah_id":113,"lang":"id","slug":""}]`)},
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "slug")
+	})
+
+	t.Run("zero ruku_count rejected", func(t *testing.T) {
+		t.Parallel()
+		_, err := RunQuranSurahEditorialImport(context.Background(), QuranSurahEditorialOptions{
+			DryRun: true,
+			Paths:  []string{write(t, `[{"surah_id":113,"lang":"id","ruku_count":0}]`)},
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "ruku_count")
+	})
+
+	t.Run("duplicate chronological_order rejected", func(t *testing.T) {
+		t.Parallel()
+		_, err := RunQuranSurahEditorialImport(context.Background(), QuranSurahEditorialOptions{
+			DryRun: true,
+			Paths:  []string{write(t, `[{"surah_id":112,"lang":"id","chronological_order":5},{"surah_id":113,"lang":"id","chronological_order":5}]`)},
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "chronological_order")
+	})
 }
