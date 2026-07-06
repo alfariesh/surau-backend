@@ -161,30 +161,34 @@ type QuranAudioSegment struct {
 // QuranRecitation describes one imported reciter/resource and its audio coverage.
 // A track is playable when either public_url or source audio_url is present.
 type QuranRecitation struct {
-	ID                 string     `json:"id" example:"qul-ayah-recitation-mishari-rashid-al-afasy-murattal-hafs-953"`
-	Name               string     `json:"name" example:"QUL ayah recitation mishari rashid al afasy murattal hafs 953"`
-	DisplayName        string     `json:"display_name" example:"Mishari Rashid Al-Afasy"`
-	ReciterName        *string    `json:"reciter_name,omitempty" example:"Mishari Rashid Al-Afasy"`
-	Style              *string    `json:"style,omitempty" example:"murattal"`
-	Mode               string     `json:"mode" example:"ayah"`
-	SourceURL          *string    `json:"source_url,omitempty"`
-	QULResourceID      *string    `json:"qul_resource_id,omitempty" example:"953"`
-	Format             string     `json:"format" example:"json"`
-	LicenseStatus      string     `json:"license_status" example:"needs_review"`
-	Checksum           *string    `json:"checksum,omitempty"`
-	TrackCount         int        `json:"track_count" example:"6236"`
-	PublicTrackCount   int        `json:"public_track_count" example:"0"`
-	PlayableTrackCount int        `json:"playable_track_count" example:"6236"`
-	SegmentCount       int        `json:"segment_count" example:"77796"`
-	HasPublicAudio     bool       `json:"has_public_audio" example:"false"`
-	HasPlayableAudio   bool       `json:"has_playable_audio" example:"true"`
-	IsDefault          bool       `json:"is_default" example:"false"`
-	SortOrder          int        `json:"sort_order" example:"10"`
-	DefaultPriority    *int       `json:"default_priority,omitempty" example:"0"`
-	IsVisible          bool       `json:"is_visible" example:"true"`
-	Metadata           RawJSON    `json:"metadata,omitempty" swaggertype:"object"`
-	ImportedAt         *time.Time `json:"imported_at,omitempty" example:"2026-01-01T00:00:00Z"`
-	UpdatedAt          time.Time  `json:"updated_at" example:"2026-01-01T00:00:00Z"`
+	ID                 string  `json:"id" example:"qul-ayah-recitation-mishari-rashid-al-afasy-murattal-hafs-953"`
+	Name               string  `json:"name" example:"QUL ayah recitation mishari rashid al afasy murattal hafs 953"`
+	DisplayName        string  `json:"display_name" example:"Mishari Rashid Al-Afasy"`
+	ReciterName        *string `json:"reciter_name,omitempty" example:"Mishari Rashid Al-Afasy"`
+	Style              *string `json:"style,omitempty" example:"murattal"`
+	Mode               string  `json:"mode" example:"ayah"`
+	SourceURL          *string `json:"source_url,omitempty"`
+	QULResourceID      *string `json:"qul_resource_id,omitempty" example:"953"`
+	Format             string  `json:"format" example:"json"`
+	LicenseStatus      string  `json:"license_status" example:"needs_review"`
+	Checksum           *string `json:"checksum,omitempty"`
+	TrackCount         int     `json:"track_count" example:"6236"`
+	PublicTrackCount   int     `json:"public_track_count" example:"0"`
+	PlayableTrackCount int     `json:"playable_track_count" example:"6236"`
+	SegmentCount       int     `json:"segment_count" example:"77796"`
+	// CoveragePercent is the fraction (0..1) of the corpus this recitation can play:
+	// playable tracks over all ayahs (mode=ayah) or over 114 surahs (mode=surah). It
+	// drives default-recitation selection so a near-empty recitation can't win.
+	CoveragePercent  float64    `json:"coverage_percent" example:"1"`
+	HasPublicAudio   bool       `json:"has_public_audio" example:"false"`
+	HasPlayableAudio bool       `json:"has_playable_audio" example:"true"`
+	IsDefault        bool       `json:"is_default" example:"false"`
+	SortOrder        int        `json:"sort_order" example:"10"`
+	DefaultPriority  *int       `json:"default_priority,omitempty" example:"0"`
+	IsVisible        bool       `json:"is_visible" example:"true"`
+	Metadata         RawJSON    `json:"metadata,omitempty" swaggertype:"object"`
+	ImportedAt       *time.Time `json:"imported_at,omitempty" example:"2026-01-01T00:00:00Z"`
+	UpdatedAt        time.Time  `json:"updated_at" example:"2026-01-01T00:00:00Z"`
 } // @name entity.QuranRecitation
 
 // QuranAudioTrack stores recitation track metadata. public_url is preferred for
@@ -208,11 +212,20 @@ type QuranAudioTrack struct {
 
 // QuranSurahAudioManifest is a FE-friendly audio manifest for one surah and recitation.
 type QuranSurahAudioManifest struct {
-	SurahID         int               `json:"surah_id" example:"1"`
-	Recitation      QuranRecitation   `json:"recitation"`
-	Mode            string            `json:"mode" example:"ayah"`
-	Tracks          []QuranAudioTrack `json:"tracks"`
-	MissingAyahKeys []string          `json:"missing_ayah_keys" example:"1:1"`
+	SurahID    int               `json:"surah_id" example:"1"`
+	Recitation QuranRecitation   `json:"recitation"`
+	Mode       string            `json:"mode" example:"ayah"`
+	Tracks     []QuranAudioTrack `json:"tracks"`
+	// HasFullSurahAudio is true when a playable surah-level track covers the whole
+	// surah (mode "surah"); the audio plays even when per-ayah segments are absent.
+	HasFullSurahAudio bool `json:"has_full_surah_audio" example:"false"`
+	// MissingAyahKeys are ayahs with NO playable audio at all (no ayah-track and no
+	// full-surah track). When a full-surah track is present this stays empty even if
+	// the track has no segments — the audio still covers every ayah.
+	MissingAyahKeys []string `json:"missing_ayah_keys" example:"1:1"`
+	// SegmentMissingAyahKeys are ayahs the full-surah audio covers but cannot seek to
+	// precisely (no per-ayah segment offset). Always empty in ayah mode.
+	SegmentMissingAyahKeys []string `json:"segment_missing_ayah_keys" example:"1:1"`
 } // @name entity.QuranSurahAudioManifest
 
 // QuranAyah is one canonical ayah row with optional translation and audio metadata.

@@ -2172,6 +2172,13 @@ definitions:
     properties:
       checksum:
         type: string
+      coverage_percent:
+        description: |-
+          CoveragePercent is the fraction (0..1) of the corpus this recitation can play:
+          playable tracks over all ayahs (mode=ayah) or over 114 surahs (mode=surah). It
+          drives default-recitation selection so a near-empty recitation can't win.
+        example: 1
+        type: number
       default_priority:
         example: 0
         type: integer
@@ -4061,7 +4068,16 @@ definitions:
     type: object
   v1.QuranSurahAudioManifest:
     properties:
+      has_full_surah_audio:
+        description: |-
+          HasFullSurahAudio is true when a playable full-surah track covers the surah even
+          without per-ayah segments (mode "surah").
+        example: false
+        type: boolean
       missing_ayah_keys:
+        description: |-
+          MissingAyahKeys are ayahs with no playable audio at all (empty when a full-surah
+          track is present).
         items:
           type: string
         type: array
@@ -4070,6 +4086,12 @@ definitions:
         type: string
       recitation:
         $ref: '#/definitions/v1.QuranSurahAudioRecitation'
+      segment_missing_ayah_keys:
+        description: SegmentMissingAyahKeys are ayahs the full-surah audio covers
+          but cannot seek to.
+        items:
+          type: string
+        type: array
       surah_id:
         example: 1
         type: integer
@@ -4080,6 +4102,12 @@ definitions:
     type: object
   v1.QuranSurahAudioRecitation:
     properties:
+      coverage_percent:
+        description: |-
+          CoveragePercent (0..1) is how much of the surah/corpus this recitation can play;
+          lets the client see when an explicitly requested recitation is only partly synced.
+        example: 1
+        type: number
       display_name:
         example: Mishari Rashid Al-Afasy
         type: string

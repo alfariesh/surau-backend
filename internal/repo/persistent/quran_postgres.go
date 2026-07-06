@@ -268,7 +268,19 @@ SELECT r.id,
                WHEN COALESCE(NULLIF(t.public_url, ''), NULLIF(t.audio_url, '')) IS NOT NULL THEN 1
            END
        )::int AS playable_track_count,
-       COALESCE(sc.segment_count, 0)::int AS segment_count
+       COALESCE(sc.segment_count, 0)::int AS segment_count,
+       -- Playable coverage over the corpus: playable ayah-tracks / all ayahs (mode
+       -- 'ayah') or playable surah-tracks / 114 (mode 'surah'). Kept in lockstep with
+       -- defaultPlayableRecitationID so the flagged default matches the served default.
+       COALESCE(
+           CASE r.mode
+               WHEN 'ayah' THEN COUNT(CASE WHEN COALESCE(NULLIF(t.public_url, ''), NULLIF(t.audio_url, '')) IS NOT NULL THEN 1 END)::float8
+                                / NULLIF((SELECT COUNT(*) FROM quran_ayahs), 0)
+               WHEN 'surah' THEN COUNT(CASE WHEN COALESCE(NULLIF(t.public_url, ''), NULLIF(t.audio_url, '')) IS NOT NULL THEN 1 END)::float8
+                                / 114.0
+               ELSE 0
+           END,
+       0)::float8 AS coverage_percent
 FROM quran_recitations r
 LEFT JOIN quran_audio_tracks t ON t.recitation_id = r.id
 LEFT JOIN (
@@ -312,7 +324,7 @@ func (r *QuranRepo) GetSurahAudioManifest(
 	surahID int,
 	recitationID string,
 ) (entity.QuranSurahAudioManifest, error) {
-	if err := r.ensureQuranSurah(ctx, surahID); err != nil {
+	if _, err := r.ensureQuranSurah(ctx, surahID); err != nil {
 		return entity.QuranSurahAudioManifest{}, err
 	}
 
@@ -344,12 +356,16 @@ func (r *QuranRepo) GetSurahAudioManifest(
 		return entity.QuranSurahAudioManifest{}, err
 	}
 
+	missing, segmentMissing, hasFullSurahAudio := manifestAudioCoverage(ayahKeys, recitation.Mode, tracks)
+
 	return entity.QuranSurahAudioManifest{
-		SurahID:         surahID,
-		Recitation:      recitation,
-		Mode:            recitation.Mode,
-		Tracks:          tracks,
-		MissingAyahKeys: missingManifestAyahKeys(ayahKeys, recitation.Mode, tracks),
+		SurahID:                surahID,
+		Recitation:             recitation,
+		Mode:                   recitation.Mode,
+		Tracks:                 tracks,
+		HasFullSurahAudio:      hasFullSurahAudio,
+		MissingAyahKeys:        missing,
+		SegmentMissingAyahKeys: segmentMissing,
 	}, nil
 }
 
@@ -587,8 +603,17 @@ func (r *QuranRepo) ListSurahAyahs(
 	includeEditorial bool,
 	recitationID string,
 ) ([]entity.QuranAyah, error) {
-	if err := r.ensureQuranSurah(ctx, surahID); err != nil {
+	ayahCount, err := r.ensureQuranSurah(ctx, surahID)
+	if err != nil {
 		return nil, err
+	}
+
+	// Reject a range that starts or ends past the surah's real length. Without this
+	// an out-of-range from/to (e.g. from=999 on a 7-ayah surah) returns 200 + an
+	// empty list, which reads as "surah has no ayahs" instead of a bad request.
+	// from/to == 0 are the "open" sentinels (start / end) and never exceed ayahCount.
+	if fromAyah > ayahCount || toAyah > ayahCount {
+		return nil, entity.ErrInvalidQuranRange
 	}
 
 	resolvedSourceID := ""
@@ -828,6 +853,16 @@ func (r *QuranRepo) SearchAyahs(
 
 	if err = rows.Err(); err != nil {
 		return nil, 0, fmt.Errorf("QuranRepo - SearchAyahs - rows.Err: %w", err)
+	}
+
+	// On a page past the last match, no rows come back, so COUNT(*) OVER() never
+	// folds the real total in and it stays 0 — recover it with a count-only pass
+	// over the same scored CTE (same tx, so the SET LOCAL threshold still applies).
+	if len(results) == 0 && filter.Offset > 0 {
+		if err = tx.QueryRow(ctx, quranSearchCountSQL, searchQuery, filter.Lang, resolvedSourceID, resolvedTransliterationSourceID, like).
+			Scan(&total); err != nil {
+			return nil, 0, fmt.Errorf("QuranRepo - SearchAyahs - count: %w", err)
+		}
 	}
 
 	return results, total, nil
@@ -1299,7 +1334,9 @@ func quranNavigationColumn(kind string) (string, error) {
 	}
 }
 
-const quranSearchSQL = `
+// quranSearchScoredCTE is the shared `scored` CTE (bind params $1..$5) reused by
+// both the paginated result query and the out-of-range total-count query.
+const quranSearchScoredCTE = `
 WITH scored AS (
 SELECT a.surah_id,
        a.ayah_number,
@@ -1378,7 +1415,11 @@ WHERE a.search_text ILIKE $5
    OR a.text_qpc_hafs % $1
    OR t.text % $1
    OR tn.text % $1
-)
+)`
+
+// quranSearchSQL returns the ranked, paginated result rows; COUNT(*) OVER() folds
+// the match total into each row in a single pass.
+const quranSearchSQL = quranSearchScoredCTE + `
 SELECT surah_id,
        ayah_number,
        ayah_key,
@@ -1427,6 +1468,12 @@ SELECT surah_id,
 FROM scored
 ORDER BY score DESC, surah_id ASC, ayah_number ASC
 LIMIT $6 OFFSET $7`
+
+// quranSearchCountSQL returns just the match total. It is only run when the paged
+// query returns zero rows on a non-first page (offset past the last match), where
+// COUNT(*) OVER() never gets a row to fold the total into and would report 0.
+const quranSearchCountSQL = quranSearchScoredCTE + `
+SELECT COUNT(*)::int FROM scored`
 
 func quranAyahSelectSQL(where string, includeTranslation, includeTransliteration, includeEditorial, includeEditorialHTML bool) string {
 	translationColumns := quranAyahTranslationColumnsSQL
@@ -1477,6 +1524,12 @@ func quranAyahSelectSQL(where string, includeTranslation, includeTransliteration
 		where
 }
 
+// audioTracksForAyahs maps each requested ayah to its playable tracks. A surah-mode
+// track only maps to an ayah when a per-ayah segment pins the offset, so a full-surah
+// track with no segments yields no per-ayah entry here by design (G6): the per-ayah
+// reader needs a seek offset it does not have. The surah audio manifest
+// (GetSurahAudioManifest) is the source of truth for full-surah coverage and exposes
+// it via HasFullSurahAudio / SegmentMissingAyahKeys.
 func (r *QuranRepo) audioTracksForAyahs(
 	ctx context.Context,
 	ayahKeys []string,
@@ -1606,7 +1659,17 @@ SELECT r.id,
                WHEN COALESCE(NULLIF(t.public_url, ''), NULLIF(t.audio_url, '')) IS NOT NULL THEN 1
            END
        )::int AS playable_track_count,
-       COALESCE(sc.segment_count, 0)::int AS segment_count
+       COALESCE(sc.segment_count, 0)::int AS segment_count,
+       -- Coverage_percent must match ListRecitations (both feed scanQuranRecitation).
+       COALESCE(
+           CASE r.mode
+               WHEN 'ayah' THEN COUNT(CASE WHEN COALESCE(NULLIF(t.public_url, ''), NULLIF(t.audio_url, '')) IS NOT NULL THEN 1 END)::float8
+                                / NULLIF((SELECT COUNT(*) FROM quran_ayahs), 0)
+               WHEN 'surah' THEN COUNT(CASE WHEN COALESCE(NULLIF(t.public_url, ''), NULLIF(t.audio_url, '')) IS NOT NULL THEN 1 END)::float8
+                                / 114.0
+               ELSE 0
+           END,
+       0)::float8 AS coverage_percent
 FROM quran_recitations r
 LEFT JOIN quran_audio_tracks t ON t.recitation_id = r.id
 LEFT JOIN (
@@ -1728,6 +1791,12 @@ func sortedQuranAudioTracks(grouped map[string]*entity.QuranAudioTrack) []entity
 	return tracks
 }
 
+// resolveAudioRecitationID validates an explicit recitation id (falling back to the
+// coverage-ranked default when blank). It intentionally checks visibility only, NOT
+// per-request playability: a visible-but-unsynced recitation still resolves so the
+// manifest can render. Playability is surfaced softly instead of via a hard error —
+// the recitation's CoveragePercent/HasPlayableAudio and the manifest's
+// MissingAyahKeys/SegmentMissingAyahKeys tell the client what is (not) playable.
 func (r *QuranRepo) resolveAudioRecitationID(ctx context.Context, recitationID string) (string, error) {
 	recitationID = strings.TrimSpace(recitationID)
 	if recitationID == "" {
@@ -1836,23 +1905,36 @@ LIMIT 1`, lang, defaultIDTransliterationSourceID, defaultENTransliterationSource
 func (r *QuranRepo) defaultPlayableRecitationID(ctx context.Context) (string, error) {
 	var recitationID string
 
+	// Eligibility is "has at least one playable track" (playable_count > 0), then the
+	// MOST COMPLETE recitation wins via coverage DESC — so a 1-track recitation can no
+	// longer become the default over a full one. An explicit admin default_priority
+	// still takes precedence. The coverage formula mirrors ListRecitations exactly.
 	err := r.Pool.QueryRow(ctx, `
-SELECT r.id
-FROM quran_recitations r
-JOIN quran_audio_tracks t ON t.recitation_id = r.id
-WHERE r.is_visible = TRUE
-GROUP BY r.id, r.mode, r.name
-HAVING COUNT(t.recitation_id) > 0
-   AND COUNT(
-       CASE
-           WHEN COALESCE(NULLIF(t.public_url, ''), NULLIF(t.audio_url, '')) IS NOT NULL THEN 1
-       END
-   ) = COUNT(t.recitation_id)
-ORDER BY CASE WHEN r.default_priority IS NULL THEN 1 ELSE 0 END,
-         r.default_priority ASC,
-         CASE r.mode WHEN 'ayah' THEN 0 WHEN 'surah' THEN 1 ELSE 2 END,
-         COALESCE(NULLIF(r.display_name, ''), NULLIF(r.reciter_name, ''), r.name) ASC,
-         r.id ASC
+WITH recitation_coverage AS (
+    SELECT r.id,
+           r.mode,
+           r.default_priority,
+           COALESCE(NULLIF(r.display_name, ''), NULLIF(r.reciter_name, ''), r.name) AS sort_name,
+           COUNT(CASE WHEN COALESCE(NULLIF(t.public_url, ''), NULLIF(t.audio_url, '')) IS NOT NULL THEN 1 END) AS playable_count,
+           CASE r.mode
+               WHEN 'ayah'  THEN NULLIF((SELECT COUNT(*) FROM quran_ayahs), 0)
+               WHEN 'surah' THEN 114
+               ELSE NULL
+           END AS expected_count
+    FROM quran_recitations r
+    JOIN quran_audio_tracks t ON t.recitation_id = r.id
+    WHERE r.is_visible = TRUE
+    GROUP BY r.id
+)
+SELECT id
+FROM recitation_coverage
+WHERE playable_count > 0
+ORDER BY CASE WHEN default_priority IS NULL THEN 1 ELSE 0 END,
+         default_priority ASC,
+         (playable_count::float8 / NULLIF(expected_count, 0)) DESC NULLS LAST,
+         CASE mode WHEN 'ayah' THEN 0 WHEN 'surah' THEN 1 ELSE 2 END,
+         sort_name ASC,
+         id ASC
 LIMIT 1`).Scan(&recitationID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -1901,18 +1983,21 @@ func applyQuranAyahMetadata(ayah *entity.QuranAyah, requestedLang string, includ
 	}
 }
 
-func (r *QuranRepo) ensureQuranSurah(ctx context.Context, surahID int) error {
-	var exists bool
-	if err := r.Pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM quran_surahs WHERE surah_id = $1)`, surahID).
-		Scan(&exists); err != nil {
-		return fmt.Errorf("QuranRepo - ensureQuranSurah - QueryRow: %w", err)
+// ensureQuranSurah verifies a surah exists and returns its ayah_count so callers
+// can validate a requested ayah range against the real surah length in the same
+// round-trip (avoids a second lookup).
+func (r *QuranRepo) ensureQuranSurah(ctx context.Context, surahID int) (int, error) {
+	var ayahCount int
+	if err := r.Pool.QueryRow(ctx, `SELECT ayah_count FROM quran_surahs WHERE surah_id = $1`, surahID).
+		Scan(&ayahCount); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return 0, entity.ErrQuranSurahNotFound
+		}
+
+		return 0, fmt.Errorf("QuranRepo - ensureQuranSurah - QueryRow: %w", err)
 	}
 
-	if !exists {
-		return entity.ErrQuranSurahNotFound
-	}
-
-	return nil
+	return ayahCount, nil
 }
 
 func (r *QuranRepo) ensureQuranPublishedBook(ctx context.Context, bookID int) error {
@@ -1977,7 +2062,10 @@ func markDefaultRecitation(recitations []entity.QuranRecitation) {
 
 	for i := range recitations {
 		recitation := &recitations[i]
-		if !recitation.HasPlayableAudio {
+		// Eligible = can play at least one track. Completeness is decided by the
+		// coverage ranking below, not by requiring every imported track to be playable
+		// (that wrongly excluded a 99%-covered recitation while a 1-track one qualified).
+		if recitation.PlayableTrackCount <= 0 {
 			continue
 		}
 
@@ -2010,6 +2098,12 @@ func quranDefaultRecitationLess(left, right *entity.QuranRecitation) bool {
 		if *left.DefaultPriority != *right.DefaultPriority {
 			return *left.DefaultPriority < *right.DefaultPriority
 		}
+	}
+
+	// Prefer the more complete recitation (mirrors defaultPlayableRecitationID's
+	// coverage DESC) before falling back to mode/name/id ordering.
+	if left.CoveragePercent != right.CoveragePercent {
+		return left.CoveragePercent > right.CoveragePercent
 	}
 
 	return quranRecitationLess(left, right)
@@ -2110,6 +2204,7 @@ func scanQuranRecitation(row rowScanner) (entity.QuranRecitation, error) {
 		&recitation.PublicTrackCount,
 		&recitation.PlayableTrackCount,
 		&recitation.SegmentCount,
+		&recitation.CoveragePercent,
 	)
 	if err != nil {
 		return entity.QuranRecitation{}, err
@@ -2134,28 +2229,64 @@ func scanQuranRecitation(row rowScanner) (entity.QuranRecitation, error) {
 	return recitation, nil
 }
 
-func missingManifestAyahKeys(ayahKeys []string, mode string, tracks []entity.QuranAudioTrack) []string {
+// manifestAudioCoverage classifies a surah's ayahs against a recitation's playable
+// tracks. It separates "no audio at all" (missing) from "full-surah audio present but
+// no per-ayah segment to seek to" (segmentMissing), so a playable full-surah track is
+// no longer mis-reported as every ayah missing.
+func manifestAudioCoverage(
+	ayahKeys []string,
+	mode string,
+	tracks []entity.QuranAudioTrack,
+) (missing, segmentMissing []string, hasFullSurahAudio bool) {
+	if mode == quranTrackTypeSurah {
+		return surahManifestCoverage(ayahKeys, tracks)
+	}
+
+	// Ayah mode: an ayah is missing when it has no playable ayah-track.
 	present := make(map[string]bool, len(ayahKeys))
 
 	for i := range tracks {
 		track := &tracks[i]
-		if !quranAudioTrackPlayable(track) {
-			continue
-		}
-
-		if mode == quranTrackTypeSurah {
-			for _, segment := range track.Segments {
-				present[segment.AyahKey] = true
-			}
-
-			continue
-		}
-
-		if track.TrackType == quranTrackTypeAyah {
+		if track.TrackType == quranTrackTypeAyah && quranAudioTrackPlayable(track) {
 			present[track.TrackKey] = true
 		}
 	}
 
+	return keysNotIn(ayahKeys, present), []string{}, false
+}
+
+// surahManifestCoverage handles the surah-mode branch of manifestAudioCoverage: a
+// playable full-surah track covers every ayah (nothing "missing"), and only ayahs
+// without a per-ayah segment are segment-missing.
+func surahManifestCoverage(
+	ayahKeys []string,
+	tracks []entity.QuranAudioTrack,
+) (missing, segmentMissing []string, hasFullSurahAudio bool) {
+	segmentPresent := make(map[string]bool, len(ayahKeys))
+
+	for i := range tracks {
+		track := &tracks[i]
+		if track.TrackType != quranTrackTypeSurah || !quranAudioTrackPlayable(track) {
+			continue
+		}
+
+		hasFullSurahAudio = true
+
+		for _, segment := range track.Segments {
+			segmentPresent[segment.AyahKey] = true
+		}
+	}
+
+	if !hasFullSurahAudio {
+		// No playable surah track → the whole surah has no audio.
+		return append([]string{}, ayahKeys...), []string{}, false
+	}
+
+	return []string{}, keysNotIn(ayahKeys, segmentPresent), true
+}
+
+// keysNotIn returns, as a non-nil slice, the ayah keys absent from present.
+func keysNotIn(ayahKeys []string, present map[string]bool) []string {
 	missing := make([]string, 0)
 
 	for _, ayahKey := range ayahKeys {

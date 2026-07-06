@@ -45,11 +45,18 @@ type QuranReaderAyahAudioSegment struct {
 
 // QuranSurahAudioManifest is the compact surah audio payload for FE players.
 type QuranSurahAudioManifest struct {
-	SurahID         int                       `json:"surah_id" example:"1"`
-	Recitation      QuranSurahAudioRecitation `json:"recitation"`
-	Mode            string                    `json:"mode" example:"ayah"`
-	Tracks          []QuranSurahAudioTrack    `json:"tracks"`
-	MissingAyahKeys []string                  `json:"missing_ayah_keys"`
+	SurahID    int                       `json:"surah_id" example:"1"`
+	Recitation QuranSurahAudioRecitation `json:"recitation"`
+	Mode       string                    `json:"mode" example:"ayah"`
+	Tracks     []QuranSurahAudioTrack    `json:"tracks"`
+	// HasFullSurahAudio is true when a playable full-surah track covers the surah even
+	// without per-ayah segments (mode "surah").
+	HasFullSurahAudio bool `json:"has_full_surah_audio" example:"false"`
+	// MissingAyahKeys are ayahs with no playable audio at all (empty when a full-surah
+	// track is present).
+	MissingAyahKeys []string `json:"missing_ayah_keys"`
+	// SegmentMissingAyahKeys are ayahs the full-surah audio covers but cannot seek to.
+	SegmentMissingAyahKeys []string `json:"segment_missing_ayah_keys"`
 } // @name v1.QuranSurahAudioManifest
 
 // QuranSurahAudioRecitation summarizes the selected recitation for one manifest.
@@ -63,6 +70,9 @@ type QuranSurahAudioRecitation struct {
 	TrackCount       int     `json:"track_count" example:"6236"`
 	PublicTrackCount int     `json:"public_track_count" example:"6236"`
 	SegmentCount     int     `json:"segment_count" example:"77796"`
+	// CoveragePercent (0..1) is how much of the surah/corpus this recitation can play;
+	// lets the client see when an explicitly requested recitation is only partly synced.
+	CoveragePercent float64 `json:"coverage_percent" example:"1"`
 } // @name v1.QuranSurahAudioRecitation
 
 // QuranSurahAudioTrack is a playable audio item in a surah manifest.
@@ -128,10 +138,13 @@ func QuranSurahAudioManifestFromEntity(manifest *entity.QuranSurahAudioManifest)
 			TrackCount:       manifest.Recitation.TrackCount,
 			PublicTrackCount: manifest.Recitation.PublicTrackCount,
 			SegmentCount:     manifest.Recitation.SegmentCount,
+			CoveragePercent:  manifest.Recitation.CoveragePercent,
 		},
-		Mode:            manifest.Mode,
-		Tracks:          surahAudioTracks(manifest.Tracks),
-		MissingAyahKeys: manifest.MissingAyahKeys,
+		Mode:                   manifest.Mode,
+		Tracks:                 surahAudioTracks(manifest.Tracks),
+		HasFullSurahAudio:      manifest.HasFullSurahAudio,
+		MissingAyahKeys:        manifest.MissingAyahKeys,
+		SegmentMissingAyahKeys: manifest.SegmentMissingAyahKeys,
 	}
 }
 
