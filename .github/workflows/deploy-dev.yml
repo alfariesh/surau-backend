@@ -76,10 +76,18 @@ jobs:
             echo "db container not running yet (first deploy?) — skipping pre-deploy snapshot"
           fi
 
+          # Bound build-cache growth so a full disk can't silently fail the build. A
+          # failed build leaves the OLD container running, which the health check below
+          # would otherwise pass — masking a non-deploy.
+          sudo docker builder prune -f --filter 'until=72h' >/dev/null 2>&1 || true
+
           sudo docker compose --env-file .env.production -f docker-compose.prod.yml "${PROFILE_ARGS[@]}" up -d --build "${SERVICES[@]}"
           for attempt in {1..30}; do
+            # Also assert /version reports the version we just deployed, so a build that
+            # did not roll out (e.g. disk full) fails loudly instead of looking healthy.
             if curl -fsS http://127.0.0.1:8080/healthz >/dev/null &&
                curl -fsS http://127.0.0.1:8080/readyz >/dev/null &&
+               curl -fsS http://127.0.0.1:8080/version | grep -q "\"version\":\"$APP_VERSION\"" &&
                { [ -z "$COLLAB_CHECK" ] || curl -fsS "$COLLAB_CHECK" >/dev/null; }; then
               # Reclaim old images ONLY after the new release is proven healthy.
               sudo docker image prune -f
