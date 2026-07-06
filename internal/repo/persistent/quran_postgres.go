@@ -3,6 +3,7 @@ package persistent
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -55,7 +56,7 @@ LEFT JOIN quran_audio_segments s
 WHERE t.recitation_id = $1
   AND t.surah_id = $2
   AND t.track_type = $3
-ORDER BY t.track_type ASC, t.track_key ASC, s.segment_index ASC`
+ORDER BY t.track_type ASC, t.surah_id ASC, t.ayah_number ASC NULLS FIRST, s.segment_index ASC`
 
 const quranAyahSelectHeadSQL = `
 SELECT a.surah_id,
@@ -131,8 +132,55 @@ LEFT JOIN quran_ayah_transliterations tn
       AND tn.source_id = $4`
 
 const quranAyahAvailabilityColumnsSQL = `,
-       COALESCE(ta.available_langs, ARRAY[]::TEXT[]) AS available_translation_langs
+       COALESCE(ta.available_langs, ARRAY[]::TEXT[]) AS available_translation_langs`
+
+const quranAyahFromSQL = `
 FROM quran_ayahs a`
+
+// Per-ayah editorial columns. The shape is CONSTANT (9 columns) across the
+// null/light/full variants so scanQuranAyahInternal aligns regardless of flags.
+// Heavy HTML/FAQ load only on the single-ayah detail read; list reads keep them
+// NULL so a 286-ayah payload stays under the edge cache's MAX_CACHE_BYTES.
+const quranAyahEditorialNullColumnsSQL = `,
+       NULL::text AS ed_lang,
+       NULL::text AS ed_meta_title,
+       NULL::text AS ed_meta_description,
+       NULL::text AS ed_tafsir_range,
+       NULL::text AS ed_license_status,
+       NULL::timestamptz AS ed_updated_at,
+       NULL::text AS ed_intisari_html,
+       NULL::text AS ed_keutamaan_html,
+       NULL::jsonb AS ed_faq`
+
+const quranAyahEditorialLightColumnsSQL = `,
+       ae.lang AS ed_lang,
+       ae.meta_title AS ed_meta_title,
+       ae.meta_description AS ed_meta_description,
+       ae.tafsir_range AS ed_tafsir_range,
+       ae.license_status AS ed_license_status,
+       ae.updated_at AS ed_updated_at,
+       NULL::text AS ed_intisari_html,
+       NULL::text AS ed_keutamaan_html,
+       NULL::jsonb AS ed_faq`
+
+const quranAyahEditorialFullColumnsSQL = `,
+       ae.lang AS ed_lang,
+       ae.meta_title AS ed_meta_title,
+       ae.meta_description AS ed_meta_description,
+       ae.tafsir_range AS ed_tafsir_range,
+       ae.license_status AS ed_license_status,
+       ae.updated_at AS ed_updated_at,
+       ae.intisari_html AS ed_intisari_html,
+       ae.keutamaan_html AS ed_keutamaan_html,
+       ae.faq AS ed_faq`
+
+// Only permitted (reviewed) editorial is joined, so drafts never leave the API.
+const quranAyahEditorialJoinSQL = `
+LEFT JOIN quran_ayah_editorial ae
+       ON ae.surah_id = a.surah_id
+      AND ae.ayah_number = a.ayah_number
+      AND ae.lang = $2
+      AND ae.license_status = 'permitted'`
 
 const quranAyahAvailableLangsJoinSQL = `
 LEFT JOIN LATERAL (
@@ -492,7 +540,7 @@ func (r *QuranRepo) GetAyah(
 	includeTransliteration := !contentlang.IsArabic(lang) && resolvedTransliterationSourceID != ""
 
 	ayah, err := scanQuranAyah(r.Pool.QueryRow(ctx, quranAyahSelectSQL(`
-WHERE a.ayah_key = $1`, includeTranslation, includeTransliteration), ayahKey, lang, resolvedSourceID, resolvedTransliterationSourceID))
+WHERE a.ayah_key = $1`, includeTranslation, includeTransliteration, true, true), ayahKey, lang, resolvedSourceID, resolvedTransliterationSourceID))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return entity.QuranAyah{}, entity.ErrQuranAyahNotFound
@@ -523,6 +571,7 @@ func (r *QuranRepo) ListSurahAyahs(
 	translationSource string,
 	includeTranslation bool,
 	includeAudio bool,
+	includeEditorial bool,
 	recitationID string,
 ) ([]entity.QuranAyah, error) {
 	if err := r.ensureQuranSurah(ctx, surahID); err != nil {
@@ -556,7 +605,7 @@ func (r *QuranRepo) ListSurahAyahs(
 	}
 	where := "\nWHERE " + strings.Join(conditions, " AND ") + "\nORDER BY a.ayah_number ASC"
 
-	rows, err := r.Pool.Query(ctx, quranAyahSelectSQL(where, includeSelectedTranslation, includeTransliteration), args...)
+	rows, err := r.Pool.Query(ctx, quranAyahSelectSQL(where, includeSelectedTranslation, includeTransliteration, includeEditorial, false), args...)
 	if err != nil {
 		return nil, fmt.Errorf("QuranRepo - ListSurahAyahs - Query: %w", err)
 	}
@@ -602,6 +651,7 @@ func (r *QuranRepo) ListNavigationAyahs(
 	translationSource string,
 	includeTranslation bool,
 	includeAudio bool,
+	includeEditorial bool,
 	recitationID string,
 ) ([]entity.QuranAyah, error) {
 	column, err := quranNavigationColumn(kind)
@@ -628,7 +678,7 @@ func (r *QuranRepo) ListNavigationAyahs(
 		ctx,
 		quranAyahSelectSQL(fmt.Sprintf(`
 WHERE a.%s = $1
-ORDER BY a.surah_id ASC, a.ayah_number ASC`, column), includeSelectedTranslation, includeTransliteration),
+ORDER BY a.surah_id ASC, a.ayah_number ASC`, column), includeSelectedTranslation, includeTransliteration, includeEditorial, false),
 		number,
 		lang,
 		resolvedSourceID,
@@ -697,62 +747,35 @@ func (r *QuranRepo) SearchAyahs(
 	}
 
 	like := "%" + searchQuery + "%"
-	countSQL := `
-SELECT COUNT(*)
-FROM quran_ayahs a
-LEFT JOIN quran_ayah_translations t
-       ON t.surah_id = a.surah_id
-      AND t.ayah_number = a.ayah_number
-      AND t.lang = $2
-      AND t.source_id = $3
-LEFT JOIN quran_ayah_transliterations tn
-       ON tn.surah_id = a.surah_id
-      AND tn.ayah_number = a.ayah_number
-      AND tn.lang = $2
-      AND tn.source_id = $4
-LEFT JOIN LATERAL (
-    SELECT mt.source_id,
-           mt.lang,
-           mt.text
-    FROM quran_ayah_translations mt
-    WHERE mt.surah_id = a.surah_id
-      AND mt.ayah_number = a.ayah_number
-      AND (
-          COALESCE(mt.text, '') ILIKE $5
-          OR similarity(COALESCE(mt.text, ''), $1) > 0.18
-      )
-    ORDER BY similarity(COALESCE(mt.text, ''), $1) DESC,
-             mt.lang ASC,
-             mt.source_id ASC
-    LIMIT 1
-) mt ON true
-WHERE COALESCE(a.search_text, '') ILIKE $5
-   OR COALESCE(a.text_qpc_hafs, '') ILIKE $5
-   OR COALESCE(t.text, '') ILIKE $5
-   OR COALESCE(tn.text, '') ILIKE $5
-   OR mt.source_id IS NOT NULL
-   OR similarity(COALESCE(a.search_text, ''), $1) > 0.18
-   OR similarity(COALESCE(a.text_qpc_hafs, ''), $1) > 0.18
-   OR similarity(COALESCE(t.text, ''), $1) > 0.18
-   OR similarity(COALESCE(tn.text, ''), $1) > 0.18`
 
-	var total int
-	if err := r.Pool.QueryRow(ctx, countSQL, searchQuery, filter.Lang, resolvedSourceID, resolvedTransliterationSourceID, like).Scan(&total); err != nil {
-		return nil, 0, fmt.Errorf("QuranRepo - SearchAyahs - count: %w", err)
+	// Run in a read-only tx so SET LOCAL scopes the trigram threshold to THIS query
+	// (pooled connections must not leak session GUCs). The threshold lets the %
+	// operator match the previous similarity()>0.18 recall while using the GIN trgm
+	// indexes; the total is folded in via COUNT(*) OVER() (single pass, no 2nd query).
+	tx, err := r.Pool.Begin(ctx)
+	if err != nil {
+		return nil, 0, fmt.Errorf("QuranRepo - SearchAyahs - begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	if _, err := tx.Exec(ctx, "SET LOCAL pg_trgm.similarity_threshold = 0.18"); err != nil {
+		return nil, 0, fmt.Errorf("QuranRepo - SearchAyahs - set threshold: %w", err)
 	}
 
-	rows, err := r.Pool.Query(ctx, quranSearchSQL, searchQuery, filter.Lang, resolvedSourceID, resolvedTransliterationSourceID, like, filter.Limit, filter.Offset)
+	rows, err := tx.Query(ctx, quranSearchSQL, searchQuery, filter.Lang, resolvedSourceID, resolvedTransliterationSourceID, like, filter.Limit, filter.Offset)
 	if err != nil {
 		return nil, 0, fmt.Errorf("QuranRepo - SearchAyahs - Query: %w", err)
 	}
 	defer rows.Close()
 
+	total := 0
 	results := make([]entity.QuranSearchResult, 0, filter.Limit)
 	for rows.Next() {
-		ayah, score, matchedLang, matchedSourceID, matchedField, err := scanQuranAyahWithScore(rows)
+		ayah, score, matchedLang, matchedSourceID, matchedField, rowTotal, err := scanQuranAyahWithScore(rows)
 		if err != nil {
 			return nil, 0, fmt.Errorf("QuranRepo - SearchAyahs - scanQuranAyahWithScore: %w", err)
 		}
+		total = rowTotal
 
 		applyQuranAyahMetadata(&ayah, filter.Lang, true, false)
 		results = append(results, entity.QuranSearchResult{
@@ -827,29 +850,100 @@ func (r *QuranRepo) ListBookQuranReferences(
 		return nil, 0, fmt.Errorf("QuranRepo - ListBookQuranReferences - rows.Err: %w", err)
 	}
 
+	if err := r.attachBookReferenceAyahs(ctx, references, filter.Lang, filter.TranslationSource); err != nil {
+		return nil, 0, err
+	}
+
+	return references, total, nil
+}
+
+// attachBookReferenceAyahs loads the ayah ranges for ALL references in ONE query
+// (an unnest of (surah_id, from, to) ranges) and slices each reference's range from
+// the shared result, replacing the previous per-reference N+1. Mirrors ListSurahAyahs'
+// translation/transliteration resolution + light editorial join so payloads match.
+func (r *QuranRepo) attachBookReferenceAyahs(
+	ctx context.Context,
+	references []entity.BookQuranReference,
+	lang string,
+	translationSource string,
+) error {
+	surahs := make([]int, 0, len(references))
+	froms := make([]int, 0, len(references))
+	tos := make([]int, 0, len(references))
 	for i := range references {
 		ref := &references[i]
 		if ref.SurahID == nil || ref.FromAyahNumber == nil || ref.ToAyahNumber == nil {
 			continue
 		}
-		ayahs, err := r.ListSurahAyahs(
-			ctx,
-			*ref.SurahID,
-			*ref.FromAyahNumber,
-			*ref.ToAyahNumber,
-			filter.Lang,
-			filter.TranslationSource,
-			true,
-			false,
-			"",
-		)
-		if err != nil {
-			return nil, 0, err
-		}
-		ref.Ayahs = ayahs
+		surahs = append(surahs, *ref.SurahID)
+		froms = append(froms, *ref.FromAyahNumber)
+		tos = append(tos, *ref.ToAyahNumber)
+	}
+	if len(surahs) == 0 {
+		return nil
 	}
 
-	return references, total, nil
+	resolvedSourceID, err := r.resolveTranslationSourceID(ctx, lang, translationSource)
+	if err != nil {
+		return err
+	}
+	includeSelectedTranslation := !contentlang.IsArabic(lang) && resolvedSourceID != ""
+	resolvedTransliterationSourceID, err := r.defaultTransliterationSourceID(ctx, lang)
+	if err != nil {
+		return err
+	}
+	includeTransliteration := !contentlang.IsArabic(lang) && resolvedTransliterationSourceID != ""
+
+	// $1=surahs $2=lang $3=source $4=transliteration source $5=froms $6=tos
+	where := `
+WHERE EXISTS (
+    SELECT 1
+    FROM unnest($1::int[], $5::int[], $6::int[]) AS ref(surah_id, from_ayah, to_ayah)
+    WHERE ref.surah_id = a.surah_id
+      AND a.ayah_number BETWEEN ref.from_ayah AND ref.to_ayah
+)
+ORDER BY a.surah_id ASC, a.ayah_number ASC`
+
+	rows, err := r.Pool.Query(
+		ctx,
+		quranAyahSelectSQL(where, includeSelectedTranslation, includeTransliteration, true, false),
+		surahs, lang, resolvedSourceID, resolvedTransliterationSourceID, froms, tos,
+	)
+	if err != nil {
+		return fmt.Errorf("QuranRepo - attachBookReferenceAyahs - Query: %w", err)
+	}
+	defer rows.Close()
+
+	bySurah := make(map[int][]entity.QuranAyah)
+	for rows.Next() {
+		ayah, err := scanQuranAyah(rows)
+		if err != nil {
+			return fmt.Errorf("QuranRepo - attachBookReferenceAyahs - scanQuranAyah: %w", err)
+		}
+		applyQuranAyahMetadata(&ayah, lang, true, false)
+		bySurah[ayah.SurahID] = append(bySurah[ayah.SurahID], ayah)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("QuranRepo - attachBookReferenceAyahs - rows.Err: %w", err)
+	}
+
+	// Bucket each reference's [from, to] slice from its surah's shared ayah list.
+	for i := range references {
+		ref := &references[i]
+		if ref.SurahID == nil || ref.FromAyahNumber == nil || ref.ToAyahNumber == nil {
+			continue
+		}
+		candidates := bySurah[*ref.SurahID]
+		picked := make([]entity.QuranAyah, 0)
+		for j := range candidates {
+			if candidates[j].AyahNumber >= *ref.FromAyahNumber && candidates[j].AyahNumber <= *ref.ToAyahNumber {
+				picked = append(picked, candidates[j])
+			}
+		}
+		ref.Ayahs = picked
+	}
+
+	return nil
 }
 
 // ListMissingQuranAssets returns missing Quran assets for admin queues.
@@ -1017,8 +1111,11 @@ missing AS (
 
     UNION ALL
 
+    -- Public audio is language-independent (no lang column on quran_audio_tracks), so
+    -- emit ONE row per missing track with an empty target_lang. A CROSS JOIN to
+    -- target_langs here would duplicate every missing audio asset once per target lang.
     SELECT 'audio_public'::TEXT AS asset_type,
-           tl.lang AS target_lang,
+           ''::TEXT AS target_lang,
            t.surah_id,
            COALESCE(s.name_latin, s.name_arabic) AS surah_name,
            t.ayah_number,
@@ -1032,7 +1129,6 @@ missing AS (
            t.updated_at AS source_updated_at
     FROM quran_audio_tracks t
     JOIN quran_surahs s ON s.surah_id = t.surah_id
-    CROSS JOIN target_langs tl
     WHERE t.public_url IS NULL
 ),
 filtered AS (
@@ -1200,21 +1296,25 @@ LEFT JOIN LATERAL (
     WHERE mt.surah_id = a.surah_id
       AND mt.ayah_number = a.ayah_number
       AND (
-          COALESCE(mt.text, '') ILIKE $5
-          OR similarity(COALESCE(mt.text, ''), $1) > 0.18
+          mt.text ILIKE $5
+          OR mt.text % $1
       )
     ORDER BY match_score DESC, mt.lang ASC, mt.source_id ASC
     LIMIT 1
 ) mt ON true
-WHERE COALESCE(a.search_text, '') ILIKE $5
-   OR COALESCE(a.text_qpc_hafs, '') ILIKE $5
-   OR COALESCE(t.text, '') ILIKE $5
-   OR COALESCE(tn.text, '') ILIKE $5
+-- Bare columns (no COALESCE) so ILIKE and the % operator can use the GIN trgm
+-- indexes; % is equivalent to similarity()>threshold with pg_trgm.similarity_threshold
+-- set to 0.18 (SET LOCAL in SearchAyahs). NULL columns yield NULL → excluded, same
+-- as the old COALESCE('',...) form.
+WHERE a.search_text ILIKE $5
+   OR a.text_qpc_hafs ILIKE $5
+   OR t.text ILIKE $5
+   OR tn.text ILIKE $5
    OR mt.source_id IS NOT NULL
-   OR similarity(COALESCE(a.search_text, ''), $1) > 0.18
-   OR similarity(COALESCE(a.text_qpc_hafs, ''), $1) > 0.18
-   OR similarity(COALESCE(t.text, ''), $1) > 0.18
-   OR similarity(COALESCE(tn.text, ''), $1) > 0.18
+   OR a.search_text % $1
+   OR a.text_qpc_hafs % $1
+   OR t.text % $1
+   OR tn.text % $1
 )
 SELECT surah_id,
        ayah_number,
@@ -1259,12 +1359,13 @@ SELECT surah_id,
            WHEN GREATEST(search_score, arabic_score) >= GREATEST(selected_translation_score, transliteration_score, any_translation_score) THEN 'arabic'
            WHEN transliteration_score >= GREATEST(selected_translation_score, any_translation_score) AND transliteration_source_id IS NOT NULL THEN 'transliteration'
            ELSE 'translation'
-       END AS matched_field
+       END AS matched_field,
+       COUNT(*) OVER()::int AS total_count
 FROM scored
 ORDER BY score DESC, surah_id ASC, ayah_number ASC
 LIMIT $6 OFFSET $7`
 
-func quranAyahSelectSQL(where string, includeTranslation, includeTransliteration bool) string {
+func quranAyahSelectSQL(where string, includeTranslation, includeTransliteration, includeEditorial, includeEditorialHTML bool) string {
 	translationColumns := quranAyahTranslationColumnsSQL
 	translationJoin := quranAyahTranslationJoinSQL
 	if !includeTranslation {
@@ -1280,13 +1381,33 @@ func quranAyahSelectSQL(where string, includeTranslation, includeTransliteration
 		transliterationJoin = quranAyahTransliterationDisabledJoinSQL
 	}
 
+	// Editorial columns are ALWAYS selected (real or NULL) so the column count is
+	// constant for scanQuranAyahInternal; the join is added only when included.
+	editorialColumns := quranAyahEditorialNullColumnsSQL
+	editorialJoin := ""
+	contentUpdatedAtColumn := `,
+       a.updated_at AS content_updated_at`
+	if includeEditorial {
+		editorialColumns = quranAyahEditorialLightColumnsSQL
+		if includeEditorialHTML {
+			editorialColumns = quranAyahEditorialFullColumnsSQL
+		}
+		editorialJoin = quranAyahEditorialJoinSQL
+		contentUpdatedAtColumn = `,
+       GREATEST(a.updated_at, COALESCE(ae.updated_at, a.updated_at)) AS content_updated_at`
+	}
+
 	return quranAyahSelectHeadSQL +
 		translationColumns + `,
        ` + transliterationColumns +
 		quranAyahAvailabilityColumnsSQL +
+		editorialColumns +
+		contentUpdatedAtColumn +
+		quranAyahFromSQL +
 		translationJoin +
 		transliterationJoin +
 		quranAyahAvailableLangsJoinSQL +
+		editorialJoin +
 		where
 }
 
@@ -1335,7 +1456,7 @@ WHERE (
 	    (t.track_type = 'surah' AND (s.surah_id::text || ':' || s.ayah_number::text) = ANY($1))
 	)
 	  AND t.recitation_id = $2
-	ORDER BY t.recitation_id ASC, t.track_type ASC, t.track_key ASC, s.segment_index ASC`,
+	ORDER BY t.recitation_id ASC, t.track_type ASC, t.surah_id ASC, t.ayah_number ASC NULLS FIRST, s.segment_index ASC`,
 		ayahKeys,
 		recitationID,
 	)
@@ -1581,17 +1702,14 @@ SELECT EXISTS (
 
 func (r *QuranRepo) defaultTranslationSourceID(ctx context.Context, lang string) (string, error) {
 	var sourceID string
+	// coverage_count is denormalized at import time, so this is a tiny lookup over
+	// the small sources table — NOT a full GROUP BY aggregate per request.
 	err := r.Pool.QueryRow(ctx, `
 SELECT s.id
 FROM quran_translation_sources s
-LEFT JOIN (
-    SELECT source_id, COUNT(*)::int AS translated_ayahs
-    FROM quran_ayah_translations
-    GROUP BY source_id
-) sc ON sc.source_id = s.id
 WHERE s.lang = $1
 ORDER BY CASE WHEN s.lang = 'id' AND s.id = $2 THEN 0 ELSE 1 END,
-         COALESCE(sc.translated_ayahs, 0) DESC,
+         s.coverage_count DESC,
          s.name ASC,
          s.id ASC
 LIMIT 1`, lang, defaultQuranTranslationSourceID).Scan(&sourceID)
@@ -1612,21 +1730,17 @@ func (r *QuranRepo) defaultTransliterationSourceID(ctx context.Context, lang str
 	}
 
 	var sourceID string
+	// coverage_count is denormalized at import time (tiny lookup, no per-request aggregate).
 	err := r.Pool.QueryRow(ctx, `
 SELECT s.id
 FROM quran_transliteration_sources s
-LEFT JOIN (
-    SELECT source_id, COUNT(*)::int AS transliterated_ayahs
-    FROM quran_ayah_transliterations
-    GROUP BY source_id
-) sc ON sc.source_id = s.id
 WHERE s.lang = $1
 ORDER BY CASE
              WHEN s.lang = 'id' AND s.id = $2 THEN 0
              WHEN s.lang = 'en' AND s.id = $3 THEN 0
              ELSE 1
          END,
-         COALESCE(sc.transliterated_ayahs, 0) DESC,
+         s.coverage_count DESC,
          s.name ASC,
          s.id ASC
 LIMIT 1`, lang, defaultIDTransliterationSourceID, defaultENTransliterationSourceID).Scan(&sourceID)
@@ -1855,8 +1969,25 @@ func quranAudioTrackLess(left, right *entity.QuranAudioTrack) bool {
 	if leftRank != rightRank {
 		return leftRank < rightRank
 	}
+	if left.SurahID != right.SurahID {
+		return left.SurahID < right.SurahID
+	}
+	// Order by numeric ayah, not the "surah:ayah" string: "1:2" must precede "1:10".
+	// A nil AyahNumber (surah-level track) sorts before ayah-level tracks of the surah.
+	leftAyah, rightAyah := quranTrackAyahNumber(left), quranTrackAyahNumber(right)
+	if leftAyah != rightAyah {
+		return leftAyah < rightAyah
+	}
 
 	return left.TrackKey < right.TrackKey
+}
+
+func quranTrackAyahNumber(track *entity.QuranAudioTrack) int {
+	if track.AyahNumber != nil {
+		return *track.AyahNumber
+	}
+
+	return 0
 }
 
 func scanQuranRecitation(row rowScanner) (entity.QuranRecitation, error) {
@@ -2176,12 +2307,12 @@ func scanQuranSurah(row rowScanner) (entity.QuranSurah, error) {
 }
 
 func scanQuranAyah(row rowScanner) (entity.QuranAyah, error) {
-	ayah, _, _, _, _, err := scanQuranAyahInternal(row, false)
+	ayah, _, _, _, _, _, err := scanQuranAyahInternal(row, false, true, false)
 	return ayah, err
 }
 
-func scanQuranAyahWithScore(row rowScanner) (entity.QuranAyah, float64, string, string, string, error) {
-	return scanQuranAyahInternal(row, true)
+func scanQuranAyahWithScore(row rowScanner) (entity.QuranAyah, float64, string, string, string, int, error) {
+	return scanQuranAyahInternal(row, true, false, true)
 }
 
 func scanQuranNavigationSegment(row rowScanner) (entity.QuranNavigationSegment, error) {
@@ -2212,7 +2343,7 @@ func scanQuranNavigationSegment(row rowScanner) (entity.QuranNavigationSegment, 
 	return segment, nil
 }
 
-func scanQuranAyahInternal(row rowScanner, withScore bool) (entity.QuranAyah, float64, string, string, string, error) {
+func scanQuranAyahInternal(row rowScanner, withScore, withEditorial, withTotal bool) (entity.QuranAyah, float64, string, string, string, int, error) {
 	var ayah entity.QuranAyah
 	var textQPCHafs sql.NullString
 	var textImlaei sql.NullString
@@ -2240,6 +2371,17 @@ func scanQuranAyahInternal(row rowScanner, withScore bool) (entity.QuranAyah, fl
 	var matchedLang sql.NullString
 	var matchedSourceID sql.NullString
 	var matchedField sql.NullString
+	var total sql.NullInt64
+	var edLang sql.NullString
+	var edMetaTitle sql.NullString
+	var edMetaDescription sql.NullString
+	var edTafsirRange sql.NullString
+	var edLicenseStatus sql.NullString
+	var edUpdatedAt sql.NullTime
+	var edIntisari sql.NullString
+	var edKeutamaan sql.NullString
+	var edFAQ []byte
+	var contentUpdatedAt sql.NullTime
 
 	dest := []any{
 		&ayah.SurahID,
@@ -2269,12 +2411,30 @@ func scanQuranAyahInternal(row rowScanner, withScore bool) (entity.QuranAyah, fl
 		&transliterationUpdatedAt,
 		&availableTranslationLangs,
 	}
+	if withEditorial {
+		dest = append(
+			dest,
+			&edLang,
+			&edMetaTitle,
+			&edMetaDescription,
+			&edTafsirRange,
+			&edLicenseStatus,
+			&edUpdatedAt,
+			&edIntisari,
+			&edKeutamaan,
+			&edFAQ,
+			&contentUpdatedAt,
+		)
+	}
 	if withScore {
 		dest = append(dest, &score, &matchedLang, &matchedSourceID, &matchedField)
 	}
+	if withTotal {
+		dest = append(dest, &total)
+	}
 
 	if err := row.Scan(dest...); err != nil {
-		return entity.QuranAyah{}, 0, "", "", "", err
+		return entity.QuranAyah{}, 0, "", "", "", 0, err
 	}
 
 	ayah.TextQPCHafs = nullableString(textQPCHafs)
@@ -2313,8 +2473,62 @@ func scanQuranAyahInternal(row rowScanner, withScore bool) (entity.QuranAyah, fl
 		ayah.Transliteration = transliteration
 	}
 	ayah.AvailableTranslationLangs = emptyStringSlice(availableTranslationLangs)
+	if withEditorial {
+		ayah.ContentUpdatedAt = nullableTime(contentUpdatedAt)
+		if edLang.Valid {
+			editorial := &entity.QuranAyahEditorial{
+				Lang:            edLang.String,
+				MetaTitle:       nullableString(edMetaTitle),
+				MetaDescription: nullableString(edMetaDescription),
+				TafsirRange:     nullableString(edTafsirRange),
+				LicenseStatus:   edLicenseStatus.String,
+			}
+			if edUpdatedAt.Valid {
+				editorial.UpdatedAt = edUpdatedAt.Time
+			}
+			// HTML is sanitized on read; empties are omitted so the frontend's
+			// "has editorial" gate is not tripped by "".
+			if edIntisari.Valid {
+				if sanitized := readerutil.SanitizeHTML(edIntisari.String); sanitized != "" {
+					editorial.Intisari = &sanitized
+				}
+			}
+			if edKeutamaan.Valid {
+				if sanitized := readerutil.SanitizeHTML(edKeutamaan.String); sanitized != "" {
+					editorial.Keutamaan = &sanitized
+				}
+			}
+			if len(edFAQ) > 0 {
+				editorial.FAQ = sanitizeAyahEditorialFAQ(edFAQ)
+			}
+			ayah.Editorial = editorial
+		}
+	}
 
-	return ayah, score.Float64, matchedLang.String, matchedSourceID.String, matchedField.String, nil
+	return ayah, score.Float64, matchedLang.String, matchedSourceID.String, matchedField.String, int(total.Int64), nil
+}
+
+// sanitizeAyahEditorialFAQ unmarshals the stored FAQ JSONB and sanitizes every
+// answer_html (author HTML, same gate as keutamaan/TextHTML), dropping entries
+// that become empty.
+func sanitizeAyahEditorialFAQ(raw []byte) []entity.QuranAyahEditorialFAQ {
+	var items []entity.QuranAyahEditorialFAQ
+	if err := json.Unmarshal(raw, &items); err != nil {
+		return nil
+	}
+	out := make([]entity.QuranAyahEditorialFAQ, 0, len(items))
+	for _, item := range items {
+		question := strings.TrimSpace(item.Question)
+		answer := readerutil.SanitizeHTML(item.AnswerHTML)
+		if question == "" || answer == "" {
+			continue
+		}
+		out = append(out, entity.QuranAyahEditorialFAQ{Question: question, AnswerHTML: answer})
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func scanQuranAudioTrackRow(row rowScanner) (

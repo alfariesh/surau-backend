@@ -4,6 +4,7 @@ import (
 	"context"
 	"slices"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/evrone/go-clean-template/internal/contentlang"
 	"github.com/evrone/go-clean-template/internal/entity"
@@ -14,6 +15,11 @@ import (
 const (
 	defaultLimit = 50
 	maxLimit     = 200
+	// maxOffset caps deep paging. The search query computes COUNT(*) OVER() and the
+	// LATERAL joins over the full matched set before LIMIT/OFFSET, so an unbounded
+	// offset (e.g. 2e9) forces a needless full scan+sort — a cheap DoS amplifier.
+	// 10000 is far beyond any real page over the fixed ~6236-ayah corpus.
+	maxOffset = 10000
 
 	navigationKindJuz  = "juz"
 	navigationKindHizb = "hizb"
@@ -100,6 +106,7 @@ func (uc *UseCase) JuzAyahs(
 	translationSource string,
 	includeTranslation bool,
 	includeAudio bool,
+	includeEditorial bool,
 	recitationID string,
 ) ([]entity.QuranAyah, error) {
 	if juzNumber < 1 || juzNumber > 30 {
@@ -114,6 +121,7 @@ func (uc *UseCase) JuzAyahs(
 		translationSource,
 		includeTranslation,
 		includeAudio,
+		includeEditorial,
 		recitationID,
 	)
 }
@@ -136,6 +144,7 @@ func (uc *UseCase) HizbAyahs(
 	translationSource string,
 	includeTranslation bool,
 	includeAudio bool,
+	includeEditorial bool,
 	recitationID string,
 ) ([]entity.QuranAyah, error) {
 	if hizbNumber < 1 || hizbNumber > 60 {
@@ -150,6 +159,7 @@ func (uc *UseCase) HizbAyahs(
 		translationSource,
 		includeTranslation,
 		includeAudio,
+		includeEditorial,
 		recitationID,
 	)
 }
@@ -193,6 +203,7 @@ func (uc *UseCase) SurahAyahs(
 	translationSource string,
 	includeTranslation bool,
 	includeAudio bool,
+	includeEditorial bool,
 	recitationID string,
 ) ([]entity.QuranAyah, error) {
 	if surahID <= 0 || surahID > 114 {
@@ -222,6 +233,7 @@ func (uc *UseCase) SurahAyahs(
 		normalizeTranslationSource(translationSource),
 		includeTranslation,
 		includeAudio,
+		includeEditorial,
 		normalizeRecitationID(recitationID),
 	)
 }
@@ -234,6 +246,7 @@ func (uc *UseCase) navigationAyahs(
 	translationSource string,
 	includeTranslation bool,
 	includeAudio bool,
+	includeEditorial bool,
 	recitationID string,
 ) ([]entity.QuranAyah, error) {
 	normalizedLang, err := contentlang.Normalize(lang)
@@ -249,6 +262,7 @@ func (uc *UseCase) navigationAyahs(
 		normalizeTranslationSource(translationSource),
 		includeTranslation,
 		includeAudio,
+		includeEditorial,
 		normalizeRecitationID(recitationID),
 	)
 }
@@ -260,8 +274,15 @@ func (uc *UseCase) Search(ctx context.Context, query, lang string, limit, offset
 		return nil, 0, err
 	}
 
+	// A 0–1 rune query degenerates to a broad ILIKE '%x%' scan with no usable
+	// trigrams; short-circuit (the repo also guards the empty case).
+	trimmed := strings.TrimSpace(query)
+	if utf8.RuneCountInString(trimmed) < 2 {
+		return []entity.QuranSearchResult{}, 0, nil
+	}
+
 	return uc.repo.SearchAyahs(ctx, repo.QuranSearchFilter{
-		Query:             strings.TrimSpace(query),
+		Query:             trimmed,
 		Lang:              normalizedLang,
 		TranslationSource: "",
 		Limit:             clampLimit(limit),
@@ -334,6 +355,9 @@ func clampLimit(limit int) uint64 {
 func clampOffset(offset int) uint64 {
 	if offset < 0 {
 		return 0
+	}
+	if offset > maxOffset {
+		return maxOffset
 	}
 
 	return uint64(offset)

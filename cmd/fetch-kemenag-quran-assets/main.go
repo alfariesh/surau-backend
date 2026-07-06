@@ -230,7 +230,7 @@ func fetchAyahs(ctx context.Context, client *http.Client, opts fetchOptions, sur
 	return response.Data, nil
 }
 
-func fetchJSON(ctx context.Context, client *http.Client, opts fetchOptions, endpoint string, referer string, target any) error {
+func fetchJSON(ctx context.Context, client *http.Client, opts fetchOptions, endpoint, referer string, target any) error {
 	requestURL := opts.BaseURL + "/" + strings.TrimLeft(endpoint, "/")
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
 	if err != nil {

@@ -1,6 +1,7 @@
 package persistent
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 
@@ -31,6 +32,74 @@ func TestQuranSurahSelectSQLColumnCountMatchesScan(t *testing.T) {
 				includeInfo, includeEditorialHTML)
 		}
 	}
+}
+
+// TestQuranAyahSelectSQLColumnCountMatchesScan guards the ayah SELECT/scan
+// coupling. quranAyahSelectSQL ALWAYS emits the 9 editorial columns plus
+// content_updated_at (real values when included, NULL-typed placeholders when
+// not), so the top-level column count is CONSTANT across every flag combination
+// and must equal what scanQuranAyahInternal reads with withEditorial=true (the
+// path every quranAyahSelectSQL row is scanned through). Bump expectedColumns ONLY
+// together with that scan target list.
+func TestQuranAyahSelectSQLColumnCountMatchesScan(t *testing.T) {
+	t.Parallel()
+
+	const expectedColumns = 36
+
+	for _, includeTranslation := range []bool{false, true} {
+		for _, includeTransliteration := range []bool{false, true} {
+			for _, includeEditorial := range []bool{false, true} {
+				for _, includeEditorialHTML := range []bool{false, true} {
+					query := quranAyahSelectSQL("", includeTranslation, includeTransliteration, includeEditorial, includeEditorialHTML)
+					got := topLevelSelectColumnCount(t, query)
+					assert.Equalf(t, expectedColumns, got,
+						"includeTranslation=%v includeTransliteration=%v includeEditorial=%v includeEditorialHTML=%v: SELECT column count must equal scanQuranAyahInternal targets",
+						includeTranslation, includeTransliteration, includeEditorial, includeEditorialHTML)
+				}
+			}
+		}
+	}
+}
+
+// TestQuranAyahSelectSQLEditorialColumnOrder complements the count guard: several
+// editorial columns are the same type (text), so a same-typed reorder would slip
+// past a count check yet silently mis-map onto the scan targets. Assert the alias
+// order in the SELECT matches the order scanQuranAyahInternal appends them, in
+// BOTH the NULL-placeholder (list/nav) and real-column (detail) variants.
+func TestQuranAyahSelectSQLEditorialColumnOrder(t *testing.T) {
+	t.Parallel()
+
+	want := []string{
+		"ed_lang",
+		"ed_meta_title",
+		"ed_meta_description",
+		"ed_tafsir_range",
+		"ed_license_status",
+		"ed_updated_at",
+		"ed_intisari_html",
+		"ed_keutamaan_html",
+		"ed_faq",
+		"content_updated_at",
+	}
+
+	for _, includeEditorial := range []bool{false, true} {
+		query := quranAyahSelectSQL("", true, true, includeEditorial, includeEditorial)
+		assert.Equalf(t, want, editorialColumnAliases(query),
+			"includeEditorial=%v: editorial alias order must match scanQuranAyahInternal append order", includeEditorial)
+	}
+}
+
+var editorialAliasRe = regexp.MustCompile(`AS (ed_[a-z_]+|content_updated_at)`)
+
+// editorialColumnAliases returns the editorial + content_updated_at column aliases
+// in the order they appear in the query.
+func editorialColumnAliases(query string) []string {
+	matches := editorialAliasRe.FindAllStringSubmatch(query, -1)
+	out := make([]string, 0, len(matches))
+	for _, m := range matches {
+		out = append(out, m[1])
+	}
+	return out
 }
 
 // topLevelSelectColumnCount counts comma-separated columns in the SELECT...FROM
@@ -139,6 +208,18 @@ func TestQuranAudioTrackLessPrefersAyahTrack(t *testing.T) {
 
 	assert.True(t, quranAudioTrackLess(&ayahTrack, &surahTrack))
 	assert.False(t, quranAudioTrackLess(&surahTrack, &ayahTrack))
+}
+
+func TestQuranAudioTrackLessNaturalAyahOrder(t *testing.T) {
+	t.Parallel()
+
+	n2, n10 := 2, 10
+	track2 := entity.QuranAudioTrack{RecitationID: "rec", TrackType: "ayah", SurahID: 1, AyahNumber: &n2, TrackKey: "1:2"}
+	track10 := entity.QuranAudioTrack{RecitationID: "rec", TrackType: "ayah", SurahID: 1, AyahNumber: &n10, TrackKey: "1:10"}
+
+	// Regression for lexicographic track_key sort: "1:2" must precede "1:10".
+	assert.True(t, quranAudioTrackLess(&track2, &track10))
+	assert.False(t, quranAudioTrackLess(&track10, &track2))
 }
 
 func TestMissingManifestAyahKeys(t *testing.T) {

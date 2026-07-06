@@ -518,7 +518,7 @@ func intSet(values []int) map[int]struct{} {
 	return result
 }
 
-func containsFold(value string, needle string) bool {
+func containsFold(value, needle string) bool {
 	return strings.Contains(strings.ToLower(value), strings.ToLower(needle))
 }
 

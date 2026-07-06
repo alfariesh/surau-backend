@@ -20,7 +20,7 @@ func main() {
 	os.Exit(run(ctx, os.Args[1:], os.Stdout, os.Stderr))
 }
 
-func run(ctx context.Context, args []string, stdout io.Writer, stderr io.Writer) int {
+func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	var opts rageval.Options
 
 	flags := flag.NewFlagSet("rag-eval", flag.ContinueOnError)
@@ -63,7 +63,7 @@ func run(ctx context.Context, args []string, stdout io.Writer, stderr io.Writer)
 	return 0
 }
 
-func envOrDefault(key string, fallback string) string {
+func envOrDefault(key, fallback string) string {
 	if value := os.Getenv(key); value != "" {
 		return value
 	}

@@ -1460,18 +1460,18 @@ func (mr *MockQuranMockRecorder) BookReferences(ctx, bookID, headingID, lang, st
 }
 
 // HizbAyahs mocks base method.
-func (m *MockQuran) HizbAyahs(ctx context.Context, hizbNumber int, lang, translationSource string, includeTranslation, includeAudio bool, recitationID string) ([]entity.QuranAyah, error) {
+func (m *MockQuran) HizbAyahs(ctx context.Context, hizbNumber int, lang, translationSource string, includeTranslation, includeAudio, includeEditorial bool, recitationID string) ([]entity.QuranAyah, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "HizbAyahs", ctx, hizbNumber, lang, translationSource, includeTranslation, includeAudio, recitationID)
+	ret := m.ctrl.Call(m, "HizbAyahs", ctx, hizbNumber, lang, translationSource, includeTranslation, includeAudio, includeEditorial, recitationID)
 	ret0, _ := ret[0].([]entity.QuranAyah)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // HizbAyahs indicates an expected call of HizbAyahs.
-func (mr *MockQuranMockRecorder) HizbAyahs(ctx, hizbNumber, lang, translationSource, includeTranslation, includeAudio, recitationID any) *gomock.Call {
+func (mr *MockQuranMockRecorder) HizbAyahs(ctx, hizbNumber, lang, translationSource, includeTranslation, includeAudio, includeEditorial, recitationID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "HizbAyahs", reflect.TypeOf((*MockQuran)(nil).HizbAyahs), ctx, hizbNumber, lang, translationSource, includeTranslation, includeAudio, recitationID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "HizbAyahs", reflect.TypeOf((*MockQuran)(nil).HizbAyahs), ctx, hizbNumber, lang, translationSource, includeTranslation, includeAudio, includeEditorial, recitationID)
 }
 
 // Hizbs mocks base method.
@@ -1505,18 +1505,18 @@ func (mr *MockQuranMockRecorder) Juz(ctx, lang any) *gomock.Call {
 }
 
 // JuzAyahs mocks base method.
-func (m *MockQuran) JuzAyahs(ctx context.Context, juzNumber int, lang, translationSource string, includeTranslation, includeAudio bool, recitationID string) ([]entity.QuranAyah, error) {
+func (m *MockQuran) JuzAyahs(ctx context.Context, juzNumber int, lang, translationSource string, includeTranslation, includeAudio, includeEditorial bool, recitationID string) ([]entity.QuranAyah, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "JuzAyahs", ctx, juzNumber, lang, translationSource, includeTranslation, includeAudio, recitationID)
+	ret := m.ctrl.Call(m, "JuzAyahs", ctx, juzNumber, lang, translationSource, includeTranslation, includeAudio, includeEditorial, recitationID)
 	ret0, _ := ret[0].([]entity.QuranAyah)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // JuzAyahs indicates an expected call of JuzAyahs.
-func (mr *MockQuranMockRecorder) JuzAyahs(ctx, juzNumber, lang, translationSource, includeTranslation, includeAudio, recitationID any) *gomock.Call {
+func (mr *MockQuranMockRecorder) JuzAyahs(ctx, juzNumber, lang, translationSource, includeTranslation, includeAudio, includeEditorial, recitationID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "JuzAyahs", reflect.TypeOf((*MockQuran)(nil).JuzAyahs), ctx, juzNumber, lang, translationSource, includeTranslation, includeAudio, recitationID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "JuzAyahs", reflect.TypeOf((*MockQuran)(nil).JuzAyahs), ctx, juzNumber, lang, translationSource, includeTranslation, includeAudio, includeEditorial, recitationID)
 }
 
 // MissingAssets mocks base method.
@@ -1596,18 +1596,18 @@ func (mr *MockQuranMockRecorder) SurahAudio(ctx, surahID, recitationID any) *gom
 }
 
 // SurahAyahs mocks base method.
-func (m *MockQuran) SurahAyahs(ctx context.Context, surahID, fromAyah, toAyah int, lang, translationSource string, includeTranslation, includeAudio bool, recitationID string) ([]entity.QuranAyah, error) {
+func (m *MockQuran) SurahAyahs(ctx context.Context, surahID, fromAyah, toAyah int, lang, translationSource string, includeTranslation, includeAudio, includeEditorial bool, recitationID string) ([]entity.QuranAyah, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "SurahAyahs", ctx, surahID, fromAyah, toAyah, lang, translationSource, includeTranslation, includeAudio, recitationID)
+	ret := m.ctrl.Call(m, "SurahAyahs", ctx, surahID, fromAyah, toAyah, lang, translationSource, includeTranslation, includeAudio, includeEditorial, recitationID)
 	ret0, _ := ret[0].([]entity.QuranAyah)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // SurahAyahs indicates an expected call of SurahAyahs.
-func (mr *MockQuranMockRecorder) SurahAyahs(ctx, surahID, fromAyah, toAyah, lang, translationSource, includeTranslation, includeAudio, recitationID any) *gomock.Call {
+func (mr *MockQuranMockRecorder) SurahAyahs(ctx, surahID, fromAyah, toAyah, lang, translationSource, includeTranslation, includeAudio, includeEditorial, recitationID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SurahAyahs", reflect.TypeOf((*MockQuran)(nil).SurahAyahs), ctx, surahID, fromAyah, toAyah, lang, translationSource, includeTranslation, includeAudio, recitationID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SurahAyahs", reflect.TypeOf((*MockQuran)(nil).SurahAyahs), ctx, surahID, fromAyah, toAyah, lang, translationSource, includeTranslation, includeAudio, includeEditorial, recitationID)
 }
 
 // Surahs mocks base method.

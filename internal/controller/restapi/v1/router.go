@@ -25,6 +25,11 @@ const personalWritesPerMinute = 240
 // protected auth endpoints without a DB-backed limit in the use case.
 const sessionRequestsPerMinute = 30
 
+// quranSearchesPerMinute caps per-IP Quran search requests. Search is public and
+// expensive (trigram + LATERAL joins + COUNT(*) OVER()), so query-variety must not
+// churn the cache and load the DB unbounded.
+const quranSearchesPerMinute = 60
+
 // NewRoutes -.
 func NewRoutes(
 	apiV1Group fiber.Router,
@@ -98,6 +103,12 @@ func NewRoutes(
 	apiV1Group.Get("/categories", middleware.PublicCache(), r.listCategories)
 	apiV1Group.Get("/authors", middleware.PublicCache(), r.listAuthors)
 
+	// Per-IP limiter for the expensive public search route (default key = client IP).
+	quranSearchLimiter := limiter.New(limiter.Config{
+		Max:        quranSearchesPerMinute,
+		Expiration: time.Minute,
+	})
+
 	quranGroup := apiV1Group.Group("/quran", middleware.PublicCache())
 	{
 		quranGroup.Get("/recitations", r.listQuranRecitations)
@@ -111,7 +122,7 @@ func NewRoutes(
 		quranGroup.Get("/surahs/:surah_id/audio", r.getQuranSurahAudio)
 		quranGroup.Get("/surahs/:surah_id/ayahs", r.listQuranSurahAyahs)
 		quranGroup.Get("/ayahs/:ayah_key", r.getQuranAyah)
-		quranGroup.Get("/search", r.searchQuran)
+		quranGroup.Get("/search", quranSearchLimiter, r.searchQuran)
 	}
 
 	// Protected routes

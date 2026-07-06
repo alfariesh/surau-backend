@@ -279,7 +279,7 @@ type (
 			lang string,
 			maxPages int,
 		) ([]entity.RAGPageSource, error)
-		SearchRAGPages(ctx context.Context, bookID int, query string, lang string, limit int) ([]entity.RAGSearchResult, error)
+		SearchRAGPages(ctx context.Context, bookID int, query, lang string, limit int) ([]entity.RAGSearchResult, error)
 	}
 
 	// QuranRepo provides public Quran browse/search and kitab reference lookups.
@@ -289,7 +289,7 @@ type (
 		ListRecitations(ctx context.Context) ([]entity.QuranRecitation, error)
 		GetSurahAudioManifest(ctx context.Context, surahID int, recitationID string) (entity.QuranSurahAudioManifest, error)
 		ListTranslationSources(ctx context.Context, lang string) ([]entity.QuranTranslationSource, error)
-		ListNavigationSegments(ctx context.Context, kind string, lang string) ([]entity.QuranNavigationSegment, error)
+		ListNavigationSegments(ctx context.Context, kind, lang string) ([]entity.QuranNavigationSegment, error)
 		GetAyah(
 			ctx context.Context,
 			ayahKey string,
@@ -307,6 +307,7 @@ type (
 			translationSource string,
 			includeTranslation bool,
 			includeAudio bool,
+			includeEditorial bool,
 			recitationID string,
 		) ([]entity.QuranAyah, error)
 		ListNavigationAyahs(
@@ -317,6 +318,7 @@ type (
 			translationSource string,
 			includeTranslation bool,
 			includeAudio bool,
+			includeEditorial bool,
 			recitationID string,
 		) ([]entity.QuranAyah, error)
 		SearchAyahs(ctx context.Context, filter QuranSearchFilter) ([]entity.QuranSearchResult, int, error)
@@ -340,8 +342,8 @@ type (
 		ListSavedItemTags(ctx context.Context, userID string) ([]string, error)
 		StartKhatamCycle(ctx context.Context, cycle entity.QuranKhatamCycle) (entity.QuranKhatamCycle, error)
 		GetActiveKhatamCycle(ctx context.Context, userID string) (entity.QuranKhatamCycle, error)
-		MarkKhatamJuz(ctx context.Context, userID string, juzNumber int) (entity.QuranKhatamCycle, error)
-		UnmarkKhatamJuz(ctx context.Context, userID string, juzNumber int) (entity.QuranKhatamCycle, error)
+		MarkKhatamJuz(ctx context.Context, userID string, juzNumber int) (entity.QuranKhatamCycle, bool, error)
+		UnmarkKhatamJuz(ctx context.Context, userID string, juzNumber int) (entity.QuranKhatamCycle, bool, error)
 		CompleteKhatamCycle(ctx context.Context, userID string) (entity.QuranKhatamCycle, error)
 		ListKhatamHistory(ctx context.Context, userID string, limit, offset uint64) ([]entity.QuranKhatamCycle, int, error)
 		SyncSnapshot(ctx context.Context, userID string, since *time.Time) (entity.PersonalSyncSnapshot, error)

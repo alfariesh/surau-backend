@@ -95,10 +95,13 @@ WHERE c.user_id = $1 AND c.completed_at IS NULL`, khatamCycleColumns, khatamMark
 	return cycle, nil
 }
 
-// MarkKhatamJuz idempotently marks one juz as completed on the active cycle
-// and returns the refreshed cycle state. Sibling CTEs cannot see each other's
-// writes, so the aggregate unions the inserted mark explicitly.
-func (r *PersonalRepo) MarkKhatamJuz(ctx context.Context, userID string, juzNumber int) (entity.QuranKhatamCycle, error) {
+// MarkKhatamJuz idempotently marks one juz as completed on the active cycle and
+// returns the refreshed cycle state plus whether a NEW mark was actually inserted.
+// Sibling CTEs cannot see each other's writes, so the aggregate unions the inserted
+// mark explicitly. updated_at only advances when a new mark is inserted (so an
+// idempotent re-mark does not churn sync cursors), and `changed` lets the usecase
+// skip the milestone notifier on a re-mark.
+func (r *PersonalRepo) MarkKhatamJuz(ctx context.Context, userID string, juzNumber int) (entity.QuranKhatamCycle, bool, error) {
 	sqlText := `
 WITH active AS (
     SELECT id FROM quran_khatam_cycles WHERE user_id = $1 AND completed_at IS NULL
@@ -118,30 +121,32 @@ all_marks AS (
 ),
 touched AS (
     UPDATE quran_khatam_cycles c
-    SET updated_at = now()
+    SET updated_at = CASE WHEN EXISTS (SELECT 1 FROM mark) THEN now() ELSE c.updated_at END
     WHERE c.id = (SELECT id FROM active)
     RETURNING c.id, c.user_id, c.started_at, c.completed_at, c.notes, c.created_at, c.updated_at
 )
 SELECT t.id, t.user_id, t.started_at, t.completed_at, t.notes, t.created_at, t.updated_at,
        COALESCE((SELECT array_agg(am.juz_number ORDER BY am.juz_number) FROM all_marks am), ARRAY[]::INTEGER[]) AS completed_juz,
-       (SELECT COUNT(*)::int FROM all_marks) AS juz_count
+       (SELECT COUNT(*)::int FROM all_marks) AS juz_count,
+       EXISTS (SELECT 1 FROM mark) AS changed
 FROM touched t`
 
-	cycle, err := scanKhatamCycle(r.Pool.QueryRow(ctx, sqlText, userID, juzNumber))
+	cycle, changed, err := scanKhatamCycleRow(r.Pool.QueryRow(ctx, sqlText, userID, juzNumber), true)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return entity.QuranKhatamCycle{}, entity.ErrKhatamCycleNotFound
+			return entity.QuranKhatamCycle{}, false, entity.ErrKhatamCycleNotFound
 		}
 
-		return entity.QuranKhatamCycle{}, fmt.Errorf("PersonalRepo - MarkKhatamJuz - scanKhatamCycle: %w", err)
+		return entity.QuranKhatamCycle{}, false, fmt.Errorf("PersonalRepo - MarkKhatamJuz - scanKhatamCycle: %w", err)
 	}
 
-	return cycle, nil
+	return cycle, changed, nil
 }
 
 // UnmarkKhatamJuz idempotently removes one juz mark from the active cycle and
-// returns the refreshed cycle state.
-func (r *PersonalRepo) UnmarkKhatamJuz(ctx context.Context, userID string, juzNumber int) (entity.QuranKhatamCycle, error) {
+// returns the refreshed cycle state plus whether a mark was actually deleted.
+// updated_at only advances when a mark is removed (no sync churn on a no-op unmark).
+func (r *PersonalRepo) UnmarkKhatamJuz(ctx context.Context, userID string, juzNumber int) (entity.QuranKhatamCycle, bool, error) {
 	sqlText := `
 WITH active AS (
     SELECT id FROM quran_khatam_cycles WHERE user_id = $1 AND completed_at IS NULL
@@ -158,25 +163,26 @@ all_marks AS (
 ),
 touched AS (
     UPDATE quran_khatam_cycles c
-    SET updated_at = now()
+    SET updated_at = CASE WHEN EXISTS (SELECT 1 FROM unmark) THEN now() ELSE c.updated_at END
     WHERE c.id = (SELECT id FROM active)
     RETURNING c.id, c.user_id, c.started_at, c.completed_at, c.notes, c.created_at, c.updated_at
 )
 SELECT t.id, t.user_id, t.started_at, t.completed_at, t.notes, t.created_at, t.updated_at,
        COALESCE((SELECT array_agg(am.juz_number ORDER BY am.juz_number) FROM all_marks am), ARRAY[]::INTEGER[]) AS completed_juz,
-       (SELECT COUNT(*)::int FROM all_marks) AS juz_count
+       (SELECT COUNT(*)::int FROM all_marks) AS juz_count,
+       EXISTS (SELECT 1 FROM unmark) AS changed
 FROM touched t`
 
-	cycle, err := scanKhatamCycle(r.Pool.QueryRow(ctx, sqlText, userID, juzNumber))
+	cycle, changed, err := scanKhatamCycleRow(r.Pool.QueryRow(ctx, sqlText, userID, juzNumber), true)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return entity.QuranKhatamCycle{}, entity.ErrKhatamCycleNotFound
+			return entity.QuranKhatamCycle{}, false, entity.ErrKhatamCycleNotFound
 		}
 
-		return entity.QuranKhatamCycle{}, fmt.Errorf("PersonalRepo - UnmarkKhatamJuz - scanKhatamCycle: %w", err)
+		return entity.QuranKhatamCycle{}, false, fmt.Errorf("PersonalRepo - UnmarkKhatamJuz - scanKhatamCycle: %w", err)
 	}
 
-	return cycle, nil
+	return cycle, changed, nil
 }
 
 // CompleteKhatamCycle completes the active cycle only when all 30 juz are
@@ -291,14 +297,23 @@ LIMIT $2 OFFSET $3`, khatamCycleColumns, khatamMarksLateral)
 }
 
 func scanKhatamCycle(row rowScanner) (entity.QuranKhatamCycle, error) {
+	cycle, _, err := scanKhatamCycleRow(row, false)
+	return cycle, err
+}
+
+// scanKhatamCycleRow scans a cycle row, optionally with a trailing `changed` bool
+// that Mark/Unmark append to report whether the write actually altered the mark set
+// (so the usecase can skip the milestone notifier on an idempotent re-mark).
+func scanKhatamCycleRow(row rowScanner, withChanged bool) (entity.QuranKhatamCycle, bool, error) {
 	var (
 		cycle        entity.QuranKhatamCycle
 		completedAt  sql.NullTime
 		notes        sql.NullString
 		completedJuz []int32
+		changed      bool
 	)
 
-	err := row.Scan(
+	dests := []any{
 		&cycle.ID,
 		&cycle.UserID,
 		&cycle.StartedAt,
@@ -308,9 +323,13 @@ func scanKhatamCycle(row rowScanner) (entity.QuranKhatamCycle, error) {
 		&cycle.UpdatedAt,
 		&completedJuz,
 		&cycle.JuzCount,
-	)
-	if err != nil {
-		return entity.QuranKhatamCycle{}, err
+	}
+	if withChanged {
+		dests = append(dests, &changed)
+	}
+
+	if err := row.Scan(dests...); err != nil {
+		return entity.QuranKhatamCycle{}, false, err
 	}
 
 	if completedAt.Valid {
@@ -326,5 +345,5 @@ func scanKhatamCycle(row rowScanner) (entity.QuranKhatamCycle, error) {
 
 	cycle.Percent = math.Round(float64(cycle.JuzCount)/float64(entity.KhatamJuzTotal)*percentScale) / percentFull
 
-	return cycle, nil
+	return cycle, changed, nil
 }

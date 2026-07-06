@@ -151,7 +151,7 @@ type (
 		Books(ctx context.Context, query string, categoryID, authorID *int, hasContent *bool, limit, offset int, lang string) ([]entity.Book, int, error)
 		BookStats(ctx context.Context, lang string) (entity.BookCatalogStats, error)
 		Book(ctx context.Context, bookID int, lang string) (entity.Book, error)
-		Pages(ctx context.Context, bookID int, limit, offset int) ([]entity.BookPage, int, error)
+		Pages(ctx context.Context, bookID, limit, offset int) ([]entity.BookPage, int, error)
 		Page(ctx context.Context, bookID, pageID int) (entity.BookPage, error)
 		Headings(ctx context.Context, bookID int, query string) ([]entity.BookHeading, error)
 		Section(ctx context.Context, bookID, headingID int, lang string) (entity.BookSection, error)
@@ -208,6 +208,7 @@ type (
 			translationSource string,
 			includeTranslation bool,
 			includeAudio bool,
+			includeEditorial bool,
 			recitationID string,
 		) ([]entity.QuranAyah, error)
 		Hizbs(ctx context.Context, lang string) ([]entity.QuranNavigationSegment, error)
@@ -218,6 +219,7 @@ type (
 			translationSource string,
 			includeTranslation bool,
 			includeAudio bool,
+			includeEditorial bool,
 			recitationID string,
 		) ([]entity.QuranAyah, error)
 		Ayah(
@@ -237,6 +239,7 @@ type (
 			translationSource string,
 			includeTranslation bool,
 			includeAudio bool,
+			includeEditorial bool,
 			recitationID string,
 		) ([]entity.QuranAyah, error)
 		Search(ctx context.Context, query, lang string, limit, offset int) ([]entity.QuranSearchResult, int, error)

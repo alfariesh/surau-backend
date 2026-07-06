@@ -1979,6 +1979,14 @@ definitions:
       ayah_number:
         example: 4
         type: integer
+      content_updated_at:
+        description: |-
+          ContentUpdatedAt is GREATEST(ayah, editorial) for the requested lang; use it
+          as the per-ayah SEO sitemap lastmod so editorial edits advance freshness.
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      editorial:
+        $ref: '#/definitions/entity.QuranAyahEditorial'
       font_family:
         type: string
       hizb_number:
@@ -2020,6 +2028,47 @@ definitions:
         $ref: '#/definitions/entity.AvailabilityDecision'
       translation:
         $ref: '#/definitions/entity.AvailabilityDecision'
+    type: object
+  entity.QuranAyahEditorial:
+    properties:
+      author_name:
+        type: string
+      faq:
+        items:
+          $ref: '#/definitions/entity.QuranAyahEditorialFAQ'
+        type: array
+      intisari_html:
+        type: string
+      keutamaan_html:
+        type: string
+      lang:
+        example: id
+        type: string
+      license_status:
+        example: permitted
+        type: string
+      meta_description:
+        type: string
+      meta_title:
+        type: string
+      reviewed_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      reviewed_by:
+        type: string
+      tafsir_range:
+        example: "255"
+        type: string
+      updated_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+    type: object
+  entity.QuranAyahEditorialFAQ:
+    properties:
+      answer_html:
+        type: string
+      question:
+        type: string
     type: object
   entity.QuranKhatamCycle:
     properties:

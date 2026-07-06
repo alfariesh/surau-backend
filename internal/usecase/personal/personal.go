@@ -279,8 +279,11 @@ func (uc *UseCase) MarkKhatamJuz(ctx context.Context, userID string, juzNumber i
 		return entity.QuranKhatamCycle{}, entity.ErrInvalidJuzNumber
 	}
 
-	cycle, err := uc.repo.MarkKhatamJuz(ctx, userID, juzNumber)
-	if err == nil && uc.notifier != nil {
+	// Only notify when a NEW mark was inserted (a genuine 9->10 / 19->20 transition
+	// once isKhatamMilestone gates on the count). An idempotent re-mark returns
+	// changed=false, so retries/offline replays no longer re-send the milestone push.
+	cycle, changed, err := uc.repo.MarkKhatamJuz(ctx, userID, juzNumber)
+	if err == nil && changed && uc.notifier != nil {
 		uc.notifier.NotifyKhatamMilestone(ctx, userID, cycle.JuzCount)
 	}
 
@@ -293,7 +296,9 @@ func (uc *UseCase) UnmarkKhatamJuz(ctx context.Context, userID string, juzNumber
 		return entity.QuranKhatamCycle{}, entity.ErrInvalidJuzNumber
 	}
 
-	return uc.repo.UnmarkKhatamJuz(ctx, userID, juzNumber)
+	cycle, _, err := uc.repo.UnmarkKhatamJuz(ctx, userID, juzNumber)
+
+	return cycle, err
 }
 
 // CompleteKhatamCycle completes the active cycle once all 30 juz are marked.
@@ -550,7 +555,9 @@ func normalizeSavedItemTags(tags []string) ([]string, error) {
 
 func normalizeSavedItemTag(tag string) (string, error) {
 	tag = strings.ToLower(strings.TrimSpace(tag))
-	if len(tag) > maxTagLength {
+	// Count runes, not bytes, so non-ASCII tags (Arabic, etc.) hit the limit at the
+	// expected character count — consistent with the label/note checks above.
+	if utf8.RuneCountInString(tag) > maxTagLength {
 		return "", entity.ErrInvalidSavedItem
 	}
 

@@ -13126,6 +13126,14 @@ const docTemplate = `{
                     "type": "integer",
                     "example": 4
                 },
+                "content_updated_at": {
+                    "description": "ContentUpdatedAt is GREATEST(ayah, editorial) for the requested lang; use it\nas the per-ayah SEO sitemap lastmod so editorial edits advance freshness.",
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "editorial": {
+                    "$ref": "#/definitions/entity.QuranAyahEditorial"
+                },
                 "font_family": {
                     "type": "string"
                 },
@@ -13185,6 +13193,66 @@ const docTemplate = `{
                 },
                 "translation": {
                     "$ref": "#/definitions/entity.AvailabilityDecision"
+                }
+            }
+        },
+        "entity.QuranAyahEditorial": {
+            "type": "object",
+            "properties": {
+                "author_name": {
+                    "type": "string"
+                },
+                "faq": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.QuranAyahEditorialFAQ"
+                    }
+                },
+                "intisari_html": {
+                    "type": "string"
+                },
+                "keutamaan_html": {
+                    "type": "string"
+                },
+                "lang": {
+                    "type": "string",
+                    "example": "id"
+                },
+                "license_status": {
+                    "type": "string",
+                    "example": "permitted"
+                },
+                "meta_description": {
+                    "type": "string"
+                },
+                "meta_title": {
+                    "type": "string"
+                },
+                "reviewed_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "reviewed_by": {
+                    "type": "string"
+                },
+                "tafsir_range": {
+                    "type": "string",
+                    "example": "255"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                }
+            }
+        },
+        "entity.QuranAyahEditorialFAQ": {
+            "type": "object",
+            "properties": {
+                "answer_html": {
+                    "type": "string"
+                },
+                "question": {
+                    "type": "string"
                 }
             }
         },

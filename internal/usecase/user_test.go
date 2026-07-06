@@ -983,7 +983,7 @@ func TestResetPassword(t *testing.T) {
 		}
 		repo.EXPECT().GetPasswordResetTokenByHash(context.Background(), tokenHash).Return(storedToken, nil)
 		repo.EXPECT().ResetPasswordWithToken(context.Background(), "token-id", "user-id-123", gomock.Any()).
-			DoAndReturn(func(_ context.Context, _, _ string, passwordHash string) (entity.User, error) {
+			DoAndReturn(func(_ context.Context, _, _, passwordHash string) (entity.User, error) {
 				assert.NoError(t, bcrypt.CompareHashAndPassword([]byte(passwordHash), []byte("newpassword123")))
 
 				return entity.User{ID: "user-id-123", EmailVerified: true, PasswordHash: passwordHash}, nil

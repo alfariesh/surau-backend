@@ -345,6 +345,9 @@ func (r *V1) listQuranSurahAyahs(ctx *fiber.Ctx) error {
 		includeTranslation = *includeTranslationValue
 	}
 	includeAudio := includeAudioValue != nil && *includeAudioValue
+	// The compact reader view drops editorial in the response, so skip the editorial
+	// join entirely for it — high-volume reader traffic avoids unnecessary work.
+	includeEditorial := view != quranAyahViewReaderMinimal
 
 	ayahs, err := r.quran.SurahAyahs(
 		ctx.UserContext(),
@@ -355,6 +358,7 @@ func (r *V1) listQuranSurahAyahs(ctx *fiber.Ctx) error {
 		ctx.Query("translation_source"),
 		includeTranslation,
 		includeAudio,
+		includeEditorial,
 		ctx.Query("recitation_id"),
 	)
 	if err != nil {
@@ -397,14 +401,13 @@ func (r *V1) searchQuran(ctx *fiber.Ctx) error {
 }
 
 // @Summary     List book Quran references
-// @Description List Quran references linked to a public kitab. Defaults to approved references.
+// @Description List approved Quran references linked to a public kitab. This public endpoint only ever returns approved references.
 // @ID          list-book-quran-references
 // @Tags        quran
 // @Produce     json
 // @Param       book_id path     int    true  "Book ID"
 // @Param       heading_id query int    false "Heading ID"
 // @Param       lang    query    string false "Language code" default(id)
-// @Param       status  query    string false "Review status" Enums(approved,pending,rejected,ambiguous,needs_review,all) default(approved)
 // @Param       limit   query    int    false "Limit" default(50)
 // @Param       offset  query    int    false "Offset" default(0)
 // @Success     200     {object} response.BookQuranReferenceList
@@ -428,7 +431,11 @@ func (r *V1) listBookQuranReferences(ctx *fiber.Ctx) error {
 		bookID,
 		headingID,
 		ctx.Query("lang"),
-		ctx.Query("status", "approved"),
+		// SECURITY: this is an unauthenticated, cacheable public route. Never let the
+		// caller pick a non-approved moderation state (pending/rejected/ambiguous/
+		// needs_review/all) — doing so leaks unreviewed or editor-rejected citations.
+		// Always serve approved only; expose other states only behind an editor route.
+		"approved",
 		queryInt(ctx, "limit", 50),
 		queryInt(ctx, "offset", 0),
 	)
@@ -448,6 +455,7 @@ type quranNavigationAyahLoader func(
 	translationSource string,
 	includeTranslation bool,
 	includeAudio bool,
+	includeEditorial bool,
 	recitationID string,
 ) ([]entity.QuranAyah, error)
 
@@ -475,6 +483,8 @@ func (r *V1) quranNavigationAyahs(
 		includeTranslation = *includeTranslationValue
 	}
 	includeAudio := includeAudioValue != nil && *includeAudioValue
+	// Match the surah path: full view may carry editorial; reader_minimal strips it.
+	includeEditorial := view != quranAyahViewReaderMinimal
 
 	ayahs, err := load(
 		ctx.UserContext(),
@@ -483,6 +493,7 @@ func (r *V1) quranNavigationAyahs(
 		ctx.Query("translation_source"),
 		includeTranslation,
 		includeAudio,
+		includeEditorial,
 		ctx.Query("recitation_id"),
 	)
 	if err != nil {
