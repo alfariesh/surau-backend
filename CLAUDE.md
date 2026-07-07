@@ -8,6 +8,9 @@ di repo ini). Operator (Salman) **non-developer** — balas dalam **bahasa Indon
 istilah teknis dengan dampak produknya; identifier/komentar kode tetap English.
 
 ## MULAI DARI SINI (sumber kebenaran)
+0. **`roadmap/SESI.md`** — antrean prompt sesi siap-paste milik operator (urutan eksekusi
+   konkret). Bila sesi ini dimulai dari salah satu prompt di sana: ikuti aturannya, dan di
+   akhir sesi CENTANG sesi tsb. di SESI.md.
 1. **`roadmap/PROGRAM.md`** — urutan eksekusi (gelombang W0–W7), jalur execute-early
    "Selamatkan Data" (E1–E6), antrean keputusan operator (§5), dan **START HERE** 5 sesi
    pertama (§6). Living document — perbarui saat milestone selesai.
@@ -51,6 +54,31 @@ aman** yang tertulis di PROGRAM.md §5.
 - Deploy: push `main` → dev-api.surau.org; tag `api-vX.Y.Z` → api.surau.org (+ GitHub Release).
   Migrasi gagal saat deploy = schema DIRTY → boot-loop; runbook di `docs/deploy-vps.md` §6.
   Tidak ada auto-rollback.
+
+## Protokol sesi (agar tiap sesi konsisten)
+
+**Awal sesi:**
+- Baca `roadmap/PROGRAM.md` dulu (posisi gelombang + keputusan terbaru) sebelum mengerjakan apa pun.
+- Kerja di branch fitur (`feat/...`, `fix/...`, `chore/...`) — **jangan commit langsung ke
+  `main`** (push ke main = auto-deploy ke dev-api).
+
+**Definition of Done — sebuah perubahan BELUM selesai sebelum:**
+1. Test menyertainya (unit; integration untuk endpoint publik baru/berubah; live-test bila
+   menyentuh invariant korpus) dan `make pre-commit` hijau.
+2. Kontrak API berubah → **Swagger di-regenerate** DAN dokumen kontrak terkait di `docs/*.md`
+   diperbarui — FE web/mobile membaca docs ini; API berubah tanpa docs = merusak konsumen.
+3. Migrasi baru = pasangan up/down yang teruji bolak-balik.
+4. Milestone roadmap selesai atau keputusan baru diambil → **perbarui `roadmap/PROGRAM.md`**
+   (centang/catat); keputusan operator baru → tambahkan ke "Keputusan terjawab" di file ini.
+5. Tidak ada artefak sementara ikut ter-commit (dump, coverage, file eksperimen — pakai tmp/
+   lokal).
+
+**Setelah merge ke `main` (auto-deploy dev):** verifikasi di dev-api.surau.org — `/version`
+menunjukkan SHA baru + smoke endpoint yang diubah. Merge ≠ selesai; terverifikasi di dev =
+selesai.
+
+**Rilis prod:** hanya via tag `api-vX.Y.Z`, hanya setelah perubahan hidup & teruji di dev
+(soak). Workflow memverifikasi `/version` prod pasca-deploy — periksa hasilnya, jangan diasumsikan.
 
 ## Kebiasaan & perintah repo
 - Layering: `entity → repo (persistent/webapi) → usecase → controller (restapi/v1) → router`;

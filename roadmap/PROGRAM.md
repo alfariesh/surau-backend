@@ -264,6 +264,26 @@ yang diperselisihkan — di jawaban AI dan di halaman wiki.
 **Sambil S1–S5 berjalan, Salman menjawab:** **PK-1** (memblokir W2), lalu mencicil PK-2
 (memblokir W4) dan PK-3 poin 1. *(O-F1-1 sudah terjawab: Telegram — lihat §5.0.)*
 
+### Template prompt sesi implementasi (copy-paste, isi bagian [kurung])
+
+```text
+Kerjakan [S1 — E1+E2 / atau satu inisiatif, mis. F1-B] dari roadmap/PROGRAM.md.
+
+1. Baca dulu: roadmap/PROGRAM.md (posisi & keputusan) + dokumen fase terkait:
+   [mis. roadmap/phase-1-foundations.md bagian F1-A + roadmap/phase-8-production.md P8-2].
+2. MASUK PLAN MODE dulu. Roadmap hanya memberi WHAT/WHY/Acceptance-Criteria — detail
+   implementasi (HOW) kamu temukan sendiri dari kode. Rencanamu WAJIB menyebut bagaimana
+   SETIAP Acceptance Criterion inisiatif ini dipenuhi, dan boleh menyimpang dari asumsi
+   roadmap bila kode menunjukkan jalan lebih baik (catat sebagai nota).
+3. Setelah kusetujui: implementasi + test di branch fitur, lalu jalankan checklist
+   "Definition of Done" di CLAUDE.md sebelum menyatakan selesai — termasuk mencentang
+   milestone di roadmap/PROGRAM.md dan verifikasi di dev-api setelah merge.
+```
+
+Aturan ukuran sesi: **satu baris tabel START HERE atau satu inisiatif fase per sesi** — besar
+boleh, campur-aduk jangan. Untuk pekerjaan sapuan lebar (mis. K-0 multi-defect, K-1 backfill
+katalog), tambahkan kata **"ultracode"** di prompt agar sesi memakai orkestrasi multi-agen.
+
 ---
 
 ## 7. Living document
