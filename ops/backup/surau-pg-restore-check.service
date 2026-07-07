@@ -1,5 +1,5 @@
 [Unit]
-Description=Surau PostgreSQL backup to Cloudflare R2
+Description=Surau weekly restore-check of latest R2 backup
 Wants=docker.service
 After=docker.service network-online.target
 OnFailure=surau-alert@%n.service
@@ -7,7 +7,8 @@ OnFailure=surau-alert@%n.service
 [Service]
 Type=oneshot
 EnvironmentFile=/etc/surau-backup/env
-ExecStart=/usr/local/sbin/surau-pg-backup
+Environment=NOTIFY_ON_SUCCESS=1
+ExecStart=/usr/local/sbin/surau-pg-restore-check r2-latest
 Nice=10
 IOSchedulingClass=best-effort
 IOSchedulingPriority=7

@@ -19,6 +19,10 @@ R2_ENDPOINT="${R2_ENDPOINT:-}"
 R2_ACCESS_KEY_ID="${R2_ACCESS_KEY_ID:-}"
 R2_SECRET_ACCESS_KEY="${R2_SECRET_ACCESS_KEY:-}"
 R2_UPLOAD_REQUIRED="${R2_UPLOAD_REQUIRED:-1}"
+# Dumps contain user PII (emails, password hashes); they must never reach R2
+# in plaintext. Encryption is client-side (age) and the key pair is deliberately
+# separate from the R2 credentials: leaking the bucket token yields ciphertext only.
+AGE_RECIPIENT="${AGE_RECIPIENT:-}"
 
 if [[ -z "$R2_ENDPOINT" && -n "$R2_ACCOUNT_ID" ]]; then
   R2_ENDPOINT="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
@@ -58,6 +62,7 @@ write_rclone_config() {
 main() {
   require DEPLOY_PATH
   require R2_BUCKET
+  require AGE_RECIPIENT
 
   umask 077
   mkdir -p "$BACKUP_DIR"
@@ -66,7 +71,7 @@ main() {
   started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   stamp="$(date -u +%Y%m%dT%H%M%SZ)"
   git_sha="$(git -c safe.directory="$DEPLOY_PATH" -C "$DEPLOY_PATH" rev-parse --short HEAD 2>/dev/null || echo unknown)"
-  base="surau-postgres-${stamp}-${git_sha}.dump.zst"
+  base="surau-postgres-${stamp}-${git_sha}.dump.zst.age"
   archive="${BACKUP_DIR}/${base}"
   tmp_archive="${archive}.tmp"
   checksum="${archive}.sha256"
@@ -80,7 +85,8 @@ main() {
 
   sudo docker compose --env-file "$COMPOSE_ENV_FILE" -f "$COMPOSE_FILE" exec -T db \
     sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" --format=custom --no-owner --no-privileges' \
-    | zstd -T0 -10 -q -o "$tmp_archive"
+    | zstd -T0 -10 -q \
+    | age -e -r "$AGE_RECIPIENT" -o "$tmp_archive"
 
   mv "$tmp_archive" "$archive"
   (cd "$BACKUP_DIR" && sha256sum "$base") >"$tmp_checksum"
@@ -94,7 +100,7 @@ main() {
     fi
 
     echo "R2 upload skipped because R2_UPLOAD_REQUIRED=${R2_UPLOAD_REQUIRED}"
-    find "$BACKUP_DIR" -type f \( -name '*.dump.zst' -o -name '*.dump.zst.sha256' \) -mtime +"$LOCAL_RETENTION_DAYS" -delete
+    find "$BACKUP_DIR" -type f \( -name '*.dump.zst' -o -name '*.dump.zst.age' -o -name '*.sha256' \) -mtime +"$LOCAL_RETENTION_DAYS" -delete
     echo "local backup created: ${archive}"
     return
   fi
@@ -107,7 +113,7 @@ main() {
   rclone --config "$rclone_config" copyto "$checksum" "r2:${R2_BUCKET}/${object_prefix}/${base}.sha256"
   rclone --config "$rclone_config" lsf "r2:${R2_BUCKET}/${object_prefix}/" --files-only | grep -Fx "${base}" >/dev/null
 
-  find "$BACKUP_DIR" -type f \( -name '*.dump.zst' -o -name '*.dump.zst.sha256' \) -mtime +"$LOCAL_RETENTION_DAYS" -delete
+  find "$BACKUP_DIR" -type f \( -name '*.dump.zst' -o -name '*.dump.zst.age' -o -name '*.sha256' \) -mtime +"$LOCAL_RETENTION_DAYS" -delete
 
   echo "backup uploaded: r2://${R2_BUCKET}/${object_prefix}/${base}"
 }

@@ -15,9 +15,18 @@ R2_ENDPOINT="${R2_ENDPOINT:-}"
 R2_ACCESS_KEY_ID="${R2_ACCESS_KEY_ID:-}"
 R2_SECRET_ACCESS_KEY="${R2_SECRET_ACCESS_KEY:-}"
 RESTORE_IMAGE="${RESTORE_IMAGE:-postgres:18.4-alpine}"
+# Private half of the backup encryption key pair; lives on this host only,
+# never in the bucket. See docs/backup-restore-r2.md for the escrow copy.
+AGE_KEY_FILE="${AGE_KEY_FILE:-/etc/surau-backup/age.key}"
+# Set NOTIFY_ON_SUCCESS=1 (the weekly systemd service does) to send the
+# check report to Telegram; failures are reported by surau-alert@ instead.
+NOTIFY_ON_SUCCESS="${NOTIFY_ON_SUCCESS:-0}"
 RESTORE_WORKDIR=""
 RESTORE_CONTAINER=""
 RESTORE_VOLUME=""
+
+# Matches both encrypted (current) and legacy plaintext backup names.
+ARCHIVE_PATTERN='^surau-postgres-[0-9TZ]+-[A-Za-z0-9._-]+\.dump\.zst(\.age)?$'
 
 if [[ -z "$R2_ENDPOINT" && -n "$R2_ACCOUNT_ID" ]]; then
   R2_ENDPOINT="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
@@ -65,7 +74,7 @@ download_latest_from_r2() {
 
   latest="$(
     rclone --config "$rclone_config" lsf "r2:${R2_BUCKET}/${object_prefix}/" --files-only \
-      | grep -E '^surau-postgres-[0-9TZ]+-[A-Za-z0-9._-]+\.dump\.zst$' \
+      | grep -E "$ARCHIVE_PATTERN" \
       | sort \
       | tail -n 1
   )"
@@ -84,12 +93,26 @@ download_latest_from_r2() {
 }
 
 latest_local_backup() {
-  find "$BACKUP_DIR" -maxdepth 1 -type f -name 'surau-postgres-*.dump.zst' -print | sort | tail -n 1
+  find "$BACKUP_DIR" -maxdepth 1 -type f \( -name 'surau-postgres-*.dump.zst' -o -name 'surau-postgres-*.dump.zst.age' \) -print | sort | tail -n 1
+}
+
+decompress_archive() {
+  local archive="$1"
+  if [[ "$archive" == *.age ]]; then
+    if [[ ! -f "$AGE_KEY_FILE" ]]; then
+      echo "encrypted backup but decryption key not found: ${AGE_KEY_FILE}" >&2
+      exit 6
+    fi
+    age -d -i "$AGE_KEY_FILE" "$archive" | zstd -dc
+  else
+    zstd -dc "$archive"
+  fi
 }
 
 main() {
   local source_arg="${1:-r2-latest}"
-  local archive checksum books pages ayahs
+  local archive checksum books pages ayahs started_epoch duration
+  started_epoch="$(date +%s)"
   RESTORE_WORKDIR="$(mktemp -d /tmp/surau-restore-check.XXXXXX)"
   RESTORE_CONTAINER="surau-restore-check-$(date -u +%Y%m%d%H%M%S)"
 
@@ -158,7 +181,7 @@ main() {
     exit 5
   fi
 
-  zstd -dc "$archive" | sudo docker exec -i "$RESTORE_CONTAINER" \
+  decompress_archive "$archive" | sudo docker exec -i "$RESTORE_CONTAINER" \
     pg_restore -U surau -d surau_restore --no-owner --no-privileges
 
   books="$(sudo docker exec "$RESTORE_CONTAINER" psql -U surau -d surau_restore -Atc "select count(*) from books where has_content = true")"
@@ -172,7 +195,12 @@ main() {
     exit 4
   fi
 
-  echo "restore check passed"
+  duration=$(( $(date +%s) - started_epoch ))
+  echo "restore check passed in ${duration}s (archive: $(basename "$archive"))"
+
+  if [[ "$NOTIFY_ON_SUCCESS" == "1" ]] && command -v surau-notify >/dev/null 2>&1; then
+    surau-notify "✅ restore-check LULUS dalam ${duration}s — arsip $(basename "$archive"); books=${books} pages=${pages} ayahs=${ayahs}" || true
+  fi
 }
 
 main "$@"

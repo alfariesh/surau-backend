@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+# Dead-man switch: alert when the newest backup object in R2 is older than
+# MAX_BACKUP_AGE_HOURS (default 26h). Catches SILENT failures — a timer that
+# never fires, a wedged upload — that OnFailure= alerts cannot see.
+set -Eeuo pipefail
+
+ENV_FILE="${BACKUP_ENV_FILE:-/etc/surau-backup/env}"
+if [[ -f "$ENV_FILE" ]]; then
+  # shellcheck disable=SC1090
+  source "$ENV_FILE"
+fi
+
+R2_ACCOUNT_ID="${R2_ACCOUNT_ID:-}"
+R2_BUCKET="${R2_BUCKET:-surau-backend-backups}"
+R2_PREFIX="${R2_PREFIX:-postgres}"
+R2_ENDPOINT="${R2_ENDPOINT:-}"
+R2_ACCESS_KEY_ID="${R2_ACCESS_KEY_ID:-}"
+R2_SECRET_ACCESS_KEY="${R2_SECRET_ACCESS_KEY:-}"
+MAX_BACKUP_AGE_HOURS="${MAX_BACKUP_AGE_HOURS:-26}"
+
+if [[ -z "$R2_ENDPOINT" && -n "$R2_ACCOUNT_ID" ]]; then
+  R2_ENDPOINT="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+fi
+
+require() {
+  local name="$1"
+  local value="${!name:-}"
+  if [[ -z "$value" ]]; then
+    echo "missing required config: $name" >&2
+    exit 2
+  fi
+}
+
+write_rclone_config() {
+  require R2_ENDPOINT
+  require R2_ACCESS_KEY_ID
+  require R2_SECRET_ACCESS_KEY
+
+  mkdir -p /run/surau-backup
+  local config
+  config="$(mktemp /run/surau-backup/rclone.XXXXXX.conf)"
+  chmod 600 "$config"
+  {
+    echo "[r2]"
+    echo "type = s3"
+    echo "provider = Cloudflare"
+    echo "access_key_id = ${R2_ACCESS_KEY_ID}"
+    echo "secret_access_key = ${R2_SECRET_ACCESS_KEY}"
+    echo "endpoint = ${R2_ENDPOINT}"
+    echo "region = auto"
+    echo "no_check_bucket = true"
+  } >"$config"
+  echo "$config"
+}
+
+main() {
+  require R2_BUCKET
+
+  local object_prefix="${R2_PREFIX%/}"
+  local rclone_config newest_line newest_time newest_file newest_epoch now_epoch age_hours
+  rclone_config="$(write_rclone_config)"
+  trap 'rm -f "$rclone_config"' RETURN
+
+  # Format "tsp" → "<modtime>;<size>;<path>" per file; newest backup wins.
+  newest_line="$(
+    rclone --config "$rclone_config" lsf "r2:${R2_BUCKET}/${object_prefix}/" \
+      --files-only --format "tsp" --separator ';' \
+      | grep -E ';surau-postgres-[0-9TZ]+-[A-Za-z0-9._-]+\.dump\.zst(\.age)?$' \
+      | sort \
+      | tail -n 1
+  )"
+
+  if [[ -z "$newest_line" ]]; then
+    /usr/local/sbin/surau-notify "🚨 DEAD-MAN: TIDAK ADA backup sama sekali di r2://${R2_BUCKET}/${object_prefix}/"
+    exit 4
+  fi
+
+  newest_time="${newest_line%%;*}"
+  newest_file="${newest_line##*;}"
+  newest_epoch="$(date -d "$newest_time" +%s)"
+  now_epoch="$(date +%s)"
+  age_hours=$(( (now_epoch - newest_epoch) / 3600 ))
+
+  echo "newest backup: ${newest_file} (${age_hours}h old, threshold ${MAX_BACKUP_AGE_HOURS}h)"
+
+  if (( age_hours > MAX_BACKUP_AGE_HOURS )); then
+    /usr/local/sbin/surau-notify "🚨 DEAD-MAN: backup terakhir di r2://${R2_BUCKET}/${object_prefix}/ berumur ${age_hours} jam (> ${MAX_BACKUP_AGE_HOURS} jam). File: ${newest_file}. Backup harian kemungkinan MATI DIAM-DIAM — periksa journalctl -u surau-pg-backup.service."
+    exit 4
+  fi
+
+  echo "backup freshness OK"
+}
+
+main "$@"

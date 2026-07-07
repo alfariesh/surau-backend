@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# Send a message to the operator's Telegram bot (decision O-F1-1).
+# Usage: surau-notify "message text"
+set -Eeuo pipefail
+
+ENV_FILE="${BACKUP_ENV_FILE:-/etc/surau-backup/env}"
+if [[ -f "$ENV_FILE" ]]; then
+  # shellcheck disable=SC1090
+  source "$ENV_FILE"
+fi
+
+TELEGRAM_BOT_TOKEN="${TELEGRAM_BOT_TOKEN:-}"
+TELEGRAM_CHAT_ID="${TELEGRAM_CHAT_ID:-}"
+ENV_LABEL="${ENV_LABEL:-$(hostname)}"
+
+if [[ -z "$TELEGRAM_BOT_TOKEN" || -z "$TELEGRAM_CHAT_ID" ]]; then
+  echo "surau-notify: TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID not configured in ${ENV_FILE}" >&2
+  exit 2
+fi
+
+if [[ $# -lt 1 ]]; then
+  echo "usage: surau-notify <message>" >&2
+  exit 2
+fi
+
+# Telegram caps messages at 4096 chars; keep headroom for the label.
+text="[${ENV_LABEL}] $*"
+text="${text:0:3900}"
+
+curl -fsS -m 20 --retry 3 --retry-delay 2 \
+  "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+  --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+  --data-urlencode "text=${text}" >/dev/null
+
+echo "surau-notify: sent"
