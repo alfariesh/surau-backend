@@ -240,6 +240,22 @@ go run ./cmd/import-books --release-key=full-YYYYMMDD
 
 Full import has a disk preflight and defaults to requiring 30GiB free. Use `--limit` or `--book-ids` for sample imports.
 
+### Re-import safety (staged diff + approval)
+
+Re-imports are **non-destructive by default**: rows that disappeared from the
+new source release are only *staged* (recorded in `book_import_removal_stages`
+with the run id printed at the end) — nothing is deleted or hidden. To apply
+them as **soft tombstones** (`is_deleted`, reversible, editorial/user data
+untouched), review the staged list and re-run with the same source:
+
+```sh
+go run ./cmd/import-books --release-key=full-YYYYMMDD -approve-removals=<staged-run-id>
+```
+
+If the source changed between staging and approval the run aborts (drift
+guard) — re-stage and review again. A row that reappears in a later release
+automatically clears its tombstone.
+
 ## Import Translation/Audio Assets
 
 `cmd/import-reader-assets` accepts JSONL records.

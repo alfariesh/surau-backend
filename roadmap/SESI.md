@@ -47,7 +47,9 @@ Rujukan: roadmap/phase-1-foundations.md F1-A (bagian WAL/PITR & snapshot).
 Masuk PLAN MODE dulu; rencana wajib menyebut cara memenuhi setiap Acceptance Criterion. Setelah saya setujui: kerjakan sampai tuntas — branch fitur, test, Definition of Done di CLAUDE.md, centang PROGRAM.md & SESI.md, merge, verifikasi dev-api. Laporan akhir bahasa awam.
 ```
 
-- [ ] **SESI 3 — Jinakkan importer buku (E4) — PALING PENTING**
+- [x] **SESI 3 — Jinakkan importer buku (E4) — PALING PENTING** ✅ 2026-07-07 — hard-delete
+  dihapus; alur stage→review→approve + tombstone reversibel; suite 8 skenario ditulis DULU
+  (merah membuktikan defect, hijau setelah implementasi); larangan re-import di CLAUDE.md dicabut.
 
 ```text
 Kerjakan E4 dari roadmap/PROGRAM.md §1: importer Shamela (cmd/import-books) saat ini MENGHAPUS permanen halaman/heading yang hilang di sumber baru dan ikut menghapus kerja editorial (defect D1 kritis). Ubah menjadi staged-diff + tombstone + persetujuan eksplisit, dan TULIS SUITE TEST-NYA DULU sebelum mengubah perilaku.
