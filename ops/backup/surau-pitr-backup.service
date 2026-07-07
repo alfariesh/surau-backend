@@ -1,0 +1,13 @@
+[Unit]
+Description=Surau pgBackRest base backup (full Sun, diff otherwise)
+Wants=docker.service
+After=docker.service network-online.target
+OnFailure=surau-alert@%n.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/surau-backup/env
+ExecStart=/usr/local/sbin/surau-pitr-backup
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7

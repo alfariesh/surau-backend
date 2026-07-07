@@ -1,19 +1,31 @@
 # PostgreSQL Backups to Cloudflare R2
 
-Backups are created on each VPS with `pg_dump`, compressed with `zstd`,
-**encrypted client-side with [age](https://age-encryption.org)**, uploaded to
-Cloudflare R2, and verified weekly by restoring into a temporary PostgreSQL
-container. Failures alert the operator's Telegram bot (decision O-F1-1), and a
-dead-man check alarms when no fresh backup lands in R2 for >26 hours.
+Three complementary layers protect the data, all failing loudly to the
+operator's Telegram bot (decision O-F1-1):
+
+1. **Daily encrypted dumps** (`pg_dump | zstd | age` → R2), verified weekly by
+   restoring into a temporary PostgreSQL container; a dead-man check alarms
+   when no fresh dump lands in R2 for >26 hours.
+2. **Continuous WAL archiving / PITR** (pgBackRest → R2, E3): every database
+   change is shipped within ≤5 minutes (`archive_timeout=300`), so recovery to
+   an arbitrary point in time is possible — RPO ≤5 min instead of 24 h.
+3. **Pre-deploy snapshots** (E6): every deploy uploads an encrypted dump to R2
+   (`predeploy/<env>/`, 7-day retention) before migrations run.
 
 ## Layout
 
 - Bucket: `surau-backend-backups`
-- Prefixes: `postgres/prod/` (prod VPS) and `postgres/dev/` (dev VPS).
-  Legacy plaintext objects under `postgres/` age out via the 30-day lifecycle.
+- Prefixes:
+  - `postgres/prod/`, `postgres/dev/` — daily encrypted dumps
+    (`surau-postgres-<UTCstamp>-<gitsha>.dump.zst.age` + `.sha256` over the
+    ciphertext). Legacy plaintext objects under `postgres/` age out via the
+    30-day lifecycle.
+  - `pitr/prod/`, `pitr/dev/` — pgBackRest repos (base backups + WAL,
+    AES-256 encrypted, retention `repo1-retention-full=2` ≈ 2 weeks of PITR).
+  - `predeploy/prod/`, `predeploy/dev/` — pre-deploy snapshots
+    (`surau-predeploy-<UTCstamp>-<gitsha>.dump.zst.age`, pruned after 7 days
+    by the snapshot script itself).
 - Lifecycle: expire `postgres/` objects after 30 days.
-- Artifact name: `surau-postgres-<UTCstamp>-<gitsha>.dump.zst.age` (+ `.sha256`
-  over the ciphertext).
 
 Create an R2 API token in Cloudflare with Object Read & Write permission scoped
 to the `surau-backend-backups` bucket. Store the Access Key ID and Secret Access
@@ -65,15 +77,69 @@ and `TELEGRAM_CHAT_ID` from `/etc/surau-backup/env`, prefixed with
 - The weekly restore-check sends a short success report (duration + invariant
   counts) with `NOTIFY_ON_SUCCESS=1`.
 
+## PITR (pgBackRest, E3)
+
+The db container is `surau-db:latest` ([ops/pitr/Dockerfile.db](../ops/pitr/Dockerfile.db)
+= `postgres:18.4-alpine` + pgBackRest). Compose starts postgres with
+`archive_mode=on`, `archive_command='pgbackrest --stanza=main archive-push %p'`,
+`archive_timeout=300`. Config lives on the host at
+`/etc/surau-backup/pgbackrest.conf` (template:
+[pgbackrest.conf.example](../ops/backup/pgbackrest.conf.example)), mounted
+read-only into the container; it holds the R2 keys and the **repo cipher
+passphrase** (AES-256) — keep an offline escrow copy of that passphrase
+together with the age key. Repo per host: `pitr/prod` vs `pitr/dev`.
+
+- `surau-pitr-backup` (daily 03:30): base backup — full on Sunday, diff
+  otherwise; retention expires old sets automatically. Failure → Telegram.
+- `surau-pitr-check` (every 6h): `pgbackrest check` forces a WAL switch and
+  proves the segment reaches R2. Failure → Telegram (silent archiving death
+  surfaces within 6h).
+- `surau-pg-pitr-restore '<YYYY-MM-DD HH:MM:SS+TZ>'` — restores the repo into
+  a TEMPORARY container up to the given time (`--type=time`,
+  `--target-action=promote`), validates corpus invariants, runs any extra SQL
+  you pass, then tears down (set `KEEP_CONTAINER=1` to keep it running, e.g.
+  to extract rows during a real incident). The temporary instance starts with
+  `archive_mode` off, so it can never pollute the WAL archive.
+
+First-time setup on a host (after `install.sh`):
+
+```sh
+# 1. fill /etc/surau-backup/pgbackrest.conf; chown it to the CONTAINER postgres
+#    uid (check: docker exec <db> id -u postgres), chmod 400
+# 2. build + restart the db with archiving enabled (brief API blip):
+sudo docker compose --env-file .env.production -f docker-compose.prod.yml build db
+sudo docker compose --env-file .env.production -f docker-compose.prod.yml up -d db
+# 3. create the stanza and take the first full backup:
+sudo docker compose --env-file .env.production -f docker-compose.prod.yml exec -T -u postgres db \
+  pgbackrest --stanza=main stanza-create
+sudo /usr/local/sbin/surau-pitr-backup
+sudo /usr/local/sbin/surau-pitr-check
+```
+
+## Pre-deploy snapshots (E6)
+
+Both deploy workflows call `sudo /usr/local/sbin/surau-predeploy-snapshot`
+before the app migrates: encrypted custom-format dump to
+`/var/backups/surau/predeploy/` + upload to `r2://…/predeploy/<env>/`, both
+pruned after 7 days. Dump failure **aborts the deploy**; R2-upload failure
+alarms Telegram but lets the deploy continue (the local artifact still covers
+rollback). Restore one with the same recipe as any encrypted dump (see
+docs/deploy-vps.md §Pemulihan schema DIRTY).
+
 ## VPS Files
 
 - `/usr/local/sbin/surau-pg-backup` · `surau-pg-restore-check` ·
-  `surau-backup-watchdog` · `surau-notify` · `surau-alert`
+  `surau-backup-watchdog` · `surau-notify` · `surau-alert` ·
+  `surau-pitr-backup` · `surau-pitr-check` · `surau-pg-pitr-restore` ·
+  `surau-predeploy-snapshot`
 - `/etc/systemd/system/surau-pg-backup.{service,timer}` (daily 04:00),
   `surau-pg-restore-check.{service,timer}` (weekly Mon 06:00),
-  `surau-backup-watchdog.{service,timer}` (every 2h), `surau-alert@.service`
-- `/etc/surau-backup/env` (0600) and `/etc/surau-backup/age.key` (0600)
-- `/var/backups/surau/postgres/`
+  `surau-backup-watchdog.{service,timer}` (every 2h),
+  `surau-pitr-backup.{service,timer}` (daily 03:30),
+  `surau-pitr-check.{service,timer}` (every 6h), `surau-alert@.service`
+- `/etc/surau-backup/env` (0600), `/etc/surau-backup/age.key` (0600),
+  `/etc/surau-backup/pgbackrest.conf` (0400, owned by container postgres uid)
+- `/var/backups/surau/postgres/` and `/var/backups/surau/predeploy/`
 
 Install/update everything from a checkout of this repo:
 

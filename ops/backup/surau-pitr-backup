@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# Periodic pgBackRest base backup: full on Sunday, differential otherwise.
+# pgBackRest auto-upgrades diff→full when no prior full exists, and expires
+# old backups per repo1-retention-full after each run.
+set -Eeuo pipefail
+
+ENV_FILE="${BACKUP_ENV_FILE:-/etc/surau-backup/env}"
+if [[ -f "$ENV_FILE" ]]; then
+  # shellcheck disable=SC1090
+  source "$ENV_FILE"
+fi
+
+DEPLOY_PATH="${DEPLOY_PATH:-/srv/surau/backend}"
+COMPOSE_ENV_FILE="${COMPOSE_ENV_FILE:-.env.production}"
+COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.prod.yml}"
+
+backup_type="diff"
+if [[ "$(date +%u)" == "7" ]]; then
+  backup_type="full"
+fi
+
+cd "$DEPLOY_PATH"
+echo "starting pgbackrest ${backup_type} backup"
+sudo docker compose --env-file "$COMPOSE_ENV_FILE" -f "$COMPOSE_FILE" exec -T -u postgres db \
+  pgbackrest --stanza=main --type="$backup_type" backup </dev/null
+echo "pgbackrest ${backup_type} backup done"

@@ -1,0 +1,10 @@
+[Unit]
+Description=Run Surau pgBackRest archiving check every 6 hours
+
+[Timer]
+OnCalendar=00/6:45:00
+Persistent=true
+RandomizedDelaySec=5m
+
+[Install]
+WantedBy=timers.target

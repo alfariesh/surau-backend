@@ -17,7 +17,7 @@ Ada DUA VPS terpisah, di-deploy oleh dua GitHub Actions workflow:
   git tag -a api-v0.8.0 -m "API v0.8.0"
   git push origin api-v0.8.0
   ```
-  Workflow prod checkout commit di tag itu (detached HEAD), deploy ke PROD VPS (`APP_VERSION=0.8.0`, `APP_ENV=prod`), lalu buat GitHub Release otomatis. **Rollback** = deploy ulang tag sebelumnya (`git push origin api-v0.7.x` ulang, atau `workflow_dispatch`) atau restore `db-predeploy-backup.sql.gz`.
+  Workflow prod checkout commit di tag itu (detached HEAD), deploy ke PROD VPS (`APP_VERSION=0.8.0`, `APP_ENV=prod`), lalu buat GitHub Release otomatis. **Rollback** = deploy ulang tag sebelumnya (`git push origin api-v0.7.x` ulang, atau `workflow_dispatch`) atau restore snapshot pra-deploy terenkripsi dari `/var/backups/surau/predeploy/` / R2 `predeploy/prod/` (lihat §Pemulihan schema DIRTY).
 - **Verifikasi env:** `curl https://api.surau.org/version` → `{"name","version","env":"prod"}`; `curl https://dev-api.surau.org/version` → `env:"dev"`.
 - Kedua VPS pakai `docker-compose.prod.yml` + `.env.production` masing-masing (nilai beda: dev pakai `LOG_LEVEL=debug`, `SWAGGER_ENABLED=true`, `EMAIL_DELIVERY_MODE=log`, `ONESIGNAL_ENABLED=false`; prod pakai nilai produksi). Reverse proxy: `deploy/Caddyfile.tmpl` (ganti `{$DOMAIN}` per host).
 - **Secrets GitHub** (Settings → Secrets → Actions): `DEV_VPS_HOST/USER/DEPLOY_PATH/SSH_PRIVATE_KEY` + `PROD_VPS_HOST/USER/DEPLOY_PATH/SSH_PRIVATE_KEY`.
@@ -126,7 +126,7 @@ Database disimpan di Docker volume `surau-backend-prod_db_data`, dimount ke `/va
 
 ## Keamanan migration (auto-migrate saat boot)
 
-Aplikasi auto-migrate saat boot (build `-tags migrate`). Pipeline deploy (`.github/workflows/deploy-vps.yml`) sudah: (1) `pg_dump` snapshot ke `db-predeploy-backup.sql.gz` sebelum build/migrate, dan (2) `docker image prune` HANYA setelah `/readyz` hijau (biar image lama masih ada untuk rollback bila deploy gagal). `migrate.go` menolak auto-migrate bila schema DIRTY dan mencetak langkah pemulihan.
+Aplikasi auto-migrate saat boot (build `-tags migrate`). Pipeline deploy sudah: (1) snapshot pra-deploy via `surau-predeploy-snapshot` — pg_dump terenkripsi (age) ke `/var/backups/surau/predeploy/` DAN diunggah ke R2 `predeploy/<env>/` dengan retensi 7 hari (dump gagal = deploy batal; upload R2 gagal = deploy lanjut + alarm Telegram), dan (2) `docker image prune` HANYA setelah `/readyz` hijau (biar image lama masih ada untuk rollback bila deploy gagal). `migrate.go` menolak auto-migrate bila schema DIRTY dan mencetak langkah pemulihan.
 
 ### Preflight WAJIB sebelum deploy migration constraint baru
 
@@ -145,10 +145,12 @@ Kalau boot gagal dengan pesan `schema is DIRTY at version N`:
 
 ```sh
 # 1. Inspeksi & perbaiki data/schema penyebab migration gagal.
-# 2. Restore snapshot bila perlu:
-gunzip -c db-predeploy-backup.sql.gz | \
+# 2. Restore snapshot pra-deploy bila perlu (artefak terenkripsi, lihat
+#    docs/backup-restore-r2.md untuk detail kunci):
+age -d -i /etc/surau-backup/age.key \
+  /var/backups/surau/predeploy/surau-predeploy-<stamp>-<sha>.dump.zst.age | zstd -dc | \
   docker compose --env-file .env.production -f docker-compose.prod.yml exec -T db \
-  psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"
+  pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists --no-owner --no-privileges
 # 3. Set ulang versi ke migration terakhir yang sukses (JANGAN force sembarangan):
 migrate -path migrations -database "$PG_URL" force <last-good-version>
 # 4. Deploy ulang.
