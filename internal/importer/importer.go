@@ -37,7 +37,16 @@ type Options struct {
 	Limit         int
 	SkipDiskCheck bool
 	MinFreeGB     uint64
+	// ApproveRemovalsRun is the id of a prior staged run whose recorded
+	// removals may be applied as soft tombstones. Empty = stage-only mode:
+	// removals are recorded for review, nothing is ever deleted or hidden.
+	ApproveRemovalsRun string
 }
+
+// ErrRemovalDrift means the source changed between staging and approval: the
+// freshly computed removal set is not covered by the staged one, so applying
+// tombstones would hide rows the operator never reviewed.
+var ErrRemovalDrift = errors.New("staged removals drifted from current source; re-run stage mode and review again")
 
 // Stats describe an import run.
 type Stats struct {
@@ -52,6 +61,12 @@ type Stats struct {
 	MasterChecksum   string
 	StartedAt        time.Time
 	FinishedAt       time.Time
+	// Staged-diff bookkeeping (E4): removals recorded for review in stage
+	// mode, and tombstones actually applied in approval mode.
+	StagedRemovalPages    int
+	StagedRemovalHeadings int
+	TombstonedPages       int
+	TombstonedHeadings    int
 }
 
 type masterBook struct {
