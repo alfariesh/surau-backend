@@ -37,7 +37,16 @@ type Options struct {
 	Limit         int
 	SkipDiskCheck bool
 	MinFreeGB     uint64
+	// ApproveRemovalsRun is the id of a prior staged run whose recorded
+	// removals may be applied as soft tombstones. Empty = stage-only mode:
+	// removals are recorded for review, nothing is ever deleted or hidden.
+	ApproveRemovalsRun string
 }
+
+// ErrRemovalDrift means the source changed between staging and approval: the
+// freshly computed removal set is not covered by the staged one, so applying
+// tombstones would hide rows the operator never reviewed.
+var ErrRemovalDrift = errors.New("staged removals drifted from current source; re-run stage mode and review again")
 
 // Stats describe an import run.
 type Stats struct {
@@ -52,6 +61,14 @@ type Stats struct {
 	MasterChecksum   string
 	StartedAt        time.Time
 	FinishedAt       time.Time
+	// Staged-diff bookkeeping (E4): removals recorded for review in stage
+	// mode, and tombstones actually applied in approval mode.
+	StagedRemovalPages    int
+	StagedRemovalHeadings int
+	TombstonedPages       int
+	TombstonedHeadings    int
+	// ApprovedStageRun echoes Options.ApproveRemovalsRun for provenance.
+	ApprovedStageRun string
 }
 
 type masterBook struct {
@@ -117,10 +134,11 @@ func Run(ctx context.Context, opts Options) (stats Stats, err error) {
 	defer pool.Close()
 
 	stats = Stats{
-		RunID:          uuid.New().String(),
-		ReleaseKey:     opts.ReleaseKey,
-		MasterChecksum: checksum,
-		StartedAt:      startedAt,
+		RunID:            uuid.New().String(),
+		ReleaseKey:       opts.ReleaseKey,
+		MasterChecksum:   checksum,
+		StartedAt:        startedAt,
+		ApprovedStageRun: opts.ApproveRemovalsRun,
 	}
 
 	if err = upsertReleaseAndRun(ctx, pool, opts, stats); err != nil {
@@ -170,6 +188,14 @@ func Run(ctx context.Context, opts Options) (stats Stats, err error) {
 		return stats, err
 	}
 
+	if opts.ApproveRemovalsRun != "" {
+		if err = validateApprovalRun(ctx, pool, opts.ApproveRemovalsRun); err != nil {
+			status = "failed"
+
+			return stats, err
+		}
+	}
+
 	candidates := selectBookCandidates(books, opts)
 	stats.TotalBooks = len(candidates)
 
@@ -181,15 +207,27 @@ func Run(ctx context.Context, opts Options) (stats Stats, err error) {
 			continue
 		}
 
-		importedPages, importedHeadings, err := importBookContent(ctx, pool, book.ID, pages, headings)
+		outcome, err := importBookContent(ctx, pool, book.ID, pages, headings, bookImportParams{
+			RunID:        stats.RunID,
+			ReleaseKey:   stats.ReleaseKey,
+			ApproveRunID: opts.ApproveRemovalsRun,
+		})
 		if err != nil {
 			status = "failed"
 			return stats, fmt.Errorf("importing book %d: %w", book.ID, err)
 		}
 
 		stats.ImportedBooks++
-		stats.ImportedPages += importedPages
-		stats.ImportedHeadings += importedHeadings
+		stats.ImportedPages += outcome.LivePages
+		stats.ImportedHeadings += outcome.LiveHeadings
+
+		if opts.ApproveRemovalsRun == "" {
+			stats.StagedRemovalPages += len(outcome.Pages.RemovedIDs)
+			stats.StagedRemovalHeadings += len(outcome.Headings.RemovedIDs)
+		} else {
+			stats.TombstonedPages += outcome.TombstonedPages
+			stats.TombstonedHeadings += outcome.TombstonedHeadings
+		}
 	}
 
 	if len(stats.Errors) > 0 {
@@ -595,27 +633,50 @@ func readHeadings(db *stdsql.DB) ([]readerutil.SourceHeading, error) {
 	return headings, nil
 }
 
+type bookImportParams struct {
+	RunID        string
+	ReleaseKey   string
+	ApproveRunID string
+}
+
+type bookImportOutcome struct {
+	LivePages          int
+	LiveHeadings       int
+	Pages              pageDiff
+	Headings           headingDiff
+	TombstonedPages    int
+	TombstonedHeadings int
+}
+
+// importBookContent applies a source snapshot as a staged diff (E4 / K-0 D1):
+// only added/changed/revived rows are written, and rows missing from the
+// source are NEVER deleted — they are recorded for review (stage mode) or
+// soft-tombstoned (approval mode, after a drift check against the staged
+// diff). Editorial and user data therefore survive re-imports by construction.
 func importBookContent(
 	ctx context.Context,
 	pool *pgxpool.Pool,
 	bookID int,
 	pages []sourcePage,
 	headings []readerutil.SourceHeading,
-) (int, int, error) {
+	params bookImportParams,
+) (bookImportOutcome, error) {
 	if len(pages) == 0 {
-		return 0, 0, errors.New("book has no pages")
+		return bookImportOutcome{}, errors.New("book has no pages")
 	}
 
 	pageIDs := make(map[int]struct{}, len(pages))
-	pageIDList := make([]int, 0, len(pages))
+	incomingPages := make([]sourcePage, 0, len(pages))
 	lastPageID := 0
+
 	for _, page := range pages {
 		if page.IsDeleted {
 			continue
 		}
 
 		pageIDs[page.ID] = struct{}{}
-		pageIDList = append(pageIDList, page.ID)
+		incomingPages = append(incomingPages, page)
+
 		if page.ID > lastPageID {
 			lastPageID = page.ID
 		}
@@ -635,22 +696,38 @@ func importBookContent(
 	}
 
 	decorated := readerutil.DecorateHeadings(filteredHeadings)
-	ranges := readerutil.BuildHeadingRanges(bookID, lastPageID, decorated)
 
 	tx, err := pool.Begin(ctx)
 	if err != nil {
-		return 0, 0, fmt.Errorf("begin tx: %w", err)
+		return bookImportOutcome{}, fmt.Errorf("begin tx: %w", err)
 	}
 	defer func() {
 		_ = tx.Rollback(ctx)
 	}()
 
+	currentPages, err := loadCurrentPages(ctx, tx, bookID)
+	if err != nil {
+		return bookImportOutcome{}, err
+	}
+
+	currentHeadings, err := loadCurrentHeadings(ctx, tx, bookID)
+	if err != nil {
+		return bookImportOutcome{}, err
+	}
+
+	outcome := bookImportOutcome{
+		LivePages:    len(incomingPages),
+		LiveHeadings: len(decorated),
+		Pages:        diffPages(currentPages, incomingPages),
+		Headings:     diffHeadings(currentHeadings, decorated),
+	}
+
 	pageBatch := &pgx.Batch{}
-	for _, page := range pages {
+	for _, page := range outcome.Pages.Upserts {
 		pageBatch.Queue(
 			`
 INSERT INTO book_pages (book_id, page_id, part, printed_page, number, content_html, content_text, services, is_deleted, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, nullif($8, '')::jsonb, $9, now())
+VALUES ($1, $2, $3, $4, $5, $6, $7, nullif($8, '')::jsonb, false, now())
 ON CONFLICT (book_id, page_id) DO UPDATE SET
     part = EXCLUDED.part,
     printed_page = EXCLUDED.printed_page,
@@ -658,7 +735,9 @@ ON CONFLICT (book_id, page_id) DO UPDATE SET
     content_html = EXCLUDED.content_html,
     content_text = EXCLUDED.content_text,
     services = EXCLUDED.services,
-    is_deleted = EXCLUDED.is_deleted,
+    is_deleted = false,
+    deleted_at = NULL,
+    delete_reason = NULL,
     updated_at = now()`,
 			bookID,
 			page.ID,
@@ -668,62 +747,67 @@ ON CONFLICT (book_id, page_id) DO UPDATE SET
 			page.ContentHTML,
 			page.ContentText,
 			page.Services,
-			page.IsDeleted,
 		)
 	}
 
 	if err = execTxBatch(ctx, tx, pageBatch); err != nil {
-		return 0, 0, fmt.Errorf("upsert pages: %w", err)
+		return bookImportOutcome{}, fmt.Errorf("upsert pages: %w", err)
 	}
 
-	if len(pageIDList) > 0 {
-		if _, err = tx.Exec(ctx, `DELETE FROM book_pages WHERE book_id = $1 AND NOT (page_id = ANY($2))`, bookID, pageIDList); err != nil {
-			return 0, 0, fmt.Errorf("delete stale pages: %w", err)
-		}
-	}
-
-	headingIDs := make([]int, 0, len(decorated))
 	headingBatch := &pgx.Batch{}
-	for _, heading := range decorated {
-		parentID := intPtrOrNil(heading.ParentID)
-		headingIDs = append(headingIDs, heading.ID)
+	for _, heading := range outcome.Headings.Upserts {
 		headingBatch.Queue(
 			`
 INSERT INTO book_headings (book_id, heading_id, parent_id, page_id, depth, ordinal, content, is_deleted, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now())
+VALUES ($1, $2, $3, $4, $5, $6, $7, false, now())
 ON CONFLICT (book_id, heading_id) DO UPDATE SET
     parent_id = EXCLUDED.parent_id,
     page_id = EXCLUDED.page_id,
     depth = EXCLUDED.depth,
     ordinal = EXCLUDED.ordinal,
     content = EXCLUDED.content,
-    is_deleted = EXCLUDED.is_deleted,
+    is_deleted = false,
+    deleted_at = NULL,
+    delete_reason = NULL,
     updated_at = now()`,
 			bookID,
 			heading.ID,
-			parentID,
+			intPtrOrNil(heading.ParentID),
 			heading.PageID,
 			heading.Depth,
 			heading.Ordinal,
 			heading.Content,
-			heading.IsDeleted,
 		)
 	}
 
 	if err = execTxBatch(ctx, tx, headingBatch); err != nil {
-		return 0, 0, fmt.Errorf("upsert headings: %w", err)
+		return bookImportOutcome{}, fmt.Errorf("upsert headings: %w", err)
 	}
 
-	if len(headingIDs) > 0 {
-		if _, err = tx.Exec(ctx, `DELETE FROM book_headings WHERE book_id = $1 AND NOT (heading_id = ANY($2))`, bookID, headingIDs); err != nil {
-			return 0, 0, fmt.Errorf("delete stale headings: %w", err)
+	hasRemovals := len(outcome.Pages.RemovedIDs) > 0 || len(outcome.Headings.RemovedIDs) > 0
+
+	switch {
+	case hasRemovals && params.ApproveRunID == "":
+		if err := stageRemovals(ctx, tx, params.RunID, bookID, outcome.Pages.RemovedIDs, outcome.Headings.RemovedIDs); err != nil {
+			return bookImportOutcome{}, err
+		}
+	case hasRemovals:
+		outcome.TombstonedPages, outcome.TombstonedHeadings, err = applyApprovedRemovals(
+			ctx, tx, bookID, params, outcome.Pages.RemovedIDs, outcome.Headings.RemovedIDs,
+		)
+		if err != nil {
+			return bookImportOutcome{}, err
 		}
 	}
 
-	rangeBatch := &pgx.Batch{}
-	for _, headingRange := range ranges {
-		rangeBatch.Queue(
-			`
+	changed := !outcome.Pages.empty() || !outcome.Headings.empty()
+	if changed {
+		ranges := readerutil.BuildHeadingRanges(bookID, lastPageID, decorated)
+
+		rangeBatch := &pgx.Batch{}
+		for _, headingRange := range ranges {
+			rangeBatch.Queue(
+				`
 INSERT INTO book_heading_ranges (book_id, heading_id, start_page_id, end_page_id, start_anchor, end_anchor, updated_at)
 VALUES ($1, $2, $3, $4, $5, $6, now())
 ON CONFLICT (book_id, heading_id) DO UPDATE SET
@@ -732,28 +816,175 @@ ON CONFLICT (book_id, heading_id) DO UPDATE SET
     start_anchor = EXCLUDED.start_anchor,
     end_anchor = EXCLUDED.end_anchor,
     updated_at = now()`,
-			bookID,
-			headingRange.HeadingID,
-			headingRange.StartPageID,
-			headingRange.EndPageID,
-			emptyStringNil(headingRange.StartAnchor),
-			emptyStringNil(headingRange.EndAnchor),
-		)
-	}
+				bookID,
+				headingRange.HeadingID,
+				headingRange.StartPageID,
+				headingRange.EndPageID,
+				emptyStringNil(headingRange.StartAnchor),
+				emptyStringNil(headingRange.EndAnchor),
+			)
+		}
 
-	if err = execTxBatch(ctx, tx, rangeBatch); err != nil {
-		return 0, 0, fmt.Errorf("upsert heading ranges: %w", err)
-	}
+		if err = execTxBatch(ctx, tx, rangeBatch); err != nil {
+			return bookImportOutcome{}, fmt.Errorf("upsert heading ranges: %w", err)
+		}
 
-	if _, err = tx.Exec(ctx, `UPDATE books SET has_content = true, updated_at = now() WHERE id = $1`, bookID); err != nil {
-		return 0, 0, fmt.Errorf("mark book content: %w", err)
+		if _, err = tx.Exec(ctx, `UPDATE books SET has_content = true, updated_at = now() WHERE id = $1`, bookID); err != nil {
+			return bookImportOutcome{}, fmt.Errorf("mark book content: %w", err)
+		}
 	}
 
 	if err = tx.Commit(ctx); err != nil {
-		return 0, 0, fmt.Errorf("commit tx: %w", err)
+		return bookImportOutcome{}, fmt.Errorf("commit tx: %w", err)
 	}
 
-	return len(pageIDList), len(decorated), nil
+	return outcome, nil
+}
+
+func loadCurrentPages(ctx context.Context, tx pgx.Tx, bookID int) (map[int]pageRecord, error) {
+	rows, err := tx.Query(ctx, `
+SELECT page_id, coalesce(part, ''), coalesce(printed_page, ''), coalesce(number, ''),
+       content_html, content_text, coalesce(services::text, ''), is_deleted
+FROM book_pages WHERE book_id = $1`, bookID)
+	if err != nil {
+		return nil, fmt.Errorf("load current pages: %w", err)
+	}
+	defer rows.Close()
+
+	current := make(map[int]pageRecord)
+
+	for rows.Next() {
+		var (
+			id     int
+			record pageRecord
+		)
+
+		if err = rows.Scan(&id, &record.Part, &record.PrintedPage, &record.Number,
+			&record.ContentHTML, &record.ContentText, &record.ServicesJSON, &record.IsDeleted); err != nil {
+			return nil, fmt.Errorf("scan current page: %w", err)
+		}
+
+		current[id] = record
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate current pages: %w", err)
+	}
+
+	return current, nil
+}
+
+func loadCurrentHeadings(ctx context.Context, tx pgx.Tx, bookID int) (map[int]headingRecord, error) {
+	rows, err := tx.Query(ctx, `
+SELECT heading_id, coalesce(parent_id, 0), page_id, depth, ordinal, content, is_deleted
+FROM book_headings WHERE book_id = $1`, bookID)
+	if err != nil {
+		return nil, fmt.Errorf("load current headings: %w", err)
+	}
+	defer rows.Close()
+
+	current := make(map[int]headingRecord)
+
+	for rows.Next() {
+		var (
+			id     int
+			record headingRecord
+		)
+
+		if err = rows.Scan(&id, &record.ParentID, &record.PageID, &record.Depth,
+			&record.Ordinal, &record.Content, &record.IsDeleted); err != nil {
+			return nil, fmt.Errorf("scan current heading: %w", err)
+		}
+
+		current[id] = record
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate current headings: %w", err)
+	}
+
+	return current, nil
+}
+
+// stageRemovals records the rows that would disappear so the operator can
+// review them; the rows themselves stay live and untouched.
+func stageRemovals(ctx context.Context, tx pgx.Tx, runID string, bookID int, pageIDs, headingIDs []int) error {
+	if _, err := tx.Exec(ctx, `
+INSERT INTO book_import_removal_stages (run_id, book_id, page_ids, heading_ids)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (run_id, book_id) DO UPDATE SET
+    page_ids = EXCLUDED.page_ids,
+    heading_ids = EXCLUDED.heading_ids`,
+		runID, bookID, pageIDs, headingIDs); err != nil {
+		return fmt.Errorf("stage removals: %w", err)
+	}
+
+	return nil
+}
+
+// applyApprovedRemovals turns the freshly computed removals into soft
+// tombstones, but only when they are covered by the operator-reviewed staged
+// diff — anything new since staging is drift and aborts the run.
+func applyApprovedRemovals(
+	ctx context.Context,
+	tx pgx.Tx,
+	bookID int,
+	params bookImportParams,
+	removedPageIDs, removedHeadingIDs []int,
+) (tombstonedPages, tombstonedHeadings int, err error) {
+	var stagedPages, stagedHeadings []int
+
+	err = tx.QueryRow(ctx, `
+SELECT page_ids, heading_ids FROM book_import_removal_stages
+WHERE run_id = $1 AND book_id = $2`, params.ApproveRunID, bookID).Scan(&stagedPages, &stagedHeadings)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, 0, fmt.Errorf("book %d has removals but no staged diff in run %s: %w", bookID, params.ApproveRunID, ErrRemovalDrift)
+	}
+
+	if err != nil {
+		return 0, 0, fmt.Errorf("load staged removals: %w", err)
+	}
+
+	if !subsetOf(removedPageIDs, stagedPages) || !subsetOf(removedHeadingIDs, stagedHeadings) {
+		return 0, 0, fmt.Errorf("book %d: %w", bookID, ErrRemovalDrift)
+	}
+
+	reason := "import:" + params.ReleaseKey
+
+	pagesTag, err := tx.Exec(ctx, `
+UPDATE book_pages SET is_deleted = true, deleted_at = now(), delete_reason = $3, updated_at = now()
+WHERE book_id = $1 AND page_id = ANY($2) AND is_deleted = false`,
+		bookID, removedPageIDs, reason)
+	if err != nil {
+		return 0, 0, fmt.Errorf("tombstone pages: %w", err)
+	}
+
+	headingsTag, err := tx.Exec(ctx, `
+UPDATE book_headings SET is_deleted = true, deleted_at = now(), delete_reason = $3, updated_at = now()
+WHERE book_id = $1 AND heading_id = ANY($2) AND is_deleted = false`,
+		bookID, removedHeadingIDs, reason)
+	if err != nil {
+		return 0, 0, fmt.Errorf("tombstone headings: %w", err)
+	}
+
+	return int(pagesTag.RowsAffected()), int(headingsTag.RowsAffected()), nil
+}
+
+func validateApprovalRun(ctx context.Context, pool *pgxpool.Pool, runID string) error {
+	if _, err := uuid.Parse(runID); err != nil {
+		return fmt.Errorf("invalid -approve-removals run id %q: %w", runID, err)
+	}
+
+	var exists bool
+	if err := pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM import_runs WHERE id = $1)`, runID).Scan(&exists); err != nil {
+		return fmt.Errorf("look up approval run: %w", err)
+	}
+
+	if !exists {
+		return fmt.Errorf("approval run %s not found", runID)
+	}
+
+	return nil
 }
 
 func upsertReleaseAndRun(ctx context.Context, pool *pgxpool.Pool, opts Options, stats Stats) error {
@@ -808,7 +1039,12 @@ UPDATE import_runs SET
     imported_pages = $6,
     imported_headings = $7,
     skipped_files = $8,
-    errors = nullif($9, 'null')::jsonb
+    errors = nullif($9, 'null')::jsonb,
+    staged_removal_pages = $10,
+    staged_removal_headings = $11,
+    tombstoned_pages = $12,
+    tombstoned_headings = $13,
+    approved_stage_run = nullif($14, '')::uuid
 WHERE id = $1`,
 		stats.RunID,
 		status,
@@ -819,6 +1055,11 @@ WHERE id = $1`,
 		stats.ImportedHeadings,
 		stats.SkippedFiles,
 		string(errs),
+		stats.StagedRemovalPages,
+		stats.StagedRemovalHeadings,
+		stats.TombstonedPages,
+		stats.TombstonedHeadings,
+		stats.ApprovedStageRun,
 	)
 	if err != nil {
 		return fmt.Errorf("finish import run: %w", err)

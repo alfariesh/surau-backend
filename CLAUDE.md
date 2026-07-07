@@ -44,9 +44,11 @@ aman** yang tertulis di PROGRAM.md §5.
   tidak pernah dipublish baru.
 
 ## ⚠️ LARANGAN / zona bahaya
-- **JANGAN menjalankan re-import buku (`cmd/import-books`) ke database yang berisi kerja
-  editorial** sebelum E4 (K-0/D1) selesai — importer saat ini HARD-DELETE + FK cascade yang
-  menghapus editorial dan meng-orphan data pengguna (`internal/importer/importer.go:680–720`).
+- **Larangan re-import buku DICABUT (E4 selesai 2026-07-07):** importer kini staged-diff +
+  soft-tombstone + persetujuan eksplisit — default TIDAK PERNAH menghapus; baris hilang hanya
+  di-stage, tombstone baru diterapkan via `-approve-removals=<run-id>` setelah review (drift =
+  abort). Suite `TestLiveBookImport*` menjaga kontrak ini di CI. Alur operasional: README
+  §Re-import safety.
 - File `.env*` berisi rahasia (gitignored) — jangan commit, jangan tampilkan isinya di output.
 - Migrasi: pasangan timestamped up/down; pola `NOT VALID` → preflight → `VALIDATE`; perubahan
   data besar wajib playbook F1-H (expand-contract, backfill resumable) — tanpa downtime endpoint
