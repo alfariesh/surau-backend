@@ -1,0 +1,10 @@
+[Unit]
+Description=Surau pgBackRest archiving check (WAL reaches R2)
+Wants=docker.service
+After=docker.service network-online.target
+OnFailure=surau-alert@%n.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/surau-backup/env
+ExecStart=/usr/local/sbin/surau-pitr-check

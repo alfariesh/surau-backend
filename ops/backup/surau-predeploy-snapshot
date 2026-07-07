@@ -1,0 +1,111 @@
+#!/usr/bin/env bash
+# Pre-deploy DB snapshot (E6): encrypted pg_dump uploaded to R2 with 7-day
+# retention, called by the deploy workflows right before auto-migrate.
+#
+# Failure semantics:
+#   - dump fails      -> non-zero exit  -> deploy ABORTS ("no backup, no deploy")
+#   - R2 upload fails -> Telegram alarm -> deploy CONTINUES (local artifact
+#     still exists for rollback; deploys are not hostage to an R2 outage)
+#   - db container not running (first deploy) -> skip, exit 0
+set -Eeuo pipefail
+
+ENV_FILE="${BACKUP_ENV_FILE:-/etc/surau-backup/env}"
+if [[ -f "$ENV_FILE" ]]; then
+  # shellcheck disable=SC1090
+  source "$ENV_FILE"
+fi
+
+DEPLOY_PATH="${DEPLOY_PATH:-/srv/surau/backend}"
+COMPOSE_ENV_FILE="${COMPOSE_ENV_FILE:-.env.production}"
+COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.prod.yml}"
+PREDEPLOY_DIR="${PREDEPLOY_DIR:-/var/backups/surau/predeploy}"
+PREDEPLOY_RETENTION_DAYS="${PREDEPLOY_RETENTION_DAYS:-7}"
+ENV_LABEL="${ENV_LABEL:-unknown}"
+R2_ACCOUNT_ID="${R2_ACCOUNT_ID:-}"
+R2_BUCKET="${R2_BUCKET:-surau-backend-backups}"
+R2_ENDPOINT="${R2_ENDPOINT:-}"
+R2_ACCESS_KEY_ID="${R2_ACCESS_KEY_ID:-}"
+R2_SECRET_ACCESS_KEY="${R2_SECRET_ACCESS_KEY:-}"
+AGE_RECIPIENT="${AGE_RECIPIENT:-}"
+
+if [[ -z "$R2_ENDPOINT" && -n "$R2_ACCOUNT_ID" ]]; then
+  R2_ENDPOINT="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+fi
+
+require() {
+  local name="$1"
+  local value="${!name:-}"
+  if [[ -z "$value" ]]; then
+    echo "missing required config: $name" >&2
+    exit 2
+  fi
+}
+
+write_rclone_config() {
+  require R2_ENDPOINT
+  require R2_ACCESS_KEY_ID
+  require R2_SECRET_ACCESS_KEY
+
+  mkdir -p /run/surau-backup
+  local config
+  config="$(mktemp /run/surau-backup/rclone.XXXXXX.conf)"
+  chmod 600 "$config"
+  {
+    echo "[r2]"
+    echo "type = s3"
+    echo "provider = Cloudflare"
+    echo "access_key_id = ${R2_ACCESS_KEY_ID}"
+    echo "secret_access_key = ${R2_SECRET_ACCESS_KEY}"
+    echo "endpoint = ${R2_ENDPOINT}"
+    echo "region = auto"
+    echo "no_check_bucket = true"
+  } >"$config"
+  echo "$config"
+}
+
+main() {
+  require AGE_RECIPIENT
+
+  cd "$DEPLOY_PATH"
+
+  if [[ -z "$(sudo docker compose --env-file "$COMPOSE_ENV_FILE" -f "$COMPOSE_FILE" ps -q db)" ]]; then
+    echo "db container not running yet (first deploy?) — skipping pre-deploy snapshot"
+    return
+  fi
+
+  umask 077
+  mkdir -p "$PREDEPLOY_DIR"
+
+  local stamp git_sha base archive tmp_archive
+  stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+  git_sha="$(git -c safe.directory="$DEPLOY_PATH" -C "$DEPLOY_PATH" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+  base="surau-predeploy-${stamp}-${git_sha}.dump.zst.age"
+  archive="${PREDEPLOY_DIR}/${base}"
+  tmp_archive="${archive}.tmp"
+
+  echo "writing pre-deploy snapshot ${archive}"
+  sudo docker compose --env-file "$COMPOSE_ENV_FILE" -f "$COMPOSE_FILE" exec -T db \
+    sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" --format=custom --no-owner --no-privileges' </dev/null \
+    | zstd -T0 -10 -q \
+    | age -e -r "$AGE_RECIPIENT" -o "$tmp_archive"
+  mv "$tmp_archive" "$archive"
+  echo "pre-deploy snapshot written: $(du -h "$archive" | cut -f1)"
+
+  find "$PREDEPLOY_DIR" -type f -name 'surau-predeploy-*.dump.zst.age' -mtime +"$PREDEPLOY_RETENTION_DAYS" -delete
+
+  local rclone_config
+  rclone_config="$(write_rclone_config)"
+  trap 'rm -f "$rclone_config"' RETURN
+
+  local remote="r2:${R2_BUCKET}/predeploy/${ENV_LABEL}"
+  if rclone --config "$rclone_config" copyto "$archive" "${remote}/${base}" \
+    && rclone --config "$rclone_config" lsf "${remote}/" --files-only | grep -Fx "$base" >/dev/null; then
+    echo "pre-deploy snapshot uploaded: ${remote}/${base}"
+    rclone --config "$rclone_config" delete "${remote}/" --min-age "${PREDEPLOY_RETENTION_DAYS}d" || true
+  else
+    echo "R2 upload of pre-deploy snapshot FAILED — continuing deploy with local snapshot only" >&2
+    /usr/local/sbin/surau-notify "⚠️ Snapshot pra-deploy GAGAL naik ke R2 (${base}). Deploy tetap lanjut; snapshot lokal ada di ${PREDEPLOY_DIR}. Periksa kredensial R2/journalctl." || true
+  fi
+}
+
+main "$@"

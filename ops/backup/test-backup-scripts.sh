@@ -77,4 +77,30 @@ local_latest="$(find "$workdir/backups" -maxdepth 1 -type f \( -name 'surau-post
   || fail "local latest selection picked '$local_latest'"
 
 echo "ok: latest-archive selection"
+
+# --- 3. PITR target-time validation pattern ---
+# Keep in sync with TIME_PATTERN in surau-pg-pitr-restore (guarded below).
+time_pattern='^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?([+-][0-9]{2}(:?[0-9]{2})?)?$'
+grep -qF "$time_pattern" "$here/surau-pg-pitr-restore" \
+  || fail "TIME_PATTERN in surau-pg-pitr-restore drifted from the tested pattern"
+
+for good in '2026-07-07 12:34:56' '2026-07-07 12:34:56+08' '2026-07-07 12:34:56.123+08:00' '2026-07-07 12:34:56-0500'; do
+  [[ "$good" =~ $time_pattern ]] || fail "valid target time rejected: '$good'"
+done
+for bad in '2026-07-07' '12:34:56' '2026-07-07T12:34:56' "2026-07-07 12:34:56'; drop table books;--" 'now()'; do
+  [[ "$bad" =~ $time_pattern ]] && fail "invalid target time accepted: '$bad'"
+done
+
+echo "ok: PITR target-time validation"
+
+# --- 4. pre-deploy snapshot artifact naming stays restorable ---
+# surau-pg-restore-check must accept an explicit predeploy artifact path (its
+# decrypt branch keys off the .age suffix), and the name must never collide
+# with the daily-backup pattern that r2-latest/local-latest selection uses.
+predeploy_name='surau-predeploy-20260707T120000Z-abcdef1.dump.zst.age'
+[[ "$predeploy_name" == *.age ]] || fail "predeploy artifact must be age-encrypted"
+printf '%s\n' "$predeploy_name" | grep -qE "$pattern" \
+  && fail "predeploy artifact name collides with daily-backup selection pattern"
+
+echo "ok: predeploy artifact naming"
 echo "all backup script tests passed"

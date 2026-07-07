@@ -2,14 +2,31 @@ name: surau-backend-prod
 
 services:
   db:
-    image: postgres:18.4-alpine
+    # postgres:18.4-alpine + pgBackRest for continuous WAL archiving (PITR, E3).
+    # Deploys never touch this service (SERVICES=app,collab); rebuilding/restarting
+    # the db is a deliberate manual ops action — see docs/backup-restore-r2.md.
+    image: surau-db:latest
+    build:
+      context: ops/pitr
+      dockerfile: Dockerfile.db
     restart: unless-stopped
+    command:
+      - postgres
+      - -c
+      - archive_mode=on
+      - -c
+      - archive_command=pgbackrest --stanza=main archive-push %p
+      # Force a WAL segment switch at most every 5 min under write activity,
+      # so the recovery point (RPO) is ≤5 min, not "whenever 16MB fills up".
+      - -c
+      - archive_timeout=300
     environment:
       POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB}
     volumes:
       - db_data:/var/lib/postgresql
+      - /etc/surau-backup/pgbackrest.conf:/etc/pgbackrest/pgbackrest.conf:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
       interval: 10s

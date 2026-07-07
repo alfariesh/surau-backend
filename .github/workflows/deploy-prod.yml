@@ -65,18 +65,14 @@ jobs:
           fi
 
           # Snapshot the DB before the new image auto-migrates on boot, so a bad
-          # migration can be rolled back. No backup, no deploy — skip only on the very
-          # first deploy when the db container does not exist yet.
-          if [ -n "$(sudo docker compose --env-file .env.production -f docker-compose.prod.yml ps -q db)" ]; then
-            echo "Snapshotting DB before migrate..."
-            # </dev/null is load-bearing: `exec -T` otherwise consumes this script's
-            # stdin (the ssh heredoc), swallowing every command after the snapshot.
-            sudo docker compose --env-file .env.production -f docker-compose.prod.yml exec -T db \
-              sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB"' </dev/null | gzip > db-predeploy-backup.sql.gz
-            echo "DB snapshot written: $(du -h db-predeploy-backup.sql.gz | cut -f1)"
-          else
-            echo "db container not running yet (first deploy?) — skipping pre-deploy snapshot"
-          fi
+          # migration can be rolled back. Encrypted + uploaded to R2 with 7-day
+          # retention (E6); dump failure aborts the deploy ("no backup, no deploy"),
+          # R2-upload failure alarms Telegram but lets the deploy continue.
+          # </dev/null is load-bearing: the script uses `exec -T`, which otherwise
+          # consumes this script's stdin (the ssh heredoc), swallowing every
+          # command after the snapshot.
+          echo "Snapshotting DB before migrate..."
+          sudo /usr/local/sbin/surau-predeploy-snapshot </dev/null
 
           # Bound build-cache growth so a full disk can't fail the build.
           sudo docker builder prune -f --filter 'until=72h' >/dev/null 2>&1 || true
