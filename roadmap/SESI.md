@@ -57,7 +57,9 @@ Rujukan: roadmap/phase-4-kitab-editorial.md §1.2 defect D1/D6 + inisiatif K-0 p
 Masuk PLAN MODE dulu; rencana wajib menyebut cara memenuhi setiap Acceptance Criterion K-0 bagian importer. Setelah saya setujui: kerjakan sampai tuntas — branch fitur, test, Definition of Done, centang PROGRAM.md & SESI.md, merge, verifikasi dev-api. Laporan akhir bahasa awam. Setelah sesi ini selesai, larangan re-import di CLAUDE.md boleh kamu perbarui statusnya.
 ```
 
-- [ ] **SESI 4 — Tutup celah DoS publik + bersih-bersih identitas repo (E5 + F1-F)**
+- [x] **SESI 4 — Tutup celah DoS publik + bersih-bersih identitas repo (E5 + F1-F)** ✅ 2026-07-08 —
+  offset publik ter-cap 10k; headings ter-paginasi (default 200, aditif); %/_ di search jadi literal;
+  module di-rename ke alfariesh/surau-backend; gitleaks menjaga CI (terbukti menolak dummy secret).
 
 ```text
 Kerjakan E5 dari roadmap/PROGRAM.md §1 (clamp offset publik ke 10k, paginasi endpoint headings dengan default besar yang aman, escape metakarakter ILIKE di semua search reader — defect D2/D4/D5 di roadmap/phase-4-kitab-editorial.md §1.2) DAN F1-F dari roadmap/phase-1-foundations.md (rename module path dari github.com/evrone/go-clean-template ke identitas Surau, hapus kode mati amqp_rpc/nats_rpc, tambah pemindaian secret di CI).
