@@ -20,7 +20,9 @@ import (
 // by construction. Written BEFORE the behavior change (D6: this path had zero
 // tests while it was hard-deleting).
 
-const liveBookImportUser = "11111111-2222-3333-4444-555555555555"
+func bookImportUserID(bookID int) string {
+	return fmt.Sprintf("11111111-2222-3333-4444-%012d", bookID)
+}
 
 func liveBookImportPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
@@ -48,7 +50,7 @@ func resetBookImportState(t *testing.T, pool *pgxpool.Pool, bookID int, releaseP
 	cleanup := func() {
 		_, err := pool.Exec(ctx, `DELETE FROM books WHERE id = $1`, bookID)
 		require.NoError(t, err)
-		_, err = pool.Exec(ctx, `DELETE FROM users WHERE id = $1`, liveBookImportUser)
+		_, err = pool.Exec(ctx, `DELETE FROM users WHERE id = $1`, bookImportUserID(bookID))
 		require.NoError(t, err)
 		_, err = pool.Exec(ctx, `DELETE FROM import_runs WHERE release_key LIKE $1`, releasePrefix+"%")
 		require.NoError(t, err)
@@ -129,7 +131,7 @@ func seedEditorialAndUserData(t *testing.T, pool *pgxpool.Pool, bookID, pageID, 
 INSERT INTO users (id, username, email, password_hash)
 VALUES ($1, $2, $3, 'x')
 ON CONFLICT (id) DO NOTHING`,
-		liveBookImportUser,
+		bookImportUserID(bookID),
 		fmt.Sprintf("book-import-suite-%d", bookID),
 		fmt.Sprintf("book-import-suite-%d@test.local", bookID))
 	require.NoError(t, err)
@@ -151,12 +153,12 @@ VALUES ($1, $2, 'id', 'ringkasan editorial')`, bookID, headingID)
 
 	_, err = pool.Exec(ctx, `
 INSERT INTO saved_items (id, user_id, item_type, book_id, page_id)
-VALUES ($1, $2, 'book_page', $3, $4)`, uuid.New().String(), liveBookImportUser, bookID, pageID)
+VALUES ($1, $2, 'book_page', $3, $4)`, uuid.New().String(), bookImportUserID(bookID), bookID, pageID)
 	require.NoError(t, err)
 
 	_, err = pool.Exec(ctx, `
 INSERT INTO reading_progress (user_id, book_id, page_id, heading_id, progress_percent)
-VALUES ($1, $2, $3, $4, 42.0)`, liveBookImportUser, bookID, pageID, headingID)
+VALUES ($1, $2, $3, $4, 42.0)`, bookImportUserID(bookID), bookID, pageID, headingID)
 	require.NoError(t, err)
 }
 
@@ -191,6 +193,9 @@ func fixtureV1(bookID int) fixtureBook {
 // TestLiveBookImportInitial — T1: first import lands live content and run provenance.
 func TestLiveBookImportInitial(t *testing.T) {
 	pool := liveBookImportPool(t)
+
+	t.Parallel()
+
 	bookID := 9001
 	resetBookImportState(t, pool, bookID, "bi-initial")
 
@@ -218,6 +223,9 @@ func queryRunStatus(t *testing.T, pool *pgxpool.Pool, runID string) string {
 // TestLiveBookImportIdenticalNoOp — T2: identical re-import writes nothing.
 func TestLiveBookImportIdenticalNoOp(t *testing.T) {
 	pool := liveBookImportPool(t)
+
+	t.Parallel()
+
 	bookID := 9002
 	resetBookImportState(t, pool, bookID, "bi-noop")
 
@@ -271,6 +279,9 @@ SELECT 'h:' || heading_id::text, updated_at FROM book_headings WHERE book_id = $
 // and a source that restores the page revives it with editorial intact.
 func TestLiveBookImportRemovalFlow(t *testing.T) {
 	pool := liveBookImportPool(t)
+
+	t.Parallel()
+
 	bookID := 9003
 	resetBookImportState(t, pool, bookID, "bi-flow")
 
@@ -344,6 +355,7 @@ WHERE si.book_id = $1`, bookID))
 	assert.False(t, revived.isDeleted, "reappearing source row must clear the tombstone")
 	assert.Nil(t, revived.deletedAt)
 	assert.False(t, headingState(t, pool, bookID, 2).isDeleted)
+	assert.False(t, headingState(t, pool, bookID, 1).isDeleted, "untouched heading must stay live through the whole flow")
 	assert.Equal(t, 1, countRows(t, pool, `
 SELECT count(*) FROM section_translations st
 JOIN book_headings h ON h.book_id = st.book_id AND h.heading_id = st.heading_id AND h.is_deleted = false
@@ -354,6 +366,9 @@ WHERE st.book_id = $1 AND st.heading_id = 2`, bookID), "editorial must resurface
 // from the staged diff must abort without touching anything.
 func TestLiveBookImportApproveDrift(t *testing.T) {
 	pool := liveBookImportPool(t)
+
+	t.Parallel()
+
 	bookID := 9004
 	resetBookImportState(t, pool, bookID, "bi-drift")
 
@@ -388,6 +403,9 @@ func TestLiveBookImportApproveDrift(t *testing.T) {
 // removal candidate (stage → approve), never an implicit delete.
 func TestLiveBookImportSourceDeletedFlag(t *testing.T) {
 	pool := liveBookImportPool(t)
+
+	t.Parallel()
+
 	bookID := 9005
 	resetBookImportState(t, pool, bookID, "bi-srcdel")
 
@@ -410,4 +428,5 @@ func TestLiveBookImportSourceDeletedFlag(t *testing.T) {
 	_, err = runBookImport(t, v2, "bi-srcdel-v3", bookID, stageStats.RunID)
 	require.NoError(t, err)
 	assert.True(t, pageState(t, pool, bookID, 3).isDeleted)
+	assert.True(t, headingState(t, pool, bookID, 2).isDeleted, "heading on the source-deleted page follows it into the tombstone")
 }

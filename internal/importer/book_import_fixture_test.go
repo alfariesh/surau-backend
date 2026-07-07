@@ -1,6 +1,7 @@
 package importer
 
 import (
+	"context"
 	stdsql "database/sql"
 	"fmt"
 	"os"
@@ -49,11 +50,13 @@ func writeBookSource(t *testing.T, dir string, books ...fixtureBook) {
 		id INTEGER PRIMARY KEY, name TEXT, is_deleted TEXT, category TEXT, type TEXT,
 		date TEXT, author TEXT, printed TEXT, minor_release TEXT, major_release TEXT,
 		bibliography TEXT, hint TEXT, pdf_links TEXT, metadata TEXT)`)
+
 	for _, b := range books {
 		mustExec(t, master,
 			`INSERT INTO book (id, name, is_deleted, category, type, author) VALUES (?, ?, '0', '1', '1', '1')`,
 			b.ID, b.Name)
 	}
+
 	closeFixtureSQLite(t, master)
 
 	authors := openFixtureSQLite(t, filepath.Join(masterDir, "author.sqlite"))
@@ -76,6 +79,7 @@ func writeBookSource(t *testing.T, dir string, books ...fixtureBook) {
 		content := openFixtureSQLite(t, filepath.Join(bookDir, fmt.Sprintf("%d.db", b.ID)))
 		mustExec(t, content, `CREATE TABLE page (
 			id INTEGER PRIMARY KEY, content TEXT, part TEXT, page TEXT, number TEXT, services TEXT, is_deleted TEXT)`)
+
 		mustExec(t, content, `CREATE TABLE title (
 			id INTEGER PRIMARY KEY, content TEXT, page TEXT, parent TEXT, is_deleted TEXT)`)
 
@@ -84,11 +88,13 @@ func writeBookSource(t *testing.T, dir string, books ...fixtureBook) {
 				`INSERT INTO page (id, content, part, page, number, services, is_deleted) VALUES (?, ?, ?, ?, ?, '', ?)`,
 				p.ID, p.Content, p.Part, p.Page, p.Number, boolFixture(p.IsDeleted))
 		}
+
 		for _, h := range b.Headings {
 			mustExec(t, content,
 				`INSERT INTO title (id, content, page, parent, is_deleted) VALUES (?, ?, ?, ?, ?)`,
 				h.ID, h.Content, fmt.Sprintf("%d", h.PageID), fmt.Sprintf("%d", h.ParentID), boolFixture(h.IsDeleted))
 		}
+
 		closeFixtureSQLite(t, content)
 	}
 }
@@ -115,7 +121,7 @@ func closeFixtureSQLite(t *testing.T, db *stdsql.DB) {
 func mustExec(t *testing.T, db *stdsql.DB, query string, args ...any) {
 	t.Helper()
 
-	if _, err := db.Exec(query, args...); err != nil {
+	if _, err := db.ExecContext(context.Background(), query, args...); err != nil {
 		t.Fatalf("fixture exec %q: %v", query, err)
 	}
 }

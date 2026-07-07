@@ -23,6 +23,8 @@ func main() {
 	flag.IntVar(&opts.Limit, "limit", 0, "limit imported content books for sample import")
 	flag.BoolVar(&opts.SkipDiskCheck, "skip-disk-check", false, "skip full import disk preflight")
 	flag.Uint64Var(&opts.MinFreeGB, "min-free-gb", 30, "minimum free GiB required for full import")
+	flag.StringVar(&opts.ApproveRemovalsRun, "approve-removals", "",
+		"apply the removals staged by the given run id as soft tombstones; default (empty) only stages removals for review")
 	flag.Parse()
 
 	ids, err := parseBookIDs(bookIDs)
@@ -46,6 +48,25 @@ func main() {
 		stats.SkippedFiles,
 		stats.MasterChecksum,
 	)
+
+	if stats.StagedRemovalPages > 0 || stats.StagedRemovalHeadings > 0 {
+		fmt.Printf(
+			"STAGED removals: pages=%d headings=%d — NOTHING was deleted or hidden.\nReview them (book_import_removal_stages, run_id=%s), then re-run with -approve-removals=%s to apply soft tombstones.\n",
+			stats.StagedRemovalPages,
+			stats.StagedRemovalHeadings,
+			stats.RunID,
+			stats.RunID,
+		)
+	}
+
+	if stats.TombstonedPages > 0 || stats.TombstonedHeadings > 0 {
+		fmt.Printf(
+			"tombstoned: pages=%d headings=%d (soft — reversible by a source that restores them; approved stage run %s)\n",
+			stats.TombstonedPages,
+			stats.TombstonedHeadings,
+			stats.ApprovedStageRun,
+		)
+	}
 
 	for _, errMsg := range stats.Errors {
 		fmt.Printf("warning=%s\n", errMsg)
