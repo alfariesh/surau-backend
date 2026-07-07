@@ -2468,7 +2468,7 @@ func loginFingerprintInputs(meta authmeta.Meta) (string, string, bool) {
 	userAgent := strings.TrimSpace(meta.UserAgent)
 	transport := strings.TrimSpace(meta.Transport)
 
-	if clientIP == transport || clientIP == "unknown" || clientIP == "nats" || clientIP == "amqp" {
+	if clientIP == transport || clientIP == "unknown" {
 		clientIP = ""
 	}
 	if clientIP == "" && userAgent == "" {

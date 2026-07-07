@@ -11,6 +11,8 @@ import (
 
 // TestPublicDoSGuards pins the E5 fixes on the live HTTP surface:
 // D2 (offset clamp), D4 (headings pagination, additive), D5 (ILIKE escaping).
+//
+//nolint:bodyclose // every response is closed by decodeAndClose or resp.Body.Close
 func TestPublicDoSGuards(t *testing.T) {
 	seedMultilingualKitabFixture(t)
 	seedMetacharHeadings(t)
@@ -116,7 +118,7 @@ func TestPublicDoSGuards(t *testing.T) {
 	})
 }
 
-func searchHeadings(t *testing.T, query string) (int, []string) {
+func searchHeadings(t *testing.T, query string) (total int, contents []string) {
 	t.Helper()
 
 	var payload struct {
@@ -134,7 +136,7 @@ func searchHeadings(t *testing.T, query string) (int, []string) {
 		t.Fatalf("headings q=%q expected 200, got %d", query, resp.StatusCode)
 	}
 
-	contents := make([]string, 0, len(payload.Items))
+	contents = make([]string, 0, len(payload.Items))
 	for _, item := range payload.Items {
 		contents = append(contents, item.Content)
 	}

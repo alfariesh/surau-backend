@@ -1,0 +1,16 @@
+# Gitleaks config: default rules + allowlist for known-safe fixture values.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Known-safe test fixtures and documented non-secrets"
+paths = [
+  # Synthetic SQLite fixtures / test seeds carry fake credentials only.
+  '''integration-test/.*_test\.go''',
+  '''internal/.*_test\.go''',
+]
+regexTarget = "line"
+regexes = [
+  # Documented example DSNs with the placeholder password.
+  '''myAwEsOm3pa55@w0rd''',
+]

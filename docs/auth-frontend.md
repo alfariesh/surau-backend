@@ -1,6 +1,6 @@
 # Frontend Auth Integration Guide
 
-Dokumen ini adalah kontrak integrasi auth untuk frontend Surau. Fokus utama frontend adalah REST API. Backend juga punya dukungan gRPC, NATS, dan AMQP untuk service lain, tetapi aplikasi web/mobile frontend sebaiknya memakai endpoint HTTP di bawah `/v1`.
+Dokumen ini adalah kontrak integrasi auth untuk frontend Surau. Satu-satunya transport yang didukung adalah REST API — pakai endpoint HTTP di bawah `/v1`. (Dukungan gRPC/NATS/AMQP dari template lama sudah dihapus.)
 
 ## Ringkasan
 
