@@ -1,0 +1,9 @@
+[Unit]
+Description=Surau backup dead-man check (R2 freshness)
+After=network-online.target
+OnFailure=surau-alert@%n.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/surau-backup/env
+ExecStart=/usr/local/sbin/surau-backup-watchdog

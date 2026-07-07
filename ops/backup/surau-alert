@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# OnFailure= hook: report a failed systemd unit to Telegram with its last log lines.
+# Usage (via surau-alert@.service): surau-alert <unit-name>
+set -Eeuo pipefail
+
+unit="${1:-}"
+if [[ -z "$unit" ]]; then
+  echo "usage: surau-alert <unit-name>" >&2
+  exit 2
+fi
+
+tail_lines="$(journalctl -u "$unit" -n 8 --no-pager -o cat 2>/dev/null | tail -c 900 || true)"
+
+/usr/local/sbin/surau-notify "🚨 ${unit} GAGAL di $(hostname).
+Log terakhir:
+${tail_lines:-<journal kosong>}"
