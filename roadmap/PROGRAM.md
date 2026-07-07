@@ -19,8 +19,8 @@ depan — bukan pekerjaan baru.
 
 | ID | Pekerjaan | Kenapa tidak boleh menunggu | Asal |
 |---|---|---|---|
-| E1 | **Enkripsi client-side dump backup sebelum naik R2** (kunci terpisah dari kredensial bucket) | Dump berisi PII — email & hash password pengguna; kompromi kredensial rclone hari ini = bocor data pengguna | P8-2 (P8-D2) |
-| E2 | **Drill restore pertama + `surau-pg-restore-check` terjadwal mingguan + dead-man alert 26 jam** | Backup tanpa restore teruji = harapan; kegagalan backup hari ini SENYAP | F1-A / P8-2 |
+| E1 ✅ | **Enkripsi client-side dump backup sebelum naik R2** (kunci terpisah dari kredensial bucket) — **SELESAI 2026-07-07 (S1)**: age keypair, artefak `.dump.zst.age`, kunci di host + escrow offline | Dump berisi PII — email & hash password pengguna; kompromi kredensial rclone hari ini = bocor data pengguna | P8-2 (P8-D2) |
+| E2 ✅ | **Drill restore pertama + `surau-pg-restore-check` terjadwal mingguan + dead-man alert 26 jam** — **SELESAI 2026-07-07 (S1)**: drill #1 lulus di prod 241 dtk (lihat docs/backup-restore-r2.md §Drill log); timer mingguan + watchdog + alarm Telegram hidup di prod & dev | Backup tanpa restore teruji = harapan; kegagalan backup hari ini SENYAP | F1-A / P8-2 |
 | E3 | **WAL-archiving / PITR ke R2** → RPO 24 jam menjadi ≤1 jam | Satu-satunya kegagalan yang bisa mengakhiri produk dalam sehari | F1-A (charter G2) |
 | E4 | **Importer Shamela jadi staged-diff + tombstone, suite test DITULIS DULU** | Defect D1 (KRITIS): re-import hari ini hard-delete + cascade MENGHAPUS kerja editorial & meng-orphan data pengguna — **dilarang menjalankan re-import apa pun sebelum E4 selesai** | K-0 (D1/D6) |
 | E5 | **Perbaikan DoS publik**: clamp offset (cap 10k), paginasi endpoint headings, escape metakarakter ILIKE | Endpoint publik tanpa auth bisa dipakai membebani DB dengan satu URL | K-0 (D2/D4/D5) |
@@ -255,7 +255,7 @@ yang diperselisihkan — di jawaban AI dan di halaman wiki.
 
 | Sesi | Isi | Definisi selesai |
 |---|---|---|
-| **S1** | E1 (enkripsi backup) + E2 (drill restore #1 + restore-check mingguan + dead-man) | Restore dari R2 terbukti + laporan drill pertama di tangan Salman; dump terenkripsi; backup gagal = alarm |
+| **S1** ✅ | E1 (enkripsi backup) + E2 (drill restore #1 + restore-check mingguan + dead-man) — **SELESAI 2026-07-07** | Restore dari R2 terbukti + laporan drill pertama di tangan Salman; dump terenkripsi; backup gagal = alarm |
 | **S2** | E3 (WAL/PITR) + E6 (snapshot pra-deploy → R2) | Pemulihan point-in-time ≤1 jam terdemonstrasikan |
 | **S3** | E4 (importer staged — TEST DULU, lalu staged-diff+tombstone) | Fixture re-import destruktif TIDAK BISA menghapus editorial tanpa diff yang disetujui; **larangan re-import dicabut** |
 | **S4** | E5 (clamp offset, paginasi headings, escape ILIKE) + F1-F (rename module, hapus kode mati) | Fuzz publik aman; repo beridentitas Surau |
@@ -290,6 +290,13 @@ katalog), tambahkan kata **"ultracode"** di prompt agar sesi memakai orkestrasi 
 
 Perbarui PROGRAM.md pada tiap gerbang-gelombang: centang isi gelombang, catat keputusan yang
 terjawab (pindahkan dari §5 ke catatan keputusan), dan tambahkan pelajaran yang mengubah urutan.
+
+**Pelajaran S1 (2026-07-07):** asumsi "backup harian sudah berjalan" ternyata hanya benar untuk
+VPS dev — **VPS prod sama sekali tidak punya backup** sampai sesi S1 memasangnya (stack backup
+dipasang Juni saat masih satu VPS; saat dev/prod dipisah, prod tidak ikut). Moral: klaim
+infrastruktur di dokumen ≠ keadaan mesin — verifikasi langsung di host sebelum menandai aman.
+Prefix R2 kini terpisah: `postgres/prod/` vs `postgres/dev/`. Kedua host sementara memakai token
+R2 yang sama — rotasi ke token ter-scope per-host masuk antrean P8-6/backlog rotasi kredensial.
 Dokumen fase (roadmap/phase-*.md) tetap sumber kebenaran untuk AC/DS per inisiatif — jangan
 duplikasi ke sini. Konflik baru antar-dokumen di masa depan mengikuti pola yang sama: nota
 "Conflicts with charter" di dokumen fase + rekonsiliasi di sini.

@@ -18,7 +18,7 @@
 
 ## ⚙️ PERSIAPAN SEKALI SAJA (manual, hanya kamu yang bisa)
 
-- [ ] **Buat bot Telegram**: buka Telegram → cari **@BotFather** → ketik `/newbot` → ikuti
+- [x] **Buat bot Telegram**: buka Telegram → cari **@BotFather** → ketik `/newbot` → ikuti
   langkahnya → simpan **token**-nya. Lalu chat bot barumu sekali (tekan Start). Token ini akan
   diminta sesi S1 — berikan dengan menaruhnya di file `.env` saat sesi memintanya (JANGAN paste
   token di chat).
@@ -27,7 +27,9 @@
 
 ## GELOMBANG 0 — Selamatkan Data
 
-- [ ] **SESI 1 — Commit fondasi + enkripsi backup + drill restore (E1+E2)**
+- [x] **SESI 1 — Commit fondasi + enkripsi backup + drill restore (E1+E2)** ✅ 2026-07-07 —
+  drill #1 lulus (241 dtk, prod); catatan: token bot terlanjur tertempel di chat sesi — rotasi
+  via @BotFather dianjurkan (lihat laporan sesi), lalu perbarui `/etc/surau-backup/env` di 2 VPS.
 
 ```text
 Sebelum mulai: commit folder roadmap/ dan CLAUDE.md ke main (pesan: "chore(roadmap): program plan fase 0-9 + CLAUDE.md").

@@ -125,4 +125,4 @@ rejection, and latest-archive selection across mixed `.zst`/`.zst.age` names.
 
 | # | Date (UTC) | Scenario | Source | Duration | Result |
 |---|---|---|---|---|---|
-| 1 | 2026-07-07 | Full restore of encrypted dump from R2 into empty instance (invariants: books ≥1, pages ≥1, ayahs = 6236) | prod, `postgres/prod/` r2-latest | _recorded during drill_ | _recorded during drill_ |
+| 1 | 2026-07-07 | Full restore of encrypted dump from R2 into empty instance (invariants: books ≥1, pages ≥1, ayahs = 6236) | prod, `postgres/prod/` r2-latest (`surau-postgres-20260707T082107Z-28e91ba.dump.zst.age`, 242 MB) | **241 s** end-to-end (download + decrypt + restore + checks) — RTO target ≤4 h | **PASS** — books=161, pages=295604, ayahs=6236; success report delivered to Telegram. Also verified same day: deliberate backup failure → OnFailure Telegram alarm (dev), forced-stale dead-man → Telegram alarm (dev) |
