@@ -262,18 +262,18 @@ WHERE h.book_id = $1
   AND h.is_deleted = false
   AND bp.is_deleted = false
   AND (
-      COALESCE(he.content, h.content) ILIKE '%' || $2 || '%'
-      OR COALESCE(pe.content_text, bp.content_text) ILIKE '%' || $2 || '%'
-      OR COALESCE(st.content, '') ILIKE '%' || $2 || '%'
-      OR COALESCE(bhs_lang.summary, bhs_ar.summary, '') ILIKE '%' || $2 || '%'
+      COALESCE(he.content, h.content) ILIKE '%' || $6 || '%'
+      OR COALESCE(pe.content_text, bp.content_text) ILIKE '%' || $6 || '%'
+      OR COALESCE(st.content, '') ILIKE '%' || $6 || '%'
+      OR COALESCE(bhs_lang.summary, bhs_ar.summary, '') ILIKE '%' || $6 || '%'
       OR COALESCE(he.content, h.content) % $2
       OR COALESCE(pe.content_text, bp.content_text) % $2
       OR COALESCE(st.content, '') % $2
       OR COALESCE(bhs_lang.summary, bhs_ar.summary, '') % $2
-      OR translate(COALESCE(he.content, h.content), $5, '') ILIKE '%' || $2 || '%'
-      OR translate(COALESCE(pe.content_text, bp.content_text), $5, '') ILIKE '%' || $2 || '%'
-      OR translate(COALESCE(st.content, ''), $5, '') ILIKE '%' || $2 || '%'
-      OR translate(COALESCE(bhs_lang.summary, bhs_ar.summary, ''), $5, '') ILIKE '%' || $2 || '%'
+      OR translate(COALESCE(he.content, h.content), $5, '') ILIKE '%' || $6 || '%'
+      OR translate(COALESCE(pe.content_text, bp.content_text), $5, '') ILIKE '%' || $6 || '%'
+      OR translate(COALESCE(st.content, ''), $5, '') ILIKE '%' || $6 || '%'
+      OR translate(COALESCE(bhs_lang.summary, bhs_ar.summary, ''), $5, '') ILIKE '%' || $6 || '%'
       OR translate(COALESCE(he.content, h.content), $5, '') % $2
       OR translate(COALESCE(pe.content_text, bp.content_text), $5, '') % $2
       OR translate(COALESCE(st.content, ''), $5, '') % $2
@@ -282,7 +282,8 @@ WHERE h.book_id = $1
 ORDER BY score DESC, h.depth DESC, bp.page_id ASC, h.heading_id ASC
 LIMIT $4`
 
-	rows, err := r.Pool.Query(ctx, sqlText, bookID, query, lang, limit, arabicSearchMarks)
+	// $2 stays raw for similarity()/trigram %; $6 is the LIKE-escaped copy for ILIKE.
+	rows, err := r.Pool.Query(ctx, sqlText, bookID, query, lang, limit, arabicSearchMarks, escapeLike(query))
 	if err != nil {
 		return nil, fmt.Errorf("BookRAGRepo - SearchRAGPages - Query: %w", err)
 	}

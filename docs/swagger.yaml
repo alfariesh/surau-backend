@@ -7124,7 +7124,9 @@ paths:
       - kitab
   /books/{book_id}/headings:
     get:
-      description: List raw Arabic heading tree rows for one published kitab.
+      description: 'List raw Arabic heading tree rows for one published kitab. Paginated
+        additively: omitting limit returns the first 200 rows; total always carries
+        the full match count.'
       operationId: list-kitab-headings
       parameters:
       - description: Book ID
@@ -7136,6 +7138,14 @@ paths:
         in: query
         name: q
         type: string
+      - description: Page size (default 200, max 200)
+        in: query
+        name: limit
+        type: integer
+      - description: Offset (clamped to 10000)
+        in: query
+        name: offset
+        type: integer
       produces:
       - application/json
       responses:

@@ -125,8 +125,8 @@ func (r *EmailRepo) ListEmailTemplates(
 	if strings.TrimSpace(filter.Query) != "" {
 		query = query.Where(
 			"(key ILIKE ? OR name ILIKE ?)",
-			"%"+strings.TrimSpace(filter.Query)+"%",
-			"%"+strings.TrimSpace(filter.Query)+"%",
+			"%"+escapeLike(strings.TrimSpace(filter.Query))+"%",
+			"%"+escapeLike(strings.TrimSpace(filter.Query))+"%",
 		)
 	}
 

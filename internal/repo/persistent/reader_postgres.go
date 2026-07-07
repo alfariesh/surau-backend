@@ -248,7 +248,7 @@ func (r *ReaderRepo) ListAuthors(ctx context.Context, filter repo.AuthorFilter) 
 		Where(sq.Eq{"a.is_deleted": false})
 
 	if filter.Query != "" {
-		like := "%" + filter.Query + "%"
+		like := "%" + escapeLike(filter.Query) + "%"
 		condition := `(a.name ILIKE ?
 			OR COALESCE(a.biography, '') ILIKE ?
 			OR EXISTS (
@@ -269,7 +269,7 @@ func (r *ReaderRepo) ListAuthors(ctx context.Context, filter repo.AuthorFilter) 
 	whereSQL := "WHERE a.is_deleted = false"
 	args := []any{filter.Lang}
 	if filter.Query != "" {
-		like := "%" + filter.Query + "%"
+		like := "%" + escapeLike(filter.Query) + "%"
 		whereSQL += fmt.Sprintf(` AND (a.name ILIKE $%d
 			OR COALESCE(a.biography, '') ILIKE $%d
 			OR EXISTS (
@@ -570,24 +570,41 @@ func (r *ReaderRepo) GetBookPage(ctx context.Context, bookID, pageID int) (entit
 	return page, nil
 }
 
-// ListBookHeadings returns a flat heading tree for a book.
-func (r *ReaderRepo) ListBookHeadings(ctx context.Context, bookID int, query string) ([]entity.BookHeading, error) {
+// ListBookHeadings returns a paginated flat heading tree for a book plus the
+// full match count.
+func (r *ReaderRepo) ListBookHeadings(ctx context.Context, bookID int, filter repo.HeadingFilter) ([]entity.BookHeading, int, error) {
+	countBuilder := r.Builder.
+		Select("COUNT(*)").
+		From("book_headings h").
+		Join("book_publications p ON p.book_id = h.book_id AND p.status = 'published'").
+		LeftJoin("book_heading_edits he ON he.book_id = h.book_id AND he.heading_id = h.heading_id AND he.status = 'published'").
+		Where(sq.Eq{"h.book_id": bookID, "h.is_deleted": false})
+
 	builder := r.headingSelectBuilder().
 		Where(sq.Eq{"h.book_id": bookID, "h.is_deleted": false}).
-		OrderBy("h.ordinal ASC", "h.heading_id ASC")
+		OrderBy("h.ordinal ASC", "h.heading_id ASC").
+		Limit(filter.Limit).
+		Offset(filter.Offset)
 
-	if query != "" {
-		builder = builder.Where("COALESCE(he.content, h.content) ILIKE ?", "%"+query+"%")
+	if filter.Query != "" {
+		like := "%" + escapeLike(filter.Query) + "%"
+		countBuilder = countBuilder.Where("COALESCE(he.content, h.content) ILIKE ?", like)
+		builder = builder.Where("COALESCE(he.content, h.content) ILIKE ?", like)
+	}
+
+	total, err := r.count(ctx, countBuilder)
+	if err != nil {
+		return nil, 0, fmt.Errorf("ReaderRepo - ListBookHeadings - count: %w", err)
 	}
 
 	sqlText, args, err := builder.ToSql()
 	if err != nil {
-		return nil, fmt.Errorf("ReaderRepo - ListBookHeadings - r.Builder: %w", err)
+		return nil, 0, fmt.Errorf("ReaderRepo - ListBookHeadings - r.Builder: %w", err)
 	}
 
 	rows, err := r.Pool.Query(ctx, sqlText, args...)
 	if err != nil {
-		return nil, fmt.Errorf("ReaderRepo - ListBookHeadings - r.Pool.Query: %w", err)
+		return nil, 0, fmt.Errorf("ReaderRepo - ListBookHeadings - r.Pool.Query: %w", err)
 	}
 	defer rows.Close()
 
@@ -595,17 +612,17 @@ func (r *ReaderRepo) ListBookHeadings(ctx context.Context, bookID int, query str
 	for rows.Next() {
 		heading, err := scanHeading(rows)
 		if err != nil {
-			return nil, fmt.Errorf("ReaderRepo - ListBookHeadings - scanHeading: %w", err)
+			return nil, 0, fmt.Errorf("ReaderRepo - ListBookHeadings - scanHeading: %w", err)
 		}
 
 		headings = append(headings, heading)
 	}
 
 	if err = rows.Err(); err != nil {
-		return nil, fmt.Errorf("ReaderRepo - ListBookHeadings - rows.Err: %w", err)
+		return nil, 0, fmt.Errorf("ReaderRepo - ListBookHeadings - rows.Err: %w", err)
 	}
 
-	return headings, nil
+	return headings, total, nil
 }
 
 // ListTOCEntries returns published effective TOC rows plus requested-language asset flags.
@@ -1500,7 +1517,7 @@ func applyBookFilter(countBuilder, dataBuilder sq.SelectBuilder, filter repo.Boo
 }
 
 func bookSearchCondition(query string) (condition string, args []any) {
-	like := "%" + query + "%"
+	like := "%" + escapeLike(query) + "%"
 	condition = bookBaseSearchConditionSQL
 	args = bookSearchArgs(like)
 
@@ -1535,7 +1552,7 @@ func bookArabicSearchCondition(baseCondition string, args []any, query string) (
 	condition string,
 	searchArgs []any,
 ) {
-	normalizedLike := "%" + normalizeReaderArabicSearchText(query) + "%"
+	normalizedLike := "%" + escapeLike(normalizeReaderArabicSearchText(query)) + "%"
 	condition = baseCondition + ` OR (` + normalizedArabicSQL("COALESCE(bmt.display_title, me.display_title, b.name)") + ` ILIKE ?
 		OR ` + normalizedArabicSQL("b.name") + ` ILIKE ?
 		OR ` + normalizedArabicSQL("COALESCE(at.name, a.name)") + ` ILIKE ?

@@ -1496,7 +1496,7 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, nullif($8, '')::jsonb, now())`,
 
 func applyEditorialBookFilter(countBuilder, dataBuilder sq.SelectBuilder, filter repo.EditorialBookFilter) (sq.SelectBuilder, sq.SelectBuilder) {
 	if filter.Query != "" {
-		like := "%" + filter.Query + "%"
+		like := "%" + escapeLike(filter.Query) + "%"
 		condition := "(b.name ILIKE ? OR me.display_title ILIKE ? OR a.name ILIKE ? OR c.name ILIKE ?)"
 		countBuilder = countBuilder.Where(condition, like, like, like, like)
 		dataBuilder = dataBuilder.Where(condition, like, like, like, like)
@@ -1526,7 +1526,7 @@ func applyProductionCandidateFilter(
 	filter repo.ProductionCandidateFilter,
 ) (sq.SelectBuilder, sq.SelectBuilder) {
 	if filter.Query != "" {
-		like := "%" + filter.Query + "%"
+		like := "%" + escapeLike(filter.Query) + "%"
 		condition := "(b.name ILIKE ? OR me.display_title ILIKE ? OR a.name ILIKE ? OR c.name ILIKE ?)"
 		countBuilder = countBuilder.Where(condition, like, like, like, like)
 		dataBuilder = dataBuilder.Where(condition, like, like, like, like)

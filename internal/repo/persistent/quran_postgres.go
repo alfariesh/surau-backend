@@ -816,7 +816,7 @@ func (r *QuranRepo) SearchAyahs(
 		return nil, 0, err
 	}
 
-	like := "%" + searchQuery + "%"
+	like := "%" + escapeLike(searchQuery) + "%"
 
 	// Run in a read-only tx so SET LOCAL scopes the trigram threshold to THIS query
 	// (pooled connections must not leak session GUCs). The threshold lets the %

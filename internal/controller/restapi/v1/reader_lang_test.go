@@ -158,8 +158,8 @@ func (f *fakeReader) Page(context.Context, int, int) (entity.BookPage, error) {
 	return entity.BookPage{}, f.err
 }
 
-func (f *fakeReader) Headings(context.Context, int, string) ([]entity.BookHeading, error) {
-	return nil, f.err
+func (f *fakeReader) Headings(context.Context, int, string, int, int) ([]entity.BookHeading, int, error) {
+	return nil, 0, f.err
 }
 
 func (f *fakeReader) Section(context.Context, int, int, string) (entity.BookSection, error) {

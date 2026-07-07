@@ -221,7 +221,7 @@ func (r *UserRepo) ListAccounts(
 		Offset(filter.Offset)
 
 	if filter.Query != "" {
-		pattern := "%" + filter.Query + "%"
+		pattern := "%" + escapeLike(filter.Query) + "%"
 		condition := "(u.email ILIKE ? OR u.username ILIKE ? OR p.display_name ILIKE ?)"
 		countBuilder = countBuilder.Where(condition, pattern, pattern, pattern)
 		dataBuilder = dataBuilder.Where(condition, pattern, pattern, pattern)

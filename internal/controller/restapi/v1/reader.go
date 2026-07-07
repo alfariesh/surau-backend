@@ -363,12 +363,14 @@ func (r *V1) getBookPage(ctx *fiber.Ctx) error {
 }
 
 // @Summary     List kitab headings
-// @Description List raw Arabic heading tree rows for one published kitab.
+// @Description List raw Arabic heading tree rows for one published kitab. Paginated additively: omitting limit returns the first 200 rows; total always carries the full match count.
 // @ID          list-kitab-headings
 // @Tags        kitab
 // @Produce     json
 // @Param       book_id path     int    true  "Book ID"
 // @Param       q       query    string false "Search heading title"
+// @Param       limit   query    int    false "Page size (default 200, max 200)"
+// @Param       offset  query    int    false "Offset (clamped to 10000)"
 // @Success     200     {object} response.BookHeadingList
 // @Failure     400     {object} response.Error
 // @Failure     500     {object} response.Error
@@ -379,14 +381,17 @@ func (r *V1) listBookHeadings(ctx *fiber.Ctx) error {
 		return errorResponse(ctx, http.StatusBadRequest, "invalid book_id")
 	}
 
-	headings, err := r.reader.Headings(ctx.UserContext(), bookID, ctx.Query("q"))
+	limit := queryInt(ctx, "limit", 0)
+	offset := queryInt(ctx, "offset", 0)
+
+	headings, total, err := r.reader.Headings(ctx.UserContext(), bookID, ctx.Query("q"), limit, offset)
 	if err != nil {
 		r.logReaderError(err, "restapi - v1 - listBookHeadings")
 
 		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
 	}
 
-	return ctx.Status(http.StatusOK).JSON(response.BookHeadingList{Items: headings, Total: len(headings)})
+	return ctx.Status(http.StatusOK).JSON(response.BookHeadingList{Items: headings, Total: total})
 }
 
 // @Summary     Get kitab section
