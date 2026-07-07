@@ -1,0 +1,275 @@
+# PROGRAM — Satu Rencana Eksekusi Lintas-Domain (Fase 9, Konsolidasi)
+
+> **Status:** hasil rekonsiliasi SEPULUH dokumen roadmap (charter + fase 1, 1B, 2–8), semuanya
+> dibaca-ulang dari disk dan diinventarisasi 2026-07-07. Kedelapan nota konflik antar-dokumen
+> berstatus RESOLVED (lihat §3); tidak ada konflik terbuka tersisa.
+> **Cara pakai (untuk Salman):** (1) baca §1 — pekerjaan penyelamatan data yang jalan SEKARANG;
+> (2) jawab antrean keputusan §5 sesuai tenggat-gelombangnya (semuanya punya default aman —
+> diam = default berlaku); (3) jalankan sesi implementasi mengikuti §6 lalu §2. Dokumen fase
+> tetap sumber detail (AC/DS per inisiatif); PROGRAM.md hanya memuat URUTAN dan KEPUTUSAN.
+> Perbarui dokumen ini setiap milestone selesai (living document).
+
+---
+
+## 1. GELOMBANG 0 — Jalur EXECUTE-EARLY: "Selamatkan Data" (jangan menunggu apa pun)
+
+Kriteria masuk jalur ini: risiko **kehilangan data, kebocoran data, atau DoS publik** dengan
+effort kecil. Semuanya adalah irisan dari inisiatif fase (rujukan di kurung) yang ditarik ke
+depan — bukan pekerjaan baru.
+
+| ID | Pekerjaan | Kenapa tidak boleh menunggu | Asal |
+|---|---|---|---|
+| E1 | **Enkripsi client-side dump backup sebelum naik R2** (kunci terpisah dari kredensial bucket) | Dump berisi PII — email & hash password pengguna; kompromi kredensial rclone hari ini = bocor data pengguna | P8-2 (P8-D2) |
+| E2 | **Drill restore pertama + `surau-pg-restore-check` terjadwal mingguan + dead-man alert 26 jam** | Backup tanpa restore teruji = harapan; kegagalan backup hari ini SENYAP | F1-A / P8-2 |
+| E3 | **WAL-archiving / PITR ke R2** → RPO 24 jam menjadi ≤1 jam | Satu-satunya kegagalan yang bisa mengakhiri produk dalam sehari | F1-A (charter G2) |
+| E4 | **Importer Shamela jadi staged-diff + tombstone, suite test DITULIS DULU** | Defect D1 (KRITIS): re-import hari ini hard-delete + cascade MENGHAPUS kerja editorial & meng-orphan data pengguna — **dilarang menjalankan re-import apa pun sebelum E4 selesai** | K-0 (D1/D6) |
+| E5 | **Perbaikan DoS publik**: clamp offset (cap 10k), paginasi endpoint headings, escape metakarakter ILIKE | Endpoint publik tanpa auth bisa dipakai membebani DB dengan satu URL | K-0 (D2/D4/D5) |
+| E6 | **Snapshot pra-deploy ikut diunggah ke R2** (retensi 7 hari) | Jaring pengaman rollback hari ini hidup ±20 menit di disk lokal VPS | F1-A |
+
+**Keputusan yang dibutuhkan gelombang ini:** hanya **O-F1-1** (kanal alarm — lihat §5.0),
+karena mulai E2 sistem akan mulai "berteriak" dan harus ada telinga yang mendengarnya.
+
+---
+
+## 2. PROGRAM GELOMBANG W1–W7
+
+Prinsip urutan: **critical path** = F1-H → B-1..B-3 → K-1 → U-1..U-3 → GA Ask. Dua jalur
+paralel yang tidak boleh tertinggal: **A-1 → W-0** (tanpa RBAC, gerbang klaim sensitif wiki
+mati) dan **H-0..H-7** (tanpanya, Ask GA tanpa hadith). Effort per gelombang memakai label
+dokumen fase (kecil/sedang/besar); tidak ada tanggal — gerbang-keluar yang menentukan pindah
+gelombang.
+
+### W1 — Fondasi (F1 + awal F2)
+**Isi:** F1-B (observability inti) · F1-C (supervisi loop + dead-letter email) · F1-H (playbook
+expand-contract/backfill — PRASYARAT W2) · F1-F (rename module + kode mati — kerjakan SEBELUM
+kode baru menumpuk) · F1-D (kontrak error) · F1-E (kepercayaan CI) · F1-G (tuning Postgres) ·
+**A-3 (MFA + step-up)** · **A-1 (RBAC ber-kapabilitas + scholar_reviewer)** — selesai di sini
+agar W5 tidak menunggu.
+**Gerbang keluar:** request-ID→trace hidup + 5 alert teruji; playbook F1-H terpakai ≥1 backfill
+nyata; CI 10-run hijau tanpa retry; login admin ber-MFA; matriks kapabilitas beku-ber-test.
+**Keputusan:** O-2-1 (cakupan MFA — cepat, lihat PK-3).
+
+### W2 — Content Backbone (1B)
+**Isi:** B-1 (registry Citable Unit + pilot kitab) → B-2 (Anchor + resolusi + legacy) → B-3
+(Cross-Reference umum + bridge rujukan Quran); paralel: B-5 (normalisasi v1 + vektor emas +
+gerbang kesetaraan CI), B-6 (identitas generation-run); B-4 (lisensi platform + gerbang publish
+kitab) — **menunggu PK-1**.
+**Gerbang keluar:** determinisme pilot ≥99,5% (target 100%); 100% anchor legacy resolvable ≤50ms;
+rujukan approved lama setara via registry baru; suite kesetaraan normalisasi hijau di dua runtime.
+**Aturan keras (charter D2):** Fase hadith/wiki DILARANG mendesain model datanya sebelum
+B-1..B-3 terkunci.
+
+### W3 — Konten inti (Quran + industrialisasi kitab + benih retrieval)
+**Isi:** Q-1 (editorial Quran → standar kitab) ∥ Q-2 (deklarasi Anchor ayat + unit Quran +
+test anti-tafsir) ∥ **K-1 (industrialisasi Citable Unit seluruh katalog + migrasi sitasi RAG —
+critical path, effort besar)** ∥ Q-4 (SEO sitemap/slug) + Q-6 (keandalan notifikasi);
+sisa F2: A-2 (identitas mesin ber-scope), A-4 (dual-key JWT + drill), A-5 (refresh 336h);
+**U-0 (lapisan inferensi) + U-6 (eval-harness → gate) DIMULAI DI SINI** — Fase 7 mensyaratkan
+keduanya "sejak hari pertama", dan enrichment kitab langsung ikut menumpang U-0.
+**Gerbang keluar:** editorial Quran ber-ETag+revisi; test eligibilitas anti-tafsir lulus (dirujuk
+U-6); 100% buku published ter-unit dengan sitasi dual-write terverifikasi; eval berjalan di CI
+(non-gating → gating bertahap); setiap panggilan LLM ber-meter.
+**Keputusan:** O-4-2 (prioritas korpus — PK-6) mengarahkan urutan backfill K-1.
+
+### W4 — Perluasan konten + kelahiran hadith
+**Isi:** K-2 (Work/Edition) ∥ K-3 (rujukan tafsir→ayat + antrean kurasi) ∥ K-4 (SEO kitab) ∥
+K-9 (loop editorial) ∥ K-6 (span entitas — setelah K-1) ∥ Q-3/Q-5/Q-7 (riwayah, posisi audio,
+reading plan) ∥ **H-0 → H-1 (fondasi korpus hadith + unit + reader — menunggu PK-2)**.
+**Gerbang keluar:** rujukan eksplisit ≥95% auto-link ber-confidence; sitemap kitab hidup;
+koleksi hadith pertama browsable dengan importer staged teruji.
+
+### W5 — Hadith dalam + Wiki
+**Isi:** H-2 (Grading Assertions) ∥ H-3 (isnad + antrean perawi→entitas) → H-4/H-5
+(terjemahan; takhrij & rujukan silang) → H-6/H-7 (produk; serah-terima RAG dengan sitasi
+ber-grading); **W-0 (service kurasi + governance — butuh A-1)** → W-1 (taksonomi + jembatan
+Work) → **W-2 (disambiguasi: SLA top-500 perawi SEBELUM span hadith dibuka luas)** → W-3
+(halaman entitas + backlink + SEO) ∥ W-4 (relasi + derived-from-isnad).
+**Gerbang keluar:** hadith dgn dua penilaian tampil ter-atribusi keduanya; transisi status
+knowledge_* mustahil via SQL langsung; top-500 perawi terkurasi; halaman entitas dengan backlink
+≥2 korpus hidup.
+**Keputusan:** O-6-1 (scholar-reviewer — memblokir klaim sensitif/W-5-rijal; PK-3), O-8-3 (jam
+kurasi — memblokir SLA antrean; PK-4).
+
+### W6 — Retrieval terpadu (capstone)
+**Isi:** U-1 (indeks dua-himpunan + embedding ber-gerbang-mini-eval) → U-2 (resolver + traversal
+registry + flywheel) → U-3 (EvidencePack + composer + skema jawaban) → U-4 (preferensi & lensa)
+∥ U-5 (Search terpadu) → U-7 (guardrail runtime); parity-reroute endpoint book-RAG lama + pensiun
+tree per-buku; W-7 (grounding handoff); sisa produk: K-5/K-7/K-8, Q-8/Q-9, W-5 (jarh wa ta'dil),
+W-6 (dispute), U-8 (tier riset + flywheel matang).
+**Gerbang keluar (GA Ask):** eval ≥50 kasus, pass-rate ≥90%, validitas sitasi 100%, kategori
+keamanan (anti-tafsir/injeksi/ikhtilaf/lensa) lulus mutlak; jawaban lintas-korpus dengan grading
+menempel; budget panggilan sesuai target (ber-jangkar ≤2, terbuka ≤4).
+**Keputusan:** PK-5 (materi sensitif & suara platform) HARUS terjawab sebelum GA Ask.
+
+### W7 — Formalisasi produksi (F8 penuh)
+**Isi:** P8-1 (SLO & error-budget) · P8-2 (kadensi drill formal — lanjutan E-lane) · P8-3
+(kapasitas + keputusan HA) · P8-4 (ops inferensi: cap/breaker/failover-drill/persetujuan-backfill)
+· P8-5 (eval-gate berpemilik + break-glass) · P8-6 (irama keamanan: vuln-blocking, kalender
+rotasi, tabletop) · P8-7 (ops mesin konten: antrean ber-SLA, watchdog collab, cakupan MFA) ·
+P8-8 (rilis & insiden).
+**Gerbang keluar:** dua drill kuartalan berturut lulus RPO/RTO; loop-runaway tersimulasi terhenti
+oleh cap; laporan SLO mingguan berjalan; satu re-import produksi lewat alur persetujuan.
+
+---
+
+## 3. Rekonsiliasi konflik — SEMUA RESOLVED (ratifikasi program)
+
+| # | Konflik/nota | Resolusi (sudah dieksekusi in-session) |
+|---|---|---|
+| 1 | Charter D7 ("embedding menyusul") vs Fase 7 v2 (hybrid = pilar inti kelas-terbuka) | Charter D7 diberi nota revisi 2026-07-07; pgvector-di-Postgres tetap; R-D4/R-D5 lama resmi digantikan U-D3/U-D4 |
+| 2 | Charter menyuruh bangun "publish multi-aset atomik" vs bukti F4 (SUDAH atomik) | Charter §4.3 dikoreksi; scope → audit-trail re-publish (K-9); urgensi pindah ke importer D1 |
+| 3 | F5 H-D5 (penulis pertama knowledge_entities) vs kepemilikan F6 | Diterima F6 sebagai input resmi (W-D1); antrean H-3 = beban kerja W-2 ber-SLA |
+| 4 | Seam Reader Experience tidak ada di charter §4.1 | F3 §1.3 dinyatakan owner-of-record; F4/F5 mengonsumsi — tercatat di checklist charter |
+| 5 | Entitas Work wiki vs Work/Edition katalog K-2 | Jembatan 1:1 (W-D4) — satu identitas karya, tanpa duplikasi |
+| 6 | Fase 7 ditulis-ulang vs kontrak fase korpus | Semua kontrak dikonsumsi verbatim (H-7, K-D4, K-3/H-5, W-7); EvidencePack ditambahkan ke glosarium charter |
+| 7 | Gate backfill embedding (P8-D5) vs kapabilitas U-1 | Konsisten: U-1 kapabilitas, P8-4 rem operasional (pratinjau-biaya >5% cap → persetujuan) |
+| 8 | Normalisasi Arab dua-implementasi (charter D9 / 1B C5 / F4 K-D9/D8) | Satu semantik: Go v1 beku + vektor emas + gerbang kesetaraan CI; reader melebur ke C5 |
+
+**Pernyataan program:** tidak ada konflik terbuka; edit-edit charter saling konsisten
+(diverifikasi inventaris disk 2026-07-07).
+
+## 4. Pemeriksaan konformans lintas-domain — tidak ada drift
+
+- **RAG Safety** (rantai penegakan): 1B C2 (unit Quran dikecualikan statis dari kelayakan
+  interpretatif) → Q-2 (test anti-tafsir yang dirujuk eval) → U-1 (indeks interpretatif TANPA
+  Quran secara konstruksi) → `quote_only` di perakitan EvidencePack → kategori eval anti-tafsir
+  = blokir mutlak (U-6/P8-5). Tidak ada fase yang diam-diam menafsirkan ayat.
+- **Ikhtilaf tidak diratakan**: grading per-otoritas tanpa label global (H-D4/H-D8) → grading+
+  isnad WAJIB ikut sitasi (H-7, diuji struktural) → panel ikhtilaf tak bisa disembunyikan lensa
+  personalisasi mana pun (U-D9, 5 invarian) → kategori eval "lensa-tak-meratakan" (U-6).
+  Personalisasi TIDAK PERNAH menyentuh eligibility retrieval.
+- **Provenance & mesin**: identitas generation-run wajib (B-6) → mesin-unreviewed keluar dari
+  kelayakan interpretatif (K-D4, termasuk ringkasan yang dulu ikut ranking) → grading tak pernah
+  dihasilkan LLM (H-D8) → transisi status knowledge hanya via service ber-audit (W-0) → klaim
+  approved wajib sitasi sumber (W-D8). Konsisten ujung-ke-ujung.
+
+---
+
+## 5. ANTREAN KEPUTUSAN TERPADU (33 keputusan → 1 item segera + 7 paket)
+
+Setiap keputusan muncul TEPAT SATU KALI. Diam = **default aman** berlaku. Urutan = apa yang
+paling memblokir.
+
+### 5.0 — O-F1-1 — Kanal alarm & laporan — ✅ **TERJAWAB (Salman, 2026-07-07): TELEGRAM**
+Alarm (backup gagal, error melonjak) DAN laporan (drill, SLO mingguan) dikirim via **bot
+Telegram**. Implementasi S1/E2 dan paket alert F1-B memakai kanal ini; email tetap tersedia
+sebagai cadangan teknis bila bot gagal terkirim.
+
+### PK-1 — Lisensi & Konten Existing  *(jawab sebelum W2; memblokir B-4)*
+Gabungan **O3 + O-1B-1 + O-4-4**. Pertanyaan intinya: bagaimana kita memperlakukan ribuan kitab
+Shamela yang status lisensinya belum jelas, dan konten terjemahan mesin yang belum direview?
+1. **Postur audit lisensi (O3):** (a) audit per-karya, hanya `permitted` yang publish — bersih
+   tapi lambat; (b) publish sambil audit — cepat, berisiko hukum/etika. **Rek & default: (a)**,
+   prioritas karya paling dibaca; yang `unknown` tidak pernah dipublish BARU.
+2. **Nasib karya yang telanjur publik selama audit (O-1B-1):** (a) tetap tayang, takedown segera
+   hanya yang teraudit `restricted`; (b) turunkan semua `unknown` sekarang; (c) sembunyikan dari
+   search/RAG, tautan langsung tetap. **Rek & default: (a).**
+3. **Terjemahan mesin `generated` di reader publik (O-4-4):** (a) tetap tampil BERLABEL + investasi
+   antrean review (RAG sudah dikecualikan darinya); (b) hanya reviewed yang publik (katalog
+   menyusut drastis); (c) opt-in pengguna. **Rek & default: (a).**
+
+### PK-2 — Paket Hadith  *(jawab sebelum W4; memblokir H-0 total)*
+Gabungan **O1 + O-5-1 + O-5-2 + O-5-3 + O-5-4**.
+1. **Scope koleksi pertama (O1):** (a) Bukhari lalu Muslim — nilai cepat, risiko kecil; (b) Kutub
+   as-Sittah sekaligus; (c) tunggu kemitraan data. **Rek & default: (a).**
+2. **Sumber data & lisensinya (O-5-4) — GERBANG MUTLAK:** (a) hanya sumber machine-readable
+   berlisensi jelas/terbuka; (b) + negosiasi lisensi untuk pelengkap bernilai tinggi. **Rek: (a)
+   mulai, (b) menyusul. Default: (a)** — tanpa sumber legal, H-0 memang harus menunggu.
+3. **Edisi kanon penomoran per koleksi (O-5-1):** (a) penomoran yang paling lazim dikutip dunia;
+   (b) ikut penomoran sumber data apa adanya. **Rek & default: (a)** (edisi lain jadi alias).
+4. **Otoritas grading pertama (O-5-2) — pilihan manhaj yang terlihat publik:** (a) hanya
+   penilaian internal-koleksi; (b) (a) + 1–2 otoritas takhrij yang paling luas dipakai,
+   atribusi ketat. **Rek: (b)** dengan framing "melaporkan, bukan menilai". **Default: (a).**
+5. **Terjemahan matn publik (O-5-3):** (a) hanya yang reviewed (lebih ketat dari kitab —
+   sengaja); (b) generated berlabel seperti kitab. **Rek & default: (a).**
+
+### PK-3 — Tim & Kuasa  *(O-2-1 di W1; O-6-1 sebelum W5)*
+Gabungan **O-2-1 + O-2-2 + O-6-1 + O-6-3 + O-4-3**.
+1. **Cakupan wajib MFA (O-2-1):** (a) wajib admin + scholar-reviewer, opsional editor; (b) wajib
+   semua peran ber-kuasa. **Rek & default: (a).**
+2. **Delegasi kuasa publish (O-2-2):** (a) tetap admin-only sampai RBAC+MFA+audit berjalan
+   ≥1 bulan, lalu delegasi ke curator terpilih; (b) delegasi segera. **Rek & default: (a).**
+3. **Siapa scholar-reviewer (O-6-1) — gerbang klaim sensitif:** (a) 1–2 reviewer tepercaya yang
+   sudah mereview konten Surau; (b) dewan kecil ber-SOP; (c) tunda → kelas klaim sensitif tetap
+   TERTUTUP. **Rek: (a)→(b). Default: (c)** — tertutup sampai ada nama.
+4. **Kontribusi publik wiki (O-6-3):** (a) lapor-saja ber-rate-limit; (b) usul-suntingan. 
+   **Rek & default: (a).**
+5. **Anotasi pengguna (O-4-3):** (a) privat-saja dulu; (b) bisa dibagikan. **Rek & default: (a).**
+
+### PK-4 — Anggaran & Sumber Daya  *(baseline di W3; cap & HA di W6–W7)*
+Gabungan **O4 + O-7-3 + O-8-1 + O-8-3 + O-3-3**.
+1. **Selera biaya umum (O4):** (a) hemat: single VPS + PITR, ekstraksi bertahap; (b) menengah:
+   + replika/managed DB + budget ekstraksi tetap. **Rek: (a)→(b) saat tumbuh. Default: (a).**
+2. **Pagar biaya LLM (O-7-3):** (a) cap keras sekarang; (b) ukur baseline sebulan → cap 2×
+   baseline. **Rek & default: (b)** (metering jalan dulu).
+3. **Postur HA (O-8-1):** (a) single+PITR dengan PEMICU tertulis untuk naik kelas; (b)
+   warm-standby sekarang; (c) managed DB. **Rek & default: (a)** — 99,9% hanya dijanjikan
+   setelah (b)/(c) dibayar.
+4. **Jam manusia untuk antrean kurasi (O-8-3) — bahan bakar flywheel:** (a) 4–8 jam/minggu dari
+   editor yang ada; (b) rekrut kurator paruh waktu berdasarkan data throughput. **Rek: (a) lalu
+   (b). Default: (a).**
+5. **Penambahan korpus terjemahan/qari Quran (O-3-3):** (a) tetap yang ada; (b) shortlist
+   terkurasi + verifikasi lisensi. **Rek: (b). Default: (a).**
+
+### PK-5 — Materi Sensitif & Suara Platform  *(jawab sebelum GA Ask, W6)*
+Gabungan **O2 + O-7-1 + O-7-2 + O-6-2**. Inti: bagaimana platform berbicara tentang perkara
+yang diperselisihkan — di jawaban AI dan di halaman wiki.
+1. **Framing materi kontensius (O2):** (a) semua tampil dengan atribusi ketat + framing
+   "melaporkan, bukan memutus", kategori sensitif dipaksa multi-pendapat tanpa sintesis;
+   (b) sembunyikan kategori tertentu dari RAG (browse-only). **Rek: (a) + penandaan kategori.
+   Default: (b) untuk takfir/sekte, (a) untuk fiqh.**
+2. **Derajat hadith di jawaban Ask (O-7-1):** (a) semua approved tampil berlabel; (b) default
+   sahih/hasan + toggle "tampilkan semua derajat". **Rek: (b) untuk Ask, (a) untuk Search.
+   Default: (b).**
+3. **Pertanyaan fatwa/hukum personal (O-7-2):** (a) paparkan posisi ulama ter-atribusi +
+   disclaimer + arahan konsultasi — tidak pernah memutus. **Rek & default: (a).**
+4. **Tampilan jarh wa ta'dil & label mazhab (O-6-2):** (a) tampil penuh per-otoritas dengan
+   framing pelaporan; (b) kedalaman hanya di halaman entitas, tidak di tooltip/lintasan baca.
+   **Rek: (a) dengan batas penyajian (b). Default: (b).**
+
+### PK-6 — Produk (semua ber-default-aman; jawab santai, kecuali #1 berguna cepat)
+1. **Prioritas korpus backfill/SEO/tautan (O-4-2):** rek & default: **kategori tafsir & syarah
+   dulu**, tie-break trafik. *(Berguna sejak W3 — mengarahkan K-1.)*
+2. **Teks multi-riwayah Quran (O-3-1):** rek & default: **tunda** — atribusi riwayah audio jalan
+   sekarang (Q-3), arsitektur sudah siap bila kelak dibuka.
+3. **Word-by-word & tajwid (O-3-2):** rek: pilot word-by-word SETELAH backbone bila metrik
+   belajar menunjukkan kebutuhan. Default: belum.
+4. **Bentuk reading-plan (O-3-4):** rek & default: **versi ringan deterministik** (target
+   tanggal → kuota → on/off-track).
+5. **Kedalaman audiobook kitab (O-4-1):** rek & default: resume + identitas/lisensi qari dulu;
+   forced-alignment = evaluasi setelah metrik dengar terlihat.
+6. **Lensa mazhab (O-7-4):** rek & default: **opt-in eksplisit di pengaturan, TIDAK ditanya di
+   onboarding**, framing selalu berlabel, panel ikhtilaf tak pernah hilang.
+7. **Gaya jawaban default (O-7-5):** rek & default: **standar** (tersimpan per-user setelah
+   dipilih).
+
+### PK-7 — Kecil-operasional (kapan saja)
+1. **Lingkup auto-link mesin wiki (O-6-4):** rek & default: manual-first untuk orang; auto hanya
+   alias unik Term/Work ≥0.95 ber-sampling.
+2. **Status page publik (O-8-2):** rek & default: belum — sampai ada konsumen API eksternal.
+3. **Bahasa berikutnya (O5):** rek & default: tidak menambah — kunci kualitas id, en menyusul.
+
+---
+
+## 6. START HERE — lima sesi implementasi pertama
+
+| Sesi | Isi | Definisi selesai |
+|---|---|---|
+| **S1** | E1 (enkripsi backup) + E2 (drill restore #1 + restore-check mingguan + dead-man) | Restore dari R2 terbukti + laporan drill pertama di tangan Salman; dump terenkripsi; backup gagal = alarm |
+| **S2** | E3 (WAL/PITR) + E6 (snapshot pra-deploy → R2) | Pemulihan point-in-time ≤1 jam terdemonstrasikan |
+| **S3** | E4 (importer staged — TEST DULU, lalu staged-diff+tombstone) | Fixture re-import destruktif TIDAK BISA menghapus editorial tanpa diff yang disetujui; **larangan re-import dicabut** |
+| **S4** | E5 (clamp offset, paginasi headings, escape ILIKE) + F1-F (rename module, hapus kode mati) | Fuzz publik aman; repo beridentitas Surau |
+| **S5** | F1-B (request-ID→log, tracing, 5 alert) → lanjut F1-H (playbook backfill) | Satu request tertelusur ujung-ke-ujung; playbook siap → **masuk W2 (B-1 pilot)** |
+
+**Sambil S1–S5 berjalan, Salman menjawab:** **PK-1** (memblokir W2), lalu mencicil PK-2
+(memblokir W4) dan PK-3 poin 1. *(O-F1-1 sudah terjawab: Telegram — lihat §5.0.)*
+
+---
+
+## 7. Living document
+
+Perbarui PROGRAM.md pada tiap gerbang-gelombang: centang isi gelombang, catat keputusan yang
+terjawab (pindahkan dari §5 ke catatan keputusan), dan tambahkan pelajaran yang mengubah urutan.
+Dokumen fase (roadmap/phase-*.md) tetap sumber kebenaran untuk AC/DS per inisiatif — jangan
+duplikasi ke sini. Konflik baru antar-dokumen di masa depan mengikuti pola yang sama: nota
+"Conflicts with charter" di dokumen fase + rekonsiliasi di sini.

@@ -1,0 +1,72 @@
+# CLAUDE.md — Panduan sesi untuk repo surau-backend
+
+## Konteks proyek
+Backend **Go** (Fiber + pgx + PostgreSQL + golang-migrate) untuk **Surau** — wiki ilmu Islam:
+Quran, kitab/turats (Shamela), hadith (greenfield), entitas pengetahuan — menuju satu retrieval
+terpadu (search + RAG bersitasi). Frontend = app **Next.js TERPISAH** (jangan sentuh/rencanakan
+di repo ini). Operator (Salman) **non-developer** — balas dalam **bahasa Indonesia**, jelaskan
+istilah teknis dengan dampak produknya; identifier/komentar kode tetap English.
+
+## MULAI DARI SINI (sumber kebenaran)
+1. **`roadmap/PROGRAM.md`** — urutan eksekusi (gelombang W0–W7), jalur execute-early
+   "Selamatkan Data" (E1–E6), antrean keputusan operator (§5), dan **START HERE** 5 sesi
+   pertama (§6). Living document — perbarui saat milestone selesai.
+2. **`roadmap/README.md`** (charter) — glosarium kanonik (pakai istilahnya VERBATIM: Anchor,
+   Citable Unit, Cross-Reference, Provenance Class, License Status, EvidencePack, dll.),
+   definition-of-solid (angka target), prinsip & keputusan D1–D13.
+3. **`roadmap/phase-*.md`** — detail tiap inisiatif (rationale, AC, DS, register keputusan).
+   Jangan memutus ulang apa yang sudah diputuskan di register; kalau menemukan alasan kuat untuk
+   menyimpang, tulis nota "Conflicts with charter" + usulan resolusi, jangan menyimpang diam-diam.
+
+**Status saat ini:** roadmap 0–9 LENGKAP (2026-07-07). Implementasi dimulai dari PROGRAM.md §6
+(S1: enkripsi backup + drill restore). Keputusan operator yang belum terjawab → pakai **default
+aman** yang tertulis di PROGRAM.md §5.
+
+## Keputusan operator yang SUDAH terjawab
+- **O-F1-1** (2026-07-07): kanal alarm & laporan = **bot Telegram** (email = cadangan teknis).
+
+## Aturan yang MENGIKAT semua sesi (non-negotiable)
+- **RAG Safety:** makna/tafsir TIDAK PERNAH diturunkan LLM dari teks ayat Quran. Ayat = teks
+  primer yang disitasi / jangkar rujukan; interpretasi hanya dari tafsir/kitab/hadith. Penegakan
+  = level data/indeks (eligibility), bukan prompt.
+- **Domain Integrity:** ikhtilaf disajikan plural & ter-atribusi (tak pernah diratakan — termasuk
+  oleh personalisasi); grading hadith per-otoritas + lafaz verbatim, TANPA label global, TANPA
+  auto-grading LLM; provenance `source/editorial/machine` terpisah di tingkat unit; semua
+  keluaran LLM baru wajib identitas model + versi-prompt + run (kontrak B-6); klaim wiki approved
+  wajib sitasi sumber.
+- **Kontrak API hidup** (FE web + mobile bergantung): envelope list `{items,total}`; ETag
+  optimistic-locking `If-Match` (412/428/`*`); taksonomi `apierror`; perubahan breaking =
+  versioned/additive + masa deprecation 90 hari.
+- **Lisensi:** hanya konten `license_status=permitted` yang tampil publik; konten `unknown`
+  tidak pernah dipublish baru.
+
+## ⚠️ LARANGAN / zona bahaya
+- **JANGAN menjalankan re-import buku (`cmd/import-books`) ke database yang berisi kerja
+  editorial** sebelum E4 (K-0/D1) selesai — importer saat ini HARD-DELETE + FK cascade yang
+  menghapus editorial dan meng-orphan data pengguna (`internal/importer/importer.go:680–720`).
+- File `.env*` berisi rahasia (gitignored) — jangan commit, jangan tampilkan isinya di output.
+- Migrasi: pasangan timestamped up/down; pola `NOT VALID` → preflight → `VALIDATE`; perubahan
+  data besar wajib playbook F1-H (expand-contract, backfill resumable) — tanpa downtime endpoint
+  publik.
+- Deploy: push `main` → dev-api.surau.org; tag `api-vX.Y.Z` → api.surau.org (+ GitHub Release).
+  Migrasi gagal saat deploy = schema DIRTY → boot-loop; runbook di `docs/deploy-vps.md` §6.
+  Tidak ada auto-rollback.
+
+## Kebiasaan & perintah repo
+- Layering: `entity → repo (persistent/webapi) → usecase → controller (restapi/v1) → router`;
+  request/response structs di paket masing-masing; Swagger di-regenerate saat kontrak berubah.
+- Test: `make test` (unit+coverage) · `make integration-test` (Docker) · live tests:
+  `SURAU_LIVE_PG=... go test -p 1` (serial, invariant korpus — HARUS benar-benar jalan di CI).
+- Lint: golangci-lint strict (33 linter, `--new-from-merge-base`); `make pre-commit` sebelum PR.
+- Bar kualitas (charter §2.3): kode baru usecase/repo coverage ≥70%; setiap endpoint publik ≥1
+  integration test; p95 baca <200ms, search <400ms; paginasi publik selalu ter-clamp; search
+  ILIKE selalu ter-escape; normalisasi Arab hanya via profil kanonik ber-versi (1B C5 —
+  `internal/quranutil/normalize.go` = sumber kebenaran).
+- Commit kecil & konvensional (lihat riwayat: `fix(quran): ...`, `chore(deploy): ...`).
+
+## Peta cepat
+`internal/usecase/*` domain logic · `internal/repo/persistent/*` SQL · `internal/importer/*`
+importer Quran/buku · `internal/controller/restapi/v1/*` handlers · `migrations/` skema ·
+`scripts/langextract_kg/` pipeline ekstraksi entitas (Python) · `collab-server/` sidecar Yjs ·
+`workers/api-cache/` edge worker · `eval/` + `cmd/rag-eval` harness eval RAG · `ops/backup/`
+skrip backup/restore · `docs/` kontrak FE & runbook.
