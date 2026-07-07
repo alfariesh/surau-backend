@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/evrone/go-clean-template/internal/readerlang"
+	"github.com/alfariesh/surau-backend/internal/readerlang"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )

@@ -8,8 +8,8 @@ import (
 	"math"
 	"strings"
 
-	"github.com/evrone/go-clean-template/internal/entity"
-	"github.com/evrone/go-clean-template/pkg/postgres"
+	"github.com/alfariesh/surau-backend/internal/entity"
+	"github.com/alfariesh/surau-backend/pkg/postgres"
 	"github.com/jackc/pgx/v5"
 )
 

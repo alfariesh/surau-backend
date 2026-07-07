@@ -9,15 +9,15 @@ func TestEscapeLike(t *testing.T) {
 	t.Parallel()
 
 	cases := map[string]string{
-		"":            "",
-		"salam":       "salam",
-		"100%":        `100\%`,
-		"a_b":         `a\_b`,
-		`back\slash`:  `back\\slash`,
-		"%_":          `\%\_`,
-		`%%\__`:       `\%\%\\\_\_`,
-		"عرب%ي":       `عرب\%ي`,
-		"no-op چیزی":  "no-op چیزی",
+		"":           "",
+		"salam":      "salam",
+		"100%":       `100\%`,
+		"a_b":        `a\_b`,
+		`back\slash`: `back\\slash`,
+		"%_":         `\%\_`,
+		`%%\__`:      `\%\%\\\_\_`,
+		"عرب%ي":      `عرب\%ي`,
+		"no-op چیزی": "no-op چیزی",
 	}
 
 	for input, want := range cases {

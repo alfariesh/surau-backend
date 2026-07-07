@@ -4,7 +4,7 @@ package contentlang
 import (
 	"strings"
 
-	"github.com/evrone/go-clean-template/internal/entity"
+	"github.com/alfariesh/surau-backend/internal/entity"
 )
 
 const (

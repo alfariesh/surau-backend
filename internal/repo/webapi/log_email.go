@@ -6,7 +6,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/evrone/go-clean-template/internal/entity"
+	"github.com/alfariesh/surau-backend/internal/entity"
 )
 
 // LogEmailSender writes transactional email details to stdout for local development.

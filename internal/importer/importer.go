@@ -16,7 +16,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/evrone/go-clean-template/internal/readerutil"
+	"github.com/alfariesh/surau-backend/internal/readerutil"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"

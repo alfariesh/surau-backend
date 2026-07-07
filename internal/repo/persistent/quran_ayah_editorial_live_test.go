@@ -5,9 +5,9 @@ import (
 	"os"
 	"testing"
 
-	"github.com/evrone/go-clean-template/internal/entity"
-	repocontract "github.com/evrone/go-clean-template/internal/repo"
-	"github.com/evrone/go-clean-template/pkg/postgres"
+	"github.com/alfariesh/surau-backend/internal/entity"
+	repocontract "github.com/alfariesh/surau-backend/internal/repo"
+	"github.com/alfariesh/surau-backend/pkg/postgres"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

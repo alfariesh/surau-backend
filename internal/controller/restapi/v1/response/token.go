@@ -3,7 +3,7 @@ package response
 import (
 	"time"
 
-	"github.com/evrone/go-clean-template/internal/entity"
+	"github.com/alfariesh/surau-backend/internal/entity"
 )
 
 // Token carries the access/refresh pair issued at login and refresh. Token

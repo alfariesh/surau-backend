@@ -1,4 +1,4 @@
-module github.com/evrone/go-clean-template
+module github.com/alfariesh/surau-backend
 
 go 1.26
 

@@ -5,8 +5,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/evrone/go-clean-template/internal/entity"
-	"github.com/evrone/go-clean-template/internal/repo"
+	"github.com/alfariesh/surau-backend/internal/entity"
+	"github.com/alfariesh/surau-backend/internal/repo"
 )
 
 //go:generate mockgen -source=contracts.go -destination=./mocks_usecase_test.go -package=usecase_test

@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/evrone/go-clean-template/internal/quranutil"
+	"github.com/alfariesh/surau-backend/internal/quranutil"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"

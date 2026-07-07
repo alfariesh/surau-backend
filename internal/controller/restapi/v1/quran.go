@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/evrone/go-clean-template/internal/controller/restapi/v1/response"
-	"github.com/evrone/go-clean-template/internal/entity"
+	"github.com/alfariesh/surau-backend/internal/controller/restapi/v1/response"
+	"github.com/alfariesh/surau-backend/internal/entity"
 	"github.com/gofiber/fiber/v2"
 )
 

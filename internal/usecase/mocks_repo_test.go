@@ -14,8 +14,8 @@ import (
 	reflect "reflect"
 	time "time"
 
-	entity "github.com/evrone/go-clean-template/internal/entity"
-	repo "github.com/evrone/go-clean-template/internal/repo"
+	entity "github.com/alfariesh/surau-backend/internal/entity"
+	repo "github.com/alfariesh/surau-backend/internal/repo"
 	gomock "go.uber.org/mock/gomock"
 )
 

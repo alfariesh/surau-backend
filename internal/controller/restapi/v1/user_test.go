@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/evrone/go-clean-template/internal/entity"
-	"github.com/evrone/go-clean-template/pkg/logger"
+	"github.com/alfariesh/surau-backend/internal/entity"
+	"github.com/alfariesh/surau-backend/pkg/logger"
 	"github.com/go-playground/validator/v10"
 	"github.com/gofiber/fiber/v2"
 	"github.com/stretchr/testify/assert"

@@ -4,10 +4,10 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/evrone/go-clean-template/internal/controller/authutil"
-	"github.com/evrone/go-clean-template/internal/controller/restapi/apierror"
-	"github.com/evrone/go-clean-template/internal/usecase"
-	"github.com/evrone/go-clean-template/pkg/jwt"
+	"github.com/alfariesh/surau-backend/internal/controller/authutil"
+	"github.com/alfariesh/surau-backend/internal/controller/restapi/apierror"
+	"github.com/alfariesh/surau-backend/internal/usecase"
+	"github.com/alfariesh/surau-backend/pkg/jwt"
 	"github.com/gofiber/fiber/v2"
 )
 

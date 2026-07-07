@@ -10,9 +10,9 @@ import (
 	"time"
 
 	sq "github.com/Masterminds/squirrel"
-	"github.com/evrone/go-clean-template/internal/entity"
-	"github.com/evrone/go-clean-template/internal/repo"
-	"github.com/evrone/go-clean-template/pkg/postgres"
+	"github.com/alfariesh/surau-backend/internal/entity"
+	"github.com/alfariesh/surau-backend/internal/repo"
+	"github.com/alfariesh/surau-backend/pkg/postgres"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 )

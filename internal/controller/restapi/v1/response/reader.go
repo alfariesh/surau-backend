@@ -1,6 +1,6 @@
 package response
 
-import "github.com/evrone/go-clean-template/internal/entity"
+import "github.com/alfariesh/surau-backend/internal/entity"
 
 // Every user-facing list endpoint shares the {items, total} envelope. For
 // paginated lists total is the unbounded match count; for full (non-paginated)

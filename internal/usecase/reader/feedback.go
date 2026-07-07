@@ -4,8 +4,8 @@ import (
 	"context"
 	"strings"
 
-	"github.com/evrone/go-clean-template/internal/entity"
-	"github.com/evrone/go-clean-template/internal/readerlang"
+	"github.com/alfariesh/surau-backend/internal/entity"
+	"github.com/alfariesh/surau-backend/internal/readerlang"
 	"github.com/google/uuid"
 )
 

@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/evrone/go-clean-template/internal/entity"
-	"github.com/evrone/go-clean-template/internal/repo"
+	"github.com/alfariesh/surau-backend/internal/entity"
+	"github.com/alfariesh/surau-backend/internal/repo"
 )
 
 // lockoutStaleWindow is how long after the last failed login a lockout counter is

@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"sort"
 
-	"github.com/evrone/go-clean-template/internal/readerutil"
+	"github.com/alfariesh/surau-backend/internal/readerutil"
 )
 
 // pageRecord / headingRecord mirror the mutable columns of a stored row, used

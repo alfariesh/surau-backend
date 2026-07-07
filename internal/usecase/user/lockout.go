@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/evrone/go-clean-template/internal/entity"
+	"github.com/alfariesh/surau-backend/internal/entity"
 )
 
 // checkLoginLockout rejects logins for a key that is currently locked out.

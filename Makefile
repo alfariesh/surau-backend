@@ -80,7 +80,7 @@ sync-quran-audio-r2: ### Sync Quran audio R2 manifest into Postgres: make sync-q
 .PHONY: sync-quran-audio-r2
 
 docker-rm-volume: ### remove docker volume
-	docker volume rm go-clean-template_pg-data
+	docker volume rm surau-backend_pg-data
 .PHONY: docker-rm-volume
 
 linter-golangci: ### check by golangci linter
