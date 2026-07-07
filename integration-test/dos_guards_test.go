@@ -9,13 +9,18 @@ import (
 	"time"
 )
 
+// dosBookID is a dedicated published book for this suite: its heading set is
+// fully owned here, so the discriminator rows cannot disturb the TOC/heading
+// expectations of the shared multilingual fixture book.
+const dosBookID = 990777
+
 // TestPublicDoSGuards pins the E5 fixes on the live HTTP surface:
 // D2 (offset clamp), D4 (headings pagination, additive), D5 (ILIKE escaping).
 //
 //nolint:bodyclose // every response is closed by decodeAndClose or resp.Body.Close
 func TestPublicDoSGuards(t *testing.T) {
-	seedMultilingualKitabFixture(t)
-	seedMetacharHeadings(t)
+	seedMultilingualKitabFixture(t) // guarantees the shared category/author rows exist
+	seedDoSGuardBook(t)
 
 	t.Run("huge offset is clamped, not executed", func(t *testing.T) {
 		start := time.Now()
@@ -45,7 +50,7 @@ func TestPublicDoSGuards(t *testing.T) {
 			Total int `json:"total"`
 		}
 
-		resp := doJSON(t, http.MethodGet, fmt.Sprintf("%s/v1/books/%d/headings", baseURL(), fixtureBookID), nil, "")
+		resp := doJSON(t, http.MethodGet, fmt.Sprintf("%s/v1/books/%d/headings", baseURL(), dosBookID), nil, "")
 		decodeAndClose(t, resp, &full)
 
 		if resp.StatusCode != http.StatusOK {
@@ -65,7 +70,7 @@ func TestPublicDoSGuards(t *testing.T) {
 			Total int   `json:"total"`
 		}
 
-		resp = doJSON(t, http.MethodGet, fmt.Sprintf("%s/v1/books/%d/headings?limit=1&offset=1", baseURL(), fixtureBookID), nil, "")
+		resp = doJSON(t, http.MethodGet, fmt.Sprintf("%s/v1/books/%d/headings?limit=1&offset=1", baseURL(), dosBookID), nil, "")
 		decodeAndClose(t, resp, &page)
 
 		if len(page.Items) != 1 {
@@ -129,7 +134,7 @@ func searchHeadings(t *testing.T, query string) (total int, contents []string) {
 	}
 
 	resp := doJSON(t, http.MethodGet,
-		fmt.Sprintf("%s/v1/books/%d/headings?q=%s", baseURL(), fixtureBookID, url.QueryEscape(query)), nil, "")
+		fmt.Sprintf("%s/v1/books/%d/headings?q=%s", baseURL(), dosBookID, url.QueryEscape(query)), nil, "")
 	decodeAndClose(t, resp, &payload)
 
 	if resp.StatusCode != http.StatusOK {
@@ -144,10 +149,11 @@ func searchHeadings(t *testing.T, query string) (total int, contents []string) {
 	return payload.Total, contents
 }
 
-// seedMetacharHeadings adds two discriminator headings to the fixture book:
-// one with a literal '%' and one with "1000" but no metacharacter, so the
-// escaping assertions can tell literal matches from wildcard matches.
-func seedMetacharHeadings(t *testing.T) {
+// seedDoSGuardBook creates a self-contained published book with three
+// headings: a plain one, one containing a literal '%', and one containing
+// "1000" without any metacharacter — so the escaping assertions can tell
+// literal matches from wildcard matches without touching shared fixtures.
+func seedDoSGuardBook(t *testing.T) {
 	t.Helper()
 
 	pool := integrationDB(t)
@@ -156,23 +162,44 @@ func seedMetacharHeadings(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), requestTimeout)
 	defer cancel()
 
+	exec := func(sql string, args ...any) {
+		t.Helper()
+
+		if _, err := pool.Exec(ctx, sql, args...); err != nil {
+			t.Fatalf("seed dos-guard book: %v (sql %s)", err, sql)
+		}
+	}
+
+	exec(`
+INSERT INTO books (id, name, category_id, author_id, type, has_content)
+VALUES ($1, 'كتاب حراس التحميل', $2, $3, 1, true)
+ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, has_content = true, is_deleted = false`,
+		dosBookID, fixtureCategoryID, fixtureAuthorID)
+	exec(`
+INSERT INTO book_publications (book_id, status, featured, sort_order, published_at)
+VALUES ($1, 'published', false, 99, now())
+ON CONFLICT (book_id) DO UPDATE SET status = 'published'`, dosBookID)
+	exec(`
+INSERT INTO book_pages (book_id, page_id, content_html, content_text)
+VALUES ($1, 1, '<p>صفحة الاختبار</p>', 'صفحة الاختبار')
+ON CONFLICT (book_id, page_id) DO UPDATE SET is_deleted = false`, dosBookID)
+
 	for _, row := range []struct {
 		id      int
 		ordinal int
 		content string
 	}{
-		{fixtureHeadingID + 900, 90, "باب 100% مئوية"},
-		{fixtureHeadingID + 901, 91, "باب 1000 قاعدة"},
+		{1, 1, "باب الاختبار"},
+		{2, 2, "باب 100% مئوية"},
+		{3, 3, "باب 1000 قاعدة"},
 	} {
-		if _, err := pool.Exec(ctx, `
+		exec(`
 INSERT INTO book_headings (book_id, heading_id, parent_id, page_id, depth, ordinal, content)
 VALUES ($1, $2, NULL, 1, 0, $3, $4)
 ON CONFLICT (book_id, heading_id) DO UPDATE SET
     content = EXCLUDED.content,
     ordinal = EXCLUDED.ordinal,
     is_deleted = false`,
-			fixtureBookID, row.id, row.ordinal, row.content); err != nil {
-			t.Fatalf("seed metachar heading %d: %v", row.id, err)
-		}
+			dosBookID, row.id, row.ordinal, row.content)
 	}
 }
