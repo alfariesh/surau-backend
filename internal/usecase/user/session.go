@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/evrone/go-clean-template/internal/entity"
-	"github.com/evrone/go-clean-template/internal/repo"
-	"github.com/evrone/go-clean-template/internal/usecase/authmeta"
+	"github.com/alfariesh/surau-backend/internal/entity"
+	"github.com/alfariesh/surau-backend/internal/repo"
+	"github.com/alfariesh/surau-backend/internal/usecase/authmeta"
 	"github.com/google/uuid"
 )
 

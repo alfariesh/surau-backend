@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/evrone/go-clean-template/internal/entity"
+	"github.com/alfariesh/surau-backend/internal/entity"
 )
 
 const activityDateLayout = "2006-01-02"

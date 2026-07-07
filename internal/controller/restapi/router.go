@@ -6,14 +6,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/alfariesh/surau-backend/config"
+	_ "github.com/alfariesh/surau-backend/docs" // Swagger docs.
+	"github.com/alfariesh/surau-backend/internal/controller/restapi/middleware"
+	v1 "github.com/alfariesh/surau-backend/internal/controller/restapi/v1"
+	"github.com/alfariesh/surau-backend/internal/usecase"
+	"github.com/alfariesh/surau-backend/pkg/jwt"
+	"github.com/alfariesh/surau-backend/pkg/logger"
 	"github.com/ansrivas/fiberprometheus/v2"
-	"github.com/evrone/go-clean-template/config"
-	_ "github.com/evrone/go-clean-template/docs" // Swagger docs.
-	"github.com/evrone/go-clean-template/internal/controller/restapi/middleware"
-	v1 "github.com/evrone/go-clean-template/internal/controller/restapi/v1"
-	"github.com/evrone/go-clean-template/internal/usecase"
-	"github.com/evrone/go-clean-template/pkg/jwt"
-	"github.com/evrone/go-clean-template/pkg/logger"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/compress"
 	"github.com/gofiber/fiber/v2/middleware/cors"

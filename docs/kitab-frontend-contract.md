@@ -15,6 +15,7 @@ For a shared kitab + Quran integration entrypoint, see `docs/frontend-integratio
 - Unsupported explicit language returns `400 {"error":"unsupported language"}`.
 - Catalog display can fall back to Arabic/source metadata.
 - User-facing list endpoints (categories, authors, books, pages, headings, TOC, Quran references) return a uniform `{ "items": [...], "total": number }` envelope; `GET /v1/books` keeps a `stats` sibling, and TOC items still nest `children` inside each item. Unwrap `items` before mapping.
+- **Pagination guards (additive, since 2026-07-08):** `GET /v1/books/{id}/headings` now accepts optional `limit` (default 200, max 200) and `offset`; omitting them returns the first 200 rows and `total` always carries the FULL match count — books with >200 headings need follow-up pages (`offset=200`, …). Public list `offset` values are clamped to 10000 everywhere. Search `q` values are treated literally (`%`/`_` no longer act as wildcards) and are bounded to 200 characters.
 - Section translation content is exact-language only. Missing `lang=en` returns `translation: null` even if `id` exists.
 - Translation feedback is exact-language only. Do not show feedback controls unless `translation` is non-null and `translation.lang === selectedLang`.
 

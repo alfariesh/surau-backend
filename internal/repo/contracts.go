@@ -5,7 +5,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/evrone/go-clean-template/internal/entity"
+	"github.com/alfariesh/surau-backend/internal/entity"
 )
 
 //go:generate mockgen -source=contracts.go -destination=../usecase/mocks_repo_test.go -package=usecase_test
@@ -261,7 +261,7 @@ type (
 		GetBook(ctx context.Context, bookID int, lang string) (entity.Book, error)
 		ListBookPages(ctx context.Context, bookID int, filter PageFilter) ([]entity.BookPage, int, error)
 		GetBookPage(ctx context.Context, bookID, pageID int) (entity.BookPage, error)
-		ListBookHeadings(ctx context.Context, bookID int, query string) ([]entity.BookHeading, error)
+		ListBookHeadings(ctx context.Context, bookID int, filter HeadingFilter) ([]entity.BookHeading, int, error)
 		ListTOCEntries(ctx context.Context, bookID int, lang string, includeAudio bool) ([]entity.BookTOCEntry, error)
 		GetSection(ctx context.Context, bookID, headingID int, lang string) (entity.BookSection, error)
 		CreateTranslationFeedback(ctx context.Context, feedback entity.TranslationFeedback) (entity.TranslationFeedback, error)
@@ -460,6 +460,13 @@ type (
 
 	// PageFilter -.
 	PageFilter struct {
+		Limit  uint64
+		Offset uint64
+	}
+
+	// HeadingFilter -.
+	HeadingFilter struct {
+		Query  string
 		Limit  uint64
 		Offset uint64
 	}

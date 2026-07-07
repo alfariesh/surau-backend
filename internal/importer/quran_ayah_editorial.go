@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/evrone/go-clean-template/internal/contentlang"
+	"github.com/alfariesh/surau-backend/internal/contentlang"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"

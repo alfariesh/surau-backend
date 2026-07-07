@@ -4,14 +4,24 @@ import (
 	"context"
 	"strings"
 
-	"github.com/evrone/go-clean-template/internal/entity"
-	"github.com/evrone/go-clean-template/internal/readerlang"
-	"github.com/evrone/go-clean-template/internal/repo"
+	"github.com/alfariesh/surau-backend/internal/entity"
+	"github.com/alfariesh/surau-backend/internal/readerlang"
+	"github.com/alfariesh/surau-backend/internal/repo"
 )
 
 const (
 	defaultLimit = 50
 	maxLimit     = 200
+	// maxOffset guards public endpoints against deep-paging DoS (unbounded
+	// OFFSET forces a full scan); aligned with the personal/quran usecases.
+	maxOffset = 10000
+	// maxQueryRunes bounds search input so a single URL cannot carry a
+	// pathological ILIKE pattern.
+	maxQueryRunes = 200
+	// defaultHeadingLimit is the additive default for the headings endpoint:
+	// large enough that existing clients keep seeing whole TOCs for typical
+	// books, bounded so huge books stop producing unbounded responses.
+	defaultHeadingLimit = 200
 )
 
 // UseCase provides public reader operations.
@@ -42,7 +52,7 @@ func (uc *UseCase) Authors(ctx context.Context, query string, limit, offset int,
 	}
 
 	return uc.repo.ListAuthors(ctx, repo.AuthorFilter{
-		Query:  strings.TrimSpace(query),
+		Query:  trimQuery(query),
 		Lang:   lang,
 		Limit:  clampLimit(limit),
 		Offset: clampOffset(offset),
@@ -64,7 +74,7 @@ func (uc *UseCase) Books(
 	}
 
 	return uc.repo.ListBooks(ctx, repo.BookFilter{
-		Query:      strings.TrimSpace(query),
+		Query:      trimQuery(query),
 		Lang:       lang,
 		CategoryID: categoryID,
 		AuthorID:   authorID,
@@ -107,9 +117,17 @@ func (uc *UseCase) Page(ctx context.Context, bookID, pageID int) (entity.BookPag
 	return uc.repo.GetBookPage(ctx, bookID, pageID)
 }
 
-// Headings returns a flat heading tree for a book.
-func (uc *UseCase) Headings(ctx context.Context, bookID int, query string) ([]entity.BookHeading, error) {
-	return uc.repo.ListBookHeadings(ctx, bookID, strings.TrimSpace(query))
+// Headings returns a paginated flat heading tree for a book.
+func (uc *UseCase) Headings(ctx context.Context, bookID int, query string, limit, offset int) ([]entity.BookHeading, int, error) {
+	if limit <= 0 {
+		limit = defaultHeadingLimit
+	}
+
+	return uc.repo.ListBookHeadings(ctx, bookID, repo.HeadingFilter{
+		Query:  trimQuery(query),
+		Limit:  clampLimit(limit),
+		Offset: clampOffset(offset),
+	})
 }
 
 // Section returns one section in Arabic plus optional requested language assets.
@@ -139,5 +157,21 @@ func clampOffset(offset int) uint64 {
 		return 0
 	}
 
+	if offset > maxOffset {
+		return maxOffset
+	}
+
 	return uint64(offset)
+}
+
+// trimQuery trims and bounds a public search query to maxQueryRunes.
+func trimQuery(query string) string {
+	query = strings.TrimSpace(query)
+	runes := []rune(query)
+
+	if len(runes) > maxQueryRunes {
+		return string(runes[:maxQueryRunes])
+	}
+
+	return query
 }

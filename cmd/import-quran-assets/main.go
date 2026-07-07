@@ -8,7 +8,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/evrone/go-clean-template/internal/importer"
+	"github.com/alfariesh/surau-backend/internal/importer"
 )
 
 type repeatedStringFlag []string

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/evrone/go-clean-template/internal/entity"
+	"github.com/alfariesh/surau-backend/internal/entity"
 	"github.com/stretchr/testify/assert"
 )
 

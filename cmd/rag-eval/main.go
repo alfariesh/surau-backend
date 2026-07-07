@@ -10,7 +10,7 @@ import (
 	"os/signal"
 	"time"
 
-	"github.com/evrone/go-clean-template/internal/rageval"
+	"github.com/alfariesh/surau-backend/internal/rageval"
 )
 
 func main() {

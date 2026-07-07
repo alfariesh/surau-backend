@@ -7,7 +7,7 @@ import (
 	"log"
 	"os"
 
-	"github.com/evrone/go-clean-template/internal/importer"
+	"github.com/alfariesh/surau-backend/internal/importer"
 )
 
 func main() {

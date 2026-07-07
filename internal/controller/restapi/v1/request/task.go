@@ -1,6 +1,6 @@
 package request
 
-import "github.com/evrone/go-clean-template/internal/entity"
+import "github.com/alfariesh/surau-backend/internal/entity"
 
 // CreateTask -.
 type CreateTask struct {

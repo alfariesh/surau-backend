@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/evrone/go-clean-template/internal/importer"
+	"github.com/alfariesh/surau-backend/internal/importer"
 	"github.com/stretchr/testify/require"
 )
 

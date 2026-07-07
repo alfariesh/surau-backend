@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/evrone/go-clean-template/internal/entity"
+	"github.com/alfariesh/surau-backend/internal/entity"
 )
 
 // OpenAICompatibleOptions configures a chat-completions-compatible LLM.

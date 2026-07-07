@@ -12,7 +12,7 @@ REST + auth backend for an Islamic classical book reader. The service imports ra
 - SQLite importer via `modernc.org/sqlite`
 - Optional realtime collaborative page editing via a Yjs/Hocuspocus sidecar (`collab-server/`, Node 22) — see [docs/collab.md](docs/collab.md)
 
-The runtime app no longer starts RabbitMQ, NATS, or gRPC. Legacy packages may still compile in the tree, but `cmd/app` wires only REST + Postgres + JWT.
+The runtime app wires only REST + Postgres + JWT; the template's RabbitMQ/NATS/gRPC transports were removed entirely (code and dependencies).
 
 ### Editorial source edits: concurrency & history
 

@@ -1,7 +1,7 @@
 // Package readerlang normalizes public kitab language codes.
 package readerlang
 
-import "github.com/evrone/go-clean-template/internal/contentlang"
+import "github.com/alfariesh/surau-backend/internal/contentlang"
 
 const (
 	Default = contentlang.Default

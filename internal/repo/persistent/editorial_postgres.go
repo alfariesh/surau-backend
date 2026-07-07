@@ -9,9 +9,9 @@ import (
 	"time"
 
 	sq "github.com/Masterminds/squirrel"
-	"github.com/evrone/go-clean-template/internal/entity"
-	"github.com/evrone/go-clean-template/internal/repo"
-	"github.com/evrone/go-clean-template/pkg/postgres"
+	"github.com/alfariesh/surau-backend/internal/entity"
+	"github.com/alfariesh/surau-backend/internal/repo"
+	"github.com/alfariesh/surau-backend/pkg/postgres"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 )
@@ -1496,7 +1496,7 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, nullif($8, '')::jsonb, now())`,
 
 func applyEditorialBookFilter(countBuilder, dataBuilder sq.SelectBuilder, filter repo.EditorialBookFilter) (sq.SelectBuilder, sq.SelectBuilder) {
 	if filter.Query != "" {
-		like := "%" + filter.Query + "%"
+		like := "%" + escapeLike(filter.Query) + "%"
 		condition := "(b.name ILIKE ? OR me.display_title ILIKE ? OR a.name ILIKE ? OR c.name ILIKE ?)"
 		countBuilder = countBuilder.Where(condition, like, like, like, like)
 		dataBuilder = dataBuilder.Where(condition, like, like, like, like)
@@ -1526,7 +1526,7 @@ func applyProductionCandidateFilter(
 	filter repo.ProductionCandidateFilter,
 ) (sq.SelectBuilder, sq.SelectBuilder) {
 	if filter.Query != "" {
-		like := "%" + filter.Query + "%"
+		like := "%" + escapeLike(filter.Query) + "%"
 		condition := "(b.name ILIKE ? OR me.display_title ILIKE ? OR a.name ILIKE ? OR c.name ILIKE ?)"
 		countBuilder = countBuilder.Where(condition, like, like, like, like)
 		dataBuilder = dataBuilder.Where(condition, like, like, like, like)

@@ -1,6 +1,6 @@
 package response
 
-import "github.com/evrone/go-clean-template/internal/entity"
+import "github.com/alfariesh/surau-backend/internal/entity"
 
 // EmailTemplateList wraps paginated email templates.
 type EmailTemplateList struct {

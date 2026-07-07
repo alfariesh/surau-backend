@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	jwtpkg "github.com/evrone/go-clean-template/pkg/jwt"
+	jwtpkg "github.com/alfariesh/surau-backend/pkg/jwt"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

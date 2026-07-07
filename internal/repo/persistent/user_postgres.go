@@ -10,9 +10,9 @@ import (
 	"time"
 
 	sq "github.com/Masterminds/squirrel"
-	"github.com/evrone/go-clean-template/internal/entity"
-	"github.com/evrone/go-clean-template/internal/repo"
-	"github.com/evrone/go-clean-template/pkg/postgres"
+	"github.com/alfariesh/surau-backend/internal/entity"
+	"github.com/alfariesh/surau-backend/internal/repo"
+	"github.com/alfariesh/surau-backend/pkg/postgres"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 )
@@ -221,7 +221,7 @@ func (r *UserRepo) ListAccounts(
 		Offset(filter.Offset)
 
 	if filter.Query != "" {
-		pattern := "%" + filter.Query + "%"
+		pattern := "%" + escapeLike(filter.Query) + "%"
 		condition := "(u.email ILIKE ? OR u.username ILIKE ? OR p.display_name ILIKE ?)"
 		countBuilder = countBuilder.Where(condition, pattern, pattern, pattern)
 		dataBuilder = dataBuilder.Where(condition, pattern, pattern, pattern)

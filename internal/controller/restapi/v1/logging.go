@@ -3,7 +3,7 @@ package v1
 import (
 	"errors"
 
-	"github.com/evrone/go-clean-template/internal/entity"
+	"github.com/alfariesh/surau-backend/internal/entity"
 )
 
 func (r *V1) logReaderError(err error, operation string) {

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	suraujwt "github.com/evrone/go-clean-template/pkg/jwt"
+	suraujwt "github.com/alfariesh/surau-backend/pkg/jwt"
 	jwtlib "github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

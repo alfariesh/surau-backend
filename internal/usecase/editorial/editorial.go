@@ -7,10 +7,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/evrone/go-clean-template/internal/entity"
-	"github.com/evrone/go-clean-template/internal/readerlang"
-	"github.com/evrone/go-clean-template/internal/readerutil"
-	"github.com/evrone/go-clean-template/internal/repo"
+	"github.com/alfariesh/surau-backend/internal/entity"
+	"github.com/alfariesh/surau-backend/internal/readerlang"
+	"github.com/alfariesh/surau-backend/internal/readerutil"
+	"github.com/alfariesh/surau-backend/internal/repo"
 )
 
 const (

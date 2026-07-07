@@ -3,8 +3,8 @@ package reader
 import (
 	"context"
 
-	"github.com/evrone/go-clean-template/internal/entity"
-	"github.com/evrone/go-clean-template/internal/readerlang"
+	"github.com/alfariesh/surau-backend/internal/entity"
+	"github.com/alfariesh/surau-backend/internal/readerlang"
 )
 
 // TOC returns the nested table of contents for a published book.

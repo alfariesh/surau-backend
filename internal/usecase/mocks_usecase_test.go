@@ -14,8 +14,8 @@ import (
 	reflect "reflect"
 	time "time"
 
-	entity "github.com/evrone/go-clean-template/internal/entity"
-	repo "github.com/evrone/go-clean-template/internal/repo"
+	entity "github.com/alfariesh/surau-backend/internal/entity"
+	repo "github.com/alfariesh/surau-backend/internal/repo"
 	gomock "go.uber.org/mock/gomock"
 )
 
@@ -1246,18 +1246,19 @@ func (mr *MockReaderMockRecorder) CreateTranslationFeedback(ctx, bookID, heading
 }
 
 // Headings mocks base method.
-func (m *MockReader) Headings(ctx context.Context, bookID int, query string) ([]entity.BookHeading, error) {
+func (m *MockReader) Headings(ctx context.Context, bookID int, query string, limit, offset int) ([]entity.BookHeading, int, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Headings", ctx, bookID, query)
+	ret := m.ctrl.Call(m, "Headings", ctx, bookID, query, limit, offset)
 	ret0, _ := ret[0].([]entity.BookHeading)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
+	ret1, _ := ret[1].(int)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
 }
 
 // Headings indicates an expected call of Headings.
-func (mr *MockReaderMockRecorder) Headings(ctx, bookID, query any) *gomock.Call {
+func (mr *MockReaderMockRecorder) Headings(ctx, bookID, query, limit, offset any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Headings", reflect.TypeOf((*MockReader)(nil).Headings), ctx, bookID, query)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Headings", reflect.TypeOf((*MockReader)(nil).Headings), ctx, bookID, query, limit, offset)
 }
 
 // Page mocks base method.

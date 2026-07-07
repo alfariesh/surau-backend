@@ -5,8 +5,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/evrone/go-clean-template/internal/entity"
-	"github.com/evrone/go-clean-template/internal/repo"
+	"github.com/alfariesh/surau-backend/internal/entity"
+	"github.com/alfariesh/surau-backend/internal/repo"
 )
 
 //go:generate mockgen -source=contracts.go -destination=./mocks_usecase_test.go -package=usecase_test
@@ -153,7 +153,7 @@ type (
 		Book(ctx context.Context, bookID int, lang string) (entity.Book, error)
 		Pages(ctx context.Context, bookID, limit, offset int) ([]entity.BookPage, int, error)
 		Page(ctx context.Context, bookID, pageID int) (entity.BookPage, error)
-		Headings(ctx context.Context, bookID int, query string) ([]entity.BookHeading, error)
+		Headings(ctx context.Context, bookID int, query string, limit, offset int) ([]entity.BookHeading, int, error)
 		Section(ctx context.Context, bookID, headingID int, lang string) (entity.BookSection, error)
 		TOC(ctx context.Context, bookID int, lang string, includeAudio bool) ([]entity.BookTOCNode, error)
 		TOCRead(ctx context.Context, bookID, headingID int, lang string) (entity.BookTOCRead, error)

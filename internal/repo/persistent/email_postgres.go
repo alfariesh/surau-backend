@@ -10,9 +10,9 @@ import (
 	"time"
 
 	sq "github.com/Masterminds/squirrel"
-	"github.com/evrone/go-clean-template/internal/entity"
-	"github.com/evrone/go-clean-template/internal/repo"
-	"github.com/evrone/go-clean-template/pkg/postgres"
+	"github.com/alfariesh/surau-backend/internal/entity"
+	"github.com/alfariesh/surau-backend/internal/repo"
+	"github.com/alfariesh/surau-backend/pkg/postgres"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -125,8 +125,8 @@ func (r *EmailRepo) ListEmailTemplates(
 	if strings.TrimSpace(filter.Query) != "" {
 		query = query.Where(
 			"(key ILIKE ? OR name ILIKE ?)",
-			"%"+strings.TrimSpace(filter.Query)+"%",
-			"%"+strings.TrimSpace(filter.Query)+"%",
+			"%"+escapeLike(strings.TrimSpace(filter.Query))+"%",
+			"%"+escapeLike(strings.TrimSpace(filter.Query))+"%",
 		)
 	}
 

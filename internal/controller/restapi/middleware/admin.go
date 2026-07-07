@@ -3,8 +3,8 @@ package middleware
 import (
 	"net/http"
 
-	"github.com/evrone/go-clean-template/internal/entity"
-	"github.com/evrone/go-clean-template/internal/usecase"
+	"github.com/alfariesh/surau-backend/internal/entity"
+	"github.com/alfariesh/surau-backend/internal/usecase"
 	"github.com/gofiber/fiber/v2"
 )
 

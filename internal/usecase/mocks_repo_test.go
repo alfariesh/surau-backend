@@ -14,8 +14,8 @@ import (
 	reflect "reflect"
 	time "time"
 
-	entity "github.com/evrone/go-clean-template/internal/entity"
-	repo "github.com/evrone/go-clean-template/internal/repo"
+	entity "github.com/alfariesh/surau-backend/internal/entity"
+	repo "github.com/alfariesh/surau-backend/internal/repo"
 	gomock "go.uber.org/mock/gomock"
 )
 
@@ -1881,18 +1881,19 @@ func (mr *MockReaderRepoMockRecorder) ListAuthors(ctx, filter any) *gomock.Call 
 }
 
 // ListBookHeadings mocks base method.
-func (m *MockReaderRepo) ListBookHeadings(ctx context.Context, bookID int, query string) ([]entity.BookHeading, error) {
+func (m *MockReaderRepo) ListBookHeadings(ctx context.Context, bookID int, filter repo.HeadingFilter) ([]entity.BookHeading, int, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ListBookHeadings", ctx, bookID, query)
+	ret := m.ctrl.Call(m, "ListBookHeadings", ctx, bookID, filter)
 	ret0, _ := ret[0].([]entity.BookHeading)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
+	ret1, _ := ret[1].(int)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
 }
 
 // ListBookHeadings indicates an expected call of ListBookHeadings.
-func (mr *MockReaderRepoMockRecorder) ListBookHeadings(ctx, bookID, query any) *gomock.Call {
+func (mr *MockReaderRepoMockRecorder) ListBookHeadings(ctx, bookID, filter any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListBookHeadings", reflect.TypeOf((*MockReaderRepo)(nil).ListBookHeadings), ctx, bookID, query)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListBookHeadings", reflect.TypeOf((*MockReaderRepo)(nil).ListBookHeadings), ctx, bookID, filter)
 }
 
 // ListBookPages mocks base method.

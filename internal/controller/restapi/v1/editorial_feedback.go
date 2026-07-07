@@ -3,8 +3,8 @@ package v1
 import (
 	"net/http"
 
-	"github.com/evrone/go-clean-template/internal/controller/restapi/v1/request"
-	"github.com/evrone/go-clean-template/internal/controller/restapi/v1/response"
+	"github.com/alfariesh/surau-backend/internal/controller/restapi/v1/request"
+	"github.com/alfariesh/surau-backend/internal/controller/restapi/v1/response"
 	"github.com/gofiber/fiber/v2"
 )
 

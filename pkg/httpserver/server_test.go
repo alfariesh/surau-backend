@@ -3,8 +3,8 @@ package httpserver_test
 import (
 	"testing"
 
-	"github.com/evrone/go-clean-template/pkg/httpserver"
-	"github.com/evrone/go-clean-template/pkg/logger"
+	"github.com/alfariesh/surau-backend/pkg/httpserver"
+	"github.com/alfariesh/surau-backend/pkg/logger"
 	"github.com/stretchr/testify/assert"
 )
 

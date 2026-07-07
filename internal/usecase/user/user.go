@@ -17,11 +17,11 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/evrone/go-clean-template/internal/contentlang"
-	"github.com/evrone/go-clean-template/internal/entity"
-	"github.com/evrone/go-clean-template/internal/repo"
-	"github.com/evrone/go-clean-template/internal/usecase/authmeta"
-	"github.com/evrone/go-clean-template/pkg/jwt"
+	"github.com/alfariesh/surau-backend/internal/contentlang"
+	"github.com/alfariesh/surau-backend/internal/entity"
+	"github.com/alfariesh/surau-backend/internal/repo"
+	"github.com/alfariesh/surau-backend/internal/usecase/authmeta"
+	"github.com/alfariesh/surau-backend/pkg/jwt"
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -2468,7 +2468,7 @@ func loginFingerprintInputs(meta authmeta.Meta) (string, string, bool) {
 	userAgent := strings.TrimSpace(meta.UserAgent)
 	transport := strings.TrimSpace(meta.Transport)
 
-	if clientIP == transport || clientIP == "unknown" || clientIP == "nats" || clientIP == "amqp" {
+	if clientIP == transport || clientIP == "unknown" {
 		clientIP = ""
 	}
 	if clientIP == "" && userAgent == "" {

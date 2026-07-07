@@ -3,7 +3,7 @@ package importer
 import (
 	"testing"
 
-	"github.com/evrone/go-clean-template/internal/readerutil"
+	"github.com/alfariesh/surau-backend/internal/readerutil"
 	"github.com/stretchr/testify/assert"
 )
 

@@ -3499,7 +3499,7 @@ const docTemplate = `{
         },
         "/books/{book_id}/headings": {
             "get": {
-                "description": "List raw Arabic heading tree rows for one published kitab.",
+                "description": "List raw Arabic heading tree rows for one published kitab. Paginated additively: omitting limit returns the first 200 rows; total always carries the full match count.",
                 "produces": [
                     "application/json"
                 ],
@@ -3520,6 +3520,18 @@ const docTemplate = `{
                         "type": "string",
                         "description": "Search heading title",
                         "name": "q",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page size (default 200, max 200)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Offset (clamped to 10000)",
+                        "name": "offset",
                         "in": "query"
                     }
                 ],

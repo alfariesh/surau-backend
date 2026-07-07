@@ -3,7 +3,7 @@ package response
 import (
 	"time"
 
-	"github.com/evrone/go-clean-template/internal/entity"
+	"github.com/alfariesh/surau-backend/internal/entity"
 )
 
 // SessionInfo describes one active device/session for the "manage devices" view.

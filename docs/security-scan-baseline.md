@@ -29,3 +29,32 @@ Raw generated-code baseline:
   - `docs/proto/v1/translation.history.pb.go`
 
 Raw `gosec ./...` still reports generated protobuf `G103` unsafe usage from `protoc-gen-go`. Use `-exclude-generated` for actionable application-code scans; do not hand-edit generated protobuf unsafe blocks.
+(Catatan 2026-07-08: file `docs/proto/*.pb.go` yang dirujuk baseline lama sudah DIHAPUS bersama transport gRPC — baris di atas dipertahankan hanya sebagai konteks historis.)
+
+## Secret scanning (gitleaks) + runbook rotasi rahasia
+
+Sejak 2026-07-08 CI menjalankan job `gitleaks` (default rules + `.gitleaks.toml`) pada setiap PR
+— commit yang membawa secret nyata akan MERAH dan tidak bisa merge. False positive fixture/test
+ditambahkan ke allowlist `.gitleaks.toml`, bukan di-skip.
+
+**Bila secret terlanjur ter-commit (atau terdeteksi bocor):**
+
+1. **Anggap bocor permanen** — history git tidak dianggap bersih walau di-force-push.
+2. **Rotasi SUMBERNYA dulu**, baru bersihkan repo:
+   - `JWT_SECRET` → ganti nilai di `.env.production` kedua VPS → restart app (`docker compose up
+     -d --force-recreate app`); semua sesi login terputus (pengguna login ulang).
+   - Kredensial R2 (`R2_ACCESS_KEY_ID/SECRET`) → buat token baru di Cloudflare → update
+     `/etc/surau-backup/env` di kedua VPS + `/etc/surau-backup/pgbackrest.conf` → `pgbackrest
+     check` + jalankan `surau-backup-watchdog` untuk memastikan hijau.
+   - Token bot Telegram → @BotFather `/revoke` → update `/etc/surau-backup/env` kedua VPS →
+     `surau-notify "test"`.
+   - `POSTGRES_PASSWORD`/`PG_URL` → ubah role password di db → update `.env.production` →
+     recreate app (perlu jendela singkat).
+   - Kunci deploy SSH → generate pasangan baru → update `authorized_keys` VPS + GitHub secret
+     `*_VPS_SSH_PRIVATE_KEY`.
+3. Hapus nilai dari file yang ter-commit + tambahkan pola ke `.gitleaks.toml` HANYA bila memang
+   bukan secret; kalau secret nyata: biarkan gitleaks tetap menjaga.
+4. Catat insiden (apa, kapan, rotasi apa) di PR/issue terkait.
+
+Rotasi berkala terjadwal (kalender, dual-key JWT) = milik Fase 2/P8-6 — runbook ini untuk
+respons insiden.
