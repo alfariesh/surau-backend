@@ -30,3 +30,7 @@ log-level-file=off
 # PGDATA of the postgres:18 official image layout (verify with `echo $PGDATA`
 # inside the container).
 pg1-path=/var/lib/postgresql/18/docker
+# The cluster superuser is $POSTGRES_USER (not "postgres"), so tell pgBackRest
+# which role and maintenance db to connect with.
+pg1-user=surau
+pg1-database=postgres

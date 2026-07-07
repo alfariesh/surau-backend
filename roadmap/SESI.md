@@ -38,7 +38,8 @@ Rujukan detail: roadmap/phase-1-foundations.md inisiatif F1-A dan roadmap/phase-
 Masuk PLAN MODE dulu; rencana wajib menyebut cara memenuhi setiap Acceptance Criterion. Setelah saya setujui: kerjakan sampai tuntas — branch fitur, test, checklist Definition of Done di CLAUDE.md, centang milestone di roadmap/PROGRAM.md dan roadmap/SESI.md, merge, verifikasi dev-api. Akhiri dengan laporan bahasa awam + kirim satu pesan Telegram uji ke saya.
 ```
 
-- [ ] **SESI 2 — PITR + snapshot deploy aman (E3+E6)**
+- [x] **SESI 2 — PITR + snapshot deploy aman (E3+E6)** ✅ 2026-07-07 — pgBackRest di kedua VPS
+  (RPO ≤5 mnt); drill PITR lulus 82 dtk; snapshot pra-deploy terenkripsi → R2 retensi 7 hari.
 
 ```text
 Kerjakan E3+E6 dari roadmap/PROGRAM.md §1: (E3) WAL-archiving/PITR ke R2 sehingga RPO turun dari 24 jam ke ≤1 jam, dibuktikan demonstrasi pemulihan point-in-time; (E6) snapshot pra-deploy ikut diunggah ke R2 dengan retensi 7 hari.
