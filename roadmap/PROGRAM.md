@@ -23,7 +23,7 @@ depan — bukan pekerjaan baru.
 | E2 ✅ | **Drill restore pertama + `surau-pg-restore-check` terjadwal mingguan + dead-man alert 26 jam** — **SELESAI 2026-07-07 (S1)**: drill #1 lulus di prod 241 dtk (lihat docs/backup-restore-r2.md §Drill log); timer mingguan + watchdog + alarm Telegram hidup di prod & dev | Backup tanpa restore teruji = harapan; kegagalan backup hari ini SENYAP | F1-A / P8-2 |
 | E3 ✅ | **WAL-archiving / PITR ke R2** → RPO 24 jam menjadi ≤1 jam — **SELESAI 2026-07-07 (S2)**: pgBackRest (archive_timeout=300 ⇒ RPO ≤5 mnt) di prod & dev; drill PITR lulus 82 dtk (docs/backup-restore-r2.md §Drill log #2) | Satu-satunya kegagalan yang bisa mengakhiri produk dalam sehari | F1-A (charter G2) |
 | E4 ✅ | **Importer Shamela jadi staged-diff + tombstone, suite test DITULIS DULU** — **SELESAI 2026-07-07 (S3)**: hard-delete dihapus dari kode; stage→review→approve (drift guard); suite `TestLiveBookImport*` (8 skenario) jadi gerbang CI; **larangan re-import DICABUT** | Defect D1 (KRITIS): re-import dulunya hard-delete + cascade MENGHAPUS kerja editorial & meng-orphan data pengguna | K-0 (D1/D6) |
-| E5 | **Perbaikan DoS publik**: clamp offset (cap 10k), paginasi endpoint headings, escape metakarakter ILIKE | Endpoint publik tanpa auth bisa dipakai membebani DB dengan satu URL | K-0 (D2/D4/D5) |
+| E5 ✅ | **Perbaikan DoS publik**: clamp offset (cap 10k), paginasi endpoint headings, escape metakarakter ILIKE — **SELESAI 2026-07-08 (S4)**: reader clamp 10k; headings limit default/max 200 (aditif, total = count penuh); escapeLike di SEMUA situs ILIKE + query dibatasi 200 rune; terverifikasi live di dev | Endpoint publik tanpa auth bisa dipakai membebani DB dengan satu URL | K-0 (D2/D4/D5) |
 | E6 ✅ | **Snapshot pra-deploy ikut diunggah ke R2** (retensi 7 hari) — **SELESAI 2026-07-07 (S2)**: `surau-predeploy-snapshot` (terenkripsi age) dipanggil kedua workflow deploy; prune 7 hari lokal+R2 | Jaring pengaman rollback hari ini hidup ±20 menit di disk lokal VPS | F1-A |
 
 **Keputusan yang dibutuhkan gelombang ini:** hanya **O-F1-1** (kanal alarm — lihat §5.0),
@@ -258,7 +258,7 @@ yang diperselisihkan — di jawaban AI dan di halaman wiki.
 | **S1** ✅ | E1 (enkripsi backup) + E2 (drill restore #1 + restore-check mingguan + dead-man) — **SELESAI 2026-07-07** | Restore dari R2 terbukti + laporan drill pertama di tangan Salman; dump terenkripsi; backup gagal = alarm |
 | **S2** ✅ | E3 (WAL/PITR) + E6 (snapshot pra-deploy → R2) — **SELESAI 2026-07-07** | Pemulihan point-in-time ≤1 jam terdemonstrasikan |
 | **S3** ✅ | E4 (importer staged — TEST DULU, lalu staged-diff+tombstone) — **SELESAI 2026-07-07** | Fixture re-import destruktif TIDAK BISA menghapus editorial tanpa diff yang disetujui; **larangan re-import dicabut** |
-| **S4** | E5 (clamp offset, paginasi headings, escape ILIKE) + F1-F (rename module, hapus kode mati) | Fuzz publik aman; repo beridentitas Surau |
+| **S4** ✅ | E5 (clamp offset, paginasi headings, escape ILIKE) + F1-F (rename module, hapus kode mati) — **SELESAI 2026-07-08**: module = github.com/alfariesh/surau-backend; kode mati amqp/nats sudah tiada (sisa docs dibersihkan); gitleaks aktif di CI (gerbang DIBUKTIKAN dgn PR dummy-secret yang ditolak); docs/module-conventions.md lahir | Fuzz publik aman; repo beridentitas Surau |
 | **S5** | F1-B (request-ID→log, tracing, 5 alert) → lanjut F1-H (playbook backfill) | Satu request tertelusur ujung-ke-ujung; playbook siap → **masuk W2 (B-1 pilot)** |
 
 **Sambil S1–S5 berjalan, Salman menjawab:** **PK-1** (memblokir W2), lalu mencicil PK-2
