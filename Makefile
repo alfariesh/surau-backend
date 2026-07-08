@@ -99,6 +99,10 @@ test: ### run test
 	go test -v -race -covermode atomic -coverprofile=coverage.txt ./internal/... ./pkg/...
 .PHONY: test
 
+diff-cover: ### coverage of new code vs origin/main (the CI ratchet, F1-E); needs coverage.txt from `make test`
+	git diff -U0 --no-color origin/main...HEAD | go run ./cmd/diffcover -profile coverage.txt
+.PHONY: diff-cover
+
 integration-test: ### run integration-test
 	go clean -testcache && go test -v ./integration-test/...
 .PHONY: integration-test

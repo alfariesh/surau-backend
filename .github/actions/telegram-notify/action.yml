@@ -1,0 +1,30 @@
+name: telegram-notify
+description: >-
+  Send a message to the operator's Telegram bot (decision O-F1-1) from CI.
+  Same curl contract as ops/backup/surau-notify. No-op (with a notice) when
+  the TELEGRAM_* secrets are absent — e.g. on fork PRs — so the alarm can
+  never fail a build by itself.
+inputs:
+  message:
+    description: Message text (truncated to Telegram's limit)
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Send Telegram message
+      shell: bash
+      env:
+        MESSAGE: ${{ inputs.message }}
+      run: |
+        set -euo pipefail
+        if [ -z "${TELEGRAM_BOT_TOKEN:-}" ] || [ -z "${TELEGRAM_CHAT_ID:-}" ]; then
+          echo "::notice::telegram-notify: TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID not set; skipping alarm"
+          exit 0
+        fi
+        text="[ci] ${MESSAGE}"
+        text="${text:0:3900}"
+        curl -fsS -m 20 --retry 3 --retry-delay 2 \
+          "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+          --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+          --data-urlencode "text=${text}" >/dev/null
+        echo "telegram-notify: sent"

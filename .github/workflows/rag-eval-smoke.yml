@@ -1,0 +1,48 @@
+name: RAG Eval Smoke
+# F1-D9: scheduled + non-gating by construction (never runs on pull_request,
+# so it can never block a merge — the full eval gate belongs to Fase 7). It
+# drives the black-box harness against dev-api, which already has the seeded
+# corpus and a configured LLM; a failure alarms Telegram so RAG regressions
+# surface early instead of waiting for a user.
+on:
+  schedule:
+    # Sunday 19:00 UTC = Monday 02:00 WIB, weekly.
+    - cron: "0 19 * * 0"
+  workflow_dispatch: {}
+
+jobs:
+  smoke:
+    name: runner / rag-eval-smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: 1.26
+      - name: Run rag-eval smoke against dev-api
+        run: |
+          set -euo pipefail
+          go run ./cmd/rag-eval -base-url https://dev-api.surau.org \
+            -cases eval/bookrag_smoke.jsonl -output json -verbose | tee rag-eval.json
+      - name: Publish result summary
+        if: always()
+        run: |
+          set -euo pipefail
+          {
+            echo "### RAG eval smoke (non-gating, F1-D9)"
+            echo ""
+            echo '```json'
+            cat rag-eval.json 2>/dev/null || echo '"no output produced"'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Telegram alarm — RAG smoke failed
+        if: failure()
+        uses: ./.github/actions/telegram-notify
+        with:
+          message: >-
+            ❌ RAG eval smoke GAGAL terhadap dev-api (regresi RAG atau dev-api bermasalah):
+            ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

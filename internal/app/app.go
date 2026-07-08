@@ -486,7 +486,7 @@ func emailDispatchPass(cfg *config.Config, emailUC *emailusecase.UseCase) func(c
 	}
 }
 
-func (s *servers) waitForShutdown(l logger.Interface) {
+func (s *servers) waitForShutdown(l logger.Interface, stop <-chan struct{}) {
 	interrupt := make(chan os.Signal, 1)
 	signal.Notify(interrupt, os.Interrupt, syscall.SIGTERM)
 
@@ -497,6 +497,8 @@ func (s *servers) waitForShutdown(l logger.Interface) {
 		l.Info("app - Run - signal: %s", sig.String())
 	case err = <-s.http.Notify():
 		l.Error(fmt.Errorf("app - Run - httpServer.Notify: %w", err))
+	case <-stop:
+		l.Info("app - Run - stop requested")
 	}
 
 	s.shutdownServers(l)
@@ -530,6 +532,13 @@ func (s *servers) shutdownServers(l logger.Interface) {
 
 // Run creates objects via constructors.
 func Run(cfg *config.Config) {
+	run(cfg, nil)
+}
+
+// run is Run with an injectable stop channel so the bootstrap smoke test can
+// drive the full startup/shutdown path in-process; production passes nil (a
+// nil channel never fires), keeping signal-only shutdown semantics.
+func run(cfg *config.Config, stop <-chan struct{}) {
 	l := logger.New(cfg.Log.Level)
 
 	// Tracing (F1-B): HTTP -> pgx -> outbound webapi spans, exported over
@@ -584,7 +593,7 @@ func Run(cfg *config.Config) {
 	uc := initUseCases(cfg, pg, jwtManager, l)
 	s := initServers(cfg, pg, uc, jwtManager, l)
 	s.startServers(cfg, uc.email, uc.user, uc.notification, l)
-	s.waitForShutdown(l)
+	s.waitForShutdown(l, stop)
 }
 
 func unsubscribeFrontendURL(cfg *config.Config) string {
