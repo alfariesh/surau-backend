@@ -259,14 +259,17 @@ services:
     profiles: ["observability"]
     restart: unless-stopped
     environment:
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD}
-      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:?set GRAFANA_ROOT_URL}
+      # Defaults (not :?) on purpose: compose interpolates the WHOLE file for
+      # every command, so required-vars here would break app-only deploys on
+      # hosts that have not configured the observability profile yet.
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-set-grafana-admin-password}
+      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-http://localhost:3000/grafana/}
       GF_SERVER_SERVE_FROM_SUB_PATH: "true"
       GF_ANALYTICS_REPORTING_ENABLED: "false"
       GF_USERS_ALLOW_SIGN_UP: "false"
       # Consumed by alerting provisioning ($VAR expansion at load time).
-      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?set TELEGRAM_BOT_TOKEN}
-      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:?set TELEGRAM_CHAT_ID}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
       OBS_ENV_LABEL: ${OBS_ENV_LABEL:-dev}
     volumes:
       - ./ops/observability/grafana/provisioning:/etc/grafana/provisioning:ro
