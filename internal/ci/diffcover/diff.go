@@ -8,6 +8,7 @@ package diffcover
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"regexp"
@@ -15,8 +16,15 @@ import (
 	"strings"
 )
 
+var errMalformedHunk = errors.New("diffcover: malformed hunk header")
+
 // hunkHeader captures the "+new_start,new_count" half of @@ -a,b +c,d @@.
-var hunkHeader = regexp.MustCompile(`^@@ -[0-9]+(?:,[0-9]+)? \+([0-9]+)(?:,([0-9]+))? @@`)
+var hunkHeader = regexp.MustCompile(`^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@`)
+
+const (
+	scannerInitialBuf = 1024
+	scannerBufferCap  = 16 * 1024 * 1024
+)
 
 // ParseUnifiedDiff extracts the added-line numbers per file from a unified
 // diff (git diff -U0 output; larger contexts also parse). Keys are the
@@ -28,7 +36,7 @@ func ParseUnifiedDiff(r io.Reader) (map[string][]int, error) {
 
 	scanner := bufio.NewScanner(r)
 	// Diff lines can exceed bufio's 64k default (minified assets, fixtures).
-	scanner.Buffer(make([]byte, 0, 1024*1024), 16*1024*1024)
+	scanner.Buffer(make([]byte, 0, scannerInitialBuf), scannerBufferCap)
 
 	line := 0 // current post-image line number while walking a hunk
 
@@ -42,14 +50,9 @@ func ParseUnifiedDiff(r io.Reader) (map[string][]int, error) {
 				current = strings.TrimSpace(path)
 			}
 		case strings.HasPrefix(text, "@@"):
-			match := hunkHeader.FindStringSubmatch(text)
-			if match == nil {
-				return nil, fmt.Errorf("diffcover: malformed hunk header: %q", text)
-			}
-
-			start, err := strconv.Atoi(match[1])
+			start, err := parseHunkStart(text)
 			if err != nil {
-				return nil, fmt.Errorf("diffcover: hunk start in %q: %w", text, err)
+				return nil, err
 			}
 
 			line = start
@@ -69,4 +72,19 @@ func ParseUnifiedDiff(r io.Reader) (map[string][]int, error) {
 	}
 
 	return added, nil
+}
+
+// parseHunkStart returns the post-image start line of an @@ hunk header.
+func parseHunkStart(text string) (int, error) {
+	match := hunkHeader.FindStringSubmatch(text)
+	if match == nil {
+		return 0, fmt.Errorf("%w: %q", errMalformedHunk, text)
+	}
+
+	start, err := strconv.Atoi(match[1])
+	if err != nil {
+		return 0, fmt.Errorf("%w: %q: %w", errMalformedHunk, text, err)
+	}
+
+	return start, nil
 }

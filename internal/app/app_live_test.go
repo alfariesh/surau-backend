@@ -38,6 +38,7 @@ func TestLiveAppBootstrap(t *testing.T) {
 
 	// The test owns its entire environment: required keys plus explicit safe
 	// values for every gate that could reach an external service.
+	//nolint:gosec // throwaway smoke-test values, not real credentials
 	for key, value := range map[string]string{
 		"APP_NAME":                    "surau-backend-smoke",
 		"APP_VERSION":                 "smoke-test",
@@ -68,6 +69,7 @@ func TestLiveAppBootstrap(t *testing.T) {
 
 	go func() {
 		defer close(done)
+
 		run(cfg, stop)
 	}()
 
@@ -126,7 +128,9 @@ func TestLiveAppBootstrap(t *testing.T) {
 func freeTCPPort(t *testing.T) string {
 	t.Helper()
 
-	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	var lc net.ListenConfig
+
+	lis, err := lc.Listen(context.Background(), "tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 
 	addr, ok := lis.Addr().(*net.TCPAddr)
@@ -171,7 +175,7 @@ func tryGet(url string) (int, error) {
 	return resp.StatusCode, nil
 }
 
-func httpGet(t *testing.T, url string) (int, string) {
+func httpGet(t *testing.T, url string) (status int, body string) {
 	t.Helper()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -185,8 +189,8 @@ func httpGet(t *testing.T, url string) (int, string) {
 
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	raw, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)
 
-	return resp.StatusCode, string(body)
+	return resp.StatusCode, string(raw)
 }

@@ -1,6 +1,7 @@
 package diffcover
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -8,6 +9,11 @@ import (
 	"sort"
 	"strings"
 )
+
+var errModulePathRequired = errors.New("diffcover: module path is required")
+
+// fullCoverage is the percentage reported when nothing measurable changed.
+const fullCoverage = 100.0
 
 // Options configures one gate run.
 type Options struct {
@@ -49,10 +55,10 @@ type Result struct {
 // adds no measurable statements passes by definition.
 func (r Result) DiffPercent() float64 {
 	if r.ChangedStmts == 0 {
-		return 100
+		return fullCoverage
 	}
 
-	return 100 * float64(r.CoveredStmts) / float64(r.ChangedStmts)
+	return fullCoverage * float64(r.CoveredStmts) / float64(r.ChangedStmts)
 }
 
 // TotalPercent is the repo-wide statement coverage across the profile union.
@@ -61,7 +67,7 @@ func (r Result) TotalPercent() float64 {
 		return 0
 	}
 
-	return 100 * float64(r.TotalCovered) / float64(r.TotalStmts)
+	return fullCoverage * float64(r.TotalCovered) / float64(r.TotalStmts)
 }
 
 // Pass applies the ratchet threshold to the diff coverage.
@@ -76,7 +82,7 @@ func (r Result) Pass(threshold float64) bool {
 // new code without any test is exactly what the ratchet exists to catch.
 func Analyze(diff io.Reader, profilePaths []string, opts Options) (Result, error) {
 	if opts.ModulePath == "" {
-		return Result{}, fmt.Errorf("diffcover: module path is required")
+		return Result{}, errModulePathRequired
 	}
 
 	added, err := ParseUnifiedDiff(diff)
@@ -102,25 +108,12 @@ func Analyze(diff io.Reader, profilePaths []string, opts Options) (Result, error
 	sort.Strings(paths)
 
 	for _, path := range paths {
-		if !inScope(path, opts.ScopeDirs) {
-			continue
-		}
-
-		src, err := os.ReadFile(filepath.Join(opts.RepoRoot, filepath.FromSlash(path)))
-		if err != nil {
-			return Result{}, fmt.Errorf("diffcover: read changed file: %w", err)
-		}
-
-		if isGeneratedSource(src) {
-			continue
-		}
-
-		fileResult, err := scoreFile(path, src, added[path], idx)
+		fileResult, measurable, err := scoreChangedFile(path, added[path], idx, opts)
 		if err != nil {
 			return Result{}, err
 		}
 
-		if fileResult.ChangedStmts == 0 {
+		if !measurable {
 			continue
 		}
 
@@ -130,6 +123,31 @@ func Analyze(diff io.Reader, profilePaths []string, opts Options) (Result, error
 	}
 
 	return result, nil
+}
+
+// scoreChangedFile applies the scope/generated exemptions and scores one
+// changed file; measurable is false when the file contributes nothing to the
+// gate (out of scope, generated, or no statement-bearing changes).
+func scoreChangedFile(path string, addedLines []int, idx *profileIndex, opts Options) (FileResult, bool, error) {
+	if !inScope(path, opts.ScopeDirs) {
+		return FileResult{}, false, nil
+	}
+
+	src, err := os.ReadFile(filepath.Join(opts.RepoRoot, filepath.FromSlash(path)))
+	if err != nil {
+		return FileResult{}, false, fmt.Errorf("diffcover: read changed file: %w", err)
+	}
+
+	if isGeneratedSource(src) {
+		return FileResult{}, false, nil
+	}
+
+	fileResult, err := scoreFile(path, src, addedLines, idx)
+	if err != nil {
+		return FileResult{}, false, err
+	}
+
+	return fileResult, fileResult.ChangedStmts > 0, nil
 }
 
 func scoreFile(path string, src []byte, addedLines []int, idx *profileIndex) (FileResult, error) {

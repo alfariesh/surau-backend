@@ -22,26 +22,30 @@ type profileIndex struct {
 	coveredStmts int
 }
 
+// blockKey identifies one cover block across profiles.
+type blockKey struct {
+	file      string
+	startLine int
+	startCol  int
+	endLine   int
+	endCol    int
+}
+
+// blockAgg unions one block's counts across profiles.
+type blockAgg struct {
+	numStmt int
+	covered bool
+}
+
 // loadProfiles parses and unions cover profiles. Profile file names are
 // module-qualified import paths (module/dir/file.go); modulePath strips them
 // back to repo-relative. Profiles must share one cover mode semantically;
 // union-of-counts>0 is sound for set and atomic modes alike.
 func loadProfiles(paths []string, modulePath string) (*profileIndex, error) {
 	idx := &profileIndex{files: map[string]*lineCoverage{}}
-	prefix := modulePath + "/"
 
 	// The same block can appear in several profiles (unit + live); totals must
 	// count each block once, with covered = max over profiles.
-	type blockKey struct {
-		file                                     string
-		startLine, startCol, endLine, endCol int
-	}
-
-	type blockAgg struct {
-		numStmt int
-		covered bool
-	}
-
 	blocks := map[blockKey]*blockAgg{}
 
 	for _, path := range paths {
@@ -51,35 +55,7 @@ func loadProfiles(paths []string, modulePath string) (*profileIndex, error) {
 		}
 
 		for _, profile := range profiles {
-			rel, ok := strings.CutPrefix(profile.FileName, prefix)
-			if !ok {
-				// Foreign module entries (shouldn't happen) stay out of scope.
-				continue
-			}
-
-			file := idx.files[rel]
-			if file == nil {
-				file = &lineCoverage{stmtLines: map[int]bool{}}
-				idx.files[rel] = file
-			}
-
-			for _, block := range profile.Blocks {
-				key := blockKey{rel, block.StartLine, block.StartCol, block.EndLine, block.EndCol}
-
-				agg := blocks[key]
-				if agg == nil {
-					agg = &blockAgg{numStmt: block.NumStmt}
-					blocks[key] = agg
-				}
-
-				if block.Count > 0 {
-					agg.covered = true
-				}
-
-				for line := block.StartLine; line <= block.EndLine; line++ {
-					file.stmtLines[line] = file.stmtLines[line] || block.Count > 0
-				}
-			}
+			indexProfile(idx, blocks, profile, modulePath+"/")
 		}
 	}
 
@@ -91,4 +67,37 @@ func loadProfiles(paths []string, modulePath string) (*profileIndex, error) {
 	}
 
 	return idx, nil
+}
+
+// indexProfile folds one file's blocks into the union index.
+func indexProfile(idx *profileIndex, blocks map[blockKey]*blockAgg, profile *cover.Profile, prefix string) {
+	rel, ok := strings.CutPrefix(profile.FileName, prefix)
+	if !ok {
+		// Foreign module entries (shouldn't happen) stay out of scope.
+		return
+	}
+
+	file := idx.files[rel]
+	if file == nil {
+		file = &lineCoverage{stmtLines: map[int]bool{}}
+		idx.files[rel] = file
+	}
+
+	for _, block := range profile.Blocks {
+		key := blockKey{rel, block.StartLine, block.StartCol, block.EndLine, block.EndCol}
+
+		agg := blocks[key]
+		if agg == nil {
+			agg = &blockAgg{numStmt: block.NumStmt}
+			blocks[key] = agg
+		}
+
+		if block.Count > 0 {
+			agg.covered = true
+		}
+
+		for line := block.StartLine; line <= block.EndLine; line++ {
+			file.stmtLines[line] = file.stmtLines[line] || block.Count > 0
+		}
+	}
 }

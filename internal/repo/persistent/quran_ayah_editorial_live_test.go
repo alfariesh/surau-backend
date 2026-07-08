@@ -22,7 +22,7 @@ import (
 //
 //	SURAU_LIVE_PG=postgres://... go test ./internal/repo/persistent/ -run TestLiveAyahEditorialReadPath -v
 //
-//nolint:paralleltest,tparallel // serial live-DB read-path checks over shared seeded rows (gated on SURAU_LIVE_PG)
+//nolint:paralleltest // serial live-DB read-path checks over shared seeded rows (gated on SURAU_LIVE_PG)
 func TestLiveAyahEditorialReadPath(t *testing.T) {
 	url := os.Getenv("SURAU_LIVE_PG")
 	if url == "" {
@@ -43,7 +43,7 @@ func TestLiveAyahEditorialReadPath(t *testing.T) {
 		permittedNo = 905 // full editorial, license permitted
 		sourceID    = "f1e-editorial-readpath-source"
 		// Unique token so SearchAyahs can only ever match the seeded row.
-		searchToken = "f1ereadpathfixture905"
+		searchNeedle = "f1ereadpathfixture905"
 	)
 
 	permittedKey := fmt.Sprintf("%d:%d", surahID, permittedNo)
@@ -118,7 +118,7 @@ VALUES ($1, 'id', 'F1-E Read Path Fixture', 'json', 'permitted', 0)`, sourceID)
 
 	_, err = pg.Pool.Exec(ctx, `
 INSERT INTO quran_ayah_translations (source_id, surah_id, ayah_number, ayah_key, lang, text)
-VALUES ($1, $2, $3, $4, 'id', 'Terjemahan fixture dengan token `+searchToken+` di dalamnya.')`,
+VALUES ($1, $2, $3, $4, 'id', 'Terjemahan fixture dengan token `+searchNeedle+` di dalamnya.')`,
 		sourceID, surahID, permittedNo, permittedKey)
 	require.NoError(t, err)
 
@@ -187,7 +187,7 @@ VALUES ($1, $2, $3, $4, 'id', 'Terjemahan fixture dengan token `+searchToken+` d
 
 	t.Run("SearchAyahs returns hits and total via single-pass window", func(t *testing.T) {
 		results, total, err := repo.SearchAyahs(ctx, repocontract.QuranSearchFilter{
-			Query: searchToken, Lang: "id", Limit: 50, Offset: 0,
+			Query: searchNeedle, Lang: "id", Limit: 50, Offset: 0,
 		})
 		require.NoError(t, err)
 		assert.GreaterOrEqual(t, total, 1, "windowed total must count the match")

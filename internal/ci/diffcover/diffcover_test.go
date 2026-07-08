@@ -147,7 +147,7 @@ func writeRepo(t *testing.T, files map[string]string) string {
 	for path, content := range files {
 		full := filepath.Join(root, filepath.FromSlash(path))
 		require.NoError(t, os.MkdirAll(filepath.Dir(full), 0o755))
-		require.NoError(t, os.WriteFile(full, []byte(content), 0o644))
+		require.NoError(t, os.WriteFile(full, []byte(content), 0o600))
 	}
 
 	return root
@@ -157,7 +157,7 @@ func writeFile(t *testing.T, dir, name, content string) string {
 	t.Helper()
 
 	path := filepath.Join(dir, name)
-	require.NoError(t, os.WriteFile(path, []byte(content), 0o644))
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
 
 	return path
 }

@@ -3,6 +3,7 @@ package integration_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -48,6 +49,8 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
+var errProbeStatus = errors.New("probe expected 200")
+
 // waitForApp blocks until the app accepts HTTP and reports ready, or the
 // readiness budget elapses. Compose `depends_on` only orders container starts;
 // nothing guarantees the listener is up before the suite fires its first
@@ -76,11 +79,11 @@ func waitForApp() error {
 	return lastErr
 }
 
-func probeOK(url string) error {
+func probeOK(target string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, http.NoBody)
 	if err != nil {
 		return err
 	}
@@ -89,10 +92,11 @@ func probeOK(url string) error {
 	if err != nil {
 		return err
 	}
+
 	resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("%s: expected 200, got %d", url, resp.StatusCode)
+		return fmt.Errorf("%w: %s returned %d", errProbeStatus, target, resp.StatusCode)
 	}
 
 	return nil
