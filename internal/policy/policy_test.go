@@ -10,6 +10,8 @@ import (
 )
 
 // allRoles is the frozen set of account roles the matrix must cover.
+//
+//nolint:gochecknoglobals // test fixture
 var allRoles = []string{
 	entity.UserRoleUser,
 	entity.UserRoleEditor,
@@ -22,6 +24,8 @@ var allRoles = []string{
 // table (policy.go). It is the frozen contract: changing a grant in policy.go
 // without consciously updating this twin fails TestFrozenMatrixMatchesGolden.
 // admin is the superset (every capability), asserted separately.
+//
+//nolint:gochecknoglobals // deliberate golden twin of the frozen matrix
 var goldenMatrix = map[string]map[policy.Capability]bool{
 	entity.UserRoleUser: {
 		policy.CapReviewEditorial:       false,

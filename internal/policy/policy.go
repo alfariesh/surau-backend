@@ -8,6 +8,7 @@
 package policy
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/alfariesh/surau-backend/internal/entity"
@@ -84,13 +85,7 @@ func Can(role string, capability Capability) bool {
 		return true
 	}
 
-	for _, held := range roleCapabilities[role] {
-		if held == capability {
-			return true
-		}
-	}
-
-	return false
+	return slices.Contains(roleCapabilities[role], capability)
 }
 
 // Capabilities returns the capabilities a role holds. admin returns the full

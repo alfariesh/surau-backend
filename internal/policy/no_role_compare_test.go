@@ -7,6 +7,7 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -92,20 +93,16 @@ func roleComparisonViolation(n ast.Node) string {
 			return "role-value comparison via " + node.Op.String()
 		}
 	case *ast.CaseClause:
-		for _, expr := range node.List {
-			if isRoleExpr(expr) {
-				return "role-value switch/case"
-			}
+		if slices.ContainsFunc(node.List, isRoleExpr) {
+			return "role-value switch/case"
 		}
 	case *ast.CallExpr:
 		if calleeName(node) != "EqualFold" {
 			return ""
 		}
 
-		for _, arg := range node.Args {
-			if isRoleExpr(arg) {
-				return "role-value strings.EqualFold"
-			}
+		if slices.ContainsFunc(node.Args, isRoleExpr) {
+			return "role-value strings.EqualFold"
 		}
 	}
 
@@ -114,6 +111,8 @@ func roleComparisonViolation(n ast.Node) string {
 
 // roleValues are the account-role strings; a literal equal to one of these is
 // a role comparison (but "" and arbitrary strings are not).
+//
+//nolint:gochecknoglobals // test fixture
 var roleValues = map[string]bool{
 	"user":             true,
 	"editor":           true,
