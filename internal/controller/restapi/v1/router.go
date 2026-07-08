@@ -138,14 +138,19 @@ func NewRoutes(
 		quranGroup.Get("/search", quranSearchLimiter, r.searchQuran)
 	}
 
-	// Protected routes
-	protected := apiV1Group.Group("", middleware.Auth(jwtManager, u))
+	// Protected routes. Auth is attached per-subtree, NOT on the bare /v1
+	// group: an empty-prefix Use would claim the whole /v1 namespace and
+	// answer unknown paths with 401 before the app-level 404 catch-all can
+	// emit the frozen error envelope (the F1-D contract that
+	// TestUnknownRouteReturnsErrorEnvelope guards).
+	authRequired := middleware.Auth(jwtManager, u)
+	protected := apiV1Group.Group("")
 
 	// One shared per-user budget for session listing/revocation; in-memory
 	// store is fine (single instance, prefork off) like the other limiters.
 	sessionLimiter := newSessionLimiter()
 
-	protectedAuthGroup := protected.Group("/auth")
+	protectedAuthGroup := protected.Group("/auth", authRequired)
 	{
 		protectedAuthGroup.Get("/introspect", r.introspect)
 		protectedAuthGroup.Post("/change-password", r.changePassword)
@@ -157,7 +162,7 @@ func NewRoutes(
 		protectedAuthGroup.Delete("/sessions/:id", sessionLimiter, r.revokeSession)
 	}
 
-	userGroup := protected.Group("/user")
+	userGroup := protected.Group("/user", authRequired)
 	{
 		userGroup.Get("/profile", r.profile)
 		userGroup.Patch("/profile", r.updateProfile)
@@ -190,7 +195,7 @@ func NewRoutes(
 		},
 	})
 
-	meGroup := protected.Group("/me", personalWriteLimiter)
+	meGroup := protected.Group("/me", authRequired, personalWriteLimiter)
 	{
 		meGroup.Get("/sync", r.syncPersonalData)
 		meGroup.Get("/activity", r.getReadingActivity)
@@ -236,7 +241,7 @@ func NewRoutes(
 		},
 	})
 
-	editorialGroup := protected.Group("/editorial", editorialSaveLimiter)
+	editorialGroup := protected.Group("/editorial", authRequired, editorialSaveLimiter)
 	{
 		editorialReviewGroup := editorialGroup.Group(
 			"",
@@ -302,7 +307,7 @@ func NewRoutes(
 		editorialAdminGroup.Delete("/production-projects/:id/toc/:heading_id/final-assets/:asset_type", r.editorialDeleteFinalHeadingProductionAsset)
 	}
 
-	adminGroup := protected.Group("/admin", middleware.RequireRoles(u, entity.UserRoleAdmin))
+	adminGroup := protected.Group("/admin", authRequired, middleware.RequireRoles(u, entity.UserRoleAdmin))
 	{
 		adminGroup.Get("/users", r.adminUsers)
 		adminGroup.Get("/users/:id/activity", r.adminUserActivity)
