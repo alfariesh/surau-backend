@@ -571,6 +571,26 @@ type fakeAuthUser struct {
 	roleEmail         string
 	role              string
 	roleUser          entity.User
+
+	mfaEnrollment      entity.MFAEnrollment
+	mfaEnrollErr       error
+	mfaRecoveryCodes   []string
+	mfaConfirmErr      error
+	mfaVerifyResult    entity.LoginResult
+	mfaVerifyErr       error
+	mfaStepUpAt        time.Time
+	mfaStepUpErr       error
+	mfaDisableResult   entity.LoginResult
+	mfaDisableErr      error
+	mfaRegenErr        error
+	mfaStatus          entity.MFAStatus
+	mfaStatusErr       error
+	mfaGate            entity.MFAGateDecision
+	mfaGateErr         error
+	mfaResetToken      string
+	mfaResetExpiresAt  time.Time
+	mfaResetRequestErr error
+	mfaResetConfirmErr error
 }
 
 func (f *fakeAuthUser) Register(context.Context, string, string, string) (entity.User, error) {
@@ -781,6 +801,46 @@ func (f *fakeAuthUser) VerifyEmailChange(context.Context, string, string, string
 
 func (f *fakeAuthUser) DeleteAccount(context.Context, string, string) error {
 	return f.deleteAccountErr
+}
+
+func (f *fakeAuthUser) StartMFAEnrollment(context.Context, string) (entity.MFAEnrollment, error) {
+	return f.mfaEnrollment, f.mfaEnrollErr
+}
+
+func (f *fakeAuthUser) ConfirmMFAEnrollment(context.Context, string, string, string) ([]string, error) {
+	return f.mfaRecoveryCodes, f.mfaConfirmErr
+}
+
+func (f *fakeAuthUser) VerifyMFALogin(context.Context, string, string) (entity.LoginResult, error) {
+	return f.mfaVerifyResult, f.mfaVerifyErr
+}
+
+func (f *fakeAuthUser) StepUpMFA(context.Context, string, string, string) (time.Time, error) {
+	return f.mfaStepUpAt, f.mfaStepUpErr
+}
+
+func (f *fakeAuthUser) DisableMFA(context.Context, string, string) (entity.LoginResult, error) {
+	return f.mfaDisableResult, f.mfaDisableErr
+}
+
+func (f *fakeAuthUser) RegenerateMFARecoveryCodes(context.Context, string, string) ([]string, error) {
+	return f.mfaRecoveryCodes, f.mfaRegenErr
+}
+
+func (f *fakeAuthUser) MFAStatus(context.Context, string, string) (entity.MFAStatus, error) {
+	return f.mfaStatus, f.mfaStatusErr
+}
+
+func (f *fakeAuthUser) MFAGate(context.Context, *entity.User, string) (entity.MFAGateDecision, error) {
+	return f.mfaGate, f.mfaGateErr
+}
+
+func (f *fakeAuthUser) RequestMFAReset(context.Context, string) (string, time.Time, error) {
+	return f.mfaResetToken, f.mfaResetExpiresAt, f.mfaResetRequestErr
+}
+
+func (f *fakeAuthUser) ConfirmMFAReset(context.Context, string, string, string) error {
+	return f.mfaResetConfirmErr
 }
 
 func defaultTestAccount() entity.UserAccount {

@@ -159,6 +159,35 @@ func (mr *MockUserMockRecorder) CompleteOnboarding(ctx, userID, onboarding any) 
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CompleteOnboarding", reflect.TypeOf((*MockUser)(nil).CompleteOnboarding), ctx, userID, onboarding)
 }
 
+// ConfirmMFAEnrollment mocks base method.
+func (m *MockUser) ConfirmMFAEnrollment(ctx context.Context, userID, familyID, code string) ([]string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ConfirmMFAEnrollment", ctx, userID, familyID, code)
+	ret0, _ := ret[0].([]string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ConfirmMFAEnrollment indicates an expected call of ConfirmMFAEnrollment.
+func (mr *MockUserMockRecorder) ConfirmMFAEnrollment(ctx, userID, familyID, code any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ConfirmMFAEnrollment", reflect.TypeOf((*MockUser)(nil).ConfirmMFAEnrollment), ctx, userID, familyID, code)
+}
+
+// ConfirmMFAReset mocks base method.
+func (m *MockUser) ConfirmMFAReset(ctx context.Context, resetToken, otp, recoveryCode string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ConfirmMFAReset", ctx, resetToken, otp, recoveryCode)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// ConfirmMFAReset indicates an expected call of ConfirmMFAReset.
+func (mr *MockUserMockRecorder) ConfirmMFAReset(ctx, resetToken, otp, recoveryCode any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ConfirmMFAReset", reflect.TypeOf((*MockUser)(nil).ConfirmMFAReset), ctx, resetToken, otp, recoveryCode)
+}
+
 // DeleteAccount mocks base method.
 func (m *MockUser) DeleteAccount(ctx context.Context, userID, currentPassword string) error {
 	m.ctrl.T.Helper()
@@ -171,6 +200,21 @@ func (m *MockUser) DeleteAccount(ctx context.Context, userID, currentPassword st
 func (mr *MockUserMockRecorder) DeleteAccount(ctx, userID, currentPassword any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteAccount", reflect.TypeOf((*MockUser)(nil).DeleteAccount), ctx, userID, currentPassword)
+}
+
+// DisableMFA mocks base method.
+func (m *MockUser) DisableMFA(ctx context.Context, userID, familyID string) (entity.LoginResult, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DisableMFA", ctx, userID, familyID)
+	ret0, _ := ret[0].(entity.LoginResult)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// DisableMFA indicates an expected call of DisableMFA.
+func (mr *MockUserMockRecorder) DisableMFA(ctx, userID, familyID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DisableMFA", reflect.TypeOf((*MockUser)(nil).DisableMFA), ctx, userID, familyID)
 }
 
 // ForgotPassword mocks base method.
@@ -275,6 +319,36 @@ func (mr *MockUserMockRecorder) LogoutAll(ctx, userID any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LogoutAll", reflect.TypeOf((*MockUser)(nil).LogoutAll), ctx, userID)
 }
 
+// MFAGate mocks base method.
+func (m *MockUser) MFAGate(ctx context.Context, user *entity.User, familyID string) (entity.MFAGateDecision, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "MFAGate", ctx, user, familyID)
+	ret0, _ := ret[0].(entity.MFAGateDecision)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// MFAGate indicates an expected call of MFAGate.
+func (mr *MockUserMockRecorder) MFAGate(ctx, user, familyID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MFAGate", reflect.TypeOf((*MockUser)(nil).MFAGate), ctx, user, familyID)
+}
+
+// MFAStatus mocks base method.
+func (m *MockUser) MFAStatus(ctx context.Context, userID, familyID string) (entity.MFAStatus, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "MFAStatus", ctx, userID, familyID)
+	ret0, _ := ret[0].(entity.MFAStatus)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// MFAStatus indicates an expected call of MFAStatus.
+func (mr *MockUserMockRecorder) MFAStatus(ctx, userID, familyID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MFAStatus", reflect.TypeOf((*MockUser)(nil).MFAStatus), ctx, userID, familyID)
+}
+
 // RefreshSession mocks base method.
 func (m *MockUser) RefreshSession(ctx context.Context, refreshToken string) (entity.LoginResult, error) {
 	m.ctrl.T.Helper()
@@ -288,6 +362,21 @@ func (m *MockUser) RefreshSession(ctx context.Context, refreshToken string) (ent
 func (mr *MockUserMockRecorder) RefreshSession(ctx, refreshToken any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RefreshSession", reflect.TypeOf((*MockUser)(nil).RefreshSession), ctx, refreshToken)
+}
+
+// RegenerateMFARecoveryCodes mocks base method.
+func (m *MockUser) RegenerateMFARecoveryCodes(ctx context.Context, userID, familyID string) ([]string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RegenerateMFARecoveryCodes", ctx, userID, familyID)
+	ret0, _ := ret[0].([]string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// RegenerateMFARecoveryCodes indicates an expected call of RegenerateMFARecoveryCodes.
+func (mr *MockUserMockRecorder) RegenerateMFARecoveryCodes(ctx, userID, familyID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RegenerateMFARecoveryCodes", reflect.TypeOf((*MockUser)(nil).RegenerateMFARecoveryCodes), ctx, userID, familyID)
 }
 
 // Register mocks base method.
@@ -317,6 +406,22 @@ func (m *MockUser) RequestEmailChange(ctx context.Context, userID, currentPasswo
 func (mr *MockUserMockRecorder) RequestEmailChange(ctx, userID, currentPassword, newEmail any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RequestEmailChange", reflect.TypeOf((*MockUser)(nil).RequestEmailChange), ctx, userID, currentPassword, newEmail)
+}
+
+// RequestMFAReset mocks base method.
+func (m *MockUser) RequestMFAReset(ctx context.Context, mfaToken string) (string, time.Time, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RequestMFAReset", ctx, mfaToken)
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(time.Time)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
+}
+
+// RequestMFAReset indicates an expected call of RequestMFAReset.
+func (mr *MockUserMockRecorder) RequestMFAReset(ctx, mfaToken any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RequestMFAReset", reflect.TypeOf((*MockUser)(nil).RequestMFAReset), ctx, mfaToken)
 }
 
 // ResendEmailVerification mocks base method.
@@ -376,6 +481,36 @@ func (mr *MockUserMockRecorder) SetRoleByEmail(ctx, actorID, actorEmail, email, 
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetRoleByEmail", reflect.TypeOf((*MockUser)(nil).SetRoleByEmail), ctx, actorID, actorEmail, email, role)
 }
 
+// StartMFAEnrollment mocks base method.
+func (m *MockUser) StartMFAEnrollment(ctx context.Context, userID string) (entity.MFAEnrollment, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "StartMFAEnrollment", ctx, userID)
+	ret0, _ := ret[0].(entity.MFAEnrollment)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// StartMFAEnrollment indicates an expected call of StartMFAEnrollment.
+func (mr *MockUserMockRecorder) StartMFAEnrollment(ctx, userID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StartMFAEnrollment", reflect.TypeOf((*MockUser)(nil).StartMFAEnrollment), ctx, userID)
+}
+
+// StepUpMFA mocks base method.
+func (m *MockUser) StepUpMFA(ctx context.Context, userID, familyID, code string) (time.Time, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "StepUpMFA", ctx, userID, familyID, code)
+	ret0, _ := ret[0].(time.Time)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// StepUpMFA indicates an expected call of StepUpMFA.
+func (mr *MockUserMockRecorder) StepUpMFA(ctx, userID, familyID, code any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StepUpMFA", reflect.TypeOf((*MockUser)(nil).StepUpMFA), ctx, userID, familyID, code)
+}
+
 // UpdateUserPreferences mocks base method.
 func (m *MockUser) UpdateUserPreferences(ctx context.Context, userID string, patch entity.UserPreferencesPatch) (entity.UserAccount, error) {
 	m.ctrl.T.Helper()
@@ -433,6 +568,21 @@ func (m *MockUser) VerifyEmailChange(ctx context.Context, userID, token, otp str
 func (mr *MockUserMockRecorder) VerifyEmailChange(ctx, userID, token, otp any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "VerifyEmailChange", reflect.TypeOf((*MockUser)(nil).VerifyEmailChange), ctx, userID, token, otp)
+}
+
+// VerifyMFALogin mocks base method.
+func (m *MockUser) VerifyMFALogin(ctx context.Context, mfaToken, code string) (entity.LoginResult, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "VerifyMFALogin", ctx, mfaToken, code)
+	ret0, _ := ret[0].(entity.LoginResult)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// VerifyMFALogin indicates an expected call of VerifyMFALogin.
+func (mr *MockUserMockRecorder) VerifyMFALogin(ctx, mfaToken, code any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "VerifyMFALogin", reflect.TypeOf((*MockUser)(nil).VerifyMFALogin), ctx, mfaToken, code)
 }
 
 // MockEmailAdmin is a mock of EmailAdmin interface.

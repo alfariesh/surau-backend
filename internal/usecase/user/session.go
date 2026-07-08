@@ -96,6 +96,10 @@ func (uc *UseCase) RefreshSession(ctx context.Context, refreshToken string) (res
 	}
 
 	result, err = uc.issueSessionRow(ctx, &user, uuid.NewString(), session.FamilyID, func(next *entity.AuthSession) error {
+		// Step-up freshness survives rotation: the successor row inherits
+		// the MFA stamp (A-3).
+		next.MFAVerifiedAt = session.MFAVerifiedAt
+
 		return uc.sessions.RotateAuthSession(ctx, session.ID, *next)
 	})
 	if err != nil {

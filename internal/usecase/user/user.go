@@ -21,6 +21,7 @@ import (
 	"github.com/alfariesh/surau-backend/internal/entity"
 	"github.com/alfariesh/surau-backend/internal/repo"
 	"github.com/alfariesh/surau-backend/internal/usecase/authmeta"
+	"github.com/alfariesh/surau-backend/pkg/cryptobox"
 	"github.com/alfariesh/surau-backend/pkg/jwt"
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
@@ -133,6 +134,9 @@ type UseCase struct {
 	sessions                 repo.AuthSessionRepo
 	lockout                  repo.AuthLockoutRepo
 	maintenance              repo.AuthMaintenanceRepo
+	mfa                      repo.MFARepo
+	mfaBox                   *cryptobox.Box
+	mfaOptions               MFAOptions
 	refreshTokenTTL          time.Duration
 	lockoutOptions           LockoutOptions
 	cleanup                  CleanupOptions
@@ -184,6 +188,12 @@ type RateLimitOptions struct {
 	RefreshToken            RateLimitRule
 	RefreshIP               RateLimitRule
 	VerifyEmailToken        RateLimitRule
+	MFAVerifyToken          RateLimitRule
+	MFAVerifyIP             RateLimitRule
+	MFAStepUpUser           RateLimitRule
+	MFAStepUpIP             RateLimitRule
+	MFAResetEmail           RateLimitRule
+	MFAResetIP              RateLimitRule
 }
 
 // LockoutOptions configures progressive per-account login lockout.
@@ -245,6 +255,9 @@ type Options struct {
 	Sessions                 repo.AuthSessionRepo
 	Lockout                  repo.AuthLockoutRepo
 	Maintenance              repo.AuthMaintenanceRepo
+	MFA                      repo.MFARepo
+	MFABox                   *cryptobox.Box
+	MFAOptions               MFAOptions
 	RefreshTokenTTL          time.Duration
 	LockoutOptions           LockoutOptions
 	Cleanup                  CleanupOptions
@@ -316,6 +329,9 @@ func New(r repo.UserRepo, j *jwt.Manager, emailSender repo.EmailSender, opts Opt
 		sessions:                 opts.Sessions,
 		lockout:                  opts.Lockout,
 		maintenance:              opts.Maintenance,
+		mfa:                      opts.MFA,
+		mfaBox:                   opts.MFABox,
+		mfaOptions:               normalizeMFAOptions(opts.MFAOptions),
 		refreshTokenTTL:          refreshTokenTTL,
 		lockoutOptions:           normalizeLockoutOptions(opts.LockoutOptions),
 		cleanup:                  opts.Cleanup,
@@ -545,6 +561,16 @@ func (uc *UseCase) Login(ctx context.Context, email, password string) (result en
 	}
 
 	uc.resetLoginLockout(ctx, email)
+
+	// MFA-enabled accounts divert to the second-factor step: no session yet,
+	// just a short-lived challenge (A-3, additive — everyone else falls
+	// through to the exact pre-MFA flow). The new-device notification moves
+	// to VerifyMFALogin, after full authentication.
+	if challenge, required, mfaErr := uc.mfaLoginChallengeFor(ctx, &user); mfaErr != nil {
+		return entity.LoginResult{}, mfaErr
+	} else if required {
+		return challenge, nil
+	}
 
 	result, err = uc.issueSession(ctx, &user)
 	if err != nil {
@@ -1742,6 +1768,12 @@ func normalizeRateLimitOptions(opts RateLimitOptions) RateLimitOptions {
 		RefreshToken:            RateLimitRule{Max: 5, Window: 15 * time.Minute},  //nolint:mnd // default rate-limit table,
 		RefreshIP:               RateLimitRule{Max: 60, Window: 15 * time.Minute}, //nolint:mnd // default rate-limit table,
 		VerifyEmailToken:        RateLimitRule{Max: 5, Window: 15 * time.Minute},  //nolint:mnd // default rate-limit table,
+		MFAVerifyToken:          RateLimitRule{Max: 5, Window: 5 * time.Minute},   //nolint:mnd // default rate-limit table,
+		MFAVerifyIP:             RateLimitRule{Max: 30, Window: 15 * time.Minute}, //nolint:mnd // default rate-limit table,
+		MFAStepUpUser:           RateLimitRule{Max: 10, Window: 5 * time.Minute},  //nolint:mnd // default rate-limit table,
+		MFAStepUpIP:             RateLimitRule{Max: 60, Window: 15 * time.Minute}, //nolint:mnd // default rate-limit table,
+		MFAResetEmail:           RateLimitRule{Max: 3, Window: time.Hour},
+		MFAResetIP:              RateLimitRule{Max: 10, Window: time.Hour},
 	}
 
 	opts.LoginEmail = withDefaultRule(opts.LoginEmail, defaults.LoginEmail)
@@ -1766,6 +1798,12 @@ func normalizeRateLimitOptions(opts RateLimitOptions) RateLimitOptions {
 	opts.RefreshToken = withDefaultRule(opts.RefreshToken, defaults.RefreshToken)
 	opts.RefreshIP = withDefaultRule(opts.RefreshIP, defaults.RefreshIP)
 	opts.VerifyEmailToken = withDefaultRule(opts.VerifyEmailToken, defaults.VerifyEmailToken)
+	opts.MFAVerifyToken = withDefaultRule(opts.MFAVerifyToken, defaults.MFAVerifyToken)
+	opts.MFAVerifyIP = withDefaultRule(opts.MFAVerifyIP, defaults.MFAVerifyIP)
+	opts.MFAStepUpUser = withDefaultRule(opts.MFAStepUpUser, defaults.MFAStepUpUser)
+	opts.MFAStepUpIP = withDefaultRule(opts.MFAStepUpIP, defaults.MFAStepUpIP)
+	opts.MFAResetEmail = withDefaultRule(opts.MFAResetEmail, defaults.MFAResetEmail)
+	opts.MFAResetIP = withDefaultRule(opts.MFAResetIP, defaults.MFAResetIP)
 
 	return opts
 }
@@ -1969,6 +2007,22 @@ func auditErrorCode(err error) string {
 		return "last_admin"
 	case errors.Is(err, entity.ErrSelfRoleChange):
 		return "self_role_change"
+	case errors.Is(err, entity.ErrMFAAlreadyEnabled):
+		return "mfa_already_enabled"
+	case errors.Is(err, entity.ErrMFAEnrollmentNotStarted):
+		return "mfa_enrollment_not_started"
+	case errors.Is(err, entity.ErrInvalidMFACode):
+		return "invalid_mfa_code"
+	case errors.Is(err, entity.ErrInvalidMFAChallenge):
+		return "invalid_mfa_challenge"
+	case errors.Is(err, entity.ErrInvalidMFAReset):
+		return "invalid_mfa_reset"
+	case errors.Is(err, entity.ErrMFAStepUpRequired):
+		return "mfa_step_up_required"
+	case errors.Is(err, entity.ErrMFANotEnabled):
+		return "mfa_not_enabled"
+	case errors.Is(err, entity.ErrMFAEnrollmentRequired):
+		return "mfa_enrollment_required"
 	default:
 		return "internal_error"
 	}

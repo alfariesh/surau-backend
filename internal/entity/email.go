@@ -16,6 +16,8 @@ const (
 	EmailTemplateKeyRoleChanged             = "auth_role_changed"
 	EmailTemplateKeyEmailChanged            = "auth_email_changed"
 	EmailTemplateKeyAccountDeleted          = "auth_account_deleted"
+	EmailTemplateKeyMFAResetOTP             = "auth_mfa_reset_otp"
+	EmailTemplateKeyMFADisabled             = "auth_mfa_disabled"
 
 	EmailMessageStatusQueued  = "queued"
 	EmailMessageStatusSent    = "sent"
