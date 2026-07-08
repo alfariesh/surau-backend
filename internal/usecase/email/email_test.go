@@ -1660,14 +1660,15 @@ func (s *emailRepoStub) ScheduleEmailMessageRetry(
 }
 
 func (s *emailRepoStub) GetEmailMessageByID(_ context.Context, id string) (entity.EmailMessageLog, error) {
-	for _, message := range s.createdMessages {
-		if message.ID == id {
-			return message, nil
+	for idx := range s.createdMessages {
+		if s.createdMessages[idx].ID == id {
+			return s.createdMessages[idx], nil
 		}
 	}
-	for _, message := range s.claimedTransactionalMessages {
-		if message.ID == id {
-			return message, nil
+
+	for idx := range s.claimedTransactionalMessages {
+		if s.claimedTransactionalMessages[idx].ID == id {
+			return s.claimedTransactionalMessages[idx], nil
 		}
 	}
 

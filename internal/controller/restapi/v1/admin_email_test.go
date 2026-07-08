@@ -116,6 +116,7 @@ func TestAdminEmailResendMessage(t *testing.T) {
 
 	resp, err := app.Test(req)
 	require.NoError(t, err)
+
 	defer resp.Body.Close()
 
 	var message entity.EmailMessageLog
@@ -155,6 +156,7 @@ func TestAdminEmailResendMessageErrorMapping(t *testing.T) {
 
 			resp, err := app.Test(req)
 			require.NoError(t, err)
+
 			defer resp.Body.Close()
 
 			assert.Equal(t, tc.wantStatus, resp.StatusCode)
@@ -176,6 +178,7 @@ func TestAdminEmailResendMessageRejectsEditorActor(t *testing.T) {
 
 	resp, err := app.Test(req)
 	require.NoError(t, err)
+
 	defer resp.Body.Close()
 
 	assert.Equal(t, http.StatusForbidden, resp.StatusCode)
@@ -624,6 +627,7 @@ func (f *fakeEmailAdmin) ResendMessage(
 	if f.resendErr != nil {
 		return entity.EmailMessageLog{}, f.resendErr
 	}
+
 	if f.resendMessage.ID == "" {
 		f.resendMessage.ID = id
 	}

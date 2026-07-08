@@ -31,6 +31,7 @@ func TestAdminEmailResendDeadLetter(t *testing.T) {
 	if resp.StatusCode != http.StatusAccepted {
 		t.Fatalf("resend expected 202, got %d", resp.StatusCode)
 	}
+
 	if requeued.ID != messageID || requeued.Status != "queued" || requeued.Attempts != 0 {
 		t.Fatalf("unexpected requeued message: %+v", requeued)
 	}
@@ -109,7 +110,7 @@ RETURNING id`, recipient).Scan(&id)
 		cleanupPool := integrationDB(t)
 		defer cleanupPool.Close()
 
-		_, _ = cleanupPool.Exec(cleanupCtx, `DELETE FROM email_messages WHERE id = $1`, id)
+		_, _ = cleanupPool.Exec(cleanupCtx, `DELETE FROM email_messages WHERE id = $1`, id) //nolint:errcheck // best-effort fixture cleanup
 	})
 
 	return id

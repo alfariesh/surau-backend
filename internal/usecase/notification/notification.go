@@ -185,7 +185,7 @@ func (uc *UseCase) dispatchEvent(
 		// (F1-C), so recover and log instead.
 		defer func() {
 			if r := recover(); r != nil {
-				uc.log.Error(fmt.Errorf("notification - dispatchEvent - panic recovered: %v\n%s", r, debug.Stack()))
+				uc.log.Error("notification - dispatchEvent - panic recovered: %v\n%s", r, debug.Stack())
 			}
 		}()
 
