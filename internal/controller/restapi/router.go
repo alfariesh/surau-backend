@@ -94,7 +94,10 @@ func NewRouter(
 
 	// Prometheus metrics
 	if cfg.Metrics.Enabled {
-		prometheus := fiberprometheus.New(cfg.App.Name)
+		// NewWithDefaultRegistry, NOT New: the plain constructor creates a private
+		// registry, which would silently drop every custom collector registered on
+		// the default one (email queue gauges, loop freshness — bit us on dev).
+		prometheus := fiberprometheus.NewWithDefaultRegistry(cfg.App.Name)
 		prometheus.RegisterAt(app, "/metrics")
 		app.Use(prometheus.Middleware)
 	}
