@@ -435,7 +435,7 @@ FE implementation:
 
 - Render `html` in a sandboxed preview iframe/webview if possible.
 - Show `text` fallback in a separate tab.
-- If backend returns `400 invalid email template`, highlight missing `required_variables` or invalid template syntax.
+- If backend returns `400 invalid email template`, the message/`code` are fixed (`invalid_email_template`); the SPECIFIC reason (missing subject, parser error with line numbers) now rides in the envelope's `details` field (F1-D) — surface `details` near the form.
 
 ### Test Send Template
 

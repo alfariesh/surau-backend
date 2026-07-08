@@ -29,9 +29,13 @@
 - Stack (profil compose `observability`, deploy rutin TIDAK menyentuhnya):
   Prometheus :9090 (retensi 7d/1GB) · Tempo :3200/:4318 (retensi 48 jam) · Grafana :3000
   (dipublish loopback; Caddy route `/grafana*`) · node_exporter :9100 (+ textfile collector
-  `/var/lib/node_exporter/textfile` — skrip backup menulis heartbeat ke sini).
+  `/var/lib/node_exporter/textfile` — skrip backup menulis heartbeat ke sini) ·
+  postgres-exporter :9187 (F1-G, internal-only; `--collector.stat_statements`) — metrik DB
+  (koneksi, statements, dead-tuples, autovacuum) + panel "DB *" di dashboard; ukuran
+  tabel/index top-20 datang dari collector app (`surau_db_relation_*`). Panel slow-statements
+  butuh db berjalan dgn preload `pg_stat_statements` (docs/deploy-vps.md §Tuning Postgres).
 - Provisioning Grafana dari `ops/observability/grafana/provisioning/` (datasource, dashboard,
-  contact point Telegram, 6 alert rule) — semua file di git, tiba di VPS via checkout deploy.
+  contact point Telegram, 7 alert rule) — semua file di git, tiba di VPS via checkout deploy.
 
 ## Alert (semua → Telegram, prefix env)
 
@@ -43,6 +47,7 @@
 | backup heartbeat stale | sukses terakhir >26 jam | dead-man backup (lapis dashboard; watchdog S1 tetap ada) |
 | disk space low | sisa <15% | disk hampir penuh |
 | app down | scrape gagal 3m | app mati/boot-loop (termasuk schema DIRTY) |
+| db connections near max | koneksi >80% max_connections 5m | pool bocor/beban tak wajar — cek pg_stat_activity (F1-G) |
 
 Ambang ditulis DI DALAM ekspresi PromQL di
 [rules.yml](../ops/observability/grafana/provisioning/alerting/rules.yml) (pola `> bool X`) —

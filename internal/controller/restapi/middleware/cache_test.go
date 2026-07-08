@@ -47,3 +47,49 @@ func TestPublicCacheSetsValidatorsAndSupportsNotModified(t *testing.T) {
 	assert.Equal(t, http.StatusNotModified, notModifiedResp.StatusCode)
 	assert.Empty(t, body)
 }
+
+// TestPublicCacheHeaderIsAContract pins the exact Cache-Control string:
+// the max-age/stale-while-revalidate numbers MUST stay equal to the edge
+// worker TTLs in workers/api-cache/wrangler.jsonc (FRESH 300 / STALE 86400).
+// Changing one side without the other splits the cache policy.
+func TestPublicCacheHeaderIsAContract(t *testing.T) {
+	t.Parallel()
+
+	app := fiber.New()
+	app.Use(middleware.PublicCache())
+	app.Get("/c", func(ctx *fiber.Ctx) error { return ctx.JSON(fiber.Map{"x": 1}) })
+
+	resp, err := app.Test(httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/c", nil))
+	require.NoError(t, err)
+
+	defer resp.Body.Close()
+
+	assert.Equal(t, "public, max-age=300, stale-while-revalidate=86400", resp.Header.Get("Cache-Control"))
+}
+
+// TestPublicCacheExcludePath: dynamic endpoints inside a cached group (e.g.
+// /v1/quran/search) answer no-store while sibling routes stay cached (F1-D).
+func TestPublicCacheExcludePath(t *testing.T) {
+	t.Parallel()
+
+	app := fiber.New()
+	app.Use(middleware.PublicCache(middleware.ExcludePath("/quran/search")))
+	app.Get("/quran/search", func(ctx *fiber.Ctx) error { return ctx.JSON(fiber.Map{"items": []string{}}) })
+	app.Get("/quran/juz", func(ctx *fiber.Ctx) error { return ctx.JSON(fiber.Map{"items": []string{}}) })
+
+	searchResp, err := app.Test(httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/quran/search?q=x", nil))
+	require.NoError(t, err)
+
+	defer searchResp.Body.Close()
+
+	assert.Equal(t, http.StatusOK, searchResp.StatusCode)
+	assert.Equal(t, "no-store", searchResp.Header.Get("Cache-Control"))
+	assert.Empty(t, searchResp.Header.Get("ETag"))
+
+	juzResp, err := app.Test(httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/quran/juz", nil))
+	require.NoError(t, err)
+
+	defer juzResp.Body.Close()
+
+	assert.Equal(t, "public, max-age=300, stale-while-revalidate=86400", juzResp.Header.Get("Cache-Control"))
+}

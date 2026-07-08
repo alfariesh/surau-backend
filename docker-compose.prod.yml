@@ -20,6 +20,33 @@ services:
       # so the recovery point (RPO) is ≤5 min, not "whenever 16MB fills up".
       - -c
       - archive_timeout=300
+      # ---- F1-G baseline tuning (per-host values in .env.production; the
+      # defaults fit the 2GB dev VPS — see docs/deploy-vps.md §Tuning
+      # Postgres). Applying changes needs a manual `up -d db` (brief
+      # restart) followed by `pgbackrest check`.
+      - -c
+      - shared_buffers=${PG_SHARED_BUFFERS:-256MB}
+      - -c
+      - effective_cache_size=${PG_EFFECTIVE_CACHE_SIZE:-1GB}
+      - -c
+      - work_mem=${PG_WORK_MEM:-6MB}
+      - -c
+      - maintenance_work_mem=${PG_MAINTENANCE_WORK_MEM:-128MB}
+      # App pool 10 + collab 5 + CLI/backup bursts + exporter stay far
+      # below 50; smaller headroom = less RAM held hostage on a small box.
+      - -c
+      - max_connections=${PG_MAX_CONNECTIONS:-50}
+      # Slow-query visibility: p95 read budget is 200ms (charter §2.3).
+      - -c
+      - log_min_duration_statement=${PG_LOG_MIN_DURATION:-200ms}
+      - -c
+      - log_autovacuum_min_duration=1s
+      - -c
+      - track_io_timing=on
+      # pg_stat_statements needs this preload + CREATE EXTENSION (migration
+      # 20260708000002) + one db restart to start collecting.
+      - -c
+      - shared_preload_libraries=pg_stat_statements
     environment:
       POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
@@ -299,6 +326,25 @@ services:
       - /:/host/rootfs:ro,rslave
       # Backup scripts drop heartbeat metrics here (F1-A dead-man on the dashboard).
       - /var/lib/node_exporter/textfile:/var/lib/node_exporter/textfile:ro
+    mem_limit: 64m
+    networks:
+      - internal
+
+  postgres-exporter:
+    # F1-G: DB visibility (connections, statements, dead tuples, autovacuum).
+    # Scraped in-network by prometheus at postgres-exporter:9187 — no host
+    # port. stat_statements data appears once the db runs with the
+    # pg_stat_statements preload (see the db command above).
+    image: prometheuscommunity/postgres-exporter:v0.18.1
+    profiles: ["observability"]
+    restart: unless-stopped
+    environment:
+      DATA_SOURCE_NAME: ${PG_URL:?set PG_URL}
+    command:
+      - --collector.stat_statements
+    depends_on:
+      db:
+        condition: service_healthy
     mem_limit: 64m
     networks:
       - internal

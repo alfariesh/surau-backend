@@ -251,12 +251,16 @@ func TestEditorialCreateProductionProjectConflictIncludesExistingProjectID(t *te
 
 	var body struct {
 		Error             string `json:"error"`
+		Code              string `json:"code"`
+		RequestID         string `json:"request_id"`
 		ExistingProjectID string `json:"existing_project_id"`
 	}
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
 
 	assert.Equal(t, http.StatusConflict, resp.StatusCode)
 	assert.Equal(t, "production project already exists", body.Error)
+	// F1-D: the rich envelope now carries the machine code too.
+	assert.Equal(t, "production_project_already_exists", body.Code)
 	assert.Equal(t, existingProjectID, body.ExistingProjectID)
 }
 
@@ -293,6 +297,7 @@ func TestEditorialPublishProductionProjectBlockedIncludesBlockers(t *testing.T) 
 
 	var body struct {
 		Error          string                              `json:"error"`
+		Code           string                              `json:"code"`
 		CanPublish     bool                                `json:"can_publish"`
 		BlockingErrors []entity.BookProductionBlocking     `json:"blocking_errors"`
 		Missing        []entity.BookProductionMissingAsset `json:"missing"`
@@ -301,6 +306,8 @@ func TestEditorialPublishProductionProjectBlockedIncludesBlockers(t *testing.T) 
 
 	assert.Equal(t, http.StatusConflict, resp.StatusCode)
 	assert.Equal(t, "production project is not ready", body.Error)
+	// F1-D: the rich envelope now carries the machine code too.
+	assert.Equal(t, "production_project_is_not_ready", body.Code)
 	assert.False(t, body.CanPublish)
 	require.Len(t, body.BlockingErrors, 1)
 	assert.Equal(t, entity.ProductionAssetBookMetadata, body.BlockingErrors[0].AssetType)

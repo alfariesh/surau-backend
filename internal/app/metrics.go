@@ -261,3 +261,106 @@ ORDER BY job_name`)
 func registerBackfillMetrics(pool *pgxpool.Pool) {
 	prometheus.MustRegister(newBackfillCollector(pool))
 }
+
+const (
+	dbSizeCacheTTL      = 60 * time.Second
+	dbSizeQueryTimeout  = 5 * time.Second
+	dbSizeTopNRelations = 20
+)
+
+// dbRelationSize is one cached row for the relation-size collector.
+type dbRelationSize struct {
+	relation   string
+	totalBytes float64
+	indexBytes float64
+}
+
+// dbSizeCollector exposes per-relation table+index sizes (F1-G) at scrape
+// time — postgres-exporter has no built-in collector for relation sizes, and
+// the app already follows this cached scrape-time pattern (email queue,
+// backfill). Top-N by total size keeps label cardinality bounded.
+type dbSizeCollector struct {
+	pool *pgxpool.Pool
+
+	mu      sync.Mutex
+	fetched time.Time
+	sizes   []dbRelationSize
+
+	totalDesc *prometheus.Desc
+	indexDesc *prometheus.Desc
+}
+
+func newDBSizeCollector(pool *pgxpool.Pool) *dbSizeCollector {
+	labels := []string{"relation"}
+
+	return &dbSizeCollector{
+		pool: pool,
+		totalDesc: prometheus.NewDesc("surau_db_relation_total_bytes",
+			"Total on-disk size (table + indexes + toast) of the largest relations.", labels, nil),
+		indexDesc: prometheus.NewDesc("surau_db_relation_index_bytes",
+			"Index size of the largest relations.", labels, nil),
+	}
+}
+
+func (c *dbSizeCollector) Describe(ch chan<- *prometheus.Desc) {
+	ch <- c.totalDesc
+
+	ch <- c.indexDesc
+}
+
+func (c *dbSizeCollector) Collect(ch chan<- prometheus.Metric) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if time.Since(c.fetched) > dbSizeCacheTTL {
+		if sizes, err := c.fetch(); err == nil {
+			c.sizes = sizes
+			c.fetched = time.Now()
+		}
+		// On error keep the previous snapshot (stale beats scrape failure).
+	}
+
+	for _, s := range c.sizes {
+		ch <- prometheus.MustNewConstMetric(c.totalDesc, prometheus.GaugeValue, s.totalBytes, s.relation)
+
+		ch <- prometheus.MustNewConstMetric(c.indexDesc, prometheus.GaugeValue, s.indexBytes, s.relation)
+	}
+}
+
+func (c *dbSizeCollector) fetch() ([]dbRelationSize, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), dbSizeQueryTimeout)
+	defer cancel()
+
+	rows, err := c.pool.Query(ctx, `
+SELECT relname,
+       pg_total_relation_size(relid)::float8,
+       pg_indexes_size(relid)::float8
+FROM pg_stat_user_tables
+ORDER BY pg_total_relation_size(relid) DESC
+LIMIT $1`, dbSizeTopNRelations)
+	if err != nil {
+		return nil, fmt.Errorf("db size metrics: query: %w", err)
+	}
+	defer rows.Close()
+
+	sizes := make([]dbRelationSize, 0, dbSizeTopNRelations)
+
+	for rows.Next() {
+		var s dbRelationSize
+		if err := rows.Scan(&s.relation, &s.totalBytes, &s.indexBytes); err != nil {
+			return nil, fmt.Errorf("db size metrics: scan: %w", err)
+		}
+
+		sizes = append(sizes, s)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("db size metrics: rows: %w", err)
+	}
+
+	return sizes, nil
+}
+
+func registerDBSizeMetrics(pool *pgxpool.Pool) {
+	prometheus.MustRegister(newDBSizeCollector(pool))
+}

@@ -36,6 +36,7 @@ type Server struct {
 	bodyLimit       int
 	proxyHeader     string
 	trustedProxies  []string
+	errorHandler    fiber.ErrorHandler
 
 	logger logger.Interface
 }
@@ -70,7 +71,7 @@ func New(l logger.Interface, opts ...Option) *Server {
 		proxyHeader = ""
 	}
 
-	app := fiber.New(fiber.Config{
+	config := fiber.Config{
 		Prefork:                 s.prefork,
 		ReadTimeout:             s.readTimeout,
 		WriteTimeout:            s.writeTimeout,
@@ -81,7 +82,15 @@ func New(l logger.Interface, opts ...Option) *Server {
 		EnableTrustedProxyCheck: len(s.trustedProxies) > 0,
 		TrustedProxies:          s.trustedProxies,
 		EnableIPValidation:      true,
-	})
+	}
+
+	// F1-D: framework-level failures share the API error envelope when the
+	// caller installs a handler (fiber's default returns text/plain).
+	if s.errorHandler != nil {
+		config.ErrorHandler = s.errorHandler
+	}
+
+	app := fiber.New(config)
 
 	s.App = app
 

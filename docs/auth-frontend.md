@@ -801,7 +801,7 @@ Jika kena limit, REST mengembalikan `429`. Response `429` menyertakan header `Re
 - "Terlalu banyak percobaan. Coba lagi beberapa saat."
 - Untuk resend/forgot, disable tombol selama minimal 60 detik setelah request sukses atau rate-limited.
 
-Endpoint session management (`GET /v1/auth/sessions` dan `DELETE /v1/auth/sessions/{id}`) dibatasi terpisah: 30 request/menit per user, dengan `429` + header `Retry-After` saat melebihi batas. List sessions memakai envelope `{ "items": [...], "total": number }`.
+Endpoint session management (`GET /v1/auth/sessions` dan `DELETE /v1/auth/sessions/{id}`) dibatasi terpisah: 30 request/menit per user, dengan `429` + header `Retry-After` saat melebihi batas. Sejak F1-D body 429 ini memakai envelope error standar (`{"error":"too many requests","code":"too_many_requests","retry_after":N,"request_id":"..."}` — sebelumnya teks polos). List sessions memakai envelope `{ "items": [...], "total": number }`.
 
 ## Recommended Frontend Routes
 

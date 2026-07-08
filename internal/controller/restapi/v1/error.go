@@ -21,6 +21,19 @@ func errorResponse(ctx *fiber.Ctx, code int, msg string) error {
 	})
 }
 
+// errorResponseWithDetails keeps the message (and thus the frozen machine
+// code) FIXED while carrying instance-specific human detail in details —
+// use it wherever the underlying error text varies per request (F1-D).
+func errorResponseWithDetails(ctx *fiber.Ctx, code int, msg string, details any) error {
+	return ctx.Status(code).JSON(response.Error{
+		Error:     msg,
+		Code:      apierror.Code(msg),
+		Message:   msg,
+		Details:   details,
+		RequestID: requestID(ctx),
+	})
+}
+
 // rateLimitedResponse renders a 429 and, when the usecase reported a
 // retry-after hint, surfaces it via the Retry-After header and body field.
 func rateLimitedResponse(ctx *fiber.Ctx, err error) error {
@@ -50,4 +63,22 @@ func requestID(ctx *fiber.Ctx) string {
 	}
 
 	return requestID
+}
+
+// limiterLimitReached is the shared LimitReached handler for the in-process
+// rate limiters (F1-D): the 429 uses the standard envelope instead of
+// fiber's plain-text default, mirroring the Retry-After header fiber has
+// already set into the body field.
+func limiterLimitReached(ctx *fiber.Ctx) error {
+	const msg = "too many requests"
+
+	retryAfter, _ := strconv.ParseInt(ctx.GetRespHeader(fiber.HeaderRetryAfter), 10, 64) //nolint:errcheck // absent header just means zero
+
+	return ctx.Status(http.StatusTooManyRequests).JSON(response.Error{
+		Error:      msg,
+		Code:       apierror.Code(msg),
+		Message:    msg,
+		RetryAfter: retryAfter,
+		RequestID:  requestID(ctx),
+	})
 }

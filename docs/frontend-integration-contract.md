@@ -75,6 +75,12 @@ Every user-facing list endpoint returns the same envelope (breaking change from 
 - TOC items still nest `children` inside each item.
 - For paginated lists, `total` is the unbounded match count; for full lists it equals `items.length`.
 - Object endpoints (detail pages, audio manifests, `/v1/me/sync` snapshot, activity, profile) are unchanged.
+- **Frozen legacy exceptions (F1-D):** eight pre-existing list envelopes keep
+  their bespoke keys forever (contract-tested backend-side): admin users
+  `{users,total}`, admin activity `{activity,total}`, editorial production
+  `{projects,total}` / `{candidates,total}` / `{events,total}` /
+  `{revisions,total}` (2×), translation feedback `{feedbacks,total}`. Every
+  NEW list endpoint must use literal `items` + `total`.
 
 ## User Bootstrap and Onboarding
 
@@ -257,22 +263,58 @@ Playback rules:
 
 ## Error Handling
 
-All API errors use:
+All API errors use the standard envelope (F1-D — `error` is kept for old
+clients; branch on `code` or, primarily, the HTTP status):
 
 ```json
-{"error":"message"}
+{
+  "error": "message",
+  "code": "machine_code",
+  "message": "message",
+  "details": "optional instance-specific detail",
+  "retry_after": 60,
+  "request_id": "uuid"
+}
 ```
+
+Contract guarantees (F1-D, contract-tested backend-side):
+
+- **`code` values are FROZEN.** Fixing an error sentence's wording can never
+  change its `code` (`internal/controller/restapi/apierror/registry.go` is
+  the frozen table; a contract test blocks unregistered message edits).
+  Branch on `code`, never on the `error`/`message` text.
+- Every error shape carries `code` + `request_id` — including the rich 409
+  editorial envelopes (`existing_project_id`, publish-blocked), rate-limiter
+  429s (`too many requests`, with `retry_after` mirroring the `Retry-After`
+  header), unmatched-route 404s, and framework errors (413 etc. — there
+  `request_id` may be empty).
+- Include `request_id` in bug reports: it links directly to backend logs and
+  traces.
+- Variable human detail (e.g. template validation specifics) rides in
+  `details`; `error`/`code` stay fixed.
 
 FE handling:
 
-- `400 unsupported language`: reset to previous valid language or `id`.
+- `400 unsupported language` (code `unsupported_language`): reset to previous valid language or `id`.
 - `400 invalid include_audio/include_translation/include_info`: fix caller query construction.
 - `404 quran recitation not found`: clear saved recitation preference.
 - `404 quran translation source not found`: clear saved source preference for that language.
 - `404 translation not found` on kitab feedback: hide feedback because exact requested translation is missing.
-- `429 too many auth attempts`: auth rate limit hit (enforced per client IP and per email/account). Back off and show a retry-later state; do not retry immediately.
+- `429 too many auth attempts` (code `AUTH_RATE_LIMITED`): auth rate limit hit (per client IP and per email/account). Back off; honor `retry_after`.
+- `429 too many requests` (code `too_many_requests`): non-auth rate limiter (RAG/search/personal/editorial/session). Back off; honor `retry_after`.
 - `500 internal server error`: show retry UI and keep previous content if cached.
-- Onboarding/profile errors follow the same `{ "error": "message" }` shape.
+
+## Public Cache Contract (F1-D)
+
+Public catalog/Quran GET endpoints answer with
+`Cache-Control: public, max-age=300, stale-while-revalidate=86400`, a weak
+body-hash `ETag`, and `Last-Modified`; send `If-None-Match` to get 304s.
+Numbers are a contract: they equal the edge worker TTLs
+(`workers/api-cache/wrangler.jsonc` — FRESH 300 / STALE 86400). Exception:
+`GET /v1/quran/search` is dynamic and answers `Cache-Control: no-store`.
+Cache invalidation source of truth = the worker's `CACHE_VERSION` env (bump
++ `wrangler deploy` = instant mass invalidation); the backend deliberately
+has no coupling to it until invalidation needs to be API-driven.
 
 ## Editorial Gap Queues
 

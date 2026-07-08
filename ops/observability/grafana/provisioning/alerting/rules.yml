@@ -290,3 +290,50 @@ groups:
                     type: last
         noDataState: NoData
         execErrState: Error
+      - uid: surau-db-connections
+        title: db connections near max
+        condition: C
+        for: 5m
+        labels:
+          env: $OBS_ENV_LABEL
+          source: f1g
+        annotations:
+          summary: Koneksi Postgres >80% dari max_connections selama 5 menit — pool bocor
+            atau beban tak wajar; cek pg_stat_activity sebelum aplikasi mulai ditolak koneksi.
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: (sum(pg_stat_activity_count) / max(pg_settings_max_connections)) > bool 0.8
+              instant: true
+              range: false
+              datasource:
+                type: prometheus
+                uid: prometheus
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              datasource:
+                type: __expr__
+                uid: __expr__
+              conditions:
+                - evaluator:
+                    type: gt
+                    params:
+                      - 0
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - A
+                  reducer:
+                    type: last
+        noDataState: NoData
+        execErrState: Error

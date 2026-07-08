@@ -1,6 +1,9 @@
 package response
 
-import "github.com/alfariesh/surau-backend/internal/entity"
+import (
+	"github.com/alfariesh/surau-backend/internal/controller/restapi/apierror"
+	"github.com/alfariesh/surau-backend/internal/entity"
+)
 
 // Error -.
 type Error struct {
@@ -14,11 +17,15 @@ type Error struct {
 
 type ProductionProjectConflict struct {
 	Error             string `json:"error" example:"production project already exists"`
+	Code              string `json:"code,omitempty" example:"production_project_already_exists"`
+	RequestID         string `json:"request_id,omitempty" example:"550e8400-e29b-41d4-a716-446655440000"`
 	ExistingProjectID string `json:"existing_project_id,omitempty" example:"550e8400-e29b-41d4-a716-446655440000"`
 } // @name v1.ProductionProjectConflict
 
 type ProductionPublishBlocked struct {
 	Error          string                              `json:"error" example:"production project is not ready"`
+	Code           string                              `json:"code,omitempty" example:"production_project_is_not_ready"`
+	RequestID      string                              `json:"request_id,omitempty" example:"550e8400-e29b-41d4-a716-446655440000"`
 	Project        entity.BookProductionProject        `json:"project"`
 	Ready          bool                                `json:"ready" example:"false"`
 	CanPublish     bool                                `json:"can_publish" example:"false"`
@@ -32,6 +39,7 @@ type ProductionPublishBlocked struct {
 func ProductionPublishBlockedFromCheck(message string, check entity.BookProductionPublishCheck) ProductionPublishBlocked {
 	return ProductionPublishBlocked{
 		Error:          message,
+		Code:           apierror.Code(message),
 		Project:        check.Project,
 		Ready:          check.Ready,
 		CanPublish:     check.CanPublish,

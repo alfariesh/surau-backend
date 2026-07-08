@@ -15,27 +15,28 @@ const (
 	CodeAuthRateLimited     = "AUTH_RATE_LIMITED"
 )
 
-var messageCodes = map[string]string{
-	"missing authorization header":        CodeAuthHeaderMissing,
-	"invalid authorization header format": CodeAuthHeaderInvalid,
-	"invalid or expired token":            CodeAuthTokenInvalid,
-	"unauthorized":                        CodeAuthUnauthorized,
-	"invalid credentials":                 CodeAuthCredentials,
-	"email not verified":                  CodeAuthEmailUnverified,
-	"too many auth attempts":              CodeAuthRateLimited,
-}
-
-// Code returns a stable machine-readable code while preserving legacy
-// snake_case fallback codes for messages without an explicit mapping.
+// Code returns the stable machine-readable code for an error message: the
+// FROZEN compatibility table first (registry.go — the F1-D contract), then
+// the legacy snake_case derivation for messages not yet registered. Register
+// new messages in frozenCodes; never repurpose an existing entry.
 func Code(msg string) string {
 	msg = strings.ToLower(strings.TrimSpace(msg))
 	if msg == "" {
 		return "error"
 	}
-	if code, ok := messageCodes[msg]; ok {
+
+	if code, ok := frozenCodes[msg]; ok {
 		return code
 	}
 
+	return derive(msg)
+}
+
+// derive is the legacy fallback: lowercase message → snake_case code. Kept
+// ONLY for unregistered (new) messages; the frozen table snapshots what this
+// produced for every historical message, so changing this algorithm cannot
+// move shipped codes (guarded by registry_test.go).
+func derive(msg string) string {
 	var out strings.Builder
 
 	lastUnderscore := false

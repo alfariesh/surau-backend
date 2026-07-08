@@ -124,6 +124,44 @@ docker compose --env-file .env.production -f docker-compose.prod.yml logs -f app
 
 Database disimpan di Docker volume `surau-backend-prod_db_data`, dimount ke `/var/lib/postgresql` sesuai layout image PostgreSQL 18. Jangan jalankan `docker compose down -v` di production kecuali memang ingin menghapus data.
 
+## Tuning Postgres per RAM VPS (F1-G)
+
+Semua setelan server Postgres hidup sebagai flag `-c` di `command:` service `db`
+(`docker-compose.prod.yml`) dengan nilai dari `.env.production` — TIDAK ada
+postgresql.conf yang di-mount (menghindari tabrakan dengan layout PGDATA
+pgBackRest). Flag archive pgBackRest di atasnya JANGAN pernah diubah/dihapus.
+
+Nilai per host (default compose = aman untuk 2GB):
+
+| Knob (env) | dev VPS (2GB) | prod VPS (4GB) | Alasan |
+|---|---|---|---|
+| `PG_SHARED_BUFFERS` | 256MB (default) | 512MB | ±25% RAM yang dialokasikan utk DB di kotak bersama |
+| `PG_EFFECTIVE_CACHE_SIZE` | 1GB (default) | 2GB | Estimasi jujur cache OS (default Postgres 4GB itu bohong di kotak 2GB) |
+| `PG_WORK_MEM` | 6MB (default) | 6MB | Kecil × banyak sort paralel; naikkan hanya dengan bukti |
+| `PG_MAINTENANCE_WORK_MEM` | 128MB (default) | 128MB | Vacuum/index build lebih cepat |
+| `PG_MAX_CONNECTIONS` | 50 (default) | 50 | Pool app 10 + collab 5 + burst CLI/backup + exporter ≪ 50 |
+| `PG_LOG_MIN_DURATION` | 200ms (default) | 200ms | = budget p95 baca (charter §2.3); query lambat tampil di `docker logs db` |
+
+`shared_preload_libraries=pg_stat_statements` ikut di command (panel "slow
+statements" di Grafana). Ekstensinya dibuat migrasi `20260708000002`.
+
+**Rollout (perubahan tuning perlu restart db ±10–30 dtk — di luar jalur deploy;
+db tidak pernah disentuh workflow deploy):**
+
+```sh
+cd /srv/surau/backend
+# 1) set nilai per-host di .env.production (lihat tabel)
+# 2) recreate db dengan flag baru (downtime singkat!)
+sudo docker compose --env-file .env.production -f docker-compose.prod.yml up -d db
+# 3) WAJIB: pastikan arsip WAL pgBackRest tetap jalan
+sudo docker compose --env-file .env.production -f docker-compose.prod.yml \
+  exec db pgbackrest --stanza=main check
+# 4) hidupkan/refresh exporter metrik DB
+sudo docker compose --env-file .env.production -f docker-compose.prod.yml \
+  --profile observability up -d postgres-exporter
+# 5) verifikasi: SHOW shared_buffers; SHOW log_min_duration_statement;
+```
+
 ## Keamanan migration (auto-migrate saat boot)
 
 Aplikasi auto-migrate saat boot (build `-tags migrate`). Pipeline deploy sudah: (1) snapshot pra-deploy via `surau-predeploy-snapshot` — pg_dump terenkripsi (age) ke `/var/backups/surau/predeploy/` DAN diunggah ke R2 `predeploy/<env>/` dengan retensi 7 hari (dump gagal = deploy batal; upload R2 gagal = deploy lanjut + alarm Telegram), dan (2) `docker image prune` HANYA setelah `/readyz` hijau (biar image lama masih ada untuk rollback bila deploy gagal). `migrate.go` menolak auto-migrate bila schema DIRTY dan mencetak langkah pemulihan.

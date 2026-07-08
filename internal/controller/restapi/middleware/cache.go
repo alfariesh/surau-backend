@@ -11,44 +11,81 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
+// publicCacheControl is a CONTRACT string (F1-D): the max-age/SWR numbers
+// must stay equal to the edge worker's FRESH/STALE TTLs
+// (workers/api-cache/wrangler.jsonc) — both sides advertise one policy.
+// Pinned by cache_test.go; documented in docs/frontend-integration-contract.md.
 const publicCacheControl = "public, max-age=300, stale-while-revalidate=86400"
 
+// ExcludePath marks exact request paths a PublicCache group must NOT cache
+// (dynamic endpoints like search): the response is stamped no-store instead.
+// Needed because fiber group middleware is a prefix Use — a route cannot
+// simply be "moved out" of the group.
+func ExcludePath(paths ...string) func(map[string]bool) {
+	return func(excluded map[string]bool) {
+		for _, path := range paths {
+			excluded[path] = true
+		}
+	}
+}
+
 // PublicCache sets cache validators for stable public GET JSON endpoints.
-func PublicCache() fiber.Handler {
+func PublicCache(opts ...func(map[string]bool)) fiber.Handler {
+	excluded := make(map[string]bool)
+	for _, opt := range opts {
+		opt(excluded)
+	}
+
 	return func(ctx *fiber.Ctx) error {
 		if ctx.Method() != http.MethodGet {
 			return ctx.Next()
+		}
+
+		if excluded[ctx.Path()] {
+			if err := ctx.Next(); err != nil {
+				return err
+			}
+
+			ctx.Set("Cache-Control", "no-store")
+
+			return nil
 		}
 
 		if err := ctx.Next(); err != nil {
 			return err
 		}
 
-		if ctx.Response().StatusCode() != http.StatusOK {
-			return nil
-		}
-
-		body := ctx.Response().Body()
-		if len(body) == 0 {
-			return nil
-		}
-
-		hash := sha256.Sum256(body)
-		etag := `W/"` + hex.EncodeToString(hash[:]) + `"`
-
-		ctx.Set("Cache-Control", publicCacheControl)
-		ctx.Set("ETag", etag)
-
-		if lastModified, ok := latestUpdatedAt(body); ok {
-			ctx.Set("Last-Modified", lastModified.UTC().Format(http.TimeFormat))
-		}
-
-		if strings.TrimSpace(ctx.Get("If-None-Match")) == etag {
-			ctx.Status(http.StatusNotModified)
-			ctx.Response().SetBody(nil)
-		}
+		stampCacheValidators(ctx)
 
 		return nil
+	}
+}
+
+// stampCacheValidators adds Cache-Control/ETag/Last-Modified to a successful
+// GET response and answers 304 on an If-None-Match hit.
+func stampCacheValidators(ctx *fiber.Ctx) {
+	if ctx.Response().StatusCode() != http.StatusOK {
+		return
+	}
+
+	body := ctx.Response().Body()
+	if len(body) == 0 {
+		return
+	}
+
+	hash := sha256.Sum256(body)
+	etag := `W/"` + hex.EncodeToString(hash[:]) + `"`
+
+	ctx.Set("Cache-Control", publicCacheControl)
+	ctx.Set("ETag", etag)
+
+	if lastModified, ok := latestUpdatedAt(body); ok {
+		ctx.Set("Last-Modified", lastModified.UTC().Format(http.TimeFormat))
+	}
+
+	if strings.TrimSpace(ctx.Get("If-None-Match")) == etag {
+		ctx.Status(http.StatusNotModified)
+		ctx.Response().SetBody(nil)
 	}
 }
 

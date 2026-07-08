@@ -303,6 +303,7 @@ func initServers(cfg *config.Config, pg *postgres.Postgres, uc useCases, jwtMana
 		httpserver.ProxyHeader(cfg.HTTP.ProxyHeader),
 		httpserver.TrustedProxies(cfg.HTTP.TrustedProxies),
 		httpserver.BodyLimit(cfg.HTTP.BodyLimitBytes),
+		httpserver.ErrorHandler(restapi.EnvelopeErrorHandler(l)),
 	)
 	restapi.NewRouter(
 		httpServer.App,
@@ -573,6 +574,7 @@ func Run(cfg *config.Config) {
 	if cfg.Metrics.Enabled {
 		registerEmailQueueMetrics(pg.Pool)
 		registerBackfillMetrics(pg.Pool)
+		registerDBSizeMetrics(pg.Pool)
 	}
 
 	// JWT. The manager's duration is the ACCESS token TTL; refresh tokens are

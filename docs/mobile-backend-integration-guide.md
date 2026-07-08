@@ -106,6 +106,8 @@ Semua error REST memakai shape:
 
 `error` tetap ada untuk client lama. FE baru sebaiknya simpan `request_id` untuk debugging dan boleh branch ringan memakai `code`, tetapi status HTTP tetap sumber utama.
 
+Jaminan F1-D (dites kontrak di backend): nilai `code` BEKU — perbaikan ejaan kalimat `error` tidak akan pernah mengubah `code`, jadi aman branch memakai `code`. Semua bentuk error kini membawa `code`+`request_id`, termasuk envelope kaya editorial 409, 429 limiter non-auth (`code: too_many_requests`, `retry_after` terisi), 404 route tak dikenal, dan error framework (413; `request_id` bisa kosong di jalur itu). Detail per-instance (mis. validasi template email) ada di field `details`.
+
 Mobile sebaiknya branch berdasarkan HTTP status terlebih dahulu:
 
 | Status | Arti umum | Mobile behavior |

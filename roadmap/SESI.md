@@ -93,7 +93,13 @@ Kerjakan F1-C dan F1-H dari roadmap/phase-1-foundations.md: (F1-C) panic-recover
 Masuk PLAN MODE dulu; rencana wajib menyebut cara memenuhi setiap Acceptance Criterion keduanya. Setelah saya setujui: kerjakan sampai tuntas — branch fitur, test, Definition of Done, centang PROGRAM.md & SESI.md, merge, verifikasi dev-api. Laporan akhir bahasa awam.
 ```
 
-- [ ] **SESI 7 — Kontrak API terkunci + DB terlihat (F1-D + F1-G)**
+- [x] **SESI 7 — Kontrak API terkunci + DB terlihat (F1-D + F1-G)** ✅ 2026-07-08 —
+  kode error dibekukan (±100 entri; memperbaiki ejaan kalimat TAK BISA lagi mengubah kode —
+  dijaga test kontrak AST, dibuktikan dgn uji mutasi); semua bentuk error kini ber-`code`+
+  `request_id` (envelope kaya 409, 429 limiter ber-`retry_after`, 404 catch-all, error framework
+  — bocor nilai panic ke body 500 ikut tertutup); `/v1/quran/search` tak lagi salah ber-cache;
+  Postgres di-tuning per RAM host (slow-query log 200ms, pg_stat_statements) + dashboard DB
+  5 panel + alert koneksi>80% → Telegram; aktif di dev & prod (pgbackrest check lulus).
 
 ```text
 Kerjakan F1-D dan F1-G dari roadmap/phase-1-foundations.md: (F1-D) kode error jadi eksplisit di titik emit dengan tabel kompatibilitas beku ber-test (tanpa breaking change), envelope error kaya diberi code+request_id, dokumentasikan & selaraskan kebijakan cache PublicCache dengan edge worker; (F1-G) tuning ringan Postgres + slow-query log + exporter metrik DB ke dashboard.

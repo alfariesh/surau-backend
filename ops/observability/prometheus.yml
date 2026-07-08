@@ -16,6 +16,11 @@ scrape_configs:
     static_configs:
       - targets: ["node-exporter:9100"]
 
+  # F1-G: Postgres visibility (connections, statements, autovacuum, sizes).
+  - job_name: postgres
+    static_configs:
+      - targets: ["postgres-exporter:9187"]
+
   - job_name: prometheus
     static_configs:
       - targets: ["localhost:9090"]

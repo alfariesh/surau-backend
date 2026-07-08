@@ -4,10 +4,21 @@ import (
 	"net"
 	"strings"
 	"time"
+
+	"github.com/gofiber/fiber/v2"
 )
 
 // Option -.
 type Option func(*Server)
+
+// ErrorHandler installs a custom Fiber error handler so framework-level
+// failures (body limit, routing errors) share the API's error envelope
+// instead of Fiber's plain-text defaults (F1-D).
+func ErrorHandler(handler fiber.ErrorHandler) Option {
+	return func(s *Server) {
+		s.errorHandler = handler
+	}
+}
 
 // Port -.
 func Port(port string) Option {

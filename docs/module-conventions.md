@@ -35,7 +35,16 @@ internal/controller/restapi/v1/response/     ← struct response per paket (enve
 
 - Endpoint list publik: envelope `{items,total}`; `limit` di-clamp (default 50/200, max 200);
   `offset` di-clamp max 10000; query pencarian dibatasi 200 rune dan pola ILIKE WAJIB lewat
-  `persistent.escapeLike`.
+  `persistent.escapeLike`. Delapan envelope legacy (`users/activity/projects/candidates/
+  events/revisions/feedbacks`) DIBEKUKAN apa adanya (test kontrak di `v1/response`) — list
+  BARU dilarang meniru mereka.
+- Pesan error = kontrak (F1-D): setiap kalimat pesan baru WAJIB didaftarkan di
+  `apierror/registry.go` (test kontrak menolak literal tak terdaftar); JANGAN mengubah kalimat
+  lama — kodenya beku. Detail per-instance masuk `details` (`errorResponseWithDetails`),
+  bukan ke kalimat pesan.
+- Endpoint GET publik yang stabil masuk grup `middleware.PublicCache()`; endpoint dinamis
+  (search/q-param) di dalam grup ter-cache WAJIB dikecualikan via
+  `middleware.ExcludePath(...)` (no-store).
 - Mutasi ber-ETag mengikuti pola optimistic-locking (`If-Match`, 412/428).
 - Interface baru di contracts.go → jalankan `make mock` (mock ter-regenerate, jangan diedit
   manual).

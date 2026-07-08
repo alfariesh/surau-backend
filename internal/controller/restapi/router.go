@@ -8,8 +8,10 @@ import (
 
 	"github.com/alfariesh/surau-backend/config"
 	_ "github.com/alfariesh/surau-backend/docs" // Swagger docs.
+	"github.com/alfariesh/surau-backend/internal/controller/restapi/apierror"
 	"github.com/alfariesh/surau-backend/internal/controller/restapi/middleware"
 	v1 "github.com/alfariesh/surau-backend/internal/controller/restapi/v1"
+	"github.com/alfariesh/surau-backend/internal/controller/restapi/v1/response"
 	"github.com/alfariesh/surau-backend/internal/usecase"
 	"github.com/alfariesh/surau-backend/pkg/jwt"
 	"github.com/alfariesh/surau-backend/pkg/logger"
@@ -147,4 +149,21 @@ func NewRouter(
 		internalGroup := app.Group("/internal", middleware.ServiceToken(cfg.Collab.ServiceToken))
 		v1.NewInternalRoutes(internalGroup, e, l)
 	}
+
+	// Catch-all (F1-D): unmatched routes answer with the standard error
+	// envelope instead of fiber's plain-text 404. Registered last so every
+	// real route wins. (Side effect: /internal/* with collab disabled also
+	// gets the JSON envelope — the route stays hidden either way.)
+	app.Use(func(ctx *fiber.Ctx) error {
+		requestID, _ := ctx.Locals("requestID").(string) //nolint:errcheck // absent locals just mean empty request_id
+
+		const msg = "not found"
+
+		return ctx.Status(http.StatusNotFound).JSON(response.Error{
+			Error:     msg,
+			Code:      apierror.Code(msg),
+			Message:   msg,
+			RequestID: requestID,
+		})
+	})
 }
