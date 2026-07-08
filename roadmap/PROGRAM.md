@@ -40,7 +40,7 @@ dokumen fase (kecil/sedang/besar); tidak ada tanggal — gerbang-keluar yang men
 gelombang.
 
 ### W1 — Fondasi (F1 + awal F2)
-**Isi:** F1-B (observability inti) · F1-C (supervisi loop + dead-letter email) · F1-H (playbook
+**Isi:** F1-B ✅ **SELESAI 2026-07-08 (S5)** (observability inti — request-ID+trace_id di semua log request-scoped; OTel HTTP→pgx→webapi ke Tempo; RED+email+loop metrik; Grafana /grafana + 6 alert Telegram; kelima alert DIBUKTIKAN menyala via simulasi dev; AC trace-follow terbukti end-to-end) · F1-C (supervisi loop + dead-letter email) · F1-H (playbook
 expand-contract/backfill — PRASYARAT W2) · F1-F (rename module + kode mati — kerjakan SEBELUM
 kode baru menumpuk) · F1-D (kontrak error) · F1-E (kepercayaan CI) · F1-G (tuning Postgres) ·
 **A-3 (MFA + step-up)** · **A-1 (RBAC ber-kapabilitas + scholar_reviewer)** — selesai di sini
@@ -259,7 +259,7 @@ yang diperselisihkan — di jawaban AI dan di halaman wiki.
 | **S2** ✅ | E3 (WAL/PITR) + E6 (snapshot pra-deploy → R2) — **SELESAI 2026-07-07** | Pemulihan point-in-time ≤1 jam terdemonstrasikan |
 | **S3** ✅ | E4 (importer staged — TEST DULU, lalu staged-diff+tombstone) — **SELESAI 2026-07-07** | Fixture re-import destruktif TIDAK BISA menghapus editorial tanpa diff yang disetujui; **larangan re-import dicabut** |
 | **S4** ✅ | E5 (clamp offset, paginasi headings, escape ILIKE) + F1-F (rename module, hapus kode mati) — **SELESAI 2026-07-08**: module = github.com/alfariesh/surau-backend; kode mati amqp/nats sudah tiada (sisa docs dibersihkan); gitleaks aktif di CI (gerbang DIBUKTIKAN dgn PR dummy-secret yang ditolak); docs/module-conventions.md lahir | Fuzz publik aman; repo beridentitas Surau |
-| **S5** | F1-B (request-ID→log, tracing, 5 alert) → lanjut F1-H (playbook backfill) | Satu request tertelusur ujung-ke-ujung; playbook siap → **masuk W2 (B-1 pilot)** |
+| **S5** ✅(F1-B) | F1-B (request-ID→log, tracing, 5 alert) **SELESAI 2026-07-08** → lanjut F1-H (playbook backfill, sesi berikutnya) | Satu request tertelusur ujung-ke-ujung ✅; playbook siap → **masuk W2 (B-1 pilot)** |
 
 **Sambil S1–S5 berjalan, Salman menjawab:** **PK-1** (memblokir W2), lalu mencicil PK-2
 (memblokir W4) dan PK-3 poin 1. *(O-F1-1 sudah terjawab: Telegram — lihat §5.0.)*

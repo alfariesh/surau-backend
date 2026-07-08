@@ -68,7 +68,10 @@ Masuk PLAN MODE dulu; rencana wajib menyebut cara memenuhi setiap Acceptance Cri
 
 ## GELOMBANG 1 — Fondasi
 
-- [ ] **SESI 5 — Mata & telinga sistem (F1-B)**
+- [x] **SESI 5 — Mata & telinga sistem (F1-B)** ✅ 2026-07-08 — log ber-request_id+trace_id;
+  trace HTTP→SQL→LLM terbukti; Grafana https://dev-api.surau.org/grafana & /grafana prod;
+  KELIMA alert dibuktikan menyala (simulasi dev) → Telegram; prod menyusul lengkap saat rilis
+  api-v berikutnya (stack sudah hidup, app instrumented menunggu tag).
 
 ```text
 Kerjakan F1-B dari roadmap/phase-1-foundations.md: request-ID masuk ke setiap baris log, distributed tracing (OpenTelemetry) dari HTTP → database → panggilan eksternal, perbaiki label Prometheus yang hardcoded, metrik RED per endpoint + antrean email, dan 5 alert dasar (5xx-surge, p95, email stuck, backup heartbeat, disk) — semua alert ke bot Telegram yang sudah ada.
