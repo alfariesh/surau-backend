@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/alfariesh/surau-backend/internal/readerutil"
+	"github.com/alfariesh/surau-backend/internal/searchtext"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -335,23 +336,27 @@ func importAuthors(ctx context.Context, pool *pgxpool.Pool, db *stdsql.DB) error
 			return fmt.Errorf("scan author: %w", err)
 		}
 
+		// name_search rides every author write (insert AND conflict-update)
+		// so re-imports never leave a stale normalized form behind (F1-H).
 		batch.Queue(
 			`
-INSERT INTO authors (id, name, biography, death_text, death_number, is_deleted, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, now())
+INSERT INTO authors (id, name, biography, death_text, death_number, is_deleted, updated_at, name_search)
+VALUES ($1, $2, $3, $4, $5, $6, now(), $7)
 ON CONFLICT (id) DO UPDATE SET
     name = EXCLUDED.name,
     biography = EXCLUDED.biography,
     death_text = EXCLUDED.death_text,
     death_number = EXCLUDED.death_number,
     is_deleted = EXCLUDED.is_deleted,
-    updated_at = now()`,
+    updated_at = now(),
+    name_search = EXCLUDED.name_search`,
 			id,
 			nullStringValue(name),
 			nullStringPtr(biography),
 			nullStringPtr(deathText),
 			nullStringToInt(deathNumber),
 			rawBool(isDeleted),
+			searchtext.Normalize(nullStringValue(name)),
 		)
 	}
 

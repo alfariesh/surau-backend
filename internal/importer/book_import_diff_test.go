@@ -7,8 +7,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func strp(s string) *string { return &s }
-
 func TestDiffPages(t *testing.T) {
 	t.Parallel()
 
@@ -19,10 +17,10 @@ func TestDiffPages(t *testing.T) {
 		4: {Part: "1", ContentHTML: "<p>four</p>", ContentText: "four"},
 	}
 	incoming := []sourcePage{
-		{ID: 1, Part: strp("1"), ContentHTML: "<p>one</p>", ContentText: "one"},       // identical -> skip
-		{ID: 2, Part: strp("1"), ContentHTML: "<p>two v2</p>", ContentText: "two v2"}, // changed
-		{ID: 3, Part: strp("1"), ContentHTML: "<p>three</p>", ContentText: "three"},   // revived tombstone
-		{ID: 5, Part: strp("1"), ContentHTML: "<p>five</p>", ContentText: "five"},     // added
+		{ID: 1, Part: new("1"), ContentHTML: "<p>one</p>", ContentText: "one"},       // identical -> skip
+		{ID: 2, Part: new("1"), ContentHTML: "<p>two v2</p>", ContentText: "two v2"}, // changed
+		{ID: 3, Part: new("1"), ContentHTML: "<p>three</p>", ContentText: "three"},   // revived tombstone
+		{ID: 5, Part: new("1"), ContentHTML: "<p>five</p>", ContentText: "five"},     // added
 	}
 
 	diff := diffPages(current, incoming)
@@ -42,7 +40,7 @@ func TestDiffPagesIdenticalIsNoOp(t *testing.T) {
 	}
 	incoming := []sourcePage{
 		// jsonb normalizes key order/whitespace — semantic equality must hold.
-		{ID: 1, Part: strp("1"), Number: strp("1"), ContentHTML: "<p>one</p>", ContentText: "one", Services: `{"b":2,"a":1}`},
+		{ID: 1, Part: new("1"), Number: new("1"), ContentHTML: "<p>one</p>", ContentText: "one", Services: `{"b":2,"a":1}`},
 	}
 
 	diff := diffPages(current, incoming)
