@@ -41,16 +41,12 @@ type loopSpec struct {
 // startLoop launches one supervised loop goroutine registered on the drain
 // WaitGroup, with the loop name stamped on every log line.
 func (s *servers) startLoop(ctx context.Context, spec loopSpec, l logger.Interface) {
-	s.loopWG.Add(1)
-
-	go func() {
-		defer s.loopWG.Done()
-
+	s.loopWG.Go(func() {
 		runSupervisedLoop(ctx, spec, l.WithField("loop", spec.name))
-	}()
+	})
 }
 
-// runSupervisedLoop drives spec.run until ctx is cancelled. The first pass
+// runSupervisedLoop drives spec.run until ctx is canceled. The first pass
 // waits initialDelay (or one interval when zero, matching a plain ticker);
 // each subsequent wait is the interval on success or a growing backoff on
 // consecutive failures.
@@ -104,7 +100,7 @@ func runLoopPass(ctx context.Context, spec loopSpec, l logger.Interface) (err er
 		if r := recover(); r != nil {
 			err = fmt.Errorf("%w: %v", errLoopPanic, r)
 
-			l.Error(fmt.Errorf("app - loop panic recovered: %v\n%s", r, debug.Stack()))
+			l.Error("app - loop panic recovered: %v\n%s", r, debug.Stack())
 		}
 	}()
 

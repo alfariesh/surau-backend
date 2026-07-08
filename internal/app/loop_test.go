@@ -8,24 +8,25 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alfariesh/surau-backend/pkg/logger"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/alfariesh/surau-backend/pkg/logger"
 )
 
 type noopLogger struct{}
 
-func (noopLogger) Debug(_ any, _ ...any) {}
+func (noopLogger) Debug(_ any, _ ...any)   {}
 func (noopLogger) Info(_ string, _ ...any) {}
 func (noopLogger) Warn(_ string, _ ...any) {}
-func (noopLogger) Error(_ any, _ ...any) {}
-func (noopLogger) Fatal(_ any, _ ...any) {}
+func (noopLogger) Error(_ any, _ ...any)   {}
+func (noopLogger) Fatal(_ any, _ ...any)   {}
 
 func (n noopLogger) WithField(_ string, _ any) logger.Interface { return n }
 
 func testLogger() logger.Interface { return noopLogger{} }
+
+var errTransient = errors.New("transient failure")
 
 func TestRunSupervisedLoopRecoversFromPanic(t *testing.T) {
 	t.Parallel()
@@ -79,8 +80,7 @@ func TestRunSupervisedLoopBackoffOnConsecutiveFailures(t *testing.T) {
 
 	var calls atomic.Int64
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	failUntil := int64(3)
 
@@ -91,7 +91,7 @@ func TestRunSupervisedLoopBackoffOnConsecutiveFailures(t *testing.T) {
 		backoffMax:  4 * time.Millisecond,
 		run: func(context.Context) error {
 			if calls.Add(1) <= failUntil {
-				return errors.New("transient failure")
+				return errTransient
 			}
 
 			return nil
@@ -110,8 +110,7 @@ func TestRunSupervisedLoopHonorsInitialDelay(t *testing.T) {
 
 	var firstCall atomic.Int64
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	start := time.Now()
 	initialDelay := 60 * time.Millisecond
@@ -149,6 +148,7 @@ func TestRunSupervisedLoopStopsWhilePassInFlight(t *testing.T) {
 			case started <- struct{}{}:
 			default:
 			}
+
 			<-passCtx.Done()
 
 			return passCtx.Err()
@@ -157,13 +157,9 @@ func TestRunSupervisedLoopStopsWhilePassInFlight(t *testing.T) {
 
 	var wg sync.WaitGroup
 
-	wg.Add(1)
-
-	go func() {
-		defer wg.Done()
-
+	wg.Go(func() {
 		runSupervisedLoop(ctx, spec, testLogger())
-	}()
+	})
 
 	select {
 	case <-started:
@@ -194,6 +190,7 @@ func TestShutdownDrainTimeoutWithStuckPass(t *testing.T) {
 			case started <- struct{}{}:
 			default:
 			}
+
 			// Ignores ctx: simulates a stuck pass that must not block
 			// shutdown beyond the drain timeout.
 			<-release
@@ -204,13 +201,9 @@ func TestShutdownDrainTimeoutWithStuckPass(t *testing.T) {
 
 	var wg sync.WaitGroup
 
-	wg.Add(1)
-
-	go func() {
-		defer wg.Done()
-
+	wg.Go(func() {
 		runSupervisedLoop(ctx, spec, testLogger())
-	}()
+	})
 
 	select {
 	case <-started:

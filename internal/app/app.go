@@ -356,7 +356,7 @@ func buildLoopSpecs(
 	notificationUC *notification.UseCase,
 	l logger.Interface,
 ) []loopSpec {
-	specs := make([]loopSpec, 0, 5)
+	var specs []loopSpec
 
 	if userUC != nil && cfg.AuthCleanup.Enabled {
 		specs = append(specs, loopSpec{
@@ -385,15 +385,25 @@ func buildLoopSpecs(
 		})
 	}
 
-	if emailUC != nil {
-		specs = append(specs, loopSpec{
-			name:     "email_dispatch",
-			interval: cfg.Email.DispatchInterval,
-			run:      emailDispatchPass(cfg, emailUC),
-		})
+	return append(specs, buildEmailLoopSpecs(cfg, emailUC)...)
+}
+
+// buildEmailLoopSpecs gates the email loops exactly as the pre-supervisor
+// code did: the dispatcher runs whenever the usecase exists; the Cloudflare
+// event poller only in cloudflare mode with polling enabled (otherwise it
+// would tick "success" while doing nothing).
+func buildEmailLoopSpecs(cfg *config.Config, emailUC *emailusecase.UseCase) []loopSpec {
+	if emailUC == nil {
+		return nil
 	}
 
-	if emailUC != nil && cfg.Email.DeliveryMode == config.EmailDeliveryModeCloudflare && cfg.Email.CloudflareEventPollingEnabled {
+	specs := []loopSpec{{
+		name:     "email_dispatch",
+		interval: cfg.Email.DispatchInterval,
+		run:      emailDispatchPass(cfg, emailUC),
+	}}
+
+	if cfg.Email.DeliveryMode == config.EmailDeliveryModeCloudflare && cfg.Email.CloudflareEventPollingEnabled {
 		specs = append(specs, loopSpec{
 			name:     "email_events_poll",
 			interval: cfg.Email.CloudflareEventPollingInterval,
@@ -513,7 +523,7 @@ func (s *servers) shutdownServers(l logger.Interface) {
 	select {
 	case <-drained:
 	case <-time.After(loopDrainTimeout):
-		l.Error(fmt.Errorf("app - shutdown: background loops still draining after %s, exiting anyway", loopDrainTimeout))
+		l.Error("app - shutdown: background loops still draining after %s, exiting anyway", loopDrainTimeout)
 	}
 }
 
@@ -562,6 +572,7 @@ func Run(cfg *config.Config) {
 
 	if cfg.Metrics.Enabled {
 		registerEmailQueueMetrics(pg.Pool)
+		registerBackfillMetrics(pg.Pool)
 	}
 
 	// JWT. The manager's duration is the ACCESS token TTL; refresh tokens are
