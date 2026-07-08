@@ -123,7 +123,15 @@ Kerjakan F1-E dari roadmap/phase-1-foundations.md: akar-masalahi flakiness integ
 Masuk PLAN MODE dulu; rencana wajib menyebut cara memenuhi setiap Acceptance Criterion. Setelah saya setujui: kerjakan sampai tuntas — branch fitur, test, Definition of Done, centang PROGRAM.md & SESI.md, merge, verifikasi dev-api. Laporan akhir bahasa awam.
 ```
 
-- [ ] **SESI 9 — Kunci ganda untuk akun berkuasa (A-3)**
+- [x] **SESI 9 — Kunci ganda untuk akun berkuasa (A-3)** ✅ 2026-07-09 (PR #74) — MFA TOTP
+  (kode 6 digit dari aplikasi authenticator) + 10 recovery code sekali-pakai, WAJIB untuk admin;
+  login admin kini minta kode setelah password (akun biasa TAK berubah). Aksi paling berbahaya
+  (publish/unpublish, hapus aset final, ganti peran) minta kode LAGI meski sudah login ("step-up",
+  segar 10 menit). Admin baru punya masa tenggang 7 hari untuk enroll sebelum terkunci dari aksi
+  itu. Kehilangan HP: reset via OTP email + recovery code (semua sesi keluar), atau CLI darurat
+  admin. Secret authenticator ter-enkripsi di database. ⚠️ 1 langkah manual Salman sebelum rilis
+  prod (tag api-v berikutnya): set `MFA_ENCRYPTION_KEY` (32+ karakter acak) di `.env.production`
+  VPS supaya rotasi kunci JWT nanti (A-4) tidak membuat authenticator yatim.
 
 ```text
 Kerjakan A-3 dari roadmap/phase-2-auth.md: MFA TOTP + recovery codes (wajib untuk admin & scholar_reviewer sesuai default O-2-1), dan step-up (tantangan MFA ulang) untuk aksi destruktif kelas-atas. Alur login lama pengguna biasa tidak berubah.
