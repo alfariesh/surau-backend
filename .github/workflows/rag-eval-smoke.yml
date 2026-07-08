@@ -23,13 +23,45 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version: 1.26
+      - name: Check the eval corpus exists on dev
+        id: corpus
+        # The smoke cases pin Shamela book IDs; dev currently carries only a
+        # sample subset, so run the harness only once those books are imported
+        # (data task) — a skip is reported loudly instead of a permanent red.
+        run: |
+          set -euo pipefail
+          missing=""
+          for book in 797 7312 12876; do
+            code="$(curl -s -o /dev/null -w '%{http_code}' "https://dev-api.surau.org/v1/books/${book}")"
+            [ "$code" = "200" ] || missing="${missing} ${book}"
+          done
+          if [ -n "$missing" ]; then
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::rag-eval smoke SKIPPED — eval books not on dev-api yet:${missing}"
+            {
+              echo "### RAG eval smoke: DILEWATI"
+              echo ""
+              echo "Buku korpus eval belum ada di dev-api:${missing} — impor dulu (tugas data), lalu smoke ini otomatis berjalan penuh."
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Telegram notice — smoke skipped (corpus missing)
+        if: steps.corpus.outputs.present == 'false'
+        uses: ./.github/actions/telegram-notify
+        with:
+          message: >-
+            ⚠️ RAG eval smoke DILEWATI: buku korpus eval (797/7312/12876) belum diimpor ke dev-api.
+            Smoke berjalan penuh otomatis setelah impor:
+            ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
       - name: Run rag-eval smoke against dev-api
+        if: steps.corpus.outputs.present == 'true'
         run: |
           set -euo pipefail
           go run ./cmd/rag-eval -base-url https://dev-api.surau.org \
             -cases eval/bookrag_smoke.jsonl -output json -verbose | tee rag-eval.json
       - name: Publish result summary
-        if: always()
+        if: always() && steps.corpus.outputs.present == 'true'
         run: |
           set -euo pipefail
           {
