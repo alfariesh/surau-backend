@@ -112,6 +112,12 @@ func (r *V1) login(ctx *fiber.Ctx) error {
 		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
 	}
 
+	// MFA-enabled accounts get a short-lived challenge instead of tokens
+	// (A-3, additive): finish with POST /auth/mfa/verify.
+	if result.MFARequired {
+		return ctx.Status(http.StatusOK).JSON(response.NewMFAChallenge(&result))
+	}
+
 	return ctx.Status(http.StatusOK).JSON(response.NewToken(&result))
 }
 

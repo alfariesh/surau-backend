@@ -74,6 +74,11 @@ func NewRoutes(
 		authGroup.Post("/resend-verification", r.resendVerification)
 		authGroup.Post("/forgot-password", r.forgotPassword)
 		authGroup.Post("/reset-password", r.resetPassword)
+		// MFA (A-3): challenge-token endpoints — the mfa_token from login is
+		// the proof of password, so these stay outside Bearer auth.
+		authGroup.Post("/mfa/verify", r.mfaVerify)
+		authGroup.Post("/mfa/reset/request", r.mfaResetRequest)
+		authGroup.Post("/mfa/reset/confirm", r.mfaResetConfirm)
 	}
 
 	emailPublicGroup := apiV1Group.Group("/email")
@@ -160,6 +165,13 @@ func NewRoutes(
 		protectedAuthGroup.Post("/logout-all", r.logoutAll)
 		protectedAuthGroup.Get("/sessions", sessionLimiter, r.listSessions)
 		protectedAuthGroup.Delete("/sessions/:id", sessionLimiter, r.revokeSession)
+		// MFA (A-3): session-scoped enrollment, step-up, and management.
+		protectedAuthGroup.Post("/mfa/enroll", r.mfaEnroll)
+		protectedAuthGroup.Post("/mfa/enroll/confirm", r.mfaEnrollConfirm)
+		protectedAuthGroup.Post("/mfa/step-up", r.mfaStepUp)
+		protectedAuthGroup.Post("/mfa/disable", r.mfaDisable)
+		protectedAuthGroup.Post("/mfa/recovery-codes", r.mfaRecoveryCodes)
+		protectedAuthGroup.Get("/mfa/status", r.mfaStatus)
 	}
 
 	userGroup := protected.Group("/user", authRequired)
@@ -295,7 +307,10 @@ func NewRoutes(
 		editorialReviewGroup.Get("/books/:book_id/headings/:heading_id/draft", r.editorialGetHeadingDraft)
 		editorialReviewGroup.Put("/books/:book_id/headings/:heading_id/draft", r.editorialSaveHeadingDraft)
 
-		editorialAdminGroup := editorialGroup.Group("", middleware.RequireRoles(u, entity.UserRoleAdmin))
+		// High-class destructive routes demand a FRESH second factor on top of
+		// the role (A-3 step-up): publish/unpublish, final-asset deletion.
+		editorialAdminGroup := editorialGroup.Group("",
+			middleware.RequireRoles(u, entity.UserRoleAdmin), middleware.RequireFreshMFA(u))
 		editorialAdminGroup.Put("/books/:book_id/publication", r.editorialUpdatePublication)
 		editorialAdminGroup.Post("/books/:book_id/metadata-draft/publish", r.editorialPublishMetadataDraft)
 		editorialAdminGroup.Post("/books/:book_id/pages/:page_id/publish", r.editorialPublishPageDraft)
@@ -312,7 +327,9 @@ func NewRoutes(
 		adminGroup.Get("/users", r.adminUsers)
 		adminGroup.Get("/users/:id/activity", r.adminUserActivity)
 		adminGroup.Get("/users/:id", r.adminUserDetail)
-		adminGroup.Patch("/users/role", r.adminSetUserRole)
+		// Role change is step-up gated (A-3): the rest of /admin stays read-only
+	// or routine, so the gate is per-route, not group-wide.
+	adminGroup.Patch("/users/role", middleware.RequireFreshMFA(u), r.adminSetUserRole)
 		emailGroup := adminGroup.Group("/emails")
 		{
 			emailGroup.Get("/templates", r.adminEmailTemplates)

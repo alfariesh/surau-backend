@@ -572,6 +572,7 @@ type fakeAuthUser struct {
 	role              string
 	roleUser          entity.User
 
+	loginResult        entity.LoginResult
 	mfaEnrollment      entity.MFAEnrollment
 	mfaEnrollErr       error
 	mfaRecoveryCodes   []string
@@ -600,6 +601,10 @@ func (f *fakeAuthUser) Register(context.Context, string, string, string) (entity
 func (f *fakeAuthUser) Login(context.Context, string, string) (entity.LoginResult, error) {
 	if f.loginErr != nil {
 		return entity.LoginResult{}, f.loginErr
+	}
+
+	if f.loginResult.MFARequired {
+		return f.loginResult, nil
 	}
 
 	return testLoginResult(), nil
