@@ -88,6 +88,13 @@ x-backend-app-environment: &x-backend-app-environment
   # Empty AUTH_ALERT_RECIPIENTS falls back to all admin-role users.
   AUTH_ALERT_ENABLED: "${AUTH_ALERT_ENABLED:-false}"
   AUTH_ALERT_INTERVAL: "${AUTH_ALERT_INTERVAL:-5m}"
+  # MFA / TOTP (A-3)
+  MFA_STEP_UP_TTL: "${MFA_STEP_UP_TTL:-10m}"
+  MFA_ENROLLMENT_GRACE: "${MFA_ENROLLMENT_GRACE:-168h}"
+  MFA_CHALLENGE_TTL: "${MFA_CHALLENGE_TTL:-5m}"
+  MFA_RESET_TTL: "${MFA_RESET_TTL:-15m}"
+  MFA_TOTP_ISSUER: "${MFA_TOTP_ISSUER:-Surau}"
+  MFA_ENCRYPTION_KEY: "${MFA_ENCRYPTION_KEY:-}"
   AUTH_ALERT_RECIPIENTS: "${AUTH_ALERT_RECIPIENTS:-}"
   # Collaborative editing bridge (collab-server -> app internal API)
   COLLAB_ENABLED: "${COLLAB_ENABLED:-true}"

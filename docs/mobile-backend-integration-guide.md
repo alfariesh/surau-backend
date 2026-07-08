@@ -211,7 +211,7 @@ export function resolveContentLang(input: {
 
 ## 4. Auth Flow
 
-Mobile auth memakai JWT Bearer token. Tidak ada cookie auth atau MFA. Endpoint session/refresh yang lebih baru (`POST /v1/auth/refresh`, `POST /v1/auth/logout`, `GET/DELETE /v1/auth/sessions`) belum tercakup di dokumen ini — cek `docs/auth-frontend.md` dan `/swagger/index.html`.
+Mobile auth memakai JWT Bearer token. Tidak ada cookie auth. **MFA (TOTP) tersedia sejak A-3**: bila `POST /v1/auth/login` membalas `{ "mfa_required": true, "mfa_token": "..." }` (bukan token), minta kode 6 digit lalu `POST /v1/auth/mfa/verify` `{ mfa_token, code }` → pasangan token normal; akun tanpa MFA tidak berubah alurnya. Detail lengkap (enrollment, step-up, recovery) di `docs/auth-frontend.md` §Flow MFA. Endpoint session/refresh yang lebih baru (`POST /v1/auth/refresh`, `POST /v1/auth/logout`, `GET/DELETE /v1/auth/sessions`) belum tercakup di dokumen ini — cek `docs/auth-frontend.md` dan `/swagger/index.html`.
 
 Endpoint ringkas:
 

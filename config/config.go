@@ -30,6 +30,30 @@ func configErrorf(format string, args ...any) error {
 	return fmt.Errorf("%w: %s", errConfig, fmt.Sprintf(format, args...))
 }
 
+func validateMFA(m mfa) error {
+	if m.StepUpTTL <= 0 {
+		return configError("MFA_STEP_UP_TTL must be positive")
+	}
+
+	if m.EnrollmentGrace <= 0 {
+		return configError("MFA_ENROLLMENT_GRACE must be positive")
+	}
+
+	if m.ChallengeTTL <= 0 {
+		return configError("MFA_CHALLENGE_TTL must be positive")
+	}
+
+	if m.ResetTTL <= 0 {
+		return configError("MFA_RESET_TTL must be positive")
+	}
+
+	if key := strings.TrimSpace(m.EncryptionKey); key != "" && len(key) < 32 {
+		return configError("MFA_ENCRYPTION_KEY must be at least 32 bytes when set")
+	}
+
+	return nil
+}
+
 func validateAuthLockout(lockout authLockout) error {
 	if !lockout.Enabled {
 		return nil
@@ -94,6 +118,7 @@ type (
 		AuthCleanup   authCleanup
 		AuthEmail     authEmail
 		AuthAlert     authAlert
+		MFA           mfa
 		RAG           rag
 		Collab        collab
 		Metrics       metrics
@@ -265,6 +290,35 @@ type (
 		RefreshIPWindow               time.Duration `env:"AUTH_RATE_LIMIT_REFRESH_IP_WINDOW" envDefault:"15m"`
 		VerifyEmailTokenMax           int           `env:"AUTH_RATE_LIMIT_VERIFY_EMAIL_TOKEN_MAX" envDefault:"5"`
 		VerifyEmailTokenWindow        time.Duration `env:"AUTH_RATE_LIMIT_VERIFY_EMAIL_TOKEN_WINDOW" envDefault:"15m"`
+		MFAVerifyTokenMax             int           `env:"AUTH_RATE_LIMIT_MFA_VERIFY_TOKEN_MAX" envDefault:"5"`
+		MFAVerifyTokenWindow          time.Duration `env:"AUTH_RATE_LIMIT_MFA_VERIFY_TOKEN_WINDOW" envDefault:"5m"`
+		MFAVerifyIPMax                int           `env:"AUTH_RATE_LIMIT_MFA_VERIFY_IP_MAX" envDefault:"30"`
+		MFAVerifyIPWindow             time.Duration `env:"AUTH_RATE_LIMIT_MFA_VERIFY_IP_WINDOW" envDefault:"15m"`
+		MFAStepUpUserMax              int           `env:"AUTH_RATE_LIMIT_MFA_STEP_UP_USER_MAX" envDefault:"10"`
+		MFAStepUpUserWindow           time.Duration `env:"AUTH_RATE_LIMIT_MFA_STEP_UP_USER_WINDOW" envDefault:"5m"`
+		MFAStepUpIPMax                int           `env:"AUTH_RATE_LIMIT_MFA_STEP_UP_IP_MAX" envDefault:"60"`
+		MFAStepUpIPWindow             time.Duration `env:"AUTH_RATE_LIMIT_MFA_STEP_UP_IP_WINDOW" envDefault:"15m"`
+		MFAResetEmailMax              int           `env:"AUTH_RATE_LIMIT_MFA_RESET_EMAIL_MAX" envDefault:"3"`
+		MFAResetEmailWindow           time.Duration `env:"AUTH_RATE_LIMIT_MFA_RESET_EMAIL_WINDOW" envDefault:"1h"`
+		MFAResetIPMax                 int           `env:"AUTH_RATE_LIMIT_MFA_RESET_IP_MAX" envDefault:"10"`
+		MFAResetIPWindow              time.Duration `env:"AUTH_RATE_LIMIT_MFA_RESET_IP_WINDOW" envDefault:"1h"`
+	}
+
+	// MFA (A-3) -.
+	mfa struct {
+		// StepUpTTL is how long a proven second factor keeps a session
+		// "fresh" for destructive admin routes.
+		StepUpTTL time.Duration `env:"MFA_STEP_UP_TTL" envDefault:"10m"`
+		// EnrollmentGrace is how long an MFA-mandated role may operate
+		// without enrolling, counted per-account from mfa_enforced_from.
+		EnrollmentGrace time.Duration `env:"MFA_ENROLLMENT_GRACE" envDefault:"168h"`
+		ChallengeTTL    time.Duration `env:"MFA_CHALLENGE_TTL" envDefault:"5m"`
+		ResetTTL        time.Duration `env:"MFA_RESET_TTL" envDefault:"15m"`
+		TOTPIssuer      string        `env:"MFA_TOTP_ISSUER" envDefault:"Surau"`
+		// EncryptionKey seals TOTP secrets at rest. Empty = derive from
+		// JWT_SECRET (set a dedicated key in prod so JWT rotation cannot
+		// orphan MFA secrets).
+		EncryptionKey string `env:"MFA_ENCRYPTION_KEY"`
 	}
 
 	// AuthLockout -.
@@ -403,6 +457,10 @@ func NewConfig() (*Config, error) {
 
 	if cfg.AuthAlert.Enabled && cfg.AuthAlert.Interval <= 0 {
 		return nil, configError("AUTH_ALERT_INTERVAL must be positive")
+	}
+
+	if err := validateMFA(cfg.MFA); err != nil {
+		return nil, err
 	}
 	cfg.Email.CloudflareAccountID = strings.TrimSpace(cfg.Email.CloudflareAccountID)
 	cfg.Email.CloudflareAPIToken = strings.TrimSpace(cfg.Email.CloudflareAPIToken)
