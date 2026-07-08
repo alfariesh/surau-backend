@@ -32,7 +32,7 @@ func (r *V1) editorialListBooks(ctx *fiber.Ctx) error {
 		queryInt(ctx, "offset", 0),
 	)
 	if err != nil {
-		r.logEditorialError(err, "restapi - v1 - editorialListBooks")
+		r.logEditorialError(ctx, err, "restapi - v1 - editorialListBooks")
 		if errors.Is(err, entity.ErrInvalidStatus) {
 			return errorResponse(ctx, http.StatusBadRequest, "invalid status")
 		}
@@ -72,7 +72,7 @@ func (r *V1) editorialUpdatePublication(ctx *fiber.Ctx) error {
 		body.SortOrder,
 	)
 	if err != nil {
-		r.logEditorialError(err, "restapi - v1 - editorialUpdatePublication")
+		r.logEditorialError(ctx, err, "restapi - v1 - editorialUpdatePublication")
 
 		return r.editorialError(ctx, err)
 	}
@@ -102,7 +102,7 @@ func (r *V1) editorialAddCollectionItem(ctx *fiber.Ctx) error {
 
 	item, err := r.editorial.AddCollectionItem(ctx.UserContext(), actorID, slug, body.BookID, body.SortOrder)
 	if err != nil {
-		r.logEditorialError(err, "restapi - v1 - editorialAddCollectionItem")
+		r.logEditorialError(ctx, err, "restapi - v1 - editorialAddCollectionItem")
 
 		return r.editorialError(ctx, err)
 	}

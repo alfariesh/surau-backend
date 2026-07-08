@@ -30,7 +30,7 @@ func (r *V1) editorialListTranslationFeedbacks(ctx *fiber.Ctx) error {
 		queryInt(ctx, "offset", 0),
 	)
 	if err != nil {
-		r.logEditorialError(err, "restapi - v1 - editorialListTranslationFeedbacks")
+		r.logEditorialError(ctx, err, "restapi - v1 - editorialListTranslationFeedbacks")
 
 		return r.editorialError(ctx, err)
 	}
@@ -59,7 +59,7 @@ func (r *V1) editorialTranslationFeedbackSummary(ctx *fiber.Ctx) error {
 		queryInt(ctx, "limit", 20),
 	)
 	if err != nil {
-		r.logEditorialError(err, "restapi - v1 - editorialTranslationFeedbackSummary")
+		r.logEditorialError(ctx, err, "restapi - v1 - editorialTranslationFeedbackSummary")
 
 		return r.editorialError(ctx, err)
 	}
@@ -91,7 +91,7 @@ func (r *V1) editorialResolveTranslationFeedback(ctx *fiber.Ctx) error {
 
 	feedback, err := r.editorial.ResolveTranslationFeedback(ctx.UserContext(), actorID, feedbackID, body.Note)
 	if err != nil {
-		r.logEditorialError(err, "restapi - v1 - editorialResolveTranslationFeedback")
+		r.logEditorialError(ctx, err, "restapi - v1 - editorialResolveTranslationFeedback")
 
 		return r.editorialError(ctx, err)
 	}
@@ -112,7 +112,7 @@ func (r *V1) editorialReopenTranslationFeedback(ctx *fiber.Ctx) error {
 
 	feedback, err := r.editorial.ReopenTranslationFeedback(ctx.UserContext(), actorID, feedbackID)
 	if err != nil {
-		r.logEditorialError(err, "restapi - v1 - editorialReopenTranslationFeedback")
+		r.logEditorialError(ctx, err, "restapi - v1 - editorialReopenTranslationFeedback")
 
 		return r.editorialError(ctx, err)
 	}

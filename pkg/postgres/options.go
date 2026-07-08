@@ -1,6 +1,10 @@
 package postgres
 
-import "time"
+import (
+	"time"
+
+	"github.com/jackc/pgx/v5"
+)
 
 // Option -.
 type Option func(*Postgres)
@@ -37,5 +41,12 @@ func MaxConnLifetime(lifetime time.Duration) Option {
 func MaxConnIdleTime(idle time.Duration) Option {
 	return func(c *Postgres) {
 		c.maxConnIdleTime = idle
+	}
+}
+
+// QueryTracer instruments every pooled connection (e.g. otelpgx for spans).
+func QueryTracer(tracer pgx.QueryTracer) Option {
+	return func(c *Postgres) {
+		c.queryTracer = tracer
 	}
 }

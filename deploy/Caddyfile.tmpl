@@ -20,6 +20,12 @@
 		reverse_proxy 127.0.0.1:8090
 	}
 
+	# Grafana health dashboard (observability profile). Grafana serves from the
+	# /grafana sub-path (GF_SERVER_SERVE_FROM_SUB_PATH) and enforces its own login.
+	handle /grafana* {
+		reverse_proxy 127.0.0.1:3000
+	}
+
 	# Everything else -> the Go API.
 	reverse_proxy 127.0.0.1:8080
 }

@@ -28,7 +28,7 @@ for u in "${units[@]}"; do
   install -m 0644 "${SRC_DIR}/${u}" "/etc/systemd/system/${u}"
 done
 
-mkdir -p /etc/surau-backup /var/backups/surau/postgres
+mkdir -p /etc/surau-backup /var/backups/surau/postgres /var/lib/node_exporter/textfile
 chmod 700 /etc/surau-backup
 
 systemctl daemon-reload

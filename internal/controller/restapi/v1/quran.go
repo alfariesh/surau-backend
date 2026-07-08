@@ -36,7 +36,7 @@ func (r *V1) listQuranSurahs(ctx *fiber.Ctx) error {
 
 	surahs, err := r.quran.Surahs(ctx.UserContext(), ctx.Query("lang"), includeInfo)
 	if err != nil {
-		r.logQuranError(err, "restapi - v1 - listQuranSurahs")
+		r.logQuranError(ctx, err, "restapi - v1 - listQuranSurahs")
 
 		return r.quranErrorResponse(ctx, err)
 	}
@@ -64,7 +64,7 @@ func (r *V1) getQuranSurah(ctx *fiber.Ctx) error {
 
 	surah, err := r.quran.Surah(ctx.UserContext(), surahID, ctx.Query("lang"))
 	if err != nil {
-		r.logQuranError(err, "restapi - v1 - getQuranSurah")
+		r.logQuranError(ctx, err, "restapi - v1 - getQuranSurah")
 
 		return r.quranErrorResponse(ctx, err)
 	}
@@ -111,7 +111,7 @@ func (r *V1) getQuranSurahAudio(ctx *fiber.Ctx) error {
 
 	manifest, err := r.quran.SurahAudio(ctx.UserContext(), surahID, ctx.Query("recitation_id"))
 	if err != nil {
-		r.logQuranError(err, "restapi - v1 - getQuranSurahAudio")
+		r.logQuranError(ctx, err, "restapi - v1 - getQuranSurahAudio")
 
 		return r.quranErrorResponse(ctx, err)
 	}
@@ -132,7 +132,7 @@ func (r *V1) getQuranSurahAudio(ctx *fiber.Ctx) error {
 func (r *V1) listQuranTranslationSources(ctx *fiber.Ctx) error {
 	sources, err := r.quran.TranslationSources(ctx.UserContext(), ctx.Query("lang"))
 	if err != nil {
-		r.logQuranError(err, "restapi - v1 - listQuranTranslationSources")
+		r.logQuranError(ctx, err, "restapi - v1 - listQuranTranslationSources")
 
 		return r.quranErrorResponse(ctx, err)
 	}
@@ -153,7 +153,7 @@ func (r *V1) listQuranTranslationSources(ctx *fiber.Ctx) error {
 func (r *V1) listQuranJuz(ctx *fiber.Ctx) error {
 	segments, err := r.quran.Juz(ctx.UserContext(), ctx.Query("lang"))
 	if err != nil {
-		r.logQuranError(err, "restapi - v1 - listQuranJuz")
+		r.logQuranError(ctx, err, "restapi - v1 - listQuranJuz")
 
 		return r.quranErrorResponse(ctx, err)
 	}
@@ -206,7 +206,7 @@ func (r *V1) listQuranJuzAyahs(ctx *fiber.Ctx) error {
 func (r *V1) listQuranHizbs(ctx *fiber.Ctx) error {
 	segments, err := r.quran.Hizbs(ctx.UserContext(), ctx.Query("lang"))
 	if err != nil {
-		r.logQuranError(err, "restapi - v1 - listQuranHizbs")
+		r.logQuranError(ctx, err, "restapi - v1 - listQuranHizbs")
 
 		return r.quranErrorResponse(ctx, err)
 	}
@@ -277,7 +277,7 @@ func (r *V1) getQuranAyah(ctx *fiber.Ctx) error {
 		ctx.Query("recitation_id"),
 	)
 	if err != nil {
-		r.logQuranError(err, "restapi - v1 - getQuranAyah")
+		r.logQuranError(ctx, err, "restapi - v1 - getQuranAyah")
 
 		return r.quranErrorResponse(ctx, err)
 	}
@@ -362,7 +362,7 @@ func (r *V1) listQuranSurahAyahs(ctx *fiber.Ctx) error {
 		ctx.Query("recitation_id"),
 	)
 	if err != nil {
-		r.logQuranError(err, "restapi - v1 - listQuranSurahAyahs")
+		r.logQuranError(ctx, err, "restapi - v1 - listQuranSurahAyahs")
 
 		return r.quranErrorResponse(ctx, err)
 	}
@@ -392,7 +392,7 @@ func (r *V1) searchQuran(ctx *fiber.Ctx) error {
 		queryInt(ctx, "offset", 0),
 	)
 	if err != nil {
-		r.logQuranError(err, "restapi - v1 - searchQuran")
+		r.logQuranError(ctx, err, "restapi - v1 - searchQuran")
 
 		return r.quranErrorResponse(ctx, err)
 	}
@@ -440,7 +440,7 @@ func (r *V1) listBookQuranReferences(ctx *fiber.Ctx) error {
 		queryInt(ctx, "offset", 0),
 	)
 	if err != nil {
-		r.logQuranError(err, "restapi - v1 - listBookQuranReferences")
+		r.logQuranError(ctx, err, "restapi - v1 - listBookQuranReferences")
 
 		return r.quranErrorResponse(ctx, err)
 	}
@@ -497,7 +497,7 @@ func (r *V1) quranNavigationAyahs(
 		ctx.Query("recitation_id"),
 	)
 	if err != nil {
-		r.logQuranError(err, operation)
+		r.logQuranError(ctx, err, operation)
 
 		return nil, "", false, r.quranErrorResponse(ctx, err)
 	}

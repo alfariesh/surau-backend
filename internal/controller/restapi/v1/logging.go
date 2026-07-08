@@ -3,34 +3,43 @@ package v1
 import (
 	"errors"
 
+	"github.com/alfariesh/surau-backend/internal/controller/restapi/middleware"
 	"github.com/alfariesh/surau-backend/internal/entity"
+	"github.com/alfariesh/surau-backend/pkg/logger"
+	"github.com/gofiber/fiber/v2"
 )
 
-func (r *V1) logReaderError(err error, operation string) {
+// reqLog returns the request-scoped logger (request_id + trace_id stamped by
+// middleware.TraceContext), falling back to the base logger outside a request.
+func (r *V1) reqLog(ctx *fiber.Ctx) logger.Interface {
+	return middleware.RequestLogger(ctx, r.l)
+}
+
+func (r *V1) logReaderError(ctx *fiber.Ctx, err error, operation string) {
 	if isExpectedReaderError(err) {
-		r.l.Warn("%s: %s", operation, err)
+		r.reqLog(ctx).Warn("%s: %s", operation, err)
 		return
 	}
 
-	r.l.Error(err, operation)
+	r.reqLog(ctx).Error(err, operation)
 }
 
-func (r *V1) logEditorialError(err error, operation string) {
+func (r *V1) logEditorialError(ctx *fiber.Ctx, err error, operation string) {
 	if isExpectedEditorialError(err) {
-		r.l.Warn("%s: %s", operation, err)
+		r.reqLog(ctx).Warn("%s: %s", operation, err)
 		return
 	}
 
-	r.l.Error(err, operation)
+	r.reqLog(ctx).Error(err, operation)
 }
 
-func (r *V1) logQuranError(err error, operation string) {
+func (r *V1) logQuranError(ctx *fiber.Ctx, err error, operation string) {
 	if isExpectedQuranError(err) {
-		r.l.Warn("%s: %s", operation, err)
+		r.reqLog(ctx).Warn("%s: %s", operation, err)
 		return
 	}
 
-	r.l.Error(err, operation)
+	r.reqLog(ctx).Error(err, operation)
 }
 
 func isExpectedReaderError(err error) bool {

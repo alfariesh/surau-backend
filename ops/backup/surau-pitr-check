@@ -14,7 +14,18 @@ DEPLOY_PATH="${DEPLOY_PATH:-/srv/surau/backend}"
 COMPOSE_ENV_FILE="${COMPOSE_ENV_FILE:-.env.production}"
 COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.prod.yml}"
 
+
+write_heartbeat_metric() {
+  # Textfile metric for node_exporter (F1-B): the Grafana "backup heartbeat"
+  # alert reads this; the S1 Telegram watchdog stays as the second layer.
+  local name="$1" dir="${NODE_TEXTFILE_DIR:-/var/lib/node_exporter/textfile}"
+  [[ -d "$dir" ]] || return 0
+  printf '# TYPE %s gauge\n%s %s\n' "$name" "$name" "$(date +%s)" >"${dir}/${name}.prom.tmp" \
+    && mv "${dir}/${name}.prom.tmp" "${dir}/${name}.prom"
+}
+
 cd "$DEPLOY_PATH"
 sudo docker compose --env-file "$COMPOSE_ENV_FILE" -f "$COMPOSE_FILE" exec -T -u postgres db \
   pgbackrest --stanza=main check </dev/null
 echo "pgbackrest check passed"
+write_heartbeat_metric surau_pitr_check_last_success_timestamp

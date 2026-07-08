@@ -1,0 +1,19 @@
+# Telegram contact point (operator decision O-F1-1). Token/chat id come from
+# the container environment (.env.production on the host) — Grafana
+# provisioning expands $VARS at load time.
+apiVersion: 1
+
+contactPoints:
+  - orgId: 1
+    name: telegram-salman
+    receivers:
+      - uid: telegram-salman
+        type: telegram
+        settings:
+          bottoken: $TELEGRAM_BOT_TOKEN
+          chatid: "$TELEGRAM_CHAT_ID"
+          message: |-
+            {{ if eq .Status "firing" }}🚨{{ else }}✅{{ end }} [$OBS_ENV_LABEL] {{ .Status | toUpper }}
+            {{ range .Alerts }}{{ .Labels.alertname }}: {{ .Annotations.summary }}
+            {{ end }}
+        disableResolveMessage: false

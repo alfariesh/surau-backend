@@ -63,7 +63,7 @@ func (r *V1) editorialListProductionCandidates(ctx *fiber.Ctx) error {
 		queryInt(ctx, "offset", 0),
 	)
 	if err != nil {
-		r.logEditorialError(err, "restapi - v1 - editorialListProductionCandidates")
+		r.logEditorialError(ctx, err, "restapi - v1 - editorialListProductionCandidates")
 
 		return r.editorialError(ctx, err)
 	}
@@ -92,7 +92,7 @@ func (r *V1) editorialProductionDashboard(ctx *fiber.Ctx) error {
 		queryInt(ctx, "activity_limit", 20),
 	)
 	if err != nil {
-		r.logEditorialError(err, "restapi - v1 - editorialProductionDashboard")
+		r.logEditorialError(ctx, err, "restapi - v1 - editorialProductionDashboard")
 
 		return r.editorialError(ctx, err)
 	}
@@ -123,7 +123,7 @@ func (r *V1) editorialGlobalProductionActivity(ctx *fiber.Ctx) error {
 		queryInt(ctx, "offset", 0),
 	)
 	if err != nil {
-		r.logEditorialError(err, "restapi - v1 - editorialGlobalProductionActivity")
+		r.logEditorialError(ctx, err, "restapi - v1 - editorialGlobalProductionActivity")
 
 		return r.editorialError(ctx, err)
 	}
@@ -177,7 +177,7 @@ func (r *V1) editorialCreateProductionProject(ctx *fiber.Ctx) error {
 		Notes:          body.Notes,
 	})
 	if err != nil {
-		r.logEditorialError(err, "restapi - v1 - editorialCreateProductionProject")
+		r.logEditorialError(ctx, err, "restapi - v1 - editorialCreateProductionProject")
 
 		return r.editorialError(ctx, err)
 	}
@@ -231,7 +231,7 @@ func (r *V1) editorialListProductionProjects(ctx *fiber.Ctx) error {
 		queryInt(ctx, "offset", 0),
 	)
 	if err != nil {
-		r.logEditorialError(err, "restapi - v1 - editorialListProductionProjects")
+		r.logEditorialError(ctx, err, "restapi - v1 - editorialListProductionProjects")
 
 		return r.editorialError(ctx, err)
 	}
@@ -255,7 +255,7 @@ func (r *V1) editorialListProductionProjects(ctx *fiber.Ctx) error {
 func (r *V1) editorialGetProductionProject(ctx *fiber.Ctx) error {
 	project, err := r.editorial.ProductionProject(ctx.UserContext(), ctx.Params("id"))
 	if err != nil {
-		r.logEditorialError(err, "restapi - v1 - editorialGetProductionProject")
+		r.logEditorialError(ctx, err, "restapi - v1 - editorialGetProductionProject")
 
 		return r.editorialError(ctx, err)
 	}
@@ -279,7 +279,7 @@ func (r *V1) editorialGetProductionProject(ctx *fiber.Ctx) error {
 func (r *V1) editorialProductionWorkspace(ctx *fiber.Ctx) error {
 	workspace, err := r.editorial.ProductionWorkspace(ctx.UserContext(), ctx.Params("id"))
 	if err != nil {
-		r.logEditorialError(err, "restapi - v1 - editorialProductionWorkspace")
+		r.logEditorialError(ctx, err, "restapi - v1 - editorialProductionWorkspace")
 
 		return r.editorialError(ctx, err)
 	}
@@ -310,7 +310,7 @@ func (r *V1) editorialProductionActivity(ctx *fiber.Ctx) error {
 		queryInt(ctx, "offset", 0),
 	)
 	if err != nil {
-		r.logEditorialError(err, "restapi - v1 - editorialProductionActivity")
+		r.logEditorialError(ctx, err, "restapi - v1 - editorialProductionActivity")
 
 		return r.editorialError(ctx, err)
 	}
@@ -351,7 +351,7 @@ func (r *V1) editorialListProductionDraftRevisions(ctx *fiber.Ctx) error {
 		queryInt(ctx, "offset", 0),
 	)
 	if err != nil {
-		r.logEditorialError(err, "restapi - v1 - editorialListProductionDraftRevisions")
+		r.logEditorialError(ctx, err, "restapi - v1 - editorialListProductionDraftRevisions")
 
 		return r.editorialError(ctx, err)
 	}
@@ -387,7 +387,7 @@ func (r *V1) editorialRestoreProductionDraftRevision(ctx *fiber.Ctx) error {
 		ctx.Params("revision_id"),
 	)
 	if err != nil {
-		r.logEditorialError(err, "restapi - v1 - editorialRestoreProductionDraftRevision")
+		r.logEditorialError(ctx, err, "restapi - v1 - editorialRestoreProductionDraftRevision")
 
 		return r.editorialError(ctx, err)
 	}
@@ -411,7 +411,7 @@ func (r *V1) editorialRestoreProductionDraftRevision(ctx *fiber.Ctx) error {
 func (r *V1) editorialProductionPublishCheck(ctx *fiber.Ctx) error {
 	check, err := r.editorial.ProductionPublishCheck(ctx.UserContext(), ctx.Params("id"))
 	if err != nil {
-		r.logEditorialError(err, "restapi - v1 - editorialProductionPublishCheck")
+		r.logEditorialError(ctx, err, "restapi - v1 - editorialProductionPublishCheck")
 
 		return r.editorialError(ctx, err)
 	}
@@ -463,7 +463,7 @@ func (r *V1) editorialUpdateProductionProject(ctx *fiber.Ctx) error {
 		Notes:          body.Notes,
 	}, expected)
 	if err != nil {
-		r.logEditorialError(err, "restapi - v1 - editorialUpdateProductionProject")
+		r.logEditorialError(ctx, err, "restapi - v1 - editorialUpdateProductionProject")
 
 		return r.editorialError(ctx, err)
 	}
@@ -487,7 +487,7 @@ func (r *V1) editorialUpdateProductionProject(ctx *fiber.Ctx) error {
 func (r *V1) editorialProductionCompleteness(ctx *fiber.Ctx) error {
 	completeness, err := r.editorial.ProductionCompleteness(ctx.UserContext(), ctx.Params("id"))
 	if err != nil {
-		r.logEditorialError(err, "restapi - v1 - editorialProductionCompleteness")
+		r.logEditorialError(ctx, err, "restapi - v1 - editorialProductionCompleteness")
 
 		return r.editorialError(ctx, err)
 	}
@@ -558,7 +558,7 @@ func (r *V1) editorialSaveMetadataTranslationDraft(ctx *fiber.Ctx) error {
 		Metadata:     entity.RawJSON(body.Metadata),
 	}, expected)
 	if err != nil {
-		r.logEditorialError(err, "restapi - v1 - editorialSaveMetadataTranslationDraft")
+		r.logEditorialError(ctx, err, "restapi - v1 - editorialSaveMetadataTranslationDraft")
 
 		return r.editorialError(ctx, err)
 	}
@@ -647,7 +647,7 @@ func (r *V1) editorialSaveAuthorTranslationDraft(ctx *fiber.Ctx) error {
 		Metadata:  entity.RawJSON(body.Metadata),
 	}, expected)
 	if err != nil {
-		r.logEditorialError(err, "restapi - v1 - editorialSaveAuthorTranslationDraft")
+		r.logEditorialError(ctx, err, "restapi - v1 - editorialSaveAuthorTranslationDraft")
 
 		return r.editorialError(ctx, err)
 	}
@@ -734,7 +734,7 @@ func (r *V1) editorialSaveCategoryTranslationDraft(ctx *fiber.Ctx) error {
 		Metadata: entity.RawJSON(body.Metadata),
 	}, expected)
 	if err != nil {
-		r.logEditorialError(err, "restapi - v1 - editorialSaveCategoryTranslationDraft")
+		r.logEditorialError(ctx, err, "restapi - v1 - editorialSaveCategoryTranslationDraft")
 
 		return r.editorialError(ctx, err)
 	}
@@ -831,7 +831,7 @@ func (r *V1) editorialSaveSectionTranslationDraft(ctx *fiber.Ctx) error {
 		Metadata:  entity.RawJSON(body.Metadata),
 	}, expected)
 	if err != nil {
-		r.logEditorialError(err, "restapi - v1 - editorialSaveSectionTranslationDraft")
+		r.logEditorialError(ctx, err, "restapi - v1 - editorialSaveSectionTranslationDraft")
 
 		return r.editorialError(ctx, err)
 	}
@@ -929,7 +929,7 @@ func (r *V1) editorialSaveHeadingSummaryDraft(ctx *fiber.Ctx) error {
 		Metadata:  entity.RawJSON(body.Metadata),
 	}, expected)
 	if err != nil {
-		r.logEditorialError(err, "restapi - v1 - editorialSaveHeadingSummaryDraft")
+		r.logEditorialError(ctx, err, "restapi - v1 - editorialSaveHeadingSummaryDraft")
 
 		return r.editorialError(ctx, err)
 	}
@@ -1029,7 +1029,7 @@ func (r *V1) editorialSaveSectionAudioDraft(ctx *fiber.Ctx) error {
 		Metadata:        entity.RawJSON(body.Metadata),
 	}, expected)
 	if err != nil {
-		r.logEditorialError(err, "restapi - v1 - editorialSaveSectionAudioDraft")
+		r.logEditorialError(ctx, err, "restapi - v1 - editorialSaveSectionAudioDraft")
 
 		return r.editorialError(ctx, err)
 	}
@@ -1095,7 +1095,7 @@ func (r *V1) editorialReviewProductionAsset(ctx *fiber.Ctx) error {
 		body.Note,
 	)
 	if err != nil {
-		r.logEditorialError(err, "restapi - v1 - editorialReviewProductionAsset")
+		r.logEditorialError(ctx, err, "restapi - v1 - editorialReviewProductionAsset")
 
 		return r.editorialError(ctx, err)
 	}
@@ -1131,7 +1131,7 @@ func (r *V1) editorialPublishProductionProject(ctx *fiber.Ctx) error {
 
 	project, err := r.editorial.PublishProductionProject(ctx.UserContext(), actorID, ctx.Params("id"), expected)
 	if err != nil {
-		r.logEditorialError(err, "restapi - v1 - editorialPublishProductionProject")
+		r.logEditorialError(ctx, err, "restapi - v1 - editorialPublishProductionProject")
 		if errors.Is(err, entity.ErrProductionNotReady) {
 			check, checkErr := r.editorial.ProductionPublishCheck(ctx.UserContext(), ctx.Params("id"))
 			if checkErr == nil {
@@ -1140,7 +1140,7 @@ func (r *V1) editorialPublishProductionProject(ctx *fiber.Ctx) error {
 				)
 			}
 
-			r.logEditorialError(checkErr, "restapi - v1 - editorialPublishProductionProject - publishCheck")
+			r.logEditorialError(ctx, checkErr, "restapi - v1 - editorialPublishProductionProject - publishCheck")
 		}
 
 		return r.editorialError(ctx, err)
@@ -1175,7 +1175,7 @@ func (r *V1) editorialUnpublishProductionProject(ctx *fiber.Ctx) error {
 
 	project, err := r.editorial.UnpublishProductionProject(ctx.UserContext(), actorID, ctx.Params("id"), expected)
 	if err != nil {
-		r.logEditorialError(err, "restapi - v1 - editorialUnpublishProductionProject")
+		r.logEditorialError(ctx, err, "restapi - v1 - editorialUnpublishProductionProject")
 
 		return r.editorialError(ctx, err)
 	}
@@ -1221,7 +1221,7 @@ func (r *V1) editorialDeleteFinalProductionAsset(ctx *fiber.Ctx) error {
 		body.Reason,
 	)
 	if err != nil {
-		r.logEditorialError(err, "restapi - v1 - editorialDeleteFinalProductionAsset")
+		r.logEditorialError(ctx, err, "restapi - v1 - editorialDeleteFinalProductionAsset")
 
 		return r.editorialError(ctx, err)
 	}
@@ -1273,7 +1273,7 @@ func (r *V1) editorialDeleteFinalHeadingProductionAsset(ctx *fiber.Ctx) error {
 		body.Reason,
 	)
 	if err != nil {
-		r.logEditorialError(err, "restapi - v1 - editorialDeleteFinalHeadingProductionAsset")
+		r.logEditorialError(ctx, err, "restapi - v1 - editorialDeleteFinalHeadingProductionAsset")
 
 		return r.editorialError(ctx, err)
 	}

@@ -59,6 +59,16 @@ write_rclone_config() {
   echo "$config"
 }
 
+
+write_heartbeat_metric() {
+  # Textfile metric for node_exporter (F1-B): the Grafana "backup heartbeat"
+  # alert reads this; the S1 Telegram watchdog stays as the second layer.
+  local name="$1" dir="${NODE_TEXTFILE_DIR:-/var/lib/node_exporter/textfile}"
+  [[ -d "$dir" ]] || return 0
+  printf '# TYPE %s gauge\n%s %s\n' "$name" "$name" "$(date +%s)" >"${dir}/${name}.prom.tmp" \
+    && mv "${dir}/${name}.prom.tmp" "${dir}/${name}.prom"
+}
+
 main() {
   require DEPLOY_PATH
   require R2_BUCKET
@@ -116,6 +126,7 @@ main() {
   find "$BACKUP_DIR" -type f \( -name '*.dump.zst' -o -name '*.dump.zst.age' -o -name '*.sha256' \) -mtime +"$LOCAL_RETENTION_DAYS" -delete
 
   echo "backup uploaded: r2://${R2_BUCKET}/${object_prefix}/${base}"
+  write_heartbeat_metric surau_backup_last_success_timestamp
 }
 
 main "$@"

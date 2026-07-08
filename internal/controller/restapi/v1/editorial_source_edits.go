@@ -32,7 +32,7 @@ func (r *V1) editorialGetMetadataDraft(ctx *fiber.Ctx) error {
 
 	edit, err := r.editorial.GetMetadataDraft(ctx.UserContext(), bookID)
 	if err != nil {
-		r.logEditorialError(err, "restapi - v1 - editorialGetMetadataDraft")
+		r.logEditorialError(ctx, err, "restapi - v1 - editorialGetMetadataDraft")
 
 		return r.editorialError(ctx, err)
 	}
@@ -76,7 +76,7 @@ func (r *V1) editorialSaveMetadataDraft(ctx *fiber.Ctx) error {
 		Notes:        body.Notes,
 	}, expected, entity.EditOriginREST)
 	if err != nil {
-		r.logEditorialError(err, "restapi - v1 - editorialSaveMetadataDraft")
+		r.logEditorialError(ctx, err, "restapi - v1 - editorialSaveMetadataDraft")
 
 		return r.editorialError(ctx, err)
 	}
@@ -102,7 +102,7 @@ func (r *V1) editorialPublishMetadataDraft(ctx *fiber.Ctx) error {
 
 	edit, err := r.editorial.PublishMetadataDraft(ctx.UserContext(), actorID, bookID, expected)
 	if err != nil {
-		r.logEditorialError(err, "restapi - v1 - editorialPublishMetadataDraft")
+		r.logEditorialError(ctx, err, "restapi - v1 - editorialPublishMetadataDraft")
 
 		return r.editorialError(ctx, err)
 	}
@@ -118,7 +118,7 @@ func (r *V1) editorialGetPageEdit(ctx *fiber.Ctx) error {
 
 	edit, err := r.editorial.GetPageEdit(ctx.UserContext(), bookID, pageID)
 	if err != nil {
-		r.logEditorialError(err, "restapi - v1 - editorialGetPageEdit")
+		r.logEditorialError(ctx, err, "restapi - v1 - editorialGetPageEdit")
 
 		return r.editorialError(ctx, err)
 	}
@@ -157,7 +157,7 @@ func (r *V1) editorialSavePageDraft(ctx *fiber.Ctx) error {
 		ContentHTML: body.ContentHTML,
 	}, expected, entity.EditOriginREST)
 	if err != nil {
-		r.logEditorialError(err, "restapi - v1 - editorialSavePageDraft")
+		r.logEditorialError(ctx, err, "restapi - v1 - editorialSavePageDraft")
 
 		return r.editorialError(ctx, err)
 	}
@@ -183,7 +183,7 @@ func (r *V1) editorialPublishPageDraft(ctx *fiber.Ctx) error {
 
 	edit, err := r.editorial.PublishPageDraft(ctx.UserContext(), actorID, bookID, pageID, expected)
 	if err != nil {
-		r.logEditorialError(err, "restapi - v1 - editorialPublishPageDraft")
+		r.logEditorialError(ctx, err, "restapi - v1 - editorialPublishPageDraft")
 
 		return r.editorialError(ctx, err)
 	}
@@ -214,7 +214,7 @@ func (r *V1) editorialGetHeadingDraft(ctx *fiber.Ctx) error {
 
 	edit, err := r.editorial.GetHeadingDraft(ctx.UserContext(), bookID, headingID)
 	if err != nil {
-		r.logEditorialError(err, "restapi - v1 - editorialGetHeadingDraft")
+		r.logEditorialError(ctx, err, "restapi - v1 - editorialGetHeadingDraft")
 
 		return r.editorialError(ctx, err)
 	}
@@ -253,7 +253,7 @@ func (r *V1) editorialSaveHeadingDraft(ctx *fiber.Ctx) error {
 		Content:   body.Content,
 	}, expected, entity.EditOriginREST)
 	if err != nil {
-		r.logEditorialError(err, "restapi - v1 - editorialSaveHeadingDraft")
+		r.logEditorialError(ctx, err, "restapi - v1 - editorialSaveHeadingDraft")
 
 		return r.editorialError(ctx, err)
 	}
@@ -279,7 +279,7 @@ func (r *V1) editorialPublishHeadingDraft(ctx *fiber.Ctx) error {
 
 	edit, err := r.editorial.PublishHeadingDraft(ctx.UserContext(), actorID, bookID, headingID, expected)
 	if err != nil {
-		r.logEditorialError(err, "restapi - v1 - editorialPublishHeadingDraft")
+		r.logEditorialError(ctx, err, "restapi - v1 - editorialPublishHeadingDraft")
 
 		return r.editorialError(ctx, err)
 	}
@@ -321,7 +321,7 @@ func (r *V1) editorialListPageDraftRevisions(ctx *fiber.Ctx) error {
 		queryInt(ctx, "offset", 0),
 	)
 	if err != nil {
-		r.logEditorialError(err, "restapi - v1 - editorialListPageDraftRevisions")
+		r.logEditorialError(ctx, err, "restapi - v1 - editorialListPageDraftRevisions")
 
 		return r.editorialError(ctx, err)
 	}
@@ -358,7 +358,7 @@ func (r *V1) editorialRestorePageDraftRevision(ctx *fiber.Ctx) error {
 
 	edit, err := r.editorial.RestorePageDraftRevision(ctx.UserContext(), actorID, bookID, pageID, ctx.Params("revision_id"))
 	if err != nil {
-		r.logEditorialError(err, "restapi - v1 - editorialRestorePageDraftRevision")
+		r.logEditorialError(ctx, err, "restapi - v1 - editorialRestorePageDraftRevision")
 
 		return r.editorialError(ctx, err)
 	}

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/alfariesh/surau-backend/internal/entity"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 // OpenAICompatibleOptions configures a chat-completions-compatible LLM.
@@ -48,7 +49,7 @@ func NewOpenAICompatibleClient(opts OpenAICompatibleOptions) *OpenAICompatibleCl
 		model:       opts.Model,
 		maxTokens:   opts.MaxTokens,
 		temperature: opts.Temperature,
-		httpClient:  &http.Client{Timeout: timeout},
+		httpClient:  &http.Client{Timeout: timeout, Transport: otelhttp.NewTransport(http.DefaultTransport)},
 	}
 }
 

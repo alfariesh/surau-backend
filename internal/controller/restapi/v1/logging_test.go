@@ -9,6 +9,7 @@ import (
 
 	"github.com/alfariesh/surau-backend/internal/entity"
 	"github.com/alfariesh/surau-backend/internal/usecase"
+	"github.com/alfariesh/surau-backend/pkg/logger"
 	"github.com/go-playground/validator/v10"
 	"github.com/gofiber/fiber/v2"
 	"github.com/stretchr/testify/assert"
@@ -189,3 +190,5 @@ func (s *spyLogger) Info(string, ...any) {}
 func (s *spyLogger) Warn(string, ...any) { s.warnCount++ }
 func (s *spyLogger) Error(any, ...any)   { s.errorCount++ }
 func (s *spyLogger) Fatal(any, ...any)   { s.errorCount++ }
+
+func (s *spyLogger) WithField(string, any) logger.Interface { return s }

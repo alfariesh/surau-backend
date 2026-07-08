@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/alfariesh/surau-backend/internal/entity"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 const defaultOneSignalBaseURL = "https://api.onesignal.com"
@@ -47,7 +48,7 @@ func NewOneSignalClient(opts OneSignalOptions) *OneSignalClient {
 		baseURL:    baseURL,
 		appID:      opts.AppID,
 		restAPIKey: opts.RESTAPIKey,
-		httpClient: &http.Client{Timeout: timeout},
+		httpClient: &http.Client{Timeout: timeout, Transport: otelhttp.NewTransport(http.DefaultTransport)},
 	}
 }
 
