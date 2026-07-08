@@ -29,7 +29,9 @@ func TestInitTracingEnabled(t *testing.T) {
 	defer cancel()
 
 	// Shutdown may fail on flush (nothing listening) — only assert it returns.
-	_ = shutdown(ctx)
+	if err := shutdown(ctx); err != nil {
+		t.Logf("shutdown flush error (expected, no collector): %v", err)
+	}
 }
 
 func TestInitTracingDisabledIsNoop(t *testing.T) {
