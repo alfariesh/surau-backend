@@ -83,7 +83,10 @@ Masuk PLAN MODE dulu; rencana wajib menyebut cara memenuhi setiap Acceptance Cri
   kini punya tombol kirim-ulang admin (`POST /admin/emails/messages/{id}/resend`, drill dev sukses);
   playbook `docs/data-change-playbook.md` lahir + runner backfill resumable (`/backfill` di image app,
   metrik `surau_backfill_*`) dipakai backfill nyata `authors-name-search` — pencarian penulis
-  `q=احمد` naik 19 → 1.087 hasil; pause→resume terbukti tanpa kehilangan progres.
+  `q=احمد` naik 19 → 209 hasil (192/192 nama ber-hamzah kini terjangkau ejaan polos);
+  pause→resume terbukti tanpa kehilangan progres (drill dev: pause di 500/3.187 → resume →
+  completed; endpoint publik tetap 200) dan drill dead-letter tuntas end-to-end (alert
+  Telegram menyala → resend → email tiba → alert pulih).
 
 ```text
 Kerjakan F1-C dan F1-H dari roadmap/phase-1-foundations.md: (F1-C) panic-recovery + backoff untuk 4 loop background, email gagal-final jadi dead-letter yang terlihat + bisa dikirim ulang via admin; (F1-H) playbook expand-contract + pola job backfill resumable ter-metrik yang dipakai minimal satu backfill nyata.

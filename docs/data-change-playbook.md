@@ -165,5 +165,5 @@ Pantau: Grafana → Prometheus query `surau_backfill_rows_done{job="..."}` vs `r
 
 | # | Job | Tabel | Status | Catatan |
 |---|---|---|---|---|
-| 1 | `authors-name-search` | authors (3.187 baris dev) | expand+backfill+switch hidup (S6, 2026-07-08) | Bukti produk: `/v1/authors?q=احكام` 19 → 1.000+; CONTRACT (index/NOT NULL/konsolidasi lengan translate() buku) ditunda — keputusan profil ء/ة milik B-5 |
+| 1 | `authors-name-search` | authors (3.187 baris dev) | SELESAI di dev (S6, 2026-07-08): drill pause di 500/3.187 → resume → completed; endpoint publik 200 sepanjang drill; pending=0 | Bukti produk: `/v1/authors?q=احمد` 19 → 209 hasil (192/192 nama ber-hamzah terjangkau); CONTRACT (index/NOT NULL/konsolidasi lengan translate() buku) ditunda — keputusan profil ء/ة milik B-5 |
 | 2 | (rencana) pilot Citable Unit | book_* | menunggu B-1 (SESI 11) | Pakai runner ini + checklist §7 |
