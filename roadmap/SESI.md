@@ -138,7 +138,17 @@ Kerjakan A-3 dari roadmap/phase-2-auth.md: MFA TOTP + recovery codes (wajib untu
 Masuk PLAN MODE dulu; rencana wajib menyebut cara memenuhi setiap Acceptance Criterion A-3. Setelah saya setujui: kerjakan sampai tuntas — branch fitur, test, Definition of Done, centang PROGRAM.md & SESI.md, merge, verifikasi dev-api. Laporan akhir bahasa awam + panduan singkat cara saya meng-enroll MFA akun saya.
 ```
 
-- [ ] **SESI 10 — Peran yang benar (A-1)**
+- [x] **SESI 10 — Peran yang benar (A-1)** ✅ 2026-07-09 (PR #76) — otorisasi tak lagi memakai
+  "cap admin" kasar: kini ada daftar **kapabilitas** (mis. "boleh review editorial", "boleh
+  publish", "boleh kelola pengguna") dan tiap peran adalah bundel kapabilitas, dikunci di satu
+  tempat + test kontrak. Dua peran baru: **curator** (kurasi entitas) & **scholar_reviewer**
+  (satu-satunya, selain admin, yang boleh menyetujui klaim sensitif nanti di wiki — wajib MFA).
+  Perilaku hak akses yang sudah ada tidak berubah; API ganti-peran menerima peran baru tanpa
+  merusak apa pun. Test khusus menjaga tak ada lagi pengecekan peran "diam-diam" tersebar di
+  kode. Empat kapabilitas masa-depan (klaim wiki, token layanan) sudah didaftarkan tapi belum
+  dipakai rute mana pun — menunggu fase wiki/A-2. **Gerbang W1-auth (A-1+A-3) tuntas**; sisa
+  A-4/A-5/A-6 opsional kapan saja, dan Gelombang 2 (Content Backbone) sudah boleh dimulai —
+  tapi ingat: PK-1 (lisensi) masih perlu jawabanmu sebelum SESI 15/B-4.
 
 ```text
 Kerjakan A-1 dari roadmap/phase-2-auth.md: RBAC ber-kapabilitas dengan satu titik kebijakan, peran baru curator & scholar_reviewer, semua pemeriksaan peran pindah ke kapabilitas, matriks peran×kapabilitas dibekukan dengan test kontrak, API kelola peran diperluas aditif.
