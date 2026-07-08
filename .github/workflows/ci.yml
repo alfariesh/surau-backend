@@ -119,8 +119,11 @@ jobs:
           go-version: 1.26
       - name: Unit Tests
         run: "make test"
-      - name: Upload coverage report
-        run: bash <(curl -s https://codecov.io/bash)
+      - name: Upload unit coverage profile
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-unit
+          path: coverage.txt
 
   # Runs the SURAU_LIVE_PG-gated live tests (self-seeding DB invariants: coverage_count
   # triggers, audio-import atomicity, progress double-count, default recitation, editorial
@@ -155,9 +158,145 @@ jobs:
       - name: Apply migrations
         run: migrate -path migrations -database "$PG_URL" up
       - name: Live tests
-        # -p 1 serializes the two packages so they do not race on the shared DB;
-        # -skip excludes the read-path test that expects a pre-seeded corpus.
-        run: go test -p 1 -race -run TestLive -skip TestLiveAyahEditorialReadPath ./internal/repo/persistent/ ./internal/importer/
+        # -p 1 serializes the packages so they do not race on the shared DB.
+        # internal/app runs the bootstrap smoke (F1-E AC-2); the coverage
+        # profile feeds the coverage-gate job (live-only paths like app.Run
+        # get credit there).
+        run: >-
+          go test -p 1 -race -covermode atomic -coverprofile=coverage-live.txt
+          -coverpkg=./internal/...,./pkg/...
+          -run TestLive ./internal/repo/persistent/ ./internal/importer/ ./internal/app/
+      - name: Upload live coverage profile
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-live
+          path: coverage-live.txt
+
+  # F1-E (AC-3): a PR whose NEW code is under the 70% ratchet fails. Diff
+  # coverage comes from cmd/diffcover over the union of the unit and live
+  # profiles (live-only paths like the app bootstrap still get credit); the
+  # repo-wide total is reported in the job summary and a sticky PR comment.
+  coverage-gate:
+    name: runner / coverage-gate
+    runs-on: ubuntu-latest
+    needs: [unit-tests, live-tests]
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # The gate diffs against the merge-base with the base branch, same
+          # as golangci-lint's --new-from-merge-base.
+          fetch-depth: 0
+      - uses: actions/setup-go@v6
+        with:
+          go-version: 1.26
+      - uses: actions/download-artifact@v4
+        with:
+          name: coverage-unit
+      - uses: actions/download-artifact@v4
+        with:
+          name: coverage-live
+      - name: Diff coverage gate (new code >=70%)
+        run: |
+          set -euo pipefail
+          git diff -U0 --no-color "origin/${{ github.base_ref }}...HEAD" > diff.patch
+          go run ./cmd/diffcover -diff diff.patch \
+            -profile coverage.txt -profile coverage-live.txt \
+            -threshold 70 -markdown-out diffcover.md
+      - name: Report coverage on the PR (sticky comment, best effort)
+        if: always() && github.event_name == 'pull_request'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          [ -f diffcover.md ] || exit 0
+          existing="$(gh api "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments" \
+            --paginate --jq '.[] | select(.body | startswith("<!-- diffcover -->")) | .id' | head -1)"
+          if [ -n "$existing" ]; then
+            gh api -X PATCH "repos/${{ github.repository }}/issues/comments/${existing}" -F body=@diffcover.md >/dev/null
+          else
+            gh api -X POST "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments" \
+              -F body=@diffcover.md >/dev/null
+          fi
+
+  # F1-E (AC-2): proves every down migration reverses its up on an empty DB —
+  # up all -> down all -> up all. "down -all" must leave zero app-owned objects
+  # (extension-owned functions excluded), and the schema dump must be identical
+  # after both up passes (pg_dump's random \restrict tokens filtered out).
+  migration-roundtrip:
+    name: runner / migrations / round-trip
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18.4-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PG_URL: "postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable"
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: 1.26
+      - name: Install migrate CLI (postgres driver)
+        run: go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.19.1
+      - name: Up all (first pass) and assert version
+        run: |
+          set -euo pipefail
+          migrate -path migrations -database "$PG_URL" up
+          version="$(migrate -path migrations -database "$PG_URL" version 2>&1)"
+          expected="$(basename "$(find migrations -name '*.up.sql' | sort | tail -1)" | cut -d_ -f1)"
+          echo "version after up: ${version} (expected ${expected})"
+          [ "$version" = "$expected" ]
+      - name: Dump schema A
+        # pg_dump must match the server major; ubuntu-latest ships an older
+        # client, so dump through the already-pulled server image instead.
+        run: |
+          set -euo pipefail
+          docker run --rm --network host postgres:18.4-alpine \
+            pg_dump "$PG_URL" --schema-only --no-owner --no-privileges \
+            | grep -vE '^\\(un)?restrict ' > /tmp/schema-A.sql
+          wc -l /tmp/schema-A.sql
+      - name: Down all
+        run: migrate -path migrations -database "$PG_URL" down -all
+      - name: Assert schema is empty after down
+        run: |
+          set -euo pipefail
+          leftovers="$(docker run --rm --network host postgres:18.4-alpine psql "$PG_URL" -At -c "
+            SELECT count(*) FROM (
+              SELECT tablename AS obj FROM pg_tables WHERE schemaname='public' AND tablename<>'schema_migrations'
+              UNION ALL SELECT viewname FROM pg_views WHERE schemaname='public'
+              UNION ALL SELECT matviewname FROM pg_matviews WHERE schemaname='public'
+              UNION ALL SELECT t.typname FROM pg_type t JOIN pg_namespace n ON n.oid=t.typnamespace
+                WHERE n.nspname='public' AND t.typtype='e'
+              UNION ALL SELECT sequencename FROM pg_sequences WHERE schemaname='public'
+              UNION ALL SELECT p.proname FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+                WHERE n.nspname='public'
+                  AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.objid=p.oid AND d.deptype='e')
+            ) leftovers;")"
+          echo "app-owned leftover objects after down -all: ${leftovers}"
+          [ "$leftovers" = "0" ]
+      - name: Up all (second pass) and diff schema
+        run: |
+          set -euo pipefail
+          migrate -path migrations -database "$PG_URL" up
+          docker run --rm --network host postgres:18.4-alpine \
+            pg_dump "$PG_URL" --schema-only --no-owner --no-privileges \
+            | grep -vE '^\\(un)?restrict ' > /tmp/schema-B.sql
+          diff /tmp/schema-A.sql /tmp/schema-B.sql
+          echo "schema identical after down/up round-trip"
 
   collab-server:
     name: runner / collab-server
@@ -181,26 +320,58 @@ jobs:
       - name: Build
         run: npm run build
 
+  # F1-E / F1-D8: one retry max, and using it is an ALARM (Telegram + warning),
+  # not a crutch — the readiness-wait in integration-test/reader_test.go plus
+  # the db healthcheck in docker-compose.yml are the actual de-flake. The
+  # 10-run no-retry proof lives in integration-soak.yml (AC-1).
   integration-tests:
     name: runner / tests / integration
     runs-on: ubuntu-latest
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
     steps:
       - uses: actions/checkout@v6
-      - name: Integration tests
-        shell: bash
+      - name: Integration tests (attempt 1)
+        id: attempt1
+        continue-on-error: true
+        run: make compose-up-integration-test
+      - name: Reset stack before retry
+        if: steps.attempt1.outcome == 'failure'
+        run: docker compose -f docker-compose.yml -f docker-compose-integration-test.yml down --remove-orphans -v || true
+      - name: Integration tests (single retry — F1-D8)
+        id: attempt2
+        if: steps.attempt1.outcome == 'failure'
+        continue-on-error: true
         run: |
           set -euo pipefail
-
-          status=0
-          for attempt in 1 2 3; do
-            echo "Integration test attempt ${attempt}/3"
-            make compose-up-integration-test && exit 0
-            status=$?
-
-            docker compose -f docker-compose.yml -f docker-compose-integration-test.yml down --remove-orphans -v || true
-            if [ "$attempt" -eq 3 ]; then
-              exit "$status"
-            fi
-
-            sleep $((attempt * 15))
-          done
+          sleep 15
+          make compose-up-integration-test
+      - name: Mark retry usage (retry is an alarm, not a crutch)
+        if: steps.attempt1.outcome == 'failure' && steps.attempt2.outcome == 'success'
+        run: |
+          echo "::warning::Integration suite needed its single retry (F1-D8) — green, but investigate the flake."
+          {
+            echo "### ⚠️ Integration retry terpakai (F1-D8)"
+            echo ""
+            echo "Attempt 1 gagal, attempt 2 hijau. Retry adalah alarm, bukan kruk — selidiki flake-nya."
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Telegram alarm — retry was needed
+        if: steps.attempt1.outcome == 'failure' && steps.attempt2.outcome == 'success'
+        uses: ./.github/actions/telegram-notify
+        with:
+          message: >-
+            ⚠️ Integration suite butuh retry (attempt 1 gagal, attempt 2 hijau) pada PR
+            #${{ github.event.pull_request.number }}. Retry = alarm (F1-D8), selidiki:
+            ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      - name: Telegram alarm — suite failed even after retry
+        if: steps.attempt1.outcome == 'failure' && steps.attempt2.outcome != 'success'
+        uses: ./.github/actions/telegram-notify
+        with:
+          message: >-
+            ❌ Integration suite GAGAL setelah retry pada PR
+            #${{ github.event.pull_request.number }}:
+            ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      - name: Fail the job if the suite never passed
+        if: steps.attempt1.outcome == 'failure' && steps.attempt2.outcome != 'success'
+        run: exit 1
