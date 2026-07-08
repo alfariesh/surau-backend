@@ -149,7 +149,7 @@ groups:
                       - A
                   reducer:
                     type: last
-        noDataState: NoData
+        noDataState: OK
         execErrState: Error
       - uid: surau-backup-heartbeat
         title: backup heartbeat stale
@@ -195,7 +195,7 @@ groups:
                       - A
                   reducer:
                     type: last
-        noDataState: NoData
+        noDataState: OK
         execErrState: Error
       - uid: surau-disk-low
         title: disk space low
