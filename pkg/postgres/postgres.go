@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Masterminds/squirrel"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -24,6 +25,7 @@ type Postgres struct {
 	connTimeout     time.Duration
 	maxConnLifetime time.Duration
 	maxConnIdleTime time.Duration
+	queryTracer     pgx.QueryTracer
 
 	Builder squirrel.StatementBuilderType
 	Pool    *pgxpool.Pool
@@ -63,6 +65,10 @@ func New(url string, opts ...Option) (*Postgres, error) {
 
 	if pg.maxConnIdleTime > 0 {
 		poolConfig.MaxConnIdleTime = pg.maxConnIdleTime
+	}
+
+	if pg.queryTracer != nil {
+		poolConfig.ConnConfig.Tracer = pg.queryTracer
 	}
 
 	var lastErr error

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/alfariesh/surau-backend/internal/entity"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 const cloudflareEmailDeliveryFailedStatus = "deliveryFailed"
@@ -43,7 +44,7 @@ func NewCloudflareEmailEventsClient(opts CloudflareEmailEventsOptions) *Cloudfla
 	return &CloudflareEmailEventsClient{
 		baseURL:    baseURL,
 		apiToken:   strings.TrimSpace(opts.APIToken),
-		httpClient: &http.Client{Timeout: timeout},
+		httpClient: &http.Client{Timeout: timeout, Transport: otelhttp.NewTransport(http.DefaultTransport)},
 	}
 }
 

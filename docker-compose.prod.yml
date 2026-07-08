@@ -59,6 +59,9 @@ services:
       SECURITY_HSTS_SECONDS: ${SECURITY_HSTS_SECONDS:-31536000}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       METRICS_ENABLED: ${METRICS_ENABLED:-false}
+      OTEL_ENABLED: ${OTEL_ENABLED:-false}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://tempo:4318}
+      OTEL_TRACE_SAMPLE_RATIO: ${OTEL_TRACE_SAMPLE_RATIO:-1.0}
       SWAGGER_ENABLED: ${SWAGGER_ENABLED:-false}
       PG_POOL_MAX: ${PG_POOL_MAX:-10}
       PG_MAX_CONN_LIFETIME: ${PG_MAX_CONN_LIFETIME:-1h}
@@ -218,8 +221,88 @@ services:
     networks:
       - internal
 
+  # --- Observability stack (F1-B) ---------------------------------------
+  # Profile "observability": deploys never touch these (SERVICES=app,collab);
+  # bring them up once per host with
+  #   docker compose --env-file .env.production -f docker-compose.prod.yml \
+  #     --profile observability up -d
+  # Only Grafana publishes a (loopback) port — Caddy proxies /grafana to it.
+  prometheus:
+    image: prom/prometheus:v3.9.1
+    profiles: ["observability"]
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=7d
+      - --storage.tsdb.retention.size=1GB
+    volumes:
+      - ./ops/observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    mem_limit: 400m
+    networks:
+      - internal
+
+  tempo:
+    image: grafana/tempo:2.9.0
+    profiles: ["observability"]
+    restart: unless-stopped
+    command: ["-config.file=/etc/tempo/tempo.yaml"]
+    volumes:
+      - ./ops/observability/tempo.yaml:/etc/tempo/tempo.yaml:ro
+      - tempo_data:/var/tempo
+    mem_limit: 300m
+    networks:
+      - internal
+
+  grafana:
+    image: grafana/grafana:12.3.2
+    profiles: ["observability"]
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD}
+      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:?set GRAFANA_ROOT_URL}
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      # Consumed by alerting provisioning ($VAR expansion at load time).
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?set TELEGRAM_BOT_TOKEN}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:?set TELEGRAM_CHAT_ID}
+      OBS_ENV_LABEL: ${OBS_ENV_LABEL:-dev}
+    volumes:
+      - ./ops/observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "${GRAFANA_BIND_ADDR:-127.0.0.1}:${GRAFANA_PUBLISHED_PORT:-3000}:3000"
+    mem_limit: 256m
+    networks:
+      - internal
+
+  node-exporter:
+    image: prom/node-exporter:v1.10.2
+    profiles: ["observability"]
+    restart: unless-stopped
+    pid: "host"
+    command:
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --path.rootfs=/host/rootfs
+      - --collector.textfile.directory=/var/lib/node_exporter/textfile
+      - --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc|run)($|/)
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/host/rootfs:ro,rslave
+      # Backup scripts drop heartbeat metrics here (F1-A dead-man on the dashboard).
+      - /var/lib/node_exporter/textfile:/var/lib/node_exporter/textfile:ro
+    mem_limit: 64m
+    networks:
+      - internal
+
 networks:
   internal:
 
 volumes:
   db_data:
+  prometheus_data:
+  tempo_data:
+  grafana_data:

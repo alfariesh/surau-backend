@@ -2,6 +2,7 @@ package logger
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -15,6 +16,9 @@ type Interface interface {
 	Warn(message string, args ...any)
 	Error(message any, args ...any)
 	Fatal(message any, args ...any)
+	// WithField returns a child logger that stamps the given field on every
+	// line — the correlation hook for request_id / trace_id (F1-B).
+	WithField(key string, value any) Interface
 }
 
 // Logger -.
@@ -23,6 +27,14 @@ type Logger struct {
 }
 
 var _ Interface = (*Logger)(nil)
+
+// NewWithWriter is New with a custom sink; tests use it to capture output.
+func NewWithWriter(level string, out io.Writer) *Logger {
+	base := New(level)
+	child := base.logger.Output(out)
+
+	return &Logger{logger: &child}
+}
 
 // New -.
 func New(level string) *Logger {
@@ -54,6 +66,13 @@ func New(level string) *Logger {
 	return &Logger{
 		logger: new(logger),
 	}
+}
+
+// WithField -.
+func (l *Logger) WithField(key string, value any) Interface {
+	child := l.logger.With().Interface(key, value).Logger()
+
+	return &Logger{logger: &child}
 }
 
 // Debug -.

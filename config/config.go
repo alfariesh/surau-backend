@@ -97,6 +97,7 @@ type (
 		RAG           rag
 		Collab        collab
 		Metrics       metrics
+		Otel          otel
 		Swagger       swagger
 		OneSignal     oneSignal
 	}
@@ -325,6 +326,14 @@ type (
 	// Metrics -.
 	metrics struct {
 		Enabled bool `env:"METRICS_ENABLED" envDefault:"true"`
+	}
+
+	// Otel — OpenTelemetry tracing (F1-B). Disabled by default; when enabled
+	// spans flow HTTP → pgx → outbound webapi to the OTLP endpoint (Tempo).
+	otel struct {
+		Enabled     bool    `env:"OTEL_ENABLED" envDefault:"false"`
+		Endpoint    string  `env:"OTEL_EXPORTER_OTLP_ENDPOINT" envDefault:"http://tempo:4318"`
+		SampleRatio float64 `env:"OTEL_TRACE_SAMPLE_RATIO" envDefault:"1.0"`
 	}
 
 	// Swagger -.

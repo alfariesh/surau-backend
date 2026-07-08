@@ -14,6 +14,7 @@ import (
 	"github.com/alfariesh/surau-backend/pkg/jwt"
 	"github.com/alfariesh/surau-backend/pkg/logger"
 	"github.com/ansrivas/fiberprometheus/v2"
+	"github.com/gofiber/contrib/otelfiber/v2"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/compress"
 	"github.com/gofiber/fiber/v2/middleware/cors"
@@ -54,10 +55,19 @@ func NewRouter(
 	jwtManager *jwt.Manager,
 	l logger.Interface,
 ) {
-	// Options
+	// Options. Order matters: RequestID first (correlation id), then the
+	// access logger (wraps everything below), recovery, then tracing — the
+	// otelfiber span is opened inside the logger so trace_id is available to
+	// the request-scoped logger that TraceContext builds.
 	app.Use(middleware.RequestID())
 	app.Use(middleware.Logger(l))
 	app.Use(middleware.Recovery(l))
+
+	if cfg.Otel.Enabled {
+		app.Use(otelfiber.Middleware())
+	}
+
+	app.Use(middleware.TraceContext(l))
 
 	// Security headers, CORS, and response compression. Helmet first so its
 	// headers reach every response, CORS before routing so browser preflights
@@ -84,7 +94,7 @@ func NewRouter(
 
 	// Prometheus metrics
 	if cfg.Metrics.Enabled {
-		prometheus := fiberprometheus.New("my-service-name")
+		prometheus := fiberprometheus.New(cfg.App.Name)
 		prometheus.RegisterAt(app, "/metrics")
 		app.Use(prometheus.Middleware)
 	}

@@ -4,6 +4,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -27,7 +28,9 @@ import (
 	"github.com/alfariesh/surau-backend/pkg/httpserver"
 	"github.com/alfariesh/surau-backend/pkg/jwt"
 	"github.com/alfariesh/surau-backend/pkg/logger"
+	"github.com/alfariesh/surau-backend/pkg/observability"
 	"github.com/alfariesh/surau-backend/pkg/postgres"
+	"github.com/exaring/otelpgx"
 )
 
 type useCases struct {
@@ -320,6 +323,8 @@ func initServers(cfg *config.Config, pg *postgres.Postgres, uc useCases, jwtMana
 
 // backgroundInitialDelay is the short head start before the first cleanup and
 // alert passes, so restarts do not postpone them by a full interval.
+const tracingShutdownTimeout = 5 * time.Second
+
 const backgroundInitialDelay = 30 * time.Second
 
 func (s *servers) startServers(
@@ -376,6 +381,9 @@ func runAuthCleanupLoop(ctx context.Context, interval time.Duration, userUC *use
 		}
 
 		result, err := userUC.CleanupAuthData(ctx)
+
+		recordLoopRun("auth_cleanup", err)
+
 		if err != nil {
 			l.Error(fmt.Errorf("app - auth cleanup: %w", err))
 
@@ -410,6 +418,9 @@ func runAuthAlertLoop(ctx context.Context, interval time.Duration, userUC *user.
 		}
 
 		count, err := userUC.AlertRefreshReuse(ctx)
+
+		recordLoopRun("auth_alert", err)
+
 		if err != nil {
 			l.Error(fmt.Errorf("app - refresh-reuse alert: %w", err))
 
@@ -443,6 +454,9 @@ func runNotificationReminderLoop(
 		}
 
 		sent, err := notificationUC.DispatchReminders(ctx)
+
+		recordLoopRun("notification_reminder", err)
+
 		if err != nil {
 			l.Error(fmt.Errorf("app - reminder dispatch: %w", err))
 
@@ -475,13 +489,17 @@ func runEmailDispatchLoop(ctx context.Context, cfg *config.Config, emailUC *emai
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if err := emailUC.DispatchDueCampaigns(ctx, cfg.Email.DispatchBatch); err != nil {
-				l.Error(fmt.Errorf("app - email dispatcher: %w", err))
+			campaignErr := emailUC.DispatchDueCampaigns(ctx, cfg.Email.DispatchBatch)
+			if campaignErr != nil {
+				l.Error(fmt.Errorf("app - email dispatcher: %w", campaignErr))
 			}
 
-			if err := emailUC.DispatchDueTransactionalEmails(ctx, cfg.Email.DispatchBatch); err != nil {
-				l.Error(fmt.Errorf("app - transactional email dispatcher: %w", err))
+			transactionalErr := emailUC.DispatchDueTransactionalEmails(ctx, cfg.Email.DispatchBatch)
+			if transactionalErr != nil {
+				l.Error(fmt.Errorf("app - transactional email dispatcher: %w", transactionalErr))
 			}
+
+			recordLoopRun("email_dispatch", errors.Join(campaignErr, transactionalErr))
 		case <-pollC:
 			if _, err := emailUC.PollCloudflareEmailEvents(ctx); err != nil {
 				l.Error(fmt.Errorf("app - cloudflare email event poller: %w", err))
@@ -531,17 +549,48 @@ func (s *servers) shutdownServers(l logger.Interface) {
 func Run(cfg *config.Config) {
 	l := logger.New(cfg.Log.Level)
 
+	// Tracing (F1-B): HTTP -> pgx -> outbound webapi spans, exported over
+	// OTLP to the self-hosted backend. Disabled config = zero-cost no-op.
+	shutdownTracing, err := observability.InitTracing(context.Background(), &observability.TracingConfig{
+		Enabled:     cfg.Otel.Enabled,
+		Endpoint:    cfg.Otel.Endpoint,
+		SampleRatio: cfg.Otel.SampleRatio,
+		ServiceName: cfg.App.Name,
+		Environment: cfg.App.Env,
+		Version:     cfg.App.Version,
+	})
+	if err != nil {
+		l.Fatal(fmt.Errorf("app - Run - observability.InitTracing: %w", err))
+	}
+
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), tracingShutdownTimeout)
+		defer cancel()
+
+		if err := shutdownTracing(shutdownCtx); err != nil {
+			l.Error(fmt.Errorf("app - Run - tracing shutdown: %w", err))
+		}
+	}()
+
 	// Repository
-	pg, err := postgres.New(
-		cfg.PG.URL,
+	pgOpts := []postgres.Option{
 		postgres.MaxPoolSize(cfg.PG.PoolMax),
 		postgres.MaxConnLifetime(cfg.PG.MaxConnLifetime),
 		postgres.MaxConnIdleTime(cfg.PG.MaxConnIdleTime),
-	)
+	}
+	if cfg.Otel.Enabled {
+		pgOpts = append(pgOpts, postgres.QueryTracer(otelpgx.NewTracer(otelpgx.WithTrimSQLInSpanName())))
+	}
+
+	pg, err := postgres.New(cfg.PG.URL, pgOpts...)
 	if err != nil {
 		l.Fatal(fmt.Errorf("app - Run - postgres.New: %w", err))
 	}
 	defer pg.Close()
+
+	if cfg.Metrics.Enabled {
+		registerEmailQueueMetrics(pg.Pool)
+	}
 
 	// JWT. The manager's duration is the ACCESS token TTL; refresh tokens are
 	// opaque session tokens with their own configured expiry.

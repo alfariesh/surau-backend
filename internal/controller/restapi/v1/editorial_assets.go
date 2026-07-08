@@ -40,7 +40,7 @@ func (r *V1) editorialMissingReaderAssets(ctx *fiber.Ctx) error {
 		queryInt(ctx, "offset", 0),
 	)
 	if err != nil {
-		r.logEditorialError(err, "restapi - v1 - editorialMissingReaderAssets")
+		r.logEditorialError(ctx, err, "restapi - v1 - editorialMissingReaderAssets")
 
 		return r.editorialError(ctx, err)
 	}
@@ -80,7 +80,7 @@ func (r *V1) editorialMissingQuranAssets(ctx *fiber.Ctx) error {
 		queryInt(ctx, "offset", 0),
 	)
 	if err != nil {
-		r.logQuranError(err, "restapi - v1 - editorialMissingQuranAssets")
+		r.logQuranError(ctx, err, "restapi - v1 - editorialMissingQuranAssets")
 
 		return r.quranErrorResponse(ctx, err)
 	}

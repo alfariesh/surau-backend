@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/alfariesh/surau-backend/internal/entity"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 const defaultCloudflareAPIBaseURL = "https://api.cloudflare.com/client/v4"
@@ -58,7 +59,7 @@ func NewCloudflareEmailClient(opts CloudflareEmailOptions) *CloudflareEmailClien
 		fromAddress: opts.FromAddress,
 		fromName:    opts.FromName,
 		replyTo:     opts.ReplyTo,
-		httpClient:  &http.Client{Timeout: timeout},
+		httpClient:  &http.Client{Timeout: timeout, Transport: otelhttp.NewTransport(http.DefaultTransport)},
 	}
 }
 
