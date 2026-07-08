@@ -11,6 +11,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"runtime/debug"
 	"time"
 
 	"github.com/alfariesh/surau-backend/internal/entity"
@@ -180,6 +181,14 @@ func (uc *UseCase) dispatchEvent(
 		return
 	}
 	go func() {
+		// Detached goroutine: a panic here would kill the whole process
+		// (F1-C), so recover and log instead.
+		defer func() {
+			if r := recover(); r != nil {
+				uc.log.Error(fmt.Errorf("notification - dispatchEvent - panic recovered: %v\n%s", r, debug.Stack()))
+			}
+		}()
+
 		ctx, cancel := context.WithTimeout(context.Background(), pushTimeout)
 		defer cancel()
 

@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"time"
 
@@ -27,9 +28,15 @@ var (
 )
 
 // recordLoopRun stamps one background-loop pass; call with the pass error.
+// Recovered panics (F1-C) are counted under their own result label.
 func recordLoopRun(loop string, err error) {
 	if err != nil {
-		loopRuns.WithLabelValues(loop, "error").Inc()
+		result := "error"
+		if errors.Is(err, errLoopPanic) {
+			result = "panic"
+		}
+
+		loopRuns.WithLabelValues(loop, result).Inc()
 
 		return
 	}

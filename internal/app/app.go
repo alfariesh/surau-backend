@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -45,11 +46,13 @@ type useCases struct {
 }
 
 type servers struct {
-	http                     *httpserver.Server
-	emailDispatcherStop      context.CancelFunc
-	authCleanupStop          context.CancelFunc
-	authAlertStop            context.CancelFunc
-	notificationReminderStop context.CancelFunc
+	http *httpserver.Server
+
+	// Supervised background loops (F1-C): one shared cancel plus a drain
+	// WaitGroup so shutdown can wait for in-flight passes (bounded by
+	// loopDrainTimeout).
+	loopStop context.CancelFunc
+	loopWG   sync.WaitGroup
 }
 
 func initUseCases(cfg *config.Config, pg *postgres.Postgres, jwtManager *jwt.Manager, l logger.Interface) useCases {
@@ -334,60 +337,82 @@ func (s *servers) startServers(
 	notificationUC *notification.UseCase,
 	l logger.Interface,
 ) {
-	if userUC != nil && cfg.AuthCleanup.Enabled {
-		cleanupCtx, cancel := context.WithCancel(context.Background())
-		s.authCleanupStop = cancel
+	loopCtx, cancel := context.WithCancel(context.Background())
+	s.loopStop = cancel
 
-		go runAuthCleanupLoop(cleanupCtx, cfg.AuthCleanup.Interval, userUC, l)
-	}
-
-	if notificationUC != nil && cfg.OneSignal.Enabled {
-		reminderCtx, cancel := context.WithCancel(context.Background())
-		s.notificationReminderStop = cancel
-
-		go runNotificationReminderLoop(reminderCtx, cfg.OneSignal.ReminderInterval, notificationUC, l)
-	}
-
-	if userUC != nil && cfg.AuthAlert.Enabled {
-		alertCtx, cancel := context.WithCancel(context.Background())
-		s.authAlertStop = cancel
-
-		go runAuthAlertLoop(alertCtx, cfg.AuthAlert.Interval, userUC, l)
-	}
-
-	if emailUC != nil {
-		dispatchCtx, cancel := context.WithCancel(context.Background())
-		s.emailDispatcherStop = cancel
-
-		go runEmailDispatchLoop(dispatchCtx, cfg, emailUC, l)
+	for _, spec := range buildLoopSpecs(cfg, emailUC, userUC, notificationUC, l) {
+		s.startLoop(loopCtx, spec, l)
 	}
 
 	s.http.Start()
 }
 
-func runAuthCleanupLoop(ctx context.Context, interval time.Duration, userUC *user.UseCase, l logger.Interface) {
-	initialDelay := time.NewTimer(backgroundInitialDelay)
-	defer initialDelay.Stop()
+// buildLoopSpecs assembles the supervised background loops, applying the same
+// config gates as before supervision (a disabled loop emits no metrics).
+func buildLoopSpecs(
+	cfg *config.Config,
+	emailUC *emailusecase.UseCase,
+	userUC *user.UseCase,
+	notificationUC *notification.UseCase,
+	l logger.Interface,
+) []loopSpec {
+	specs := make([]loopSpec, 0, 5)
 
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
+	if userUC != nil && cfg.AuthCleanup.Enabled {
+		specs = append(specs, loopSpec{
+			name:         "auth_cleanup",
+			interval:     cfg.AuthCleanup.Interval,
+			initialDelay: backgroundInitialDelay,
+			run:          authCleanupPass(userUC, l),
+		})
+	}
 
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-initialDelay.C:
-		case <-ticker.C:
-		}
+	if notificationUC != nil && cfg.OneSignal.Enabled {
+		specs = append(specs, loopSpec{
+			name:         "notification_reminder",
+			interval:     cfg.OneSignal.ReminderInterval,
+			initialDelay: backgroundInitialDelay,
+			run:          notificationReminderPass(notificationUC, l),
+		})
+	}
 
+	if userUC != nil && cfg.AuthAlert.Enabled {
+		specs = append(specs, loopSpec{
+			name:         "auth_alert",
+			interval:     cfg.AuthAlert.Interval,
+			initialDelay: backgroundInitialDelay,
+			run:          authAlertPass(userUC, l),
+		})
+	}
+
+	if emailUC != nil {
+		specs = append(specs, loopSpec{
+			name:     "email_dispatch",
+			interval: cfg.Email.DispatchInterval,
+			run:      emailDispatchPass(cfg, emailUC),
+		})
+	}
+
+	if emailUC != nil && cfg.Email.DeliveryMode == config.EmailDeliveryModeCloudflare && cfg.Email.CloudflareEventPollingEnabled {
+		specs = append(specs, loopSpec{
+			name:     "email_events_poll",
+			interval: cfg.Email.CloudflareEventPollingInterval,
+			run: func(ctx context.Context) error {
+				_, err := emailUC.PollCloudflareEmailEvents(ctx)
+
+				return err
+			},
+		})
+	}
+
+	return specs
+}
+
+func authCleanupPass(userUC *user.UseCase, l logger.Interface) func(context.Context) error {
+	return func(ctx context.Context) error {
 		result, err := userUC.CleanupAuthData(ctx)
-
-		recordLoopRun("auth_cleanup", err)
-
 		if err != nil {
-			l.Error(fmt.Errorf("app - auth cleanup: %w", err))
-
-			continue
+			return fmt.Errorf("auth cleanup: %w", err)
 		}
 
 		l.Info(
@@ -399,112 +424,54 @@ func runAuthCleanupLoop(ctx context.Context, interval time.Duration, userUC *use
 			result.NotificationCooldowns,
 			result.AuditLogs,
 		)
+
+		return nil
 	}
 }
 
-func runAuthAlertLoop(ctx context.Context, interval time.Duration, userUC *user.UseCase, l logger.Interface) {
-	initialDelay := time.NewTimer(backgroundInitialDelay)
-	defer initialDelay.Stop()
-
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-initialDelay.C:
-		case <-ticker.C:
-		}
-
+func authAlertPass(userUC *user.UseCase, l logger.Interface) func(context.Context) error {
+	return func(ctx context.Context) error {
 		count, err := userUC.AlertRefreshReuse(ctx)
-
-		recordLoopRun("auth_alert", err)
-
 		if err != nil {
-			l.Error(fmt.Errorf("app - refresh-reuse alert: %w", err))
-
-			continue
+			return fmt.Errorf("refresh-reuse alert: %w", err)
 		}
 
 		if count > 0 {
 			l.Info("app - refresh-reuse alert: notified admins of %d new event(s)", count)
 		}
+
+		return nil
 	}
 }
 
-func runNotificationReminderLoop(
-	ctx context.Context,
-	interval time.Duration,
-	notificationUC *notification.UseCase,
-	l logger.Interface,
-) {
-	initialDelay := time.NewTimer(backgroundInitialDelay)
-	defer initialDelay.Stop()
-
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-initialDelay.C:
-		case <-ticker.C:
-		}
-
+func notificationReminderPass(notificationUC *notification.UseCase, l logger.Interface) func(context.Context) error {
+	return func(ctx context.Context) error {
 		sent, err := notificationUC.DispatchReminders(ctx)
-
-		recordLoopRun("notification_reminder", err)
-
 		if err != nil {
-			l.Error(fmt.Errorf("app - reminder dispatch: %w", err))
-
-			continue
+			return fmt.Errorf("reminder dispatch: %w", err)
 		}
 
 		if sent > 0 {
 			l.Info("app - reminder dispatch: sent %d streak reminder(s)", sent)
 		}
+
+		return nil
 	}
 }
 
-func runEmailDispatchLoop(ctx context.Context, cfg *config.Config, emailUC *emailusecase.UseCase, l logger.Interface) {
-	ticker := time.NewTicker(cfg.Email.DispatchInterval)
-	defer ticker.Stop()
+func emailDispatchPass(cfg *config.Config, emailUC *emailusecase.UseCase) func(context.Context) error {
+	return func(ctx context.Context) error {
+		var campaignErr, transactionalErr error
 
-	var pollTicker *time.Ticker
-
-	var pollC <-chan time.Time
-
-	if cfg.Email.DeliveryMode == config.EmailDeliveryModeCloudflare && cfg.Email.CloudflareEventPollingEnabled {
-		pollTicker = time.NewTicker(cfg.Email.CloudflareEventPollingInterval)
-		pollC = pollTicker.C
-
-		defer pollTicker.Stop()
-	}
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			campaignErr := emailUC.DispatchDueCampaigns(ctx, cfg.Email.DispatchBatch)
-			if campaignErr != nil {
-				l.Error(fmt.Errorf("app - email dispatcher: %w", campaignErr))
-			}
-
-			transactionalErr := emailUC.DispatchDueTransactionalEmails(ctx, cfg.Email.DispatchBatch)
-			if transactionalErr != nil {
-				l.Error(fmt.Errorf("app - transactional email dispatcher: %w", transactionalErr))
-			}
-
-			recordLoopRun("email_dispatch", errors.Join(campaignErr, transactionalErr))
-		case <-pollC:
-			if _, err := emailUC.PollCloudflareEmailEvents(ctx); err != nil {
-				l.Error(fmt.Errorf("app - cloudflare email event poller: %w", err))
-			}
+		if err := emailUC.DispatchDueCampaigns(ctx, cfg.Email.DispatchBatch); err != nil {
+			campaignErr = fmt.Errorf("email dispatcher: %w", err)
 		}
+
+		if err := emailUC.DispatchDueTransactionalEmails(ctx, cfg.Email.DispatchBatch); err != nil {
+			transactionalErr = fmt.Errorf("transactional email dispatcher: %w", err)
+		}
+
+		return errors.Join(campaignErr, transactionalErr)
 	}
 }
 
@@ -525,23 +492,28 @@ func (s *servers) waitForShutdown(l logger.Interface) {
 }
 
 func (s *servers) shutdownServers(l logger.Interface) {
-	if s.emailDispatcherStop != nil {
-		s.emailDispatcherStop()
+	// Cancel all supervised loops first so their drain overlaps the HTTP
+	// shutdown; then wait, bounded, so a stuck pass cannot block exit past
+	// Docker's kill grace.
+	if s.loopStop != nil {
+		s.loopStop()
 	}
 
-	if s.authCleanupStop != nil {
-		s.authCleanupStop()
-	}
+	drained := make(chan struct{})
 
-	if s.authAlertStop != nil {
-		s.authAlertStop()
-	}
+	go func() {
+		s.loopWG.Wait()
+		close(drained)
+	}()
 
-	if s.notificationReminderStop != nil {
-		s.notificationReminderStop()
-	}
 	if err := s.http.Shutdown(); err != nil {
 		l.Error(fmt.Errorf("app - Run - httpServer.Shutdown: %w", err))
+	}
+
+	select {
+	case <-drained:
+	case <-time.After(loopDrainTimeout):
+		l.Error(fmt.Errorf("app - shutdown: background loops still draining after %s, exiting anyway", loopDrainTimeout))
 	}
 }
 
