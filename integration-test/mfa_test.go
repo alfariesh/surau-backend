@@ -123,8 +123,9 @@ func mfaAdmin(t *testing.T) (email, userID string) {
 	return email, userID
 }
 
-// changeRoleRequest fires the step-up-gated destructive action (role change).
-func changeRoleRequest(t *testing.T, accessToken, targetEmail, role string) (*http.Response, mfaErrorResponse) {
+// changeRoleRequest fires the step-up-gated destructive action (role change)
+// and returns the status + decoded envelope (body closed inside).
+func changeRoleRequest(t *testing.T, accessToken, targetEmail, role string) (int, mfaErrorResponse) {
 	t.Helper()
 
 	body := fmt.Sprintf(`{"email":%q,"role":%q}`, targetEmail, role)
@@ -134,7 +135,7 @@ func changeRoleRequest(t *testing.T, accessToken, targetEmail, role string) (*ht
 
 	decodeAndClose(t, resp, &envelope)
 
-	return resp, envelope
+	return resp.StatusCode, envelope
 }
 
 // TestMFAStepUpGateOnRoleChange is AC-2 end-to-end: fresh MFA opens the
@@ -148,9 +149,9 @@ func TestMFAStepUpGateOnRoleChange(t *testing.T) {
 	_, recoveryCodes := enrollMFA(t, login.AccessToken)
 
 	// Enroll-confirm just stamped the session fresh: destructive route opens.
-	resp, _ := changeRoleRequest(t, login.AccessToken, targetEmail, "editor")
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("fresh step-up role change expected 200, got %d", resp.StatusCode)
+	status, _ := changeRoleRequest(t, login.AccessToken, targetEmail, "editor")
+	if status != http.StatusOK {
+		t.Fatalf("fresh step-up role change expected 200, got %d", status)
 	}
 
 	// Age the stamp via SQL (the test cannot wait 10 minutes): the same
@@ -166,9 +167,9 @@ func TestMFAStepUpGateOnRoleChange(t *testing.T) {
 		t.Fatalf("age mfa stamp: %v", err)
 	}
 
-	resp, envelope := changeRoleRequest(t, login.AccessToken, targetEmail, "user")
-	if resp.StatusCode != http.StatusForbidden {
-		t.Fatalf("stale step-up expected 403, got %d", resp.StatusCode)
+	status, envelope := changeRoleRequest(t, login.AccessToken, targetEmail, "user")
+	if status != http.StatusForbidden {
+		t.Fatalf("stale step-up expected 403, got %d", status)
 	}
 
 	if envelope.Code != "mfa_step_up_required" {
@@ -182,7 +183,7 @@ func TestMFAStepUpGateOnRoleChange(t *testing.T) {
 	// Step up with a recovery code (no TOTP replay concerns) and retry.
 	stepUpBody := fmt.Sprintf(`{"code":%q}`, recoveryCodes[0])
 
-	resp = doJSON(t, http.MethodPost, baseURL()+"/v1/auth/mfa/step-up", bytes.NewBufferString(stepUpBody), login.AccessToken)
+	resp := doJSON(t, http.MethodPost, baseURL()+"/v1/auth/mfa/step-up", bytes.NewBufferString(stepUpBody), login.AccessToken)
 
 	var stepUp struct {
 		SteppedUp bool `json:"stepped_up"`
@@ -194,9 +195,9 @@ func TestMFAStepUpGateOnRoleChange(t *testing.T) {
 		t.Fatalf("step-up expected 200 stepped_up, got %d %+v", resp.StatusCode, stepUp)
 	}
 
-	resp, _ = changeRoleRequest(t, login.AccessToken, targetEmail, "user")
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("post-step-up role change expected 200, got %d", resp.StatusCode)
+	status, _ = changeRoleRequest(t, login.AccessToken, targetEmail, "user")
+	if status != http.StatusOK {
+		t.Fatalf("post-step-up role change expected 200, got %d", status)
 	}
 }
 
@@ -210,9 +211,9 @@ func TestMFAGraceLockout(t *testing.T) {
 	login := loginWithUA(t, adminEmail, "mfa-grace-test")
 
 	// Inside grace (anchor = now): allowed without any MFA.
-	resp, _ := changeRoleRequest(t, login.AccessToken, targetEmail, "editor")
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("in-grace role change expected 200, got %d", resp.StatusCode)
+	status, _ := changeRoleRequest(t, login.AccessToken, targetEmail, "editor")
+	if status != http.StatusOK {
+		t.Fatalf("in-grace role change expected 200, got %d", status)
 	}
 
 	// Expire the grace window (default 168h) via SQL.
@@ -227,9 +228,9 @@ func TestMFAGraceLockout(t *testing.T) {
 		t.Fatalf("age mfa_enforced_from: %v", err)
 	}
 
-	resp, envelope := changeRoleRequest(t, login.AccessToken, targetEmail, "user")
-	if resp.StatusCode != http.StatusForbidden {
-		t.Fatalf("past-grace expected 403, got %d", resp.StatusCode)
+	status, envelope := changeRoleRequest(t, login.AccessToken, targetEmail, "user")
+	if status != http.StatusForbidden {
+		t.Fatalf("past-grace expected 403, got %d", status)
 	}
 
 	if envelope.Code != "mfa_enrollment_required" {
@@ -239,9 +240,9 @@ func TestMFAGraceLockout(t *testing.T) {
 	// Enrolling lifts the lockout (confirm stamps the session fresh).
 	enrollMFA(t, login.AccessToken)
 
-	resp, _ = changeRoleRequest(t, login.AccessToken, targetEmail, "user")
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("post-enroll role change expected 200, got %d", resp.StatusCode)
+	status, _ = changeRoleRequest(t, login.AccessToken, targetEmail, "user")
+	if status != http.StatusOK {
+		t.Fatalf("post-enroll role change expected 200, got %d", status)
 	}
 }
 
@@ -291,7 +292,7 @@ func TestMFALoginFlowAndRecoveryCodeOnce(t *testing.T) {
 	}
 
 	// Recovery code path: works once (AC-3)...
-	useRecovery := func(code string) (*http.Response, mfaErrorResponse) {
+	useRecovery := func(code string) (int, mfaErrorResponse) {
 		resp := doJSON(t, http.MethodPost, baseURL()+"/v1/auth/login", bytes.NewBufferString(challengeBody), "")
 
 		var freshChallenge mfaChallengeResponse
@@ -309,18 +310,18 @@ func TestMFALoginFlowAndRecoveryCodeOnce(t *testing.T) {
 
 		decodeAndClose(t, verifyResp, &envelope)
 
-		return verifyResp, envelope
+		return verifyResp.StatusCode, envelope
 	}
 
-	resp, _ = useRecovery(recoveryCodes[1])
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("recovery code login expected 200, got %d", resp.StatusCode)
+	recoveryStatus, _ := useRecovery(recoveryCodes[1])
+	if recoveryStatus != http.StatusOK {
+		t.Fatalf("recovery code login expected 200, got %d", recoveryStatus)
 	}
 
 	// ...and exactly once.
-	resp, envelope := useRecovery(recoveryCodes[1])
-	if resp.StatusCode != http.StatusUnauthorized || envelope.Code != "invalid_mfa_code" {
-		t.Fatalf("spent recovery code expected 401 invalid_mfa_code, got %d %q (AC-3)", resp.StatusCode, envelope.Code)
+	recoveryStatus, envelope := useRecovery(recoveryCodes[1])
+	if recoveryStatus != http.StatusUnauthorized || envelope.Code != "invalid_mfa_code" {
+		t.Fatalf("spent recovery code expected 401 invalid_mfa_code, got %d %q (AC-3)", recoveryStatus, envelope.Code)
 	}
 }
 
@@ -362,6 +363,8 @@ func TestMFAResetFlow(t *testing.T) {
 	// Reach the challenge state (proof of password).
 	challengeBody := fmt.Sprintf(`{"email":%q,"password":"testpass123"}`, adminEmail)
 	resp := doJSON(t, http.MethodPost, baseURL()+"/v1/auth/login", bytes.NewBufferString(challengeBody), "")
+
+	defer resp.Body.Close() // decodeAndClose closes; the extra Close is a safe no-op for the linter
 
 	var challenge mfaChallengeResponse
 

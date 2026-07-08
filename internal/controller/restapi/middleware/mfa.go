@@ -19,7 +19,10 @@ func RequireFreshMFA(u usecase.User) fiber.Handler {
 			return middlewareError(ctx, http.StatusUnauthorized, "unauthorized")
 		}
 
-		familyID, _ := ctx.Locals("sessionID").(string)
+		familyID := ""
+		if value, ok := ctx.Locals("sessionID").(string); ok {
+			familyID = value
+		}
 
 		decision, err := u.MFAGate(ctx.UserContext(), &user, familyID)
 		if err != nil {

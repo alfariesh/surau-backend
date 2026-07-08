@@ -328,8 +328,8 @@ func NewRoutes(
 		adminGroup.Get("/users/:id/activity", r.adminUserActivity)
 		adminGroup.Get("/users/:id", r.adminUserDetail)
 		// Role change is step-up gated (A-3): the rest of /admin stays read-only
-	// or routine, so the gate is per-route, not group-wide.
-	adminGroup.Patch("/users/role", middleware.RequireFreshMFA(u), r.adminSetUserRole)
+		// or routine, so the gate is per-route, not group-wide.
+		adminGroup.Patch("/users/role", middleware.RequireFreshMFA(u), r.adminSetUserRole)
 		emailGroup := adminGroup.Group("/emails")
 		{
 			emailGroup.Get("/templates", r.adminEmailTemplates)

@@ -1772,8 +1772,8 @@ func normalizeRateLimitOptions(opts RateLimitOptions) RateLimitOptions {
 		MFAVerifyIP:             RateLimitRule{Max: 30, Window: 15 * time.Minute}, //nolint:mnd // default rate-limit table,
 		MFAStepUpUser:           RateLimitRule{Max: 10, Window: 5 * time.Minute},  //nolint:mnd // default rate-limit table,
 		MFAStepUpIP:             RateLimitRule{Max: 60, Window: 15 * time.Minute}, //nolint:mnd // default rate-limit table,
-		MFAResetEmail:           RateLimitRule{Max: 3, Window: time.Hour},
-		MFAResetIP:              RateLimitRule{Max: 10, Window: time.Hour},
+		MFAResetEmail:           RateLimitRule{Max: 3, Window: time.Hour},         //nolint:mnd // default rate-limit table,
+		MFAResetIP:              RateLimitRule{Max: 10, Window: time.Hour},        //nolint:mnd // default rate-limit table,
 	}
 
 	opts.LoginEmail = withDefaultRule(opts.LoginEmail, defaults.LoginEmail)

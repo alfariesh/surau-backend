@@ -183,7 +183,7 @@ func initUseCases(cfg *config.Config, pg *postgres.Postgres, jwtManager *jwt.Man
 				ResetTTL:        cfg.MFA.ResetTTL,
 				TOTPIssuer:      cfg.MFA.TOTPIssuer,
 			},
-			RefreshTokenTTL:          cfg.JWT.RefreshTokenExpiry,
+			RefreshTokenTTL: cfg.JWT.RefreshTokenExpiry,
 			LockoutOptions: user.LockoutOptions{
 				Enabled:      cfg.AuthLockout.Enabled,
 				Threshold:    cfg.AuthLockout.Threshold,

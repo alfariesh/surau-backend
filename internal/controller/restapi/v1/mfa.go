@@ -16,9 +16,11 @@ import (
 
 // currentSessionFamily returns the caller's session family ("sid" claim).
 func currentSessionFamily(ctx *fiber.Ctx) string {
-	familyID, _ := ctx.Locals("sessionID").(string)
+	if familyID, ok := ctx.Locals("sessionID").(string); ok {
+		return familyID
+	}
 
-	return familyID
+	return ""
 }
 
 // @Summary     Complete MFA login
@@ -322,31 +324,38 @@ func (r *V1) mfaResetConfirm(ctx *fiber.Ctx) error {
 	return ctx.Status(http.StatusOK).JSON(response.MFAResetDone{MFAReset: true})
 }
 
+// mfaErrorMappings maps MFA usecase sentinels to their frozen envelope
+// message + HTTP status (F1-D: literals registered in apierror).
+//
+//nolint:gochecknoglobals // immutable error-contract table
+var mfaErrorMappings = []struct {
+	target  error
+	status  int
+	message string
+}{
+	{entity.ErrInvalidMFACode, http.StatusUnauthorized, "invalid mfa code"},
+	{entity.ErrInvalidMFAChallenge, http.StatusUnauthorized, "invalid mfa challenge"},
+	{entity.ErrInvalidMFAReset, http.StatusUnauthorized, "invalid mfa reset"},
+	{entity.ErrMFAAlreadyEnabled, http.StatusConflict, "mfa already enabled"},
+	{entity.ErrMFANotEnabled, http.StatusBadRequest, "mfa not enabled"},
+	{entity.ErrMFAEnrollmentNotStarted, http.StatusBadRequest, "mfa enrollment not started"},
+	{entity.ErrMFAStepUpRequired, http.StatusForbidden, "mfa step-up required"},
+	{entity.ErrMFAEnrollmentRequired, http.StatusForbidden, "mfa enrollment required"},
+	{entity.ErrUserNotFound, http.StatusUnauthorized, "invalid mfa challenge"},
+}
+
 // mfaErrorResponse is the shared usecase-error → envelope ladder for the MFA
-// endpoints (message literals are frozen in apierror).
+// endpoints.
 func mfaErrorResponse(ctx *fiber.Ctx, err error) error {
-	switch {
-	case errors.Is(err, entity.ErrInvalidMFACode):
-		return errorResponse(ctx, http.StatusUnauthorized, "invalid mfa code")
-	case errors.Is(err, entity.ErrInvalidMFAChallenge):
-		return errorResponse(ctx, http.StatusUnauthorized, "invalid mfa challenge")
-	case errors.Is(err, entity.ErrInvalidMFAReset):
-		return errorResponse(ctx, http.StatusUnauthorized, "invalid mfa reset")
-	case errors.Is(err, entity.ErrMFAAlreadyEnabled):
-		return errorResponse(ctx, http.StatusConflict, "mfa already enabled")
-	case errors.Is(err, entity.ErrMFANotEnabled):
-		return errorResponse(ctx, http.StatusBadRequest, "mfa not enabled")
-	case errors.Is(err, entity.ErrMFAEnrollmentNotStarted):
-		return errorResponse(ctx, http.StatusBadRequest, "mfa enrollment not started")
-	case errors.Is(err, entity.ErrMFAStepUpRequired):
-		return errorResponse(ctx, http.StatusForbidden, "mfa step-up required")
-	case errors.Is(err, entity.ErrMFAEnrollmentRequired):
-		return errorResponse(ctx, http.StatusForbidden, "mfa enrollment required")
-	case errors.Is(err, entity.ErrUserNotFound):
-		return errorResponse(ctx, http.StatusUnauthorized, "invalid mfa challenge")
-	case errors.Is(err, entity.ErrAuthRateLimited), errors.Is(err, entity.ErrAccountLocked):
-		return rateLimitedResponse(ctx, err)
-	default:
-		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
+	for _, mapping := range mfaErrorMappings {
+		if errors.Is(err, mapping.target) {
+			return errorResponse(ctx, mapping.status, mapping.message)
+		}
 	}
+
+	if errors.Is(err, entity.ErrAuthRateLimited) || errors.Is(err, entity.ErrAccountLocked) {
+		return rateLimitedResponse(ctx, err)
+	}
+
+	return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
 }

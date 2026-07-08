@@ -17,6 +17,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+//nolint:gosec // fixed RFC 6238 test vector, not a credential
 const (
 	testMFAUserID   = "mfa-user-1"
 	testMFAFamilyID = "mfa-family-1"
@@ -418,7 +419,7 @@ func TestMFAGate(t *testing.T) {
 	now := time.Now().UTC()
 	fresh := now.Add(-time.Minute)
 	stale := now.Add(-time.Hour)
-	graceStart := now.Add(-24 * time.Hour)      // inside the 168h grace
+	graceStart := now.Add(-24 * time.Hour)        // inside the 168h grace
 	graceExpired := now.Add(-30 * 24 * time.Hour) // way past it
 
 	admin := testMFAUser()

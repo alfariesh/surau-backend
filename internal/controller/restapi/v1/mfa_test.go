@@ -51,7 +51,7 @@ func newMFATestApp(user *fakeAuthUser) *fiber.App {
 	return app
 }
 
-func mfaJSONRequest(t *testing.T, app *fiber.App, method, path string, body any) (*http.Response, []byte) {
+func mfaJSONRequest(t *testing.T, app *fiber.App, method, path string, body any) (status int, raw []byte) {
 	t.Helper()
 
 	var reader io.Reader = http.NoBody
@@ -71,10 +71,10 @@ func mfaJSONRequest(t *testing.T, app *fiber.App, method, path string, body any)
 
 	defer resp.Body.Close()
 
-	raw, err := io.ReadAll(resp.Body)
+	raw, err = io.ReadAll(resp.Body)
 	require.NoError(t, err)
 
-	return resp, raw
+	return resp.StatusCode, raw
 }
 
 func TestLoginReturnsMFAChallenge(t *testing.T) {
@@ -90,11 +90,11 @@ func TestLoginReturnsMFAChallenge(t *testing.T) {
 
 	app := newMFATestApp(fake)
 
-	resp, raw := mfaJSONRequest(t, app, http.MethodPost, "/auth/login", map[string]string{
+	status, raw := mfaJSONRequest(t, app, http.MethodPost, "/auth/login", map[string]string{
 		"email":    "admin@example.com",
 		"password": "password123",
 	})
-	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Equal(t, http.StatusOK, status)
 
 	var body struct {
 		MFARequired  bool   `json:"mfa_required"`
@@ -124,11 +124,11 @@ func TestMFAVerifyHandler(t *testing.T) {
 		}}
 		app := newMFATestApp(fake)
 
-		resp, raw := mfaJSONRequest(t, app, http.MethodPost, "/auth/mfa/verify", map[string]string{
+		status, raw := mfaJSONRequest(t, app, http.MethodPost, "/auth/mfa/verify", map[string]string{
 			"mfa_token": "challenge-token-abcdef",
 			"code":      "123456",
 		})
-		require.Equal(t, http.StatusOK, resp.StatusCode)
+		require.Equal(t, http.StatusOK, status)
 		assert.Contains(t, string(raw), "access-1")
 	})
 
@@ -152,11 +152,11 @@ func TestMFAVerifyHandler(t *testing.T) {
 
 				app := newMFATestApp(&fakeAuthUser{mfaVerifyErr: tc.err})
 
-				resp, raw := mfaJSONRequest(t, app, http.MethodPost, "/auth/mfa/verify", map[string]string{
+				status, raw := mfaJSONRequest(t, app, http.MethodPost, "/auth/mfa/verify", map[string]string{
 					"mfa_token": "challenge-token-abcdef",
 					"code":      "123456",
 				})
-				assert.Equal(t, tc.wantStatus, resp.StatusCode)
+				assert.Equal(t, tc.wantStatus, status)
 
 				if tc.wantCode != "" {
 					var envelope struct {
@@ -174,8 +174,8 @@ func TestMFAVerifyHandler(t *testing.T) {
 
 		app := newMFATestApp(&fakeAuthUser{})
 
-		resp, _ := mfaJSONRequest(t, app, http.MethodPost, "/auth/mfa/verify", map[string]string{"code": "123456"})
-		assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+		status, _ := mfaJSONRequest(t, app, http.MethodPost, "/auth/mfa/verify", map[string]string{"code": "123456"})
+		assert.Equal(t, http.StatusBadRequest, status)
 	})
 }
 
@@ -185,14 +185,15 @@ func TestMFAEnrollHandlers(t *testing.T) {
 	t.Run("enroll returns provisioning material", func(t *testing.T) {
 		t.Parallel()
 
+		//nolint:gosec // fixed RFC 6238 test vector, not a credential
 		fake := &fakeAuthUser{mfaEnrollment: entity.MFAEnrollment{
 			Secret:     "JBSWY3DPEHPK3PXP",
 			OTPAuthURL: "otpauth://totp/Surau:a@b?secret=JBSWY3DPEHPK3PXP",
 		}}
 		app := newMFATestApp(fake)
 
-		resp, raw := mfaJSONRequest(t, app, http.MethodPost, "/auth/mfa/enroll", nil)
-		require.Equal(t, http.StatusOK, resp.StatusCode)
+		status, raw := mfaJSONRequest(t, app, http.MethodPost, "/auth/mfa/enroll", nil)
+		require.Equal(t, http.StatusOK, status)
 		assert.Contains(t, string(raw), "otpauth://totp/")
 	})
 
@@ -201,8 +202,8 @@ func TestMFAEnrollHandlers(t *testing.T) {
 
 		app := newMFATestApp(&fakeAuthUser{mfaEnrollErr: entity.ErrMFAAlreadyEnabled})
 
-		resp, raw := mfaJSONRequest(t, app, http.MethodPost, "/auth/mfa/enroll", nil)
-		assert.Equal(t, http.StatusConflict, resp.StatusCode)
+		status, raw := mfaJSONRequest(t, app, http.MethodPost, "/auth/mfa/enroll", nil)
+		assert.Equal(t, http.StatusConflict, status)
 
 		var envelope struct {
 			Code string `json:"code"`
@@ -217,8 +218,8 @@ func TestMFAEnrollHandlers(t *testing.T) {
 		fake := &fakeAuthUser{mfaRecoveryCodes: []string{"AAAA-BBBB-CCCC-DDDD", "EEEE-FFFF-GGGG-HHHH"}}
 		app := newMFATestApp(fake)
 
-		resp, raw := mfaJSONRequest(t, app, http.MethodPost, "/auth/mfa/enroll/confirm", map[string]string{"code": "123456"})
-		require.Equal(t, http.StatusOK, resp.StatusCode)
+		status, raw := mfaJSONRequest(t, app, http.MethodPost, "/auth/mfa/enroll/confirm", map[string]string{"code": "123456"})
+		require.Equal(t, http.StatusOK, status)
 		assert.Contains(t, string(raw), "AAAA-BBBB-CCCC-DDDD")
 	})
 
@@ -227,8 +228,8 @@ func TestMFAEnrollHandlers(t *testing.T) {
 
 		app := newMFATestApp(&fakeAuthUser{mfaConfirmErr: entity.ErrMFAEnrollmentNotStarted})
 
-		resp, _ := mfaJSONRequest(t, app, http.MethodPost, "/auth/mfa/enroll/confirm", map[string]string{"code": "123456"})
-		assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+		status, _ := mfaJSONRequest(t, app, http.MethodPost, "/auth/mfa/enroll/confirm", map[string]string{"code": "123456"})
+		assert.Equal(t, http.StatusBadRequest, status)
 	})
 }
 
@@ -241,8 +242,8 @@ func TestMFAStepUpAndManagementHandlers(t *testing.T) {
 		deadline := time.Now().Add(10 * time.Minute).UTC()
 		app := newMFATestApp(&fakeAuthUser{mfaStepUpAt: deadline})
 
-		resp, raw := mfaJSONRequest(t, app, http.MethodPost, "/auth/mfa/step-up", map[string]string{"code": "123456"})
-		require.Equal(t, http.StatusOK, resp.StatusCode)
+		status, raw := mfaJSONRequest(t, app, http.MethodPost, "/auth/mfa/step-up", map[string]string{"code": "123456"})
+		require.Equal(t, http.StatusOK, status)
 		assert.Contains(t, string(raw), `"stepped_up":true`)
 	})
 
@@ -251,8 +252,8 @@ func TestMFAStepUpAndManagementHandlers(t *testing.T) {
 
 		app := newMFATestApp(&fakeAuthUser{mfaDisableErr: entity.ErrMFAStepUpRequired})
 
-		resp, raw := mfaJSONRequest(t, app, http.MethodPost, "/auth/mfa/disable", nil)
-		assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+		status, raw := mfaJSONRequest(t, app, http.MethodPost, "/auth/mfa/disable", nil)
+		assert.Equal(t, http.StatusForbidden, status)
 
 		var envelope struct {
 			Code string `json:"code"`
@@ -266,8 +267,8 @@ func TestMFAStepUpAndManagementHandlers(t *testing.T) {
 
 		app := newMFATestApp(&fakeAuthUser{mfaRecoveryCodes: []string{"NEW1-NEW1-NEW1-NEW1"}})
 
-		resp, raw := mfaJSONRequest(t, app, http.MethodPost, "/auth/mfa/recovery-codes", nil)
-		require.Equal(t, http.StatusOK, resp.StatusCode)
+		status, raw := mfaJSONRequest(t, app, http.MethodPost, "/auth/mfa/recovery-codes", nil)
+		require.Equal(t, http.StatusOK, status)
 		assert.Contains(t, string(raw), "NEW1-NEW1-NEW1-NEW1")
 	})
 
@@ -279,8 +280,8 @@ func TestMFAStepUpAndManagementHandlers(t *testing.T) {
 			Enabled: true, Required: true, EnforcedFrom: &enforced, RecoveryCodesRemaining: 9,
 		}})
 
-		resp, raw := mfaJSONRequest(t, app, http.MethodGet, "/auth/mfa/status", nil)
-		require.Equal(t, http.StatusOK, resp.StatusCode)
+		status, raw := mfaJSONRequest(t, app, http.MethodGet, "/auth/mfa/status", nil)
+		require.Equal(t, http.StatusOK, status)
 
 		var body struct {
 			Enabled                bool `json:"enabled"`
@@ -306,10 +307,10 @@ func TestMFAResetHandlers(t *testing.T) {
 		}
 		app := newMFATestApp(fake)
 
-		resp, raw := mfaJSONRequest(t, app, http.MethodPost, "/auth/mfa/reset/request", map[string]string{
+		status, raw := mfaJSONRequest(t, app, http.MethodPost, "/auth/mfa/reset/request", map[string]string{
 			"mfa_token": "challenge-token-abcdef",
 		})
-		require.Equal(t, http.StatusAccepted, resp.StatusCode)
+		require.Equal(t, http.StatusAccepted, status)
 		assert.Contains(t, string(raw), "reset-token-xyz")
 	})
 
@@ -318,10 +319,10 @@ func TestMFAResetHandlers(t *testing.T) {
 
 		app := newMFATestApp(&fakeAuthUser{mfaResetRequestErr: entity.ErrEmailDeliveryFailed})
 
-		resp, _ := mfaJSONRequest(t, app, http.MethodPost, "/auth/mfa/reset/request", map[string]string{
+		status, _ := mfaJSONRequest(t, app, http.MethodPost, "/auth/mfa/reset/request", map[string]string{
 			"mfa_token": "challenge-token-abcdef",
 		})
-		assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+		assert.Equal(t, http.StatusServiceUnavailable, status)
 	})
 
 	t.Run("confirm succeeds", func(t *testing.T) {
@@ -329,12 +330,12 @@ func TestMFAResetHandlers(t *testing.T) {
 
 		app := newMFATestApp(&fakeAuthUser{})
 
-		resp, raw := mfaJSONRequest(t, app, http.MethodPost, "/auth/mfa/reset/confirm", map[string]string{
+		status, raw := mfaJSONRequest(t, app, http.MethodPost, "/auth/mfa/reset/confirm", map[string]string{
 			"reset_token":   "reset-token-xyz-12345",
 			"otp":           "123456",
 			"recovery_code": "AAAA-BBBB-CCCC-DDDD",
 		})
-		require.Equal(t, http.StatusOK, resp.StatusCode)
+		require.Equal(t, http.StatusOK, status)
 		assert.Contains(t, string(raw), `"mfa_reset":true`)
 	})
 
@@ -343,12 +344,12 @@ func TestMFAResetHandlers(t *testing.T) {
 
 		app := newMFATestApp(&fakeAuthUser{mfaResetConfirmErr: entity.ErrInvalidMFAReset})
 
-		resp, raw := mfaJSONRequest(t, app, http.MethodPost, "/auth/mfa/reset/confirm", map[string]string{
+		status, raw := mfaJSONRequest(t, app, http.MethodPost, "/auth/mfa/reset/confirm", map[string]string{
 			"reset_token":   "reset-token-xyz-12345",
 			"otp":           "123456",
 			"recovery_code": "AAAA-BBBB-CCCC-DDDD",
 		})
-		assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+		assert.Equal(t, http.StatusUnauthorized, status)
 
 		var envelope struct {
 			Code string `json:"code"`

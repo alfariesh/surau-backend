@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/alfariesh/surau-backend/internal/contentlang"
 	"github.com/alfariesh/surau-backend/internal/entity"
 	"github.com/alfariesh/surau-backend/internal/usecase/authmeta"
-	"github.com/alfariesh/surau-backend/internal/contentlang"
 	"github.com/google/uuid"
 	"github.com/pquerna/otp"
 	"github.com/pquerna/otp/totp"
@@ -48,9 +48,18 @@ const (
 	totpSkewSteps = 1
 )
 
-// mfaRecoveryCodeAlphabet is unpadded base32 (RFC 4648) — readable, no
-// ambiguity after uppercasing.
-var mfaRecoveryCodeEncoding = base32.StdEncoding.WithPadding(base32.NoPadding)
+const (
+	defaultMFAStepUpTTL       = 10 * time.Minute
+	defaultMFAEnrollmentGrace = 168 * time.Hour
+	defaultMFAChallengeTTL    = 5 * time.Minute
+	defaultMFAResetTTL        = 15 * time.Minute
+)
+
+// recoveryCodeEncoding is unpadded base32 (RFC 4648) — readable, no ambiguity
+// after uppercasing.
+func recoveryCodeEncoding() *base32.Encoding {
+	return base32.StdEncoding.WithPadding(base32.NoPadding)
+}
 
 // MFAOptions tunes the A-3 feature; zero values take the documented defaults.
 type MFAOptions struct {
@@ -70,19 +79,19 @@ type MFAOptions struct {
 
 func normalizeMFAOptions(opts MFAOptions) MFAOptions {
 	if opts.StepUpTTL <= 0 {
-		opts.StepUpTTL = 10 * time.Minute
+		opts.StepUpTTL = defaultMFAStepUpTTL
 	}
 
 	if opts.EnrollmentGrace <= 0 {
-		opts.EnrollmentGrace = 168 * time.Hour
+		opts.EnrollmentGrace = defaultMFAEnrollmentGrace
 	}
 
 	if opts.ChallengeTTL <= 0 {
-		opts.ChallengeTTL = 5 * time.Minute
+		opts.ChallengeTTL = defaultMFAChallengeTTL
 	}
 
 	if opts.ResetTTL <= 0 {
-		opts.ResetTTL = 15 * time.Minute
+		opts.ResetTTL = defaultMFAResetTTL
 	}
 
 	if strings.TrimSpace(opts.TOTPIssuer) == "" {
@@ -129,7 +138,7 @@ func (uc *UseCase) StartMFAEnrollment(ctx context.Context, userID string) (enrol
 		return entity.MFAEnrollment{}, fmt.Errorf("UserUseCase - StartMFAEnrollment - Seal: %w", err)
 	}
 
-	if err = uc.mfa.UpsertPendingMFA(ctx, userID, sealed); err != nil {
+	if err := uc.mfa.UpsertPendingMFA(ctx, userID, sealed); err != nil {
 		return entity.MFAEnrollment{}, err
 	}
 
@@ -151,31 +160,23 @@ func (uc *UseCase) ConfirmMFAEnrollment(
 		return nil, entity.ErrMFANotEnabled
 	}
 
-	if err = uc.enforceAuthRateLimit(ctx, authEventMFAEnrollConfirm, []rateLimitCheck{
+	if err := uc.enforceAuthRateLimit(ctx, authEventMFAEnrollConfirm, []rateLimitCheck{
 		{keyType: rateLimitKeyTypeUser, value: userID, rule: uc.rateLimit.MFAStepUpUser},
 		{keyType: rateLimitKeyTypeIP, value: authmeta.From(ctx).ClientIP, rule: uc.rateLimit.MFAStepUpIP},
 	}); err != nil {
 		return nil, err
 	}
 
-	mfa, err := uc.mfa.GetMFA(ctx, userID)
+	mfa, err := uc.pendingMFA(ctx, userID)
 	if err != nil {
-		if errors.Is(err, entity.ErrMFANotEnabled) {
-			return nil, entity.ErrMFAEnrollmentNotStarted
-		}
-
 		return nil, err
 	}
 
-	if mfa.ConfirmedAt != nil {
-		return nil, entity.ErrMFAAlreadyEnabled
-	}
-
-	if err = uc.verifyTOTP(ctx, &mfa, code); err != nil {
+	if err := uc.verifyTOTP(ctx, &mfa, code); err != nil {
 		return nil, err
 	}
 
-	if err = uc.mfa.ConfirmMFA(ctx, userID); err != nil {
+	if err := uc.mfa.ConfirmMFA(ctx, userID); err != nil {
 		return nil, err
 	}
 
@@ -184,7 +185,7 @@ func (uc *UseCase) ConfirmMFAEnrollment(
 		return nil, err
 	}
 
-	if err = uc.mfa.ReplaceRecoveryCodes(ctx, userID, hashes); err != nil {
+	if err := uc.mfa.ReplaceRecoveryCodes(ctx, userID, hashes); err != nil {
 		return nil, err
 	}
 
@@ -192,10 +193,29 @@ func (uc *UseCase) ConfirmMFAEnrollment(
 	// routes open immediately. Best effort — a missing session only means
 	// the next destructive action asks for a code.
 	if familyID != "" {
+		//nolint:errcheck // best-effort: a missed stamp only means the next destructive action asks for a code
 		_ = uc.mfa.SetSessionMFAVerified(ctx, userID, familyID, time.Now().UTC())
 	}
 
 	return raw, nil
+}
+
+// pendingMFA fetches an enrollment that exists and is not yet confirmed.
+func (uc *UseCase) pendingMFA(ctx context.Context, userID string) (entity.UserMFA, error) {
+	mfa, err := uc.mfa.GetMFA(ctx, userID)
+	if err != nil {
+		if errors.Is(err, entity.ErrMFANotEnabled) {
+			return entity.UserMFA{}, entity.ErrMFAEnrollmentNotStarted
+		}
+
+		return entity.UserMFA{}, err
+	}
+
+	if mfa.ConfirmedAt != nil {
+		return entity.UserMFA{}, entity.ErrMFAAlreadyEnabled
+	}
+
+	return mfa, nil
 }
 
 // mfaLoginChallengeFor reports whether login must divert to the second-factor
@@ -236,7 +256,7 @@ func (uc *UseCase) mfaLoginChallengeFor(ctx context.Context, user *entity.User) 
 		ClientIP:  strings.TrimSpace(meta.ClientIP),
 		UserAgent: truncateRunes(meta.UserAgent, maxEmailUserAgentRunes),
 	}
-	if err = uc.mfa.CreateMFAChallenge(ctx, challenge); err != nil {
+	if err := uc.mfa.CreateMFAChallenge(ctx, challenge); err != nil {
 		return entity.LoginResult{}, false, fmt.Errorf("UserUseCase - mfaLoginChallengeFor - CreateMFAChallenge: %w", err)
 	}
 
@@ -266,38 +286,28 @@ func (uc *UseCase) VerifyMFALogin(ctx context.Context, mfaToken, code string) (r
 		return entity.LoginResult{}, entity.ErrInvalidMFAChallenge
 	}
 
-	if err = uc.enforceAuthRateLimit(ctx, authEventMFAVerify, []rateLimitCheck{
+	if err := uc.enforceAuthRateLimit(ctx, authEventMFAVerify, []rateLimitCheck{
 		{keyType: rateLimitKeyTypeToken, value: mfaToken, rule: uc.rateLimit.MFAVerifyToken},
 		{keyType: rateLimitKeyTypeIP, value: authmeta.From(ctx).ClientIP, rule: uc.rateLimit.MFAVerifyIP},
 	}); err != nil {
 		return entity.LoginResult{}, err
 	}
 
-	challenge, err := uc.mfa.GetMFAChallengeByTokenHash(ctx, hashMFAChallengeToken(mfaToken), entity.MFAChallengePurposeLogin)
+	challenge, user, mfa, err := uc.loadLoginChallenge(ctx, mfaToken)
+
+	auditUserID = challenge.UserID
+
 	if err != nil {
 		return entity.LoginResult{}, err
 	}
 
-	auditUserID = challenge.UserID
-
-	user, err := uc.repo.GetByID(ctx, challenge.UserID)
-	if err != nil {
-		return entity.LoginResult{}, entity.ErrInvalidMFAChallenge
-	}
-
-	mfa, err := uc.mfa.GetMFA(ctx, user.ID)
-	if err != nil || mfa.ConfirmedAt == nil {
-		// MFA was disabled between password and code: the challenge is stale.
-		return entity.LoginResult{}, entity.ErrInvalidMFAChallenge
-	}
-
-	if err = uc.verifySecondFactor(ctx, &mfa, code); err != nil {
+	if err := uc.verifySecondFactor(ctx, &mfa, code); err != nil {
 		return entity.LoginResult{}, err
 	}
 
 	// Consume-on-success: a concurrent double-submit of the right code issues
 	// exactly one session.
-	if err = uc.mfa.ConsumeMFAChallenge(ctx, challenge.ID); err != nil {
+	if err := uc.mfa.ConsumeMFAChallenge(ctx, challenge.ID); err != nil {
 		return entity.LoginResult{}, err
 	}
 
@@ -325,6 +335,31 @@ func (uc *UseCase) VerifyMFALogin(ctx context.Context, mfaToken, code string) (r
 	return result, nil
 }
 
+// loadLoginChallenge resolves a live login challenge to its user and their
+// CONFIRMED enrollment; a user or enrollment that vanished since the password
+// step reads as a stale challenge.
+func (uc *UseCase) loadLoginChallenge(
+	ctx context.Context,
+	mfaToken string,
+) (entity.MFAChallenge, entity.User, entity.UserMFA, error) {
+	challenge, err := uc.mfa.GetMFAChallengeByTokenHash(ctx, hashMFAChallengeToken(mfaToken), entity.MFAChallengePurposeLogin)
+	if err != nil {
+		return entity.MFAChallenge{}, entity.User{}, entity.UserMFA{}, err
+	}
+
+	user, err := uc.repo.GetByID(ctx, challenge.UserID)
+	if err != nil {
+		return challenge, entity.User{}, entity.UserMFA{}, entity.ErrInvalidMFAChallenge
+	}
+
+	mfa, err := uc.mfa.GetMFA(ctx, user.ID)
+	if err != nil || mfa.ConfirmedAt == nil {
+		return challenge, user, entity.UserMFA{}, entity.ErrInvalidMFAChallenge
+	}
+
+	return challenge, user, mfa, nil
+}
+
 // StepUpMFA re-proves a factor on the CURRENT session so destructive routes
 // open for another StepUpTTL window (AC-2).
 func (uc *UseCase) StepUpMFA(ctx context.Context, userID, familyID, code string) (expiresAt time.Time, err error) {
@@ -336,7 +371,7 @@ func (uc *UseCase) StepUpMFA(ctx context.Context, userID, familyID, code string)
 		return time.Time{}, entity.ErrMFANotEnabled
 	}
 
-	if err = uc.enforceAuthRateLimit(ctx, authEventMFAStepUp, []rateLimitCheck{
+	if err := uc.enforceAuthRateLimit(ctx, authEventMFAStepUp, []rateLimitCheck{
 		{keyType: rateLimitKeyTypeUser, value: userID, rule: uc.rateLimit.MFAStepUpUser},
 		{keyType: rateLimitKeyTypeIP, value: authmeta.From(ctx).ClientIP, rule: uc.rateLimit.MFAStepUpIP},
 	}); err != nil {
@@ -352,12 +387,12 @@ func (uc *UseCase) StepUpMFA(ctx context.Context, userID, familyID, code string)
 		return time.Time{}, entity.ErrMFANotEnabled
 	}
 
-	if err = uc.verifySecondFactor(ctx, &mfa, code); err != nil {
+	if err := uc.verifySecondFactor(ctx, &mfa, code); err != nil {
 		return time.Time{}, err
 	}
 
 	now := time.Now().UTC()
-	if err = uc.mfa.SetSessionMFAVerified(ctx, userID, familyID, now); err != nil {
+	if err := uc.mfa.SetSessionMFAVerified(ctx, userID, familyID, now); err != nil {
 		return time.Time{}, err
 	}
 
@@ -376,11 +411,11 @@ func (uc *UseCase) DisableMFA(ctx context.Context, userID, familyID string) (res
 		return entity.LoginResult{}, entity.ErrMFANotEnabled
 	}
 
-	if err = uc.requireFreshStepUp(ctx, userID, familyID); err != nil {
+	if err := uc.requireFreshStepUp(ctx, userID, familyID); err != nil {
 		return entity.LoginResult{}, err
 	}
 
-	if err = uc.mfa.DeleteMFA(ctx, userID); err != nil {
+	if err := uc.mfa.DeleteMFA(ctx, userID); err != nil {
 		return entity.LoginResult{}, err
 	}
 
@@ -401,7 +436,7 @@ func (uc *UseCase) DisableMFA(ctx context.Context, userID, familyID string) (res
 		return entity.LoginResult{}, err
 	}
 
-	uc.notifyMFADisabled(ctx, user)
+	uc.notifyMFADisabled(ctx, &user)
 
 	return result, nil
 }
@@ -417,7 +452,7 @@ func (uc *UseCase) RegenerateMFARecoveryCodes(ctx context.Context, userID, famil
 		return nil, entity.ErrMFANotEnabled
 	}
 
-	if err = uc.requireFreshStepUp(ctx, userID, familyID); err != nil {
+	if err := uc.requireFreshStepUp(ctx, userID, familyID); err != nil {
 		return nil, err
 	}
 
@@ -426,7 +461,7 @@ func (uc *UseCase) RegenerateMFARecoveryCodes(ctx context.Context, userID, famil
 		return nil, err
 	}
 
-	if err = uc.mfa.ReplaceRecoveryCodes(ctx, userID, hashes); err != nil {
+	if err := uc.mfa.ReplaceRecoveryCodes(ctx, userID, hashes); err != nil {
 		return nil, err
 	}
 
@@ -558,7 +593,7 @@ func (uc *UseCase) RequestMFAReset(ctx context.Context, mfaToken string) (resetT
 		return "", time.Time{}, entity.ErrInvalidMFAChallenge
 	}
 
-	if err = uc.enforceAuthRateLimit(ctx, authEventMFAResetRequest, []rateLimitCheck{
+	if err := uc.enforceAuthRateLimit(ctx, authEventMFAResetRequest, []rateLimitCheck{
 		{keyType: rateLimitKeyTypeToken, value: mfaToken, rule: uc.rateLimit.MFAResetEmail},
 		{keyType: rateLimitKeyTypeIP, value: authmeta.From(ctx).ClientIP, rule: uc.rateLimit.MFAResetIP},
 	}); err != nil {
@@ -579,6 +614,15 @@ func (uc *UseCase) RequestMFAReset(ctx context.Context, mfaToken string) (resetT
 		return "", time.Time{}, entity.ErrInvalidMFAChallenge
 	}
 
+	return uc.mintAndEmailResetChallenge(ctx, &user)
+}
+
+// mintAndEmailResetChallenge creates the purpose=reset challenge and emails
+// its OTP (the "email" half of the email+recovery-code combo).
+func (uc *UseCase) mintAndEmailResetChallenge(
+	ctx context.Context,
+	user *entity.User,
+) (string, time.Time, error) {
 	otpValue, otpHash, err := newOTPHash()
 	if err != nil {
 		return "", time.Time{}, err
@@ -589,8 +633,7 @@ func (uc *UseCase) RequestMFAReset(ctx context.Context, mfaToken string) (resetT
 		return "", time.Time{}, err
 	}
 
-	now := time.Now().UTC()
-	resetExpiresAt := now.Add(uc.mfaOptions.ResetTTL)
+	resetExpiresAt := time.Now().UTC().Add(uc.mfaOptions.ResetTTL)
 	meta := authmeta.From(ctx)
 
 	challenge := entity.MFAChallenge{
@@ -604,19 +647,19 @@ func (uc *UseCase) RequestMFAReset(ctx context.Context, mfaToken string) (resetT
 		ClientIP:     strings.TrimSpace(meta.ClientIP),
 		UserAgent:    truncateRunes(meta.UserAgent, maxEmailUserAgentRunes),
 	}
-	if err = uc.mfa.CreateMFAChallenge(ctx, challenge); err != nil {
+	if err := uc.mfa.CreateMFAChallenge(ctx, challenge); err != nil {
 		return "", time.Time{}, fmt.Errorf("UserUseCase - RequestMFAReset - CreateMFAChallenge: %w", err)
 	}
 
-	emailCtx := uc.newAuthEmailContext(ctx, user)
-	if err = uc.sendAuthEmail(
+	emailCtx := uc.newAuthEmailContext(ctx, *user)
+	if err := uc.sendAuthEmail(
 		ctx,
 		user.Email,
 		entity.EmailTemplateKeyMFAResetOTP,
 		user.ID,
 		emailCtx.Lang,
-		mfaResetEmailVariables(emailCtx, otpValue, uc.mfaOptions.ResetTTL),
-		mfaResetEmailContent(emailCtx, otpValue, uc.mfaOptions.ResetTTL),
+		mfaResetEmailVariables(&emailCtx, otpValue, uc.mfaOptions.ResetTTL),
+		mfaResetEmailContent(&emailCtx, otpValue, uc.mfaOptions.ResetTTL),
 		true,
 	); err != nil {
 		return "", time.Time{}, entity.ErrEmailDeliveryFailed
@@ -642,7 +685,7 @@ func (uc *UseCase) ConfirmMFAReset(ctx context.Context, resetToken, otpCode, rec
 		return entity.ErrInvalidMFAReset
 	}
 
-	if err = uc.enforceAuthRateLimit(ctx, authEventMFAResetConfirm, []rateLimitCheck{
+	if err := uc.enforceAuthRateLimit(ctx, authEventMFAResetConfirm, []rateLimitCheck{
 		{keyType: rateLimitKeyTypeToken, value: resetToken, rule: uc.rateLimit.MFAResetEmail},
 		{keyType: rateLimitKeyTypeIP, value: authmeta.From(ctx).ClientIP, rule: uc.rateLimit.MFAResetIP},
 	}); err != nil {
@@ -660,26 +703,44 @@ func (uc *UseCase) ConfirmMFAReset(ctx context.Context, resetToken, otpCode, rec
 
 	auditUserID = challenge.UserID
 
-	now := time.Now().UTC()
-	if challenge.OTPHash == nil || challenge.OTPExpiresAt == nil || now.After(*challenge.OTPExpiresAt) {
-		return entity.ErrInvalidMFAReset
-	}
-
-	otpCode, otpErr := validateOTPInput(otpCode)
-	if otpErr != nil || bcrypt.CompareHashAndPassword([]byte(*challenge.OTPHash), []byte(otpCode)) != nil {
-		return entity.ErrInvalidMFAReset
-	}
-
 	// Factor order: OTP checked (non-consuming), then the recovery code is
 	// spent atomically, then the challenge closes. A typo'd recovery code
 	// costs nothing; a lost consume race after the code is spent can only be
 	// the same user double-submitting.
+	if !resetOTPMatches(&challenge, otpCode) {
+		return entity.ErrInvalidMFAReset
+	}
+
+	if err := uc.spendResetFactors(ctx, &challenge, recoveryCode); err != nil {
+		return err
+	}
+
+	return uc.finalizeMFAReset(ctx, challenge.UserID)
+}
+
+// resetOTPMatches checks the emailed OTP against the challenge, expiry-aware.
+func resetOTPMatches(challenge *entity.MFAChallenge, otpCode string) bool {
+	if challenge.OTPHash == nil || challenge.OTPExpiresAt == nil || time.Now().UTC().After(*challenge.OTPExpiresAt) {
+		return false
+	}
+
+	normalized, err := validateOTPInput(otpCode)
+	if err != nil {
+		return false
+	}
+
+	return bcrypt.CompareHashAndPassword([]byte(*challenge.OTPHash), []byte(normalized)) == nil
+}
+
+// spendResetFactors burns the recovery code then the challenge, atomically
+// each, collapsing both failure modes into the anti-oracle reset error.
+func (uc *UseCase) spendResetFactors(ctx context.Context, challenge *entity.MFAChallenge, recoveryCode string) error {
 	normalizedRecovery, err := normalizeRecoveryCode(recoveryCode)
 	if err != nil {
 		return entity.ErrInvalidMFAReset
 	}
 
-	if err = uc.mfa.ConsumeRecoveryCode(ctx, challenge.UserID, hashTokenBytes([]byte(normalizedRecovery))); err != nil {
+	if err := uc.mfa.ConsumeRecoveryCode(ctx, challenge.UserID, hashTokenBytes([]byte(normalizedRecovery))); err != nil {
 		if errors.Is(err, entity.ErrInvalidMFACode) {
 			return entity.ErrInvalidMFAReset
 		}
@@ -687,7 +748,7 @@ func (uc *UseCase) ConfirmMFAReset(ctx context.Context, resetToken, otpCode, rec
 		return err
 	}
 
-	if err = uc.mfa.ConsumeMFAChallenge(ctx, challenge.ID); err != nil {
+	if err := uc.mfa.ConsumeMFAChallenge(ctx, challenge.ID); err != nil {
 		if errors.Is(err, entity.ErrInvalidMFAChallenge) {
 			return entity.ErrInvalidMFAReset
 		}
@@ -695,18 +756,23 @@ func (uc *UseCase) ConfirmMFAReset(ctx context.Context, resetToken, otpCode, rec
 		return err
 	}
 
-	if err = uc.mfa.DeleteMFA(ctx, challenge.UserID); err != nil {
+	return nil
+}
+
+// finalizeMFAReset removes the enrollment, kills every session, and notifies.
+func (uc *UseCase) finalizeMFAReset(ctx context.Context, userID string) error {
+	if err := uc.mfa.DeleteMFA(ctx, userID); err != nil {
 		return err
 	}
 
 	if uc.sessions != nil {
-		if _, err = uc.sessions.RevokeAllAuthSessions(ctx, challenge.UserID); err != nil {
+		if _, err := uc.sessions.RevokeAllAuthSessions(ctx, userID); err != nil {
 			return fmt.Errorf("UserUseCase - ConfirmMFAReset - RevokeAllAuthSessions: %w", err)
 		}
 	}
 
-	if user, userErr := uc.repo.GetByID(ctx, challenge.UserID); userErr == nil {
-		uc.notifyMFADisabled(ctx, user)
+	if user, userErr := uc.repo.GetByID(ctx, userID); userErr == nil {
+		uc.notifyMFADisabled(ctx, &user)
 	}
 
 	return nil
@@ -768,7 +834,7 @@ func (uc *UseCase) verifyTOTP(ctx context.Context, mfa *entity.UserMFA, code str
 }
 
 // generateRecoveryCodes mints the raw display codes and their at-rest hashes.
-func generateRecoveryCodes() (raw []string, hashes []string, err error) {
+func generateRecoveryCodes() (raw, hashes []string, err error) {
 	raw = make([]string, 0, mfaRecoveryCodeCount)
 	hashes = make([]string, 0, mfaRecoveryCodeCount)
 
@@ -778,7 +844,7 @@ func generateRecoveryCodes() (raw []string, hashes []string, err error) {
 			return nil, nil, fmt.Errorf("UserUseCase - generateRecoveryCodes - rand.Read: %w", err)
 		}
 
-		normalized := mfaRecoveryCodeEncoding.EncodeToString(buf)
+		normalized := recoveryCodeEncoding().EncodeToString(buf)
 		raw = append(raw, formatRecoveryCode(normalized))
 		hashes = append(hashes, hashTokenBytes([]byte(normalized)))
 	}
@@ -813,7 +879,7 @@ func normalizeRecoveryCode(code string) (string, error) {
 		}
 	}
 
-	expectedLen := mfaRecoveryCodeEncoding.EncodedLen(mfaRecoveryCodeBytes)
+	expectedLen := recoveryCodeEncoding().EncodedLen(mfaRecoveryCodeBytes)
 	if b.Len() != expectedLen {
 		return "", entity.ErrInvalidMFACode
 	}
@@ -844,48 +910,49 @@ func hashMFAChallengeToken(raw string) string {
 
 // notifyMFADisabled tells the account owner their second factor is gone —
 // the one email that must fire loudly if an attacker pulls it off.
-func (uc *UseCase) notifyMFADisabled(ctx context.Context, user entity.User) {
+func (uc *UseCase) notifyMFADisabled(ctx context.Context, user *entity.User) {
 	if uc.emailSender == nil || !validEmail(user.Email) {
 		return
 	}
 
-	emailCtx := uc.newAuthEmailContext(ctx, user)
+	emailCtx := uc.newAuthEmailContext(ctx, *user)
 	uc.sendSecurityNotification(
 		ctx,
-		user,
+		*user,
 		entity.EmailTemplateKeyMFADisabled,
 		authEmailVariables(emailCtx),
-		mfaDisabledEmailContent(emailCtx),
+		mfaDisabledEmailContent(&emailCtx),
 	)
 }
 
-func mfaResetEmailVariables(emailCtx authEmailContext, otp string, ttl time.Duration) map[string]string {
-	variables := authEmailVariables(emailCtx)
-	variables["otp"] = otp
+func mfaResetEmailVariables(emailCtx *authEmailContext, otpValue string, ttl time.Duration) map[string]string {
+	variables := authEmailVariables(*emailCtx)
+	variables["otp"] = otpValue
 	variables["ttl"] = humanDurationText(ttl, emailCtx.Lang)
 
 	return variables
 }
 
-func mfaResetEmailContent(emailCtx authEmailContext, otp string, ttl time.Duration) authEmailContent {
+func mfaResetEmailContent(emailCtx *authEmailContext, otpValue string, ttl time.Duration) authEmailContent {
 	duration := humanDurationText(ttl, emailCtx.Lang)
 
 	if emailCtx.Lang == contentlang.English {
 		text := fmt.Sprintf(
 			"%s\n\nUse this code together with one of your recovery codes to remove two-factor authentication from your Surau account:\n%s\n\nThe code expires in %s.\n\nIf you did not request this, change your password immediately.",
 			localizedGreeting(emailCtx.Lang, emailCtx.Name),
-			otp,
+			otpValue,
 			duration,
 		)
 
 		return newAuthEmailContent(
-			emailCtx,
+			*emailCtx,
 			"Your Surau MFA reset code",
 			"MFA reset code inside",
 			"Reset two-factor authentication",
 			fmt.Sprintf(
 				"Enter this code with one of your recovery codes to remove two-factor authentication: <strong>%s</strong>. It expires in %s.",
-				otp, duration),
+				otpValue, duration,
+			),
 			"",
 			"",
 			"If you did not request this, change your password immediately.",
@@ -897,18 +964,19 @@ func mfaResetEmailContent(emailCtx authEmailContext, otp string, ttl time.Durati
 	text := fmt.Sprintf(
 		"%s\n\nGunakan kode ini bersama salah satu recovery code untuk melepas autentikasi dua langkah dari akun Surau Anda:\n%s\n\nKode kedaluwarsa dalam %s.\n\nJika Anda tidak meminta ini, segera ganti kata sandi Anda.",
 		localizedGreeting(emailCtx.Lang, emailCtx.Name),
-		otp,
+		otpValue,
 		duration,
 	)
 
 	return newAuthEmailContent(
-		emailCtx,
+		*emailCtx,
 		"Kode reset MFA Surau Anda",
 		"Kode reset MFA di dalam",
 		"Reset autentikasi dua langkah",
 		fmt.Sprintf(
 			"Masukkan kode ini bersama salah satu recovery code untuk melepas autentikasi dua langkah: <strong>%s</strong>. Berlaku %s.",
-			otp, duration),
+			otpValue, duration,
+		),
 		"",
 		"",
 		"Jika Anda tidak meminta ini, segera ganti kata sandi Anda.",
@@ -917,7 +985,7 @@ func mfaResetEmailContent(emailCtx authEmailContext, otp string, ttl time.Durati
 	)
 }
 
-func mfaDisabledEmailContent(emailCtx authEmailContext) authEmailContent {
+func mfaDisabledEmailContent(emailCtx *authEmailContext) authEmailContent {
 	if emailCtx.Lang == contentlang.English {
 		text := fmt.Sprintf(
 			"%s\n\nTwo-factor authentication was just REMOVED from your Surau account and every session was signed out.\n\nIf this was you, you can re-enroll from security settings. If not, reset your password immediately and contact support.",
@@ -925,7 +993,7 @@ func mfaDisabledEmailContent(emailCtx authEmailContext) authEmailContent {
 		)
 
 		return newAuthEmailContent(
-			emailCtx,
+			*emailCtx,
 			"Two-factor authentication removed",
 			"MFA was removed from your account",
 			"Two-factor authentication removed",
@@ -944,7 +1012,7 @@ func mfaDisabledEmailContent(emailCtx authEmailContext) authEmailContent {
 	)
 
 	return newAuthEmailContent(
-		emailCtx,
+		*emailCtx,
 		"Autentikasi dua langkah dilepas",
 		"MFA dilepas dari akun Anda",
 		"Autentikasi dua langkah dilepas",

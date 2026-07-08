@@ -210,7 +210,8 @@ INSERT INTO mfa_challenges (
     expires_at, consumed_at, client_ip, user_agent, created_at
 ) VALUES ($1, $2, $3, $4, $5, $6, $7, NULL, $8, $9, now())`
 
-	_, err := r.Pool.Exec(ctx, query,
+	_, err := r.Pool.Exec(
+		ctx, query,
 		challenge.ID,
 		challenge.UserID,
 		challenge.Purpose,

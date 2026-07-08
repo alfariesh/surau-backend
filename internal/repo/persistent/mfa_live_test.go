@@ -111,17 +111,13 @@ func TestLiveMFARecoveryCodeSingleConsume(t *testing.T) {
 	)
 
 	for range 2 {
-		wg.Add(1)
-
-		go func() {
-			defer wg.Done()
-
+		wg.Go(func() {
 			if err := repo.ConsumeRecoveryCode(ctx, userID, hashes[1]); err == nil {
 				mu.Lock()
 				successes++
 				mu.Unlock()
 			}
-		}()
+		})
 	}
 
 	wg.Wait()

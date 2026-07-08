@@ -2,10 +2,10 @@ package middleware_test
 
 import (
 	"context"
-	"time"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/alfariesh/surau-backend/internal/controller/restapi/middleware"
 	"github.com/alfariesh/surau-backend/internal/entity"

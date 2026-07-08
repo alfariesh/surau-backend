@@ -15,6 +15,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+var errGateDown = errors.New("db down")
+
 // TestRequireFreshMFA locks the step-up gate contract (A-3 AC-1 + AC-2): the
 // middleware maps the usecase verdict to pass / 403 enrollment-required /
 // 403 step-up-required with the frozen error codes FE branches on.
@@ -54,7 +56,7 @@ func TestRequireFreshMFA(t *testing.T) {
 		{
 			name:           "gate error is a 500, never a silent pass",
 			localUser:      admin,
-			gateErr:        errors.New("db down"),
+			gateErr:        errGateDown,
 			expectedStatus: http.StatusInternalServerError,
 		},
 		{
@@ -89,6 +91,7 @@ func TestRequireFreshMFA(t *testing.T) {
 			req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/destructive", http.NoBody)
 			resp, err := app.Test(req)
 			require.NoError(t, err)
+
 			defer resp.Body.Close()
 
 			assert.Equal(t, tc.expectedStatus, resp.StatusCode)
