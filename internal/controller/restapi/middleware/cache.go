@@ -55,31 +55,37 @@ func PublicCache(opts ...func(map[string]bool)) fiber.Handler {
 			return err
 		}
 
-		if ctx.Response().StatusCode() != http.StatusOK {
-			return nil
-		}
-
-		body := ctx.Response().Body()
-		if len(body) == 0 {
-			return nil
-		}
-
-		hash := sha256.Sum256(body)
-		etag := `W/"` + hex.EncodeToString(hash[:]) + `"`
-
-		ctx.Set("Cache-Control", publicCacheControl)
-		ctx.Set("ETag", etag)
-
-		if lastModified, ok := latestUpdatedAt(body); ok {
-			ctx.Set("Last-Modified", lastModified.UTC().Format(http.TimeFormat))
-		}
-
-		if strings.TrimSpace(ctx.Get("If-None-Match")) == etag {
-			ctx.Status(http.StatusNotModified)
-			ctx.Response().SetBody(nil)
-		}
+		stampCacheValidators(ctx)
 
 		return nil
+	}
+}
+
+// stampCacheValidators adds Cache-Control/ETag/Last-Modified to a successful
+// GET response and answers 304 on an If-None-Match hit.
+func stampCacheValidators(ctx *fiber.Ctx) {
+	if ctx.Response().StatusCode() != http.StatusOK {
+		return
+	}
+
+	body := ctx.Response().Body()
+	if len(body) == 0 {
+		return
+	}
+
+	hash := sha256.Sum256(body)
+	etag := `W/"` + hex.EncodeToString(hash[:]) + `"`
+
+	ctx.Set("Cache-Control", publicCacheControl)
+	ctx.Set("ETag", etag)
+
+	if lastModified, ok := latestUpdatedAt(body); ok {
+		ctx.Set("Last-Modified", lastModified.UTC().Format(http.TimeFormat))
+	}
+
+	if strings.TrimSpace(ctx.Get("If-None-Match")) == etag {
+		ctx.Status(http.StatusNotModified)
+		ctx.Response().SetBody(nil)
 	}
 }
 

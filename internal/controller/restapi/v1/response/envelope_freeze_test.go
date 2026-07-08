@@ -4,9 +4,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-
 	"github.com/alfariesh/surau-backend/internal/controller/restapi/v1/response"
+	"github.com/stretchr/testify/assert"
 )
 
 // F1-D (decision F1-D3): list envelopes are a live FE/mobile contract.
@@ -59,11 +58,13 @@ func TestStandardListEnvelopesUseItemsTotal(t *testing.T) {
 func TestErrorEnvelopeFieldsAreFrozen(t *testing.T) {
 	t.Parallel()
 
-	assert.Equal(t,
+	assert.Equal(
+		t,
 		[]string{"error", "code", "message", "details", "retry_after", "request_id"},
 		jsonKeys(response.Error{}),
 	)
-	assert.Equal(t,
+	assert.Equal(
+		t,
 		[]string{"error", "code", "request_id", "existing_project_id"},
 		jsonKeys(response.ProductionProjectConflict{}),
 	)
@@ -75,8 +76,8 @@ func jsonKeys(value any) []string {
 	typ := reflect.TypeOf(value)
 	keys := make([]string, 0, typ.NumField())
 
-	for i := range typ.NumField() {
-		tag := typ.Field(i).Tag.Get("json")
+	for field := range typ.Fields() {
+		tag := field.Tag.Get("json")
 		if tag == "" || tag == "-" {
 			continue
 		}

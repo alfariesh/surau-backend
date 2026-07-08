@@ -8,11 +8,10 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/alfariesh/surau-backend/pkg/logger"
 	"github.com/gofiber/fiber/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/alfariesh/surau-backend/pkg/logger"
 )
 
 type envelopeBody struct {
@@ -21,6 +20,8 @@ type envelopeBody struct {
 	Message   string `json:"message"`
 	RequestID string `json:"request_id"`
 }
+
+var errLeakyInternal = errors.New("secret database dsn in panic value")
 
 func newErrorHandlerApp(t *testing.T) *fiber.App {
 	t.Helper()
@@ -58,7 +59,7 @@ func TestEnvelopeErrorHandlerNeverEchoesInternalErrors(t *testing.T) {
 
 	app := newErrorHandlerApp(t)
 	app.Get("/boom", func(*fiber.Ctx) error {
-		return errors.New("secret database dsn in panic value")
+		return errLeakyInternal
 	})
 
 	resp, err := app.Test(httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/boom", nil))

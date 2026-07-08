@@ -15873,11 +15873,19 @@ const docTemplate = `{
         "v1.ProductionProjectConflict": {
             "type": "object",
             "properties": {
+                "code": {
+                    "type": "string",
+                    "example": "production_project_already_exists"
+                },
                 "error": {
                     "type": "string",
                     "example": "production project already exists"
                 },
                 "existing_project_id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "request_id": {
                     "type": "string",
                     "example": "550e8400-e29b-41d4-a716-446655440000"
                 }
@@ -15911,6 +15919,10 @@ const docTemplate = `{
                     "type": "boolean",
                     "example": false
                 },
+                "code": {
+                    "type": "string",
+                    "example": "production_project_is_not_ready"
+                },
                 "complete_count": {
                     "type": "integer",
                     "example": 40
@@ -15935,6 +15947,10 @@ const docTemplate = `{
                 "ready": {
                     "type": "boolean",
                     "example": false
+                },
+                "request_id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
                 },
                 "required_count": {
                     "type": "integer",

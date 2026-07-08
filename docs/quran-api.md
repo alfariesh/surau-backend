@@ -1030,6 +1030,8 @@ GET /v1/quran/search?q=&lang=id&limit=50&offset=0
 
 Searches Arabic Quran text, the requested translation, and other imported translations for discoverability. Result display still returns exact requested-language translation only.
 
+Rate limit: per-IP limiter; exceeding it returns `429` with the standard error envelope (`code: too_many_requests`, `retry_after` mirrors the `Retry-After` header). Caching: unlike the other Quran GET endpoints (which send `Cache-Control: public, max-age=300, stale-while-revalidate=86400` + `ETag`), search is dynamic and answers `Cache-Control: no-store` (F1-D).
+
 ### Query Params
 
 | Param | Type | Default | Notes |

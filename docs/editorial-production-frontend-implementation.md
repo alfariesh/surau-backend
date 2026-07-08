@@ -295,6 +295,8 @@ export interface BookProductionBlocking {
 export interface BookProductionPublishCheck {
   project: BookProductionProject;
   ready: boolean;
+  code?: string;        // F1-D: frozen machine code (production_project_is_not_ready)
+  request_id?: string;  // F1-D: correlate with backend logs/traces
   can_publish: boolean;
   required_count: number;
   complete_count: number;
@@ -548,8 +550,8 @@ Common backend errors:
 | 404 | `{"error":"production project not found"}` | project deleted/invalid id | Return to queue |
 | 404 | `{"error":"draft not found"}` | GET/delete/review draft before save | Show empty draft state |
 | 404 | `{"error":"heading not found"}` | invalid heading for project | Refresh workspace |
-| 409 | `{"error":"production project already exists","existing_project_id":"..."}` | duplicate active `book_id + lang` | Link existing project |
-| 409 | `{"error":"production project is not ready","blocking_errors":[...]}` | publish blocked | Show returned blockers |
+| 409 | `{"error":"production project already exists","code":"production_project_already_exists","request_id":"...","existing_project_id":"..."}` | duplicate active `book_id + lang` | Link existing project |
+| 409 | `{"error":"production project is not ready","code":"production_project_is_not_ready","request_id":"...","blocking_errors":[...]}` | publish blocked | Show returned blockers |
 | 412 | `{"error":"precondition failed"}` | stale `If-Match` on draft/project mutation | Refresh latest data and ask user to retry or merge |
 | 500 | `{"error":"internal server error"}` | server/db issue | Toast and retry option |
 

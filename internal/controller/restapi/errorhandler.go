@@ -4,11 +4,10 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/gofiber/fiber/v2"
-
 	"github.com/alfariesh/surau-backend/internal/controller/restapi/apierror"
 	"github.com/alfariesh/surau-backend/internal/controller/restapi/v1/response"
 	"github.com/alfariesh/surau-backend/pkg/logger"
+	"github.com/gofiber/fiber/v2"
 )
 
 // EnvelopeErrorHandler returns the Fiber error handler that turns framework

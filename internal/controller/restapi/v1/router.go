@@ -30,6 +30,12 @@ const sessionRequestsPerMinute = 30
 // churn the cache and load the DB unbounded.
 const quranSearchesPerMinute = 60
 
+// bookRAGRequestsPerMinute bounds the expensive per-book RAG ask endpoint.
+const bookRAGRequestsPerMinute = 20
+
+// translationFeedbackPerMinute bounds public feedback submissions.
+const translationFeedbackPerMinute = 30
+
 // NewRoutes -.
 func NewRoutes(
 	apiV1Group fiber.Router,
@@ -83,7 +89,7 @@ func NewRoutes(
 		bookGroup.Get("/", r.listBooks)
 		bookGroup.Get("/:book_id", r.getBook)
 		bookGroup.Post("/:book_id/rag", limiter.New(limiter.Config{
-			Max:          20,
+			Max:          bookRAGRequestsPerMinute,
 			Expiration:   time.Minute,
 			LimitReached: limiterLimitReached,
 		}), r.askBookRAG)
@@ -96,7 +102,7 @@ func NewRoutes(
 		bookGroup.Get("/:book_id/toc/:heading_id/playlist", r.getBookTOCPlaylist)
 		bookGroup.Get("/:book_id/quran-references", r.listBookQuranReferences)
 		bookGroup.Post("/:book_id/toc/:heading_id/translation-feedback", limiter.New(limiter.Config{
-			Max:          30,
+			Max:          translationFeedbackPerMinute,
 			Expiration:   time.Minute,
 			LimitReached: limiterLimitReached,
 		}), r.createTranslationFeedback)

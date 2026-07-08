@@ -3884,10 +3884,16 @@ definitions:
     type: object
   v1.ProductionProjectConflict:
     properties:
+      code:
+        example: production_project_already_exists
+        type: string
       error:
         example: production project already exists
         type: string
       existing_project_id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      request_id:
         example: 550e8400-e29b-41d4-a716-446655440000
         type: string
     type: object
@@ -3910,6 +3916,9 @@ definitions:
       can_publish:
         example: false
         type: boolean
+      code:
+        example: production_project_is_not_ready
+        type: string
       complete_count:
         example: 40
         type: integer
@@ -3928,6 +3937,9 @@ definitions:
       ready:
         example: false
         type: boolean
+      request_id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
       required_count:
         example: 42
         type: integer

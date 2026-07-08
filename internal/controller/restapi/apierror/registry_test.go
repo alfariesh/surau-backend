@@ -16,7 +16,7 @@ import (
 // A red diff here means an error code shipped to FE/mobile is about to move —
 // that is a breaking change and needs its own decision, not a spelling fix.
 //
-//nolint:gochecknoglobals // golden copy of the frozen contract
+//nolint:gochecknoglobals,gosec // golden copy of the frozen contract; message strings, not credentials
 var goldenCodes = map[string]string{
 	"missing authorization header":        "AUTH_HEADER_MISSING",
 	"invalid authorization header format": "AUTH_HEADER_INVALID",

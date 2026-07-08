@@ -13,7 +13,7 @@ package apierror
 // behind for old clients. Genuinely new messages fall back to derived codes
 // (see Code) until registered.
 //
-//nolint:gochecknoglobals // frozen contract table, read-only at runtime
+//nolint:gochecknoglobals,gosec // frozen contract table, read-only at runtime; the "credentials"-looking keys are error-message sentences, not secrets
 var frozenCodes = map[string]string{
 	// Explicit auth codes (pre-F1-D, SCREAMING_SNAKE by design).
 	"missing authorization header":        CodeAuthHeaderMissing,

@@ -10,8 +10,8 @@ import (
 	_ "github.com/alfariesh/surau-backend/docs" // Swagger docs.
 	"github.com/alfariesh/surau-backend/internal/controller/restapi/apierror"
 	"github.com/alfariesh/surau-backend/internal/controller/restapi/middleware"
-	"github.com/alfariesh/surau-backend/internal/controller/restapi/v1/response"
 	v1 "github.com/alfariesh/surau-backend/internal/controller/restapi/v1"
+	"github.com/alfariesh/surau-backend/internal/controller/restapi/v1/response"
 	"github.com/alfariesh/surau-backend/internal/usecase"
 	"github.com/alfariesh/surau-backend/pkg/jwt"
 	"github.com/alfariesh/surau-backend/pkg/logger"
