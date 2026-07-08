@@ -2,7 +2,7 @@ module github.com/alfariesh/surau-backend
 
 go 1.26
 
-toolchain go1.26.3
+toolchain go1.26.5
 
 tool (
 	github.com/daixiang0/gci
