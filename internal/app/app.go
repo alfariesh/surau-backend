@@ -574,6 +574,7 @@ func Run(cfg *config.Config) {
 	if cfg.Metrics.Enabled {
 		registerEmailQueueMetrics(pg.Pool)
 		registerBackfillMetrics(pg.Pool)
+		registerDBSizeMetrics(pg.Pool)
 	}
 
 	// JWT. The manager's duration is the ACCESS token TTL; refresh tokens are
