@@ -27,6 +27,10 @@ aman** yang tertulis di PROGRAM.md §5.
 
 ## Keputusan operator yang SUDAH terjawab
 - **O-F1-1** (2026-07-07): kanal alarm & laporan = **bot Telegram** (email = cadangan teknis).
+- **PK-1 Lisensi** (2026-07-09): **default aman (a/a/a)** — audit lisensi per-karya, hanya
+  `permitted` publik, `unknown` TAK PERNAH dipublish baru (O3-a); karya telanjur publik tetap tayang,
+  takedown hanya yang teraudit `restricted` (O-1B-1-a); terjemahan mesin `generated` tampil BERLABEL
+  + antrean review, RAG tetap dikecualikan (O-4-4-a). Membuka B-4 (SESI 15).
 
 ## Aturan yang MENGIKAT semua sesi (non-negotiable)
 - **RAG Safety:** makna/tafsir TIDAK PERNAH diturunkan LLM dari teks ayat Quran. Ayat = teks
