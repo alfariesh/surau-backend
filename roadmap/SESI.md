@@ -148,16 +148,15 @@ Masuk PLAN MODE dulu; rencana wajib menyebut cara memenuhi setiap Acceptance Cri
   kode. Empat kapabilitas masa-depan (klaim wiki, token layanan) sudah didaftarkan tapi belum
   dipakai rute mana pun — menunggu fase wiki/A-2. **Gerbang W1-auth (A-1+A-3) tuntas**; sisa
   A-4/A-5/A-6 opsional kapan saja, dan Gelombang 2 (Content Backbone) sudah boleh dimulai —
-  tapi ingat: PK-1 (lisensi) masih perlu jawabanmu sebelum SESI 15/B-4.
+  PK-1 (lisensi) sudah dijawab (default aman) — Gelombang 2 terbuka penuh.
 
 ```text
 Kerjakan A-1 dari roadmap/phase-2-auth.md: RBAC ber-kapabilitas dengan satu titik kebijakan, peran baru curator & scholar_reviewer, semua pemeriksaan peran pindah ke kapabilitas, matriks peran×kapabilitas dibekukan dengan test kontrak, API kelola peran diperluas aditif.
 Masuk PLAN MODE dulu; rencana wajib menyebut cara memenuhi setiap Acceptance Criterion A-1. Setelah saya setujui: kerjakan sampai tuntas — branch fitur, test, Definition of Done, centang PROGRAM.md & SESI.md, merge, verifikasi dev-api. Laporan akhir bahasa awam.
 ```
 
-> **⏸️ CHECKPOINT KEPUTUSAN — sebelum lanjut ke Gelombang 2:** jawab **PK-1 (Lisensi)** di
-> roadmap/PROGRAM.md §5. Caranya: buka sesi Claude, ketik *"PK-1: saya pilih default aman"* (atau
-> pilihanmu sendiri per poin). Sambil menunggu keputusanmu, SESI 11–12 tetap boleh jalan.
+> **✅ CHECKPOINT KEPUTUSAN — PK-1 (Lisensi) TERJAWAB (Salman, 2026-07-09): default aman (a/a/a).**
+> Detail di roadmap/PROGRAM.md §5 PK-1 + CLAUDE.md. Gelombang 2 terbuka penuh, termasuk SESI 15 (B-4).
 
 ## GELOMBANG 2 — Content Backbone
 
@@ -189,7 +188,7 @@ Kerjakan B-5 dan B-6 dari roadmap/phase-1b-content-backbone.md: (B-5) bekukan no
 Masuk PLAN MODE dulu; rencana wajib menyebut cara memenuhi setiap Acceptance Criterion keduanya. Setelah saya setujui: kerjakan sampai tuntas — branch fitur, test, Definition of Done, centang PROGRAM.md & SESI.md, merge, verifikasi dev-api. Laporan akhir bahasa awam.
 ```
 
-- [ ] **SESI 15 — Gerbang lisensi platform (B-4)** *(⚠️ butuh PK-1 sudah dijawab)*
+- [ ] **SESI 15 — Gerbang lisensi platform (B-4)** *(✅ PK-1 sudah dijawab: default aman a/a/a)*
 
 ```text
 Kerjakan B-4 dari roadmap/phase-1b-content-backbone.md sesuai jawaban PK-1 di roadmap/PROGRAM.md §5: adopsi enum license_status ke kitab (Work/Edition, pewarisan ke unit), publish BARU wajib permitted, karya existing di-grandfather sesuai keputusan O-1B-1, laporan cakupan lisensi untuk saya.

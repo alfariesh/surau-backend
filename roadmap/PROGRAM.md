@@ -180,7 +180,14 @@ Alarm (backup gagal, error melonjak) DAN laporan (drill, SLO mingguan) dikirim v
 Telegram**. Implementasi S1/E2 dan paket alert F1-B memakai kanal ini; email tetap tersedia
 sebagai cadangan teknis bila bot gagal terkirim.
 
-### PK-1 — Lisensi & Konten Existing  *(jawab sebelum W2; memblokir B-4)*
+### PK-1 — Lisensi & Konten Existing — ✅ **TERJAWAB (Salman, 2026-07-09): DEFAULT AMAN (a/a/a)**
+Ketiga sub-poin = opsi (a): **(O3)** audit lisensi per-karya, hanya `permitted` yang publish,
+`unknown` TAK PERNAH dipublish baru, prioritas karya paling dibaca; **(O-1B-1)** karya yang telanjur
+publik tetap tayang selama audit, takedown segera HANYA yang teraudit `restricted`; **(O-4-4)**
+terjemahan mesin `generated` tetap tampil di reader publik BERLABEL + investasi antrean review (RAG
+tetap dikecualikan darinya). Memblokir B-4 (SESI 15) — kini terbuka. Konsumen: B-4 (enum
+license_status + gerbang publish), K-1 (backfill katalog), dan setiap jalur publish konten.
+
 Gabungan **O3 + O-1B-1 + O-4-4**. Pertanyaan intinya: bagaimana kita memperlakukan ribuan kitab
 Shamela yang status lisensinya belum jelas, dan konten terjemahan mesin yang belum direview?
 1. **Postur audit lisensi (O3):** (a) audit per-karya, hanya `permitted` yang publish — bersih
