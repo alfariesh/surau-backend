@@ -43,13 +43,25 @@ gelombang.
 **Isi:** F1-B ✅ **SELESAI 2026-07-08 (S5)** (observability inti — request-ID+trace_id di semua log request-scoped; OTel HTTP→pgx→webapi ke Tempo; RED+email+loop metrik; Grafana /grafana + 6 alert Telegram; kelima alert DIBUKTIKAN menyala via simulasi dev; AC trace-follow terbukti end-to-end) · F1-C ✅ **SELESAI 2026-07-08 (S6)** (supervisi loop: recover+backoff+jitter+drain 5 loop via `internal/app/loop.go`, panic tak lagi mematikan proses [AC1: loop_test.go]; email dead-letter → endpoint admin `POST /admin/emails/messages/{id}/resend` [AC2 terverifikasi end-to-end di dev]) · F1-H ✅ **SELESAI 2026-07-08 (S6)** (playbook
 `docs/data-change-playbook.md` + runner backfill resumable `internal/backfill` + CLI `cmd/backfill` ber-metrik `surau_backfill_*`; dipakai backfill NYATA `authors-name-search` — recall pencarian penulis TERUKUR di dev: `q=احمد` 19→209 hasil; 192/192 penulis ber-hamzah di NAMA kini 100% terjangkau ejaan polos (angka 1.087 sebelumnya keliru — itu termasuk kecocokan biografi via lengan lama); pause/resume terbukti live-test + drill dev (pause di 500/3.187 → resume → completed, endpoint publik 200 sepanjang drill) — PRASYARAT W2 TERPENUHI) · F1-F (rename module + kode mati — kerjakan SEBELUM
 kode baru menumpuk) · F1-D ✅ **SELESAI 2026-07-08 (S7)** (kontrak error terkunci: registry kode beku ±100 entri + test kontrak AST yang menolak edit kalimat tanpa registrasi [AC-1 dibuktikan mutation-test]; SEMUA bentuk error ber-`code`+`request_id` termasuk envelope kaya 409, 429 limiter ber-`retry_after`, 404 catch-all, ErrorHandler framework [AC-2] — sekaligus menutup bocor nilai panic ke body 500; 8 envelope legacy dibekukan ber-test; `/v1/quran/search` kini `no-store`; kebijakan PublicCache + sumber kebenaran versi cache worker didokumentasikan sebagai kontrak) · F1-E ✅ **SELESAI 2026-07-08 (S8, PR #72)** (CI tepercaya: akar flakiness integration DIPERBAIKI — db healthcheck + readiness-wait eksplisit di TestMain, bukan sleep; retry 3→1 dan attempt>1 = alarm Telegram+warning [F1-D8]; job round-trip migrasi up→down→up dengan diff schema [60 pasang migrasi terbukti simetris]; smoke bootstrap `TestLiveAppBootstrap` + kontrak 5 loop ber-unit-test membunuh 0% `app.go` [AC-2]; `TestLiveAyahEditorialReadPath` di-unskip dengan fixture mandiri; ratchet coverage kode baru ≥70% via `cmd/diffcover` gagal-kan PR + total dilaporkan per-PR [AC-3, dogfood 92,5%]; rag-eval smoke cron mingguan non-gating vs dev-api [F1-D9]; BONUS: bug 401-vs-404 catch-all yang membuat PR #71 merge merah diperbaiki — Auth per-subtree; catatan: secrets TELEGRAM_* di GitHub menunggu Salman) · F1-G ✅ **SELESAI 2026-07-08 (S7)** (tuning Postgres ber-env di compose [dev 2GB default / prod 4GB override], slow-query log 200ms, pg_stat_statements, postgres-exporter + 5 panel DB + alert koneksi>80% → Telegram; review pool: app 10 + collab 5 vs max_connections 50) ·
-**A-3 (MFA + step-up)** · **A-1 (RBAC ber-kapabilitas + scholar_reviewer)** — selesai di sini
+**A-3 (MFA + step-up)** ✅ **SELESAI 2026-07-09 (S9, PR #74)** (TOTP + recovery codes sekali-pakai
+[hash-at-rest] + step-up: TOTP wajib admin [helper `entity.RoleRequiresMFA`, scholar_reviewer 1
+baris di A-1]; login akun ber-MFA membalas challenge `{mfa_required,mfa_token}` lalu `/v1/auth/mfa/verify`
+[AC login aditif — akun non-MFA tak berubah, ber-test]; **AC-1** grace enrollment [`users.mfa_enforced_from`
+backfill admin + stamp API/CLI, default 7 hari] → 403 `mfa_enrollment_required` [integration];
+**AC-2** step-up segar [`auth_sessions.mfa_verified_at` disalin saat rotasi, default 10 mnt] pada
+publish/unpublish/hapus-final-asset [grup editorialAdmin] + `PATCH /admin/users/role` → 403
+`mfa_step_up_required` [integration]; **AC-3** recovery code sekali-pakai [konsumsi atomik, live +
+concurrent double-spend + integration]; reset kehilangan-HP = OTP email + recovery code → sesi dicabut;
+CLI darurat `cmd/reset-user-mfa`; secret TOTP ter-enkripsi AES-256-GCM [`pkg/cryptobox`]; 8 kode error
+beku; Swagger+docs FE diperbarui; **nota infra:** `make test` kini `-coverpkg` → gerbang F1-E mengkredit
+coverage lintas-paket [total jujur ~28→~50%, diff A-3 77,7%]; ⚠️ set `MFA_ENCRYPTION_KEY` di prod sebelum
+A-4) · **A-1 (RBAC ber-kapabilitas + scholar_reviewer)** — selesai di sini
 agar W5 tidak menunggu.
 **Gerbang keluar:** request-ID→trace hidup + 5 alert teruji; playbook F1-H terpakai ≥1 backfill
 nyata; CI 10-run hijau tanpa retry ✅ **TERBUKTI 2026-07-08** (workflow integration-soak, 10/10
 lulus dalam 10,5 menit tanpa satu pun retry:
-https://github.com/alfariesh/surau-backend/actions/runs/28953164078); login admin ber-MFA;
-matriks kapabilitas beku-ber-test.
+https://github.com/alfariesh/surau-backend/actions/runs/28953164078); login admin ber-MFA ✅
+**TERBUKTI 2026-07-09 (S9)**; matriks kapabilitas beku-ber-test (A-1, tersisa).
 **Keputusan:** O-2-1 (cakupan MFA — cepat, lihat PK-3).
 
 ### W2 — Content Backbone (1B)
