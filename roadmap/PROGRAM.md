@@ -55,13 +55,23 @@ concurrent double-spend + integration]; reset kehilangan-HP = OTP email + recove
 CLI darurat `cmd/reset-user-mfa`; secret TOTP ter-enkripsi AES-256-GCM [`pkg/cryptobox`]; 8 kode error
 beku; Swagger+docs FE diperbarui; **nota infra:** `make test` kini `-coverpkg` → gerbang F1-E mengkredit
 coverage lintas-paket [total jujur ~28→~50%, diff A-3 77,7%]; ⚠️ set `MFA_ENCRYPTION_KEY` di prod sebelum
-A-4) · **A-1 (RBAC ber-kapabilitas + scholar_reviewer)** — selesai di sini
-agar W5 tidak menunggu.
+A-4) · **A-1 (RBAC ber-kapabilitas + scholar_reviewer)** ✅ **SELESAI 2026-07-09 (S10, PR #76)**
+(otorisasi pindah ke SATU titik `internal/policy`: 7 kapabilitas bernama + matriks beku peran×kapabilitas
+[admin=superset]; peran baru `curator` + `scholar_reviewer` [migrasi CHECK round-trip; API kelola-peran
+aditif]; `middleware.RequireCapability` menggantikan RequireRoles di 3 gerbang [perilaku live byte-identik:
+review-editorial{editor,admin}, publish-production{admin}+step-up, manage-users{admin}]; **AC-1** hanya
+scholar_reviewer+admin lolos approve-sensitive-claim [test]; **AC-2** tak ada `role==` cek-akses di luar
+policy [test AST kontrak, terbukti menangkap pelanggaran suntikan]; **AC-3** matriks beku golden-twin +
+didokumentasikan di docs/auth-frontend.md; audit mencatat kapabilitas; RoleRequiresMFA dipindah ke policy
+[scholar_reviewer kini mandat MFA]; 4 kapabilitas [curate-entities/approve-neutral&sensitive-claim/
+manage-service-tokens] dideklarasikan utk W-0/W-5/W-6/A-2 tapi belum ada rute; diff-coverage 98,4%).
 **Gerbang keluar:** request-ID→trace hidup + 5 alert teruji; playbook F1-H terpakai ≥1 backfill
 nyata; CI 10-run hijau tanpa retry ✅ **TERBUKTI 2026-07-08** (workflow integration-soak, 10/10
 lulus dalam 10,5 menit tanpa satu pun retry:
 https://github.com/alfariesh/surau-backend/actions/runs/28953164078); login admin ber-MFA ✅
-**TERBUKTI 2026-07-09 (S9)**; matriks kapabilitas beku-ber-test (A-1, tersisa).
+**TERBUKTI 2026-07-09 (S9)**; matriks kapabilitas beku-ber-test ✅ **TERBUKTI 2026-07-09 (S10)**.
+**Gerbang keluar W1 (auth) TERPENUHI** — sisa A-4/A-5/A-6 (JWT dual-key, refresh harden, alert anomali)
+menyusul kapan saja; W2 (Content Backbone) dapat mulai.
 **Keputusan:** O-2-1 (cakupan MFA — cepat, lihat PK-3).
 
 ### W2 — Content Backbone (1B)
