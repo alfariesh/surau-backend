@@ -212,8 +212,7 @@ groups:
             datasourceUid: prometheus
             model:
               refId: A
-              expr: (100 * node_filesystem_avail_bytes{mountpoint="/",fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{mountpoint="/",fstype!~"tmpfs|overlay"})
-                < bool 15
+              expr: 100 * node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"} < bool 15
               instant: true
               range: false
               datasource:
