@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/alfariesh/surau-backend/internal/entity"
+	"github.com/alfariesh/surau-backend/internal/policy"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -71,7 +72,7 @@ WHERE u.id = e.id
 RETURNING u.id, u.username, u.email, u.role, e.previous_role, u.created_at, u.updated_at`,
 		normalizedRole,
 		normalizedEmail,
-		entity.RoleRequiresMFA(normalizedRole),
+		policy.RoleRequiresMFA(normalizedRole),
 	).Scan(&user.ID, &user.Username, &user.Email, &user.Role, &previousRole, &user.CreatedAt, &user.UpdatedAt)
 	if err != nil {
 		fatalf("set user role: %v", err)

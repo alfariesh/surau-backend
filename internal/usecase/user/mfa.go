@@ -13,6 +13,7 @@ import (
 
 	"github.com/alfariesh/surau-backend/internal/contentlang"
 	"github.com/alfariesh/surau-backend/internal/entity"
+	"github.com/alfariesh/surau-backend/internal/policy"
 	"github.com/alfariesh/surau-backend/internal/usecase/authmeta"
 	"github.com/google/uuid"
 	"github.com/pquerna/otp"
@@ -487,7 +488,7 @@ func (uc *UseCase) MFAStatus(ctx context.Context, userID, familyID string) (enti
 	status := entity.MFAStatus{
 		Enabled:      data.Confirmed,
 		Pending:      data.Pending,
-		Required:     entity.RoleRequiresMFA(user.Role),
+		Required:     policy.RoleRequiresMFA(user.Role),
 		EnforcedFrom: data.EnforcedFrom,
 	}
 
@@ -537,7 +538,7 @@ func (uc *UseCase) MFAGate(ctx context.Context, user *entity.User, familyID stri
 		return entity.MFAGateStepUpRequired, nil
 	}
 
-	if !entity.RoleRequiresMFA(user.Role) {
+	if !policy.RoleRequiresMFA(user.Role) {
 		return entity.MFAGateAllowed, nil
 	}
 

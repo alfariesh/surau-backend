@@ -8,9 +8,11 @@ import (
 const (
 	UserOnboardingVersion = 1
 
-	UserRoleUser   = "user"
-	UserRoleEditor = "editor"
-	UserRoleAdmin  = "admin"
+	UserRoleUser            = "user"
+	UserRoleEditor          = "editor"
+	UserRoleCurator         = "curator"
+	UserRoleScholarReviewer = "scholar_reviewer"
+	UserRoleAdmin           = "admin"
 
 	UserPreferredLangDefault = "id"
 
@@ -36,37 +38,20 @@ func NormalizeUserRole(role string) (string, error) {
 }
 
 // IsValidUserRole reports whether role is one of the supported account roles.
+// This is validation (the valid set), not an access decision — access lives in
+// internal/policy.
 func IsValidUserRole(role string) bool {
 	switch strings.ToLower(strings.TrimSpace(role)) {
-	case UserRoleUser, UserRoleEditor, UserRoleAdmin:
+	case UserRoleUser, UserRoleEditor, UserRoleCurator, UserRoleScholarReviewer, UserRoleAdmin:
 		return true
 	default:
 		return false
 	}
 }
 
-// CanReviewEditorial reports whether role can access editorial review and draft tools.
-func CanReviewEditorial(role string) bool {
-	switch strings.ToLower(strings.TrimSpace(role)) {
-	case UserRoleEditor, UserRoleAdmin:
-		return true
-	default:
-		return false
-	}
-}
-
-// CanPublishEditorial reports whether role can publish or administer editorial state.
-func CanPublishEditorial(role string) bool {
-	return strings.EqualFold(strings.TrimSpace(role), UserRoleAdmin)
-}
-
-// RoleRequiresMFA reports whether role is under the MFA mandate (O-2-1
-// default a: admin + scholar_reviewer). scholar_reviewer joins here as a
-// one-line addition when A-1 introduces the role; A-1's capability policy
-// will subsume this helper.
-func RoleRequiresMFA(role string) bool {
-	return strings.EqualFold(strings.TrimSpace(role), UserRoleAdmin)
-}
+// Access decisions (capabilities) and the MFA mandate live in internal/policy
+// (A-1): the former entity helpers CanReviewEditorial/CanPublishEditorial/
+// RoleRequiresMFA were folded into that single policy point.
 
 // User -.
 type User struct {

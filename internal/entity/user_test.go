@@ -40,17 +40,6 @@ func TestNormalizeUserRoleRejectsInvalidRole(t *testing.T) {
 	require.ErrorIs(t, err, ErrInvalidRole)
 }
 
-func TestEditorialRolePermissions(t *testing.T) {
-	t.Parallel()
-
-	assert.True(t, CanReviewEditorial(UserRoleEditor))
-	assert.True(t, CanReviewEditorial(UserRoleAdmin))
-	assert.False(t, CanReviewEditorial(UserRoleUser))
-
-	assert.False(t, CanPublishEditorial(UserRoleEditor))
-	assert.True(t, CanPublishEditorial(UserRoleAdmin))
-}
-
 func TestNormalizeProductionLang(t *testing.T) {
 	t.Parallel()
 
