@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/alfariesh/surau-backend/internal/controller/restapi/apierror"
 	"github.com/alfariesh/surau-backend/internal/controller/restapi/v1/response"
 	"github.com/alfariesh/surau-backend/internal/entity"
 	"github.com/gofiber/fiber/v2"
@@ -11,8 +12,12 @@ import (
 
 func (r *V1) editorialError(ctx *fiber.Ctx, err error) error {
 	if existingProjectID := productionProjectExistsWithID(err); existingProjectID != "" {
+		const msg = "production project already exists"
+
 		return ctx.Status(http.StatusConflict).JSON(response.ProductionProjectConflict{
-			Error:             "production project already exists",
+			Error:             msg,
+			Code:              apierror.Code(msg),
+			RequestID:         requestID(ctx),
 			ExistingProjectID: existingProjectID,
 		})
 	}

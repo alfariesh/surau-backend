@@ -83,8 +83,9 @@ func NewRoutes(
 		bookGroup.Get("/", r.listBooks)
 		bookGroup.Get("/:book_id", r.getBook)
 		bookGroup.Post("/:book_id/rag", limiter.New(limiter.Config{
-			Max:        20,
-			Expiration: time.Minute,
+			Max:          20,
+			Expiration:   time.Minute,
+			LimitReached: limiterLimitReached,
 		}), r.askBookRAG)
 		bookGroup.Get("/:book_id/pages", r.listBookPages)
 		bookGroup.Get("/:book_id/pages/:page_id", r.getBookPage)
@@ -95,8 +96,9 @@ func NewRoutes(
 		bookGroup.Get("/:book_id/toc/:heading_id/playlist", r.getBookTOCPlaylist)
 		bookGroup.Get("/:book_id/quran-references", r.listBookQuranReferences)
 		bookGroup.Post("/:book_id/toc/:heading_id/translation-feedback", limiter.New(limiter.Config{
-			Max:        30,
-			Expiration: time.Minute,
+			Max:          30,
+			Expiration:   time.Minute,
+			LimitReached: limiterLimitReached,
 		}), r.createTranslationFeedback)
 	}
 
@@ -105,8 +107,9 @@ func NewRoutes(
 
 	// Per-IP limiter for the expensive public search route (default key = client IP).
 	quranSearchLimiter := limiter.New(limiter.Config{
-		Max:        quranSearchesPerMinute,
-		Expiration: time.Minute,
+		Max:          quranSearchesPerMinute,
+		Expiration:   time.Minute,
+		LimitReached: limiterLimitReached,
 	})
 
 	quranGroup := apiV1Group.Group("/quran", middleware.PublicCache())
@@ -157,8 +160,9 @@ func NewRoutes(
 	// One shared per-user budget across all personal writes. GETs stay
 	// uncounted. In-memory store is fine: single instance, prefork off.
 	personalWriteLimiter := limiter.New(limiter.Config{
-		Max:        personalWritesPerMinute,
-		Expiration: time.Minute,
+		Max:          personalWritesPerMinute,
+		Expiration:   time.Minute,
+		LimitReached: limiterLimitReached,
 		KeyGenerator: func(ctx *fiber.Ctx) string {
 			if userID, ok := ctx.Locals("userID").(string); ok && userID != "" {
 				return userID
@@ -207,8 +211,9 @@ func NewRoutes(
 	// bursts cannot monopolize the database. In-memory store is fine: single
 	// instance, prefork off.
 	editorialSaveLimiter := limiter.New(limiter.Config{
-		Max:        editorialSavesPerMinute,
-		Expiration: time.Minute,
+		Max:          editorialSavesPerMinute,
+		Expiration:   time.Minute,
+		LimitReached: limiterLimitReached,
 		KeyGenerator: func(ctx *fiber.Ctx) string {
 			if userID, ok := ctx.Locals("userID").(string); ok && userID != "" {
 				return userID
@@ -335,8 +340,9 @@ func NewRoutes(
 // key falls back to the client IP when no authenticated user is present.
 func newSessionLimiter() fiber.Handler {
 	return limiter.New(limiter.Config{
-		Max:        sessionRequestsPerMinute,
-		Expiration: time.Minute,
+		Max:          sessionRequestsPerMinute,
+		Expiration:   time.Minute,
+		LimitReached: limiterLimitReached,
 		KeyGenerator: func(ctx *fiber.Ctx) string {
 			if userID, ok := ctx.Locals("userID").(string); ok && userID != "" {
 				return userID

@@ -1135,9 +1135,10 @@ func (r *V1) editorialPublishProductionProject(ctx *fiber.Ctx) error {
 		if errors.Is(err, entity.ErrProductionNotReady) {
 			check, checkErr := r.editorial.ProductionPublishCheck(ctx.UserContext(), ctx.Params("id"))
 			if checkErr == nil {
-				return ctx.Status(http.StatusConflict).JSON(
-					response.ProductionPublishBlockedFromCheck("production project is not ready", check),
-				)
+				blocked := response.ProductionPublishBlockedFromCheck("production project is not ready", check)
+				blocked.RequestID = requestID(ctx)
+
+				return ctx.Status(http.StatusConflict).JSON(blocked)
 			}
 
 			r.logEditorialError(ctx, checkErr, "restapi - v1 - editorialPublishProductionProject - publishCheck")

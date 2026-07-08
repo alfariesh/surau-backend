@@ -303,6 +303,7 @@ func initServers(cfg *config.Config, pg *postgres.Postgres, uc useCases, jwtMana
 		httpserver.ProxyHeader(cfg.HTTP.ProxyHeader),
 		httpserver.TrustedProxies(cfg.HTTP.TrustedProxies),
 		httpserver.BodyLimit(cfg.HTTP.BodyLimitBytes),
+		httpserver.ErrorHandler(restapi.EnvelopeErrorHandler(l)),
 	)
 	restapi.NewRouter(
 		httpServer.App,
