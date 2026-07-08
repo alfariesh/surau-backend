@@ -106,7 +106,17 @@ Kerjakan F1-D dan F1-G dari roadmap/phase-1-foundations.md: (F1-D) kode error ja
 Masuk PLAN MODE dulu; rencana wajib menyebut cara memenuhi setiap Acceptance Criterion. Setelah saya setujui: kerjakan sampai tuntas — branch fitur, test, Definition of Done, centang PROGRAM.md & SESI.md, merge, verifikasi dev-api. Laporan akhir bahasa awam.
 ```
 
-- [ ] **SESI 8 — CI yang bisa dipercaya (F1-E)**
+- [x] **SESI 8 — CI yang bisa dipercaya (F1-E)** ✅ 2026-07-08 — akar flakiness ditemukan &
+  diperbaiki (healthcheck db + readiness-wait eksplisit; bukan sleep); retry kini 1× dan
+  TERPAKAINYA = alarm Telegram; job baru: round-trip 60 pasang migrasi (terbukti simetris) +
+  smoke boot aplikasi nyata; test read-path editorial di-unskip (fixture mandiri); kode baru
+  <70% coverage otomatis menggagalkan PR (PR ini sendiri 92,5%); rag-eval smoke tiap Senin
+  02:00 WIB vs dev-api (non-gating; TEMUAN: buku korpus eval 797/7312/12876 belum pernah
+  diimpor ke dev — smoke kini pre-check korpus dan lapor "dilewati" sampai buku diimpor
+  [tugas data menyusul]). Bonus: bug "route tak dikenal dijawab 401" yang membuat PR #71
+  ter-merge MERAH diperbaiki — soak 10-run hijau tanpa retry (bukti AC-1: lihat catatan
+  PROGRAM.md). ⚠️ Tersisa 1 langkah manual Salman: tambah secrets `TELEGRAM_BOT_TOKEN` +
+  `TELEGRAM_CHAT_ID` di GitHub repo Settings → Secrets agar alarm CI hidup.
 
 ```text
 Kerjakan F1-E dari roadmap/phase-1-foundations.md: akar-masalahi flakiness integration test lalu turunkan retry 3→1 dengan alarm, tambah job CI round-trip migrasi (up-down-up), smoke-test bootstrap internal/app, unskip TestLiveAyahEditorialReadPath dengan fixture mandiri, ratchet coverage kode baru ≥70%, dan jadwalkan rag-eval smoke non-gating.
