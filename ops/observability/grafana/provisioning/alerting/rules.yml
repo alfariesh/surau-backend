@@ -1,4 +1,6 @@
 # 5 alert dasar F1-B + app-down (menutup skenario schema-DIRTY boot-loop).
+# NB: JANGAN pakai `or` antar vektor ber-label identik (sisi kanan dibuang);
+# gabungkan dengan aritmetika seperti pada rule email.
 # Konvensi: ambang ada DI DALAM PromQL ("> bool X") sehingga rule membaca
 # 'nilai > 0 berarti menyala' — simulasi = mengubah satu angka di file ini.
 apiVersion: 1
@@ -120,7 +122,7 @@ groups:
             datasourceUid: prometheus
             model:
               refId: A
-              expr: (surau_email_oldest_due_seconds > bool 1800) or (surau_email_failed > bool 0)
+              expr: (surau_email_failed + (surau_email_oldest_due_seconds > bool 1800)) > bool 0
               instant: true
               range: false
               datasource:
