@@ -3,289 +3,289 @@
 # 'nilai > 0 berarti menyala' — simulasi = mengubah satu angka di file ini.
 apiVersion: 1
 groups:
-- orgId: 1
-  name: surau-f1b
-  folder: Surau
-  interval: 1m
-  rules:
-  - uid: surau-5xx-surge
-    title: 5xx surge
-    condition: C
-    for: 2m
-    labels:
-      env: $OBS_ENV_LABEL
-      source: f1b
-    annotations:
-      summary: API mengeluarkan error 5xx beruntun (>0.2 rps selama 2 menit) — kemungkinan DB down/migrasi
-        gagal/bug rilis.
-    data:
-    - refId: A
-      relativeTimeRange:
-        from: 600
-        to: 0
-      datasourceUid: prometheus
-      model:
-        refId: A
-        expr: sum(rate(http_requests_total{status_code=~"5.."}[5m])) > bool 0.2
-        instant: true
-        range: false
-        datasource:
-          type: prometheus
-          uid: prometheus
-    - refId: C
-      datasourceUid: __expr__
-      model:
-        refId: C
-        type: threshold
-        expression: A
-        datasource:
-          type: __expr__
-          uid: __expr__
-        conditions:
-        - evaluator:
-            type: gt
-            params:
-            - 0
-          operator:
-            type: and
-          query:
-            params:
-            - A
-          reducer:
-            type: last
-    noDataState: NoData
-    execErrState: Error
-  - uid: surau-p95-breach
-    title: p95 latency breach
-    condition: C
-    for: 10m
-    labels:
-      env: $OBS_ENV_LABEL
-      source: f1b
-    annotations:
-      summary: p95 latency API di atas 500ms selama 10 menit — periksa query lambat / beban.
-    data:
-    - refId: A
-      relativeTimeRange:
-        from: 600
-        to: 0
-      datasourceUid: prometheus
-      model:
-        refId: A
-        expr: histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le)) >
-          bool 0.5
-        instant: true
-        range: false
-        datasource:
-          type: prometheus
-          uid: prometheus
-    - refId: C
-      datasourceUid: __expr__
-      model:
-        refId: C
-        type: threshold
-        expression: A
-        datasource:
-          type: __expr__
-          uid: __expr__
-        conditions:
-        - evaluator:
-            type: gt
-            params:
-            - 0
-          operator:
-            type: and
-          query:
-            params:
-            - A
-          reducer:
-            type: last
-    noDataState: NoData
-    execErrState: Error
-  - uid: surau-email-stuck
-    title: email stuck / dead letter
-    condition: C
-    for: 2m
-    labels:
-      env: $OBS_ENV_LABEL
-      source: f1b
-    annotations:
-      summary: Ada email macet >30 menit atau gagal permanen (dead letter) — periksa dispatcher & penyedia
-        email.
-    data:
-    - refId: A
-      relativeTimeRange:
-        from: 600
-        to: 0
-      datasourceUid: prometheus
-      model:
-        refId: A
-        expr: (surau_email_oldest_due_seconds > bool 1800) or (surau_email_failed > bool 0)
-        instant: true
-        range: false
-        datasource:
-          type: prometheus
-          uid: prometheus
-    - refId: C
-      datasourceUid: __expr__
-      model:
-        refId: C
-        type: threshold
-        expression: A
-        datasource:
-          type: __expr__
-          uid: __expr__
-        conditions:
-        - evaluator:
-            type: gt
-            params:
-            - 0
-          operator:
-            type: and
-          query:
-            params:
-            - A
-          reducer:
-            type: last
-    noDataState: NoData
-    execErrState: Error
-  - uid: surau-backup-heartbeat
-    title: backup heartbeat stale
-    condition: C
-    for: 5m
-    labels:
-      env: $OBS_ENV_LABEL
-      source: f1b
-    annotations:
-      summary: Backup harian TIDAK sukses >26 jam — dead-man F1-A; periksa journalctl -u surau-pg-backup.
-    data:
-    - refId: A
-      relativeTimeRange:
-        from: 600
-        to: 0
-      datasourceUid: prometheus
-      model:
-        refId: A
-        expr: (time() - surau_backup_last_success_timestamp) > bool (26 * 3600)
-        instant: true
-        range: false
-        datasource:
-          type: prometheus
-          uid: prometheus
-    - refId: C
-      datasourceUid: __expr__
-      model:
-        refId: C
-        type: threshold
-        expression: A
-        datasource:
-          type: __expr__
-          uid: __expr__
-        conditions:
-        - evaluator:
-            type: gt
-            params:
-            - 0
-          operator:
-            type: and
-          query:
-            params:
-            - A
-          reducer:
-            type: last
-    noDataState: NoData
-    execErrState: Error
-  - uid: surau-disk-low
-    title: disk space low
-    condition: C
-    for: 5m
-    labels:
-      env: $OBS_ENV_LABEL
-      source: f1b
-    annotations:
-      summary: Sisa disk < 15% — bersihkan image/log atau perbesar disk sebelum penuh.
-    data:
-    - refId: A
-      relativeTimeRange:
-        from: 600
-        to: 0
-      datasourceUid: prometheus
-      model:
-        refId: A
-        expr: (100 * node_filesystem_avail_bytes{mountpoint="/",fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{mountpoint="/",fstype!~"tmpfs|overlay"})
-          < bool 15
-        instant: true
-        range: false
-        datasource:
-          type: prometheus
-          uid: prometheus
-    - refId: C
-      datasourceUid: __expr__
-      model:
-        refId: C
-        type: threshold
-        expression: A
-        datasource:
-          type: __expr__
-          uid: __expr__
-        conditions:
-        - evaluator:
-            type: gt
-            params:
-            - 0
-          operator:
-            type: and
-          query:
-            params:
-            - A
-          reducer:
-            type: last
-    noDataState: NoData
-    execErrState: Error
-  - uid: surau-app-down
-    title: app down
-    condition: C
-    for: 3m
-    labels:
-      env: $OBS_ENV_LABEL
-      source: f1b
-    annotations:
-      summary: Aplikasi tidak bisa di-scrape ≥3 menit — kemungkinan crash-loop (mis. schema DIRTY saat
-        boot).
-    data:
-    - refId: A
-      relativeTimeRange:
-        from: 600
-        to: 0
-      datasourceUid: prometheus
-      model:
-        refId: A
-        expr: up{job="surau-app"} == bool 0
-        instant: true
-        range: false
-        datasource:
-          type: prometheus
-          uid: prometheus
-    - refId: C
-      datasourceUid: __expr__
-      model:
-        refId: C
-        type: threshold
-        expression: A
-        datasource:
-          type: __expr__
-          uid: __expr__
-        conditions:
-        - evaluator:
-            type: gt
-            params:
-            - 0
-          operator:
-            type: and
-          query:
-            params:
-            - A
-          reducer:
-            type: last
-    noDataState: NoData
-    execErrState: Error
+  - orgId: 1
+    name: surau-f1b
+    folder: Surau
+    interval: 1m
+    rules:
+      - uid: surau-5xx-surge
+        title: 5xx surge
+        condition: C
+        for: 2m
+        labels:
+          env: $OBS_ENV_LABEL
+          source: f1b
+        annotations:
+          summary: API mengeluarkan error 5xx beruntun (>0.2 rps selama 2 menit) — kemungkinan DB down/migrasi
+            gagal/bug rilis.
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: sum(rate(http_requests_total{status_code=~"5.."}[5m])) > bool 0.2
+              instant: true
+              range: false
+              datasource:
+                type: prometheus
+                uid: prometheus
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              datasource:
+                type: __expr__
+                uid: __expr__
+              conditions:
+                - evaluator:
+                    type: gt
+                    params:
+                      - 0
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - A
+                  reducer:
+                    type: last
+        noDataState: NoData
+        execErrState: Error
+      - uid: surau-p95-breach
+        title: p95 latency breach
+        condition: C
+        for: 10m
+        labels:
+          env: $OBS_ENV_LABEL
+          source: f1b
+        annotations:
+          summary: p95 latency API di atas 500ms selama 10 menit — periksa query lambat / beban.
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))
+                > bool 0.5
+              instant: true
+              range: false
+              datasource:
+                type: prometheus
+                uid: prometheus
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              datasource:
+                type: __expr__
+                uid: __expr__
+              conditions:
+                - evaluator:
+                    type: gt
+                    params:
+                      - 0
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - A
+                  reducer:
+                    type: last
+        noDataState: NoData
+        execErrState: Error
+      - uid: surau-email-stuck
+        title: email stuck / dead letter
+        condition: C
+        for: 2m
+        labels:
+          env: $OBS_ENV_LABEL
+          source: f1b
+        annotations:
+          summary: Ada email macet >30 menit atau gagal permanen (dead letter) — periksa dispatcher &
+            penyedia email.
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: (surau_email_oldest_due_seconds > bool 1800) or (surau_email_failed > bool 0)
+              instant: true
+              range: false
+              datasource:
+                type: prometheus
+                uid: prometheus
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              datasource:
+                type: __expr__
+                uid: __expr__
+              conditions:
+                - evaluator:
+                    type: gt
+                    params:
+                      - 0
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - A
+                  reducer:
+                    type: last
+        noDataState: NoData
+        execErrState: Error
+      - uid: surau-backup-heartbeat
+        title: backup heartbeat stale
+        condition: C
+        for: 5m
+        labels:
+          env: $OBS_ENV_LABEL
+          source: f1b
+        annotations:
+          summary: Backup harian TIDAK sukses >26 jam — dead-man F1-A; periksa journalctl -u surau-pg-backup.
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: (time() - surau_backup_last_success_timestamp) > bool (26 * 3600)
+              instant: true
+              range: false
+              datasource:
+                type: prometheus
+                uid: prometheus
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              datasource:
+                type: __expr__
+                uid: __expr__
+              conditions:
+                - evaluator:
+                    type: gt
+                    params:
+                      - 0
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - A
+                  reducer:
+                    type: last
+        noDataState: NoData
+        execErrState: Error
+      - uid: surau-disk-low
+        title: disk space low
+        condition: C
+        for: 5m
+        labels:
+          env: $OBS_ENV_LABEL
+          source: f1b
+        annotations:
+          summary: Sisa disk < 15% — bersihkan image/log atau perbesar disk sebelum penuh.
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: (100 * node_filesystem_avail_bytes{mountpoint="/",fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{mountpoint="/",fstype!~"tmpfs|overlay"})
+                < bool 15
+              instant: true
+              range: false
+              datasource:
+                type: prometheus
+                uid: prometheus
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              datasource:
+                type: __expr__
+                uid: __expr__
+              conditions:
+                - evaluator:
+                    type: gt
+                    params:
+                      - 0
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - A
+                  reducer:
+                    type: last
+        noDataState: NoData
+        execErrState: Error
+      - uid: surau-app-down
+        title: app down
+        condition: C
+        for: 3m
+        labels:
+          env: $OBS_ENV_LABEL
+          source: f1b
+        annotations:
+          summary: Aplikasi tidak bisa di-scrape ≥3 menit — kemungkinan crash-loop (mis. schema DIRTY
+            saat boot).
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: up{job="surau-app"} == bool 0
+              instant: true
+              range: false
+              datasource:
+                type: prometheus
+                uid: prometheus
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              datasource:
+                type: __expr__
+                uid: __expr__
+              conditions:
+                - evaluator:
+                    type: gt
+                    params:
+                      - 0
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - A
+                  reducer:
+                    type: last
+        noDataState: NoData
+        execErrState: Error
