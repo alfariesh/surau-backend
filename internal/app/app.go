@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -26,6 +27,7 @@ import (
 	"github.com/alfariesh/surau-backend/internal/usecase/quran"
 	"github.com/alfariesh/surau-backend/internal/usecase/reader"
 	"github.com/alfariesh/surau-backend/internal/usecase/user"
+	"github.com/alfariesh/surau-backend/pkg/cryptobox"
 	"github.com/alfariesh/surau-backend/pkg/httpserver"
 	"github.com/alfariesh/surau-backend/pkg/jwt"
 	"github.com/alfariesh/surau-backend/pkg/logger"
@@ -57,6 +59,20 @@ type servers struct {
 
 func initUseCases(cfg *config.Config, pg *postgres.Postgres, jwtManager *jwt.Manager, l logger.Interface) useCases {
 	userRepo := persistent.NewUserRepo(pg)
+
+	// TOTP secrets are sealed at rest (A-3). The key derives from a dedicated
+	// env when set — decoupled from JWT rotation — else from JWT_SECRET (the
+	// unsubscribe-seed precedent below).
+	mfaSeed := strings.TrimSpace(cfg.MFA.EncryptionKey)
+	if mfaSeed == "" {
+		mfaSeed = cfg.JWT.Secret
+	}
+
+	mfaBox, err := cryptobox.New(mfaSeed, "surau-mfa-totp-v1")
+	if err != nil {
+		l.Fatal(fmt.Errorf("app - initUseCases - cryptobox.New: %w", err))
+	}
+
 	readerRepo := persistent.NewReaderRepo(pg)
 	bookRAGRepo := persistent.NewBookRAGRepo(pg)
 	quranRepo := persistent.NewQuranRepo(pg)
@@ -158,7 +174,16 @@ func initUseCases(cfg *config.Config, pg *postgres.Postgres, jwtManager *jwt.Man
 			Sessions:                 userRepo,
 			Lockout:                  lockoutRepo,
 			Maintenance:              userRepo,
-			RefreshTokenTTL:          cfg.JWT.RefreshTokenExpiry,
+			MFA:                      userRepo,
+			MFABox:                   mfaBox,
+			MFAOptions: user.MFAOptions{
+				StepUpTTL:       cfg.MFA.StepUpTTL,
+				EnrollmentGrace: cfg.MFA.EnrollmentGrace,
+				ChallengeTTL:    cfg.MFA.ChallengeTTL,
+				ResetTTL:        cfg.MFA.ResetTTL,
+				TOTPIssuer:      cfg.MFA.TOTPIssuer,
+			},
+			RefreshTokenTTL: cfg.JWT.RefreshTokenExpiry,
 			LockoutOptions: user.LockoutOptions{
 				Enabled:      cfg.AuthLockout.Enabled,
 				Threshold:    cfg.AuthLockout.Threshold,
@@ -274,6 +299,30 @@ func initUseCases(cfg *config.Config, pg *postgres.Postgres, jwtManager *jwt.Man
 				VerifyEmailToken: user.RateLimitRule{
 					Max:    cfg.AuthRateLimit.VerifyEmailTokenMax,
 					Window: cfg.AuthRateLimit.VerifyEmailTokenWindow,
+				},
+				MFAVerifyToken: user.RateLimitRule{
+					Max:    cfg.AuthRateLimit.MFAVerifyTokenMax,
+					Window: cfg.AuthRateLimit.MFAVerifyTokenWindow,
+				},
+				MFAVerifyIP: user.RateLimitRule{
+					Max:    cfg.AuthRateLimit.MFAVerifyIPMax,
+					Window: cfg.AuthRateLimit.MFAVerifyIPWindow,
+				},
+				MFAStepUpUser: user.RateLimitRule{
+					Max:    cfg.AuthRateLimit.MFAStepUpUserMax,
+					Window: cfg.AuthRateLimit.MFAStepUpUserWindow,
+				},
+				MFAStepUpIP: user.RateLimitRule{
+					Max:    cfg.AuthRateLimit.MFAStepUpIPMax,
+					Window: cfg.AuthRateLimit.MFAStepUpIPWindow,
+				},
+				MFAResetEmail: user.RateLimitRule{
+					Max:    cfg.AuthRateLimit.MFAResetEmailMax,
+					Window: cfg.AuthRateLimit.MFAResetEmailWindow,
+				},
+				MFAResetIP: user.RateLimitRule{
+					Max:    cfg.AuthRateLimit.MFAResetIPMax,
+					Window: cfg.AuthRateLimit.MFAResetIPWindow,
 				},
 			},
 		}),
@@ -427,13 +476,14 @@ func authCleanupPass(userUC *user.UseCase, l logger.Interface) func(context.Cont
 		}
 
 		l.Info(
-			"app - auth cleanup: rate_limits=%d tokens=%d sessions=%d lockouts=%d cooldowns=%d audit=%d",
+			"app - auth cleanup: rate_limits=%d tokens=%d sessions=%d lockouts=%d cooldowns=%d audit=%d mfa_challenges=%d",
 			result.RateLimits,
 			result.VerificationTokens+result.PasswordResetTokens+result.EmailChangeTokens,
 			result.Sessions,
 			result.Lockouts,
 			result.NotificationCooldowns,
 			result.AuditLogs,
+			result.MFAChallenges,
 		)
 
 		return nil

@@ -2990,6 +2990,505 @@
                 ]
             }
         },
+        "/auth/mfa/disable": {
+            "post": {
+                "description": "Remove MFA (requires a fresh step-up); revokes every session and returns a fresh pair",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Disable MFA",
+                "operationId": "mfa-disable",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Token"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/auth/mfa/enroll": {
+            "post": {
+                "description": "Provision a pending TOTP secret; confirm it with /auth/mfa/enroll/confirm",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Start MFA enrollment",
+                "operationId": "mfa-enroll",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.MFAEnrollment"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/auth/mfa/enroll/confirm": {
+            "post": {
+                "description": "Activate MFA with the first authenticator code; returns the one-time recovery codes",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Confirm MFA enrollment",
+                "operationId": "mfa-enroll-confirm",
+                "parameters": [
+                    {
+                        "description": "First TOTP code",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.MFACode"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.MFARecoveryCodes"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/auth/mfa/recovery-codes": {
+            "post": {
+                "description": "Replace all recovery codes (requires a fresh step-up); old codes stop working",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Regenerate recovery codes",
+                "operationId": "mfa-recovery-codes",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.MFARecoveryCodes"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/auth/mfa/reset/confirm": {
+            "post": {
+                "description": "Remove MFA with the emailed OTP + one recovery code; every session is revoked",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Confirm MFA reset",
+                "operationId": "mfa-reset-confirm",
+                "parameters": [
+                    {
+                        "description": "Reset token, OTP, and recovery code",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.MFAResetConfirm"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.MFAResetDone"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/mfa/reset/request": {
+            "post": {
+                "description": "Lost-device flow: from the login challenge, email a reset OTP to combine with a recovery code",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Request MFA reset",
+                "operationId": "mfa-reset-request",
+                "parameters": [
+                    {
+                        "description": "Login challenge token",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.MFAResetRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/v1.MFAResetChallenge"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/mfa/status": {
+            "get": {
+                "description": "Current MFA state for the calling account (settings screen, enrollment banners)",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "MFA status",
+                "operationId": "mfa-status",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.MFAStatus"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/auth/mfa/step-up": {
+            "post": {
+                "description": "Re-prove a second factor so destructive admin actions open for the freshness window",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "MFA step-up",
+                "operationId": "mfa-step-up",
+                "parameters": [
+                    {
+                        "description": "TOTP or recovery code",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.MFACode"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.MFAStepUp"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/auth/mfa/verify": {
+            "post": {
+                "description": "Exchange the login MFA challenge + a TOTP or recovery code for the token pair",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Complete MFA login",
+                "operationId": "mfa-verify",
+                "parameters": [
+                    {
+                        "description": "Challenge token and code",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.MFAVerify"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Token"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
         "/auth/refresh": {
             "post": {
                 "description": "Exchange a refresh token for a new access/refresh token pair",
@@ -15759,6 +16258,178 @@
                     "type": "string",
                     "maxLength": 512,
                     "example": "3q2-7w8X9yZ0aB1cD2eF3g..."
+                }
+            }
+        },
+        "v1.MFACode": {
+            "type": "object",
+            "required": [
+                "code"
+            ],
+            "properties": {
+                "code": {
+                    "type": "string",
+                    "maxLength": 32,
+                    "minLength": 6,
+                    "example": "123456"
+                }
+            }
+        },
+        "v1.MFAEnrollment": {
+            "type": "object",
+            "properties": {
+                "otpauth_url": {
+                    "type": "string",
+                    "example": "otpauth://totp/Surau:user@example.com?..."
+                },
+                "secret": {
+                    "type": "string",
+                    "example": "JBSWY3DPEHPK3PXP"
+                }
+            }
+        },
+        "v1.MFARecoveryCodes": {
+            "type": "object",
+            "properties": {
+                "recovery_codes": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "AAAA-BBBB-CCCC-DDDD"
+                    ]
+                }
+            }
+        },
+        "v1.MFAResetChallenge": {
+            "type": "object",
+            "properties": {
+                "expires_in": {
+                    "type": "integer",
+                    "example": 900
+                },
+                "reset_token": {
+                    "type": "string",
+                    "example": "q7Zr..."
+                }
+            }
+        },
+        "v1.MFAResetConfirm": {
+            "type": "object",
+            "required": [
+                "otp",
+                "recovery_code",
+                "reset_token"
+            ],
+            "properties": {
+                "otp": {
+                    "type": "string",
+                    "example": "123456"
+                },
+                "recovery_code": {
+                    "type": "string",
+                    "maxLength": 32,
+                    "minLength": 16,
+                    "example": "AAAA-BBBB-CCCC-DDDD"
+                },
+                "reset_token": {
+                    "type": "string",
+                    "maxLength": 512,
+                    "minLength": 16,
+                    "example": "q7Zr..."
+                }
+            }
+        },
+        "v1.MFAResetDone": {
+            "type": "object",
+            "properties": {
+                "mfa_reset": {
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        },
+        "v1.MFAResetRequest": {
+            "type": "object",
+            "required": [
+                "mfa_token"
+            ],
+            "properties": {
+                "mfa_token": {
+                    "type": "string",
+                    "maxLength": 512,
+                    "minLength": 16,
+                    "example": "pXW1..."
+                }
+            }
+        },
+        "v1.MFAStatus": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "enforced_from": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "grace_ends_at": {
+                    "type": "string",
+                    "example": "2026-01-08T00:00:00Z"
+                },
+                "pending": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "recovery_codes_remaining": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "required": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "step_up_expires_at": {
+                    "type": "string"
+                },
+                "step_up_verified_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "v1.MFAStepUp": {
+            "type": "object",
+            "properties": {
+                "expires_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:10:00Z"
+                },
+                "stepped_up": {
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        },
+        "v1.MFAVerify": {
+            "type": "object",
+            "required": [
+                "code",
+                "mfa_token"
+            ],
+            "properties": {
+                "code": {
+                    "type": "string",
+                    "maxLength": 32,
+                    "minLength": 6,
+                    "example": "123456"
+                },
+                "mfa_token": {
+                    "type": "string",
+                    "maxLength": 512,
+                    "minLength": 16,
+                    "example": "pXW1..."
                 }
             }
         },

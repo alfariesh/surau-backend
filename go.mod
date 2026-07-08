@@ -2,7 +2,7 @@ module github.com/alfariesh/surau-backend
 
 go 1.26
 
-toolchain go1.26.3
+toolchain go1.26.5
 
 tool (
 	github.com/daixiang0/gci
@@ -29,6 +29,7 @@ require (
 	github.com/golang-migrate/migrate/v4 v4.19.1
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.9.2
+	github.com/pquerna/otp v1.5.0
 	github.com/prometheus/client_golang v1.23.2
 	github.com/rs/zerolog v1.35.1
 	github.com/stretchr/testify v1.11.1
@@ -125,6 +126,7 @@ require (
 	github.com/blizzy78/varnamelen v0.8.0 // indirect
 	github.com/bombsimon/wsl/v4 v4.7.0 // indirect
 	github.com/bombsimon/wsl/v5 v5.8.0 // indirect
+	github.com/boombuler/barcode v1.0.1 // indirect
 	github.com/breml/bidichk v0.3.3 // indirect
 	github.com/breml/errchkjson v0.4.1 // indirect
 	github.com/butuzov/ireturn v0.4.1 // indirect

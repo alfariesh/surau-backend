@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/alfariesh/surau-backend/internal/controller/restapi/middleware"
 	"github.com/alfariesh/surau-backend/internal/entity"
@@ -16,6 +17,9 @@ import (
 type stubUserUseCase struct {
 	user entity.User
 	err  error
+
+	mfaGate    entity.MFAGateDecision
+	mfaGateErr error
 }
 
 func (s *stubUserUseCase) Register(context.Context, string, string, string) (entity.User, error) {
@@ -119,6 +123,46 @@ func (s *stubUserUseCase) VerifyEmailChange(context.Context, string, string, str
 }
 
 func (s *stubUserUseCase) DeleteAccount(context.Context, string, string) error {
+	return nil
+}
+
+func (s *stubUserUseCase) StartMFAEnrollment(context.Context, string) (entity.MFAEnrollment, error) {
+	return entity.MFAEnrollment{}, nil
+}
+
+func (s *stubUserUseCase) ConfirmMFAEnrollment(context.Context, string, string, string) ([]string, error) {
+	return nil, nil
+}
+
+func (s *stubUserUseCase) VerifyMFALogin(context.Context, string, string) (entity.LoginResult, error) {
+	return entity.LoginResult{}, nil
+}
+
+func (s *stubUserUseCase) StepUpMFA(context.Context, string, string, string) (time.Time, error) {
+	return time.Time{}, nil
+}
+
+func (s *stubUserUseCase) DisableMFA(context.Context, string, string) (entity.LoginResult, error) {
+	return entity.LoginResult{}, nil
+}
+
+func (s *stubUserUseCase) RegenerateMFARecoveryCodes(context.Context, string, string) ([]string, error) {
+	return nil, nil
+}
+
+func (s *stubUserUseCase) MFAStatus(context.Context, string, string) (entity.MFAStatus, error) {
+	return entity.MFAStatus{}, nil
+}
+
+func (s *stubUserUseCase) MFAGate(context.Context, *entity.User, string) (entity.MFAGateDecision, error) {
+	return s.mfaGate, s.mfaGateErr
+}
+
+func (s *stubUserUseCase) RequestMFAReset(context.Context, string) (string, time.Time, error) {
+	return "", time.Time{}, nil
+}
+
+func (s *stubUserUseCase) ConfirmMFAReset(context.Context, string, string, string) error {
 	return nil
 }
 

@@ -47,6 +47,8 @@ func main() {
 
 	// Unlike the admin API, this CLI deliberately skips the last-admin guard:
 	// it is the recovery escape hatch when no working admin account remains.
+	// Granting an MFA-mandated role also starts the enrollment grace clock
+	// (A-3 AC-1) so CLI-promoted admins are anchored like API-promoted ones.
 	var (
 		user         entity.User
 		previousRole string
@@ -61,12 +63,15 @@ WITH existing AS (
     FOR UPDATE
 )
 UPDATE users u
-SET role = $1, updated_at = now()
+SET role = $1,
+    mfa_enforced_from = CASE WHEN $3 THEN COALESCE(u.mfa_enforced_from, now()) ELSE u.mfa_enforced_from END,
+    updated_at = now()
 FROM existing e
 WHERE u.id = e.id
 RETURNING u.id, u.username, u.email, u.role, e.previous_role, u.created_at, u.updated_at`,
 		normalizedRole,
 		normalizedEmail,
+		entity.RoleRequiresMFA(normalizedRole),
 	).Scan(&user.ID, &user.Username, &user.Email, &user.Role, &previousRole, &user.CreatedAt, &user.UpdatedAt)
 	if err != nil {
 		fatalf("set user role: %v", err)

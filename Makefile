@@ -96,7 +96,7 @@ linter-dotenv: ### check by dotenv linter
 .PHONY: linter-dotenv
 
 test: ### run test
-	go test -v -race -covermode atomic -coverprofile=coverage.txt ./internal/... ./pkg/...
+	go test -v -race -covermode atomic -coverpkg=./internal/...,./pkg/... -coverprofile=coverage.txt ./internal/... ./pkg/...
 .PHONY: test
 
 diff-cover: ### coverage of new code vs origin/main (the CI ratchet, F1-E); needs coverage.txt from `make test`

@@ -13,4 +13,8 @@ regexTarget = "line"
 regexes = [
   # Documented example DSNs with the placeholder password.
   '''myAwEsOm3pa55@w0rd''',
+  # Empty documented placeholder in .env examples (A-3). The generic-api-key
+  # rule bridges the empty assignment into the next line and reads it as a
+  # secret; the real key only ever lives in gitignored .env, never here.
+  '''MFA_ENCRYPTION_KEY=''',
 ]

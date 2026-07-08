@@ -6,7 +6,7 @@ Dokumen ini adalah kontrak integrasi auth untuk frontend Surau. Satu-satunya tra
 
 - Auth memakai JWT Bearer token.
 - Login sukses selalu mengembalikan shape yang sama: `{ "token": "..." }`.
-- Tidak ada cookie auth atau MFA. Endpoint session/refresh yang lebih baru (`POST /v1/auth/refresh`, `POST /v1/auth/logout`, `GET/DELETE /v1/auth/sessions`) belum tercakup penuh di dokumen ini — cek `/swagger/index.html` untuk skemanya.
+- Tidak ada cookie auth. **MFA (TOTP) tersedia sejak A-3**: akun ber-MFA mendapat langkah kode 6 digit setelah password (lihat `## Flow MFA`); akun tanpa MFA memakai alur login lama TANPA perubahan. Endpoint session/refresh yang lebih baru (`POST /v1/auth/refresh`, `POST /v1/auth/logout`, `GET/DELETE /v1/auth/sessions`) belum tercakup penuh di dokumen ini — cek `/swagger/index.html` untuk skemanya.
 - Email verification, reset password, dan change email di-queue secara durable oleh backend, lalu dikirim asynchronous oleh dispatcher background memakai Cloudflare Email Service (default tick 15 detik; email biasanya tiba dalam ~15-30 detik).
 - User baru belum bisa login sampai email verified.
 - Reset password, change password, change email, dan delete account akan membuat semua JWT lama invalid.
@@ -182,7 +182,16 @@ Jangan lakukan `.trim()` pada password sebelum dikirim.
 | `GET` | `/v1/admin/users?q=&role=&email_verified=&limit=&offset=` | Admin | `200 { users: UserAccount[], total: number }` |
 | `GET` | `/v1/admin/users/{id}` | Admin | `200 UserAccount` |
 | `GET` | `/v1/admin/users/{id}/activity` | Admin | `200 { activity: UserActivity[], total: number }` |
-| `PATCH` | `/v1/admin/users/role` | Admin | `200 User` |
+| `PATCH` | `/v1/admin/users/role` | Admin + step-up | `200 User` |
+| `POST` | `/v1/auth/mfa/verify` | mfa_token | `200 Token` |
+| `POST` | `/v1/auth/mfa/enroll` | Bearer | `200 { secret, otpauth_url }` |
+| `POST` | `/v1/auth/mfa/enroll/confirm` | Bearer | `200 { recovery_codes: string[] }` |
+| `POST` | `/v1/auth/mfa/step-up` | Bearer | `200 { stepped_up: true, expires_at }` |
+| `POST` | `/v1/auth/mfa/disable` | Bearer + step-up | `200 Token` |
+| `POST` | `/v1/auth/mfa/recovery-codes` | Bearer + step-up | `200 { recovery_codes: string[] }` |
+| `GET` | `/v1/auth/mfa/status` | Bearer | `200 MFAStatus` |
+| `POST` | `/v1/auth/mfa/reset/request` | mfa_token | `202 { reset_token, expires_in }` |
+| `POST` | `/v1/auth/mfa/reset/confirm` | reset_token | `200 { mfa_reset: true }` |
 
 ## Admin User Management
 
@@ -196,6 +205,24 @@ PATCH /v1/admin/users/role
 ```
 
 Use `GET /v1/admin/users?role=editor` as the editor lookup for assigning production project `owner_id`. Role changes are recorded in activity with `actor_id`, `actor_email`, `old_role`, `new_role`, and `created_at`.
+
+## Flow MFA (TOTP) — A-3
+
+MFA WAJIB untuk peran `admin` (nanti juga `scholar_reviewer`); peran lain opsional. Aturan penting untuk FE:
+
+1. **Login akun ber-MFA** — `POST /v1/auth/login` sukses password mengembalikan `200` dengan body BARU (bukan token):
+   ```json
+   { "mfa_required": true, "mfa_token": "...", "expires_in": 300 }
+   ```
+   Tampilkan input kode 6 digit, lalu `POST /v1/auth/mfa/verify` `{ "mfa_token": "...", "code": "123456" }` → `200 Token` (shape sama persis dengan login biasa). Field `code` juga menerima recovery code (`XXXX-XXXX-XXXX-XXXX`). Akun TANPA MFA: response login tidak berubah sama sekali (tanpa field `mfa_required`).
+2. **Enrollment** — `POST /v1/auth/mfa/enroll` → `{ secret, otpauth_url }`; render `otpauth_url` sebagai QR untuk di-scan aplikasi authenticator (Google Authenticator, Aegis, 1Password, dll.), tampilkan `secret` untuk entri manual. Konfirmasi dengan kode pertama: `POST /v1/auth/mfa/enroll/confirm` `{ "code": "123456" }` → `{ "recovery_codes": [10 kode] }` — **tampilkan SEKALI dan minta pengguna menyimpannya offline; tidak bisa dilihat lagi** (hanya bisa di-regenerate).
+3. **Step-up (aksi destruktif)** — endpoint publish/unpublish produksi, hapus final asset, dan `PATCH /v1/admin/users/role` menuntut bukti kode yang SEGAR (default 10 menit). Bila kadaluarsa, response `403` dengan `code`:
+   - `mfa_step_up_required` → tampilkan prompt kode → `POST /v1/auth/mfa/step-up` `{ "code": "..." }` → ulangi aksi.
+   - `mfa_enrollment_required` → admin belum enroll dan masa tenggangnya (default 7 hari sejak diberi peran) habis → arahkan ke halaman enrollment. Cek `GET /v1/auth/mfa/status` (`grace_ends_at`) untuk menampilkan banner peringatan sebelum terkunci.
+4. **Kehilangan HP** — dua jalur: (a) login pakai recovery code di langkah verify; (b) reset penuh: dari state `mfa_token`, `POST /v1/auth/mfa/reset/request` → OTP 6 digit dikirim ke email → `POST /v1/auth/mfa/reset/confirm` `{ reset_token, otp, recovery_code }` → MFA lepas + SEMUA sesi keluar → login password → enroll ulang. Kehabisan recovery code juga → hubungi admin (CLI darurat).
+5. **Nonaktif/regenerate** — `POST /v1/auth/mfa/disable` dan `POST /v1/auth/mfa/recovery-codes` menuntut step-up segar (403 `mfa_step_up_required` bila tidak). Disable mengeluarkan SEMUA sesi dan mengembalikan pasangan token baru.
+
+Error MFA (semua ber-envelope `{error, code, message, request_id}`): `invalid_mfa_code` 401, `invalid_mfa_challenge` 401 (kadaluarsa/terpakai → ulang login), `invalid_mfa_reset` 401, `mfa_already_enabled` 409, `mfa_not_enabled` 400, `mfa_enrollment_not_started` 400, `mfa_step_up_required` 403, `mfa_enrollment_required` 403. Percobaan kode dibatasi rate limit (429 + `retry_after`).
 
 ## Flow Register dan Verify Email
 

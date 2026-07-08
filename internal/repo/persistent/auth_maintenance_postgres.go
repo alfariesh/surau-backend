@@ -68,6 +68,11 @@ func (r *UserRepo) CleanupAuthData(
 			"DELETE FROM auth_notification_cooldowns WHERE expires_at <= $1",
 			[]any{now},
 		},
+		{
+			&result.MFAChallenges,
+			"DELETE FROM mfa_challenges WHERE (consumed_at IS NOT NULL OR expires_at <= $1) AND created_at <= $2",
+			[]any{now, tokenCutoff},
+		},
 	}
 	if policy.AuditRetention > 0 {
 		steps = append(steps, struct {

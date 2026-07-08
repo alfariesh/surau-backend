@@ -55,6 +55,19 @@ type (
 		RequestEmailChange(ctx context.Context, userID, currentPassword, newEmail string) error
 		VerifyEmailChange(ctx context.Context, userID, token, otp string) (entity.LoginResult, error)
 		DeleteAccount(ctx context.Context, userID, currentPassword string) error
+
+		// MFA (A-3). Enrollment and step-up are session-scoped: familyID is
+		// the "sid" claim of the calling session.
+		StartMFAEnrollment(ctx context.Context, userID string) (entity.MFAEnrollment, error)
+		ConfirmMFAEnrollment(ctx context.Context, userID, familyID, code string) ([]string, error)
+		VerifyMFALogin(ctx context.Context, mfaToken, code string) (entity.LoginResult, error)
+		StepUpMFA(ctx context.Context, userID, familyID, code string) (time.Time, error)
+		DisableMFA(ctx context.Context, userID, familyID string) (entity.LoginResult, error)
+		RegenerateMFARecoveryCodes(ctx context.Context, userID, familyID string) ([]string, error)
+		MFAStatus(ctx context.Context, userID, familyID string) (entity.MFAStatus, error)
+		MFAGate(ctx context.Context, user *entity.User, familyID string) (entity.MFAGateDecision, error)
+		RequestMFAReset(ctx context.Context, mfaToken string) (string, time.Time, error)
+		ConfirmMFAReset(ctx context.Context, resetToken, otp, recoveryCode string) error
 	}
 
 	// EmailAdmin provides admin-managed email templates, delivery logs, consent, and campaigns.

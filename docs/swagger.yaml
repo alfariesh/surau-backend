@@ -3812,6 +3812,129 @@ definitions:
     required:
     - refresh_token
     type: object
+  v1.MFACode:
+    properties:
+      code:
+        example: "123456"
+        maxLength: 32
+        minLength: 6
+        type: string
+    required:
+    - code
+    type: object
+  v1.MFAEnrollment:
+    properties:
+      otpauth_url:
+        example: otpauth://totp/Surau:user@example.com?...
+        type: string
+      secret:
+        example: JBSWY3DPEHPK3PXP
+        type: string
+    type: object
+  v1.MFARecoveryCodes:
+    properties:
+      recovery_codes:
+        example:
+        - AAAA-BBBB-CCCC-DDDD
+        items:
+          type: string
+        type: array
+    type: object
+  v1.MFAResetChallenge:
+    properties:
+      expires_in:
+        example: 900
+        type: integer
+      reset_token:
+        example: q7Zr...
+        type: string
+    type: object
+  v1.MFAResetConfirm:
+    properties:
+      otp:
+        example: "123456"
+        type: string
+      recovery_code:
+        example: AAAA-BBBB-CCCC-DDDD
+        maxLength: 32
+        minLength: 16
+        type: string
+      reset_token:
+        example: q7Zr...
+        maxLength: 512
+        minLength: 16
+        type: string
+    required:
+    - otp
+    - recovery_code
+    - reset_token
+    type: object
+  v1.MFAResetDone:
+    properties:
+      mfa_reset:
+        example: true
+        type: boolean
+    type: object
+  v1.MFAResetRequest:
+    properties:
+      mfa_token:
+        example: pXW1...
+        maxLength: 512
+        minLength: 16
+        type: string
+    required:
+    - mfa_token
+    type: object
+  v1.MFAStatus:
+    properties:
+      enabled:
+        example: true
+        type: boolean
+      enforced_from:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      grace_ends_at:
+        example: "2026-01-08T00:00:00Z"
+        type: string
+      pending:
+        example: false
+        type: boolean
+      recovery_codes_remaining:
+        example: 10
+        type: integer
+      required:
+        example: true
+        type: boolean
+      step_up_expires_at:
+        type: string
+      step_up_verified_at:
+        type: string
+    type: object
+  v1.MFAStepUp:
+    properties:
+      expires_at:
+        example: "2026-01-01T00:10:00Z"
+        type: string
+      stepped_up:
+        example: true
+        type: boolean
+    type: object
+  v1.MFAVerify:
+    properties:
+      code:
+        example: "123456"
+        maxLength: 32
+        minLength: 6
+        type: string
+      mfa_token:
+        example: pXW1...
+        maxLength: 512
+        minLength: 16
+        type: string
+    required:
+    - code
+    - mfa_token
+    type: object
   v1.PageList:
     properties:
       items:
@@ -6793,6 +6916,337 @@ paths:
       security:
       - BearerAuth: []
       summary: Logout everywhere
+      tags:
+      - auth
+  /auth/mfa/disable:
+    post:
+      description: Remove MFA (requires a fresh step-up); revokes every session and
+        returns a fresh pair
+      operationId: mfa-disable
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.Token'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Disable MFA
+      tags:
+      - auth
+  /auth/mfa/enroll:
+    post:
+      description: Provision a pending TOTP secret; confirm it with /auth/mfa/enroll/confirm
+      operationId: mfa-enroll
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.MFAEnrollment'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Start MFA enrollment
+      tags:
+      - auth
+  /auth/mfa/enroll/confirm:
+    post:
+      consumes:
+      - application/json
+      description: Activate MFA with the first authenticator code; returns the one-time
+        recovery codes
+      operationId: mfa-enroll-confirm
+      parameters:
+      - description: First TOTP code
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.MFACode'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.MFARecoveryCodes'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Confirm MFA enrollment
+      tags:
+      - auth
+  /auth/mfa/recovery-codes:
+    post:
+      description: Replace all recovery codes (requires a fresh step-up); old codes
+        stop working
+      operationId: mfa-recovery-codes
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.MFARecoveryCodes'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Regenerate recovery codes
+      tags:
+      - auth
+  /auth/mfa/reset/confirm:
+    post:
+      consumes:
+      - application/json
+      description: Remove MFA with the emailed OTP + one recovery code; every session
+        is revoked
+      operationId: mfa-reset-confirm
+      parameters:
+      - description: Reset token, OTP, and recovery code
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.MFAResetConfirm'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.MFAResetDone'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      summary: Confirm MFA reset
+      tags:
+      - auth
+  /auth/mfa/reset/request:
+    post:
+      consumes:
+      - application/json
+      description: 'Lost-device flow: from the login challenge, email a reset OTP
+        to combine with a recovery code'
+      operationId: mfa-reset-request
+      parameters:
+      - description: Login challenge token
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.MFAResetRequest'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/v1.MFAResetChallenge'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/v1.Error'
+      summary: Request MFA reset
+      tags:
+      - auth
+  /auth/mfa/status:
+    get:
+      description: Current MFA state for the calling account (settings screen, enrollment
+        banners)
+      operationId: mfa-status
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.MFAStatus'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: MFA status
+      tags:
+      - auth
+  /auth/mfa/step-up:
+    post:
+      consumes:
+      - application/json
+      description: Re-prove a second factor so destructive admin actions open for
+        the freshness window
+      operationId: mfa-step-up
+      parameters:
+      - description: TOTP or recovery code
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.MFACode'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.MFAStepUp'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: MFA step-up
+      tags:
+      - auth
+  /auth/mfa/verify:
+    post:
+      consumes:
+      - application/json
+      description: Exchange the login MFA challenge + a TOTP or recovery code for
+        the token pair
+      operationId: mfa-verify
+      parameters:
+      - description: Challenge token and code
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.MFAVerify'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.Token'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      summary: Complete MFA login
       tags:
       - auth
   /auth/refresh:

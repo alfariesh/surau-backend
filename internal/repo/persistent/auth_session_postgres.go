@@ -11,7 +11,8 @@ import (
 )
 
 const authSessionColumns = "id, family_id, user_id, refresh_token_hash, token_version, " +
-	"user_agent, client_ip, created_at, last_used_at, expires_at, revoked_at, replaced_by_id"
+	"user_agent, client_ip, created_at, last_used_at, expires_at, revoked_at, replaced_by_id, " +
+	"mfa_verified_at"
 
 // CreateAuthSession stores a new refresh-token session row.
 func (r *UserRepo) CreateAuthSession(ctx context.Context, session entity.AuthSession) error { //nolint:gocritic // value param fixed by the repo interface contract
@@ -31,6 +32,7 @@ func (r *UserRepo) CreateAuthSession(ctx context.Context, session entity.AuthSes
 			session.ExpiresAt,
 			nullableTimeArg(session.RevokedAt),
 			nullableStringPtrArg(session.ReplacedByID),
+			nullableTimeArg(session.MFAVerifiedAt),
 		).
 		ToSql()
 	if err != nil {
@@ -115,6 +117,7 @@ func (r *UserRepo) RotateAuthSession(ctx context.Context, oldID string, next ent
 			next.ExpiresAt,
 			nullableTimeArg(next.RevokedAt),
 			nullableStringPtrArg(next.ReplacedByID),
+			nullableTimeArg(next.MFAVerifiedAt),
 		).
 		ToSql()
 	if err != nil {
@@ -306,6 +309,7 @@ func scanAuthSession(row rowScanner) (entity.AuthSession, error) {
 		&session.ExpiresAt,
 		&session.RevokedAt,
 		&session.ReplacedByID,
+		&session.MFAVerifiedAt,
 	)
 	if err != nil {
 		return entity.AuthSession{}, err
