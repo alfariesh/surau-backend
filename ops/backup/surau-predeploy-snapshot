@@ -68,7 +68,15 @@ main() {
 
   cd "$DEPLOY_PATH"
 
-  if [[ -z "$(sudo docker compose --env-file "$COMPOSE_ENV_FILE" -f "$COMPOSE_FILE" ps -q db)" ]]; then
+  # Distinguish "compose itself failed" (config/interpolation error) from
+  # "db genuinely absent": the former must ABORT the deploy, not fail open.
+  local db_container
+  if ! db_container="$(sudo docker compose --env-file "$COMPOSE_ENV_FILE" -f "$COMPOSE_FILE" ps -q db)"; then
+    echo "docker compose failed while checking the db container — aborting deploy" >&2
+    exit 3
+  fi
+
+  if [[ -z "$db_container" ]]; then
     echo "db container not running yet (first deploy?) — skipping pre-deploy snapshot"
     return
   fi
