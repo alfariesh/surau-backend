@@ -52,7 +52,13 @@ mengubah ambang = edit satu angka + `docker compose --profile observability rest
 
 ```sh
 cd /srv/surau/backend
-# .env.production wajib punya: METRICS_ENABLED/OTEL_* , GRAFANA_*, TELEGRAM_*, OBS_ENV_LABEL
+# 1) .env.production wajib punya: METRICS_ENABLED/OTEL_*, GRAFANA_*, OBS_ENV_LABEL
+# 2) generate contact point Telegram — SEKALI per host. Nilai ditulis literal
+#    (interpolasi $ENV Grafana merusak chat-id numerik); ambil dari
+#    /etc/surau-backup/env dan tulis ke /etc/surau-obs/contact-points.yml
+#    mengikuti bentuk template ops/observability/.../contact-points.yml
+#    (bottoken tanpa kutip, chatid DALAM kutip, [label] env di message).
+sudo mkdir -p /etc/surau-obs   # lalu tulis file seperti di atas, chmod 644
 sudo docker compose --env-file .env.production -f docker-compose.prod.yml \
   --profile observability up -d
 # route edge (sekali per host): tambahkan blok /grafana* dari deploy/Caddyfile.tmpl

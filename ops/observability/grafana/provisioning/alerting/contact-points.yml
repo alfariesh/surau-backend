@@ -1,6 +1,8 @@
-# Telegram contact point (operator decision O-F1-1). Token/chat id come from
-# the container environment (.env.production on the host) — Grafana
-# provisioning expands $VARS at load time.
+# TEMPLATE ONLY — the real file is generated on each VPS at
+# /etc/surau-obs/contact-points.yml (literal values, chatid quoted) and
+# bind-mounted OVER this path, because Grafana's $ENV interpolation re-types
+# a purely numeric chat id into a JSON number and the telegram integration
+# rejects it. See docs/observability.md §Rollout.
 apiVersion: 1
 
 contactPoints:
@@ -10,10 +12,7 @@ contactPoints:
       - uid: telegram-salman
         type: telegram
         settings:
-          bottoken: $TELEGRAM_BOT_TOKEN
-          chatid: "$TELEGRAM_CHAT_ID"
-          message: |-
-            {{ if eq .Status "firing" }}🚨{{ else }}✅{{ end }} [$OBS_ENV_LABEL] {{ .Status | toUpper }}
-            {{ range .Alerts }}{{ .Labels.alertname }}: {{ .Annotations.summary }}
-            {{ end }}
+          bottoken: CHANGE_ME_TELEGRAM_TOKEN
+          chatid: "0"
+          message: "[template] {{ .Status }}"
         disableResolveMessage: false

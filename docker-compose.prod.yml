@@ -267,12 +267,14 @@ services:
       GF_SERVER_SERVE_FROM_SUB_PATH: "true"
       GF_ANALYTICS_REPORTING_ENABLED: "false"
       GF_USERS_ALLOW_SIGN_UP: "false"
-      # Consumed by alerting provisioning ($VAR expansion at load time).
-      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
-      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+      # Consumed by alert-rule provisioning ($VAR expansion at load time).
       OBS_ENV_LABEL: ${OBS_ENV_LABEL:-dev}
     volumes:
       - ./ops/observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      # Host-generated contact point (literal telegram creds; see template
+      # header for why $ENV interpolation cannot be used here). Profile-gated,
+      # so hosts that never start grafana never need this file.
+      - /etc/surau-obs/contact-points.yml:/etc/grafana/provisioning/alerting/contact-points.yml:ro
       - grafana_data:/var/lib/grafana
     ports:
       - "${GRAFANA_BIND_ADDR:-127.0.0.1}:${GRAFANA_PUBLISHED_PORT:-3000}:3000"
