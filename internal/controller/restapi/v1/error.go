@@ -21,6 +21,19 @@ func errorResponse(ctx *fiber.Ctx, code int, msg string) error {
 	})
 }
 
+// errorResponseWithDetails keeps the message (and thus the frozen machine
+// code) FIXED while carrying instance-specific human detail in details —
+// use it wherever the underlying error text varies per request (F1-D).
+func errorResponseWithDetails(ctx *fiber.Ctx, code int, msg string, details any) error {
+	return ctx.Status(code).JSON(response.Error{
+		Error:     msg,
+		Code:      apierror.Code(msg),
+		Message:   msg,
+		Details:   details,
+		RequestID: requestID(ctx),
+	})
+}
+
 // rateLimitedResponse renders a 429 and, when the usecase reported a
 // retry-after hint, surfaces it via the Retry-After header and body field.
 func rateLimitedResponse(ctx *fiber.Ctx, err error) error {

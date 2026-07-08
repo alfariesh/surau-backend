@@ -1057,8 +1057,12 @@ func adminEmailError(ctx *fiber.Ctx, err error) error {
 	case errors.Is(err, entity.ErrEmailMessageNotResendable),
 		errors.Is(err, entity.ErrEmailRecipientSuppressed):
 		return errorResponse(ctx, http.StatusConflict, err.Error())
-	case errors.Is(err, entity.ErrInvalidEmailTemplate),
-		errors.Is(err, entity.ErrInvalidEmailCampaign),
+	case errors.Is(err, entity.ErrInvalidEmailTemplate):
+		// Template errors carry dynamic parser detail ("missing subject",
+		// template line numbers). Keep the message — and thus the machine
+		// code — FIXED (F1-D) and surface the specifics via details.
+		return errorResponseWithDetails(ctx, http.StatusBadRequest, entity.ErrInvalidEmailTemplate.Error(), err.Error())
+	case errors.Is(err, entity.ErrInvalidEmailCampaign),
 		errors.Is(err, entity.ErrInvalidAuthInput),
 		errors.Is(err, entity.ErrUnsupportedLanguage),
 		errors.Is(err, entity.ErrInvalidUnsubscribeToken):
