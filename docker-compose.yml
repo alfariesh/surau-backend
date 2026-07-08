@@ -147,6 +147,14 @@ services:
       - shared_preload_libraries=pg_stat_statements
     environment:
       <<: *x-db-environment
+    # F1-E: same readiness contract as prod (docker-compose.prod.yml) so
+    # dependents start only against an accepting Postgres — the integration
+    # suite's flakiness root cause was racing a still-booting stack.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
     volumes:
       # postgres:18 images keep PGDATA under /var/lib/postgresql (the image's
       # volume root). Mounting the old /18/data path left data on an anonymous
@@ -170,7 +178,8 @@ services:
     ports:
       - "8080:8080"
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     deploy:
       resources:
         limits:

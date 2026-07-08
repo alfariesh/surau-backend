@@ -40,7 +40,62 @@ func TestMain(m *testing.M) {
 		os.Exit(0)
 	}
 
+	if err := waitForApp(); err != nil {
+		fmt.Fprintf(os.Stderr, "integration-test: app never became ready: %v\n", err)
+		os.Exit(1)
+	}
+
 	os.Exit(m.Run())
+}
+
+// waitForApp blocks until the app accepts HTTP and reports ready, or the
+// readiness budget elapses. Compose `depends_on` only orders container starts;
+// nothing guarantees the listener is up before the suite fires its first
+// request, and a refused connection failed the whole run — the root cause of
+// the flakiness the CI retry loop used to mask (F1-E).
+func waitForApp() error {
+	const (
+		readinessBudget = 90 * time.Second
+		pollInterval    = 500 * time.Millisecond
+	)
+
+	var lastErr error
+
+	for deadline := time.Now().Add(readinessBudget); time.Now().Before(deadline); time.Sleep(pollInterval) {
+		// /healthz proves the listener is up; /readyz proves the DB behind it
+		// answers. Both must pass so tests never race a half-booted stack.
+		if lastErr = probeOK(baseURL() + "/healthz"); lastErr != nil {
+			continue
+		}
+
+		if lastErr = probeOK(baseURL() + "/readyz"); lastErr == nil {
+			return nil
+		}
+	}
+
+	return lastErr
+}
+
+func probeOK(url string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
+	if err != nil {
+		return err
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("%s: expected 200, got %d", url, resp.StatusCode)
+	}
+
+	return nil
 }
 
 func TestReaderRESTSmoke(t *testing.T) {
