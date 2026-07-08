@@ -16,7 +16,7 @@ import (
 // @Tags        admin
 // @Produce     json
 // @Param       q              query string false "Search username, email, or display name"
-// @Param       role           query string false "Role filter" Enums(user,editor,admin)
+// @Param       role           query string false "Role filter" Enums(user,editor,curator,scholar_reviewer,admin)
 // @Param       email_verified query bool   false "Email verification status"
 // @Param       limit          query int    false "Page size" default(50)
 // @Param       offset         query int    false "Page offset" default(0)

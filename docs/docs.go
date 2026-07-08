@@ -2230,6 +2230,8 @@ const docTemplate = `{
                         "enum": [
                             "user",
                             "editor",
+                            "curator",
+                            "scholar_reviewer",
                             "admin"
                         ],
                         "type": "string",

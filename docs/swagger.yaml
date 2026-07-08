@@ -6414,6 +6414,8 @@ paths:
         enum:
         - user
         - editor
+        - curator
+        - scholar_reviewer
         - admin
         in: query
         name: role
