@@ -41,15 +41,14 @@ func InitTracing(ctx context.Context, cfg *TracingConfig) (func(context.Context)
 		return nil, fmt.Errorf("observability - InitTracing - exporter: %w", err)
 	}
 
-	res, err := resource.Merge(resource.Default(), resource.NewWithAttributes(
-		semconv.SchemaURL,
+	// Schemaless on purpose: merging with resource.Default() fails whenever
+	// the SDK's schema version differs from the semconv import (bit us live:
+	// "conflicting Schema URL 1.41.0 vs 1.26.0" crash-looped the app).
+	res := resource.NewSchemaless(
 		semconv.ServiceName(cfg.ServiceName),
 		semconv.ServiceVersion(cfg.Version),
 		semconv.DeploymentEnvironment(cfg.Environment),
-	))
-	if err != nil {
-		return nil, fmt.Errorf("observability - InitTracing - resource: %w", err)
-	}
+	)
 
 	ratio := cfg.SampleRatio
 	if ratio <= 0 || ratio > 1 {
