@@ -204,11 +204,27 @@ GET /v1/admin/users/{id}/activity?limit=&offset=
 PATCH /v1/admin/users/role
 ```
 
-Use `GET /v1/admin/users?role=editor` as the editor lookup for assigning production project `owner_id`. Role changes are recorded in activity with `actor_id`, `actor_email`, `old_role`, `new_role`, and `created_at`.
+Use `GET /v1/admin/users?role=editor` as the editor lookup for assigning production project `owner_id`. Role changes are recorded in activity with `actor_id`, `actor_email`, `old_role`, `new_role`, `capability` (the capability that authorized the change), and `created_at`.
+
+## Peran & kapabilitas (A-1)
+
+Peran valid: `user`, `editor`, `curator`, `scholar_reviewer`, `admin` (`admin` = superset semua kapabilitas). `PATCH /v1/admin/users/role` menerima kelimanya (aditif — peran baru tak mengubah kontrak lama). Otorisasi backend memakai **kapabilitas**, bukan string peran; FE cukup tahu peran mana yang boleh melihat menu apa. Matriks beku saat ini:
+
+| Kapabilitas | user | editor | curator | scholar_reviewer | admin |
+| --- | :--: | :--: | :--: | :--: | :--: |
+| `review-editorial` (dashboard editorial) | | ✓ | | | ✓ |
+| `publish-production` (publish/unpublish, hapus aset final) | | | | | ✓ |
+| `manage-users` (kelola akun, peran, email admin) | | | | | ✓ |
+| `curate-entities` (kurasi entitas — belum ada rute) | | | ✓ | ✓ | ✓ |
+| `approve-neutral-claim` (belum ada rute) | | | ✓ | ✓ | ✓ |
+| `approve-sensitive-claim` (belum ada rute) | | | | ✓ | ✓ |
+| `manage-service-tokens` (belum ada rute) | | | | | ✓ |
+
+Rute ber-kapabilitas yang ditolak membalas `403 { "error": "forbidden", "code": "forbidden", ... }`. Empat kapabilitas terakhir sudah dibekukan di kebijakan tetapi belum menggerbangi rute apa pun (menyusul di fase wiki/token layanan). MFA wajib untuk `admin` + `scholar_reviewer` (lihat Flow MFA).
 
 ## Flow MFA (TOTP) — A-3
 
-MFA WAJIB untuk peran `admin` (nanti juga `scholar_reviewer`); peran lain opsional. Aturan penting untuk FE:
+MFA WAJIB untuk peran `admin` & `scholar_reviewer` (A-1 mengaktifkan mandat scholar_reviewer); `editor`/`curator`/`user` opsional. Aturan penting untuk FE:
 
 1. **Login akun ber-MFA** — `POST /v1/auth/login` sukses password mengembalikan `200` dengan body BARU (bukan token):
    ```json

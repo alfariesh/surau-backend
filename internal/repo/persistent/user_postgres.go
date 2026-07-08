@@ -11,6 +11,7 @@ import (
 
 	sq "github.com/Masterminds/squirrel"
 	"github.com/alfariesh/surau-backend/internal/entity"
+	"github.com/alfariesh/surau-backend/internal/policy"
 	"github.com/alfariesh/surau-backend/internal/repo"
 	"github.com/alfariesh/surau-backend/pkg/postgres"
 	"github.com/jackc/pgx/v5"
@@ -472,7 +473,7 @@ RETURNING id, username, email, role, password_hash, email_verified, token_versio
 
 	var change entity.UserRoleChange
 
-	err = tx.QueryRow(ctx, updateQuery, targetID, role, entity.RoleRequiresMFA(role)).
+	err = tx.QueryRow(ctx, updateQuery, targetID, role, policy.RoleRequiresMFA(role)).
 		Scan(
 			&change.User.ID,
 			&change.User.Username,

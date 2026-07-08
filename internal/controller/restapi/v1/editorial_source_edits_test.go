@@ -10,6 +10,7 @@ import (
 
 	"github.com/alfariesh/surau-backend/internal/controller/restapi/middleware"
 	"github.com/alfariesh/surau-backend/internal/entity"
+	"github.com/alfariesh/surau-backend/internal/policy"
 	"github.com/alfariesh/surau-backend/pkg/logger"
 	"github.com/go-playground/validator/v10"
 	"github.com/gofiber/fiber/v2"
@@ -100,7 +101,7 @@ func newSourceEditTestApp(actor entity.User, editorial *fakeSourceEditorial) *fi
 	group := app.Group(
 		"/v1/editorial",
 		injectActor,
-		middleware.RequireRoles(user, entity.UserRoleEditor, entity.UserRoleAdmin),
+		middleware.RequireCapability(user, policy.CapReviewEditorial),
 	)
 	group.Get("/books/:book_id/pages/:page_id", controller.editorialGetPageEdit)
 	group.Put("/books/:book_id/pages/:page_id/draft", controller.editorialSavePageDraft)

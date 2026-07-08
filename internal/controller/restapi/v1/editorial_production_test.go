@@ -11,6 +11,7 @@ import (
 
 	"github.com/alfariesh/surau-backend/internal/controller/restapi/middleware"
 	"github.com/alfariesh/surau-backend/internal/entity"
+	"github.com/alfariesh/surau-backend/internal/policy"
 	"github.com/alfariesh/surau-backend/internal/usecase"
 	"github.com/alfariesh/surau-backend/pkg/logger"
 	"github.com/go-playground/validator/v10"
@@ -539,7 +540,7 @@ func newProductionTestApp(actor entity.User, editorial *fakeProductionEditorial)
 	editorialReview := app.Group(
 		"/v1/editorial",
 		injectActor,
-		middleware.RequireRoles(user, entity.UserRoleEditor, entity.UserRoleAdmin),
+		middleware.RequireCapability(user, policy.CapReviewEditorial),
 	)
 	editorialReview.Get("/production-candidates", controller.editorialListProductionCandidates)
 	editorialReview.Get("/production-dashboard", controller.editorialProductionDashboard)
@@ -562,7 +563,7 @@ func newProductionTestApp(actor entity.User, editorial *fakeProductionEditorial)
 	editorialAdmin := app.Group(
 		"/v1/editorial",
 		injectActor,
-		middleware.RequireRoles(user, entity.UserRoleAdmin),
+		middleware.RequireCapability(user, policy.CapPublishProduction),
 	)
 	editorialAdmin.Post("/production-projects/:id/publish", controller.editorialPublishProductionProject)
 

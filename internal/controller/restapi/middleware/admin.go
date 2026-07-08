@@ -4,32 +4,33 @@ import (
 	"net/http"
 
 	"github.com/alfariesh/surau-backend/internal/entity"
+	"github.com/alfariesh/surau-backend/internal/policy"
 	"github.com/alfariesh/surau-backend/internal/usecase"
 	"github.com/gofiber/fiber/v2"
 )
 
-// RequireRoles requires an authenticated user with one of the provided roles.
-func RequireRoles(u usecase.User, roles ...string) fiber.Handler {
+// RequireCapability gates a route on a policy capability (A-1). It is the only
+// authorization entry point — role→capability resolution lives entirely in
+// internal/policy, so no handler/usecase compares role strings. The checked
+// capability is stashed in locals so restAuthContext can thread it into audit
+// rows ("which capability authorized this action").
+func RequireCapability(u usecase.User, capability policy.Capability) fiber.Handler {
 	return func(ctx *fiber.Ctx) error {
 		user, ok, err := authenticatedUser(ctx, u)
 		if err != nil || !ok {
 			return middlewareError(ctx, http.StatusUnauthorized, "unauthorized")
 		}
 
-		if !hasAllowedRole(user.Role, roles) {
+		if !policy.Can(user.Role, capability) {
 			return middlewareError(ctx, http.StatusForbidden, "forbidden")
 		}
 
 		ctx.Locals("user", user)
 		ctx.Locals("userID", user.ID)
+		ctx.Locals("capability", string(capability))
 
 		return ctx.Next()
 	}
-}
-
-// Admin requires an authenticated admin user.
-func Admin(u usecase.User) fiber.Handler {
-	return RequireRoles(u, entity.UserRoleAdmin)
 }
 
 func authenticatedUser(ctx *fiber.Ctx, u usecase.User) (entity.User, bool, error) {
@@ -48,24 +49,4 @@ func authenticatedUser(ctx *fiber.Ctx, u usecase.User) (entity.User, bool, error
 	}
 
 	return user, true, nil
-}
-
-func hasAllowedRole(role string, roles []string) bool {
-	role, err := entity.NormalizeUserRole(role)
-	if err != nil {
-		return false
-	}
-
-	for _, allowed := range roles {
-		allowed, err = entity.NormalizeUserRole(allowed)
-		if err != nil {
-			continue
-		}
-
-		if role == allowed {
-			return true
-		}
-	}
-
-	return false
 }
