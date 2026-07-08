@@ -24,8 +24,12 @@ internal/controller/restapi/v1/response/     ← struct response per paket (enve
 1. Repo dibangun sekali di `initUseCases`, lalu usecase: `<domain>.New(<domain>Repo, …deps)`.
 2. Instance masuk struct `useCases` → diteruskan ke `httpserver`/router — controller TIDAK PERNAH
    membangun repo sendiri.
-3. Loop background per-domain mengikuti pola `run<Nama>Loop(ctx, …)` yang di-start di
-   `startServers` dan dihentikan via context di `waitForShutdown`.
+3. Loop background per-domain = satu `loopSpec` (nama metrik, interval, fungsi pass) yang
+   didaftarkan di `buildLoopSpecs` dan dijalankan `runSupervisedLoop` (`internal/app/loop.go`,
+   F1-C): panic-recovery per pass, backoff+jitter saat gagal beruntun, drain ber-timeout saat
+   shutdown, metrik `surau_loop_runs_total{loop,result}` otomatis. JANGAN menulis goroutine
+   ticker telanjang. Job batch/one-shot (backfill dsb.) TIDAK memakai loop app — lihat
+   `docs/data-change-playbook.md`.
 
 ## Aturan yang tidak boleh dilanggar domain baru
 

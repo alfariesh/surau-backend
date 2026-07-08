@@ -19,16 +19,16 @@ func TestAyahEditorialChecksumContentOnly(t *testing.T) {
 		SurahID:         2,
 		AyahNumber:      255,
 		Lang:            "id",
-		MetaTitle:       strptr("Ayat Kursi"),
-		MetaDescription: strptr("Ayat terbesar"),
-		IntisariHTML:    strptr("<p>intisari</p>"),
-		KeutamaanHTML:   strptr("<ul><li>x</li></ul>"),
-		TafsirRange:     strptr("255"),
+		MetaTitle:       new("Ayat Kursi"),
+		MetaDescription: new("Ayat terbesar"),
+		IntisariHTML:    new("<p>intisari</p>"),
+		KeutamaanHTML:   new("<ul><li>x</li></ul>"),
+		TafsirRange:     new("255"),
 		faqProvided:     true,
 		faqJSON:         []byte(`[{"question":"q","answer_html":"<p>a</p>"}]`),
 		license:         "needs_review",
-		LicenseStatus:   strptr("needs_review"),
-		AuthorName:      strptr("Tim Surau"),
+		LicenseStatus:   new("needs_review"),
+		AuthorName:      new("Tim Surau"),
 	}
 	baseSum := ayahEditorialChecksum(base)
 
@@ -37,7 +37,7 @@ func TestAyahEditorialChecksumContentOnly(t *testing.T) {
 
 		rec := base
 		rec.license = "permitted"
-		rec.LicenseStatus = strptr("permitted")
+		rec.LicenseStatus = new("permitted")
 		assert.Equal(t, baseSum, ayahEditorialChecksum(rec))
 	})
 
@@ -45,8 +45,8 @@ func TestAyahEditorialChecksumContentOnly(t *testing.T) {
 		t.Parallel()
 
 		rec := base
-		rec.AuthorName = strptr("Someone Else")
-		rec.ReviewedBy = strptr("reviewer")
+		rec.AuthorName = new("Someone Else")
+		rec.ReviewedBy = new("reviewer")
 		assert.Equal(t, baseSum, ayahEditorialChecksum(rec))
 	})
 
@@ -54,7 +54,7 @@ func TestAyahEditorialChecksumContentOnly(t *testing.T) {
 		t.Parallel()
 
 		rec := base
-		rec.MetaTitle = strptr("Ayat Kursi (revisi)")
+		rec.MetaTitle = new("Ayat Kursi (revisi)")
 		assert.NotEqual(t, baseSum, ayahEditorialChecksum(rec))
 	})
 

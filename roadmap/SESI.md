@@ -78,7 +78,12 @@ Kerjakan F1-B dari roadmap/phase-1-foundations.md: request-ID masuk ke setiap ba
 Masuk PLAN MODE dulu; rencana wajib menyebut cara memenuhi setiap Acceptance Criterion F1-B. Setelah saya setujui: kerjakan sampai tuntas — branch fitur, test, Definition of Done, centang PROGRAM.md & SESI.md, merge, verifikasi dev-api. Laporan akhir bahasa awam + tunjukkan cara saya membuka dashboard-nya.
 ```
 
-- [ ] **SESI 6 — Loop tahan-banting + playbook data besar (F1-C + F1-H)**
+- [x] **SESI 6 — Loop tahan-banting + playbook data besar (F1-C + F1-H)** ✅ 2026-07-08 —
+  5 loop background diawasi (panic pulih sendiri + backoff + drain saat shutdown); email gagal-final
+  kini punya tombol kirim-ulang admin (`POST /admin/emails/messages/{id}/resend`, drill dev sukses);
+  playbook `docs/data-change-playbook.md` lahir + runner backfill resumable (`/backfill` di image app,
+  metrik `surau_backfill_*`) dipakai backfill nyata `authors-name-search` — pencarian penulis
+  `q=احمد` naik 19 → 1.087 hasil; pause→resume terbukti tanpa kehilangan progres.
 
 ```text
 Kerjakan F1-C dan F1-H dari roadmap/phase-1-foundations.md: (F1-C) panic-recovery + backoff untuk 4 loop background, email gagal-final jadi dead-letter yang terlihat + bisa dikirim ulang via admin; (F1-H) playbook expand-contract + pola job backfill resumable ter-metrik yang dipakai minimal satu backfill nyata.

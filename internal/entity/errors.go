@@ -34,6 +34,8 @@ var (
 	ErrEmailTemplateVersionNotFound    = errors.New("email template version not found")
 	ErrEmailEventSettingNotFound       = errors.New("email event setting not found")
 	ErrEmailMessageNotFound            = errors.New("email message not found")
+	ErrEmailMessageNotResendable       = errors.New("email message not resendable")
+	ErrEmailRecipientSuppressed        = errors.New("email recipient suppressed")
 	ErrEmailProviderPollCursorNotFound = errors.New("email provider poll cursor not found")
 	ErrEmailSubscriptionNotFound       = errors.New("email subscription not found")
 	ErrEmailCampaignNotFound           = errors.New("email campaign not found")

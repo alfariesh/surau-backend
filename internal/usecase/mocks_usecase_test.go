@@ -759,6 +759,21 @@ func (mr *MockEmailAdminMockRecorder) PublishVersion(ctx, id, actorID any) *gomo
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PublishVersion", reflect.TypeOf((*MockEmailAdmin)(nil).PublishVersion), ctx, id, actorID)
 }
 
+// ResendMessage mocks base method.
+func (m *MockEmailAdmin) ResendMessage(ctx context.Context, id string) (entity.EmailMessageLog, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ResendMessage", ctx, id)
+	ret0, _ := ret[0].(entity.EmailMessageLog)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ResendMessage indicates an expected call of ResendMessage.
+func (mr *MockEmailAdminMockRecorder) ResendMessage(ctx, id any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ResendMessage", reflect.TypeOf((*MockEmailAdmin)(nil).ResendMessage), ctx, id)
+}
+
 // RetryFailedCampaign mocks base method.
 func (m *MockEmailAdmin) RetryFailedCampaign(ctx context.Context, id, actorID string) (entity.EmailCampaign, error) {
 	m.ctrl.T.Helper()

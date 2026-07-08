@@ -39,7 +39,7 @@
 |---|---|---|
 | 5xx surge | rate 5xx >0.2 rps selama 2m | API error beruntun (DB down / rilis buruk) |
 | p95 latency breach | p95 >500ms selama 10m | API melambat |
-| email stuck / dead letter | antrean tertua >30m ATAU failed >0 | pipeline email macet/gagal permanen |
+| email stuck / dead letter | antrean tertua >30m ATAU failed >0 | pipeline email macet/gagal permanen — remediasi: kirim ulang via `POST /v1/admin/emails/messages/{id}/resend` (F1-C, lihat docs/admin-email-api.md §Resend) |
 | backup heartbeat stale | sukses terakhir >26 jam | dead-man backup (lapis dashboard; watchdog S1 tetap ada) |
 | disk space low | sisa <15% | disk hampir penuh |
 | app down | scrape gagal 3m | app mati/boot-loop (termasuk schema DIRTY) |

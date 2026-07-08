@@ -257,8 +257,20 @@ func (r *ReaderRepo) ListAuthors(ctx context.Context, filter repo.AuthorFilter) 
 				WHERE at_any.author_id = a.id
 				  AND at_any.is_deleted = false
 				  AND (at_any.name ILIKE ? OR COALESCE(at_any.biography, '') ILIKE ?)
-			))`
-		countBuilder = countBuilder.Where(condition, like, like, like, like)
+			)`
+		condArgs := []any{like, like, like, like}
+
+		// Normalized arm (F1-H): matches the canonical hamza-folded column so
+		// "احمد" finds "أحمد". Additive — the raw arms above keep working.
+		if normalizedLike, ok := normalizedSearchLike(filter.Query); ok {
+			condition += `
+			OR a.name_search ILIKE ?`
+
+			condArgs = append(condArgs, normalizedLike)
+		}
+
+		condition += ")"
+		countBuilder = countBuilder.Where(condition, condArgs...)
 	}
 
 	total, err := r.count(ctx, countBuilder)
@@ -270,6 +282,19 @@ func (r *ReaderRepo) ListAuthors(ctx context.Context, filter repo.AuthorFilter) 
 	args := []any{filter.Lang}
 	if filter.Query != "" {
 		like := "%" + escapeLike(filter.Query) + "%"
+		args = append(args, like)
+		rawIdx := len(args)
+
+		// Same normalized arm as the count query above — the two copies MUST
+		// stay in sync or totals drift from pages.
+		normalizedArm := ""
+
+		if normalizedLike, ok := normalizedSearchLike(filter.Query); ok {
+			args = append(args, normalizedLike)
+			normalizedArm = fmt.Sprintf(`
+			OR a.name_search ILIKE $%d`, len(args))
+		}
+
 		whereSQL += fmt.Sprintf(` AND (a.name ILIKE $%d
 			OR COALESCE(a.biography, '') ILIKE $%d
 			OR EXISTS (
@@ -278,8 +303,7 @@ func (r *ReaderRepo) ListAuthors(ctx context.Context, filter repo.AuthorFilter) 
 				WHERE at_any.author_id = a.id
 				  AND at_any.is_deleted = false
 				  AND (at_any.name ILIKE $%d OR COALESCE(at_any.biography, '') ILIKE $%d)
-			))`, len(args)+1, len(args)+1, len(args)+1, len(args)+1)
-		args = append(args, like)
+			)%s)`, rawIdx, rawIdx, rawIdx, rawIdx, normalizedArm)
 	}
 	limitIndex := len(args) + 1
 	offsetIndex := len(args) + 2

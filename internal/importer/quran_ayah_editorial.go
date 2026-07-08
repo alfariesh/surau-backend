@@ -173,10 +173,7 @@ func RunQuranAyahEditorialImport(ctx context.Context, opts QuranAyahEditorialOpt
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	for start := 0; start < len(records); start += ayahEditorialUpsertBatchSize {
-		end := start + ayahEditorialUpsertBatchSize
-		if end > len(records) {
-			end = len(records)
-		}
+		end := min(start+ayahEditorialUpsertBatchSize, len(records))
 
 		batch := &pgx.Batch{}
 

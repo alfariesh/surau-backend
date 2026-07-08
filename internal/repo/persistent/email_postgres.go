@@ -803,6 +803,19 @@ func (r *EmailRepo) ListEmailMessages(
 	return messages, total, nil
 }
 
+func (r *EmailRepo) GetEmailMessageByID(ctx context.Context, id string) (entity.EmailMessageLog, error) {
+	sqlText, args, err := r.Builder.
+		Select(emailMessageColumns).
+		From("email_messages").
+		Where(sq.Eq{"id": id}).
+		ToSql()
+	if err != nil {
+		return entity.EmailMessageLog{}, fmt.Errorf("EmailRepo - GetEmailMessageByID - Builder: %w", err)
+	}
+
+	return scanEmailMessage(r.Pool.QueryRow(ctx, sqlText, args...))
+}
+
 func (r *EmailRepo) GetEmailSubscription(ctx context.Context, userID string) (entity.EmailSubscription, error) {
 	const query = `
 SELECT user_id, marketing_opt_in, opted_in_at, opted_out_at, COALESCE(source, ''), created_at, updated_at
