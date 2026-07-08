@@ -9,6 +9,7 @@ import (
 
 	"github.com/alfariesh/surau-backend/internal/controller/restapi/middleware"
 	"github.com/alfariesh/surau-backend/internal/entity"
+	"github.com/alfariesh/surau-backend/internal/policy"
 	"github.com/gofiber/fiber/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -166,7 +167,7 @@ func (s *stubUserUseCase) ConfirmMFAReset(context.Context, string, string, strin
 	return nil
 }
 
-func TestRequireRoles(t *testing.T) {
+func TestRequireCapability(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -175,53 +176,64 @@ func TestRequireRoles(t *testing.T) {
 		localUser      entity.User
 		user           entity.User
 		err            error
-		roles          []string
+		capability     policy.Capability
 		expectedStatus int
+		wantCapLocal   string
 	}{
 		{
-			name:           "editor allowed for editorial review",
+			name:           "editor allowed for review-editorial",
 			userID:         "user-id-123",
 			user:           entity.User{ID: "user-id-123", Role: entity.UserRoleEditor},
-			roles:          []string{entity.UserRoleEditor, entity.UserRoleAdmin},
+			capability:     policy.CapReviewEditorial,
 			expectedStatus: http.StatusOK,
+			wantCapLocal:   "review-editorial",
 		},
 		{
-			name:           "cached admin user allowed",
+			name:           "cached admin user allowed (superset)",
 			localUser:      entity.User{ID: "user-id-123", Role: entity.UserRoleAdmin},
-			roles:          []string{entity.UserRoleEditor, entity.UserRoleAdmin},
+			capability:     policy.CapReviewEditorial,
 			expectedStatus: http.StatusOK,
+			wantCapLocal:   "review-editorial",
 		},
 		{
-			name:           "normal user forbidden for editorial review",
+			name:           "normal user forbidden for review-editorial",
 			userID:         "user-id-123",
 			user:           entity.User{ID: "user-id-123", Role: entity.UserRoleUser},
-			roles:          []string{entity.UserRoleEditor, entity.UserRoleAdmin},
+			capability:     policy.CapReviewEditorial,
 			expectedStatus: http.StatusForbidden,
 		},
 		{
-			name:           "editor forbidden for publish",
+			name:           "editor forbidden for publish-production",
 			userID:         "user-id-123",
 			user:           entity.User{ID: "user-id-123", Role: entity.UserRoleEditor},
-			roles:          []string{entity.UserRoleAdmin},
+			capability:     policy.CapPublishProduction,
 			expectedStatus: http.StatusForbidden,
 		},
 		{
-			name:           "admin allowed for publish",
+			name:           "admin allowed for publish-production",
 			userID:         "user-id-123",
 			user:           entity.User{ID: "user-id-123", Role: entity.UserRoleAdmin},
-			roles:          []string{entity.UserRoleAdmin},
+			capability:     policy.CapPublishProduction,
 			expectedStatus: http.StatusOK,
+			wantCapLocal:   "publish-production",
+		},
+		{
+			name:           "scholar_reviewer forbidden for manage-users",
+			userID:         "user-id-123",
+			user:           entity.User{ID: "user-id-123", Role: entity.UserRoleScholarReviewer},
+			capability:     policy.CapManageUsers,
+			expectedStatus: http.StatusForbidden,
 		},
 		{
 			name:           "missing user id unauthorized",
-			roles:          []string{entity.UserRoleAdmin},
+			capability:     policy.CapManageUsers,
 			expectedStatus: http.StatusUnauthorized,
 		},
 		{
 			name:           "lookup error unauthorized",
 			userID:         "user-id-123",
 			err:            entity.ErrUserNotFound,
-			roles:          []string{entity.UserRoleAdmin},
+			capability:     policy.CapManageUsers,
 			expectedStatus: http.StatusUnauthorized,
 		},
 	}
@@ -231,6 +243,8 @@ func TestRequireRoles(t *testing.T) {
 
 		t.Run(localTc.name, func(t *testing.T) {
 			t.Parallel()
+
+			var capLocal string
 
 			app := fiber.New()
 			app.Use(func(ctx *fiber.Ctx) error {
@@ -243,17 +257,25 @@ func TestRequireRoles(t *testing.T) {
 
 				return ctx.Next()
 			})
-			app.Use(middleware.RequireRoles(&stubUserUseCase{user: localTc.user, err: localTc.err}, localTc.roles...))
-			app.Get("/admin", func(ctx *fiber.Ctx) error {
+			app.Use(middleware.RequireCapability(&stubUserUseCase{user: localTc.user, err: localTc.err}, localTc.capability))
+			app.Get("/gated", func(ctx *fiber.Ctx) error {
+				if value, ok := ctx.Locals("capability").(string); ok {
+					capLocal = value
+				}
+
 				return ctx.SendStatus(http.StatusOK)
 			})
 
-			req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/admin", http.NoBody)
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/gated", http.NoBody)
 			resp, err := app.Test(req)
 			require.NoError(t, err)
 			defer resp.Body.Close()
 
 			assert.Equal(t, localTc.expectedStatus, resp.StatusCode)
+
+			if localTc.wantCapLocal != "" {
+				assert.Equal(t, localTc.wantCapLocal, capLocal, "gate must stash the capability for audit")
+			}
 		})
 	}
 }

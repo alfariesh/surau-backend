@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/alfariesh/surau-backend/internal/controller/restapi/middleware"
-	"github.com/alfariesh/surau-backend/internal/entity"
+	"github.com/alfariesh/surau-backend/internal/policy"
 	"github.com/alfariesh/surau-backend/internal/usecase"
 	"github.com/alfariesh/surau-backend/pkg/jwt"
 	"github.com/alfariesh/surau-backend/pkg/logger"
@@ -257,7 +257,7 @@ func NewRoutes(
 	{
 		editorialReviewGroup := editorialGroup.Group(
 			"",
-			middleware.RequireRoles(u, entity.UserRoleEditor, entity.UserRoleAdmin),
+			middleware.RequireCapability(u, policy.CapReviewEditorial),
 		)
 		editorialReviewGroup.Get("/books", r.editorialListBooks)
 		editorialReviewGroup.Get("/reader/missing-assets", r.editorialMissingReaderAssets)
@@ -310,7 +310,7 @@ func NewRoutes(
 		// High-class destructive routes demand a FRESH second factor on top of
 		// the role (A-3 step-up): publish/unpublish, final-asset deletion.
 		editorialAdminGroup := editorialGroup.Group("",
-			middleware.RequireRoles(u, entity.UserRoleAdmin), middleware.RequireFreshMFA(u))
+			middleware.RequireCapability(u, policy.CapPublishProduction), middleware.RequireFreshMFA(u))
 		editorialAdminGroup.Put("/books/:book_id/publication", r.editorialUpdatePublication)
 		editorialAdminGroup.Post("/books/:book_id/metadata-draft/publish", r.editorialPublishMetadataDraft)
 		editorialAdminGroup.Post("/books/:book_id/pages/:page_id/publish", r.editorialPublishPageDraft)
@@ -322,7 +322,7 @@ func NewRoutes(
 		editorialAdminGroup.Delete("/production-projects/:id/toc/:heading_id/final-assets/:asset_type", r.editorialDeleteFinalHeadingProductionAsset)
 	}
 
-	adminGroup := protected.Group("/admin", authRequired, middleware.RequireRoles(u, entity.UserRoleAdmin))
+	adminGroup := protected.Group("/admin", authRequired, middleware.RequireCapability(u, policy.CapManageUsers))
 	{
 		adminGroup.Get("/users", r.adminUsers)
 		adminGroup.Get("/users/:id/activity", r.adminUserActivity)

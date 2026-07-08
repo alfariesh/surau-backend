@@ -8,6 +8,7 @@ import (
 
 	"github.com/alfariesh/surau-backend/internal/controller/restapi/middleware"
 	"github.com/alfariesh/surau-backend/internal/entity"
+	"github.com/alfariesh/surau-backend/internal/policy"
 	"github.com/alfariesh/surau-backend/pkg/logger"
 	"github.com/go-playground/validator/v10"
 	"github.com/gofiber/fiber/v2"
@@ -204,7 +205,7 @@ func newAdminRoleTestApp(user *fakeAuthUser, actor entity.User) *fiber.App {
 
 			return ctx.Next()
 		},
-		middleware.RequireRoles(user, entity.UserRoleAdmin),
+		middleware.RequireCapability(user, policy.CapManageUsers),
 		controller.adminSetUserRole,
 	)
 	adminUserHandler := func(handler fiber.Handler) fiber.Handler {
@@ -216,17 +217,17 @@ func newAdminRoleTestApp(user *fakeAuthUser, actor entity.User) *fiber.App {
 	}
 	app.Get(
 		"/v1/admin/users",
-		adminUserHandler(middleware.RequireRoles(user, entity.UserRoleAdmin)),
+		adminUserHandler(middleware.RequireCapability(user, policy.CapManageUsers)),
 		controller.adminUsers,
 	)
 	app.Get(
 		"/v1/admin/users/:id/activity",
-		adminUserHandler(middleware.RequireRoles(user, entity.UserRoleAdmin)),
+		adminUserHandler(middleware.RequireCapability(user, policy.CapManageUsers)),
 		controller.adminUserActivity,
 	)
 	app.Get(
 		"/v1/admin/users/:id",
-		adminUserHandler(middleware.RequireRoles(user, entity.UserRoleAdmin)),
+		adminUserHandler(middleware.RequireCapability(user, policy.CapManageUsers)),
 		controller.adminUserDetail,
 	)
 

@@ -489,6 +489,9 @@ func (uc *UseCase) SetRoleByEmail(
 			"old_role":    oldRole,
 			"new_role":    role,
 			"role":        role,
+			// The capability the route gate checked (A-1). Empty when the
+			// change came through the CLI escape hatch, which bypasses gates.
+			"capability": authmeta.From(ctx).Capability,
 		})
 	}()
 

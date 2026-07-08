@@ -11,6 +11,7 @@ import (
 
 	"github.com/alfariesh/surau-backend/internal/controller/restapi/middleware"
 	"github.com/alfariesh/surau-backend/internal/entity"
+	"github.com/alfariesh/surau-backend/internal/policy"
 	"github.com/alfariesh/surau-backend/internal/repo"
 	"github.com/alfariesh/surau-backend/internal/usecase"
 	"github.com/alfariesh/surau-backend/pkg/logger"
@@ -486,43 +487,43 @@ func newAdminEmailTestApp(email *fakeEmailAdmin, actor entity.User) *fiber.App {
 	app.Post(
 		"/v1/admin/emails/templates",
 		injectActor,
-		middleware.RequireRoles(user, entity.UserRoleAdmin),
+		middleware.RequireCapability(user, policy.CapManageUsers),
 		controller.adminEmailCreateTemplate,
 	)
 	app.Post(
 		"/v1/admin/emails/campaigns/:id/retry-failed",
 		injectActor,
-		middleware.RequireRoles(user, entity.UserRoleAdmin),
+		middleware.RequireCapability(user, policy.CapManageUsers),
 		controller.adminEmailRetryFailedCampaign,
 	)
 	app.Get(
 		"/v1/admin/emails/delivery-events",
 		injectActor,
-		middleware.RequireRoles(user, entity.UserRoleAdmin),
+		middleware.RequireCapability(user, policy.CapManageUsers),
 		controller.adminEmailDeliveryEvents,
 	)
 	app.Get(
 		"/v1/admin/emails/messages/:id/delivery-events",
 		injectActor,
-		middleware.RequireRoles(user, entity.UserRoleAdmin),
+		middleware.RequireCapability(user, policy.CapManageUsers),
 		controller.adminEmailMessageDeliveryEvents,
 	)
 	app.Post(
 		"/v1/admin/emails/messages/:id/resend",
 		injectActor,
-		middleware.RequireRoles(user, entity.UserRoleAdmin),
+		middleware.RequireCapability(user, policy.CapManageUsers),
 		controller.adminEmailResendMessage,
 	)
 	app.Get(
 		"/v1/admin/emails/campaign-recipients/:id/delivery-events",
 		injectActor,
-		middleware.RequireRoles(user, entity.UserRoleAdmin),
+		middleware.RequireCapability(user, policy.CapManageUsers),
 		controller.adminEmailCampaignRecipientDeliveryEvents,
 	)
 	app.Get(
 		"/v1/admin/emails/campaigns/:id/delivery-event-summary",
 		injectActor,
-		middleware.RequireRoles(user, entity.UserRoleAdmin),
+		middleware.RequireCapability(user, policy.CapManageUsers),
 		controller.adminEmailCampaignDeliveryEventSummary,
 	)
 

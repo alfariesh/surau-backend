@@ -918,10 +918,15 @@ func (r *V1) updatePreferences(ctx *fiber.Ctx) error {
 }
 
 func restAuthContext(ctx *fiber.Ctx) context.Context {
+	// A capability is present only when a RequireCapability gate ran; audited
+	// gated actions (e.g. role change) record which capability authorized them.
+	capability, _ := ctx.Locals("capability").(string)
+
 	return authmeta.With(ctx.UserContext(), authmeta.Meta{
-		ClientIP:  ctx.IP(),
-		UserAgent: ctx.Get("User-Agent"),
-		Transport: "rest",
+		ClientIP:   ctx.IP(),
+		UserAgent:  ctx.Get("User-Agent"),
+		Transport:  "rest",
+		Capability: capability,
 	})
 }
 
