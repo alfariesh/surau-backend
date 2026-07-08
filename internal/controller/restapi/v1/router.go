@@ -112,7 +112,11 @@ func NewRoutes(
 		LimitReached: limiterLimitReached,
 	})
 
-	quranGroup := apiV1Group.Group("/quran", middleware.PublicCache())
+	// Search is dynamic (per-query) and must not advertise public caching;
+	// the edge worker bypasses q-params for the same reason (F1-D).
+	quranGroup := apiV1Group.Group("/quran", middleware.PublicCache(
+		middleware.ExcludePath("/v1/quran/search"),
+	))
 	{
 		quranGroup.Get("/recitations", r.listQuranRecitations)
 		quranGroup.Get("/translation-sources", r.listQuranTranslationSources)

@@ -11,13 +11,44 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
+// publicCacheControl is a CONTRACT string (F1-D): the max-age/SWR numbers
+// must stay equal to the edge worker's FRESH/STALE TTLs
+// (workers/api-cache/wrangler.jsonc) — both sides advertise one policy.
+// Pinned by cache_test.go; documented in docs/frontend-integration-contract.md.
 const publicCacheControl = "public, max-age=300, stale-while-revalidate=86400"
 
+// ExcludePath marks exact request paths a PublicCache group must NOT cache
+// (dynamic endpoints like search): the response is stamped no-store instead.
+// Needed because fiber group middleware is a prefix Use — a route cannot
+// simply be "moved out" of the group.
+func ExcludePath(paths ...string) func(map[string]bool) {
+	return func(excluded map[string]bool) {
+		for _, path := range paths {
+			excluded[path] = true
+		}
+	}
+}
+
 // PublicCache sets cache validators for stable public GET JSON endpoints.
-func PublicCache() fiber.Handler {
+func PublicCache(opts ...func(map[string]bool)) fiber.Handler {
+	excluded := make(map[string]bool)
+	for _, opt := range opts {
+		opt(excluded)
+	}
+
 	return func(ctx *fiber.Ctx) error {
 		if ctx.Method() != http.MethodGet {
 			return ctx.Next()
+		}
+
+		if excluded[ctx.Path()] {
+			if err := ctx.Next(); err != nil {
+				return err
+			}
+
+			ctx.Set("Cache-Control", "no-store")
+
+			return nil
 		}
 
 		if err := ctx.Next(); err != nil {
