@@ -179,6 +179,7 @@ type (
 			visibilityTimeout time.Duration,
 		) ([]entity.EmailMessageLog, error)
 		ListEmailMessages(ctx context.Context, filter EmailMessageFilter) ([]entity.EmailMessageLog, int, error)
+		GetEmailMessageByID(ctx context.Context, id string) (entity.EmailMessageLog, error)
 		GetEmailSubscription(ctx context.Context, userID string) (entity.EmailSubscription, error)
 		UpsertEmailSubscription(ctx context.Context, subscription entity.EmailSubscription) (entity.EmailSubscription, error)
 		UnsubscribeEmail(ctx context.Context, userID, email, source string) (entity.EmailSubscription, error)

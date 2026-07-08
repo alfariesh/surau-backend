@@ -96,6 +96,92 @@ func TestAdminEmailRetryFailedCampaign(t *testing.T) {
 	assert.Equal(t, "admin-id", email.retryActorID)
 }
 
+func TestAdminEmailResendMessage(t *testing.T) {
+	t.Parallel()
+
+	email := &fakeEmailAdmin{
+		resendMessage: entity.EmailMessageLog{
+			ID:       "message-id",
+			Status:   entity.EmailMessageStatusQueued,
+			Attempts: 0,
+		},
+	}
+	app := newAdminEmailTestApp(email, entity.User{ID: "admin-id", Role: entity.UserRoleAdmin})
+	req := httptest.NewRequestWithContext(
+		t.Context(),
+		http.MethodPost,
+		"/v1/admin/emails/messages/message-id/resend",
+		nil,
+	)
+
+	resp, err := app.Test(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	var message entity.EmailMessageLog
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&message))
+
+	assert.Equal(t, http.StatusAccepted, resp.StatusCode)
+	assert.Equal(t, "message-id", message.ID)
+	assert.Equal(t, entity.EmailMessageStatusQueued, message.Status)
+	assert.Equal(t, "message-id", email.resendID)
+}
+
+func TestAdminEmailResendMessageErrorMapping(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name       string
+		resendErr  error
+		wantStatus int
+	}{
+		{name: "not found", resendErr: entity.ErrEmailMessageNotFound, wantStatus: http.StatusNotFound},
+		{name: "not resendable", resendErr: entity.ErrEmailMessageNotResendable, wantStatus: http.StatusConflict},
+		{name: "suppressed", resendErr: entity.ErrEmailRecipientSuppressed, wantStatus: http.StatusConflict},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			email := &fakeEmailAdmin{resendErr: tc.resendErr}
+			app := newAdminEmailTestApp(email, entity.User{ID: "admin-id", Role: entity.UserRoleAdmin})
+			req := httptest.NewRequestWithContext(
+				t.Context(),
+				http.MethodPost,
+				"/v1/admin/emails/messages/message-id/resend",
+				nil,
+			)
+
+			resp, err := app.Test(req)
+			require.NoError(t, err)
+			defer resp.Body.Close()
+
+			assert.Equal(t, tc.wantStatus, resp.StatusCode)
+		})
+	}
+}
+
+func TestAdminEmailResendMessageRejectsEditorActor(t *testing.T) {
+	t.Parallel()
+
+	email := &fakeEmailAdmin{}
+	app := newAdminEmailTestApp(email, entity.User{ID: "editor-id", Role: entity.UserRoleEditor})
+	req := httptest.NewRequestWithContext(
+		t.Context(),
+		http.MethodPost,
+		"/v1/admin/emails/messages/message-id/resend",
+		nil,
+	)
+
+	resp, err := app.Test(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+	assert.Empty(t, email.resendID)
+}
+
 func TestAdminEmailDeliveryEvents(t *testing.T) {
 	t.Parallel()
 
@@ -418,6 +504,12 @@ func newAdminEmailTestApp(email *fakeEmailAdmin, actor entity.User) *fiber.App {
 		middleware.RequireRoles(user, entity.UserRoleAdmin),
 		controller.adminEmailMessageDeliveryEvents,
 	)
+	app.Post(
+		"/v1/admin/emails/messages/:id/resend",
+		injectActor,
+		middleware.RequireRoles(user, entity.UserRoleAdmin),
+		controller.adminEmailResendMessage,
+	)
 	app.Get(
 		"/v1/admin/emails/campaign-recipients/:id/delivery-events",
 		injectActor,
@@ -470,6 +562,10 @@ type fakeEmailAdmin struct {
 	retryCampaign entity.EmailCampaign
 	retryErr      error
 
+	resendID      string
+	resendMessage entity.EmailMessageLog
+	resendErr     error
+
 	deliveryEvents    []entity.EmailDeliveryEvent
 	deliveryTotal     int
 	deliveryFilter    repo.EmailDeliveryEventFilter
@@ -518,6 +614,21 @@ func (f *fakeEmailAdmin) RetryFailedCampaign(
 	}
 
 	return f.retryCampaign, nil
+}
+
+func (f *fakeEmailAdmin) ResendMessage(
+	_ context.Context,
+	id string,
+) (entity.EmailMessageLog, error) {
+	f.resendID = id
+	if f.resendErr != nil {
+		return entity.EmailMessageLog{}, f.resendErr
+	}
+	if f.resendMessage.ID == "" {
+		f.resendMessage.ID = id
+	}
+
+	return f.resendMessage, nil
 }
 
 func (f *fakeEmailAdmin) DeliveryEvents(

@@ -701,6 +701,97 @@ func TestDispatchDueTransactionalEmailsReschedulesAndEventuallyFails(t *testing.
 	assert.Equal(t, "message-id-final", stub.updatedMessages[1].ID)
 }
 
+func deadLetterMessageLogForTest(id, email string) entity.EmailMessageLog {
+	message := transactionalMessageLogForTest(id, email, 6, true)
+	message.Status = entity.EmailMessageStatusFailed
+	message.Error = "smtp 550"
+	message.ProviderResponse = "provider says no"
+	message.ScheduledAt = nil
+
+	return message
+}
+
+func TestResendMessageRequeuesDeadLetter(t *testing.T) {
+	t.Parallel()
+
+	const id = "8e2f2f0a-6f3f-4bb1-9a5e-0f6f6a1a2b3c"
+
+	failed := deadLetterMessageLogForTest(id, "user@example.com")
+	stub := &emailRepoStub{createdMessages: []entity.EmailMessageLog{failed}}
+	uc := New(stub, &emailSenderStub{}, Options{})
+
+	requeued, err := uc.ResendMessage(t.Context(), id)
+
+	require.NoError(t, err)
+	assert.Equal(t, entity.EmailMessageStatusQueued, requeued.Status)
+	assert.Equal(t, 0, requeued.Attempts)
+	require.NotNil(t, requeued.ScheduledAt)
+	assert.WithinDuration(t, time.Now().UTC(), *requeued.ScheduledAt, 2*time.Second)
+	// The previous failure stays on the row for forensics until the next
+	// send attempt overwrites it.
+	assert.Equal(t, "smtp 550", requeued.Error)
+	assert.Equal(t, "provider says no", requeued.ProviderResponse)
+}
+
+func TestResendMessageRejectsNonDeadLetters(t *testing.T) {
+	t.Parallel()
+
+	const (
+		queuedID    = "11111111-1111-4111-8111-111111111111"
+		marketingID = "22222222-2222-4222-8222-222222222222"
+		emptyBodyID = "33333333-3333-4333-8333-333333333333"
+	)
+
+	queued := transactionalMessageLogForTest(queuedID, "queued@example.com", 1, false)
+
+	marketing := deadLetterMessageLogForTest(marketingID, "marketing@example.com")
+	marketing.Category = entity.EmailCategoryMarketing
+
+	// Rows queued before stored-content retries (migration 20260605000003)
+	// carry no body; the dispatcher never re-renders templates.
+	emptyBody := deadLetterMessageLogForTest(emptyBodyID, "legacy@example.com")
+	emptyBody.HTML = ""
+	emptyBody.Text = ""
+
+	stub := &emailRepoStub{createdMessages: []entity.EmailMessageLog{queued, marketing, emptyBody}}
+	uc := New(stub, &emailSenderStub{}, Options{})
+
+	for _, id := range []string{queuedID, marketingID, emptyBodyID} {
+		_, err := uc.ResendMessage(t.Context(), id)
+		require.ErrorIs(t, err, entity.ErrEmailMessageNotResendable, "id=%s", id)
+	}
+
+	assert.Empty(t, stub.scheduledRetries)
+}
+
+func TestResendMessageRejectsSuppressedRecipient(t *testing.T) {
+	t.Parallel()
+
+	const id = "44444444-4444-4444-8444-444444444444"
+
+	failed := deadLetterMessageLogForTest(id, "bounced@example.com")
+	stub := &emailRepoStub{createdMessages: []entity.EmailMessageLog{failed}, suppressed: true}
+	uc := New(stub, &emailSenderStub{}, Options{})
+
+	_, err := uc.ResendMessage(t.Context(), id)
+
+	require.ErrorIs(t, err, entity.ErrEmailRecipientSuppressed)
+	assert.Empty(t, stub.scheduledRetries)
+}
+
+func TestResendMessageUnknownAndMalformedID(t *testing.T) {
+	t.Parallel()
+
+	stub := &emailRepoStub{}
+	uc := New(stub, &emailSenderStub{}, Options{})
+
+	_, err := uc.ResendMessage(t.Context(), "55555555-5555-4555-8555-555555555555")
+	require.ErrorIs(t, err, entity.ErrEmailMessageNotFound)
+
+	_, err = uc.ResendMessage(t.Context(), "not-a-uuid")
+	require.ErrorIs(t, err, entity.ErrEmailMessageNotFound)
+}
+
 func TestDispatchDueTransactionalEmailsSkipsSuppressedNonCritical(t *testing.T) {
 	t.Parallel()
 
@@ -1563,6 +1654,21 @@ func (s *emailRepoStub) ScheduleEmailMessageRetry(
 		s.updatedMessages = append(s.updatedMessages, updated)
 
 		return updated, nil
+	}
+
+	return entity.EmailMessageLog{}, entity.ErrEmailMessageNotFound
+}
+
+func (s *emailRepoStub) GetEmailMessageByID(_ context.Context, id string) (entity.EmailMessageLog, error) {
+	for _, message := range s.createdMessages {
+		if message.ID == id {
+			return message, nil
+		}
+	}
+	for _, message := range s.claimedTransactionalMessages {
+		if message.ID == id {
+			return message, nil
+		}
 	}
 
 	return entity.EmailMessageLog{}, entity.ErrEmailMessageNotFound

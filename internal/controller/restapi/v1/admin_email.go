@@ -477,6 +477,36 @@ func (r *V1) adminEmailMessageDeliveryEvents(ctx *fiber.Ctx) error {
 	return ctx.Status(http.StatusOK).JSON(response.EmailDeliveryEventList{Items: events, Total: total})
 }
 
+// @Summary  Resend a dead-lettered transactional email
+// @ID       admin-email-resend-message
+// @Tags     admin-emails
+// @Produce  json
+// @Param    id path string true "Email message ID"
+// @Success  202 {object} entity.EmailMessageLog
+// @Failure  401 {object} response.Error
+// @Failure  403 {object} response.Error
+// @Failure  404 {object} response.Error
+// @Failure  409 {object} response.Error
+// @Failure  500 {object} response.Error
+// @Security BearerAuth
+// @Router   /admin/emails/messages/{id}/resend [post]
+func (r *V1) adminEmailResendMessage(ctx *fiber.Ctx) error {
+	message, err := r.email.ResendMessage(ctx.UserContext(), ctx.Params("id"))
+	if err != nil {
+		return adminEmailError(ctx, err)
+	}
+
+	// Audit trail: the requeue keeps the previous failure on the row; stamp
+	// who pushed the button alongside it (request-scoped log carries
+	// request_id/trace_id).
+	r.reqLog(ctx).Info(
+		"admin email resend: message=%s recipient=%s actor=%s previous_error=%q",
+		message.ID, message.RecipientEmail, emailActorID(ctx), message.Error,
+	)
+
+	return ctx.Status(http.StatusAccepted).JSON(message)
+}
+
 // @Summary  List delivery events for a campaign recipient
 // @ID       admin-email-list-campaign-recipient-delivery-events
 // @Tags     admin-emails
@@ -1021,8 +1051,12 @@ func adminEmailError(ctx *fiber.Ctx, err error) error {
 		errors.Is(err, entity.ErrEmailTemplateVersionNotFound),
 		errors.Is(err, entity.ErrEmailEventSettingNotFound),
 		errors.Is(err, entity.ErrEmailCampaignNotFound),
+		errors.Is(err, entity.ErrEmailMessageNotFound),
 		errors.Is(err, entity.ErrEmailSuppressionNotFound):
 		return errorResponse(ctx, http.StatusNotFound, "not found")
+	case errors.Is(err, entity.ErrEmailMessageNotResendable),
+		errors.Is(err, entity.ErrEmailRecipientSuppressed):
+		return errorResponse(ctx, http.StatusConflict, err.Error())
 	case errors.Is(err, entity.ErrInvalidEmailTemplate),
 		errors.Is(err, entity.ErrInvalidEmailCampaign),
 		errors.Is(err, entity.ErrInvalidAuthInput),

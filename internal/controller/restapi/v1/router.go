@@ -310,6 +310,7 @@ func NewRoutes(
 			emailGroup.Patch("/events/:key", r.adminEmailUpdateEventSetting)
 			emailGroup.Get("/messages", r.adminEmailMessages)
 			emailGroup.Get("/messages/:id/delivery-events", r.adminEmailMessageDeliveryEvents)
+			emailGroup.Post("/messages/:id/resend", r.adminEmailResendMessage)
 			emailGroup.Get("/delivery-events", r.adminEmailDeliveryEvents)
 			emailGroup.Get("/suppressions", r.adminEmailSuppressions)
 			emailGroup.Post("/suppressions", r.adminEmailCreateSuppression)

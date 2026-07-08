@@ -809,6 +809,50 @@ func (uc *UseCase) DispatchDueTransactionalEmails(ctx context.Context, limit int
 	return nil
 }
 
+// ResendMessage requeues one terminally failed transactional email — the
+// F1-C dead-letter path. It refuses campaign messages (they have their own
+// retry flow), messages that are not dead-lettered, bodies from before
+// stored-content retries (the dispatcher resends stored content verbatim and
+// never re-renders templates), and recipients still on the suppression list.
+// The previous failure details are kept on the row until the next send
+// attempt overwrites them, so the forensic trail survives the requeue; the
+// acting admin is logged by the controller (email_messages has no actor
+// column).
+func (uc *UseCase) ResendMessage(ctx context.Context, id string) (entity.EmailMessageLog, error) {
+	if _, err := uuid.Parse(strings.TrimSpace(id)); err != nil {
+		return entity.EmailMessageLog{}, entity.ErrEmailMessageNotFound
+	}
+
+	messageLog, err := uc.repo.GetEmailMessageByID(ctx, strings.TrimSpace(id))
+	if err != nil {
+		return entity.EmailMessageLog{}, err
+	}
+
+	if messageLog.Category != entity.EmailCategoryTransactional ||
+		messageLog.Status != entity.EmailMessageStatusFailed ||
+		(messageLog.HTML == "" && messageLog.Text == "") {
+		return entity.EmailMessageLog{}, entity.ErrEmailMessageNotResendable
+	}
+
+	suppressed, err := uc.repo.IsEmailSuppressed(ctx, messageLog.RecipientEmail, messageLog.Category)
+	if err != nil {
+		return entity.EmailMessageLog{}, err
+	}
+
+	if suppressed {
+		return entity.EmailMessageLog{}, entity.ErrEmailRecipientSuppressed
+	}
+
+	return uc.repo.ScheduleEmailMessageRetry(
+		ctx,
+		messageLog.ID,
+		0,
+		messageLog.ProviderResponse,
+		messageLog.Error,
+		time.Now().UTC(),
+	)
+}
+
 func (uc *UseCase) PollCloudflareEmailEvents(ctx context.Context) (entity.EmailWebhookIngestResult, error) {
 	var result entity.EmailWebhookIngestResult
 	if uc.repo == nil || uc.eventPoller == nil || strings.TrimSpace(uc.pollingZoneID) == "" {

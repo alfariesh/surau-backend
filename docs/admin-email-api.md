@@ -536,6 +536,34 @@ Transactional retry/backoff behavior:
 - Non-critical queued messages are skipped if recipient becomes suppressed before retry.
 - Critical queued messages bypass suppression.
 
+### Resend a Dead-Lettered Message
+
+`failed` transactional messages are dead letters: they are never picked up
+again automatically (observability: the `surau_email_failed` gauge and the
+"email stuck / dead letter" Telegram alert). This endpoint requeues one for a
+fresh delivery cycle (attempts reset to 0, same retry ladder as above).
+
+```http
+POST /v1/admin/emails/messages/{id}/resend
+```
+
+Response `202 Accepted` with the requeued message log (`status=queued`,
+`attempts=0`, `scheduled_at` = now). The previous `error` and
+`provider_response` stay on the row until the next send attempt overwrites
+them, so the failure reason remains visible while the resend is pending.
+
+Errors:
+
+| Status | Code | When |
+| --- | --- | --- |
+| `404` | `not_found` | Unknown or malformed message id. |
+| `409` | `email_message_not_resendable` | Message is not `category=transactional`, not `status=failed`, or has no stored body (rows from before stored-content retries; the dispatcher resends stored content verbatim and never re-renders templates). |
+| `409` | `email_recipient_suppressed` | Recipient is still on the suppression list — delete the suppression first (`DELETE /v1/admin/emails/suppressions/{id}`) if the address is actually deliverable. |
+
+Note: this endpoint intentionally returns `409` for state conflicts (unlike
+`retry-failed` on campaigns which returns `400` for invalid campaign state —
+kept as-is for backward compatibility).
+
 ## Delivery Events Observability
 
 Delivery events are provider-side hard-bounce/complaint audit rows. Use these screens to explain why an email/campaign failed after provider feedback arrives.

@@ -1181,6 +1181,21 @@ func (mr *MockEmailRepoMockRecorder) GetEmailEventSetting(ctx, key any) *gomock.
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetEmailEventSetting", reflect.TypeOf((*MockEmailRepo)(nil).GetEmailEventSetting), ctx, key)
 }
 
+// GetEmailMessageByID mocks base method.
+func (m *MockEmailRepo) GetEmailMessageByID(ctx context.Context, id string) (entity.EmailMessageLog, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetEmailMessageByID", ctx, id)
+	ret0, _ := ret[0].(entity.EmailMessageLog)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetEmailMessageByID indicates an expected call of GetEmailMessageByID.
+func (mr *MockEmailRepoMockRecorder) GetEmailMessageByID(ctx, id any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetEmailMessageByID", reflect.TypeOf((*MockEmailRepo)(nil).GetEmailMessageByID), ctx, id)
+}
+
 // GetEmailProviderPollCursor mocks base method.
 func (m *MockEmailRepo) GetEmailProviderPollCursor(ctx context.Context, provider, cursorKey string) (entity.EmailProviderPollCursor, error) {
 	m.ctrl.T.Helper()
