@@ -833,6 +833,216 @@ func (mr *MockAuthMaintenanceRepoMockRecorder) CleanupAuthData(ctx, policy any) 
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CleanupAuthData", reflect.TypeOf((*MockAuthMaintenanceRepo)(nil).CleanupAuthData), ctx, policy)
 }
 
+// MockMFARepo is a mock of MFARepo interface.
+type MockMFARepo struct {
+	ctrl     *gomock.Controller
+	recorder *MockMFARepoMockRecorder
+	isgomock struct{}
+}
+
+// MockMFARepoMockRecorder is the mock recorder for MockMFARepo.
+type MockMFARepoMockRecorder struct {
+	mock *MockMFARepo
+}
+
+// NewMockMFARepo creates a new mock instance.
+func NewMockMFARepo(ctrl *gomock.Controller) *MockMFARepo {
+	mock := &MockMFARepo{ctrl: ctrl}
+	mock.recorder = &MockMFARepoMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockMFARepo) EXPECT() *MockMFARepoMockRecorder {
+	return m.recorder
+}
+
+// AdvanceMFATOTPStep mocks base method.
+func (m *MockMFARepo) AdvanceMFATOTPStep(ctx context.Context, userID string, step int64) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AdvanceMFATOTPStep", ctx, userID, step)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// AdvanceMFATOTPStep indicates an expected call of AdvanceMFATOTPStep.
+func (mr *MockMFARepoMockRecorder) AdvanceMFATOTPStep(ctx, userID, step any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AdvanceMFATOTPStep", reflect.TypeOf((*MockMFARepo)(nil).AdvanceMFATOTPStep), ctx, userID, step)
+}
+
+// ConfirmMFA mocks base method.
+func (m *MockMFARepo) ConfirmMFA(ctx context.Context, userID string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ConfirmMFA", ctx, userID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// ConfirmMFA indicates an expected call of ConfirmMFA.
+func (mr *MockMFARepoMockRecorder) ConfirmMFA(ctx, userID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ConfirmMFA", reflect.TypeOf((*MockMFARepo)(nil).ConfirmMFA), ctx, userID)
+}
+
+// ConsumeMFAChallenge mocks base method.
+func (m *MockMFARepo) ConsumeMFAChallenge(ctx context.Context, id string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ConsumeMFAChallenge", ctx, id)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// ConsumeMFAChallenge indicates an expected call of ConsumeMFAChallenge.
+func (mr *MockMFARepoMockRecorder) ConsumeMFAChallenge(ctx, id any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ConsumeMFAChallenge", reflect.TypeOf((*MockMFARepo)(nil).ConsumeMFAChallenge), ctx, id)
+}
+
+// ConsumeRecoveryCode mocks base method.
+func (m *MockMFARepo) ConsumeRecoveryCode(ctx context.Context, userID, codeHash string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ConsumeRecoveryCode", ctx, userID, codeHash)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// ConsumeRecoveryCode indicates an expected call of ConsumeRecoveryCode.
+func (mr *MockMFARepoMockRecorder) ConsumeRecoveryCode(ctx, userID, codeHash any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ConsumeRecoveryCode", reflect.TypeOf((*MockMFARepo)(nil).ConsumeRecoveryCode), ctx, userID, codeHash)
+}
+
+// CountUnusedRecoveryCodes mocks base method.
+func (m *MockMFARepo) CountUnusedRecoveryCodes(ctx context.Context, userID string) (int, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CountUnusedRecoveryCodes", ctx, userID)
+	ret0, _ := ret[0].(int)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CountUnusedRecoveryCodes indicates an expected call of CountUnusedRecoveryCodes.
+func (mr *MockMFARepoMockRecorder) CountUnusedRecoveryCodes(ctx, userID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CountUnusedRecoveryCodes", reflect.TypeOf((*MockMFARepo)(nil).CountUnusedRecoveryCodes), ctx, userID)
+}
+
+// CreateMFAChallenge mocks base method.
+func (m *MockMFARepo) CreateMFAChallenge(ctx context.Context, challenge entity.MFAChallenge) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateMFAChallenge", ctx, challenge)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// CreateMFAChallenge indicates an expected call of CreateMFAChallenge.
+func (mr *MockMFARepoMockRecorder) CreateMFAChallenge(ctx, challenge any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateMFAChallenge", reflect.TypeOf((*MockMFARepo)(nil).CreateMFAChallenge), ctx, challenge)
+}
+
+// DeleteMFA mocks base method.
+func (m *MockMFARepo) DeleteMFA(ctx context.Context, userID string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteMFA", ctx, userID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeleteMFA indicates an expected call of DeleteMFA.
+func (mr *MockMFARepoMockRecorder) DeleteMFA(ctx, userID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteMFA", reflect.TypeOf((*MockMFARepo)(nil).DeleteMFA), ctx, userID)
+}
+
+// GetMFA mocks base method.
+func (m *MockMFARepo) GetMFA(ctx context.Context, userID string) (entity.UserMFA, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetMFA", ctx, userID)
+	ret0, _ := ret[0].(entity.UserMFA)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetMFA indicates an expected call of GetMFA.
+func (mr *MockMFARepoMockRecorder) GetMFA(ctx, userID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetMFA", reflect.TypeOf((*MockMFARepo)(nil).GetMFA), ctx, userID)
+}
+
+// GetMFAChallengeByTokenHash mocks base method.
+func (m *MockMFARepo) GetMFAChallengeByTokenHash(ctx context.Context, tokenHash, purpose string) (entity.MFAChallenge, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetMFAChallengeByTokenHash", ctx, tokenHash, purpose)
+	ret0, _ := ret[0].(entity.MFAChallenge)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetMFAChallengeByTokenHash indicates an expected call of GetMFAChallengeByTokenHash.
+func (mr *MockMFARepoMockRecorder) GetMFAChallengeByTokenHash(ctx, tokenHash, purpose any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetMFAChallengeByTokenHash", reflect.TypeOf((*MockMFARepo)(nil).GetMFAChallengeByTokenHash), ctx, tokenHash, purpose)
+}
+
+// GetMFAGateData mocks base method.
+func (m *MockMFARepo) GetMFAGateData(ctx context.Context, userID, familyID string) (entity.MFAGateData, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetMFAGateData", ctx, userID, familyID)
+	ret0, _ := ret[0].(entity.MFAGateData)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetMFAGateData indicates an expected call of GetMFAGateData.
+func (mr *MockMFARepoMockRecorder) GetMFAGateData(ctx, userID, familyID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetMFAGateData", reflect.TypeOf((*MockMFARepo)(nil).GetMFAGateData), ctx, userID, familyID)
+}
+
+// ReplaceRecoveryCodes mocks base method.
+func (m *MockMFARepo) ReplaceRecoveryCodes(ctx context.Context, userID string, codeHashes []string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ReplaceRecoveryCodes", ctx, userID, codeHashes)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// ReplaceRecoveryCodes indicates an expected call of ReplaceRecoveryCodes.
+func (mr *MockMFARepoMockRecorder) ReplaceRecoveryCodes(ctx, userID, codeHashes any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReplaceRecoveryCodes", reflect.TypeOf((*MockMFARepo)(nil).ReplaceRecoveryCodes), ctx, userID, codeHashes)
+}
+
+// SetSessionMFAVerified mocks base method.
+func (m *MockMFARepo) SetSessionMFAVerified(ctx context.Context, userID, familyID string, at time.Time) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SetSessionMFAVerified", ctx, userID, familyID, at)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// SetSessionMFAVerified indicates an expected call of SetSessionMFAVerified.
+func (mr *MockMFARepoMockRecorder) SetSessionMFAVerified(ctx, userID, familyID, at any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetSessionMFAVerified", reflect.TypeOf((*MockMFARepo)(nil).SetSessionMFAVerified), ctx, userID, familyID, at)
+}
+
+// UpsertPendingMFA mocks base method.
+func (m *MockMFARepo) UpsertPendingMFA(ctx context.Context, userID, secretEnc string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpsertPendingMFA", ctx, userID, secretEnc)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// UpsertPendingMFA indicates an expected call of UpsertPendingMFA.
+func (mr *MockMFARepoMockRecorder) UpsertPendingMFA(ctx, userID, secretEnc any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpsertPendingMFA", reflect.TypeOf((*MockMFARepo)(nil).UpsertPendingMFA), ctx, userID, secretEnc)
+}
+
 // MockAuthAuditRepo is a mock of AuthAuditRepo interface.
 type MockAuthAuditRepo struct {
 	ctrl     *gomock.Controller

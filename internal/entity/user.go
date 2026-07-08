@@ -60,6 +60,14 @@ func CanPublishEditorial(role string) bool {
 	return strings.EqualFold(strings.TrimSpace(role), UserRoleAdmin)
 }
 
+// RoleRequiresMFA reports whether role is under the MFA mandate (O-2-1
+// default a: admin + scholar_reviewer). scholar_reviewer joins here as a
+// one-line addition when A-1 introduces the role; A-1's capability policy
+// will subsume this helper.
+func RoleRequiresMFA(role string) bool {
+	return strings.EqualFold(strings.TrimSpace(role), UserRoleAdmin)
+}
+
 // User -.
 type User struct {
 	ID            string    `json:"id"         example:"550e8400-e29b-41d4-a716-446655440000"`
@@ -315,10 +323,15 @@ type AuthSession struct {
 	ExpiresAt        time.Time
 	RevokedAt        *time.Time
 	ReplacedByID     *string
+	// MFAVerifiedAt is the step-up freshness anchor: when this session last
+	// proved a second factor. Copied to the successor row on rotation.
+	MFAVerifiedAt *time.Time
 }
 
 // LoginResult carries the access/refresh token pair issued at login, refresh,
-// password change, and email change.
+// password change, and email change. For MFA-enabled accounts Login instead
+// sets MFARequired + the short-lived challenge token and leaves the token
+// pair empty; the pair is issued by VerifyMFALogin (A-3, additive).
 type LoginResult struct {
 	User             User
 	SessionID        string
@@ -326,6 +339,80 @@ type LoginResult struct {
 	AccessExpiresAt  time.Time
 	RefreshToken     string
 	RefreshExpiresAt time.Time
+
+	MFARequired       bool
+	MFAToken          string
+	MFATokenExpiresAt time.Time
+}
+
+// MFA challenge purposes: bridging password success to code verification, and
+// carrying the emailed OTP of the lost-device reset flow.
+const (
+	MFAChallengePurposeLogin = "login"
+	MFAChallengePurposeReset = "reset"
+)
+
+// UserMFA stores one user's TOTP state. The shared secret is encrypted at
+// rest; ConfirmedAt nil means enrollment is pending (not yet active).
+type UserMFA struct {
+	UserID           string
+	TOTPSecretEnc    string
+	LastUsedTOTPStep int64
+	ConfirmedAt      *time.Time
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+}
+
+// MFAChallenge is one short-lived second-factor challenge row.
+type MFAChallenge struct {
+	ID           string
+	UserID       string
+	Purpose      string
+	TokenHash    string
+	OTPHash      *string
+	OTPExpiresAt *time.Time
+	ExpiresAt    time.Time
+	ConsumedAt   *time.Time
+	ClientIP     string
+	UserAgent    string
+	CreatedAt    time.Time
+}
+
+// MFAEnrollment carries the provisioning material returned once at enroll.
+type MFAEnrollment struct {
+	Secret     string
+	OTPAuthURL string
+}
+
+// MFAStatus is the FE-facing MFA state for one user + session.
+type MFAStatus struct {
+	Enabled                bool
+	Pending                bool
+	Required               bool
+	EnforcedFrom           *time.Time
+	GraceEndsAt            *time.Time
+	StepUpVerifiedAt       *time.Time
+	StepUpExpiresAt        *time.Time
+	RecoveryCodesRemaining int
+}
+
+// MFAGateDecision is the step-up gate verdict for a destructive route.
+type MFAGateDecision int
+
+const (
+	MFAGateAllowed MFAGateDecision = iota
+	MFAGateEnrollmentRequired
+	MFAGateStepUpRequired
+)
+
+// MFAGateData is the single-query read backing the step-up gate: whether the
+// user has confirmed MFA, when the mandate started applying to the account
+// (grace anchor), and when the active session last proved a factor.
+type MFAGateData struct {
+	Confirmed     bool
+	Pending       bool
+	EnforcedFrom  *time.Time
+	MFAVerifiedAt *time.Time
 }
 
 // AuthLoginLockout stores the progressive lockout state for one login key.
@@ -346,4 +433,5 @@ type AuthCleanupResult struct {
 	Lockouts              int64
 	NotificationCooldowns int64
 	AuditLogs             int64
+	MFAChallenges         int64
 }

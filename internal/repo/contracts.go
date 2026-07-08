@@ -96,6 +96,49 @@ type (
 		CleanupAuthData(ctx context.Context, policy AuthCleanupPolicy) (entity.AuthCleanupResult, error)
 	}
 
+	// MFARepo stores TOTP enrollment state, one-time recovery codes,
+	// short-lived second-factor challenges, and the session step-up stamp
+	// (A-3). Wired separately from UserRepo so the user usecase treats a nil
+	// MFARepo as "feature absent" and keeps pre-MFA behavior.
+	MFARepo interface {
+		// UpsertPendingMFA writes a NOT-yet-confirmed enrollment, overwriting
+		// a previous pending one. Returns entity.ErrMFAAlreadyEnabled when a
+		// confirmed enrollment exists.
+		UpsertPendingMFA(ctx context.Context, userID, secretEnc string) error
+		// GetMFA returns entity.ErrMFANotEnabled when no row exists.
+		GetMFA(ctx context.Context, userID string) (entity.UserMFA, error)
+		// ConfirmMFA activates a pending enrollment. Returns
+		// entity.ErrMFAEnrollmentNotStarted when no pending row exists.
+		ConfirmMFA(ctx context.Context, userID string) error
+		// AdvanceMFATOTPStep persists the last accepted TOTP step, guarded
+		// monotonically: returns entity.ErrInvalidMFACode when step is not
+		// strictly greater than the stored one (replay/concurrent use).
+		AdvanceMFATOTPStep(ctx context.Context, userID string, step int64) error
+		DeleteMFA(ctx context.Context, userID string) error
+
+		// ReplaceRecoveryCodes swaps the full recovery-code set atomically.
+		ReplaceRecoveryCodes(ctx context.Context, userID string, codeHashes []string) error
+		// ConsumeRecoveryCode marks one unused code as used, atomically.
+		// Returns entity.ErrInvalidMFACode when the code is unknown, foreign,
+		// or already used (one-time semantics, AC-3).
+		ConsumeRecoveryCode(ctx context.Context, userID, codeHash string) error
+		CountUnusedRecoveryCodes(ctx context.Context, userID string) (int, error)
+
+		CreateMFAChallenge(ctx context.Context, challenge entity.MFAChallenge) error
+		// GetMFAChallengeByTokenHash returns entity.ErrInvalidMFAChallenge
+		// when no live (unconsumed, unexpired) challenge matches.
+		GetMFAChallengeByTokenHash(ctx context.Context, tokenHash, purpose string) (entity.MFAChallenge, error)
+		// ConsumeMFAChallenge flips consumed_at exactly once; returns
+		// entity.ErrInvalidMFAChallenge when already consumed or expired.
+		ConsumeMFAChallenge(ctx context.Context, id string) error
+
+		// SetSessionMFAVerified stamps the active session of one family.
+		SetSessionMFAVerified(ctx context.Context, userID, familyID string, at time.Time) error
+		// GetMFAGateData is the single read behind the step-up gate: user's
+		// grace anchor + enrollment state + the active session's stamp.
+		GetMFAGateData(ctx context.Context, userID, familyID string) (entity.MFAGateData, error)
+	}
+
 	// AuthAuditRepo -.
 	AuthAuditRepo interface {
 		StoreAuthAuditLog(ctx context.Context, log entity.AuthAuditLog) error

@@ -459,16 +459,20 @@ func (r *UserRepo) SetRoleByEmail(ctx context.Context, email, role string) (enti
 		}
 	}
 
+	// Granting an MFA-mandated role starts the enrollment grace clock (A-3
+	// AC-1); the anchor is kept if it was already set, and demotion does not
+	// clear it (history stays honest).
 	const updateQuery = `
 UPDATE users
 SET role = $2,
+    mfa_enforced_from = CASE WHEN $3 THEN COALESCE(mfa_enforced_from, now()) ELSE mfa_enforced_from END,
     updated_at = now()
 WHERE id = $1
 RETURNING id, username, email, role, password_hash, email_verified, token_version, created_at, updated_at`
 
 	var change entity.UserRoleChange
 
-	err = tx.QueryRow(ctx, updateQuery, targetID, role).
+	err = tx.QueryRow(ctx, updateQuery, targetID, role, entity.RoleRequiresMFA(role)).
 		Scan(
 			&change.User.ID,
 			&change.User.Username,
@@ -1159,6 +1163,9 @@ WHERE id = $1
 		"DELETE FROM email_change_tokens WHERE user_id = $1",
 		"DELETE FROM auth_sessions WHERE user_id = $1",
 		"DELETE FROM auth_login_fingerprints WHERE user_id = $1",
+		"DELETE FROM user_mfa WHERE user_id = $1",
+		"DELETE FROM user_mfa_recovery_codes WHERE user_id = $1",
+		"DELETE FROM mfa_challenges WHERE user_id = $1",
 		"UPDATE auth_audit_logs SET email = NULL, client_ip = NULL, user_agent = NULL WHERE user_id = $1",
 	}
 	for _, statement := range statements {
