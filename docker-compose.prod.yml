@@ -278,7 +278,7 @@ services:
       - internal
 
   tempo:
-    image: grafana/tempo:2.9.0
+    image: grafana/tempo:3.0.2
     profiles: ["observability"]
     restart: unless-stopped
     command: ["-config.file=/etc/tempo/tempo.yaml"]
