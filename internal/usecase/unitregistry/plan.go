@@ -381,12 +381,22 @@ func (b *planBuilder) stageUpdates() {
 		}
 
 		pageID := d.PageID
-		b.plan.Updates = append(b.plan.Updates, entity.UnitPlanUpdate{
+		update := entity.UnitPlanUpdate{
 			ID:           pair.active.ID,
 			Position:     d.ScopePosition,
 			PageID:       &pageID,
 			ParentUnitID: wantParent,
-		})
+		}
+		// A footnote's parent linkage changed (the update fires only when
+		// position/page/parent moved), so refresh its footnote_link label —
+		// otherwise a footnote that just became unlinked keeps 'marker'/
+		// 'fallback' and the audit footnote_parent check false-positives.
+		if d.Kind == entity.UnitKindFootnote {
+			link := d.FootnoteLink
+			update.FootnoteLink = &link
+		}
+
+		b.plan.Updates = append(b.plan.Updates, update)
 	}
 }
 

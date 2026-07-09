@@ -173,12 +173,16 @@ type UnitRegistrySnapshot struct {
 }
 
 // UnitPlanUpdate mutates locator metadata of a matched unit; identity fields
-// never change.
+// never change. FootnoteLink, when set, refreshes provenance_detail.footnote_link
+// for a footnote whose parent linkage changed (e.g. its body was deleted so it
+// became unlinked) — otherwise the label would go stale and the audit's
+// footnote_parent check would false-positive.
 type UnitPlanUpdate struct {
 	ID           string
 	Position     int
 	PageID       *int
 	ParentUnitID *string
+	FootnoteLink *string
 }
 
 // UnitPlanRetire retires one unit (lifecycle superseded or tombstoned).

@@ -375,3 +375,49 @@ func TestPlanBookFootnoteParentRepoint(t *testing.T) {
 		t.Fatalf("footnote parent = %v, want new body id %s", up.ParentUnitID, plan.Mints[0].ID)
 	}
 }
+
+func TestPlanBookFootnoteBecomesUnlinkedRefreshesLabel(t *testing.T) {
+	t.Parallel()
+
+	// A footnote linked (fallback) to a body block; the body is then deleted so
+	// the footnote becomes unlinked. Its text is unchanged, so it MATCHES (not
+	// re-minted) — the update must both NULL the parent AND refresh
+	// footnote_link to 'unlinked', or the audit footnote_parent check would
+	// false-positive on this legitimate edit (review finding).
+	src := simpleSource("متن الفقرة قبل الحذف\n__________\n(¬١) حاشية بلا إشارة في المتن")
+
+	planA, snap := derivePlan(t, src, emptySnapshot())
+	if len(planA.Mints) != 2 {
+		t.Fatalf("initial mints = %+v", planA.Mints)
+	}
+
+	footnote := planA.Mints[1]
+	if footnote.Kind != entity.UnitKindFootnote || footnote.ProvenanceDetail["footnote_link"] != entity.FootnoteLinkFallback {
+		t.Fatalf("initial footnote = %+v", footnote)
+	}
+
+	// Body line gone: page is only the separator + footnote.
+	deleted := simpleSource("__________\n(¬١) حاشية بلا إشارة في المتن")
+	plan, _ := derivePlan(t, deleted, snap)
+
+	if plan.Report.Minted != 0 || plan.Report.Tombstoned != 1 {
+		t.Fatalf("delete report = %+v", plan.Report)
+	}
+
+	if len(plan.Updates) != 1 {
+		t.Fatalf("expected 1 footnote update, got %+v", plan.Updates)
+	}
+
+	up := plan.Updates[0]
+	if up.ID != footnote.ID {
+		t.Fatalf("update targets %s, want matched footnote %s", up.ID, footnote.ID)
+	}
+
+	if up.ParentUnitID != nil {
+		t.Fatalf("footnote parent must become NULL, got %v", up.ParentUnitID)
+	}
+
+	if up.FootnoteLink == nil || *up.FootnoteLink != entity.FootnoteLinkUnlinked {
+		t.Fatalf("footnote_link must refresh to %q, got %v", entity.FootnoteLinkUnlinked, up.FootnoteLink)
+	}
+}

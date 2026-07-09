@@ -114,16 +114,27 @@ func (r *CitableUnitRepo) LoadBookSource(ctx context.Context, bookID int) (entit
 	return src, nil
 }
 
-// Snapshot loads the planner's registry read model for one book.
+// Snapshot loads the planner's registry read model for one book. All reads run
+// inside ONE repeatable-read snapshot so the Active list, ordinal high-water
+// marks, and the fingerprint are mutually consistent: plan.BasedOn then matches
+// the data the plan was built from, and any concurrent reconcile that commits
+// afterwards is caught at apply time as a retryable ErrUnitReconcileConflict
+// (rather than defeating the check with a fingerprint read from a later state).
 //
-//nolint:gocyclo,cyclop // linear: active-units scan loop + ordinal/id scan loop + fingerprint, each guarded
+//nolint:gocyclo,cyclop,funlen // linear: repeatable-read tx + active-units scan loop + ordinal/id scan loop + fingerprint, each guarded
 func (r *CitableUnitRepo) Snapshot(ctx context.Context, bookID int) (entity.UnitRegistrySnapshot, error) {
 	snap := entity.UnitRegistrySnapshot{
 		MaxOrdinalByScope: map[int]int{},
 		ExistingIDs:       map[string]struct{}{},
 	}
 
-	rows, err := r.Pool.Query(ctx, `
+	tx, err := r.Pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
+	if err != nil {
+		return snap, fmt.Errorf("CitableUnitRepo.Snapshot begin: %w", err)
+	}
+	defer rollbackTx(ctx, tx)
+
+	rows, err := tx.Query(ctx, `
 		SELECT id, heading_id, page_id, kind, ordinal, position, parent_unit_id,
 		       marker, content_hash, occurrence, lifecycle
 		FROM citable_units
@@ -147,7 +158,9 @@ func (r *CitableUnitRepo) Snapshot(ctx context.Context, bookID int) (entity.Unit
 		return snap, fmt.Errorf("CitableUnitRepo.Snapshot active rows: %w", err)
 	}
 
-	orows, err := r.Pool.Query(ctx, `
+	rows.Close()
+
+	orows, err := tx.Query(ctx, `
 		SELECT COALESCE(heading_id, 0), MAX(ordinal), array_agg(id)
 		FROM citable_units
 		WHERE book_id = $1
@@ -176,7 +189,9 @@ func (r *CitableUnitRepo) Snapshot(ctx context.Context, bookID int) (entity.Unit
 		return snap, fmt.Errorf("CitableUnitRepo.Snapshot ordinal rows: %w", err)
 	}
 
-	snap.Fingerprint, err = registryFingerprint(ctx, r.Pool, bookID)
+	orows.Close()
+
+	snap.Fingerprint, err = registryFingerprint(ctx, tx, bookID)
 	if err != nil {
 		return snap, err
 	}
@@ -277,11 +292,21 @@ func (r *CitableUnitRepo) ApplyReconcile(ctx context.Context, plan *entity.UnitR
 	}
 
 	for _, up := range plan.Updates {
+		// $5 (footnote_link) is NULL for non-footnotes and for footnotes whose
+		// linkage did not change; when set it refreshes provenance_detail so a
+		// now-unlinked footnote's label matches its NULL parent (audit fix).
 		batch.Queue(`
 			UPDATE citable_units
-			SET position = $2, page_id = $3, parent_unit_id = $4, updated_at = now()
+			SET position = $2,
+			    page_id = $3,
+			    parent_unit_id = $4,
+			    provenance_detail = CASE
+			        WHEN $5::text IS NULL THEN provenance_detail
+			        ELSE jsonb_set(COALESCE(provenance_detail, '{}'::jsonb), '{footnote_link}', to_jsonb($5::text))
+			    END,
+			    updated_at = now()
 			WHERE id = $1 AND lifecycle = 'active'`,
-			up.ID, up.Position, up.PageID, up.ParentUnitID)
+			up.ID, up.Position, up.PageID, up.ParentUnitID, up.FootnoteLink)
 	}
 
 	for _, ret := range plan.Retires {

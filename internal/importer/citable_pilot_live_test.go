@@ -249,6 +249,48 @@ func TestLiveCitableUnitPilot(t *testing.T) {
 		  AND provenance_detail->>'edit_actor_id' = $2
 		  AND text LIKE 'النصف%'`, citableFixtureBookID, actorID))
 
+	// ---- Review regression: a MATCHED footnote whose body is later deleted
+	// becomes unlinked; its footnote_link must refresh to 'unlinked' (not keep a
+	// stale 'fallback'), or the audit footnote_parent check false-positives on a
+	// legitimate edit. Edit 1 mints the footnote linked; edit 2 removes the body
+	// so the (text-unchanged) footnote matches and unlinks via the update path. ----
+	const sharedFootnoteText = "حاشية مشتركة النص لا تتغير"
+
+	_, err = editorialUC.SavePageDraft(ctx, actorID, entity.BookPageEdit{
+		BookID: citableFixtureBookID, PageID: 3,
+		ContentHTML: "متن ثالث سيحذف لاحقا\n__________\n(٥) " + sharedFootnoteText,
+	}, nil, entity.EditOriginREST)
+	require.NoError(t, err)
+	_, err = editorialUC.PublishPageDraft(ctx, actorID, citableFixtureBookID, 3, nil)
+	require.NoError(t, err)
+
+	var initialLink string
+	require.NoError(t, pool.QueryRow(ctx, `
+		SELECT provenance_detail->>'footnote_link' FROM citable_units
+		WHERE book_id = $1 AND page_id = 3 AND kind = 'footnote' AND lifecycle = 'active'`,
+		citableFixtureBookID).Scan(&initialLink))
+	assert.Equal(t, entity.FootnoteLinkFallback, initialLink, "footnote starts linked (fallback) to the body")
+
+	// Edit 2: body gone, footnote text identical → footnote matches, unlinks.
+	_, err = editorialUC.SavePageDraft(ctx, actorID, entity.BookPageEdit{
+		BookID: citableFixtureBookID, PageID: 3,
+		ContentHTML: "__________\n(٥) " + sharedFootnoteText,
+	}, nil, entity.EditOriginREST)
+	require.NoError(t, err)
+	_, err = editorialUC.PublishPageDraft(ctx, actorID, citableFixtureBookID, 3, nil)
+	require.NoError(t, err)
+
+	var footnoteParent *string
+
+	var footnoteLink string
+	require.NoError(t, pool.QueryRow(ctx, `
+		SELECT parent_unit_id, provenance_detail->>'footnote_link'
+		FROM citable_units
+		WHERE book_id = $1 AND page_id = 3 AND kind = 'footnote' AND lifecycle = 'active'`,
+		citableFixtureBookID).Scan(&footnoteParent, &footnoteLink))
+	assert.Nil(t, footnoteParent, "footnote with no body on its page is unlinked")
+	assert.Equal(t, entity.FootnoteLinkUnlinked, footnoteLink, "footnote_link refreshed to 'unlinked' (not stale)")
+
 	// ---- AC-4: the registry rejects any write outside the service. ----
 	assertGuardRejects := func(sql string, args ...any) {
 		t.Helper()
