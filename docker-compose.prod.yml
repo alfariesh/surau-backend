@@ -343,7 +343,7 @@ services:
     # Scraped in-network by prometheus at postgres-exporter:9187 — no host
     # port. stat_statements data appears once the db runs with the
     # pg_stat_statements preload (see the db command above).
-    image: prometheuscommunity/postgres-exporter:v0.18.1
+    image: prometheuscommunity/postgres-exporter:v0.20.1
     profiles: ["observability"]
     restart: unless-stopped
     environment:
