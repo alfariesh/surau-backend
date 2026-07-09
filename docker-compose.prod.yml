@@ -290,7 +290,7 @@ services:
       - internal
 
   grafana:
-    image: grafana/grafana:12.3.2
+    image: grafana/grafana:13.1.0
     profiles: ["observability"]
     restart: unless-stopped
     environment:
