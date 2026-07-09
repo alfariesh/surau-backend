@@ -74,6 +74,10 @@ type SourceBlock struct {
 	Text           string
 	HTML           string
 	QuranCitations []SourceQuranCitation
+	// AnchorID is the toc anchor id (id="toc-N") when this block was produced
+	// from an inline heading anchor by StructureMixedContent; 0 otherwise.
+	// StructureSourceContent never sets it (frozen reader contract).
+	AnchorID int
 }
 
 // SourceFootnote is one extracted source footnote.

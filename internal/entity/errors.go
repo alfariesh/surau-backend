@@ -97,6 +97,8 @@ var (
 	ErrInvalidActivityDate             = errors.New("invalid activity date")
 	ErrInvalidActivityRange            = errors.New("invalid activity range")
 	ErrPushDeliveryFailed              = errors.New("push delivery failed")
+	ErrUnitNotFound                    = errors.New("citable unit not found")
+	ErrUnitReconcileConflict           = errors.New("unit registry changed since plan was built")
 )
 
 // AuthRateLimitedError carries the retry-after hint computed by the rate

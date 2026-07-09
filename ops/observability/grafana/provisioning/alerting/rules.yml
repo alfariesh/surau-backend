@@ -151,6 +151,54 @@ groups:
                     type: last
         noDataState: OK
         execErrState: Error
+      - uid: surau-citable-audit
+        title: citable unit registry violation
+        condition: C
+        for: 5m
+        labels:
+          env: $OBS_ENV_LABEL
+          source: b1
+        annotations:
+          summary: Audit registry Citable Unit menemukan pelanggaran invarian (sitasi menggantung /
+            hash mismatch / lineage rusak) — cek surau_citable_audit_violations per check, lalu log
+            loop citable_unit_audit.
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: sum(surau_citable_audit_violations) > bool 0
+              instant: true
+              range: false
+              datasource:
+                type: prometheus
+                uid: prometheus
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              datasource:
+                type: __expr__
+                uid: __expr__
+              conditions:
+                - evaluator:
+                    type: gt
+                    params:
+                      - 0
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - A
+                  reducer:
+                    type: last
+        noDataState: OK
+        execErrState: Error
       - uid: surau-backup-heartbeat
         title: backup heartbeat stale
         condition: C

@@ -148,6 +148,22 @@ Pantau: Grafana → Prometheus query `surau_backfill_rows_done{job="..."}` vs `r
 - CONTRACT hanya setelah ≥1 siklus soak tanpa alarm; sesudah contract, rollback = restore
   (mahal) — karena itu paling akhir.
 
+### Catatan khusus registry Citable Unit (B-1)
+
+Tabel `citable_units` / `citable_unit_lineage` dijaga trigger `citable_registry_guard()`:
+DML apa pun DITOLAK kecuali transaksinya diawali `SET LOCAL surau.registry_writer =
+'unit-service'` (hanya service `internal/usecase/unitregistry` yang melakukannya).
+Implikasi operasional:
+
+- **Escape hatch insiden** (psql manual — pakai HANYA saat insiden, audit `hash_mismatch`
+  akan menangkap perubahan teks di luar service):
+  `BEGIN; SET LOCAL surau.registry_writer = 'unit-service'; <DML>; COMMIT;`
+- **Migrasi data** yang menyentuh registry WAJIB membungkus SET LOCAL + DML dalam SATU
+  blok `BEGIN;...COMMIT;` atau `DO $$ ... $$` di file migrasi — statement migrasi
+  autocommit satu-satu (§2), jadi `SET LOCAL` telanjang adalah no-op.
+- **Restore data-only** (`pg_restore --data-only`) butuh `--disable-triggers`; restore penuh
+  normal aman (trigger dibuat SETELAH data di fase post-data).
+
 ## 7. Checklist per-backfill (salin ke PR)
 
 ```text
@@ -166,4 +182,5 @@ Pantau: Grafana → Prometheus query `surau_backfill_rows_done{job="..."}` vs `r
 | # | Job | Tabel | Status | Catatan |
 |---|---|---|---|---|
 | 1 | `authors-name-search` | authors (3.187 baris dev) | SELESAI di dev (S6, 2026-07-08): drill pause di 500/3.187 → resume → completed; endpoint publik 200 sepanjang drill; pending=0 | Bukti produk: `/v1/authors?q=احمد` 19 → 209 hasil (192/192 nama ber-hamzah terjangkau); CONTRACT (index/NOT NULL/konsolidasi lengan translate() buku) ditunda — keputusan profil ء/ة milik B-5 |
-| 2 | (rencana) pilot Citable Unit | book_* | menunggu B-1 (SESI 11) | Pakai runner ini + checklist §7 |
+| 2 | `citable-units-kitab-pilot` | citable_units (dari book_*) | SELESAI B-1 (SESI 11, 2026-07-09): 4 buku eval nyata (797/7312/12876/22842) → 16.205 unit; predikat staleness = job yang sama melayani derive awal & re-derive pasca-re-import | 1 buku per chunk (reconcile atomik); laporan per-buku di stdout |
+| 3 | `citable-units-kitab-rederive` | citable_units | Drill determinisme AC-1: re-run tanpa syarat atas buku ter-derive; TERBUKTI lokal 2026-07-09 — matched=16.205, minted=0, checksum registry MD5 identik | Juga jalur pemulihan setelah perubahan parser/profil yang disengaja (gelombang supersede diserap lineage) |

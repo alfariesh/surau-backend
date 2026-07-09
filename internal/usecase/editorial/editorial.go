@@ -11,21 +11,76 @@ import (
 	"github.com/alfariesh/surau-backend/internal/readerlang"
 	"github.com/alfariesh/surau-backend/internal/readerutil"
 	"github.com/alfariesh/surau-backend/internal/repo"
+	"github.com/alfariesh/surau-backend/pkg/logger"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
 const (
 	defaultLimit = 50
 	maxLimit     = 200
+
+	// unitReconcileTimeout bounds the post-publish registry reconcile; a slow
+	// or failing reconcile must never fail the publish itself (audit is the
+	// safety net, phase-1b B-1).
+	unitReconcileTimeout = 15 * time.Second
 )
+
+// unitReconcileFailures counts post-publish reconciles that errored; the
+// citable-unit audit loop and its stale_books gauge are the recovery path.
+//
+//nolint:gochecknoglobals // process-wide Prometheus instrument (promauto pattern)
+var unitReconcileFailures = promauto.NewCounter(prometheus.CounterOpts{
+	Name: "surau_citable_reconcile_failures_total",
+	Help: "Post-publish citable-unit reconciles that failed (registry may be stale until the next backfill/audit).",
+})
+
+// UnitReconciler re-derives a book's citable units after an editorial publish
+// (consumer-side slice of the unitregistry usecase, phase-1b B-1).
+type UnitReconciler interface {
+	ReconcileBookIfDerived(ctx context.Context, bookID int) (entity.UnitReconcileReport, bool, error)
+}
 
 // UseCase provides editorial operations.
 type UseCase struct {
-	repo repo.EditorialRepo
+	repo  repo.EditorialRepo
+	units UnitReconciler
+	log   logger.Interface
 }
 
-// New creates an editorial usecase.
-func New(r repo.EditorialRepo) *UseCase {
-	return &UseCase{repo: r}
+// New creates an editorial usecase. units and l are optional (nil-safe): when
+// wired, published page edits trigger a citable-unit reconcile for books that
+// already went through the pilot backfill.
+func New(r repo.EditorialRepo, units UnitReconciler, l logger.Interface) *UseCase {
+	return &UseCase{repo: r, units: units, log: l}
+}
+
+// reconcileUnitsAfterPublish runs the phase-1b lineage hook: the publish is
+// already committed, so failures are logged + counted, never returned — the
+// scheduled audit (stale_books) catches any book left behind.
+func (uc *UseCase) reconcileUnitsAfterPublish(ctx context.Context, bookID int) {
+	if uc.units == nil {
+		return
+	}
+
+	rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), unitReconcileTimeout)
+	defer cancel()
+
+	report, skipped, err := uc.units.ReconcileBookIfDerived(rctx, bookID)
+	if err != nil {
+		unitReconcileFailures.Inc()
+
+		if uc.log != nil {
+			uc.log.Error(fmt.Errorf("editorial - unit reconcile after publish (book %d): %w", bookID, err))
+		}
+
+		return
+	}
+
+	if !skipped && uc.log != nil {
+		uc.log.Info("editorial - units reconciled after publish: book=%d minted=%d superseded=%d tombstoned=%d updated=%d",
+			bookID, report.Minted, report.Superseded, report.Tombstoned, report.Updated)
+	}
 }
 
 // Books returns paginated books for admin review.
@@ -233,9 +288,18 @@ func (uc *UseCase) RestorePageDraftRevision(
 	}, nil, entity.EditOriginRestore)
 }
 
-// PublishPageDraft promotes page draft to published.
+// PublishPageDraft promotes page draft to published. A successful publish is
+// the supersede/mint moment for citable units (readers serve the published
+// edit from now on), so the registry reconciles right after the commit.
 func (uc *UseCase) PublishPageDraft(ctx context.Context, actorID string, bookID, pageID int, expected *time.Time) (entity.BookPageEdit, error) {
-	return uc.repo.PublishPageDraft(ctx, actorID, bookID, pageID, expected)
+	edit, err := uc.repo.PublishPageDraft(ctx, actorID, bookID, pageID, expected)
+	if err != nil {
+		return edit, err
+	}
+
+	uc.reconcileUnitsAfterPublish(ctx, bookID)
+
+	return edit, nil
 }
 
 // GetHeadingDraft returns one source heading draft.

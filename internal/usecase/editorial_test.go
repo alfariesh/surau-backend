@@ -19,7 +19,7 @@ func newEditorialUseCase(t *testing.T) (*editorial.UseCase, *MockEditorialRepo) 
 	ctrl := gomock.NewController(t)
 
 	mockRepo := NewMockEditorialRepo(ctrl)
-	useCase := editorial.New(mockRepo)
+	useCase := editorial.New(mockRepo, nil, nil)
 
 	return useCase, mockRepo
 }

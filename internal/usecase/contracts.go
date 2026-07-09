@@ -343,4 +343,15 @@ type (
 		UnpublishProductionProject(ctx context.Context, actorID, projectID string, expected *time.Time) (entity.BookProductionProject, error)
 		DeleteFinalProductionAsset(ctx context.Context, actorID, projectID, assetType string, headingID *int, reason *string) error
 	}
+
+	// UnitRegistry is the single write service of the shared Citable Unit
+	// registry (phase-1b B-1): derive → plan → apply, plus the scheduled
+	// integrity audit. ReconcileBookIfDerived is the editorial-publish hook
+	// entry: a no-op (skipped=true) until the book's initial backfill ran.
+	UnitRegistry interface {
+		ReconcileBook(ctx context.Context, bookID int) (entity.UnitReconcileReport, error)
+		ReconcileBookIfDerived(ctx context.Context, bookID int) (entity.UnitReconcileReport, bool, error)
+		AuditPass(ctx context.Context) (entity.CitableAuditReport, error)
+		ResolveUnit(ctx context.Context, unitID string) (entity.UnitResolution, error)
+	}
 )

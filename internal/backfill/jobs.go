@@ -9,11 +9,14 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// Jobs returns every registered backfill job. New backfills (e.g. the B-1
-// Citable Unit pilot) register here so the CLI, the metrics collector, and
-// the playbook checklist all see them.
+// Jobs returns every registered backfill job. New backfills register here so
+// the CLI, the metrics collector, and the playbook checklist all see them.
 func Jobs() []Job {
-	return []Job{authorsNameSearchJob{}}
+	return []Job{
+		authorsNameSearchJob{},
+		citableUnitsPilotJob{},
+		citableUnitsRederiveJob{},
+	}
 }
 
 // ByName resolves one registered job.

@@ -75,10 +75,17 @@ menyusul kapan saja; W2 (Content Backbone) dapat mulai.
 **Keputusan:** O-2-1 (cakupan MFA — cepat, lihat PK-3).
 
 ### W2 — Content Backbone (1B)
-**Isi:** B-1 (registry Citable Unit + pilot kitab) → B-2 (Anchor + resolusi + legacy) → B-3
-(Cross-Reference umum + bridge rujukan Quran); paralel: B-5 (normalisasi v1 + vektor emas +
-gerbang kesetaraan CI), B-6 (identitas generation-run); B-4 (lisensi platform + gerbang publish
-kitab) — **menunggu PK-1**.
+**Isi:** B-1 ✅ **SELESAI 2026-07-09 (SESI 11)** (registry `citable_units`+`citable_unit_lineage`
+bersama + satu service tulis `internal/usecase/unitregistry` ditegakkan trigger DB [C2]; parser baru
+`readerutil.StructureMixedContent` toleran-tag → granularitas paragraf; deriver kitab + reconcile
+deterministik [UUIDv5 natural-key, ordinal dicetak-sekali, lineage supersede/mint/rescue]; 2 job
+backfill F1-H [`citable-units-kitab-pilot` + `-rederive` drill determinisme]; hook `PublishPageDraft`;
+loop audit `citable_unit_audit` [default aktif] + alert Telegram `sum(surau_citable_audit_violations)>0`;
+**pilot 4 buku eval nyata → 16.205 unit, re-run determinisme 100% [checksum identik], audit 0
+pelanggaran; semua AC terpenuhi**; kontrak di `docs/citable-units.md`; diff-cover 83,9%) → B-2 (Anchor
++ resolusi + legacy) → B-3 (Cross-Reference umum + bridge rujukan Quran); paralel: B-5 (normalisasi v1
++ vektor emas + gerbang kesetaraan CI), B-6 (identitas generation-run); B-4 (lisensi platform +
+gerbang publish kitab) — PK-1 ✅ terjawab (default aman a/a/a).
 **Gerbang keluar:** determinisme pilot ≥99,5% (target 100%); 100% anchor legacy resolvable ≤50ms;
 rujukan approved lama setara via registry baru; suite kesetaraan normalisasi hijau di dua runtime.
 **Aturan keras (charter D2):** Fase hadith/wiki DILARANG mendesain model datanya sebelum

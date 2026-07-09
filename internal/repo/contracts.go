@@ -671,4 +671,20 @@ type (
 		Limit             uint64
 		Offset            uint64
 	}
+
+	// CitableUnitRepo is the persistence seam of the shared Citable Unit
+	// registry (phase-1b B-1). ApplyReconcile is the ONLY write path into
+	// citable_units / citable_unit_lineage: it runs inside the guarded
+	// transaction (SET LOCAL surau.registry_writer) with a per-book advisory
+	// lock, and rejects plans built on a stale fingerprint with
+	// entity.ErrUnitReconcileConflict.
+	CitableUnitRepo interface {
+		LoadBookSource(ctx context.Context, bookID int) (entity.BookUnitSource, error)
+		Snapshot(ctx context.Context, bookID int) (entity.UnitRegistrySnapshot, error)
+		ApplyReconcile(ctx context.Context, plan *entity.UnitReconcilePlan) error
+		BookDerivedAt(ctx context.Context, bookID int) (*time.Time, error)
+		ResolveUnit(ctx context.Context, unitID string) (entity.UnitResolution, error)
+		AuditCounts(ctx context.Context) (entity.CitableAuditReport, error)
+		ListActiveUnitsForHashCheck(ctx context.Context) ([]entity.CitableUnit, error)
+	}
 )
