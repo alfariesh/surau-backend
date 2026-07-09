@@ -174,6 +174,14 @@ Restore-check the latest local backup:
 sudo /usr/local/sbin/surau-pg-restore-check local-latest
 ```
 
+> **Data-only restore note (B-1 registry guard):** `citable_units` /
+> `citable_unit_lineage` carry a trigger (`citable_registry_guard`) that rejects
+> writes outside the unit service. A **full** `pg_restore` is unaffected (triggers
+> are created after the data COPY, in the post-data phase). A **data-only**
+> restore (`pg_restore --data-only`) must add `--disable-triggers`, otherwise the
+> guard aborts the registry rows. The dump/restore-check paths above use full
+> restores, so no change is needed there.
+
 Send a test Telegram message / run the dead-man check now:
 
 ```sh

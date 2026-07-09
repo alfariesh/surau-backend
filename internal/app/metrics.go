@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/alfariesh/surau-backend/internal/backfill"
+	"github.com/alfariesh/surau-backend/internal/entity"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -27,7 +28,53 @@ var (
 		Name: "surau_loop_runs_total",
 		Help: "Background loop passes by result.",
 	}, []string{"loop", "result"})
+
+	// Citable Unit registry audit (phase-1b B-1 AC-3). Violations are registry
+	// invariant breaches and alert via Grafana (> 0 => Telegram); info counts
+	// are dashboard-only observations (legacy dangling owned by B-3, stale
+	// books awaiting a backfill re-run).
+	citableAuditViolations = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "surau_citable_audit_violations",
+		Help: "Citable-unit registry invariant violations by check; any nonzero value should alert.",
+	}, []string{"check"})
+
+	citableAuditInfo = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "surau_citable_audit_info",
+		Help: "Citable-unit audit observations (no alert): stale books and pre-registry legacy dangling citations.",
+	}, []string{"check"})
+
+	citableUnits = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "surau_citable_units",
+		Help: "Citable units in the registry by lifecycle.",
+	}, []string{"lifecycle"})
 )
+
+// recordCitableAudit publishes one audit pass and returns the violation total
+// (the number the Grafana rule alerts on).
+func recordCitableAudit(report *entity.CitableAuditReport) int64 {
+	v := report.Violations
+	citableAuditViolations.WithLabelValues("book_gone").Set(float64(v.BookGone))
+	citableAuditViolations.WithLabelValues("superseded_no_successor").Set(float64(v.SupersededNoSuccessor))
+	citableAuditViolations.WithLabelValues("active_with_successor").Set(float64(v.ActiveWithSuccessor))
+	citableAuditViolations.WithLabelValues("hash_mismatch").Set(float64(v.HashMismatch))
+	citableAuditViolations.WithLabelValues("anchor_malformed").Set(float64(v.AnchorMalformed))
+	citableAuditViolations.WithLabelValues("footnote_parent").Set(float64(v.FootnoteParent))
+
+	citableAuditInfo.WithLabelValues("stale_books").Set(float64(report.Info.StaleBooks))
+	citableAuditInfo.WithLabelValues("legacy_quran_book_references").Set(float64(report.Info.LegacyQuranBookReferences))
+	citableAuditInfo.WithLabelValues("legacy_knowledge_mentions").Set(float64(report.Info.LegacyKnowledgeMentions))
+	citableAuditInfo.WithLabelValues("legacy_knowledge_source_spans").Set(float64(report.Info.LegacyKnowledgeSourceSpans))
+	citableAuditInfo.WithLabelValues("legacy_knowledge_rejections").Set(float64(report.Info.LegacyKnowledgeRejections))
+
+	for _, lifecycle := range []string{
+		entity.UnitLifecycleActive, entity.UnitLifecycleSuperseded, entity.UnitLifecycleTombstoned,
+	} {
+		citableUnits.WithLabelValues(lifecycle).Set(float64(report.UnitsByLifecycle[lifecycle]))
+	}
+
+	return v.BookGone + v.SupersededNoSuccessor + v.ActiveWithSuccessor +
+		v.HashMismatch + v.AnchorMalformed + v.FootnoteParent
+}
 
 // recordLoopRun stamps one background-loop pass; call with the pass error.
 // Recovered panics (F1-C) are counted under their own result label.

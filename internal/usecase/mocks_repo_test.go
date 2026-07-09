@@ -3635,3 +3635,131 @@ func (mr *MockEditorialRepoMockRecorder) UpdatePublication(ctx, actorID, publica
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdatePublication", reflect.TypeOf((*MockEditorialRepo)(nil).UpdatePublication), ctx, actorID, publication)
 }
+
+// MockCitableUnitRepo is a mock of CitableUnitRepo interface.
+type MockCitableUnitRepo struct {
+	ctrl     *gomock.Controller
+	recorder *MockCitableUnitRepoMockRecorder
+	isgomock struct{}
+}
+
+// MockCitableUnitRepoMockRecorder is the mock recorder for MockCitableUnitRepo.
+type MockCitableUnitRepoMockRecorder struct {
+	mock *MockCitableUnitRepo
+}
+
+// NewMockCitableUnitRepo creates a new mock instance.
+func NewMockCitableUnitRepo(ctrl *gomock.Controller) *MockCitableUnitRepo {
+	mock := &MockCitableUnitRepo{ctrl: ctrl}
+	mock.recorder = &MockCitableUnitRepoMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockCitableUnitRepo) EXPECT() *MockCitableUnitRepoMockRecorder {
+	return m.recorder
+}
+
+// ApplyReconcile mocks base method.
+func (m *MockCitableUnitRepo) ApplyReconcile(ctx context.Context, plan *entity.UnitReconcilePlan) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ApplyReconcile", ctx, plan)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// ApplyReconcile indicates an expected call of ApplyReconcile.
+func (mr *MockCitableUnitRepoMockRecorder) ApplyReconcile(ctx, plan any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ApplyReconcile", reflect.TypeOf((*MockCitableUnitRepo)(nil).ApplyReconcile), ctx, plan)
+}
+
+// AuditCounts mocks base method.
+func (m *MockCitableUnitRepo) AuditCounts(ctx context.Context) (entity.CitableAuditReport, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AuditCounts", ctx)
+	ret0, _ := ret[0].(entity.CitableAuditReport)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// AuditCounts indicates an expected call of AuditCounts.
+func (mr *MockCitableUnitRepoMockRecorder) AuditCounts(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AuditCounts", reflect.TypeOf((*MockCitableUnitRepo)(nil).AuditCounts), ctx)
+}
+
+// BookDerivedAt mocks base method.
+func (m *MockCitableUnitRepo) BookDerivedAt(ctx context.Context, bookID int) (*time.Time, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "BookDerivedAt", ctx, bookID)
+	ret0, _ := ret[0].(*time.Time)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// BookDerivedAt indicates an expected call of BookDerivedAt.
+func (mr *MockCitableUnitRepoMockRecorder) BookDerivedAt(ctx, bookID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "BookDerivedAt", reflect.TypeOf((*MockCitableUnitRepo)(nil).BookDerivedAt), ctx, bookID)
+}
+
+// ListActiveUnitsForHashCheck mocks base method.
+func (m *MockCitableUnitRepo) ListActiveUnitsForHashCheck(ctx context.Context) ([]entity.CitableUnit, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListActiveUnitsForHashCheck", ctx)
+	ret0, _ := ret[0].([]entity.CitableUnit)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListActiveUnitsForHashCheck indicates an expected call of ListActiveUnitsForHashCheck.
+func (mr *MockCitableUnitRepoMockRecorder) ListActiveUnitsForHashCheck(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListActiveUnitsForHashCheck", reflect.TypeOf((*MockCitableUnitRepo)(nil).ListActiveUnitsForHashCheck), ctx)
+}
+
+// LoadBookSource mocks base method.
+func (m *MockCitableUnitRepo) LoadBookSource(ctx context.Context, bookID int) (entity.BookUnitSource, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "LoadBookSource", ctx, bookID)
+	ret0, _ := ret[0].(entity.BookUnitSource)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// LoadBookSource indicates an expected call of LoadBookSource.
+func (mr *MockCitableUnitRepoMockRecorder) LoadBookSource(ctx, bookID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LoadBookSource", reflect.TypeOf((*MockCitableUnitRepo)(nil).LoadBookSource), ctx, bookID)
+}
+
+// ResolveUnit mocks base method.
+func (m *MockCitableUnitRepo) ResolveUnit(ctx context.Context, unitID string) (entity.UnitResolution, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ResolveUnit", ctx, unitID)
+	ret0, _ := ret[0].(entity.UnitResolution)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ResolveUnit indicates an expected call of ResolveUnit.
+func (mr *MockCitableUnitRepoMockRecorder) ResolveUnit(ctx, unitID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ResolveUnit", reflect.TypeOf((*MockCitableUnitRepo)(nil).ResolveUnit), ctx, unitID)
+}
+
+// Snapshot mocks base method.
+func (m *MockCitableUnitRepo) Snapshot(ctx context.Context, bookID int) (entity.UnitRegistrySnapshot, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Snapshot", ctx, bookID)
+	ret0, _ := ret[0].(entity.UnitRegistrySnapshot)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Snapshot indicates an expected call of Snapshot.
+func (mr *MockCitableUnitRepoMockRecorder) Snapshot(ctx, bookID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Snapshot", reflect.TypeOf((*MockCitableUnitRepo)(nil).Snapshot), ctx, bookID)
+}

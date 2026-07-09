@@ -18,7 +18,9 @@ WORKDIR /app
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
     go build -tags migrate -o /bin/app ./cmd/app && \
     CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
-    go build -o /bin/backfill ./cmd/backfill
+    go build -o /bin/backfill ./cmd/backfill && \
+    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+    go build -o /bin/import-books ./cmd/import-books
 
 # Step 3: Final
 FROM scratch
@@ -29,6 +31,10 @@ COPY --from=builder /bin/app /app
 # F1-H: ops-only resumable backfill CLI, run via
 # `docker compose exec app /backfill -job=...` (docs/data-change-playbook.md).
 COPY --from=builder /bin/backfill /backfill
+# E4/B-1: ops-only staged importer (safe by default: removals stage, never
+# delete), run via `docker compose run --rm --no-deps -v <src>:/shamela
+# --entrypoint /import-books app -book-ids=... -source-dir=/shamela`.
+COPY --from=builder /bin/import-books /import-books
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 
 CMD ["/app"]

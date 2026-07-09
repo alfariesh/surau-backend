@@ -160,7 +160,15 @@ Masuk PLAN MODE dulu; rencana wajib menyebut cara memenuhi setiap Acceptance Cri
 
 ## GELOMBANG 2 — Content Backbone
 
-- [ ] **SESI 11 — Registry Citable Unit + pilot (B-1)** *(besar — pakai ultracode)*
+- [x] **SESI 11 — Registry Citable Unit + pilot (B-1)** — ✅ **SELESAI 2026-07-09**: tabel
+  `citable_units` + `citable_unit_lineage` + trigger penjaga tulis (satu jalur tulis lewat service
+  `internal/usecase/unitregistry`); parser baru `readerutil.StructureMixedContent` (toleran-tag,
+  granularitas paragraf); deriver kitab + reconcile deterministik (UUIDv5, lineage supersede/mint);
+  2 job backfill (`citable-units-kitab-pilot` + `-rederive` drill) F1-H; hook `PublishPageDraft`;
+  loop audit `citable_unit_audit` (default aktif, alert Telegram `sum(surau_citable_audit_violations)>0`).
+  **Pilot lokal 4 buku eval nyata (797/7312/12876/22842) → 16.205 unit; re-run determinisme 100%
+  (checksum registry MD5 identik, minted=0); audit 0 pelanggaran.** Semua AC B-1 terpenuhi (bukti
+  di docs/citable-units.md). diff-cover 83,9%.
 
 ```text
 ultracode. Kerjakan B-1 dari roadmap/phase-1b-content-backbone.md: registry Citable Unit bersama + satu service tulis + lifecycle/lineage, deriver kitab dari parser readerutil yang ada, pilot backfill pada set kecil buku nyata (termasuk buku 797), job audit nol-sitasi-menggantung terjadwal. Pakai playbook F1-H untuk backfill.

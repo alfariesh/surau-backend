@@ -26,6 +26,7 @@ import (
 	"github.com/alfariesh/surau-backend/internal/usecase/personal"
 	"github.com/alfariesh/surau-backend/internal/usecase/quran"
 	"github.com/alfariesh/surau-backend/internal/usecase/reader"
+	"github.com/alfariesh/surau-backend/internal/usecase/unitregistry"
 	"github.com/alfariesh/surau-backend/internal/usecase/user"
 	"github.com/alfariesh/surau-backend/pkg/cryptobox"
 	"github.com/alfariesh/surau-backend/pkg/httpserver"
@@ -45,6 +46,7 @@ type useCases struct {
 	editorial    *editorial.UseCase
 	email        *emailusecase.UseCase
 	notification *notification.UseCase
+	unitRegistry *unitregistry.UseCase
 }
 
 type servers struct {
@@ -78,6 +80,8 @@ func initUseCases(cfg *config.Config, pg *postgres.Postgres, jwtManager *jwt.Man
 	quranRepo := persistent.NewQuranRepo(pg)
 	personalRepo := persistent.NewPersonalRepo(pg)
 	editorialRepo := persistent.NewEditorialRepo(pg)
+	citableUnitRepo := persistent.NewCitableUnitRepo(pg)
+	unitRegistryUC := unitregistry.New(citableUnitRepo)
 	emailRepo := persistent.NewEmailRepo(pg)
 	llmClient := webapi.NewOpenAICompatibleClient(webapi.OpenAICompatibleOptions{
 		BaseURL:     cfg.RAG.LLMBaseURL,
@@ -337,9 +341,10 @@ func initUseCases(cfg *config.Config, pg *postgres.Postgres, jwtManager *jwt.Man
 		}),
 		quran:        quran.New(quranRepo),
 		personal:     personal.New(personalRepo, khatamNotifier),
-		editorial:    editorial.New(editorialRepo),
+		editorial:    editorial.New(editorialRepo, unitRegistryUC, l),
 		email:        emailUC,
 		notification: notificationUC,
+		unitRegistry: unitRegistryUC,
 	}
 }
 
@@ -385,12 +390,13 @@ func (s *servers) startServers(
 	emailUC *emailusecase.UseCase,
 	userUC *user.UseCase,
 	notificationUC *notification.UseCase,
+	unitRegistryUC *unitregistry.UseCase,
 	l logger.Interface,
 ) {
 	loopCtx, cancel := context.WithCancel(context.Background())
 	s.loopStop = cancel
 
-	for _, spec := range buildLoopSpecs(cfg, emailUC, userUC, notificationUC, l) {
+	for _, spec := range buildLoopSpecs(cfg, emailUC, userUC, notificationUC, unitRegistryUC, l) {
 		s.startLoop(loopCtx, spec, l)
 	}
 
@@ -404,6 +410,7 @@ func buildLoopSpecs(
 	emailUC *emailusecase.UseCase,
 	userUC *user.UseCase,
 	notificationUC *notification.UseCase,
+	unitRegistryUC *unitregistry.UseCase,
 	l logger.Interface,
 ) []loopSpec {
 	var specs []loopSpec
@@ -432,6 +439,15 @@ func buildLoopSpecs(
 			interval:     cfg.AuthAlert.Interval,
 			initialDelay: backgroundInitialDelay,
 			run:          authAlertPass(userUC, l),
+		})
+	}
+
+	if unitRegistryUC != nil && cfg.CitableAudit.Enabled {
+		specs = append(specs, loopSpec{
+			name:         "citable_unit_audit",
+			interval:     cfg.CitableAudit.Interval,
+			initialDelay: backgroundInitialDelay,
+			run:          citableAuditPass(unitRegistryUC, l),
 		})
 	}
 
@@ -499,6 +515,35 @@ func authAlertPass(userUC *user.UseCase, l logger.Interface) func(context.Contex
 
 		if count > 0 {
 			l.Info("app - refresh-reuse alert: notified admins of %d new event(s)", count)
+		}
+
+		return nil
+	}
+}
+
+// citableAuditPass runs the zero-dangling-citations audit (phase-1b B-1 AC-3)
+// and publishes the counts. Violations are a DATA state, not a pass failure:
+// the pass succeeds, the gauges go nonzero, and the Grafana rule
+// (surau_citable_audit_violations > 0) raises the Telegram alarm.
+func citableAuditPass(unitRegistryUC *unitregistry.UseCase, l logger.Interface) func(context.Context) error {
+	return func(ctx context.Context) error {
+		report, err := unitRegistryUC.AuditPass(ctx)
+		if err != nil {
+			return fmt.Errorf("citable unit audit: %w", err)
+		}
+
+		total := recordCitableAudit(&report)
+		if total > 0 {
+			l.Error(
+				"app - citable audit: %d violation(s) — book_gone=%d superseded_no_successor=%d active_with_successor=%d hash_mismatch=%d anchor_malformed=%d footnote_parent=%d",
+				total,
+				report.Violations.BookGone,
+				report.Violations.SupersededNoSuccessor,
+				report.Violations.ActiveWithSuccessor,
+				report.Violations.HashMismatch,
+				report.Violations.AnchorMalformed,
+				report.Violations.FootnoteParent,
+			)
 		}
 
 		return nil
@@ -642,7 +687,7 @@ func run(cfg *config.Config, stop <-chan struct{}) {
 
 	uc := initUseCases(cfg, pg, jwtManager, l)
 	s := initServers(cfg, pg, uc, jwtManager, l)
-	s.startServers(cfg, uc.email, uc.user, uc.notification, l)
+	s.startServers(cfg, uc.email, uc.user, uc.notification, uc.unitRegistry, l)
 	s.waitForShutdown(l, stop)
 }
 

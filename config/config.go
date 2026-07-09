@@ -118,6 +118,7 @@ type (
 		AuthCleanup   authCleanup
 		AuthEmail     authEmail
 		AuthAlert     authAlert
+		CitableAudit  citableAudit
 		MFA           mfa
 		RAG           rag
 		Collab        collab
@@ -361,6 +362,15 @@ type (
 		Recipients []string      `env:"AUTH_ALERT_RECIPIENTS" envSeparator:","`
 	}
 
+	// CitableAudit schedules the citable-unit registry integrity audit
+	// (phase-1b B-1 "nol sitasi menggantung"). Enabled by default: it has no
+	// external dependency and an integrity audit should not be silently off —
+	// its violation gauges feed the Grafana → Telegram alert.
+	citableAudit struct {
+		Enabled  bool          `env:"CITABLE_AUDIT_ENABLED" envDefault:"true"`
+		Interval time.Duration `env:"CITABLE_AUDIT_INTERVAL" envDefault:"1h"`
+	}
+
 	// RAG -.
 	rag struct {
 		LLMBaseURL           string        `env:"RAG_LLM_BASE_URL" envDefault:"https://ai.sumopod.com/v1"`
@@ -457,6 +467,10 @@ func NewConfig() (*Config, error) {
 
 	if cfg.AuthAlert.Enabled && cfg.AuthAlert.Interval <= 0 {
 		return nil, configError("AUTH_ALERT_INTERVAL must be positive")
+	}
+
+	if cfg.CitableAudit.Enabled && cfg.CitableAudit.Interval <= 0 {
+		return nil, configError("CITABLE_AUDIT_INTERVAL must be positive")
 	}
 
 	if err := validateMFA(cfg.MFA); err != nil {

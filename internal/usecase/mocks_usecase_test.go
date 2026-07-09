@@ -2981,3 +2981,88 @@ func (mr *MockEditorialMockRecorder) UpdatePublication(ctx, actorID, bookID, sta
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdatePublication", reflect.TypeOf((*MockEditorial)(nil).UpdatePublication), ctx, actorID, bookID, status, featured, sortOrder)
 }
+
+// MockUnitRegistry is a mock of UnitRegistry interface.
+type MockUnitRegistry struct {
+	ctrl     *gomock.Controller
+	recorder *MockUnitRegistryMockRecorder
+	isgomock struct{}
+}
+
+// MockUnitRegistryMockRecorder is the mock recorder for MockUnitRegistry.
+type MockUnitRegistryMockRecorder struct {
+	mock *MockUnitRegistry
+}
+
+// NewMockUnitRegistry creates a new mock instance.
+func NewMockUnitRegistry(ctrl *gomock.Controller) *MockUnitRegistry {
+	mock := &MockUnitRegistry{ctrl: ctrl}
+	mock.recorder = &MockUnitRegistryMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockUnitRegistry) EXPECT() *MockUnitRegistryMockRecorder {
+	return m.recorder
+}
+
+// AuditPass mocks base method.
+func (m *MockUnitRegistry) AuditPass(ctx context.Context) (entity.CitableAuditReport, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AuditPass", ctx)
+	ret0, _ := ret[0].(entity.CitableAuditReport)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// AuditPass indicates an expected call of AuditPass.
+func (mr *MockUnitRegistryMockRecorder) AuditPass(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AuditPass", reflect.TypeOf((*MockUnitRegistry)(nil).AuditPass), ctx)
+}
+
+// ReconcileBook mocks base method.
+func (m *MockUnitRegistry) ReconcileBook(ctx context.Context, bookID int) (entity.UnitReconcileReport, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ReconcileBook", ctx, bookID)
+	ret0, _ := ret[0].(entity.UnitReconcileReport)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ReconcileBook indicates an expected call of ReconcileBook.
+func (mr *MockUnitRegistryMockRecorder) ReconcileBook(ctx, bookID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReconcileBook", reflect.TypeOf((*MockUnitRegistry)(nil).ReconcileBook), ctx, bookID)
+}
+
+// ReconcileBookIfDerived mocks base method.
+func (m *MockUnitRegistry) ReconcileBookIfDerived(ctx context.Context, bookID int) (entity.UnitReconcileReport, bool, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ReconcileBookIfDerived", ctx, bookID)
+	ret0, _ := ret[0].(entity.UnitReconcileReport)
+	ret1, _ := ret[1].(bool)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
+}
+
+// ReconcileBookIfDerived indicates an expected call of ReconcileBookIfDerived.
+func (mr *MockUnitRegistryMockRecorder) ReconcileBookIfDerived(ctx, bookID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReconcileBookIfDerived", reflect.TypeOf((*MockUnitRegistry)(nil).ReconcileBookIfDerived), ctx, bookID)
+}
+
+// ResolveUnit mocks base method.
+func (m *MockUnitRegistry) ResolveUnit(ctx context.Context, unitID string) (entity.UnitResolution, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ResolveUnit", ctx, unitID)
+	ret0, _ := ret[0].(entity.UnitResolution)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ResolveUnit indicates an expected call of ResolveUnit.
+func (mr *MockUnitRegistryMockRecorder) ResolveUnit(ctx, unitID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ResolveUnit", reflect.TypeOf((*MockUnitRegistry)(nil).ResolveUnit), ctx, unitID)
+}
