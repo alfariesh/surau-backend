@@ -2982,6 +2982,45 @@ func (mr *MockEditorialMockRecorder) UpdatePublication(ctx, actorID, bookID, sta
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdatePublication", reflect.TypeOf((*MockEditorial)(nil).UpdatePublication), ctx, actorID, bookID, status, featured, sortOrder)
 }
 
+// MockAnchorResolver is a mock of AnchorResolver interface.
+type MockAnchorResolver struct {
+	ctrl     *gomock.Controller
+	recorder *MockAnchorResolverMockRecorder
+	isgomock struct{}
+}
+
+// MockAnchorResolverMockRecorder is the mock recorder for MockAnchorResolver.
+type MockAnchorResolverMockRecorder struct {
+	mock *MockAnchorResolver
+}
+
+// NewMockAnchorResolver creates a new mock instance.
+func NewMockAnchorResolver(ctrl *gomock.Controller) *MockAnchorResolver {
+	mock := &MockAnchorResolver{ctrl: ctrl}
+	mock.recorder = &MockAnchorResolverMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockAnchorResolver) EXPECT() *MockAnchorResolverMockRecorder {
+	return m.recorder
+}
+
+// Resolve mocks base method.
+func (m *MockAnchorResolver) Resolve(ctx context.Context, rawAnchor string, bookID, pageID *int) (entity.AnchorResolution, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Resolve", ctx, rawAnchor, bookID, pageID)
+	ret0, _ := ret[0].(entity.AnchorResolution)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Resolve indicates an expected call of Resolve.
+func (mr *MockAnchorResolverMockRecorder) Resolve(ctx, rawAnchor, bookID, pageID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Resolve", reflect.TypeOf((*MockAnchorResolver)(nil).Resolve), ctx, rawAnchor, bookID, pageID)
+}
+
 // MockUnitRegistry is a mock of UnitRegistry interface.
 type MockUnitRegistry struct {
 	ctrl     *gomock.Controller

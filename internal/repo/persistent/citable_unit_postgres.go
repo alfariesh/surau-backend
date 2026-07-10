@@ -20,10 +20,6 @@ const registryAdvisoryLockClass = 71001
 // guard rejects any DML outside a transaction that sets it.
 const registryWriterGUC = "SET LOCAL surau.registry_writer = 'unit-service'"
 
-// lineageWalkDepthCap bounds the resolve walk; lineage is a DAG, the cap only
-// guards against pathological data.
-const lineageWalkDepthCap = 32
-
 // CitableUnitRepo persists the shared Citable Unit registry (phase-1b B-1).
 type CitableUnitRepo struct {
 	*postgres.Postgres
@@ -461,6 +457,8 @@ func scanCitableUnit(row pgx.Row) (entity.CitableUnit, error) {
 // ResolveUnit loads one unit and, when it is retired, walks the lineage DAG to
 // the active successor(s). Old anchors therefore never dead-end (AC-2); the
 // full anchor-grammar resolution surface is B-2.
+//
+//nolint:cyclop,gocyclo // guarded root read, shared lineage walk, and ordered batch hydration
 func (r *CitableUnitRepo) ResolveUnit(ctx context.Context, unitID string) (entity.UnitResolution, error) {
 	var res entity.UnitResolution
 
@@ -475,41 +473,58 @@ func (r *CitableUnitRepo) ResolveUnit(ctx context.Context, unitID string) (entit
 	}
 
 	res.Unit = unit
+
+	walk, err := walkUnitLineage(ctx, r.Pool, &unit)
+	if err != nil {
+		return res, fmt.Errorf("CitableUnitRepo.ResolveUnit walk: %w", err)
+	}
+
+	if walk.CycleDetected {
+		return res, entity.ErrAnchorLineageCycle
+	}
 	if unit.Lifecycle == entity.UnitLifecycleActive {
 		return res, nil
 	}
 
+	if len(walk.ActiveUnits) == 0 {
+		return res, nil
+	}
+
+	activeIDs := make([]string, 0, len(walk.ActiveUnits))
+	for i := range walk.ActiveUnits {
+		activeIDs = append(activeIDs, walk.ActiveUnits[i].ID)
+	}
+
 	rows, err := r.Pool.Query(ctx, `
-		WITH RECURSIVE walk AS (
-			SELECT l.successor_id, 1 AS depth
-			FROM citable_unit_lineage l
-			WHERE l.predecessor_id = $1
-			UNION
-			SELECT l.successor_id, w.depth + 1
-			FROM walk w
-			JOIN citable_unit_lineage l ON l.predecessor_id = w.successor_id
-			WHERE w.depth < $2
-		)
 		SELECT `+citableUnitColumns+`
-		FROM citable_units u
-		WHERE u.id IN (SELECT successor_id FROM walk) AND u.lifecycle = 'active'
-		ORDER BY u.anchor`, unitID, lineageWalkDepthCap)
+		FROM citable_units
+		WHERE id = ANY($1::uuid[])`, activeIDs)
 	if err != nil {
-		return res, fmt.Errorf("CitableUnitRepo.ResolveUnit walk: %w", err)
+		return res, fmt.Errorf("CitableUnitRepo.ResolveUnit active units: %w", err)
 	}
 	defer rows.Close()
 
+	byID := make(map[string]entity.CitableUnit, len(activeIDs))
 	for rows.Next() {
 		successor, err := scanCitableUnit(rows)
 		if err != nil {
 			return res, fmt.Errorf("CitableUnitRepo.ResolveUnit scan successor: %w", err)
 		}
 
-		res.Successors = append(res.Successors, successor)
+		byID[successor.ID] = successor
 	}
 
 	if err := rows.Err(); err != nil {
 		return res, fmt.Errorf("CitableUnitRepo.ResolveUnit walk rows: %w", err)
+	}
+
+	for _, id := range activeIDs {
+		successor, ok := byID[id]
+		if !ok {
+			return res, fmt.Errorf("CitableUnitRepo.ResolveUnit active successor %s: %w", id, entity.ErrUnitNotFound)
+		}
+
+		res.Successors = append(res.Successors, successor)
 	}
 
 	return res, nil
@@ -550,6 +565,19 @@ func (r *CitableUnitRepo) AuditCounts(ctx context.Context) (entity.CitableAuditR
 		SELECT COUNT(*) FROM citable_unit_lineage l
 		JOIN citable_units u ON u.id = l.predecessor_id
 		WHERE u.lifecycle = 'active'`); err != nil {
+		return report, err
+	}
+
+	if err := count(&report.Violations.LineageCycle, "lineage_cycle", `
+		WITH RECURSIVE reach(start_id, current_id) AS (
+			SELECT predecessor_id, successor_id
+			FROM citable_unit_lineage
+			UNION
+			SELECT reach.start_id, lineage.successor_id
+			FROM reach
+			JOIN citable_unit_lineage lineage ON lineage.predecessor_id = reach.current_id
+		)
+		SELECT COUNT(*) FROM reach WHERE start_id = current_id`); err != nil {
 		return report, err
 	}
 

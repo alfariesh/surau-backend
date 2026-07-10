@@ -99,6 +99,9 @@ var (
 	ErrPushDeliveryFailed              = errors.New("push delivery failed")
 	ErrUnitNotFound                    = errors.New("citable unit not found")
 	ErrUnitReconcileConflict           = errors.New("unit registry changed since plan was built")
+	ErrInvalidAnchor                   = errors.New("invalid anchor")
+	ErrAnchorNotFound                  = errors.New("anchor not found")
+	ErrAnchorLineageCycle              = errors.New("anchor lineage cycle detected")
 )
 
 // AuthRateLimitedError carries the retry-after hint computed by the rate

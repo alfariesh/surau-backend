@@ -1,6 +1,6 @@
 # Quran API Contract
 
-Last updated: 2026-06-12
+Last updated: 2026-07-10
 
 This document is the FE-facing contract for the Quran backend. It covers the public Quran read APIs, response shapes, audio behavior, errors, and the recommended fetch flow. The Quran domain is standalone: Quran rows live in dedicated Quran tables and are linked to kitab data only through Quran reference records.
 
@@ -16,6 +16,8 @@ For the shared kitab + Quran FE integration guide, see `docs/frontend-integratio
 - Segment timestamps are milliseconds.
 - When audio is enabled, fetch `/v1/quran/recitations`, use `is_default=true` initially, then store the user's chosen `recitation_id`.
 - Use `/v1/quran/juz` or `/v1/quran/hizbs` for mushaf navigation tabs; use their `/ayahs` endpoints for the actual reader payload.
+- For persisted/shared cross-corpus addresses, use canonical Anchor `quran/{ayah_key}` and resolve
+  it with `GET /v1/anchors/resolve`; bare `ayah_key` remains a permanent legacy resolver input.
 
 ## Base Contract
 
@@ -25,7 +27,8 @@ For the shared kitab + Quran FE integration guide, see `docs/frontend-integratio
 - List endpoints return a uniform envelope `{"items": [...], "total": <int>}` (breaking change from earlier bare arrays and bespoke keys like `results`/`references`). For paginated lists `total` is the unbounded match count; for full lists it equals `items.length`. Object endpoints (single surah, single ayah, audio manifest) are unchanged.
 - Default language: `id`.
 - Default translation source: language-specific. For Indonesian the preferred default is `qul-kfgqpc-id-simple` when imported; for other languages the backend chooses the highest-coverage source deterministically.
-- Canonical ayah key: `{surah_id}:{ayah_number}`, for example `73:4`.
+- Canonical Quran row key: `{surah_id}:{ayah_number}`, for example `73:4`. Its cross-corpus
+  canonical Anchor is `quran/73:4`.
 - Surah IDs are numeric `1` through `114`.
 - Ayah numbers are numeric inside each surah.
 - Juz numbers are `1` through `30`; hizb numbers are `1` through `60`.
@@ -1619,6 +1622,10 @@ Common Quran errors:
 | `404` | `book not found` |
 | `500` | `internal server error` |
 
+Anchor resolution uses the shared error registry: malformed/ambiguous resolver queries return
+`400 invalid_anchor`; an unknown or non-public target returns `404 anchor_not_found`. See
+`docs/anchors.md`; these are resolver errors, not changes to existing Quran endpoint errors.
+
 ## Smoke Test URLs
 
 Use these when checking local backend behavior:
@@ -1635,6 +1642,8 @@ http://localhost:8080/v1/quran/ayahs/1:1?lang=fr
 http://localhost:8080/v1/quran/ayahs/1:1?lang=id&include_audio=true&recitation_id=bad-id
 http://localhost:8080/v1/quran/surahs/73/ayahs?from=1&to=5&lang=id&include_translation=true
 http://localhost:8080/v1/quran/search?q=rahman&lang=id&limit=10&offset=0
+http://localhost:8080/v1/anchors/resolve?anchor=quran%2F73%3A4
+http://localhost:8080/v1/anchors/resolve?anchor=73%3A4
 ```
 
 Expected key checks:
@@ -1653,7 +1662,9 @@ Expected key checks:
 
 - Use `/v1/quran/surahs` as the cacheable surah index.
 - Use `/v1/quran/surahs/{surah_id}` for surah background HTML.
-- Use `ayah_key` as the FE route/share key.
+- Use `ayah_key` as the Quran reader route key.
+- Use `quran/{ayah_key}` as the canonical cross-corpus Anchor for new persisted/shared links;
+  existing bare `ayah_key` links remain resolvable.
 - Use `text_qpc_hafs` for Arabic display.
 - Use `translation.text` for Indonesian translation.
 - Use `GET /v1/quran/recitations` before building audio controls.

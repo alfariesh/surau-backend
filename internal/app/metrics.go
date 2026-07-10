@@ -56,6 +56,7 @@ func recordCitableAudit(report *entity.CitableAuditReport) int64 {
 	citableAuditViolations.WithLabelValues("book_gone").Set(float64(v.BookGone))
 	citableAuditViolations.WithLabelValues("superseded_no_successor").Set(float64(v.SupersededNoSuccessor))
 	citableAuditViolations.WithLabelValues("active_with_successor").Set(float64(v.ActiveWithSuccessor))
+	citableAuditViolations.WithLabelValues("lineage_cycle").Set(float64(v.LineageCycle))
 	citableAuditViolations.WithLabelValues("hash_mismatch").Set(float64(v.HashMismatch))
 	citableAuditViolations.WithLabelValues("anchor_malformed").Set(float64(v.AnchorMalformed))
 	citableAuditViolations.WithLabelValues("footnote_parent").Set(float64(v.FootnoteParent))
@@ -72,7 +73,7 @@ func recordCitableAudit(report *entity.CitableAuditReport) int64 {
 		citableUnits.WithLabelValues(lifecycle).Set(float64(report.UnitsByLifecycle[lifecycle]))
 	}
 
-	return v.BookGone + v.SupersededNoSuccessor + v.ActiveWithSuccessor +
+	return v.BookGone + v.SupersededNoSuccessor + v.ActiveWithSuccessor + v.LineageCycle +
 		v.HashMismatch + v.AnchorMalformed + v.FootnoteParent
 }
 

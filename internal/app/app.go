@@ -19,6 +19,7 @@ import (
 	"github.com/alfariesh/surau-backend/internal/repo"
 	"github.com/alfariesh/surau-backend/internal/repo/persistent"
 	"github.com/alfariesh/surau-backend/internal/repo/webapi"
+	"github.com/alfariesh/surau-backend/internal/usecase/anchorresolver"
 	"github.com/alfariesh/surau-backend/internal/usecase/bookrag"
 	"github.com/alfariesh/surau-backend/internal/usecase/editorial"
 	emailusecase "github.com/alfariesh/surau-backend/internal/usecase/email"
@@ -42,6 +43,7 @@ type useCases struct {
 	reader       *reader.UseCase
 	bookRAG      *bookrag.UseCase
 	quran        *quran.UseCase
+	anchor       *anchorresolver.UseCase
 	personal     *personal.UseCase
 	editorial    *editorial.UseCase
 	email        *emailusecase.UseCase
@@ -82,6 +84,7 @@ func initUseCases(cfg *config.Config, pg *postgres.Postgres, jwtManager *jwt.Man
 	editorialRepo := persistent.NewEditorialRepo(pg)
 	citableUnitRepo := persistent.NewCitableUnitRepo(pg)
 	unitRegistryUC := unitregistry.New(citableUnitRepo)
+	anchorRepo := persistent.NewAnchorRepo(pg)
 	emailRepo := persistent.NewEmailRepo(pg)
 	llmClient := webapi.NewOpenAICompatibleClient(webapi.OpenAICompatibleOptions{
 		BaseURL:     cfg.RAG.LLMBaseURL,
@@ -340,6 +343,7 @@ func initUseCases(cfg *config.Config, pg *postgres.Postgres, jwtManager *jwt.Man
 			TreeMaxBlocksPerTurn: cfg.RAG.TreeMaxBlocksPerTurn,
 		}),
 		quran:        quran.New(quranRepo),
+		anchor:       anchorresolver.New(anchorRepo),
 		personal:     personal.New(personalRepo, khatamNotifier),
 		editorial:    editorial.New(editorialRepo, unitRegistryUC, l),
 		email:        emailUC,
@@ -366,6 +370,7 @@ func initServers(cfg *config.Config, pg *postgres.Postgres, uc useCases, jwtMana
 		uc.reader,
 		uc.bookRAG,
 		uc.quran,
+		uc.anchor,
 		uc.user,
 		uc.personal,
 		uc.editorial,
@@ -535,11 +540,12 @@ func citableAuditPass(unitRegistryUC *unitregistry.UseCase, l logger.Interface) 
 		total := recordCitableAudit(&report)
 		if total > 0 {
 			l.Error(
-				"app - citable audit: %d violation(s) — book_gone=%d superseded_no_successor=%d active_with_successor=%d hash_mismatch=%d anchor_malformed=%d footnote_parent=%d",
+				"app - citable audit: %d violation(s) — book_gone=%d superseded_no_successor=%d active_with_successor=%d lineage_cycle=%d hash_mismatch=%d anchor_malformed=%d footnote_parent=%d",
 				total,
 				report.Violations.BookGone,
 				report.Violations.SupersededNoSuccessor,
 				report.Violations.ActiveWithSuccessor,
+				report.Violations.LineageCycle,
 				report.Violations.HashMismatch,
 				report.Violations.AnchorMalformed,
 				report.Violations.FootnoteParent,

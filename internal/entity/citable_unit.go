@@ -132,6 +132,7 @@ type CitableAuditViolations struct {
 	BookGone              int64 // active units on missing/is_deleted books
 	SupersededNoSuccessor int64
 	ActiveWithSuccessor   int64 // lineage edge whose predecessor is still active
+	LineageCycle          int64 // directed cycle reachable in the redirect graph
 	HashMismatch          int64 // recomputed content hash / normalized text drift
 	AnchorMalformed       int64
 	FootnoteParent        int64 // active footnote with missing/non-active parent

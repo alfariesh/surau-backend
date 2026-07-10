@@ -1,5 +1,102 @@
 basePath: /v1
 definitions:
+  entity.AnchorBoundary:
+    properties:
+      active_targets:
+        items:
+          $ref: '#/definitions/entity.AnchorTarget'
+        type: array
+      canonical_anchor:
+        example: quran/73:4
+        type: string
+        x-nullable: true
+      redirect_chain:
+        items:
+          $ref: '#/definitions/entity.AnchorRedirect'
+        type: array
+      role:
+        example: point
+        type: string
+      status:
+        example: active
+        type: string
+    type: object
+  entity.AnchorRedirect:
+    properties:
+      depth:
+        example: 1
+        type: integer
+      from:
+        example: kitab/797/h/11/u/42
+        type: string
+      reason:
+        example: edit
+        type: string
+      to:
+        example: kitab/797/h/11/u/43
+        type: string
+    type: object
+  entity.AnchorRequested:
+    properties:
+      anchor:
+        example: toc-11
+        type: string
+      book_id:
+        example: 797
+        type: integer
+      form:
+        example: legacy_toc
+        type: string
+      page_id:
+        example: 12
+        type: integer
+    type: object
+  entity.AnchorResolution:
+    properties:
+      boundaries:
+        items:
+          $ref: '#/definitions/entity.AnchorBoundary'
+        type: array
+      canonical_anchor:
+        example: quran/73:4
+        type: string
+        x-nullable: true
+      requested:
+        $ref: '#/definitions/entity.AnchorRequested'
+    type: object
+  entity.AnchorTarget:
+    properties:
+      ayah_key:
+        example: "73:4"
+        type: string
+      book_id:
+        example: 797
+        type: integer
+      canonical_anchor:
+        example: kitab/797/h/11/u/42
+        type: string
+      corpus:
+        example: kitab
+        type: string
+      heading_id:
+        example: 11
+        type: integer
+      navigation_url:
+        example: /v1/books/797/toc/11/read
+        type: string
+      page_id:
+        example: 12
+        type: integer
+      target_type:
+        example: citable_unit
+        type: string
+      unit_id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      updated_at:
+        example: "2026-07-10T12:00:00Z"
+        type: string
+    type: object
   entity.Author:
     properties:
       biography:
@@ -6593,6 +6690,48 @@ paths:
       summary: Set user role
       tags:
       - admin
+  /anchors/resolve:
+    get:
+      description: Resolve one canonical Anchor, a legacy ayah_key/toc anchor, or
+        a legacy kitab page tuple to current active targets. Known tombstones return
+        200; ranges resolve their two boundaries without expanding all content.
+      operationId: resolve-anchor
+      parameters:
+      - description: Canonical Anchor, legacy ayah_key, or toc-{heading_id}
+        in: query
+        name: anchor
+        type: string
+      - description: Required scope for legacy toc/page; forbidden for canonical and
+          ayah_key inputs
+        in: query
+        name: book_id
+        type: integer
+      - description: Legacy physical page locator; requires book_id and no anchor
+        in: query
+        name: page_id
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.AnchorResolution'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      summary: Resolve an Anchor
+      tags:
+      - anchors
   /auth/change-email/request:
     post:
       consumes:

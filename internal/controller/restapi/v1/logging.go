@@ -42,6 +42,18 @@ func (r *V1) logQuranError(ctx *fiber.Ctx, err error, operation string) {
 	r.reqLog(ctx).Error(err, operation)
 }
 
+func (r *V1) logAnchorError(ctx *fiber.Ctx, err error, operation string) {
+	if errors.Is(err, entity.ErrInvalidAnchor) ||
+		errors.Is(err, entity.ErrAnchorNotFound) ||
+		errors.Is(err, entity.ErrUnitNotFound) {
+		r.reqLog(ctx).Warn("%s: %s", operation, err)
+
+		return
+	}
+
+	r.reqLog(ctx).Error(err, operation)
+}
+
 func isExpectedReaderError(err error) bool {
 	return errors.Is(err, entity.ErrUnsupportedLanguage) ||
 		errors.Is(err, entity.ErrBookNotFound) ||

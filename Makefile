@@ -84,7 +84,7 @@ docker-rm-volume: ### remove docker volume
 .PHONY: docker-rm-volume
 
 linter-golangci: ### check by golangci linter
-	golangci-lint run
+	golangci-lint run --new-from-merge-base=origin/main
 .PHONY: linter-golangci
 
 linter-hadolint: ### check by hadolint linter
@@ -99,8 +99,10 @@ test: ### run test
 	go test -v -race -covermode atomic -coverpkg=./internal/...,./pkg/... -coverprofile=coverage.txt ./internal/... ./pkg/...
 .PHONY: test
 
-diff-cover: ### coverage of new code vs origin/main (the CI ratchet, F1-E); needs coverage.txt from `make test`
-	git diff -U0 --no-color origin/main...HEAD | go run ./cmd/diffcover -profile coverage.txt
+diff-cover: ### coverage of new code vs origin/main (the CI ratchet, F1-E); uses live coverage when available
+	@profiles="-profile coverage.txt"; \
+	if [ -f coverage-live.txt ]; then profiles="$$profiles -profile coverage-live.txt"; fi; \
+	git diff -U0 --no-color origin/main...HEAD | go run ./cmd/diffcover $$profiles
 .PHONY: diff-cover
 
 integration-test: ### run integration-test

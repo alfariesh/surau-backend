@@ -82,12 +82,17 @@ deterministik [UUIDv5 natural-key, ordinal dicetak-sekali, lineage supersede/min
 backfill F1-H [`citable-units-kitab-pilot` + `-rederive` drill determinisme]; hook `PublishPageDraft`;
 loop audit `citable_unit_audit` [default aktif] + alert Telegram `sum(surau_citable_audit_violations)>0`;
 **pilot 4 buku eval nyata → 16.205 unit, re-run determinisme 100% [checksum identik], audit 0
-pelanggaran; semua AC terpenuhi**; kontrak di `docs/citable-units.md`; diff-cover 83,9%) → B-2 (Anchor
-+ resolusi + legacy) → B-3 (Cross-Reference umum + bridge rujukan Quran); paralel: B-5 (normalisasi v1
+pelanggaran; semua AC terpenuhi**; kontrak di `docs/citable-units.md`; diff-cover 83,9%);
+B-2 ✅ **SELESAI 2026-07-10 (SESI 12)** (grammar Anchor kanonik diratifikasi tanpa menulis ulang
+16.205 Anchor B-1; resolver publik canonical + legacy `ayah_key`/`toc-{heading_id}`/page; seluruh
+lineage split/merge/multi-hop + cycle/visibility fail-closed; 20.500 unit aktif, 50 warm-up, 500
+sampel HTTP lokal: p50 0,952 ms, **p95 1,277 ms**, max 3,535 ms; tanpa migrasi/backfill) → B-3
+(Cross-Reference umum + bridge rujukan Quran); paralel: B-5 (normalisasi v1
 + vektor emas + gerbang kesetaraan CI), B-6 (identitas generation-run); B-4 (lisensi platform +
 gerbang publish kitab) — PK-1 ✅ terjawab (default aman a/a/a).
-**Gerbang keluar:** determinisme pilot ≥99,5% (target 100%); 100% anchor legacy resolvable ≤50ms;
-rujukan approved lama setara via registry baru; suite kesetaraan normalisasi hijau di dua runtime.
+**Gerbang keluar:** determinisme pilot ≥99,5% (target 100%); 100% anchor legacy resolvable ≤50ms
+✅ B-2 (p95 1,277 ms); rujukan approved lama setara via registry baru; suite kesetaraan
+normalisasi hijau di dua runtime.
 **Aturan keras (charter D2):** Fase hadith/wiki DILARANG mendesain model datanya sebelum
 B-1..B-3 terkunci.
 

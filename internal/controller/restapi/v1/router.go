@@ -42,6 +42,7 @@ func NewRoutes(
 	reader usecase.Reader,
 	bookRAG usecase.BookRAG,
 	quran usecase.Quran,
+	anchor usecase.AnchorResolver,
 	u usecase.User,
 	personal usecase.Personal,
 	editorial usecase.Editorial,
@@ -54,6 +55,7 @@ func NewRoutes(
 		reader:             reader,
 		bookRAG:            bookRAG,
 		quran:              quran,
+		anchor:             anchor,
 		u:                  u,
 		personal:           personal,
 		editorial:          editorial,
@@ -86,6 +88,11 @@ func NewRoutes(
 		emailPublicGroup.Get("/unsubscribe", r.emailUnsubscribe)
 		emailPublicGroup.Post("/unsubscribe", r.emailUnsubscribe)
 		emailPublicGroup.Post("/webhooks/cloudflare/bounces", r.emailCloudflareBounceWebhook)
+	}
+
+	anchorGroup := apiV1Group.Group("/anchors", middleware.PublicCache())
+	{
+		anchorGroup.Get("/resolve", r.resolveAnchor)
 	}
 
 	// Public reader routes

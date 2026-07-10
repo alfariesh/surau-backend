@@ -175,7 +175,13 @@ ultracode. Kerjakan B-1 dari roadmap/phase-1b-content-backbone.md: registry Cita
 Masuk PLAN MODE dulu; rencana wajib menyebut cara memenuhi setiap Acceptance Criterion B-1 (termasuk determinisme ID pada re-run). Setelah saya setujui: kerjakan sampai tuntas — branch fitur, test, Definition of Done, centang PROGRAM.md & SESI.md, merge, verifikasi dev-api. Laporan akhir bahasa awam.
 ```
 
-- [ ] **SESI 12 — Alamat kanonik & resolusi (B-2)**
+- [x] **SESI 12 — Alamat kanonik & resolusi (B-2)** — ✅ **SELESAI 2026-07-10**: grammar
+  canonical Quran/kitab/range diratifikasi di `docs/anchors.md` tanpa mengubah 16.205 Anchor B-1;
+  `GET /v1/anchors/resolve` menerima canonical, legacy `ayah_key`, `toc-{heading_id}+book_id`, dan
+  `book_id+page_id`; lineage split/merge/multi-hop mengembalikan seluruh target aktif dan cycle
+  masuk audit. Gerbang 20.500 unit aktif (50 warm-up + 500 sampel HTTP lokal) menghasilkan p50
+  0,952 ms, **p95 1,277 ms**, max 3,535 ms. Tidak ada migrasi, backfill, perubahan frontend, atau
+  rilis produksi.
 
 ```text
 Kerjakan B-2 dari roadmap/phase-1b-content-backbone.md: spesifikasi grammar Anchor sebagai kontrak terdokumentasi + kapabilitas resolusi (anchor kanonik DAN legacy: ayah_key, toc-{heading_id}, page → unit aktif + redirect), p95 ≤50ms.

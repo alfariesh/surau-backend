@@ -1,6 +1,6 @@
 # Kitab Frontend Integration Contract
 
-Last updated: 2026-06-12
+Last updated: 2026-07-10
 
 This guide is the frontend-facing companion to `docs/kitab-multilingual-api.md`.
 Use the backend `availability` objects as the source of truth for UI behavior.
@@ -18,6 +18,9 @@ For a shared kitab + Quran integration entrypoint, see `docs/frontend-integratio
 - **Pagination guards (additive, since 2026-07-08):** `GET /v1/books/{id}/headings` now accepts optional `limit` (default 200, max 200) and `offset`; omitting them returns the first 200 rows and `total` always carries the FULL match count — books with >200 headings need follow-up pages (`offset=200`, …). Public list `offset` values are clamped to 10000 everywhere. Search `q` values are treated literally (`%`/`_` no longer act as wildcards) and are bounded to 200 characters.
 - Section translation content is exact-language only. Missing `lang=en` returns `translation: null` even if `id` exists.
 - Translation feedback is exact-language only. Do not show feedback controls unless `translation` is non-null and `translation.lang === selectedLang`.
+- Resolve persisted/shared addresses through `GET /v1/anchors/resolve`; canonical
+  `kitab/{book_id}/h/{heading_id|0}/u/{ordinal}`, legacy `toc-{heading_id}`, and legacy page
+  addresses are all supported. The normative contract is `docs/anchors.md`.
 
 ## Minimal TypeScript Types
 
@@ -166,6 +169,27 @@ export function readTOCSection(bookId: number, headingId: number, lang: KitabLan
   return getJSON<BookTOCRead>(`/v1/books/${bookId}/toc/${headingId}/read?lang=${lang}`);
 }
 ```
+
+For a shared-link entrypoint, URL-encode the full Anchor query value. Legacy links do not need a
+migration:
+
+```ts
+export function resolveKitabAnchor(anchor: string) {
+  return getJSON(`/v1/anchors/resolve?anchor=${encodeURIComponent(anchor)}`);
+}
+
+export function resolveLegacyTOC(bookId: number, headingId: number) {
+  return getJSON(`/v1/anchors/resolve?anchor=toc-${headingId}&book_id=${bookId}`);
+}
+
+export function resolveLegacyPage(bookId: number, pageId: number) {
+  return getJSON(`/v1/anchors/resolve?book_id=${bookId}&page_id=${pageId}`);
+}
+```
+
+Render or navigate every `boundaries[].active_targets[]`, not only the first: one retired unit can
+split into multiple active units. `navigation_url` deliberately points to an existing coarse
+heading/page reader; keep the target's `canonical_anchor` and `unit_id` for precise identity.
 
 ## UI Decision Helpers
 
@@ -610,3 +634,4 @@ Supported `asset_type`: `surah_info`, `ayah_translation`, `translation_source`, 
 - `lang=ar` renders source content as primary and hides feedback.
 - Unsupported language shows a recoverable error and resets frontend state to `id` or the previous valid language.
 - Catalog cards remain visible even when requested metadata falls back to Arabic/source.
+- Canonical unit, legacy TOC, and legacy page links resolve; split lineage preserves every active target.
