@@ -2495,6 +2495,65 @@
                 ]
             }
         },
+        "/anchors/resolve": {
+            "get": {
+                "description": "Resolve one canonical Anchor, a legacy ayah_key/toc anchor, or a legacy kitab page tuple to current active targets. Known tombstones return 200; ranges resolve their two boundaries without expanding all content.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "anchors"
+                ],
+                "summary": "Resolve an Anchor",
+                "operationId": "resolve-anchor",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Canonical Anchor, legacy ayah_key, or toc-{heading_id}",
+                        "name": "anchor",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Required scope for legacy toc/page; forbidden for canonical and ayah_key inputs",
+                        "name": "book_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Legacy physical page locator; requires book_id and no anchor",
+                        "name": "page_id",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.AnchorResolution"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
         "/auth/change-email/request": {
             "post": {
                 "description": "Send a verification link to a new email address",
@@ -10856,6 +10915,142 @@
         }
     },
     "definitions": {
+        "entity.AnchorBoundary": {
+            "type": "object",
+            "properties": {
+                "active_targets": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.AnchorTarget"
+                    }
+                },
+                "canonical_anchor": {
+                    "type": "string",
+                    "x-nullable": true,
+                    "example": "quran/73:4"
+                },
+                "redirect_chain": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.AnchorRedirect"
+                    }
+                },
+                "role": {
+                    "type": "string",
+                    "example": "point"
+                },
+                "status": {
+                    "type": "string",
+                    "example": "active"
+                }
+            }
+        },
+        "entity.AnchorRedirect": {
+            "type": "object",
+            "properties": {
+                "depth": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "from": {
+                    "type": "string",
+                    "example": "kitab/797/h/11/u/42"
+                },
+                "reason": {
+                    "type": "string",
+                    "example": "edit"
+                },
+                "to": {
+                    "type": "string",
+                    "example": "kitab/797/h/11/u/43"
+                }
+            }
+        },
+        "entity.AnchorRequested": {
+            "type": "object",
+            "properties": {
+                "anchor": {
+                    "type": "string",
+                    "example": "toc-11"
+                },
+                "book_id": {
+                    "type": "integer",
+                    "example": 797
+                },
+                "form": {
+                    "type": "string",
+                    "example": "legacy_toc"
+                },
+                "page_id": {
+                    "type": "integer",
+                    "example": 12
+                }
+            }
+        },
+        "entity.AnchorResolution": {
+            "type": "object",
+            "properties": {
+                "boundaries": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.AnchorBoundary"
+                    }
+                },
+                "canonical_anchor": {
+                    "type": "string",
+                    "x-nullable": true,
+                    "example": "quran/73:4"
+                },
+                "requested": {
+                    "$ref": "#/definitions/entity.AnchorRequested"
+                }
+            }
+        },
+        "entity.AnchorTarget": {
+            "type": "object",
+            "properties": {
+                "ayah_key": {
+                    "type": "string",
+                    "example": "73:4"
+                },
+                "book_id": {
+                    "type": "integer",
+                    "example": 797
+                },
+                "canonical_anchor": {
+                    "type": "string",
+                    "example": "kitab/797/h/11/u/42"
+                },
+                "corpus": {
+                    "type": "string",
+                    "example": "kitab"
+                },
+                "heading_id": {
+                    "type": "integer",
+                    "example": 11
+                },
+                "navigation_url": {
+                    "type": "string",
+                    "example": "/v1/books/797/toc/11/read"
+                },
+                "page_id": {
+                    "type": "integer",
+                    "example": 12
+                },
+                "target_type": {
+                    "type": "string",
+                    "example": "citable_unit"
+                },
+                "unit_id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-07-10T12:00:00Z"
+                }
+            }
+        },
         "entity.Author": {
             "type": "object",
             "properties": {

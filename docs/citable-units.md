@@ -1,8 +1,8 @@
-# Citable Unit registry (Fase 1B / B-1)
+# Citable Unit registry (Fase 1B / B-1 dan B-2)
 
-Dokumen kontrak INTERNAL (bukan API publik — B-1 tidak menambah endpoint; resolusi anchor publik
-= B-2). Sumber kebenaran desain: `roadmap/phase-1b-content-backbone.md` §C1/C2 dan register
-keputusan B-D1..D11.
+Dokumen ini menjelaskan registry INTERNAL B-1. Kontrak Anchor yang diratifikasi dan endpoint
+resolusi publik B-2 ada di [`docs/anchors.md`](anchors.md). Sumber kebenaran desain:
+`roadmap/phase-1b-content-backbone.md` §C1/C2 dan register keputusan B-D1..D11.
 
 ## Apa ini
 
@@ -33,7 +33,7 @@ yang sama.
 | `ordinal` | dicetak-sekali per scope, **tak pernah didaur ulang**; bagian dari anchor |
 | `position` | urutan tampil kini (mutable) |
 | `parent_unit_id` | footnote → unit induk; metadata mutable (di-repoint saat induk berganti) |
-| `anchor` | grammar **provisional** `kitab/{book_id}/h/{heading_id\|0}/u/{ordinal}` (UNIQUE) — B-2 meratifikasi |
+| `anchor` | grammar kanonik `kitab/{book_id}/h/{heading_id\|0}/u/{ordinal}` (UNIQUE), diratifikasi B-2 |
 | `marker` | marker footnote (mis. `(¬٢)`); bagian input hash untuk footnote |
 | `text` / `html` | teks tampilan + html (bila ada) |
 | `text_normalized` / `normalization_version` | hanya via `internal/searchtext` (profil ber-versi, C5/B-5) |
@@ -73,8 +73,10 @@ ID byte-identik. Identity = `UUIDv5(ns, "kitab|book|heading|kind|hex(hash)|occur
 
 **Ketahanan-suntingan (AC-2):** suntingan yang memecah/menggabung unit mencetak unit BARU +
 menandai pendahulunya `superseded` + edge lineage; anchor lama selalu terselesaikan lewat
-`ResolveUnit` (walk rekursif ke penerus aktif). LIS atas pasangan match menjaga batas gap saat
-blok berpindah urutan; rescue pass level-buku menutup pindah-scope & hapus-kembar.
+implementasi lineage bersama yang dipakai `ResolveUnit` internal dan
+`GET /v1/anchors/resolve` publik (walk rekursif ke semua penerus aktif; lihat
+[`docs/anchors.md`](anchors.md)). LIS atas pasangan match menjaga batas gap saat blok berpindah
+urutan; rescue pass level-buku menutup pindah-scope & hapus-kembar.
 
 ## Titik masuk
 
@@ -98,7 +100,7 @@ default 1h). `AuditPass` mengisi:
 - **`surau_citable_audit_violations{check}`** (alert `sum > bool 0` → Telegram, rule
   `surau-citable-audit`): `book_gone`, `superseded_no_successor`, `active_with_successor`,
   `hash_mismatch` (recompute Go atas semua unit aktif — tripwire tulisan asing/pelanggaran GUC),
-  `anchor_malformed`, `footnote_parent`.
+  `anchor_malformed`, `footnote_parent`, `lineage_cycle`.
 - **`surau_citable_audit_info{check}`** (dashboard saja, TANPA alarm): `stale_books`,
   `legacy_dangling_*` (quran_book_references / knowledge_* menunjuk halaman `is_deleted` — milik
   B-3).
@@ -129,4 +131,5 @@ Pantau: `surau_backfill_pending_rows{job="citable-units-kitab-pilot"}` → 0; `s
   `StructureSourceContent`. B-1 menambah `readerutil.StructureMixedContent` (sibling; kontrak
   reader lama beku) yang line-based & toleran-tag. Unit `html` fallback dihitung di laporan
   reconcile sebagai sinyal kualitas parser untuk Fase 4.
-- **Anchor grammar** masih provisional sampai B-2 (kolom opaque UNIQUE, belum diekspos publik).
+- **Anchor grammar B-2 diratifikasi tanpa backfill:** seluruh 16.205 Anchor pilot yang dicetak B-1
+  sudah sesuai profil kanonik kitab, sehingga tidak ada alamat yang perlu ditulis ulang.

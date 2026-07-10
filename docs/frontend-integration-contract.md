@@ -1,6 +1,6 @@
 # Frontend Integration Contract
 
-Last updated: 2026-06-12
+Last updated: 2026-07-10
 
 This is the main FE integration entrypoint for kitab reader and Quran reader.
 Use it together with:
@@ -11,6 +11,7 @@ Use it together with:
 - `docs/kitab-multilingual-api.md` for kitab API details.
 - `docs/kitab-frontend-contract.md` for kitab TypeScript helpers and UI branching.
 - `docs/quran-api.md` for Quran endpoint details, response shapes, and smoke tests.
+- `docs/anchors.md` for the normative cross-corpus Anchor grammar and resolver response.
 - `/swagger/index.html` on a running backend for the generated OpenAPI reference.
 
 ## Shared Language Contract
@@ -81,6 +82,32 @@ Every user-facing list endpoint returns the same envelope (breaking change from 
   `{projects,total}` / `{candidates,total}` / `{events,total}` /
   `{revisions,total}` (2×), translation feedback `{feedbacks,total}`. Every
   NEW list endpoint must use literal `items` + `total`.
+
+## Shared Anchor Resolution
+
+Use `GET /v1/anchors/resolve` when opening a persisted/shared content address. New cross-content
+links should store a canonical Anchor; existing FE keys remain valid permanently:
+
+```text
+?anchor=kitab%2F797%2Fh%2F11%2Fu%2F42  canonical kitab unit
+?anchor=quran%2F73%3A4                  canonical Quran ayah
+?anchor=73%3A4                          legacy ayah_key
+?anchor=toc-11&book_id=797              legacy TOC
+?book_id=797&page_id=12                 legacy physical page
+```
+
+The object response contains `requested`, nullable `canonical_anchor`, and one boundary for a
+point or two (`start`, `end`) for a range. Each boundary contains the requested point's `status`,
+every `active_targets[]`, and the complete `redirect_chain[]`. Never assume one input has exactly
+one target: an edited unit can split and a page normally maps to several units. A known
+`tombstoned` Anchor still returns `200` and may have an empty target list.
+
+Navigate using each target's `navigation_url`, but retain `canonical_anchor`/`unit_id` as the
+precise identity because the existing reader URL can be heading- or page-level. Treat `400
+invalid_anchor` as a bad client/deep-link shape and `404 anchor_not_found` as unavailable public
+content. The endpoint supports `ETag`/`If-None-Match`, but is intentionally absent from the edge
+worker cache allowlist. See `docs/anchors.md` for the exact grammar, TypeScript wire shape, range
+rules, lifecycle semantics, and cache contract.
 
 ## User Bootstrap and Onboarding
 

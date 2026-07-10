@@ -1,6 +1,6 @@
 # Mobile Backend Integration Guide
 
-Last updated: 2026-06-12
+Last updated: 2026-07-10
 
 Dokumen ini adalah panduan utama untuk implementasi mobile app Islamic Surau dari backend ini. Fokusnya adalah kebutuhan FE mobile: urutan API call per screen, auth, data shape yang penting, strategi cache, error handling, dan behavior UI saat data terjemahan/audio belum lengkap.
 
@@ -11,6 +11,7 @@ Dokumen detail yang sudah ada dan tetap menjadi rujukan:
 - `docs/frontend-integration-contract.md` untuk kontrak gabungan kitab + Quran.
 - `docs/kitab-multilingual-api.md` dan `docs/kitab-frontend-contract.md` untuk kitab reader.
 - `docs/quran-api.md` untuk Quran reader, audio, search, juz, hizb, dan ayah response.
+- `docs/anchors.md` untuk grammar Anchor lintas-korpus dan kontrak resolver canonical/legacy.
 - `/swagger/index.html` saat backend berjalan untuk OpenAPI generated reference.
 
 ## 1. Base Contract
@@ -88,8 +89,33 @@ Response shape ringkas:
 | `GET /v1/me/quran/khatam/history` | `{ "items": QuranKhatamCycle[], "total": number }` |
 | `GET /v1/me/sync` | `PersonalSyncSnapshot` (object, lihat bagian Delta Sync) |
 | `POST /v1/me/progress/batch` | `{ "kitab": BatchResult[], "quran": BatchResult[] }` per entri |
+| `GET /v1/anchors/resolve` | `AnchorResolutionResponse` (object; satu/dua boundary, target bisa jamak) |
 
 Untuk list berpaginasi (`limit`/`offset`), `total` adalah jumlah seluruh match, bukan hanya isi page saat ini. Untuk list penuh tanpa paginasi, `total` sama dengan panjang `items`. Endpoint object (detail, audio manifest, `/v1/me/sync`, activity, profile) tidak berubah.
+
+## 1.2 Anchor dan Deep Link Lama
+
+Gunakan `GET /v1/anchors/resolve` saat mobile membuka alamat konten yang tersimpan atau dibagikan.
+Semua bentuk yang sudah dipakai FE tetap sah permanen:
+
+```text
+?anchor=quran%2F73%3A4                  Anchor Quran kanonik
+?anchor=kitab%2F797%2Fh%2F11%2Fu%2F42  Anchor unit kitab kanonik
+?anchor=73%3A4                          legacy ayah_key
+?anchor=toc-11&book_id=797              legacy TOC
+?book_id=797&page_id=12                 legacy page
+```
+
+Respons memuat `boundaries[].status`, `active_targets[]`, dan `redirect_chain[]`. Jangan ambil
+hanya target pertama: hasil page memang bisa banyak dan unit lama yang dipecah dapat menuju
+beberapa unit aktif. Anchor tombstone yang dikenal tetap sukses `200` walau target kosong. Pakai
+`navigation_url` untuk membuka reader, tetapi simpan `canonical_anchor`/`unit_id` sebagai identitas
+presisi. Query buruk menghasilkan `400 invalid_anchor`; target tak dikenal/tidak publik menghasilkan
+`404 anchor_not_found`.
+
+Endpoint mendukung `ETag` dan `If-None-Match`. Ia sengaja tidak dicache oleh L1/KV edge worker;
+mobile tetap boleh memakai validator HTTP agar respons yang belum berubah mendapat `304`. Grammar,
+range boundaries-only, dan shape lengkap ada di `docs/anchors.md`.
 
 ## 2. Error Contract
 
@@ -1475,6 +1501,8 @@ Kitab:
 - Translation feedback hanya muncul untuk exact translation.
 - Progress heading tersimpan dengan debounce.
 - Quran references membuka Quran reader.
+- Resolver membuka canonical Anchor, `ayah_key`, legacy TOC, dan legacy page; split lineage tidak
+  kehilangan target aktif.
 
 Saved items:
 
