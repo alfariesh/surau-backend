@@ -3763,3 +3763,102 @@ func (mr *MockCitableUnitRepoMockRecorder) Snapshot(ctx, bookID any) *gomock.Cal
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Snapshot", reflect.TypeOf((*MockCitableUnitRepo)(nil).Snapshot), ctx, bookID)
 }
+
+// MockAnchorRepo is a mock of AnchorRepo interface.
+type MockAnchorRepo struct {
+	ctrl     *gomock.Controller
+	recorder *MockAnchorRepoMockRecorder
+	isgomock struct{}
+}
+
+// MockAnchorRepoMockRecorder is the mock recorder for MockAnchorRepo.
+type MockAnchorRepoMockRecorder struct {
+	mock *MockAnchorRepo
+}
+
+// NewMockAnchorRepo creates a new mock instance.
+func NewMockAnchorRepo(ctrl *gomock.Controller) *MockAnchorRepo {
+	mock := &MockAnchorRepo{ctrl: ctrl}
+	mock.recorder = &MockAnchorRepoMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockAnchorRepo) EXPECT() *MockAnchorRepoMockRecorder {
+	return m.recorder
+}
+
+// ResolveCanonicalUnit mocks base method.
+func (m *MockAnchorRepo) ResolveCanonicalUnit(ctx context.Context, canonicalAnchor string) (entity.AnchorLookupResult, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ResolveCanonicalUnit", ctx, canonicalAnchor)
+	ret0, _ := ret[0].(entity.AnchorLookupResult)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ResolveCanonicalUnit indicates an expected call of ResolveCanonicalUnit.
+func (mr *MockAnchorRepoMockRecorder) ResolveCanonicalUnit(ctx, canonicalAnchor any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ResolveCanonicalUnit", reflect.TypeOf((*MockAnchorRepo)(nil).ResolveCanonicalUnit), ctx, canonicalAnchor)
+}
+
+// ResolveHeading mocks base method.
+func (m *MockAnchorRepo) ResolveHeading(ctx context.Context, bookID, headingID int) (entity.AnchorLookupResult, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ResolveHeading", ctx, bookID, headingID)
+	ret0, _ := ret[0].(entity.AnchorLookupResult)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ResolveHeading indicates an expected call of ResolveHeading.
+func (mr *MockAnchorRepoMockRecorder) ResolveHeading(ctx, bookID, headingID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ResolveHeading", reflect.TypeOf((*MockAnchorRepo)(nil).ResolveHeading), ctx, bookID, headingID)
+}
+
+// ResolvePage mocks base method.
+func (m *MockAnchorRepo) ResolvePage(ctx context.Context, bookID, pageID int) (entity.AnchorLookupResult, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ResolvePage", ctx, bookID, pageID)
+	ret0, _ := ret[0].(entity.AnchorLookupResult)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ResolvePage indicates an expected call of ResolvePage.
+func (mr *MockAnchorRepoMockRecorder) ResolvePage(ctx, bookID, pageID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ResolvePage", reflect.TypeOf((*MockAnchorRepo)(nil).ResolvePage), ctx, bookID, pageID)
+}
+
+// ResolveQuran mocks base method.
+func (m *MockAnchorRepo) ResolveQuran(ctx context.Context, ayahKey string) (entity.AnchorLookupResult, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ResolveQuran", ctx, ayahKey)
+	ret0, _ := ret[0].(entity.AnchorLookupResult)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ResolveQuran indicates an expected call of ResolveQuran.
+func (mr *MockAnchorRepoMockRecorder) ResolveQuran(ctx, ayahKey any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ResolveQuran", reflect.TypeOf((*MockAnchorRepo)(nil).ResolveQuran), ctx, ayahKey)
+}
+
+// ResolveWork mocks base method.
+func (m *MockAnchorRepo) ResolveWork(ctx context.Context, bookID int) (entity.AnchorLookupResult, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ResolveWork", ctx, bookID)
+	ret0, _ := ret[0].(entity.AnchorLookupResult)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ResolveWork indicates an expected call of ResolveWork.
+func (mr *MockAnchorRepoMockRecorder) ResolveWork(ctx, bookID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ResolveWork", reflect.TypeOf((*MockAnchorRepo)(nil).ResolveWork), ctx, bookID)
+}

@@ -344,6 +344,16 @@ type (
 		DeleteFinalProductionAsset(ctx context.Context, actorID, projectID, assetType string, headingID *int, reason *string) error
 	}
 
+	// AnchorResolver exposes the additive B-2 public lookup contract. Exactly
+	// one canonical/legacy anchor or legacy page tuple is accepted per call.
+	AnchorResolver interface {
+		Resolve(
+			ctx context.Context,
+			rawAnchor string,
+			bookID, pageID *int,
+		) (entity.AnchorResolution, error)
+	}
+
 	// UnitRegistry is the single write service of the shared Citable Unit
 	// registry (phase-1b B-1): derive → plan → apply, plus the scheduled
 	// integrity audit. ReconcileBookIfDerived is the editorial-publish hook

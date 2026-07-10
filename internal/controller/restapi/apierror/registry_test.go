@@ -27,6 +27,7 @@ var goldenCodes = map[string]string{
 	"too many auth attempts":              "AUTH_RATE_LIMITED",
 
 	"active khatam cycle already exists": "active_khatam_cycle_already_exists",
+	"anchor not found":                   "anchor_not_found",
 	"book not found":                     "book_not_found",
 	"invalid mfa challenge":              "invalid_mfa_challenge",
 	"invalid mfa code":                   "invalid_mfa_code",
@@ -49,6 +50,7 @@ var goldenCodes = map[string]string{
 	"internal server error":              "internal_server_error",
 	"invalid activity date":              "invalid_activity_date",
 	"invalid activity range":             "invalid_activity_range",
+	"invalid anchor":                     "invalid_anchor",
 	"invalid asset type":                 "invalid_asset_type",
 	"invalid asset_type":                 "invalid_asset_type",
 	"invalid author_id":                  "invalid_author_id",

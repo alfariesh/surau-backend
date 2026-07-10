@@ -687,4 +687,15 @@ type (
 		AuditCounts(ctx context.Context) (entity.CitableAuditReport, error)
 		ListActiveUnitsForHashCheck(ctx context.Context) ([]entity.CitableUnit, error)
 	}
+
+	// AnchorRepo is the indexed, visibility-filtered read seam for the public
+	// B-2 Anchor resolver. Legacy locators intentionally remain first-class
+	// lookups: they are permanent aliases, not a deprecation path.
+	AnchorRepo interface {
+		ResolveQuran(ctx context.Context, ayahKey string) (entity.AnchorLookupResult, error)
+		ResolveWork(ctx context.Context, bookID int) (entity.AnchorLookupResult, error)
+		ResolveHeading(ctx context.Context, bookID, headingID int) (entity.AnchorLookupResult, error)
+		ResolvePage(ctx context.Context, bookID, pageID int) (entity.AnchorLookupResult, error)
+		ResolveCanonicalUnit(ctx context.Context, canonicalAnchor string) (entity.AnchorLookupResult, error)
+	}
 )

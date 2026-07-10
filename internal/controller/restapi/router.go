@@ -50,6 +50,7 @@ func NewRouter(
 	r usecase.Reader,
 	bookRAG usecase.BookRAG,
 	q usecase.Quran,
+	anchor usecase.AnchorResolver,
 	u usecase.User,
 	p usecase.Personal,
 	e usecase.Editorial,
@@ -139,7 +140,7 @@ func NewRouter(
 	// Routers
 	apiV1Group := app.Group("/v1")
 	{
-		v1.NewRoutes(apiV1Group, r, bookRAG, q, u, p, e, email, cfg.Email.CloudflareWebhookSecret, jwtManager, l)
+		v1.NewRoutes(apiV1Group, r, bookRAG, q, anchor, u, p, e, email, cfg.Email.CloudflareWebhookSecret, jwtManager, l)
 	}
 
 	// Internal service-to-service bridge for the collab websocket server.

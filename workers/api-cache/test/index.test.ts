@@ -243,6 +243,7 @@ describe("Surau API cache policy", () => {
     expect(cacheDecision(request("/v1/books?q=hadith")).cacheable).toBe(false);
     expect(cacheDecision(request("/v1/books/797/quran-references?status=pending")).cacheable).toBe(false);
     expect(cacheDecision(request("/v1/quran/search?q=rahman")).cacheable).toBe(false);
+    expect(cacheDecision(request("/v1/anchors/resolve?anchor=quran%2F1%3A1")).cacheable).toBe(false);
     expect(cacheDecision(request("/v1/me/saved-items")).cacheable).toBe(false);
     expect(cacheDecision(request("/v1/categories", { headers: { Authorization: "Bearer token" } })).cacheable).toBe(false);
     expect(cacheDecision(request("/v1/books/797/rag", { method: "POST" })).cacheable).toBe(false);
