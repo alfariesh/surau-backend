@@ -241,6 +241,7 @@ describe("Surau API cache policy", () => {
     expect(cacheDecision(request("/v1/quran/surahs/1/ayahs?lang=id")).cacheable).toBe(true);
 
     expect(cacheDecision(request("/v1/books?q=hadith")).cacheable).toBe(false);
+    expect(cacheDecision(request("/v1/cross-references?anchor=quran%2F1%3A1&direction=incoming")).cacheable).toBe(false);
     expect(cacheDecision(request("/v1/books/797/quran-references?status=pending")).cacheable).toBe(false);
     expect(cacheDecision(request("/v1/quran/search?q=rahman")).cacheable).toBe(false);
     expect(cacheDecision(request("/v1/anchors/resolve?anchor=quran%2F1%3A1")).cacheable).toBe(false);

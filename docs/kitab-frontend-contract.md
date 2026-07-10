@@ -6,6 +6,8 @@ This guide is the frontend-facing companion to `docs/kitab-multilingual-api.md`.
 Use the backend `availability` objects as the source of truth for UI behavior.
 Frontend code should not recreate fallback rules from raw fields alone.
 For a shared kitab + Quran integration entrypoint, see `docs/frontend-integration-contract.md`.
+For generic Cross-Reference backlinks and the Quran compatibility bridge, see
+`docs/cross-references.md`.
 
 ## Core Rules
 
@@ -15,6 +17,7 @@ For a shared kitab + Quran integration entrypoint, see `docs/frontend-integratio
 - Unsupported explicit language returns `400 {"error":"unsupported language"}`.
 - Catalog display can fall back to Arabic/source metadata.
 - User-facing list endpoints (categories, authors, books, pages, headings, TOC, Quran references) return a uniform `{ "items": [...], "total": number }` envelope; `GET /v1/books` keeps a `stats` sibling, and TOC items still nest `children` inside each item. Unwrap `items` before mapping.
+- Public book Quran references are always approved-only. A legacy `status` query value is ignored and cannot expose pending, rejected, ambiguous, or needs-review rows.
 - **Pagination guards (additive, since 2026-07-08):** `GET /v1/books/{id}/headings` now accepts optional `limit` (default 200, max 200) and `offset`; omitting them returns the first 200 rows and `total` always carries the FULL match count — books with >200 headings need follow-up pages (`offset=200`, …). Public list `offset` values are clamped to 10000 everywhere. Search `q` values are treated literally (`%`/`_` no longer act as wildcards) and are bounded to 200 characters.
 - Section translation content is exact-language only. Missing `lang=en` returns `translation: null` even if `id` exists.
 - Translation feedback is exact-language only. Do not show feedback controls unless `translation` is non-null and `translation.lang === selectedLang`.

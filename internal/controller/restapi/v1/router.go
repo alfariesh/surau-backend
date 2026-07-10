@@ -43,6 +43,7 @@ func NewRoutes(
 	bookRAG usecase.BookRAG,
 	quran usecase.Quran,
 	anchor usecase.AnchorResolver,
+	crossReference usecase.CrossReference,
 	u usecase.User,
 	personal usecase.Personal,
 	editorial usecase.Editorial,
@@ -56,6 +57,7 @@ func NewRoutes(
 		bookRAG:            bookRAG,
 		quran:              quran,
 		anchor:             anchor,
+		crossReference:     crossReference,
 		u:                  u,
 		personal:           personal,
 		editorial:          editorial,
@@ -93,6 +95,11 @@ func NewRoutes(
 	anchorGroup := apiV1Group.Group("/anchors", middleware.PublicCache())
 	{
 		anchorGroup.Get("/resolve", r.resolveAnchor)
+	}
+
+	crossReferenceGroup := apiV1Group.Group("/cross-references", middleware.PublicCache())
+	{
+		crossReferenceGroup.Get("/", r.listCrossReferences)
 	}
 
 	// Public reader routes
@@ -267,6 +274,10 @@ func NewRoutes(
 			middleware.RequireCapability(u, policy.CapReviewEditorial),
 		)
 		editorialReviewGroup.Get("/books", r.editorialListBooks)
+		editorialReviewGroup.Get("/cross-references", r.editorialListCrossReferences)
+		editorialReviewGroup.Post("/cross-references", r.editorialCreateCrossReference)
+		editorialReviewGroup.Get("/cross-references/:id", r.editorialGetCrossReference)
+		editorialReviewGroup.Patch("/cross-references/:id/review", r.editorialReviewCrossReference)
 		editorialReviewGroup.Get("/reader/missing-assets", r.editorialMissingReaderAssets)
 		editorialReviewGroup.Get("/quran/missing-assets", r.editorialMissingQuranAssets)
 		editorialReviewGroup.Get("/translation-feedbacks", r.editorialListTranslationFeedbacks)

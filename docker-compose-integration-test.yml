@@ -1,9 +1,10 @@
 services:
   # The whole suite registers users from one container IP, so the per-IP
-  # register budget must exceed the total registrations across all tests.
+  # register/login budgets must exceed the total auth flows across all tests.
   app:
     environment:
       AUTH_RATE_LIMIT_REGISTER_IP_MAX: "100"
+      AUTH_RATE_LIMIT_LOGIN_IP_MAX: "100"
 
   integration-test:
     container_name: integration-test

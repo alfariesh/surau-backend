@@ -693,9 +693,45 @@ type (
 	// lookups: they are permanent aliases, not a deprecation path.
 	AnchorRepo interface {
 		ResolveQuran(ctx context.Context, ayahKey string) (entity.AnchorLookupResult, error)
+		ResolveQuranSurah(ctx context.Context, surahID int) (entity.AnchorLookupResult, error)
 		ResolveWork(ctx context.Context, bookID int) (entity.AnchorLookupResult, error)
 		ResolveHeading(ctx context.Context, bookID, headingID int) (entity.AnchorLookupResult, error)
 		ResolvePage(ctx context.Context, bookID, pageID int) (entity.AnchorLookupResult, error)
 		ResolveCanonicalUnit(ctx context.Context, canonicalAnchor string) (entity.AnchorLookupResult, error)
+	}
+
+	// CrossReferenceRepo is the guarded persistence seam for B-3. All writes
+	// run inside transactions which set the cross-reference service GUC; direct
+	// table DML is rejected by the database guard.
+	CrossReferenceRepo interface {
+		Create(ctx context.Context, ref entity.CrossReference) (entity.CrossReference, error)
+		UpsertDerived(
+			ctx context.Context,
+			ref entity.CrossReference,
+			bridge *entity.QuranCrossReferenceBridge,
+		) (entity.CrossReference, error)
+		Get(ctx context.Context, id string) (entity.CrossReference, error)
+		Review(
+			ctx context.Context,
+			id, status, reviewerID string,
+			expectedUpdatedAt *time.Time,
+		) (entity.CrossReference, error)
+		List(ctx context.Context, filter CrossReferenceFilter) (entity.CrossReferenceList, error)
+		FreezeLegacyQuranWrites(ctx context.Context) error
+		UnfreezeLegacyQuranWrites(ctx context.Context) error
+	}
+
+	// CrossReferenceFilter is shared by public and editorial list surfaces.
+	// PublicOnly forces approved visibility in persistence; callers cannot
+	// broaden it by also setting ReviewStatus.
+	CrossReferenceFilter struct {
+		Anchor       string
+		Direction    string
+		Kind         string
+		Method       string
+		ReviewStatus string
+		PublicOnly   bool
+		Limit        uint64
+		Offset       uint64
 	}
 )

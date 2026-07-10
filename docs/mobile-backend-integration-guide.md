@@ -12,6 +12,7 @@ Dokumen detail yang sudah ada dan tetap menjadi rujukan:
 - `docs/kitab-multilingual-api.md` dan `docs/kitab-frontend-contract.md` untuk kitab reader.
 - `docs/quran-api.md` untuk Quran reader, audio, search, juz, hizb, dan ayah response.
 - `docs/anchors.md` untuk grammar Anchor lintas-korpus dan kontrak resolver canonical/legacy.
+- `docs/cross-references.md` untuk tautan konten dua arah, backlink ayah, dan bridge endpoint Quran lama.
 - `/swagger/index.html` saat backend berjalan untuk OpenAPI generated reference.
 
 ## 1. Base Contract
@@ -82,6 +83,7 @@ Response shape ringkas:
 | `GET /v1/books/{book_id}/pages` | `{ "items": BookPage[], "total": number }` |
 | `GET /v1/quran/search` | `{ "items": QuranSearchResult[], "total": number }` |
 | `GET /v1/books/{book_id}/quran-references` | `{ "items": BookQuranReference[], "total": number }` |
+| `GET /v1/cross-references` | `{ "items": CrossReference[], "total": number, "work_total": number }` |
 | `GET /v1/me/saved-items` | `{ "items": SavedItem[], "total": number }` |
 | `GET /v1/me/saved-items/tags` | `{ "items": string[], "total": number }` |
 | `GET /v1/me/quran/progress/surahs` | `{ "items": QuranReadingProgress[], "total": number }` |
@@ -785,7 +787,7 @@ Endpoint ringkas:
 | `GET` | `/v1/books/{book_id}/toc?lang=id&include_audio=false` | Public | TOC tree. |
 | `GET` | `/v1/books/{book_id}/toc/{heading_id}/read?lang=id&include_quran_references=false` | Public | Reader section body. |
 | `GET` | `/v1/books/{book_id}/toc/{heading_id}/playlist?lang=id` | Public | Audio playlist for TOC section. |
-| `GET` | `/v1/books/{book_id}/quran-references?lang=id&heading_id=10&status=approved` | Public | Quran references linked to kitab. |
+| `GET` | `/v1/books/{book_id}/quran-references?lang=id&heading_id=10` | Public | Quran references linked to kitab; selalu approved-only. |
 | `POST` | `/v1/books/{book_id}/rag?lang=id` | Public, rate limited | Ask AI over book. |
 | `POST` | `/v1/books/{book_id}/toc/{heading_id}/translation-feedback?lang=id` | Public, rate limited | Feedback terjemahan. |
 
@@ -801,14 +803,14 @@ Kitab query params penting:
 | `include_audio` | `/books/{book_id}/toc` | `false` | `true` memasukkan metadata audio di node TOC jika tersedia. |
 | `include_quran_references` | `/books/{book_id}/toc/{heading_id}/read` | `false` | `true` embeds approved Quran refs scoped to the current heading. |
 | `heading_id` | `/books/{book_id}/quran-references` | none | Positive int filter. Use this instead of client-side filtering for section refs. |
-| `status` | `/books/{book_id}/quran-references` | `approved` | Allowed: `approved`, `pending`, `rejected`, `ambiguous`, `needs_review`, `all`. Mobile reader umumnya pakai `approved`. |
+| `status` | `/books/{book_id}/quran-references` | `approved` | Parameter kompatibilitas lama dan diabaikan; public selalu approved-only. `pending`/`all` tidak pernah membuka state editorial. |
 
 Recommended kitab reader flow:
 
 1. `GET /v1/books/{book_id}?lang={lang}` untuk header, metadata, dan `language_coverage`.
 2. `GET /v1/books/{book_id}/toc?lang={lang}&include_audio={boolean}` untuk navigasi.
 3. `GET /v1/books/{book_id}/toc/{heading_id}/read?lang={lang}&include_quran_references=true` untuk body section dan referensi Quran section.
-4. Alternatif jika perlu lazy load: `GET /v1/books/{book_id}/quran-references?lang={lang}&heading_id={headingId}&status=approved`.
+4. Alternatif jika perlu lazy load: `GET /v1/books/{book_id}/quran-references?lang={lang}&heading_id={headingId}`. Approved-only ditegakkan server.
 5. `GET /v1/books/{book_id}/toc/{heading_id}/playlist?lang={lang}` jika audio kitab aktif.
 
 Display rules:

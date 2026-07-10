@@ -885,14 +885,17 @@ func (r *QuranRepo) ListBookQuranReferences(
 		return nil, 0, err
 	}
 
+	// During the resumable B-3 backfill, bridged rows come from the generic
+	// registry while legacy rows without a bridge remain visible as a fallback.
+	// The anti-join makes the cut-over duplicate-free at every checkpoint.
 	countBuilder := r.Builder.
 		Select("COUNT(*)").
-		From("quran_book_references qbr").
+		From(quranBookReferenceProjectionSQL).
 		Where(sq.Eq{"qbr.book_id": filter.BookID})
 
 	dataBuilder := r.Builder.
 		Select(quranBookReferenceColumns()...).
-		From("quran_book_references qbr").
+		From(quranBookReferenceProjectionSQL).
 		Where(sq.Eq{"qbr.book_id": filter.BookID}).
 		OrderBy("qbr.page_id ASC", "qbr.created_at ASC").
 		Limit(filter.Limit).
@@ -944,6 +947,64 @@ func (r *QuranRepo) ListBookQuranReferences(
 
 	return references, total, nil
 }
+
+// quranBookReferenceProjectionSQL keeps the old reader contract stable while
+// quran_book_references is bridged in chunks. Registry moderation state and
+// confidence win for bridged rows; every not-yet-bridged legacy row is included
+// exactly once by the anti-join fallback.
+const quranBookReferenceProjectionSQL = `(
+    SELECT
+        b.cross_reference_id AS id,
+        b.book_id,
+        b.page_id,
+        b.heading_id,
+        b.knowledge_mention_id,
+        b.source_text,
+        b.normalized_text,
+        b.reference_kind,
+        b.surah_id,
+        b.from_ayah_number,
+        b.to_ayah_number,
+        b.from_ayah_key,
+        b.to_ayah_key,
+        b.match_strategy,
+        cr.confidence,
+        cr.review_status,
+        b.metadata,
+        b.created_at,
+        b.updated_at
+    FROM quran_cross_reference_bridge b
+    JOIN cross_references cr ON cr.id = b.cross_reference_id
+
+    UNION ALL
+
+    SELECT
+        legacy.id,
+        legacy.book_id,
+        legacy.page_id,
+        legacy.heading_id,
+        legacy.knowledge_mention_id,
+        legacy.source_text,
+        legacy.normalized_text,
+        legacy.reference_kind,
+        legacy.surah_id,
+        legacy.from_ayah_number,
+        legacy.to_ayah_number,
+        legacy.from_ayah_key,
+        legacy.to_ayah_key,
+        legacy.match_strategy,
+        legacy.confidence,
+        legacy.review_status,
+        legacy.metadata,
+        legacy.created_at,
+        legacy.updated_at
+    FROM quran_book_references legacy
+    WHERE NOT EXISTS (
+        SELECT 1
+        FROM quran_cross_reference_bridge b
+        WHERE b.cross_reference_id = legacy.id
+    )
+) qbr`
 
 // attachBookReferenceAyahs loads the ayah ranges for ALL references in ONE query
 // (an unnest of (surah_id, from, to) ranges) and slices each reference's range from

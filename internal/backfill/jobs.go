@@ -16,6 +16,9 @@ func Jobs() []Job {
 		authorsNameSearchJob{},
 		citableUnitsPilotJob{},
 		citableUnitsRederiveJob{},
+		crossReferencesQuranBridgeJob{},
+		crossReferencesQuranFreezeJob{},
+		crossReferencesQuranUnfreezeJob{},
 	}
 }
 

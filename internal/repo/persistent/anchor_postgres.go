@@ -44,6 +44,43 @@ func NewAnchorRepo(pg *postgres.Postgres) *AnchorRepo {
 	return &AnchorRepo{pg}
 }
 
+// ResolveQuranSurah resolves quran/{surah} through the quran_surahs primary
+// key. A surah is public content in the existing Quran reader; licensed
+// language-specific editorial fields remain gated by that reader separately.
+//
+//nolint:dupl // simple point lookup intentionally mirrors the Work lookup over a different corpus table
+func (r *AnchorRepo) ResolveQuranSurah(ctx context.Context, surahID int) (entity.AnchorLookupResult, error) {
+	var updatedAt sql.NullTime
+
+	err := r.Pool.QueryRow(ctx, `
+		SELECT updated_at
+		FROM quran_surahs
+		WHERE surah_id = $1`, surahID).Scan(&updatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return entity.AnchorLookupResult{}, entity.ErrAnchorNotFound
+	}
+
+	if err != nil {
+		return entity.AnchorLookupResult{}, fmt.Errorf("AnchorRepo.ResolveQuranSurah: %w", err)
+	}
+
+	canonical := "quran/" + strconv.Itoa(surahID)
+	record := entity.AnchorRecord{
+		TargetType:      entity.AnchorTargetQuranSurah,
+		Corpus:          entity.UnitCorpusQuran,
+		CanonicalAnchor: &canonical,
+		SurahID:         new(surahID),
+		Lifecycle:       entity.UnitLifecycleActive,
+		UpdatedAt:       updatedAt.Time,
+	}
+
+	return entity.AnchorLookupResult{
+		CanonicalAnchor: &canonical,
+		Status:          entity.UnitLifecycleActive,
+		ActiveRecords:   []entity.AnchorRecord{record},
+	}, nil
+}
+
 // ResolveQuran resolves both quran/{surah}:{ayah} and the permanent legacy
 // ayah_key alias through the unique quran_ayahs.ayah_key index.
 func (r *AnchorRepo) ResolveQuran(ctx context.Context, ayahKey string) (entity.AnchorLookupResult, error) {

@@ -221,7 +221,8 @@ func (uc *UseCase) resolveLegacyPage(
 	from := fmt.Sprintf("page:%d:%d", *bookID, *pageID)
 
 	redirects := make([]entity.AnchorRedirect, 0, len(lookup.ActiveRecords))
-	for _, record := range lookup.ActiveRecords {
+	for index := range lookup.ActiveRecords {
+		record := &lookup.ActiveRecords[index]
 		if record.CanonicalAnchor == nil {
 			continue
 		}
@@ -249,6 +250,8 @@ func (uc *UseCase) resolveLegacyPage(
 
 func (uc *UseCase) resolvePoint(ctx context.Context, point anchorgrammar.Point) (entity.AnchorLookupResult, error) {
 	switch point.Kind() {
+	case anchorgrammar.PointKindQuranSurah:
+		return uc.repo.ResolveQuranSurah(ctx, point.Surah())
 	case anchorgrammar.PointKindQuranAyah:
 		return uc.repo.ResolveQuran(ctx, fmt.Sprintf("%d:%d", point.Surah(), point.Ayah()))
 	case anchorgrammar.PointKindKitabWork:
@@ -305,6 +308,7 @@ func targetFromRecord(record *entity.AnchorRecord) (entity.AnchorTarget, error) 
 		BookID:          record.BookID,
 		HeadingID:       record.HeadingID,
 		PageID:          record.PageID,
+		SurahID:         record.SurahID,
 		AyahKey:         record.AyahKey,
 		NavigationURL:   navigationURL,
 		UpdatedAt:       record.UpdatedAt,
@@ -316,6 +320,12 @@ func targetFromRecord(record *entity.AnchorRecord) (entity.AnchorTarget, error) 
 //nolint:cyclop,gocognit,gocyclo // target variants are intentionally enumerated as one wire-contract switch
 func navigationURLForRecord(record *entity.AnchorRecord) (string, error) {
 	switch record.TargetType {
+	case entity.AnchorTargetQuranSurah:
+		if record.SurahID == nil {
+			return "", invalidResolutionRecord("Quran surah target is missing surah_id")
+		}
+
+		return fmt.Sprintf("/v1/quran/surahs/%d", *record.SurahID), nil
 	case entity.AnchorTargetQuranAyah:
 		if record.AyahKey == nil {
 			return "", invalidResolutionRecord("Quran target is missing ayah_key")

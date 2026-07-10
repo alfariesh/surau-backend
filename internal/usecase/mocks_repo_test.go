@@ -3848,6 +3848,21 @@ func (mr *MockAnchorRepoMockRecorder) ResolveQuran(ctx, ayahKey any) *gomock.Cal
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ResolveQuran", reflect.TypeOf((*MockAnchorRepo)(nil).ResolveQuran), ctx, ayahKey)
 }
 
+// ResolveQuranSurah mocks base method.
+func (m *MockAnchorRepo) ResolveQuranSurah(ctx context.Context, surahID int) (entity.AnchorLookupResult, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ResolveQuranSurah", ctx, surahID)
+	ret0, _ := ret[0].(entity.AnchorLookupResult)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ResolveQuranSurah indicates an expected call of ResolveQuranSurah.
+func (mr *MockAnchorRepoMockRecorder) ResolveQuranSurah(ctx, surahID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ResolveQuranSurah", reflect.TypeOf((*MockAnchorRepo)(nil).ResolveQuranSurah), ctx, surahID)
+}
+
 // ResolveWork mocks base method.
 func (m *MockAnchorRepo) ResolveWork(ctx context.Context, bookID int) (entity.AnchorLookupResult, error) {
 	m.ctrl.T.Helper()
@@ -3861,4 +3876,131 @@ func (m *MockAnchorRepo) ResolveWork(ctx context.Context, bookID int) (entity.An
 func (mr *MockAnchorRepoMockRecorder) ResolveWork(ctx, bookID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ResolveWork", reflect.TypeOf((*MockAnchorRepo)(nil).ResolveWork), ctx, bookID)
+}
+
+// MockCrossReferenceRepo is a mock of CrossReferenceRepo interface.
+type MockCrossReferenceRepo struct {
+	ctrl     *gomock.Controller
+	recorder *MockCrossReferenceRepoMockRecorder
+	isgomock struct{}
+}
+
+// MockCrossReferenceRepoMockRecorder is the mock recorder for MockCrossReferenceRepo.
+type MockCrossReferenceRepoMockRecorder struct {
+	mock *MockCrossReferenceRepo
+}
+
+// NewMockCrossReferenceRepo creates a new mock instance.
+func NewMockCrossReferenceRepo(ctrl *gomock.Controller) *MockCrossReferenceRepo {
+	mock := &MockCrossReferenceRepo{ctrl: ctrl}
+	mock.recorder = &MockCrossReferenceRepoMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockCrossReferenceRepo) EXPECT() *MockCrossReferenceRepoMockRecorder {
+	return m.recorder
+}
+
+// Create mocks base method.
+func (m *MockCrossReferenceRepo) Create(ctx context.Context, ref entity.CrossReference) (entity.CrossReference, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Create", ctx, ref)
+	ret0, _ := ret[0].(entity.CrossReference)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Create indicates an expected call of Create.
+func (mr *MockCrossReferenceRepoMockRecorder) Create(ctx, ref any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Create", reflect.TypeOf((*MockCrossReferenceRepo)(nil).Create), ctx, ref)
+}
+
+// FreezeLegacyQuranWrites mocks base method.
+func (m *MockCrossReferenceRepo) FreezeLegacyQuranWrites(ctx context.Context) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "FreezeLegacyQuranWrites", ctx)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// FreezeLegacyQuranWrites indicates an expected call of FreezeLegacyQuranWrites.
+func (mr *MockCrossReferenceRepoMockRecorder) FreezeLegacyQuranWrites(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FreezeLegacyQuranWrites", reflect.TypeOf((*MockCrossReferenceRepo)(nil).FreezeLegacyQuranWrites), ctx)
+}
+
+// Get mocks base method.
+func (m *MockCrossReferenceRepo) Get(ctx context.Context, id string) (entity.CrossReference, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Get", ctx, id)
+	ret0, _ := ret[0].(entity.CrossReference)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Get indicates an expected call of Get.
+func (mr *MockCrossReferenceRepoMockRecorder) Get(ctx, id any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Get", reflect.TypeOf((*MockCrossReferenceRepo)(nil).Get), ctx, id)
+}
+
+// List mocks base method.
+func (m *MockCrossReferenceRepo) List(ctx context.Context, filter repo.CrossReferenceFilter) (entity.CrossReferenceList, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "List", ctx, filter)
+	ret0, _ := ret[0].(entity.CrossReferenceList)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// List indicates an expected call of List.
+func (mr *MockCrossReferenceRepoMockRecorder) List(ctx, filter any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "List", reflect.TypeOf((*MockCrossReferenceRepo)(nil).List), ctx, filter)
+}
+
+// Review mocks base method.
+func (m *MockCrossReferenceRepo) Review(ctx context.Context, id, status, reviewerID string, expectedUpdatedAt *time.Time) (entity.CrossReference, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Review", ctx, id, status, reviewerID, expectedUpdatedAt)
+	ret0, _ := ret[0].(entity.CrossReference)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Review indicates an expected call of Review.
+func (mr *MockCrossReferenceRepoMockRecorder) Review(ctx, id, status, reviewerID, expectedUpdatedAt any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Review", reflect.TypeOf((*MockCrossReferenceRepo)(nil).Review), ctx, id, status, reviewerID, expectedUpdatedAt)
+}
+
+// UnfreezeLegacyQuranWrites mocks base method.
+func (m *MockCrossReferenceRepo) UnfreezeLegacyQuranWrites(ctx context.Context) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UnfreezeLegacyQuranWrites", ctx)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// UnfreezeLegacyQuranWrites indicates an expected call of UnfreezeLegacyQuranWrites.
+func (mr *MockCrossReferenceRepoMockRecorder) UnfreezeLegacyQuranWrites(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UnfreezeLegacyQuranWrites", reflect.TypeOf((*MockCrossReferenceRepo)(nil).UnfreezeLegacyQuranWrites), ctx)
+}
+
+// UpsertDerived mocks base method.
+func (m *MockCrossReferenceRepo) UpsertDerived(ctx context.Context, ref entity.CrossReference, bridge *entity.QuranCrossReferenceBridge) (entity.CrossReference, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpsertDerived", ctx, ref, bridge)
+	ret0, _ := ret[0].(entity.CrossReference)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// UpsertDerived indicates an expected call of UpsertDerived.
+func (mr *MockCrossReferenceRepoMockRecorder) UpsertDerived(ctx, ref, bridge any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpsertDerived", reflect.TypeOf((*MockCrossReferenceRepo)(nil).UpsertDerived), ctx, ref, bridge)
 }

@@ -12,6 +12,7 @@ Use it together with:
 - `docs/kitab-frontend-contract.md` for kitab TypeScript helpers and UI branching.
 - `docs/quran-api.md` for Quran endpoint details, response shapes, and smoke tests.
 - `docs/anchors.md` for the normative cross-corpus Anchor grammar and resolver response.
+- `docs/cross-references.md` for generic incoming/outgoing content links and Quran bridge behavior.
 - `/swagger/index.html` on a running backend for the generated OpenAPI reference.
 
 ## Shared Language Contract
@@ -71,8 +72,9 @@ Every user-facing list endpoint returns the same envelope (breaking change from 
 }
 ```
 
-- Covers categories, authors, books, pages, headings, TOC, Quran surahs/recitations/translation-sources/juz/hizbs/ayah lists, Quran search, book Quran references, and the `/v1/me` lists (progress, saved items, saved-item tags, surah progress, khatam history).
+- Covers categories, authors, books, pages, headings, TOC, Quran surahs/recitations/translation-sources/juz/hizbs/ayah lists, Quran search, book Quran references, generic Cross-References, and the `/v1/me` lists (progress, saved items, saved-item tags, surah progress, khatam history).
 - `GET /v1/books` keeps its `stats` sibling next to `items` and `total`.
+- `GET /v1/cross-references` keeps an additive `work_total` sibling for distinct opposing Works.
 - TOC items still nest `children` inside each item.
 - For paginated lists, `total` is the unbounded match count; for full lists it equals `items.length`.
 - Object endpoints (detail pages, audio manifests, `/v1/me/sync` snapshot, activity, profile) are unchanged.
@@ -203,7 +205,7 @@ Use this order for a reader screen:
 1. `GET /v1/books/{book_id}?lang={lang}` for title, metadata, and `language_coverage`.
 2. `GET /v1/books/{book_id}/toc?lang={lang}` for navigation tree.
 3. `GET /v1/books/{book_id}/toc/{heading_id}/read?lang={lang}` for current section body.
-4. `GET /v1/books/{book_id}/quran-references?lang={lang}&status=approved` when the screen shows Quran references.
+4. `GET /v1/books/{book_id}/quran-references?lang={lang}` when the screen shows Quran references. The server always returns approved-only; the legacy `status` query cannot expose editorial states.
 
 Kitab display rules:
 

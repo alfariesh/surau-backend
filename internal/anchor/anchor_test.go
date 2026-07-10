@@ -20,6 +20,7 @@ func TestParseCanonicalPoints(t *testing.T) {
 		surah     int
 		ayah      int
 	}{
+		{name: "Quran surah", raw: "quran/73", kind: PointKindQuranSurah, corpus: CorpusQuran, surah: 73},
 		{name: "Quran ayah", raw: "quran/73:4", kind: PointKindQuranAyah, corpus: CorpusQuran, surah: 73, ayah: 4},
 		{name: "kitab Work", raw: "kitab/797", kind: PointKindKitabWork, corpus: CorpusKitab, bookID: 797},
 		{name: "kitab heading", raw: "kitab/797/h/11", kind: PointKindKitabHeading, corpus: CorpusKitab, bookID: 797, headingID: 11},
@@ -104,11 +105,14 @@ func TestParseRejectsInvalidCanonicalValues(t *testing.T) {
 		{name: "reserved wiki", raw: "wiki/article"},
 		{name: "reserved entity", raw: "entity/person/1"},
 		{name: "Quran leading zero surah", raw: "quran/073:4"},
+		{name: "Quran surah point leading zero", raw: "quran/073"},
 		{name: "Quran leading zero ayah", raw: "quran/73:04"},
 		{name: "Quran zero surah", raw: "quran/0:4"},
-		{name: "Quran missing ayah", raw: "quran/73"},
+		{name: "Quran zero surah point", raw: "quran/0"},
+		{name: "Quran surah trailing colon", raw: "quran/73:"},
 		{name: "Quran extra colon", raw: "quran/73:4:5"},
 		{name: "Quran overflow", raw: "quran/2147483648:1"},
+		{name: "Quran surah point overflow", raw: "quran/2147483648"},
 		{name: "kitab zero Work", raw: "kitab/0"},
 		{name: "kitab Work leading zero", raw: "kitab/0797"},
 		{name: "kitab overflow", raw: "kitab/2147483648"},
@@ -124,6 +128,9 @@ func TestParseRejectsInvalidCanonicalValues(t *testing.T) {
 		{name: "range mixed corpus", raw: "quran/73:4..kitab/797"},
 		{name: "range mixed Quran surah", raw: "quran/72:4..quran/73:4"},
 		{name: "range reversed Quran ayahs", raw: "quran/73:4..quran/73:1"},
+		{name: "range between Quran surahs", raw: "quran/73..quran/73"},
+		{name: "range from Quran surah to ayah", raw: "quran/73..quran/73:4"},
+		{name: "range from Quran ayah to surah", raw: "quran/73:4..quran/73"},
 		{name: "range mixed Work", raw: "kitab/797/h/11/u/1..kitab/798/h/11/u/2"},
 	}
 
@@ -210,14 +217,16 @@ func TestConstructorsAndRangeValidation(t *testing.T) {
 		t.Errorf("NewRange().String() = %q", got)
 	}
 
-	_, quranErr := NewQuranAyah(0, 1)
+	_, quranSurahErr := NewQuranSurah(0)
+	_, quranAyahErr := NewQuranAyah(0, 1)
 	_, workErr := NewKitabWork(-1)
 	_, headingErr := NewKitabHeading(1, 0)
 	_, unitErr := NewKitabUnit(1, -1, 1)
 	_, pointErr := FromPoint(Point{})
 
 	invalidConstructors := []error{
-		quranErr,
+		quranSurahErr,
+		quranAyahErr,
 		workErr,
 		headingErr,
 		unitErr,
@@ -232,6 +241,7 @@ func TestConstructorsAndRangeValidation(t *testing.T) {
 
 func FuzzParse(f *testing.F) {
 	seeds := []string{
+		"quran/73",
 		"quran/73:4",
 		"kitab/797/h/11/u/42",
 		"quran/73:1..quran/73:4",

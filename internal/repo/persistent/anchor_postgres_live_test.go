@@ -35,6 +35,19 @@ func TestLiveAnchorRepoResolution(t *testing.T) {
 	repo := NewAnchorRepo(pg)
 	unitRepo := NewCitableUnitRepo(pg)
 
+	t.Run("quran surah primary-key row", func(t *testing.T) {
+		got, err := repo.ResolveQuranSurah(ctx, 114)
+		require.NoError(t, err)
+		assert.Equal(t, entity.UnitLifecycleActive, got.Status)
+		require.Len(t, got.ActiveRecords, 1)
+		assert.Equal(t, "quran/114", *got.CanonicalAnchor)
+		assert.Equal(t, 114, *got.ActiveRecords[0].SurahID)
+		assert.Equal(t, entity.AnchorTargetQuranSurah, got.ActiveRecords[0].TargetType)
+
+		_, err = repo.ResolveQuranSurah(ctx, 115)
+		require.ErrorIs(t, err, entity.ErrAnchorNotFound)
+	})
+
 	t.Run("quran canonical and legacy indexed row", func(t *testing.T) {
 		got, err := repo.ResolveQuran(ctx, fixture.ayahKey)
 		require.NoError(t, err)

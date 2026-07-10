@@ -354,6 +354,32 @@ type (
 		) (entity.AnchorResolution, error)
 	}
 
+	// CrossReference exposes the B-3 public backlink reader and the protected
+	// human authoring/review surface. Derived resolver writes use the concrete
+	// shared service internally so the HTTP layer cannot forge machine claims.
+	CrossReference interface {
+		CreateHuman(
+			ctx context.Context,
+			input entity.CrossReferenceCreateInput,
+			actorID string,
+		) (entity.CrossReference, error)
+		Get(ctx context.Context, id string) (entity.CrossReference, error)
+		Review(
+			ctx context.Context,
+			id, status, reviewerID string,
+			expectedUpdatedAt *time.Time,
+		) (entity.CrossReference, error)
+		ListPublic(
+			ctx context.Context,
+			anchor, direction, kind string,
+			limit, offset uint64,
+		) (entity.CrossReferenceList, error)
+		ListEditorial(
+			ctx context.Context,
+			filter repo.CrossReferenceFilter,
+		) (entity.CrossReferenceList, error)
+	}
+
 	// UnitRegistry is the single write service of the shared Citable Unit
 	// registry (phase-1b B-1): derive → plan → apply, plus the scheduled
 	// integrity audit. ReconcileBookIfDerived is the editorial-publish hook

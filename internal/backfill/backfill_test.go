@@ -43,3 +43,22 @@ func TestByName(t *testing.T) {
 	_, err = ByName("nope")
 	require.ErrorIs(t, err, ErrJobUnknown)
 }
+
+func TestCrossReferencesQuranBridgeJobRegistered(t *testing.T) {
+	t.Parallel()
+
+	job, err := ByName("cross-references-quran-bridge")
+	require.NoError(t, err)
+	assert.Equal(t, "cross-references-quran-bridge", job.Name())
+	assert.Equal(t, 1, job.ProfileVersion())
+
+	freezeJob, err := ByName("cross-references-quran-freeze")
+	require.NoError(t, err)
+	assert.Equal(t, "cross-references-quran-freeze", freezeJob.Name())
+	assert.Zero(t, freezeJob.ProfileVersion())
+
+	unfreezeJob, err := ByName("cross-references-quran-unfreeze")
+	require.NoError(t, err)
+	assert.Equal(t, "cross-references-quran-unfreeze", unfreezeJob.Name())
+	assert.Zero(t, unfreezeJob.ProfileVersion())
+}

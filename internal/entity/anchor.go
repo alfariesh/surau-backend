@@ -13,6 +13,7 @@ const (
 	AnchorBoundaryEnd   = "end"
 
 	AnchorTargetCitableUnit = "citable_unit"
+	AnchorTargetQuranSurah  = "quran_surah"
 	AnchorTargetQuranAyah   = "quran_ayah"
 	AnchorTargetBook        = "book"
 	AnchorTargetBookHeading = "book_heading"
@@ -33,6 +34,7 @@ type AnchorRecord struct {
 	BookID          *int
 	HeadingID       *int
 	PageID          *int
+	SurahID         *int
 	AyahKey         *string
 	Lifecycle       string
 	UpdatedAt       time.Time
@@ -78,6 +80,7 @@ type AnchorTarget struct {
 	BookID          *int      `json:"book_id,omitempty"          example:"797"`
 	HeadingID       *int      `json:"heading_id,omitempty"       example:"11"`
 	PageID          *int      `json:"page_id,omitempty"          example:"12"`
+	SurahID         *int      `json:"surah_id,omitempty"         example:"73"`
 	AyahKey         *string   `json:"ayah_key,omitempty"         example:"73:4"`
 	NavigationURL   string    `json:"navigation_url"             example:"/v1/books/797/toc/11/read"`
 	UpdatedAt       time.Time `json:"updated_at"                 example:"2026-07-10T12:00:00Z"`

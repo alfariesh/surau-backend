@@ -188,7 +188,14 @@ Kerjakan B-2 dari roadmap/phase-1b-content-backbone.md: spesifikasi grammar Anch
 Masuk PLAN MODE dulu; rencana wajib menyebut cara memenuhi setiap Acceptance Criterion B-2. Setelah saya setujui: kerjakan sampai tuntas — branch fitur, test, Definition of Done, centang PROGRAM.md & SESI.md, merge, verifikasi dev-api. Laporan akhir bahasa awam.
 ```
 
-- [ ] **SESI 13 — Registry rujukan silang (B-3)**
+- [x] **SESI 13 — Registry rujukan silang (B-3)** — ✅ **SELESAI 2026-07-11**: registry umum
+  menyimpan empat jenis hubungan, metode+confidence+5 status review, bukti berversi, dan jejak
+  aktor; query publik incoming/outgoing hanya approved dengan `work_total` berbeda-kitab. Bridge
+  Quran memakai dual-write atomik dan backfill pause/resume/rerun; parity `EXCEPT` dua arah serta
+  integration test membuktikan endpoint dan embed reader lama identik, termasuk saat backfill
+  parsial. Tautan kitab→kitab baru baru terlihat setelah approved. Uji 40.000 edge mencatat p95
+  38,493 ms (campuran) dan 13,486 ms (heading berulang), di bawah target 200 ms; migrasi
+  up→down→up hijau.
 
 ```text
 Kerjakan B-3 dari roadmap/phase-1b-content-backbone.md: registry Cross-Reference umum (kind cites/quotes/explains/parallel, metode+confidence+review_status 5-nilai existing, jejak bukti) + migrasi paralel dari quran_book_references TANPA mengubah kontrak endpoint publik lama; backlink query dua arah.

@@ -4805,6 +4805,85 @@
                 }
             }
         },
+        "/cross-references": {
+            "get": {
+                "description": "Return approved, publicly visible content-to-content claims for one canonical Anchor. Incoming Quran ayah queries include target ranges containing that ayah; surah-only targets do not imply every ayah.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "cross-references"
+                ],
+                "summary": "List Cross-References in either direction",
+                "operationId": "list-cross-references",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Canonical Anchor",
+                        "name": "anchor",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "enum": [
+                            "incoming",
+                            "outgoing"
+                        ],
+                        "type": "string",
+                        "description": "Direction",
+                        "name": "direction",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "enum": [
+                            "cites",
+                            "quotes",
+                            "explains",
+                            "parallel"
+                        ],
+                        "type": "string",
+                        "description": "Claim kind",
+                        "name": "kind",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 50,
+                        "description": "Limit (max 200)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Offset (max 10000)",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.CrossReferenceList"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
         "/editorial/books/{book_id}/headings/{heading_id}/draft": {
             "get": {
                 "description": "Get the current source kitab heading title draft. Requires editor or admin role.",
@@ -5087,6 +5166,351 @@
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/editorial/cross-references": {
+            "get": {
+                "description": "List the protected review queue. Requires CapReviewEditorial; unlike the public endpoint this surface can inspect all five review states.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "editorial",
+                    "cross-references"
+                ],
+                "summary": "List Cross-References for editorial review",
+                "operationId": "editorial-list-cross-references",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Canonical Anchor",
+                        "name": "anchor",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "incoming",
+                            "outgoing"
+                        ],
+                        "type": "string",
+                        "description": "Direction (required with anchor)",
+                        "name": "direction",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "cites",
+                            "quotes",
+                            "explains",
+                            "parallel"
+                        ],
+                        "type": "string",
+                        "description": "Claim kind",
+                        "name": "kind",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "resolver",
+                            "machine",
+                            "human"
+                        ],
+                        "type": "string",
+                        "description": "Attribution method",
+                        "name": "method",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "pending",
+                            "approved",
+                            "rejected",
+                            "ambiguous",
+                            "needs_review"
+                        ],
+                        "type": "string",
+                        "description": "Review state",
+                        "name": "review_status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 50,
+                        "description": "Limit (max 200)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Offset (max 10000)",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.CrossReferenceList"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            },
+            "post": {
+                "description": "Create a pending, session-attributed claim. Method, actor, review state, origin, and normalized evidence are assigned by the server.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "editorial",
+                    "cross-references"
+                ],
+                "summary": "Create a human Cross-Reference",
+                "operationId": "editorial-create-cross-reference",
+                "parameters": [
+                    {
+                        "description": "Human Cross-Reference",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.CreateCrossReference"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/entity.CrossReference"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/editorial/cross-references/{id}": {
+            "get": {
+                "description": "Get one claim, including evidence and attribution, for editorial review.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "editorial",
+                    "cross-references"
+                ],
+                "summary": "Get one Cross-Reference",
+                "operationId": "editorial-get-cross-reference",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Cross-Reference UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.CrossReference"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/editorial/cross-references/{id}/review": {
+            "patch": {
+                "description": "Set any of the existing five review states. If-Match is required; use the ETag from GET, or * for an explicit unconditional transition.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "editorial",
+                    "cross-references"
+                ],
+                "summary": "Review a Cross-Reference",
+                "operationId": "editorial-review-cross-reference",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Cross-Reference UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Current ETag or *",
+                        "name": "If-Match",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "Review decision",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.ReviewCrossReference"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.CrossReference"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "412": {
+                        "description": "Precondition Failed",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "428": {
+                        "description": "Precondition Required",
                         "schema": {
                             "$ref": "#/definitions/v1.Error"
                         }
@@ -11037,6 +11461,10 @@
                     "type": "integer",
                     "example": 12
                 },
+                "surah_id": {
+                    "type": "integer",
+                    "example": 73
+                },
                 "target_type": {
                     "type": "string",
                     "example": "citable_unit"
@@ -12947,6 +13375,150 @@
                 "user_id": {
                     "type": "string",
                     "example": "550e8400-e29b-41d4-a716-446655440000"
+                }
+            }
+        },
+        "entity.CrossReference": {
+            "type": "object",
+            "properties": {
+                "confidence": {
+                    "type": "number",
+                    "example": 1
+                },
+                "created_at": {
+                    "type": "string",
+                    "example": "2026-07-10T12:00:00Z"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "evidence_normalized": {
+                    "type": "string"
+                },
+                "evidence_text": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "kind": {
+                    "type": "string",
+                    "example": "quotes"
+                },
+                "metadata": {
+                    "type": "object"
+                },
+                "method": {
+                    "type": "string",
+                    "example": "resolver"
+                },
+                "method_detail": {
+                    "$ref": "#/definitions/entity.CrossReferenceMethodDetail"
+                },
+                "normalization_version": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "origin": {
+                    "type": "string",
+                    "example": "legacy_quran_reference"
+                },
+                "origin_key": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "review_status": {
+                    "type": "string",
+                    "example": "approved"
+                },
+                "reviewed_at": {
+                    "type": "string"
+                },
+                "reviewed_by": {
+                    "type": "string"
+                },
+                "source_anchor": {
+                    "type": "string",
+                    "example": "kitab/797/h/11"
+                },
+                "source_corpus": {
+                    "type": "string",
+                    "example": "kitab"
+                },
+                "source_work_id": {
+                    "type": "integer",
+                    "example": 797
+                },
+                "target_anchor": {
+                    "type": "string",
+                    "example": "quran/73:4"
+                },
+                "target_corpus": {
+                    "type": "string",
+                    "example": "quran"
+                },
+                "target_quran_from_ayah": {
+                    "type": "integer",
+                    "example": 4
+                },
+                "target_quran_surah_id": {
+                    "type": "integer",
+                    "example": 73
+                },
+                "target_quran_to_ayah": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "target_work_id": {
+                    "type": "integer",
+                    "example": 798
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-07-10T12:00:00Z"
+                }
+            }
+        },
+        "entity.CrossReferenceList": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.CrossReference"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                },
+                "work_total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "entity.CrossReferenceMethodDetail": {
+            "type": "object",
+            "properties": {
+                "actor_id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "model_id": {
+                    "type": "string",
+                    "example": "gpt-5-mini-2026-06-01"
+                },
+                "prompt_version": {
+                    "type": "string",
+                    "example": "quran-reference-v1"
+                },
+                "run_id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "strategy": {
+                    "type": "string",
+                    "example": "explicit_surah_ayah"
                 }
             }
         },
@@ -15712,6 +16284,51 @@
                 }
             }
         },
+        "v1.CreateCrossReference": {
+            "type": "object",
+            "required": [
+                "confidence",
+                "evidence_text",
+                "kind",
+                "source_anchor",
+                "target_anchor"
+            ],
+            "properties": {
+                "confidence": {
+                    "type": "number",
+                    "maximum": 1,
+                    "minimum": 0,
+                    "example": 0.95
+                },
+                "evidence_text": {
+                    "type": "string",
+                    "maxLength": 100000
+                },
+                "kind": {
+                    "type": "string",
+                    "enum": [
+                        "cites",
+                        "quotes",
+                        "explains",
+                        "parallel"
+                    ],
+                    "example": "quotes"
+                },
+                "metadata": {
+                    "type": "object"
+                },
+                "source_anchor": {
+                    "type": "string",
+                    "maxLength": 500,
+                    "example": "kitab/797/h/11"
+                },
+                "target_anchor": {
+                    "type": "string",
+                    "maxLength": 500,
+                    "example": "kitab/798"
+                }
+            }
+        },
         "v1.CreateProductionProject": {
             "type": "object",
             "required": [
@@ -17274,6 +17891,25 @@
                 "token": {
                     "type": "string",
                     "example": "G66NnGZnWg4W88qGz3p9N0-GxjKuxEOHHsvWv3kBaBA"
+                }
+            }
+        },
+        "v1.ReviewCrossReference": {
+            "type": "object",
+            "required": [
+                "review_status"
+            ],
+            "properties": {
+                "review_status": {
+                    "type": "string",
+                    "enum": [
+                        "pending",
+                        "approved",
+                        "rejected",
+                        "ambiguous",
+                        "needs_review"
+                    ],
+                    "example": "approved"
                 }
             }
         },
