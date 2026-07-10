@@ -6,7 +6,11 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
+	"github.com/alfariesh/surau-backend/internal/entity"
+	"github.com/alfariesh/surau-backend/internal/repo"
+	"github.com/alfariesh/surau-backend/internal/usecase/crossreference"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -265,6 +269,328 @@ func TestResolveQuranMentionAmbiguousQuote(t *testing.T) {
 	_, ok := resolveQuranMention("الحمد لله", nil, ayahs)
 
 	assert.False(t, ok)
+}
+
+func TestQuranCrossReferenceFromBridgeMapsLegacyVocabularyAndAnchors(t *testing.T) {
+	t.Parallel()
+
+	bookID := 797
+	headingID := 11
+	surahID := 73
+	fromAyah := 4
+	toAyah := 10
+	confidence := 0.9
+	base := entity.QuranCrossReferenceBridge{
+		ID:             "550e8400-e29b-41d4-a716-446655440000",
+		BookID:         bookID,
+		PageID:         12,
+		HeadingID:      &headingID,
+		SourceText:     "سورة المزمل: 4-10",
+		NormalizedText: "سورة المزمل 4 10",
+		SurahID:        &surahID,
+		FromAyahNumber: &fromAyah,
+		ToAyahNumber:   &toAyah,
+		MatchStrategy:  "explicit_surah_ayah",
+		Metadata:       entity.RawJSON(`{"source":"knowledge_mentions"}`),
+	}
+
+	tests := []struct {
+		name             string
+		referenceKind    string
+		fromAyah         *int
+		toAyah           *int
+		reviewStatus     string
+		wantSourceAnchor string
+		wantTargetAnchor string
+		wantKind         string
+		wantStatus       string
+	}{
+		{
+			name:             "ayah range becomes cites",
+			referenceKind:    "surah_ayah",
+			fromAyah:         &fromAyah,
+			toAyah:           &toAyah,
+			reviewStatus:     entity.CrossReferenceStatusApproved,
+			wantSourceAnchor: "kitab/797/h/11",
+			wantTargetAnchor: "quran/73:4..quran/73:10",
+			wantKind:         entity.CrossReferenceKindCites,
+			wantStatus:       entity.CrossReferenceStatusApproved,
+		},
+		{
+			name:             "single ayah quote becomes quotes",
+			referenceKind:    "quote",
+			fromAyah:         &fromAyah,
+			toAyah:           &fromAyah,
+			reviewStatus:     entity.CrossReferenceStatusNeedsReview,
+			wantSourceAnchor: "kitab/797/h/11",
+			wantTargetAnchor: "quran/73:4",
+			wantKind:         entity.CrossReferenceKindQuotes,
+			wantStatus:       entity.CrossReferenceStatusNeedsReview,
+		},
+		{
+			name:             "surah only becomes a surah Anchor",
+			referenceKind:    "surah",
+			reviewStatus:     entity.CrossReferenceStatusApproved,
+			wantSourceAnchor: "kitab/797/h/11",
+			wantTargetAnchor: "quran/73",
+			wantKind:         entity.CrossReferenceKindCites,
+			wantStatus:       entity.CrossReferenceStatusApproved,
+		},
+		{
+			name:             "ambiguous is status not kind",
+			referenceKind:    "ambiguous",
+			fromAyah:         &fromAyah,
+			toAyah:           &fromAyah,
+			reviewStatus:     entity.CrossReferenceStatusNeedsReview,
+			wantSourceAnchor: "kitab/797/h/11",
+			wantTargetAnchor: "quran/73:4",
+			wantKind:         entity.CrossReferenceKindCites,
+			wantStatus:       entity.CrossReferenceStatusAmbiguous,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			bridge := base
+			bridge.ReferenceKind = tt.referenceKind
+			bridge.FromAyahNumber = tt.fromAyah
+			bridge.ToAyahNumber = tt.toAyah
+
+			ref, err := quranCrossReferenceFromBridge(
+				&bridge,
+				&confidence,
+				tt.reviewStatus,
+				entity.CrossReferenceOriginLegacyQuran,
+			)
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantSourceAnchor, ref.SourceAnchor)
+			assert.Equal(t, tt.wantTargetAnchor, ref.TargetAnchor)
+			assert.Equal(t, tt.wantKind, ref.Kind)
+			assert.Equal(t, tt.wantStatus, ref.ReviewStatus)
+			assert.Equal(t, entity.CrossReferenceMethodResolver, ref.Method)
+			assert.Equal(t, "explicit_surah_ayah", ref.MethodDetail.Strategy)
+			assert.Equal(t, 1, ref.NormalizationVersion)
+			assert.Equal(t, bridge.ID, ref.OriginKey)
+		})
+	}
+}
+
+func TestQuranCrossReferenceFromBridgeFallsBackToWorkAndRejectsInvalidApproved(t *testing.T) {
+	t.Parallel()
+
+	bookID := 797
+	surahID := 73
+	fromAyah := 4
+	bridge := entity.QuranCrossReferenceBridge{
+		ID:             "550e8400-e29b-41d4-a716-446655440000",
+		BookID:         bookID,
+		PageID:         12,
+		SourceText:     "إشارة",
+		ReferenceKind:  "quote",
+		SurahID:        &surahID,
+		FromAyahNumber: &fromAyah,
+		ToAyahNumber:   &fromAyah,
+		MatchStrategy:  "normalized_quote_exact",
+	}
+
+	ref, err := quranCrossReferenceFromBridge(
+		&bridge,
+		nil,
+		entity.CrossReferenceStatusNeedsReview,
+		entity.CrossReferenceOriginLegacyQuran,
+	)
+	require.NoError(t, err)
+	assert.Equal(t, "kitab/797", ref.SourceAnchor)
+	assert.Equal(t, "quran/73:4", ref.TargetAnchor)
+	assert.Nil(t, ref.Confidence, "legacy NULL confidence must not be invented")
+
+	bridge.ReferenceKind = "ambiguous"
+	_, err = quranCrossReferenceFromBridge(
+		&bridge,
+		nil,
+		entity.CrossReferenceStatusApproved,
+		entity.CrossReferenceOriginLegacyQuran,
+	)
+	require.ErrorIs(t, err, errUnmappableLegacyQuranReference)
+
+	bridge.FromAyahNumber = nil
+	bridge.ToAyahNumber = nil
+	ref, err = quranCrossReferenceFromBridge(
+		&bridge,
+		nil,
+		entity.CrossReferenceStatusNeedsReview,
+		entity.CrossReferenceOriginLegacyQuran,
+	)
+	require.NoError(t, err)
+	assert.Equal(t, "quran/73", ref.TargetAnchor)
+	assert.Equal(t, entity.CrossReferenceStatusAmbiguous, ref.ReviewStatus)
+
+	bridge.ReferenceKind = "quote"
+	bridge.SurahID = nil
+	_, err = quranCrossReferenceFromBridge(
+		&bridge,
+		nil,
+		entity.CrossReferenceStatusApproved,
+		entity.CrossReferenceOriginLegacyQuran,
+	)
+	require.ErrorIs(t, err, errUnmappableLegacyQuranReference)
+}
+
+func TestBridgeResolvedQuranMentionUsesAtomicBridgeServiceWithResolverOrigin(t *testing.T) {
+	t.Parallel()
+
+	headingID := 11
+	surahID := 73
+	fromAyah := 4
+	ayahKey := "73:4"
+	mention := quranMentionSource{
+		ID:             "10000000-0000-4000-8000-000000000001",
+		BookID:         797,
+		PageID:         12,
+		HeadingID:      &headingID,
+		ExtractionText: "سورة المزمل: 4",
+		Attributes:     []byte(`{"source":"unit-test"}`),
+	}
+	resolution := quranReferenceResolution{
+		ReferenceKind:  "surah_ayah",
+		SurahID:        &surahID,
+		FromAyahNumber: &fromAyah,
+		ToAyahNumber:   &fromAyah,
+		FromAyahKey:    &ayahKey,
+		ToAyahKey:      &ayahKey,
+		MatchStrategy:  "explicit_surah_ayah",
+		Confidence:     1,
+		ReviewStatus:   entity.CrossReferenceStatusApproved,
+	}
+	capture := &captureCrossReferenceRepo{}
+	svc := crossreference.New(capture)
+
+	require.NoError(t, bridgeResolvedQuranMention(context.Background(), svc, &mention, &resolution))
+	require.NoError(t, bridgeResolvedQuranMention(context.Background(), svc, &mention, &resolution))
+	require.Len(t, capture.derived, 2)
+	require.Len(t, capture.bridges, 2)
+
+	first := capture.derived[0]
+	assert.Equal(t, entity.CrossReferenceOriginResolver, first.Origin)
+	assert.Equal(t, mention.ID, first.OriginKey)
+	assert.Equal(t, entity.CrossReferenceMethodResolver, first.Method)
+	assert.Equal(t, "kitab/797/h/11", first.SourceAnchor)
+	assert.Equal(t, "quran/73:4", first.TargetAnchor)
+	assert.Equal(t, first.ID, capture.bridges[0].ID)
+	assert.Equal(t, first.ID, capture.derived[1].ID, "retry must reuse the mention-derived UUID")
+	assert.Equal(t, first.ID, capture.bridges[1].ID)
+	assert.Equal(t, mention.ID, *capture.bridges[0].KnowledgeMentionID)
+}
+
+func TestLegacyQuranSourceDisposition(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		active    bool
+		status    string
+		wantSkip  bool
+		wantError error
+	}{
+		{
+			name:     "active source is bridged",
+			active:   true,
+			status:   entity.CrossReferenceStatusNeedsReview,
+			wantSkip: false,
+		},
+		{
+			name:     "deleted non-approved source is skipped",
+			status:   entity.CrossReferenceStatusNeedsReview,
+			wantSkip: true,
+		},
+		{
+			name:      "deleted approved source aborts",
+			status:    entity.CrossReferenceStatusApproved,
+			wantError: errUnmappableLegacyQuranReference,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			item := legacyQuranReference{
+				SourceBookActive: tt.active,
+				ReviewStatus:     tt.status,
+			}
+			skip, err := legacyQuranSourceDisposition(&item)
+			assert.Equal(t, tt.wantSkip, skip)
+
+			if tt.wantError == nil {
+				require.NoError(t, err)
+
+				return
+			}
+
+			require.ErrorIs(t, err, tt.wantError)
+			require.ErrorIs(t, err, errUnavailableLegacyQuranSource)
+		})
+	}
+}
+
+type captureCrossReferenceRepo struct {
+	derived []entity.CrossReference
+	bridges []entity.QuranCrossReferenceBridge
+}
+
+//nolint:gocritic // repo interface intentionally accepts the public value model
+func (r *captureCrossReferenceRepo) Create(
+	_ context.Context,
+	ref entity.CrossReference,
+) (entity.CrossReference, error) {
+	return ref, nil
+}
+
+//nolint:gocritic // repo interface intentionally accepts the public value model
+func (r *captureCrossReferenceRepo) UpsertDerived(
+	_ context.Context,
+	ref entity.CrossReference,
+	bridge *entity.QuranCrossReferenceBridge,
+) (entity.CrossReference, error) {
+	r.derived = append(r.derived, ref)
+	if bridge != nil {
+		r.bridges = append(r.bridges, *bridge)
+	}
+
+	return ref, nil
+}
+
+func (r *captureCrossReferenceRepo) Get(
+	_ context.Context,
+	_ string,
+) (entity.CrossReference, error) {
+	return entity.CrossReference{}, nil
+}
+
+func (r *captureCrossReferenceRepo) Review(
+	_ context.Context,
+	_, _, _ string,
+	_ *time.Time,
+) (entity.CrossReference, error) {
+	return entity.CrossReference{}, nil
+}
+
+//nolint:gocritic // repo interface intentionally accepts the public value filter
+func (r *captureCrossReferenceRepo) List(
+	_ context.Context,
+	_ repo.CrossReferenceFilter,
+) (entity.CrossReferenceList, error) {
+	return entity.CrossReferenceList{}, nil
+}
+
+func (r *captureCrossReferenceRepo) FreezeLegacyQuranWrites(_ context.Context) error {
+	return nil
+}
+
+func (r *captureCrossReferenceRepo) UnfreezeLegacyQuranWrites(_ context.Context) error {
+	return nil
 }
 
 func assertNavigation(t *testing.T, ayah *quranAyahImport, juzNumber, hizbNumber int) {

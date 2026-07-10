@@ -102,6 +102,9 @@ var (
 	ErrInvalidAnchor                   = errors.New("invalid anchor")
 	ErrAnchorNotFound                  = errors.New("anchor not found")
 	ErrAnchorLineageCycle              = errors.New("anchor lineage cycle detected")
+	ErrCrossReferenceNotFound          = errors.New("cross-reference not found")
+	ErrInvalidCrossReference           = errors.New("invalid cross-reference")
+	ErrCrossReferenceConflict          = errors.New("cross-reference origin already exists")
 )
 
 // AuthRateLimitedError carries the retry-after hint computed by the rate

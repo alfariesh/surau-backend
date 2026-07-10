@@ -15,6 +15,7 @@ type V1 struct {
 	bookRAG            usecase.BookRAG
 	quran              usecase.Quran
 	anchor             usecase.AnchorResolver
+	crossReference     usecase.CrossReference
 	personal           usecase.Personal
 	editorial          usecase.Editorial
 	email              usecase.EmailAdmin

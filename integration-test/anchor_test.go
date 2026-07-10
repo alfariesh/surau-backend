@@ -92,6 +92,19 @@ func TestAnchorResolverPublicContract(t *testing.T) {
 		}
 	})
 
+	t.Run("canonical Quran surah", func(t *testing.T) {
+		canonical := "quran/110"
+		resolved := getAnchorResolution(t, "anchor="+url.QueryEscape(canonical))
+		assertCanonicalAnchor(t, resolved, canonical)
+		target := onlyAnchorTarget(t, resolved)
+		if target.TargetType != entity.AnchorTargetQuranSurah || target.SurahID == nil || *target.SurahID != 110 {
+			t.Fatalf("canonical Quran surah target = %+v", target)
+		}
+		if target.AyahKey != nil || target.NavigationURL != "/v1/quran/surahs/110" {
+			t.Fatalf("canonical Quran surah navigation = %+v", target)
+		}
+	})
+
 	t.Run("canonical range resolves two boundaries without expansion", func(t *testing.T) {
 		start := fmt.Sprintf("kitab/%d/h/%d/u/1", anchorFixtureBookID, anchorFixtureHeadingID)
 		end := fmt.Sprintf("kitab/%d/h/%d/u/4", anchorFixtureBookID, anchorFixtureHeadingID)
@@ -225,6 +238,7 @@ func TestAnchorResolverPublicContract(t *testing.T) {
 
 	t.Run("unknown and unpublished Anchors are indistinguishable", func(t *testing.T) {
 		assertAnchorError(t, "anchor=kitab%2F2147483647", http.StatusNotFound, "anchor not found", "anchor_not_found")
+		assertAnchorError(t, "anchor=quran%2F115", http.StatusNotFound, "anchor not found", "anchor_not_found")
 		assertAnchorError(t, fmt.Sprintf("anchor=kitab%%2F%d", anchorHiddenBookID), http.StatusNotFound, "anchor not found", "anchor_not_found")
 		hiddenUnit := fmt.Sprintf("kitab/%d/h/301/u/1", anchorHiddenBookID)
 		assertAnchorError(t, "anchor="+url.QueryEscape(hiddenUnit), http.StatusNotFound, "anchor not found", "anchor_not_found")
@@ -242,6 +256,7 @@ func TestAnchorResolverPublicContract(t *testing.T) {
 			"anchor=toc-101&book_id=0992010",
 			"book_id=992010&page_id=0101",
 			"anchor=quran%2F110%3A999&anchor=quran%2F110%3A998",
+			"anchor=quran%2F110..quran%2F110%3A999",
 			"book_id=992010&book_id=992012&page_id=101",
 			"book_id=992010&page_id=101&page_id=102",
 			"anchor=quran%2F110%3A999&lang=id",
@@ -312,6 +327,7 @@ func TestAnchorResolverP95Under50Milliseconds(t *testing.T) {
 	lineageRoot := fmt.Sprintf("kitab/%d/h/%d/u/101", anchorPerformanceBookID, heading)
 	paths := []string{
 		fmt.Sprintf("/v1/anchors/resolve?anchor=kitab%%2F%d", anchorPerformanceBookID),
+		"/v1/anchors/resolve?anchor=" + url.QueryEscape("quran/110"),
 		"/v1/anchors/resolve?anchor=" + url.QueryEscape("quran/"+anchorFixtureAyahKey),
 		"/v1/anchors/resolve?anchor=" + url.QueryEscape(anchorFixtureAyahKey),
 		"/v1/anchors/resolve?anchor=" + url.QueryEscape(fmt.Sprintf("kitab/%d/h/%d", anchorPerformanceBookID, heading)),

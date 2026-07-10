@@ -1,8 +1,9 @@
 // Package anchor defines Surau's canonical, cross-corpus Anchor grammar.
 //
-// Active profiles are Quran ayahs and kitab Work, heading, and Citable Unit
-// points. Hadith, wiki, and entity corpora are reserved for future profiles and
-// are deliberately rejected until their locator grammar is ratified.
+// Active profiles are Quran surahs and ayahs plus kitab Work, heading, and
+// Citable Unit points. Hadith, wiki, and entity corpora are reserved for future
+// profiles and are deliberately rejected until their locator grammar is
+// ratified.
 package anchor
 
 import (
@@ -33,6 +34,7 @@ const (
 type PointKind string
 
 const (
+	PointKindQuranSurah   PointKind = "quran_surah"
 	PointKindQuranAyah    PointKind = "quran_ayah"
 	PointKindKitabWork    PointKind = "kitab_work"
 	PointKindKitabHeading PointKind = "kitab_heading"
@@ -50,6 +52,15 @@ type Point struct {
 	ordinal   int
 	surah     int
 	ayah      int
+}
+
+// NewQuranSurah constructs quran/{surah}.
+func NewQuranSurah(surah int) (Point, error) {
+	if !positiveInteger(surah) {
+		return Point{}, fmt.Errorf("%w: Quran surah must be a positive PostgreSQL integer", ErrInvalid)
+	}
+
+	return Point{corpus: CorpusQuran, kind: PointKindQuranSurah, surah: surah}, nil
 }
 
 // NewQuranAyah constructs quran/{surah}:{ayah}.
@@ -136,6 +147,8 @@ func (p Point) Ayah() int {
 // an empty string and is rejected by FromPoint and NewRange.
 func (p Point) String() string {
 	switch p.kind {
+	case PointKindQuranSurah:
+		return fmt.Sprintf("quran/%d", p.surah)
 	case PointKindQuranAyah:
 		return fmt.Sprintf("quran/%d:%d", p.surah, p.ayah)
 	case PointKindKitabWork:
@@ -150,7 +163,8 @@ func (p Point) String() string {
 }
 
 // Value is either one point or a two-boundary range. Range endpoints are
-// always in the same corpus and Work; Quran ranges are also in one surah.
+// always in the same corpus and Work; Quran ranges require two ayahs in one
+// surah.
 type Value struct {
 	start Point
 	end   *Point
@@ -214,6 +228,8 @@ func (v Value) String() string {
 
 func (p Point) valid() bool {
 	switch p.kind {
+	case PointKindQuranSurah:
+		return p.validQuranSurah()
 	case PointKindQuranAyah:
 		return p.validQuranAyah()
 	case PointKindKitabWork:
@@ -225,6 +241,10 @@ func (p Point) valid() bool {
 	default:
 		return false
 	}
+}
+
+func (p Point) validQuranSurah() bool {
+	return p.corpus == CorpusQuran && positiveInteger(p.surah) && p.ayah == 0
 }
 
 func (p Point) validQuranAyah() bool {
@@ -250,13 +270,7 @@ func validateRangeScope(start, end Point) error {
 
 	switch start.corpus {
 	case CorpusQuran:
-		if start.surah != end.surah {
-			return fmt.Errorf("%w: Quran range boundaries must use one surah", ErrInvalid)
-		}
-
-		if end.ayah < start.ayah {
-			return fmt.Errorf("%w: Quran range end must not precede its start", ErrInvalid)
-		}
+		return validateQuranRangeScope(start, end)
 	case CorpusKitab:
 		if start.bookID != end.bookID {
 			return fmt.Errorf("%w: kitab range boundaries must use one Work", ErrInvalid)
@@ -265,6 +279,22 @@ func validateRangeScope(start, end Point) error {
 		return fmt.Errorf("%w: corpus has no active range profile", ErrInvalid)
 	default:
 		return fmt.Errorf("%w: corpus has no active range profile", ErrInvalid)
+	}
+
+	return nil
+}
+
+func validateQuranRangeScope(start, end Point) error {
+	if start.kind != PointKindQuranAyah || end.kind != PointKindQuranAyah {
+		return fmt.Errorf("%w: Quran ranges require two ayah boundaries", ErrInvalid)
+	}
+
+	if start.surah != end.surah {
+		return fmt.Errorf("%w: Quran range boundaries must use one surah", ErrInvalid)
+	}
+
+	if end.ayah < start.ayah {
+		return fmt.Errorf("%w: Quran range end must not precede its start", ErrInvalid)
 	}
 
 	return nil

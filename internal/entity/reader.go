@@ -1,7 +1,9 @@
 package entity
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"time"
 )
 
@@ -118,6 +120,11 @@ type BookCategoryStat struct {
 // RawJSON is used for metadata stored as jsonb.
 type RawJSON []byte
 
+var (
+	errRawJSONNilReceiver = errors.New("entity.RawJSON: unmarshal into nil receiver")
+	errRawJSONInvalid     = errors.New("entity.RawJSON: invalid JSON")
+)
+
 // MarshalJSON returns the raw JSON value instead of base64-encoding the bytes.
 func (r RawJSON) MarshalJSON() ([]byte, error) {
 	if len(r) == 0 {
@@ -129,6 +136,27 @@ func (r RawJSON) MarshalJSON() ([]byte, error) {
 	}
 
 	return r, nil
+}
+
+// UnmarshalJSON preserves JSON objects and arrays as raw bytes.
+func (r *RawJSON) UnmarshalJSON(data []byte) error {
+	if r == nil {
+		return errRawJSONNilReceiver
+	}
+
+	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+		*r = nil
+
+		return nil
+	}
+
+	if !json.Valid(data) {
+		return errRawJSONInvalid
+	}
+
+	*r = append((*r)[:0], data...)
+
+	return nil
 }
 
 // BookPage is one raw page row from a book DB.

@@ -54,6 +54,20 @@ func (r *V1) logAnchorError(ctx *fiber.Ctx, err error, operation string) {
 	r.reqLog(ctx).Error(err, operation)
 }
 
+func (r *V1) logCrossReferenceError(ctx *fiber.Ctx, err error, operation string) {
+	if errors.Is(err, entity.ErrInvalidCrossReference) ||
+		errors.Is(err, entity.ErrCrossReferenceNotFound) ||
+		errors.Is(err, entity.ErrCrossReferenceConflict) ||
+		errors.Is(err, entity.ErrAnchorNotFound) ||
+		errors.Is(err, entity.ErrPreconditionFailed) {
+		r.reqLog(ctx).Warn("%s: %s", operation, err)
+
+		return
+	}
+
+	r.reqLog(ctx).Error(err, operation)
+}
+
 func isExpectedReaderError(err error) bool {
 	return errors.Is(err, entity.ErrUnsupportedLanguage) ||
 		errors.Is(err, entity.ErrBookNotFound) ||

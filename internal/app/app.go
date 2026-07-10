@@ -21,6 +21,7 @@ import (
 	"github.com/alfariesh/surau-backend/internal/repo/webapi"
 	"github.com/alfariesh/surau-backend/internal/usecase/anchorresolver"
 	"github.com/alfariesh/surau-backend/internal/usecase/bookrag"
+	"github.com/alfariesh/surau-backend/internal/usecase/crossreference"
 	"github.com/alfariesh/surau-backend/internal/usecase/editorial"
 	emailusecase "github.com/alfariesh/surau-backend/internal/usecase/email"
 	"github.com/alfariesh/surau-backend/internal/usecase/notification"
@@ -39,16 +40,17 @@ import (
 )
 
 type useCases struct {
-	user         *user.UseCase
-	reader       *reader.UseCase
-	bookRAG      *bookrag.UseCase
-	quran        *quran.UseCase
-	anchor       *anchorresolver.UseCase
-	personal     *personal.UseCase
-	editorial    *editorial.UseCase
-	email        *emailusecase.UseCase
-	notification *notification.UseCase
-	unitRegistry *unitregistry.UseCase
+	user           *user.UseCase
+	reader         *reader.UseCase
+	bookRAG        *bookrag.UseCase
+	quran          *quran.UseCase
+	anchor         *anchorresolver.UseCase
+	crossReference *crossreference.UseCase
+	personal       *personal.UseCase
+	editorial      *editorial.UseCase
+	email          *emailusecase.UseCase
+	notification   *notification.UseCase
+	unitRegistry   *unitregistry.UseCase
 }
 
 type servers struct {
@@ -85,6 +87,7 @@ func initUseCases(cfg *config.Config, pg *postgres.Postgres, jwtManager *jwt.Man
 	citableUnitRepo := persistent.NewCitableUnitRepo(pg)
 	unitRegistryUC := unitregistry.New(citableUnitRepo)
 	anchorRepo := persistent.NewAnchorRepo(pg)
+	crossReferenceRepo := persistent.NewCrossReferenceRepo(pg)
 	emailRepo := persistent.NewEmailRepo(pg)
 	llmClient := webapi.NewOpenAICompatibleClient(webapi.OpenAICompatibleOptions{
 		BaseURL:     cfg.RAG.LLMBaseURL,
@@ -342,13 +345,14 @@ func initUseCases(cfg *config.Config, pg *postgres.Postgres, jwtManager *jwt.Man
 			TreeMaxTurns:         cfg.RAG.TreeMaxTurns,
 			TreeMaxBlocksPerTurn: cfg.RAG.TreeMaxBlocksPerTurn,
 		}),
-		quran:        quran.New(quranRepo),
-		anchor:       anchorresolver.New(anchorRepo),
-		personal:     personal.New(personalRepo, khatamNotifier),
-		editorial:    editorial.New(editorialRepo, unitRegistryUC, l),
-		email:        emailUC,
-		notification: notificationUC,
-		unitRegistry: unitRegistryUC,
+		quran:          quran.New(quranRepo),
+		anchor:         anchorresolver.New(anchorRepo),
+		crossReference: crossreference.New(crossReferenceRepo),
+		personal:       personal.New(personalRepo, khatamNotifier),
+		editorial:      editorial.New(editorialRepo, unitRegistryUC, l),
+		email:          emailUC,
+		notification:   notificationUC,
+		unitRegistry:   unitRegistryUC,
 	}
 }
 
@@ -371,6 +375,7 @@ func initServers(cfg *config.Config, pg *postgres.Postgres, uc useCases, jwtMana
 		uc.bookRAG,
 		uc.quran,
 		uc.anchor,
+		uc.crossReference,
 		uc.user,
 		uc.personal,
 		uc.editorial,

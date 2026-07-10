@@ -13,9 +13,10 @@ Notasi EBNF berikut adalah sumber kebenaran sintaks B-2:
 ```ebnf
 anchor        = point | range ;
 range         = point, "..", point ;
-point         = quran-point | kitab-work | kitab-heading | kitab-unit ;
+point         = quran-surah | quran-ayah | kitab-work | kitab-heading | kitab-unit ;
 
-quran-point   = "quran/", positive-int, ":", positive-int ;
+quran-surah   = "quran/", positive-int ;
+quran-ayah    = quran-surah, ":", positive-int ;
 kitab-work    = "kitab/", positive-int ;
 kitab-heading = kitab-work, "/h/", positive-int ;
 kitab-unit    = kitab-work, "/h/", heading-scope, "/u/", positive-int ;
@@ -46,6 +47,7 @@ Aturan byte-level:
 
 | Profil | Contoh | Semantik |
 |---|---|---|
+| Quran surah | `quran/73` | Surah 73 sebagai target logis tanpa menganggapnya rujukan ke setiap ayah. |
 | Quran ayah | `quran/73:4` | Ayah 4 dalam surah 73; Quran adalah satu Work implisit. |
 | Kitab Work | `kitab/797` | Karya kitab dengan `book_id=797`. |
 | Kitab heading | `kitab/797/h/11` | Heading logis 11 dalam kitab 797. |
@@ -60,7 +62,8 @@ tampilan atau sitasi akademik, tetapi tidak pernah menjadi identitas kanonik.
 
 - Kedua batas ditulis sebagai point lengkap; shorthand seperti `quran/73:4..10` tidak sah.
 - Kedua batas wajib berada dalam korpus dan Work yang sama. Dua Anchor kitab harus memiliki
-  `book_id` sama; dua Anchor Quran juga wajib berada dalam surah yang sama.
+  `book_id` sama. Range Quran wajib memakai dua boundary ayah dalam surah yang sama; Anchor
+  surah tidak dapat menjadi boundary range.
 - Pada range Quran, ayah akhir tidak boleh mendahului ayah awal.
 - Resolver menyelesaikan **boundary saja**: `boundaries[0]` berperan `start` dan
   `boundaries[1]` berperan `end`. Endpoint tidak mengekspansi atau mengembalikan semua unit di
@@ -115,13 +118,14 @@ type AnchorBoundary = {
 };
 
 type AnchorTarget = {
-  target_type: "citable_unit" | "quran_ayah" | "book" | "book_heading" | "book_page";
+  target_type: "citable_unit" | "quran_surah" | "quran_ayah" | "book" | "book_heading" | "book_page";
   corpus: "kitab" | "quran";
   canonical_anchor?: string;
   unit_id?: string;
   book_id?: number;
   heading_id?: number;
   page_id?: number;
+  surah_id?: number;
   ayah_key?: string;
   navigation_url: string;
   updated_at: string;
@@ -186,6 +190,8 @@ Contoh unit lama yang telah terpecah:
 
 ### Canonical dan legacy
 
+- `quran/{surah_id}` menyelesaikan baris `quran_surahs` aktif. Targetnya bertipe
+  `quran_surah`, membawa `surah_id`, dan memakai detail surah sebagai `navigation_url`.
 - `quran/{ayah_key}` dan legacy `ayah_key` menyelesaikan baris Quran aktif yang sama. Targetnya
   bertipe `quran_ayah`, membawa `ayah_key`, dan memakai detail ayah sebagai `navigation_url`.
 - `kitab/{book_id}` menyelesaikan Work publik aktif ke target `book`.

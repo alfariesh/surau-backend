@@ -3,6 +3,7 @@ package anchorresolver_test
 import (
 	"context"
 	"errors"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -19,6 +20,7 @@ type fakeAnchorRepo struct {
 	mu sync.Mutex
 
 	quran    map[string]entity.AnchorLookupResult
+	surahs   map[int]entity.AnchorLookupResult
 	works    map[int]entity.AnchorLookupResult
 	headings map[[2]int]entity.AnchorLookupResult
 	pages    map[[2]int]entity.AnchorLookupResult
@@ -29,6 +31,10 @@ type fakeAnchorRepo struct {
 
 func (f *fakeAnchorRepo) ResolveQuran(_ context.Context, ayahKey string) (entity.AnchorLookupResult, error) {
 	return f.lookup("quran:"+ayahKey, f.quran[ayahKey])
+}
+
+func (f *fakeAnchorRepo) ResolveQuranSurah(_ context.Context, surahID int) (entity.AnchorLookupResult, error) {
+	return f.lookup("quran-surah", f.surahs[surahID])
 }
 
 func (f *fakeAnchorRepo) ResolveWork(_ context.Context, bookID int) (entity.AnchorLookupResult, error) {
@@ -76,6 +82,9 @@ func TestResolveCanonicalPointProfiles(t *testing.T) {
 
 	updatedAt := time.Date(2026, time.July, 10, 8, 30, 0, 0, time.UTC)
 	repo := &fakeAnchorRepo{
+		surahs: map[int]entity.AnchorLookupResult{
+			73: activeLookup("quran/73", quranSurahRecord(73, updatedAt)),
+		},
 		quran: map[string]entity.AnchorLookupResult{
 			"73:4": activeLookup("quran/73:4", quranRecord("73:4", updatedAt)),
 		},
@@ -100,6 +109,7 @@ func TestResolveCanonicalPointProfiles(t *testing.T) {
 		wantTargetType string
 		wantURL        string
 	}{
+		{name: "Quran surah", anchor: "quran/73", wantTargetType: entity.AnchorTargetQuranSurah, wantURL: "/v1/quran/surahs/73"},
 		{name: "Quran ayah", anchor: "quran/73:4", wantTargetType: entity.AnchorTargetQuranAyah, wantURL: "/v1/quran/ayahs/73:4"},
 		{name: "kitab Work", anchor: "kitab/797", wantTargetType: entity.AnchorTargetBook, wantURL: "/v1/books/797"},
 		{name: "kitab heading", anchor: "kitab/797/h/11", wantTargetType: entity.AnchorTargetBookHeading, wantURL: "/v1/books/797/toc/11/read"},
@@ -122,6 +132,13 @@ func TestResolveCanonicalPointProfiles(t *testing.T) {
 			require.Len(t, got.Boundaries[0].ActiveTargets, 1)
 			assert.Equal(t, test.wantTargetType, got.Boundaries[0].ActiveTargets[0].TargetType)
 			assert.Equal(t, test.wantURL, got.Boundaries[0].ActiveTargets[0].NavigationURL)
+
+			if test.wantTargetType == entity.AnchorTargetQuranSurah {
+				require.NotNil(t, got.Boundaries[0].ActiveTargets[0].SurahID)
+				assert.Equal(t, 73, *got.Boundaries[0].ActiveTargets[0].SurahID)
+				assert.Nil(t, got.Boundaries[0].ActiveTargets[0].AyahKey)
+			}
+
 			assert.Empty(t, got.Boundaries[0].RedirectChain)
 		})
 	}
@@ -332,6 +349,22 @@ func TestResolveKnownTombstoneAndCycle(t *testing.T) {
 	})
 }
 
+func TestResolveRejectsMalformedQuranSurahRecord(t *testing.T) {
+	t.Parallel()
+
+	repo := &fakeAnchorRepo{surahs: map[int]entity.AnchorLookupResult{
+		73: activeLookup("quran/73", entity.AnchorRecord{
+			TargetType:      entity.AnchorTargetQuranSurah,
+			Corpus:          entity.UnitCorpusQuran,
+			CanonicalAnchor: new("quran/73"),
+			Lifecycle:       entity.UnitLifecycleActive,
+		}),
+	}}
+
+	_, err := anchorresolver.New(repo).Resolve(t.Context(), "quran/73", nil, nil)
+	require.Error(t, err)
+}
+
 func TestResolveRejectsInvalidAmbiguousAndMissingScope(t *testing.T) {
 	t.Parallel()
 
@@ -402,6 +435,19 @@ func quranRecord(ayahKey string, updatedAt time.Time) entity.AnchorRecord {
 		Corpus:          entity.UnitCorpusQuran,
 		CanonicalAnchor: &canonical,
 		AyahKey:         new(ayahKey),
+		Lifecycle:       entity.UnitLifecycleActive,
+		UpdatedAt:       updatedAt,
+	}
+}
+
+func quranSurahRecord(surahID int, updatedAt time.Time) entity.AnchorRecord {
+	canonical := "quran/" + strconv.Itoa(surahID)
+
+	return entity.AnchorRecord{
+		TargetType:      entity.AnchorTargetQuranSurah,
+		Corpus:          entity.UnitCorpusQuran,
+		CanonicalAnchor: &canonical,
+		SurahID:         new(surahID),
 		Lifecycle:       entity.UnitLifecycleActive,
 		UpdatedAt:       updatedAt,
 	}

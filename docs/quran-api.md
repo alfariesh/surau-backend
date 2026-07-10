@@ -5,6 +5,8 @@ Last updated: 2026-07-10
 This document is the FE-facing contract for the Quran backend. It covers the public Quran read APIs, response shapes, audio behavior, errors, and the recommended fetch flow. The Quran domain is standalone: Quran rows live in dedicated Quran tables and are linked to kitab data only through Quran reference records.
 
 For the shared kitab + Quran FE integration guide, see `docs/frontend-integration-contract.md`.
+For generic incoming/outgoing content links and the Quran compatibility bridge, see
+`docs/cross-references.md`.
 
 ## Quick FE Rules
 
@@ -1086,10 +1088,14 @@ Status: `200`
 ### 9. Book Quran References
 
 ```http
-GET /v1/books/{book_id}/quran-references?lang=id&heading_id=10&status=approved&limit=50&offset=0
+GET /v1/books/{book_id}/quran-references?lang=id&heading_id=10&limit=50&offset=0
 ```
 
 Returns Quran references linked to a public kitab. Use `heading_id` for section-scoped reads; do not fetch a broad page and filter on the client.
+
+This public endpoint is hardwired to `approved`. The legacy `status` query parameter is accepted
+only for request compatibility and is ignored; `status=pending` or `status=all` never exposes an
+editorial state. Use the capability-protected editorial Cross-Reference API for review queues.
 
 `GET /v1/books/{book_id}/toc/{heading_id}/read?include_quran_references=true` can embed the same approved heading-scoped references under `quran_references` in the reader payload.
 
@@ -1105,7 +1111,7 @@ Returns Quran references linked to a public kitab. Use `heading_id` for section-
 | --- | --- | --- | --- |
 | `lang` | string | `id` | Translation language for attached ayahs. |
 | `heading_id` | integer | none | Optional positive heading filter. |
-| `status` | string | `approved` | One of `approved`, `pending`, `rejected`, `ambiguous`, `needs_review`, `all`. Invalid values become `approved`. |
+| `status` | string | `approved` | Legacy compatibility only; ignored by the server. The response is always approved-only. |
 | `limit` | integer | `50` | Clamped to max `200`. |
 | `offset` | integer | `0` | Negative becomes `0`. |
 
@@ -1164,7 +1170,7 @@ Status: `200`
 | `normalized_text` | Normalized resolver text. |
 | `reference_kind` | Example: `surah`, `surah_ayah`, `ayah_range`, `quote`. |
 | `match_strategy` | Example: `explicit_surah_ayah`, `exact_quote`, `surah_alias`. |
-| `review_status` | Review workflow status. Public FE should default to `approved`. |
+| `review_status` | Always `approved` on this public endpoint. Other review states are editorial-only. |
 | `ayahs` | Present only when the reference has concrete ayah range fields. Surah-only references can have no ayahs. Each ayah uses the same `QuranAyah` multilingual metadata as Quran reader endpoints. |
 
 ### Errors
@@ -1583,7 +1589,7 @@ For an ayah-mode recitation, each returned track normally maps to the requested 
 ### Kitab Quran References
 
 1. On a reader section screen, prefer `GET /v1/books/{book_id}/toc/{heading_id}/read?lang=id&include_quran_references=true`.
-2. If references are lazy-loaded separately, call `GET /v1/books/{book_id}/quran-references?lang=id&heading_id={headingId}&status=approved`.
+2. If references are lazy-loaded separately, call `GET /v1/books/{book_id}/quran-references?lang=id&heading_id={headingId}`; the server always applies the approved-only gate.
 3. Use `page_id` and `heading_id` to group references near kitab content.
 4. Use `ayahs` when available for preview.
 5. For surah-only references without `ayahs`, link to `/quran/surahs/{surah_id}` or the FE equivalent.

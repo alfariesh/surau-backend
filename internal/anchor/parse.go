@@ -118,7 +118,16 @@ func parsePoint(raw string) (Point, error) {
 
 func parseQuranPoint(parts []string) (Point, error) {
 	if len(parts) != quranPointSegments {
-		return Point{}, fmt.Errorf("%w: Quran point must use quran/{surah}:{ayah}", ErrInvalid)
+		return Point{}, fmt.Errorf("%w: Quran point must use quran/{surah} or quran/{surah}:{ayah}", ErrInvalid)
+	}
+
+	if !strings.Contains(parts[1], ":") {
+		surah, err := parseDecimal(parts[1], false)
+		if err != nil {
+			return Point{}, err
+		}
+
+		return NewQuranSurah(surah)
 	}
 
 	surah, ayah, err := parseAyahLocator(parts[1])

@@ -3021,6 +3021,105 @@ func (mr *MockAnchorResolverMockRecorder) Resolve(ctx, rawAnchor, bookID, pageID
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Resolve", reflect.TypeOf((*MockAnchorResolver)(nil).Resolve), ctx, rawAnchor, bookID, pageID)
 }
 
+// MockCrossReference is a mock of CrossReference interface.
+type MockCrossReference struct {
+	ctrl     *gomock.Controller
+	recorder *MockCrossReferenceMockRecorder
+	isgomock struct{}
+}
+
+// MockCrossReferenceMockRecorder is the mock recorder for MockCrossReference.
+type MockCrossReferenceMockRecorder struct {
+	mock *MockCrossReference
+}
+
+// NewMockCrossReference creates a new mock instance.
+func NewMockCrossReference(ctrl *gomock.Controller) *MockCrossReference {
+	mock := &MockCrossReference{ctrl: ctrl}
+	mock.recorder = &MockCrossReferenceMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockCrossReference) EXPECT() *MockCrossReferenceMockRecorder {
+	return m.recorder
+}
+
+// CreateHuman mocks base method.
+func (m *MockCrossReference) CreateHuman(ctx context.Context, input entity.CrossReferenceCreateInput, actorID string) (entity.CrossReference, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateHuman", ctx, input, actorID)
+	ret0, _ := ret[0].(entity.CrossReference)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CreateHuman indicates an expected call of CreateHuman.
+func (mr *MockCrossReferenceMockRecorder) CreateHuman(ctx, input, actorID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateHuman", reflect.TypeOf((*MockCrossReference)(nil).CreateHuman), ctx, input, actorID)
+}
+
+// Get mocks base method.
+func (m *MockCrossReference) Get(ctx context.Context, id string) (entity.CrossReference, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Get", ctx, id)
+	ret0, _ := ret[0].(entity.CrossReference)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Get indicates an expected call of Get.
+func (mr *MockCrossReferenceMockRecorder) Get(ctx, id any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Get", reflect.TypeOf((*MockCrossReference)(nil).Get), ctx, id)
+}
+
+// ListEditorial mocks base method.
+func (m *MockCrossReference) ListEditorial(ctx context.Context, filter repo.CrossReferenceFilter) (entity.CrossReferenceList, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListEditorial", ctx, filter)
+	ret0, _ := ret[0].(entity.CrossReferenceList)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListEditorial indicates an expected call of ListEditorial.
+func (mr *MockCrossReferenceMockRecorder) ListEditorial(ctx, filter any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListEditorial", reflect.TypeOf((*MockCrossReference)(nil).ListEditorial), ctx, filter)
+}
+
+// ListPublic mocks base method.
+func (m *MockCrossReference) ListPublic(ctx context.Context, anchor, direction, kind string, limit, offset uint64) (entity.CrossReferenceList, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListPublic", ctx, anchor, direction, kind, limit, offset)
+	ret0, _ := ret[0].(entity.CrossReferenceList)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListPublic indicates an expected call of ListPublic.
+func (mr *MockCrossReferenceMockRecorder) ListPublic(ctx, anchor, direction, kind, limit, offset any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListPublic", reflect.TypeOf((*MockCrossReference)(nil).ListPublic), ctx, anchor, direction, kind, limit, offset)
+}
+
+// Review mocks base method.
+func (m *MockCrossReference) Review(ctx context.Context, id, status, reviewerID string, expectedUpdatedAt *time.Time) (entity.CrossReference, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Review", ctx, id, status, reviewerID, expectedUpdatedAt)
+	ret0, _ := ret[0].(entity.CrossReference)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Review indicates an expected call of Review.
+func (mr *MockCrossReferenceMockRecorder) Review(ctx, id, status, reviewerID, expectedUpdatedAt any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Review", reflect.TypeOf((*MockCrossReference)(nil).Review), ctx, id, status, reviewerID, expectedUpdatedAt)
+}
+
 // MockUnitRegistry is a mock of UnitRegistry interface.
 type MockUnitRegistry struct {
 	ctrl     *gomock.Controller

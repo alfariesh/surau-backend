@@ -87,6 +87,9 @@ definitions:
       page_id:
         example: 12
         type: integer
+      surah_id:
+        example: 73
+        type: integer
       target_type:
         example: citable_unit
         type: string
@@ -1444,6 +1447,109 @@ definitions:
         type: string
       user_id:
         example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+    type: object
+  entity.CrossReference:
+    properties:
+      confidence:
+        example: 1
+        type: number
+      created_at:
+        example: "2026-07-10T12:00:00Z"
+        type: string
+      created_by:
+        type: string
+      evidence_normalized:
+        type: string
+      evidence_text:
+        type: string
+      id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      kind:
+        example: quotes
+        type: string
+      metadata:
+        type: object
+      method:
+        example: resolver
+        type: string
+      method_detail:
+        $ref: '#/definitions/entity.CrossReferenceMethodDetail'
+      normalization_version:
+        example: 1
+        type: integer
+      origin:
+        example: legacy_quran_reference
+        type: string
+      origin_key:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      review_status:
+        example: approved
+        type: string
+      reviewed_at:
+        type: string
+      reviewed_by:
+        type: string
+      source_anchor:
+        example: kitab/797/h/11
+        type: string
+      source_corpus:
+        example: kitab
+        type: string
+      source_work_id:
+        example: 797
+        type: integer
+      target_anchor:
+        example: quran/73:4
+        type: string
+      target_corpus:
+        example: quran
+        type: string
+      target_quran_from_ayah:
+        example: 4
+        type: integer
+      target_quran_surah_id:
+        example: 73
+        type: integer
+      target_quran_to_ayah:
+        example: 10
+        type: integer
+      target_work_id:
+        example: 798
+        type: integer
+      updated_at:
+        example: "2026-07-10T12:00:00Z"
+        type: string
+    type: object
+  entity.CrossReferenceList:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/entity.CrossReference'
+        type: array
+      total:
+        type: integer
+      work_total:
+        type: integer
+    type: object
+  entity.CrossReferenceMethodDetail:
+    properties:
+      actor_id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      model_id:
+        example: gpt-5-mini-2026-06-01
+        type: string
+      prompt_version:
+        example: quran-reference-v1
+        type: string
+      run_id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      strategy:
+        example: explicit_surah_ayah
         type: string
     type: object
   entity.EditorialMissingQuranAsset:
@@ -3384,6 +3490,41 @@ definitions:
         example: 3
         type: integer
     type: object
+  v1.CreateCrossReference:
+    properties:
+      confidence:
+        example: 0.95
+        maximum: 1
+        minimum: 0
+        type: number
+      evidence_text:
+        maxLength: 100000
+        type: string
+      kind:
+        enum:
+        - cites
+        - quotes
+        - explains
+        - parallel
+        example: quotes
+        type: string
+      metadata:
+        type: object
+      source_anchor:
+        example: kitab/797/h/11
+        maxLength: 500
+        type: string
+      target_anchor:
+        example: kitab/798
+        maxLength: 500
+        type: string
+    required:
+    - confidence
+    - evidence_text
+    - kind
+    - source_anchor
+    - target_anchor
+    type: object
   v1.CreateProductionProject:
     properties:
       book_id:
@@ -4491,6 +4632,20 @@ definitions:
     required:
     - password
     - token
+    type: object
+  v1.ReviewCrossReference:
+    properties:
+      review_status:
+        enum:
+        - pending
+        - approved
+        - rejected
+        - ambiguous
+        - needs_review
+        example: approved
+        type: string
+    required:
+    - review_status
     type: object
   v1.ReviewProductionAsset:
     properties:
@@ -8251,6 +8406,63 @@ paths:
       summary: List kitab categories
       tags:
       - kitab
+  /cross-references:
+    get:
+      description: Return approved, publicly visible content-to-content claims for
+        one canonical Anchor. Incoming Quran ayah queries include target ranges containing
+        that ayah; surah-only targets do not imply every ayah.
+      operationId: list-cross-references
+      parameters:
+      - description: Canonical Anchor
+        in: query
+        name: anchor
+        required: true
+        type: string
+      - description: Direction
+        enum:
+        - incoming
+        - outgoing
+        in: query
+        name: direction
+        required: true
+        type: string
+      - description: Claim kind
+        enum:
+        - cites
+        - quotes
+        - explains
+        - parallel
+        in: query
+        name: kind
+        type: string
+      - default: 50
+        description: Limit (max 200)
+        in: query
+        name: limit
+        type: integer
+      - default: 0
+        description: Offset (max 10000)
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.CrossReferenceList'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      summary: List Cross-References in either direction
+      tags:
+      - cross-references
   /editorial/books/{book_id}/headings/{heading_id}/draft:
     get:
       description: Get the current source kitab heading title draft. Requires editor
@@ -8451,6 +8663,240 @@ paths:
       summary: Restore page draft revision
       tags:
       - editorial
+  /editorial/cross-references:
+    get:
+      description: List the protected review queue. Requires CapReviewEditorial; unlike
+        the public endpoint this surface can inspect all five review states.
+      operationId: editorial-list-cross-references
+      parameters:
+      - description: Canonical Anchor
+        in: query
+        name: anchor
+        type: string
+      - description: Direction (required with anchor)
+        enum:
+        - incoming
+        - outgoing
+        in: query
+        name: direction
+        type: string
+      - description: Claim kind
+        enum:
+        - cites
+        - quotes
+        - explains
+        - parallel
+        in: query
+        name: kind
+        type: string
+      - description: Attribution method
+        enum:
+        - resolver
+        - machine
+        - human
+        in: query
+        name: method
+        type: string
+      - description: Review state
+        enum:
+        - pending
+        - approved
+        - rejected
+        - ambiguous
+        - needs_review
+        in: query
+        name: review_status
+        type: string
+      - default: 50
+        description: Limit (max 200)
+        in: query
+        name: limit
+        type: integer
+      - default: 0
+        description: Offset (max 10000)
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.CrossReferenceList'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: List Cross-References for editorial review
+      tags:
+      - editorial
+      - cross-references
+    post:
+      consumes:
+      - application/json
+      description: Create a pending, session-attributed claim. Method, actor, review
+        state, origin, and normalized evidence are assigned by the server.
+      operationId: editorial-create-cross-reference
+      parameters:
+      - description: Human Cross-Reference
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.CreateCrossReference'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/entity.CrossReference'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Create a human Cross-Reference
+      tags:
+      - editorial
+      - cross-references
+  /editorial/cross-references/{id}:
+    get:
+      description: Get one claim, including evidence and attribution, for editorial
+        review.
+      operationId: editorial-get-cross-reference
+      parameters:
+      - description: Cross-Reference UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.CrossReference'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Get one Cross-Reference
+      tags:
+      - editorial
+      - cross-references
+  /editorial/cross-references/{id}/review:
+    patch:
+      consumes:
+      - application/json
+      description: Set any of the existing five review states. If-Match is required;
+        use the ETag from GET, or * for an explicit unconditional transition.
+      operationId: editorial-review-cross-reference
+      parameters:
+      - description: Cross-Reference UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Current ETag or *
+        in: header
+        name: If-Match
+        required: true
+        type: string
+      - description: Review decision
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.ReviewCrossReference'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.CrossReference'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "412":
+          description: Precondition Failed
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "428":
+          description: Precondition Required
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Review a Cross-Reference
+      tags:
+      - editorial
+      - cross-references
   /editorial/production-activity:
     get:
       description: List recent operational timeline events across production projects.
