@@ -87,11 +87,21 @@ B-2 ✅ **SELESAI 2026-07-10 (SESI 12)** (grammar Anchor kanonik diratifikasi ta
 16.205 Anchor B-1; resolver publik canonical + legacy `ayah_key`/`toc-{heading_id}`/page; seluruh
 lineage split/merge/multi-hop + cycle/visibility fail-closed; 20.500 unit aktif, 50 warm-up, 500
 sampel HTTP lokal: p50 0,952 ms, **p95 1,277 ms**, max 3,535 ms; tanpa migrasi/backfill) → B-3
-(Cross-Reference umum + bridge rujukan Quran); paralel: B-5 (normalisasi v1
+(Cross-Reference umum + bridge rujukan Quran) ✅ **SELESAI 2026-07-11 (SESI 13)**: registry
+dua-Anchor untuk `cites|quotes|explains|parallel`, atribusi metode+confidence+5 status review,
+bukti berversi, query incoming/outgoing approved-only, lineage, visibility fail-closed, dan
+`work_total` berbeda-Work; API editorial ber-ETag; Anchor surah aditif; resolver dual-write atomik
+serta backfill Quran pause/resume/rerun + freeze eksplisit. **AC-1:** `EXCEPT` dua arah membuktikan
+seluruh approved legacy ter-bridge tanpa selisih dan endpoint/embed Quran lama tetap identik saat
+backfill parsial. **AC-2:** tautan kitab→kitab `quotes` tak terlihat saat pending dan muncul tepat
+sekali di kedua arah setelah approved. **DS:** tiga edge dari dua kitab ke ayat/range menghasilkan
+`work_total=2`; ayat di luar range nol. Gerbang 40.000 edge, 50 warm-up, 500 baca: p95 campuran
+38,493 ms dan repeated-heading 13,486 ms (<200 ms); migrasi up→down→up hijau. Paralel: B-5
+(normalisasi v1
 + vektor emas + gerbang kesetaraan CI), B-6 (identitas generation-run); B-4 (lisensi platform +
 gerbang publish kitab) — PK-1 ✅ terjawab (default aman a/a/a).
 **Gerbang keluar:** determinisme pilot ≥99,5% (target 100%); 100% anchor legacy resolvable ≤50ms
-✅ B-2 (p95 1,277 ms); rujukan approved lama setara via registry baru; suite kesetaraan
+✅ B-2 (p95 1,277 ms); rujukan approved lama setara via registry baru ✅ B-3; suite kesetaraan
 normalisasi hijau di dua runtime.
 **Aturan keras (charter D2):** Fase hadith/wiki DILARANG mendesain model datanya sebelum
 B-1..B-3 terkunci.
