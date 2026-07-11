@@ -452,6 +452,24 @@ type (
 		DeleteFinalProductionAsset(ctx context.Context, actorID, projectID, assetType string, headingID *int, reason *string) error
 	}
 
+	// LicenseRepo owns the B-4 kitab license audit queue and the atomic,
+	// actor-attributed status transition. It stays separate from EditorialRepo
+	// so existing editorial integrations do not accidentally become license
+	// writers merely by implementing the broader editing contract.
+	LicenseRepo interface {
+		ListBookLicenseAudit(
+			ctx context.Context,
+			filter LicenseAuditFilter,
+		) ([]entity.BookLicenseAuditItem, int, entity.BookLicenseAuditCounts, error)
+		GetBookLicense(ctx context.Context, bookID int) (entity.BookLicense, error)
+		UpdateBookLicense(
+			ctx context.Context,
+			actorID string,
+			update entity.BookLicenseUpdate,
+			expectedUpdatedAt *time.Time,
+		) (entity.BookLicense, error)
+	}
+
 	// TaskFilter -.
 	UserFilter struct {
 		Query         string
@@ -463,6 +481,14 @@ type (
 
 	UserActivityFilter struct {
 		UserID string
+		Limit  uint64
+		Offset uint64
+	}
+
+	// LicenseAuditFilter selects one status or the special unresolved/all
+	// queue views. Pagination is always clamped by the usecase.
+	LicenseAuditFilter struct {
+		Status string
 		Limit  uint64
 		Offset uint64
 	}

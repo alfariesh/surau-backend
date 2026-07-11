@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/alfariesh/surau-backend/internal/controller/restapi/middleware"
+	"github.com/alfariesh/surau-backend/internal/controller/restapi/v1/response"
 	"github.com/alfariesh/surau-backend/internal/entity"
 	"github.com/alfariesh/surau-backend/internal/policy"
 	"github.com/alfariesh/surau-backend/internal/usecase"
@@ -225,6 +226,7 @@ func TestEditorialCreateProductionProjectRejectsBadLang(t *testing.T) {
 
 	resp, err := app.Test(req)
 	require.NoError(t, err)
+
 	defer resp.Body.Close()
 
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
@@ -248,6 +250,7 @@ func TestEditorialCreateProductionProjectConflictIncludesExistingProjectID(t *te
 
 	resp, err := app.Test(req)
 	require.NoError(t, err)
+
 	defer resp.Body.Close()
 
 	var body struct {
@@ -294,6 +297,7 @@ func TestEditorialPublishProductionProjectBlockedIncludesBlockers(t *testing.T) 
 
 	resp, err := app.Test(req)
 	require.NoError(t, err)
+
 	defer resp.Body.Close()
 
 	var body struct {
@@ -312,6 +316,51 @@ func TestEditorialPublishProductionProjectBlockedIncludesBlockers(t *testing.T) 
 	assert.False(t, body.CanPublish)
 	require.Len(t, body.BlockingErrors, 1)
 	assert.Equal(t, entity.ProductionAssetBookMetadata, body.BlockingErrors[0].AssetType)
+}
+
+func TestEditorialPublishProductionProjectLicenseBlockedUsesRichContract(t *testing.T) {
+	t.Parallel()
+
+	app := newProductionTestApp(
+		entity.User{ID: "admin-id", Role: entity.UserRoleAdmin},
+		&fakeProductionEditorial{
+			publishProductionProjectErr: entity.ErrLicenseNotPermitted,
+			publishCheck: entity.BookProductionPublishCheck{
+				Project:       entity.BookProductionProject{ID: "project-id", BookID: 797, Lang: "id"},
+				Ready:         true,
+				CanPublish:    false,
+				LicenseStatus: entity.LicenseStatusUnknown,
+				BlockingErrors: []entity.BookProductionBlocking{{
+					Code:    "license_not_permitted",
+					Message: "book license must be permitted before publication",
+				}},
+			},
+		},
+	)
+	req := httptest.NewRequestWithContext(
+		t.Context(),
+		http.MethodPost,
+		"/v1/editorial/production-projects/project-id/publish",
+		nil,
+	)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := app.Test(req)
+	require.NoError(t, err)
+
+	defer resp.Body.Close()
+
+	var body response.ProductionPublishBlocked
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
+
+	assert.Equal(t, http.StatusConflict, resp.StatusCode)
+	assert.Equal(t, "license not permitted", body.Error)
+	assert.Equal(t, "license_not_permitted", body.Code)
+	assert.Equal(t, "project-id", body.Project.ID)
+	assert.True(t, body.Ready)
+	assert.False(t, body.CanPublish)
+	require.Len(t, body.BlockingErrors, 1)
+	assert.Equal(t, "license_not_permitted", body.BlockingErrors[0].Code)
 }
 
 func TestEditorialProductionProjectResponsesIncludeOwner(t *testing.T) {

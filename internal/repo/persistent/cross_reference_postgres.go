@@ -874,16 +874,16 @@ func applyPublicCrossReferenceVisibility(builder sq.SelectBuilder) sq.SelectBuil
             ON cr.source_corpus = 'kitab'
            AND cr_source_book.id = cr.source_work_id
            AND cr_source_book.is_deleted = FALSE`).
-		LeftJoin(`book_publications cr_source_publication
+		LeftJoin(`public_book_publications cr_source_publication
             ON cr_source_publication.book_id = cr_source_book.id
-           AND cr_source_publication.status = 'published'`).
+        `).
 		LeftJoin(`books cr_target_book
             ON cr.target_corpus = 'kitab'
            AND cr_target_book.id = cr.target_work_id
            AND cr_target_book.is_deleted = FALSE`).
-		LeftJoin(`book_publications cr_target_publication
+		LeftJoin(`public_book_publications cr_target_publication
             ON cr_target_publication.book_id = cr_target_book.id
-           AND cr_target_publication.status = 'published'`).
+        `).
 		JoinClause(`JOIN LATERAL (
             SELECT CASE
                 WHEN cr.source_corpus = 'kitab'

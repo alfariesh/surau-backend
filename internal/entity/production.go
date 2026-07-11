@@ -201,6 +201,7 @@ type BookProductionPublishCheck struct {
 	Project        BookProductionProject        `json:"project"`
 	Ready          bool                         `json:"ready"          example:"false"`
 	CanPublish     bool                         `json:"can_publish"    example:"false"`
+	LicenseStatus  string                       `json:"license_status" example:"needs_review"`
 	RequiredCount  int                          `json:"required_count" example:"42"`
 	CompleteCount  int                          `json:"complete_count" example:"40"`
 	MissingCount   int                          `json:"missing_count"  example:"2"`

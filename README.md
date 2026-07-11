@@ -256,6 +256,11 @@ If the source changed between staging and approval the run aborts (drift
 guard) — re-stage and review again. A row that reappears in a later release
 automatically clears its tombstone.
 
+B-4 adds a separate license guard: an exact no-op re-import remains allowed,
+but a material source change to a grandfathered public book fails unless that
+Edition has `license_status=permitted`. Prepare and audit the license decision
+first; see [`docs/license-governance.md`](docs/license-governance.md).
+
 ## Import Translation/Audio Assets
 
 `cmd/import-reader-assets` accepts JSONL records.
@@ -276,11 +281,19 @@ Catalog metadata translation:
 
 ```json
 {"kind":"book_metadata_translation","book_id":797,"lang":"id","display_title":"Judul Kitab","bibliography":"...","hint":"...","description":"...","source":"glm-5.1","translation_status":"generated","provenance_class":"machine","generation":{"run_id":"22222222-2222-4222-8222-222222222222","model_id":"glm-5.1","prompt_version":"catalog-translation-v1"}}
-{"kind":"author_translation","author_id":177,"lang":"id","name":"Nama Penulis","biography":"...","death_text":"...","source":"glm-5.1","translation_status":"reviewed","translation_reviewed_by":"Editor A","provenance_class":"machine","generation":{"run_id":"22222222-2222-4222-8222-222222222222","model_id":"glm-5.1","prompt_version":"catalog-translation-v1"}}
-{"kind":"category_translation","category_id":10,"lang":"id","name":"Ilmu Hadis","source":"glm-5.1","translation_status":"reviewed","translation_reviewed_by":"Editor B","provenance_class":"machine","generation":{"run_id":"22222222-2222-4222-8222-222222222222","model_id":"glm-5.1","prompt_version":"catalog-translation-v1"}}
+{"kind":"author_translation","book_id":797,"author_id":177,"lang":"id","name":"Nama Penulis","biography":"...","death_text":"...","source":"glm-5.1","translation_status":"reviewed","translation_reviewed_by":"Editor A","provenance_class":"machine","generation":{"run_id":"22222222-2222-4222-8222-222222222222","model_id":"glm-5.1","prompt_version":"catalog-translation-v1"}}
+{"kind":"category_translation","book_id":797,"category_id":10,"lang":"id","name":"Ilmu Hadis","source":"glm-5.1","translation_status":"reviewed","translation_reviewed_by":"Editor B","provenance_class":"machine","generation":{"run_id":"22222222-2222-4222-8222-222222222222","model_id":"glm-5.1","prompt_version":"catalog-translation-v1"}}
 ```
 
 Audio and section translations are keyed by TOC heading, not by page. Catalog translations are keyed by book, author, or category plus language. Every imported text row is machine enrichment and therefore requires `provenance_class=machine` plus `generation.run_id`, `model_id`, and the exact prompt version for its kind. The importer validates the full file first and commits run registration plus every row atomically; one invalid row aborts the file with its line number. Human review never removes the machine identity. Translation status is informational only: `generated` means LLM/import generated content, while `reviewed` requires `translation_reviewed_by` and is shown publicly as a reader label. It does not decide whether a book is published. Audio rows do not carry text provenance. See `examples/reader-assets.sample.jsonl` and `docs/generation-runs.md` for the complete contract.
+
+If an import would immediately change an already-public book, the Edition must
+be `permitted`; an effective no-op is still accepted. Supply `book_id` as the
+Edition/project context for shared author/category translation rows produced
+from a book workflow so the importer can fail early. The database also checks
+the real fan-out of shared author/category rows: if any affected public
+book+language is still grandfathered and non-permitted, the shared write is
+blocked because readers would see that change immediately.
 
 Run:
 
@@ -421,7 +434,7 @@ Editorial reader localization gaps are available at `GET /v1/editorial/reader/mi
 
 Editorial Quran gaps are available at `GET /v1/editorial/quran/missing-assets`. Filter with `target_lang=id|en`, `asset_type=surah_info|ayah_translation|translation_source|audio_public`, `surah_id`, `limit`, and `offset`. Empty `target_lang` means both `id,en`; `target_lang=ar` is rejected because Arabic is source content.
 
-Book translation production is managed through `book_id + lang` projects. Editors create a project from an existing raw Postgres kitab, fill drafts per metadata/author/category and per TOC heading for translation, summary, and optional audio, then submit/approve drafts when review is required. Admins publish only when completeness passes; publish upserts approved drafts into final reader tables and marks the project published. Unpublish hides the non-Arabic reader assets without deleting final rows.
+Book translation production is managed through `book_id + lang` projects. Editors create a project from an existing raw Postgres kitab, fill drafts per metadata/author/category and per TOC heading for translation, summary, and optional audio, then submit/approve drafts when review is required. Admins publish only when completeness passes **and the Edition license is `permitted`**; publish upserts approved drafts into final reader tables and marks the project published. Unpublish hides the non-Arabic reader assets without deleting final rows.
 
 Resolve a handled feedback item:
 

@@ -106,11 +106,29 @@ dan ekstraksi menolak tuple model+prompt+run yang hilang/konflik secara atomik; 
 Citable Unit, dan Cross-Reference menegakkan Provenance Class di DB serta memaparkan identity
 typed di API kurasi. Migrasi replay-safe dan 13 FK lulus `NOT VALID → preflight → VALIDATE`;
 upgrade legacy tidak merekayasa identity; up→down→up, 152 tes Python, integration HTTP penuh,
-dan live Go serial+race hijau. Berikutnya B-4 (lisensi platform + gerbang publish kitab) — PK-1
-✅ terjawab (default aman a/a/a).
+dan live Go serial+race hijau. B-4 ✅ **SELESAI 2026-07-11 (SESI 15)**: kosakata platform
+`license_status` lima nilai diadopsi pada kitab (`books` sebagai batas Edition sekaligus Work
+sementara sampai K-2) dengan nilai wajib 100%, histori keputusan append-only ber-aktor+alasan+bukti,
+serta pewarisan virtual ke Citable Unit (override unit nullable; status efektif fail-closed pada
+Anchor, Cross-Reference, dan RAG). Publikasi katalog/produksi BARU dan setiap mutasi konten yang
+menambah atau mengubah materi publik kini wajib literal `permitted`, dijaga usecase+importer+trigger
+DB dan error kontrak stabil 409 `license_not_permitted`; karya yang sudah publik dimigrasikan dengan
+marker grandfather satu-arah sesuai O-1B-1-a, tetap tayang saat `unknown`/`needs_review`, lalu segera
+hilang dari seluruh jalur baca publik bila diaudit `restricted`. Laporan terlindungi
+`GET /v1/editorial/license-audit` memberi hitungan cakupan lengkap dan antrean unresolved yang
+mendahulukan karya grandfathered lalu sinyal pembaca nyata; keputusan memakai ETag, kapabilitas
+publish, MFA segar, dan audit atomik. Kontrak publik aditif memaparkan status, cache kitab selalu
+revalidate/bypass edge, dan enrichment `machine` tetap berlabel di reader tetapi dikecualikan dari
+RAG sampai reviewed. **AC:** constraint+preflight membuktikan 100% karya bernilai; integration HTTP
+membuktikan publish non-permitted tertolak dengan error jelas serta permitted berhasil; laporan
+audit+prioritas+transisi/takedown terbukti unit/integration/live termasuk race. Migrasi penuh
+up→down-all→up menghasilkan 0 objek sisa dan skema identik; database integration baru hijau,
+live Go serial+race hijau, worker cache 22/22+typecheck hijau, diff-cover 73,6%.
 **Gerbang keluar:** determinisme pilot ≥99,5% (target 100%); 100% anchor legacy resolvable ≤50ms
 ✅ B-2 (p95 1,277 ms); rujukan approved lama setara via registry baru ✅ B-3; suite kesetaraan
 normalisasi hijau di dua runtime ✅ B-5; seluruh enrichment baru ber-generation identity ✅ B-6.
+100% karya memiliki License Status, publish baru hanya `permitted`, dan laporan audit hidup ✅ B-4.
+**Gerbang keluar W2 TERPENUHI 2026-07-11 — lanjut W3.**
 **Aturan keras (charter D2):** Fase hadith/wiki DILARANG mendesain model datanya sebelum
 B-1..B-3 terkunci.
 

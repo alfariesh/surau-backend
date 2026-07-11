@@ -179,22 +179,24 @@ sebelum `limit`/`offset`; halaman kosong karena offset tinggi tetap membawa hitu
 - Anchor surah-only seperti `quran/73` tidak dianggap merujuk setiap ayah dalam surah. Ia hanya
   cocok ketika Anchor surah itu sendiri diminta.
 - Backlink ke Anchor Citable Unit lama tetap dapat ditemukan melalui seluruh penerus aktifnya
-  setelah split/merge. Hasil akhir di-deduplicate.
+  yang license-eligible setelah split/merge. Penerus dengan override selain `NULL`/`permitted`
+  disaring tanpa menyembunyikan sibling eligible; hasil akhir di-deduplicate.
 - Kedua ujung wajib lolos gerbang visibility publik yang sama dengan resolver/reader. Buku
-  unpublished/deleted dan Anchor yang tidak terlihat tidak memengaruhi `items`, `total`, atau
-  `work_total`.
+  unpublished/deleted, heading derived tanpa unit eligible, dan Anchor unit yang tidak terlihat
+  tidak memengaruhi `items`, `total`, atau `work_total`.
 - Semua status selain `approved` tidak pernah memengaruhi tiga field tersebut.
 
-Respons sukses memakai weak body-hash `ETag` dan cache browser lima menit:
+Respons sukses memakai weak body-hash `ETag` dan wajib divalidasi ulang sebelum dipakai:
 
 ```http
-Cache-Control: public, max-age=300, stale-while-revalidate=86400
+Cache-Control: public, max-age=0, must-revalidate
 ETag: W/"..."
 ```
 
-Client boleh mengirim `If-None-Match`; kecocokan menghasilkan `304 Not Modified`. Endpoint ini
-sengaja tidak masuk cache L1/KV worker agar perubahan review dan lineage tidak tertahan oleh
-salinan edge lama.
+Client sebaiknya menyimpan ETag dan mengirim `If-None-Match`; kecocokan menghasilkan
+`304 Not Modified`. Seluruh prefix `/v1/cross-references` sengaja tidak masuk cache L1/KV Worker.
+Setiap request mencapai gerbang visibility backend agar perubahan review, lineage, atau lisensi
+langsung berlaku tanpa salinan stale.
 
 ## Endpoint editorial
 

@@ -140,10 +140,20 @@ Availability actions:
 - `POST /v1/books/{book_id}/toc/{heading_id}/translation-feedback?lang=...` remains exact-language only and returns `404 translation not found` if that section translation does not exist.
 - `POST /v1/books/{book_id}/rag?lang=...` validates the same language contract and includes `requested_lang` in the response.
 
+Reader visibility is deliberately broader than RAG retrieval eligibility. A public generated
+translation remains visible with `translation_status=generated`, but Book RAG consumes catalog
+metadata, section translations, and summaries only when the final asset is source-authored or its
+status is `reviewed`. Human approval does not rewrite provenance: `provenance_class=machine` plus
+`reviewed` is eligible; `provenance_class=machine` plus `generated` is excluded from the RAG book
+prompt, TOC tree, lexical search, and page evidence.
+
 ### Reader Publication Status Fields
 
 `publication_status` is the legacy catalog/source publication status from `book_publications`. New clients should read the explicit fields:
 
+- `license_status`: effective Edition/Work status for this public book. The field is additive;
+  only `permitted` can be published now, while a pre-B-4 grandfathered book can temporarily return
+  `unknown`, `needs_review`, or `public_domain`. `restricted` is never returned by a public reader.
 - `catalog_publication_status` / `catalog_published`: whether the Arabic/source catalog book is visible in the public reader.
 - `production_workflow_status`, `production_publication_status`, `production_published`: status of the matching `book_id + lang` production project for `lang=id|en`.
 - `production_status`: compact frontend state. `candidate` means no active production project exists for the requested target language; `published` means the target-language production project is public.
@@ -153,6 +163,9 @@ Reader stats have `scope="catalog_global"` because they describe the published s
 - `catalog_published_count`: source catalog books published via `book_publications`.
 - `production_published_count`: target-language production projects published via `book_production_projects`.
 - `coverage_count`: alias for target-language production coverage in the published source catalog.
+
+The operational license report and mutation contract are documented in
+`docs/license-governance.md`.
 
 ## Editorial Missing Reader Assets Queue
 

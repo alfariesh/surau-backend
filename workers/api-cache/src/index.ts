@@ -106,7 +106,12 @@ const BYPASS_PREFIXES = [
   "/v1/user",
   "/v1/editorial",
   "/v1/admin",
-  "/v1/email"
+  "/v1/email",
+  // License-sensitive content must always reach the backend visibility gate.
+  // In particular, an old L1/KV entry must never resurrect restricted kitab.
+  "/v1/books",
+  "/v1/anchors",
+  "/v1/cross-references"
 ];
 
 const TRACKING_PARAMS = new Set(["fbclid", "gclid", "gbraid", "wbraid", "mc_cid", "mc_eid"]);
@@ -380,7 +385,14 @@ export function normalizedCacheURL(input: string): URL {
 function allowedPublicPath(url: URL): boolean {
   const path = stripTrailingSlash(url.pathname);
 
-  if (path === "/v1/categories" || path === "/v1/authors" || path === "/v1/books") {
+  // License-sensitive kitab reads remain recognizable here only for the
+  // public-search limiter. BYPASS_PREFIXES still excludes them from caching.
+  if (
+    path === "/v1/categories" ||
+    path === "/v1/authors" ||
+    path === "/v1/books" ||
+    /^\/v1\/books\/\d+\/headings$/.test(path)
+  ) {
     return true;
   }
 
@@ -407,34 +419,6 @@ function allowedPublicPath(url: URL): boolean {
 
   if (/^\/v1\/quran\/ayahs\/\d+:\d+$/.test(path)) {
     return true;
-  }
-
-  if (/^\/v1\/books\/\d+$/.test(path)) {
-    return true;
-  }
-
-  if (/^\/v1\/books\/\d+\/pages(\/\d+)?$/.test(path)) {
-    return true;
-  }
-
-  if (/^\/v1\/books\/\d+\/headings$/.test(path)) {
-    return true;
-  }
-
-  if (/^\/v1\/books\/\d+\/sections\/\d+$/.test(path)) {
-    return true;
-  }
-
-  if (
-    /^\/v1\/books\/\d+\/toc$/.test(path) ||
-    /^\/v1\/books\/\d+\/toc\/\d+\/read$/.test(path) ||
-    /^\/v1\/books\/\d+\/toc\/\d+\/playlist$/.test(path)
-  ) {
-    return true;
-  }
-
-  if (/^\/v1\/books\/\d+\/quran-references$/.test(path)) {
-    return !url.searchParams.has("status") || url.searchParams.get("status") === "approved";
   }
 
   return false;

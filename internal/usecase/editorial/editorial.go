@@ -43,16 +43,22 @@ type UnitReconciler interface {
 
 // UseCase provides editorial operations.
 type UseCase struct {
-	repo  repo.EditorialRepo
-	units UnitReconciler
-	log   logger.Interface
+	repo    repo.EditorialRepo
+	license repo.LicenseRepo
+	units   UnitReconciler
+	log     logger.Interface
 }
 
 // New creates an editorial usecase. units and l are optional (nil-safe): when
 // wired, published page edits trigger a citable-unit reconcile for books that
 // already went through the pilot backfill.
 func New(r repo.EditorialRepo, units UnitReconciler, l logger.Interface) *UseCase {
-	return &UseCase{repo: r, units: units, log: l}
+	uc := &UseCase{repo: r, units: units, log: l}
+	if licenseRepo, ok := r.(repo.LicenseRepo); ok {
+		uc.license = licenseRepo
+	}
+
+	return uc
 }
 
 // reconcileUnitsAfterPublish runs the phase-1b lineage hook: the publish is

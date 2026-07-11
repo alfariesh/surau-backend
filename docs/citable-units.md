@@ -45,11 +45,26 @@ yang sama.
 | `provenance_class` | `source`/`editorial`/`machine` — **immutable** (B-D11); review = dimensi terpisah |
 | `provenance_detail` JSONB | `release` (source) / `edit_actor_id` (editorial) / `footnote_link` |
 | `generation_run_id` | FK immutable ke `generation_runs`; wajib hanya ketika `provenance_class=machine` (B-6) |
-| `license_status` | override per-unit; NULL = mewarisi Work (kolom Work datang di B-4) |
+| `license_status` | override per-unit; NULL = mewarisi Edition/Work sementara dari `books` (B-4) |
+| `effective_license_status` | hasil akhir override unit atau status Edition |
+| `license_source` | `unit_override` atau `edition`, sehingga asal hasil pewarisan eksplisit |
 | `lifecycle` + `retired_at` | `active`/`superseded`/`tombstoned` (CHECK: active ⟺ retired_at NULL) |
 
 `citable_unit_lineage(predecessor_id, successor_id, reason)` — edge supersede; `reason` =
 `edit` (gap alignment se-scope) atau `content_move` (rescue pass antar-scope / kembar bertahan).
+
+### Gerbang License Status pada resolver publik
+
+Work/Edition harus lolos proyeksi publik lebih dahulu. Setelah itu, Anchor dan Cross-Reference
+hanya menganggap unit ber-override `NULL` atau `permitted` sebagai target publik. Filter berlaku
+per-unit: sibling eligible pada heading/page atau ujung lineage yang sama tetap dikembalikan.
+Buku yang `units_derived_at`-nya sudah terisi tidak pernah kembali ke fallback source-row ketika
+semua unit locator terfilter; fallback kasar hanya menjaga kompatibilitas buku non-derived.
+
+Reader HTML dan Book RAG belum menyusun respons dari registry ini. Komposisi per-unit keduanya
+tetap pekerjaan K-1; B-4 tidak memotong lalu merangkai ulang halaman karena itu berisiko mengubah
+teks sumber. Lihat batas operasional dan prosedur takedown sementara di
+[`docs/license-governance.md`](license-governance.md).
 
 ### Invarian yang ditegakkan DB
 

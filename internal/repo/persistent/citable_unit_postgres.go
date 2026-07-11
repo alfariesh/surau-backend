@@ -425,11 +425,15 @@ func (r *CitableUnitRepo) BookDerivedAt(ctx context.Context, bookID int) (*time.
 }
 
 const citableUnitColumns = `
-	id, corpus, book_id, heading_id, page_id, kind, ordinal, position,
-	parent_unit_id, anchor, marker, text, html, text_normalized,
-	normalization_version, content_hash, occurrence, language,
-	provenance_class, provenance_detail, generation_run_id::text, license_status, lifecycle,
-	retired_at, created_at, updated_at`
+	u.id, u.corpus, u.book_id, u.heading_id, u.page_id, u.kind, u.ordinal, u.position,
+	u.parent_unit_id, u.anchor, u.marker, u.text, u.html, u.text_normalized,
+	u.normalization_version, u.content_hash, u.occurrence, u.language,
+	u.provenance_class, u.provenance_detail, u.generation_run_id::text, u.license_status, u.lifecycle,
+	u.retired_at, u.created_at, u.updated_at, license.effective_license_status, license.license_source`
+
+const citableUnitLicenseFrom = `
+	citable_units u
+	JOIN citable_units_with_effective_license license ON license.id = u.id`
 
 func scanCitableUnit(row pgx.Row) (entity.CitableUnit, error) {
 	var (
@@ -441,7 +445,7 @@ func scanCitableUnit(row pgx.Row) (entity.CitableUnit, error) {
 		&u.Position, &u.ParentUnitID, &u.Anchor, &u.Marker, &u.Text, &u.HTML, &u.TextNormalized,
 		&u.NormalizationVersion, &u.ContentHash, &u.Occurrence, &u.Language,
 		&u.ProvenanceClass, &detail, &u.GenerationRunID, &u.LicenseStatus, &u.Lifecycle,
-		&u.RetiredAt, &u.CreatedAt, &u.UpdatedAt)
+		&u.RetiredAt, &u.CreatedAt, &u.UpdatedAt, &u.EffectiveLicenseStatus, &u.LicenseSource)
 	if err != nil {
 		return u, err
 	}
@@ -467,7 +471,7 @@ func (r *CitableUnitRepo) ResolveUnit(ctx context.Context, unitID string) (entit
 	}
 
 	unit, err := scanCitableUnit(r.Pool.QueryRow(ctx,
-		`SELECT `+citableUnitColumns+` FROM citable_units WHERE id = $1`, unitID))
+		`SELECT `+citableUnitColumns+` FROM `+citableUnitLicenseFrom+` WHERE u.id = $1`, unitID))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return res, entity.ErrUnitNotFound
 	}
@@ -505,8 +509,8 @@ func (r *CitableUnitRepo) ResolveUnit(ctx context.Context, unitID string) (entit
 
 	rows, err := r.Pool.Query(ctx, `
 		SELECT `+citableUnitColumns+`
-		FROM citable_units
-		WHERE id = ANY($1::uuid[])`, activeIDs)
+		FROM `+citableUnitLicenseFrom+`
+		WHERE u.id = ANY($1::uuid[])`, activeIDs)
 	if err != nil {
 		return res, fmt.Errorf("CitableUnitRepo.ResolveUnit active units: %w", err)
 	}

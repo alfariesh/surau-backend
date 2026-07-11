@@ -53,6 +53,11 @@ func NewRoutes(
 	jwtManager *jwt.Manager,
 	l logger.Interface,
 ) {
+	var licenseAudit usecase.LicenseAudit
+	if implementation, ok := editorial.(usecase.LicenseAudit); ok {
+		licenseAudit = implementation
+	}
+
 	r := &V1{
 		reader:             reader,
 		bookRAG:            bookRAG,
@@ -63,6 +68,7 @@ func NewRoutes(
 		u:                  u,
 		personal:           personal,
 		editorial:          editorial,
+		licenseAudit:       licenseAudit,
 		email:              email,
 		emailWebhookSecret: strings.TrimSpace(emailWebhookSecret),
 		l:                  l,
@@ -94,18 +100,18 @@ func NewRoutes(
 		emailPublicGroup.Post("/webhooks/cloudflare/bounces", r.emailCloudflareBounceWebhook)
 	}
 
-	anchorGroup := apiV1Group.Group("/anchors", middleware.PublicCache())
+	anchorGroup := apiV1Group.Group("/anchors", middleware.PublicRevalidate())
 	{
 		anchorGroup.Get("/resolve", r.resolveAnchor)
 	}
 
-	crossReferenceGroup := apiV1Group.Group("/cross-references", middleware.PublicCache())
+	crossReferenceGroup := apiV1Group.Group("/cross-references", middleware.PublicRevalidate())
 	{
 		crossReferenceGroup.Get("/", r.listCrossReferences)
 	}
 
 	// Public reader routes
-	bookGroup := apiV1Group.Group("/books", middleware.PublicCache())
+	bookGroup := apiV1Group.Group("/books", middleware.PublicRevalidate())
 	{
 		bookGroup.Get("/", r.listBooks)
 		bookGroup.Get("/:book_id", r.getBook)
@@ -276,6 +282,8 @@ func NewRoutes(
 			middleware.RequireCapability(u, policy.CapReviewEditorial),
 		)
 		editorialReviewGroup.Get("/books", r.editorialListBooks)
+		editorialReviewGroup.Get("/license-audit", r.editorialLicenseAudit)
+		editorialReviewGroup.Get("/books/:book_id/license", r.editorialGetBookLicense)
 		editorialReviewGroup.Get("/cross-references", r.editorialListCrossReferences)
 		editorialReviewGroup.Get("/citable-units/:id", r.editorialGetCitableUnit)
 		editorialReviewGroup.Post("/cross-references", r.editorialCreateCrossReference)
@@ -333,6 +341,7 @@ func NewRoutes(
 		editorialAdminGroup := editorialGroup.Group("",
 			middleware.RequireCapability(u, policy.CapPublishProduction), middleware.RequireFreshMFA(u))
 		editorialAdminGroup.Put("/books/:book_id/publication", r.editorialUpdatePublication)
+		editorialAdminGroup.Patch("/books/:book_id/license", r.editorialUpdateBookLicense)
 		editorialAdminGroup.Post("/books/:book_id/metadata-draft/publish", r.editorialPublishMetadataDraft)
 		editorialAdminGroup.Post("/books/:book_id/pages/:page_id/publish", r.editorialPublishPageDraft)
 		editorialAdminGroup.Post("/books/:book_id/headings/:heading_id/publish", r.editorialPublishHeadingDraft)

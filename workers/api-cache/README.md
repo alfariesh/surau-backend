@@ -28,6 +28,7 @@ npm run deploy
 - Fresh TTL: `300s`
 - Stale TTL: `86400s`
 - Bypasses authenticated requests, cookies, searches, admin/editorial/auth/user paths, non-GET methods, non-JSON responses, non-200 responses, and large responses above `MAX_CACHE_BYTES`.
+- Always bypasses `/v1/books*`, `/v1/anchors*`, and `/v1/cross-references*`. These license-sensitive routes must reach the backend visibility gate on every request and retain the origin's `Cache-Control: public, max-age=0, must-revalidate`, ETag, and Last-Modified headers.
 - Uses `CACHE_VERSION` for mass invalidation without `KV.list()` or bulk deletes.
 
 ## Edge Rate Limits
@@ -59,10 +60,12 @@ curl -sS -D - -o /dev/null 'https://api.surau.org/v1/quran/surahs?lang=id'
 curl -sS -D - -o /dev/null 'https://api.surau.org/v1/quran/surahs?lang=id'
 curl -sS -D - -o /dev/null -H 'Authorization: Bearer test' 'https://api.surau.org/v1/quran/surahs?lang=id'
 curl -sS -D - -o /dev/null 'https://api.surau.org/v1/quran/search?q=rahman'
+curl -sS -D - -o /dev/null 'https://api.surau.org/v1/books/797?lang=id'
 curl -sS -D - -o /dev/null -X POST 'https://api.surau.org/v1/books/797/rag?lang=id' \
   -H 'Content-Type: application/json' \
   --data '{"question":"Apa isi bab ini?"}'
 ```
 
 Expect the first public request to return `X-Surau-Cache: MISS`, the second to return `L1-HIT` or `KV-HIT`, and authenticated/search requests to return `BYPASS`.
+The kitab request must return `X-Surau-Cache: BYPASS` and `Cache-Control: public, max-age=0, must-revalidate` on every call.
 Expensive endpoints that pass the limiter include `X-Surau-RateLimit: PASS`; blocked requests return `429`.

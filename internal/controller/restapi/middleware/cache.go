@@ -17,6 +17,11 @@ import (
 // Pinned by cache_test.go; documented in docs/frontend-integration-contract.md.
 const publicCacheControl = "public, max-age=300, stale-while-revalidate=86400"
 
+// publicRevalidateCacheControl is used by public resources whose visibility can
+// change immediately (for example after a license takedown). Browsers may keep
+// a response for conditional requests, but MUST revalidate it before reuse.
+const publicRevalidateCacheControl = "public, max-age=0, must-revalidate"
+
 // ExcludePath marks exact request paths a PublicCache group must NOT cache
 // (dynamic endpoints like search): the response is stamped no-store instead.
 // Needed because fiber group middleware is a prefix Use — a route cannot
@@ -31,6 +36,17 @@ func ExcludePath(paths ...string) func(map[string]bool) {
 
 // PublicCache sets cache validators for stable public GET JSON endpoints.
 func PublicCache(opts ...func(map[string]bool)) fiber.Handler {
+	return publicCache(publicCacheControl, opts...)
+}
+
+// PublicRevalidate sets the same validators as PublicCache while forbidding
+// reuse without an origin revalidation. Use it for public resources whose
+// visibility can be revoked and therefore must never be served stale.
+func PublicRevalidate(opts ...func(map[string]bool)) fiber.Handler {
+	return publicCache(publicRevalidateCacheControl, opts...)
+}
+
+func publicCache(cacheControl string, opts ...func(map[string]bool)) fiber.Handler {
 	excluded := make(map[string]bool)
 	for _, opt := range opts {
 		opt(excluded)
@@ -55,7 +71,7 @@ func PublicCache(opts ...func(map[string]bool)) fiber.Handler {
 			return err
 		}
 
-		stampCacheValidators(ctx)
+		stampCacheValidators(ctx, cacheControl)
 
 		return nil
 	}
@@ -63,7 +79,7 @@ func PublicCache(opts ...func(map[string]bool)) fiber.Handler {
 
 // stampCacheValidators adds Cache-Control/ETag/Last-Modified to a successful
 // GET response and answers 304 on an If-None-Match hit.
-func stampCacheValidators(ctx *fiber.Ctx) {
+func stampCacheValidators(ctx *fiber.Ctx, cacheControl string) {
 	if ctx.Response().StatusCode() != http.StatusOK {
 		return
 	}
@@ -76,7 +92,7 @@ func stampCacheValidators(ctx *fiber.Ctx) {
 	hash := sha256.Sum256(body)
 	etag := `W/"` + hex.EncodeToString(hash[:]) + `"`
 
-	ctx.Set("Cache-Control", publicCacheControl)
+	ctx.Set("Cache-Control", cacheControl)
 	ctx.Set("ETag", etag)
 
 	if lastModified, ok := latestUpdatedAt(body); ok {

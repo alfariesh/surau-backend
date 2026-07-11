@@ -194,6 +194,13 @@ func TestLiveCitableUnitPilot(t *testing.T) {
 		VALUES ($1, $2, $3, 'x') ON CONFLICT (id) DO NOTHING`,
 		actorID, "citable-pilot-editor", "citable-pilot@example.test")
 	require.NoError(t, err)
+	_, err = pool.Exec(ctx, `
+		UPDATE books
+		SET license_status = 'permitted',
+		    license_reason = 'live citable pilot publishes editorial source',
+		    license_updated_by = $2
+		WHERE id = $1`, citableFixtureBookID, actorID)
+	require.NoError(t, err)
 
 	pg := &postgres.Postgres{Pool: pool, Builder: squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar)}
 	editorialUC := editorial.New(persistent.NewEditorialRepo(pg), svc, nil)

@@ -26,10 +26,11 @@ const (
 
 	canonicalUnitRootSQL = `
 		SELECT u.id::text, u.anchor, u.book_id, u.heading_id, u.page_id,
-		       u.lifecycle, u.position, u.updated_at, COALESCE(h.ordinal, -1)
+		       u.lifecycle, u.position, u.updated_at, COALESCE(h.ordinal, -1),
+		       (u.license_status IS NULL OR u.license_status = 'permitted')
 		FROM citable_units u
 		JOIN books b ON b.id = u.book_id AND b.is_deleted = FALSE
-		JOIN book_publications p ON p.book_id = b.id AND p.status = 'published'
+		JOIN public_book_publications p ON p.book_id = b.id
 		LEFT JOIN book_headings h ON h.book_id = u.book_id AND h.heading_id = u.heading_id
 		WHERE u.corpus = 'kitab' AND u.anchor = $1`
 )
@@ -127,7 +128,7 @@ func (r *AnchorRepo) ResolveWork(ctx context.Context, bookID int) (entity.Anchor
 	err := r.Pool.QueryRow(ctx, `
 		SELECT GREATEST(b.updated_at, p.updated_at)
 		FROM books b
-		JOIN book_publications p ON p.book_id = b.id AND p.status = 'published'
+		JOIN public_book_publications p ON p.book_id = b.id
 		WHERE b.id = $1 AND b.is_deleted = FALSE`, bookID).Scan(&updatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return entity.AnchorLookupResult{}, entity.ErrAnchorNotFound
@@ -175,13 +176,14 @@ func (r *AnchorRepo) ResolveHeading(
 	rows, err := tx.Query(ctx, `
 		WITH candidate AS (
 			SELECT h.book_id, h.heading_id, h.page_id, h.is_deleted,
+			       b.units_derived_at IS NOT NULL AS units_derived,
 			       GREATEST(b.updated_at, p.updated_at, h.updated_at) AS updated_at
 			FROM books b
-			JOIN book_publications p ON p.book_id = b.id AND p.status = 'published'
+			JOIN public_book_publications p ON p.book_id = b.id
 			JOIN book_headings h ON h.book_id = b.id AND h.heading_id = $2
 			WHERE b.id = $1 AND b.is_deleted = FALSE
 		)
-		SELECT c.page_id, c.is_deleted, c.updated_at,
+		SELECT c.page_id, c.is_deleted, c.units_derived, c.updated_at,
 		       u.id::text, u.anchor, u.heading_id, u.page_id, u.updated_at
 		FROM candidate c
 		LEFT JOIN citable_units u
@@ -190,6 +192,7 @@ func (r *AnchorRepo) ResolveHeading(
 		 AND u.book_id = c.book_id
 		 AND u.heading_id = c.heading_id
 		 AND u.lifecycle = 'active'
+		 AND (u.license_status IS NULL OR u.license_status = 'permitted')
 		ORDER BY u.position NULLS LAST, u.anchor NULLS LAST`, bookID, headingID)
 	if err != nil {
 		return entity.AnchorLookupResult{}, fmt.Errorf("AnchorRepo.ResolveHeading: %w", err)
@@ -199,6 +202,7 @@ func (r *AnchorRepo) ResolveHeading(
 	result := entity.AnchorLookupResult{CanonicalAnchor: &canonical}
 	found := false
 	deleted := false
+	derived := false
 
 	var (
 		fallbackPageID    int
@@ -217,7 +221,7 @@ func (r *AnchorRepo) ResolveHeading(
 			unitPageID    sql.NullInt64
 			unitUpdatedAt sql.NullTime
 		)
-		if err := rows.Scan(&fallbackPageID, &rowDeleted, &rowUpdatedAt, &unitID, &unitAnchor,
+		if err := rows.Scan(&fallbackPageID, &rowDeleted, &derived, &rowUpdatedAt, &unitID, &unitAnchor,
 			&unitHeadingID, &unitPageID, &unitUpdatedAt); err != nil {
 			return entity.AnchorLookupResult{}, fmt.Errorf("AnchorRepo.ResolveHeading scan: %w", err)
 		}
@@ -266,7 +270,7 @@ func (r *AnchorRepo) ResolveHeading(
 	}
 
 	result.Status = entity.UnitLifecycleActive
-	if len(result.ActiveRecords) == 0 {
+	if len(result.ActiveRecords) == 0 && !derived {
 		result.ActiveRecords = []entity.AnchorRecord{{
 			TargetType:      entity.AnchorTargetBookHeading,
 			Corpus:          entity.UnitCorpusKitab,
@@ -297,13 +301,14 @@ func (r *AnchorRepo) ResolvePage(ctx context.Context, bookID, pageID int) (entit
 	rows, err := tx.Query(ctx, `
 		WITH candidate AS (
 			SELECT bp.book_id, bp.page_id, bp.is_deleted,
+			       b.units_derived_at IS NOT NULL AS units_derived,
 			       GREATEST(b.updated_at, p.updated_at, bp.updated_at) AS updated_at
 			FROM books b
-			JOIN book_publications p ON p.book_id = b.id AND p.status = 'published'
+			JOIN public_book_publications p ON p.book_id = b.id
 			JOIN book_pages bp ON bp.book_id = b.id AND bp.page_id = $2
 			WHERE b.id = $1 AND b.is_deleted = FALSE
 		)
-		SELECT c.is_deleted, c.updated_at,
+		SELECT c.is_deleted, c.units_derived, c.updated_at,
 		       u.id::text, u.anchor, u.heading_id, u.page_id, u.updated_at
 		FROM candidate c
 		LEFT JOIN citable_units u
@@ -312,6 +317,7 @@ func (r *AnchorRepo) ResolvePage(ctx context.Context, bookID, pageID int) (entit
 		 AND u.book_id = c.book_id
 		 AND u.page_id = c.page_id
 		 AND u.lifecycle = 'active'
+		 AND (u.license_status IS NULL OR u.license_status = 'permitted')
 		LEFT JOIN book_headings h
 		  ON h.book_id = u.book_id AND h.heading_id = u.heading_id
 		ORDER BY h.ordinal NULLS FIRST, u.position NULLS LAST, u.anchor NULLS LAST`, bookID, pageID)
@@ -323,6 +329,7 @@ func (r *AnchorRepo) ResolvePage(ctx context.Context, bookID, pageID int) (entit
 	result := entity.AnchorLookupResult{}
 	found := false
 	deleted := false
+	derived := false
 
 	var fallbackUpdatedAt sql.NullTime
 
@@ -338,7 +345,7 @@ func (r *AnchorRepo) ResolvePage(ctx context.Context, bookID, pageID int) (entit
 			unitPageID    sql.NullInt64
 			unitUpdatedAt sql.NullTime
 		)
-		if err := rows.Scan(&rowDeleted, &rowUpdatedAt, &unitID, &unitAnchor, &unitHeadingID,
+		if err := rows.Scan(&rowDeleted, &derived, &rowUpdatedAt, &unitID, &unitAnchor, &unitHeadingID,
 			&unitPageID, &unitUpdatedAt); err != nil {
 			return entity.AnchorLookupResult{}, fmt.Errorf("AnchorRepo.ResolvePage scan: %w", err)
 		}
@@ -387,7 +394,7 @@ func (r *AnchorRepo) ResolvePage(ctx context.Context, bookID, pageID int) (entit
 	}
 
 	result.Status = entity.UnitLifecycleActive
-	if len(result.ActiveRecords) == 0 {
+	if len(result.ActiveRecords) == 0 && !derived {
 		result.ActiveRecords = []entity.AnchorRecord{{
 			TargetType: entity.AnchorTargetBookPage,
 			Corpus:     entity.UnitCorpusKitab,
@@ -424,6 +431,10 @@ func (r *AnchorRepo) ResolveCanonicalUnit(
 		return entity.AnchorLookupResult{}, fmt.Errorf("AnchorRepo.ResolveCanonicalUnit: %w", err)
 	}
 
+	if unit.Lifecycle == entity.UnitLifecycleActive && !unit.PublicEligible {
+		return entity.AnchorLookupResult{}, entity.ErrAnchorNotFound
+	}
+
 	walk, err := walkLineageUnits(ctx, tx, []lineageUnit{unit}, publicLineagePolicy(unit.BookID))
 	if err != nil {
 		return entity.AnchorLookupResult{}, fmt.Errorf("AnchorRepo.ResolveCanonicalUnit lineage: %w", err)
@@ -449,10 +460,11 @@ func (r *AnchorRepo) resolveHistoricalHeadingUnits(
 ) (lineageWalkResult, error) {
 	return r.resolveHistoricalUnitRoots(ctx, q, bookID, `
 		SELECT u.id::text, u.anchor, u.book_id, u.heading_id, u.page_id,
-		       u.lifecycle, u.position, u.updated_at, COALESCE(h.ordinal, -1)
+		       u.lifecycle, u.position, u.updated_at, COALESCE(h.ordinal, -1),
+		       (u.license_status IS NULL OR u.license_status = 'permitted')
 		FROM citable_units u
 		JOIN books b ON b.id = u.book_id AND b.is_deleted = FALSE
-		JOIN book_publications p ON p.book_id = b.id AND p.status = 'published'
+		JOIN public_book_publications p ON p.book_id = b.id
 		LEFT JOIN book_headings h ON h.book_id = u.book_id AND h.heading_id = u.heading_id
 		WHERE u.corpus = 'kitab' AND u.book_id = $1 AND u.heading_id = $2
 		ORDER BY u.position, u.anchor`, bookID, headingID)
@@ -465,10 +477,11 @@ func (r *AnchorRepo) resolveHistoricalPageUnits(
 ) (lineageWalkResult, error) {
 	return r.resolveHistoricalUnitRoots(ctx, q, bookID, `
 		SELECT u.id::text, u.anchor, u.book_id, u.heading_id, u.page_id,
-		       u.lifecycle, u.position, u.updated_at, COALESCE(h.ordinal, -1)
+		       u.lifecycle, u.position, u.updated_at, COALESCE(h.ordinal, -1),
+		       (u.license_status IS NULL OR u.license_status = 'permitted')
 		FROM citable_units u
 		JOIN books b ON b.id = u.book_id AND b.is_deleted = FALSE
-		JOIN book_publications p ON p.book_id = b.id AND p.status = 'published'
+		JOIN public_book_publications p ON p.book_id = b.id
 		LEFT JOIN book_headings h ON h.book_id = u.book_id AND h.heading_id = u.heading_id
 		WHERE u.corpus = 'kitab' AND u.book_id = $1 AND u.page_id = $2
 		ORDER BY COALESCE(h.ordinal, -1), u.position, u.anchor`, bookID, pageID)
@@ -492,7 +505,8 @@ func (r *AnchorRepo) resolveHistoricalUnitRoots(
 	for rows.Next() {
 		var root lineageUnit
 		if err := rows.Scan(&root.ID, &root.Anchor, &root.BookID, &root.HeadingID, &root.PageID,
-			&root.Lifecycle, &root.Position, &root.UpdatedAt, &root.HeadingOrdinal); err != nil {
+			&root.Lifecycle, &root.Position, &root.UpdatedAt, &root.HeadingOrdinal,
+			&root.PublicEligible); err != nil {
 			return lineageWalkResult{}, err
 		}
 
@@ -524,6 +538,7 @@ type lineageUnit struct {
 	Lifecycle      string
 	Position       int
 	UpdatedAt      sql.NullTime
+	PublicEligible bool
 }
 
 type lineageWalkResult struct {
@@ -638,7 +653,7 @@ func walkLineageUnits(
 		edges[key] = edge
 	}
 
-	return finishLineageWalk(units, edges, outgoing)
+	return finishLineageWalk(units, edges, outgoing, policy)
 }
 
 //nolint:funlen // one compact closure query and its coupled scan contract
@@ -659,14 +674,15 @@ func loadLineageClosure(
 		       successor.id::text, successor.anchor, successor.corpus, successor.book_id,
 		       successor.heading_id, successor.page_id, successor.lifecycle,
 		       successor.position, successor.updated_at, COALESCE(heading.ordinal, -1),
-		       visible_book.id IS NOT NULL AND publication.book_id IS NOT NULL
+		       visible_book.id IS NOT NULL AND publication.book_id IS NOT NULL,
+		       (successor.license_status IS NULL OR successor.license_status = 'permitted')
 		FROM citable_unit_lineage lineage
 		JOIN citable_units predecessor ON predecessor.id = lineage.predecessor_id
 		JOIN citable_units successor ON successor.id = lineage.successor_id
 		LEFT JOIN books visible_book
 		  ON visible_book.id = successor.book_id AND visible_book.is_deleted = FALSE
-		LEFT JOIN book_publications publication
-		  ON publication.book_id = visible_book.id AND publication.status = 'published'
+		LEFT JOIN public_book_publications publication
+		  ON publication.book_id = visible_book.id
 		LEFT JOIN book_headings heading
 		  ON heading.book_id = successor.book_id AND heading.heading_id = successor.heading_id
 		WHERE lineage.predecessor_id = ANY(ARRAY(SELECT id FROM reachable))
@@ -700,6 +716,7 @@ func loadLineageClosure(
 			&edge.Successor.UpdatedAt,
 			&edge.Successor.HeadingOrdinal,
 			&edge.PublicVisible,
+			&edge.Successor.PublicEligible,
 		); err != nil {
 			return nil, err
 		}
@@ -789,11 +806,19 @@ func finishLineageWalk(
 	units map[string]lineageUnit,
 	edges map[[2]string]lineageGraphEdge,
 	outgoing map[string]int,
+	policy lineagePolicy,
 ) (lineageWalkResult, error) {
 	result := lineageWalkResult{CycleDetected: lineageHasCycle(units, edges)}
 
 	result.Redirects = make([]entity.AnchorRedirect, 0, len(edges))
 	for _, edge := range edges {
+		predecessor := units[edge.PredecessorID]
+		successor := units[edge.SuccessorID]
+
+		if policy.RequirePublic && (!predecessor.PublicEligible || !successor.PublicEligible) {
+			continue
+		}
+
 		result.Redirects = append(result.Redirects, edge.Redirect)
 	}
 
@@ -828,6 +853,10 @@ func finishLineageWalk(
 
 		if outgoing[id] > 0 && !result.CycleDetected {
 			return lineageWalkResult{}, fmt.Errorf("%w: active unit %s has an outgoing edge", errUnsafeAnchorLineage, id)
+		}
+
+		if policy.RequirePublic && !unit.PublicEligible {
+			continue
 		}
 
 		active[id] = unit
@@ -944,6 +973,7 @@ func scanLineageUnit(row pgx.Row) (lineageUnit, error) {
 		&unit.Position,
 		&unit.UpdatedAt,
 		&unit.HeadingOrdinal,
+		&unit.PublicEligible,
 	); err != nil {
 		return lineageUnit{}, err
 	}
