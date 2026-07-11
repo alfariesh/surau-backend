@@ -202,7 +202,14 @@ Kerjakan B-3 dari roadmap/phase-1b-content-backbone.md: registry Cross-Reference
 Masuk PLAN MODE dulu; rencana wajib menyebut cara memenuhi setiap Acceptance Criterion B-3. Setelah saya setujui: kerjakan sampai tuntas — branch fitur, test, Definition of Done, centang PROGRAM.md & SESI.md, merge, verifikasi dev-api. Laporan akhir bahasa awam.
 ```
 
-- [ ] **SESI 14 — Normalisasi kanonik + identitas mesin (B-5 + B-6)**
+- [x] **SESI 14 — Normalisasi kanonik + identitas mesin (B-5 + B-6)** — ✅ **SELESAI
+  2026-07-11**: `search-key` v1 dibekukan dengan korpus emas bersama, Unicode 15.0, parity
+  Go↔Python, dan gerbang immutable CI; seluruh teks turunan baru membawa versi sementara legacy
+  yang tak terbukti tetap `NULL`. Registry `generation_runs` immutable kini wajib bagi seluruh
+  enrichment machine aktif; generator, QA, importer atomik, aset final/draft, Citable Unit, dan
+  Cross-Reference menjaga Provenance Class serta tuple model+prompt+run. API kurasi dan Swagger
+  memaparkan identity typed. Migrasi replay-safe/up→down→up, 152 tes Python, integration HTTP
+  penuh, dan live Go serial+race hijau.
 
 ```text
 Kerjakan B-5 dan B-6 dari roadmap/phase-1b-content-backbone.md: (B-5) bekukan normalisasi Arab v1 dari quranutil.NormalizeKey + korpus vektor emas + gerbang kesetaraan Go↔Python di CI + kolom versi pada teks turunan; (B-6) identitas generation-run (model+versi-prompt+run) wajib untuk semua keluaran LLM baru di jalur enrichment yang aktif.

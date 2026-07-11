@@ -96,13 +96,21 @@ seluruh approved legacy ter-bridge tanpa selisih dan endpoint/embed Quran lama t
 backfill parsial. **AC-2:** tautan kitab→kitab `quotes` tak terlihat saat pending dan muncul tepat
 sekali di kedua arah setelah approved. **DS:** tiga edge dari dua kitab ke ayat/range menghasilkan
 `work_total=2`; ayat di luar range nol. Gerbang 40.000 edge, 50 warm-up, 500 baca: p95 campuran
-38,493 ms dan repeated-heading 13,486 ms (<200 ms); migrasi up→down→up hijau. Paralel: B-5
-(normalisasi v1
-+ vektor emas + gerbang kesetaraan CI), B-6 (identitas generation-run); B-4 (lisensi platform +
-gerbang publish kitab) — PK-1 ✅ terjawab (default aman a/a/a).
+38,493 ms dan repeated-heading 13,486 ms (<200 ms); migrasi up→down→up hijau. B-5 ✅
+**SELESAI 2026-07-11 (SESI 14)**: `search-key` v1 dipin ke Unicode 15.0 dengan satu korpus emas
+Go↔Python, uji exhaustive seluruh code point, gerbang immutable berbasis merge-base, versi atomik
+pada seluruh writer/trigger teks turunan, serta backfill author+rujukan Quran pause/resume dan
+race-safe; legacy yang tak terbukti tetap `NULL`. B-6 ✅ **SELESAI 2026-07-11 (SESI 14)**:
+registry immutable `generation_runs`; seluruh generator/importer terjemahan, ringkasan, katalog,
+dan ekstraksi menolak tuple model+prompt+run yang hilang/konflik secara atomik; aset final+draft,
+Citable Unit, dan Cross-Reference menegakkan Provenance Class di DB serta memaparkan identity
+typed di API kurasi. Migrasi replay-safe dan 13 FK lulus `NOT VALID → preflight → VALIDATE`;
+upgrade legacy tidak merekayasa identity; up→down→up, 152 tes Python, integration HTTP penuh,
+dan live Go serial+race hijau. Berikutnya B-4 (lisensi platform + gerbang publish kitab) — PK-1
+✅ terjawab (default aman a/a/a).
 **Gerbang keluar:** determinisme pilot ≥99,5% (target 100%); 100% anchor legacy resolvable ≤50ms
 ✅ B-2 (p95 1,277 ms); rujukan approved lama setara via registry baru ✅ B-3; suite kesetaraan
-normalisasi hijau di dua runtime.
+normalisasi hijau di dua runtime ✅ B-5; seluruh enrichment baru ber-generation identity ✅ B-6.
 **Aturan keras (charter D2):** Fase hadith/wiki DILARANG mendesain model datanya sebelum
 B-1..B-3 terkunci.
 
