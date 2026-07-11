@@ -37,7 +37,7 @@ compose-down: ### Down docker compose
 .PHONY: compose-down
 
 swag-v1: ### swag init
-	go tool swag init --parseDependency -g internal/controller/restapi/router.go
+	go tool swag init --parseDependency --templateDelims "[[,]]" -g internal/controller/restapi/router.go
 .PHONY: swag-v1
 
 deps: ### deps tidy + verify
