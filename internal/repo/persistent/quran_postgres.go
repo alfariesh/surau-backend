@@ -891,11 +891,13 @@ func (r *QuranRepo) ListBookQuranReferences(
 	countBuilder := r.Builder.
 		Select("COUNT(*)").
 		From(quranBookReferenceProjectionSQL).
+		Join("public_book_publications public_book ON public_book.book_id = qbr.book_id").
 		Where(sq.Eq{"qbr.book_id": filter.BookID})
 
 	dataBuilder := r.Builder.
 		Select(quranBookReferenceColumns()...).
 		From(quranBookReferenceProjectionSQL).
+		Join("public_book_publications public_book ON public_book.book_id = qbr.book_id").
 		Where(sq.Eq{"qbr.book_id": filter.BookID}).
 		OrderBy("qbr.page_id ASC", "qbr.created_at ASC").
 		Limit(filter.Limit).
@@ -2036,7 +2038,7 @@ func (r *QuranRepo) ensureQuranPublishedBook(ctx context.Context, bookID int) er
 SELECT EXISTS (
     SELECT 1
     FROM books b
-    JOIN book_publications p ON p.book_id = b.id AND p.status = 'published'
+    JOIN public_book_publications p ON p.book_id = b.id
     WHERE b.id = $1 AND b.is_deleted = false
 )`, bookID).Scan(&exists); err != nil {
 		return fmt.Errorf("QuranRepo - ensureQuranPublishedBook - QueryRow: %w", err)

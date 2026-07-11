@@ -1,6 +1,6 @@
 # Kitab Frontend Integration Contract
 
-Last updated: 2026-07-10
+Last updated: 2026-07-11
 
 This guide is the frontend-facing companion to `docs/kitab-multilingual-api.md`.
 Use the backend `availability` objects as the source of truth for UI behavior.
@@ -24,6 +24,16 @@ For generic Cross-Reference backlinks and the Quran compatibility bridge, see
 - Resolve persisted/shared addresses through `GET /v1/anchors/resolve`; canonical
   `kitab/{book_id}/h/{heading_id|0}/u/{ordinal}`, legacy `toc-{heading_id}`, and legacy page
   addresses are all supported. The normative contract is `docs/anchors.md`.
+- Successful public `GET /v1/books*` responses use `Cache-Control: public, max-age=0,
+  must-revalidate` with ETag (and `Last-Modified` when a source timestamp is present). Keep the
+  body for fast conditional requests, but do not display it again without revalidation. The edge
+  Worker always reports `X-Surau-Cache: BYPASS` for these routes so a license takedown reaches the
+  backend visibility gate immediately.
+- Public book objects now include additive `license_status`. Treat it as an audit label, not a
+  client-side visibility switch: the backend has already hidden `restricted` books. A visible
+  non-`permitted` value means that specific publication was grandfathered from before B-4.
+- Editorial tooling can use `GET /v1/editorial/license-audit` and the ETag-protected
+  `GET/PATCH /v1/editorial/books/{book_id}/license`; see `docs/license-governance.md`.
 
 ## Minimal TypeScript Types
 

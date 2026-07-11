@@ -3,12 +3,14 @@ package importer
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/alfariesh/surau-backend/internal/entity"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
@@ -232,4 +234,129 @@ WHERE id = ANY($1::uuid[])
   AND model_id = 'fixture-model'
   AND metadata = '{"source":"reader_asset_import"}'::jsonb`, runIDs).Scan(&registeredRunCount))
 	assert.Equal(t, len(runIDs), registeredRunCount)
+}
+
+//nolint:paralleltest // Uses one outer transaction and row locks for the license gate.
+func TestLiveAssetImportRejectsChangedGrandfatheredPublicAssetButAllowsNoOp(t *testing.T) {
+	postgresURL := os.Getenv("SURAU_LIVE_PG")
+	if postgresURL == "" {
+		t.Skip("SURAU_LIVE_PG not set")
+	}
+
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, postgresURL)
+	require.NoError(t, err)
+	t.Cleanup(pool.Close)
+
+	tx, err := pool.Begin(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = tx.Rollback(context.Background()) })
+
+	baseID := int(time.Now().UnixNano()%250_000_000) + 1_650_000_000
+	categoryID := baseID
+	authorID := baseID + 1
+	bookID := baseID + 2
+	actorID := uuid.NewString()
+	projectID := uuid.NewString()
+
+	_, err = tx.Exec(ctx, `INSERT INTO categories (id, name) VALUES ($1, 'license-asset-category')`, categoryID)
+	require.NoError(t, err)
+	_, err = tx.Exec(ctx, `INSERT INTO authors (id, name) VALUES ($1, 'license-asset-author')`, authorID)
+	require.NoError(t, err)
+	_, err = tx.Exec(ctx, `
+INSERT INTO users (id, username, email, password_hash)
+VALUES ($1, $2, $3, 'x')`, actorID, "license-asset-"+actorID, "license-asset-"+actorID+"@test.local")
+	require.NoError(t, err)
+	_, err = tx.Exec(ctx, `
+INSERT INTO books (id, name, category_id, author_id, has_content, license_status)
+VALUES ($1, 'license-asset-book', $2, $3, TRUE, 'unknown')`, bookID, categoryID, authorID)
+	require.NoError(t, err)
+	_, err = tx.Exec(ctx, `
+UPDATE books
+SET license_status = 'permitted',
+    license_reason = 'live asset fixture permission',
+    license_updated_by = $2
+WHERE id = $1`, bookID, actorID)
+	require.NoError(t, err)
+	_, err = tx.Exec(ctx, `
+INSERT INTO book_pages (book_id, page_id, content_html, content_text)
+VALUES ($1, 1, '<p>source</p>', 'source')`, bookID)
+	require.NoError(t, err)
+	_, err = tx.Exec(ctx, `
+INSERT INTO book_headings (book_id, heading_id, page_id, depth, ordinal, content)
+VALUES ($1, 1, 1, 0, 1, 'heading')`, bookID)
+	require.NoError(t, err)
+	_, err = tx.Exec(ctx, `INSERT INTO book_publications (book_id, status) VALUES ($1, 'published')`, bookID)
+	require.NoError(t, err)
+	_, err = tx.Exec(ctx, `
+INSERT INTO book_production_projects (
+    id, book_id, lang, workflow_status, publication_status, created_by, updated_by, published_by
+)
+VALUES ($1, $2, 'id', 'published', 'published', $3, $3, $3)`, projectID, bookID, actorID)
+	require.NoError(t, err)
+
+	original := fmt.Sprintf(`{"kind":"audio","book_id":%d,"heading_id":1,"lang":"ar","url":"https://example.test/original.mp3"}`, bookID)
+	_, err = importAssets(ctx, tx, strings.NewReader(original))
+	require.NoError(t, err)
+
+	// Shared author/category rows have no Edition-owned book_id. The importer
+	// must fan out their real book+language visibility before writing.
+	catalogRunID := uuid.NewString()
+	catalogOriginal := fmt.Sprintf(`{"kind":"category_translation","category_id":%d,"lang":"id","name":"Original Category","translation_status":"reviewed","translation_reviewed_by":"fixture-reviewer","provenance_class":"machine","generation":{"run_id":%q,"model_id":"fixture-model","prompt_version":"catalog-translation-v1"}}`, categoryID, catalogRunID)
+	_, err = importAssets(ctx, tx, strings.NewReader(catalogOriginal))
+	require.NoError(t, err)
+
+	var initialCatalogReviewedAt time.Time
+	require.NoError(t, tx.QueryRow(ctx, `
+SELECT reviewed_at
+FROM category_translations
+WHERE category_id = $1 AND lang = 'id'`, categoryID).Scan(&initialCatalogReviewedAt))
+
+	emulateCatalogGrandfatherBackfill(ctx, t, tx, bookID)
+
+	_, err = tx.Exec(ctx, `
+UPDATE books
+SET license_status = 'unknown',
+    license_reason = 'live asset fixture: emulate migration grandfather',
+    license_updated_by = $2
+WHERE id = $1`, bookID, actorID)
+	require.NoError(t, err)
+
+	assetStats, err := importAssets(ctx, tx, strings.NewReader(original))
+	require.NoError(t, err, "an exact public asset no-op must remain allowed")
+	assert.Equal(t, 1, assetStats.Skipped)
+
+	catalogStats, err := importAssets(ctx, tx, strings.NewReader(catalogOriginal))
+	require.NoError(t, err, "an exact shared catalog no-op must remain allowed")
+	assert.Equal(t, 1, catalogStats.Skipped)
+
+	var repeatedCatalogReviewedAt time.Time
+	require.NoError(t, tx.QueryRow(ctx, `
+SELECT reviewed_at
+FROM category_translations
+WHERE category_id = $1 AND lang = 'id'`, categoryID).Scan(&repeatedCatalogReviewedAt))
+	assert.Equal(t, initialCatalogReviewedAt, repeatedCatalogReviewedAt,
+		"reviewed_at default must be stable on an exact no-op")
+
+	changed := fmt.Sprintf(`{"kind":"audio","book_id":%d,"heading_id":1,"lang":"ar","url":"https://example.test/changed.mp3"}`, bookID)
+	_, err = importAssets(ctx, tx, strings.NewReader(changed))
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, entity.ErrLicenseNotPermitted))
+	assert.Contains(t, err.Error(), "asset import would change public book")
+
+	var storedURL string
+	require.NoError(t, tx.QueryRow(ctx, `
+SELECT url FROM section_audio WHERE book_id = $1 AND heading_id = 1 AND lang = 'ar'`, bookID).Scan(&storedURL))
+	assert.Equal(t, "https://example.test/original.mp3", storedURL)
+
+	catalogChanged := fmt.Sprintf(`{"kind":"category_translation","category_id":%d,"lang":"id","name":"Changed Category","translation_status":"reviewed","translation_reviewed_by":"fixture-reviewer","provenance_class":"machine","generation":{"run_id":%q,"model_id":"fixture-model","prompt_version":"catalog-translation-v1"}}`, categoryID, catalogRunID)
+	_, err = importAssets(ctx, tx, strings.NewReader(catalogChanged))
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, entity.ErrLicenseNotPermitted))
+	assert.Contains(t, err.Error(), "shared category")
+
+	var storedCategory string
+	require.NoError(t, tx.QueryRow(ctx, `
+SELECT name FROM category_translations WHERE category_id = $1 AND lang = 'id'`, categoryID).Scan(&storedCategory))
+	assert.Equal(t, "Original Category", storedCategory)
 }

@@ -29,6 +29,12 @@ func (r *V1) editorialError(ctx *fiber.Ctx, err error) error {
 		return errorResponse(ctx, http.StatusBadRequest, "invalid asset_type")
 	case errors.Is(err, entity.ErrInvalidStatus):
 		return errorResponse(ctx, http.StatusBadRequest, "invalid status")
+	case errors.Is(err, entity.ErrInvalidLicenseStatus):
+		return errorResponse(ctx, http.StatusBadRequest, "invalid license status")
+	case errors.Is(err, entity.ErrInvalidLicenseReason), errors.Is(err, entity.ErrInvalidLicenseEvidenceURL):
+		return errorResponse(ctx, http.StatusBadRequest, "invalid request body")
+	case errors.Is(err, entity.ErrLicenseNotPermitted):
+		return errorResponse(ctx, http.StatusConflict, "license not permitted")
 	case errors.Is(err, entity.ErrInvalidFeedback):
 		return errorResponse(ctx, http.StatusBadRequest, "invalid feedback")
 	case errors.Is(err, entity.ErrInvalidRole):

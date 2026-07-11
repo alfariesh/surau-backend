@@ -37,33 +37,35 @@ const (
 // identity, lifecycle, provenance, and license slots. Corpus tables remain the
 // source of truth for display text (B-D1).
 type CitableUnit struct {
-	ID                   string
-	Corpus               string
-	BookID               int
-	HeadingID            *int // nil = front-matter before the first heading anchor
-	PageID               *int // physical locator, secondary metadata (B-D2)
-	Kind                 string
-	Ordinal              int // minted once per scope, never recycled; part of the anchor
-	Position             int // current display index within the scope; mutable
-	ParentUnitID         *string
-	Anchor               string
-	Marker               *string
-	Text                 string
-	HTML                 *string
-	TextNormalized       string
-	NormalizationVersion int
-	ContentHash          []byte
-	Occurrence           int
-	Language             string
-	ProvenanceClass      string
-	ProvenanceDetail     map[string]any
-	GenerationRunID      *string
-	Generation           *GenerationIdentity
-	LicenseStatus        *string // nil = inherit from Work (B-4)
-	Lifecycle            string
-	RetiredAt            *time.Time
-	CreatedAt            time.Time
-	UpdatedAt            time.Time
+	ID                     string
+	Corpus                 string
+	BookID                 int
+	HeadingID              *int // nil = front-matter before the first heading anchor
+	PageID                 *int // physical locator, secondary metadata (B-D2)
+	Kind                   string
+	Ordinal                int // minted once per scope, never recycled; part of the anchor
+	Position               int // current display index within the scope; mutable
+	ParentUnitID           *string
+	Anchor                 string
+	Marker                 *string
+	Text                   string
+	HTML                   *string
+	TextNormalized         string
+	NormalizationVersion   int
+	ContentHash            []byte
+	Occurrence             int
+	Language               string
+	ProvenanceClass        string
+	ProvenanceDetail       map[string]any
+	GenerationRunID        *string
+	Generation             *GenerationIdentity
+	LicenseStatus          *string // nil = inherit from the Edition/Work boundary (B-4)
+	EffectiveLicenseStatus *string
+	LicenseSource          *string // edition or unit_override
+	Lifecycle              string
+	RetiredAt              *time.Time
+	CreatedAt              time.Time
+	UpdatedAt              time.Time
 }
 
 // CitableUnitLineage is one supersede edge (B-D3): a retired predecessor points

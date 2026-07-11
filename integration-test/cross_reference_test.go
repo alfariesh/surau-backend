@@ -256,11 +256,12 @@ INSERT INTO authors (id, name)
 VALUES ($1, 'B-3 Cross-Reference Fixture Author')
 ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, is_deleted = FALSE`, crossReferenceAuthorID)
 	execFixtureSQL(t, ctx, tx, `
-INSERT INTO books (id, name, category_id, author_id, has_content, is_deleted, updated_at)
+INSERT INTO books (id, name, category_id, author_id, has_content, is_deleted, updated_at, license_status)
 VALUES
-    ($1, 'B-3 Published Work A', $3, $4, TRUE, FALSE, '2026-07-10T00:00:00Z'),
-    ($2, 'B-3 Published Work B', $3, $4, TRUE, FALSE, '2026-07-10T00:00:00Z')`,
+    ($1, 'B-3 Published Work A', $3, $4, TRUE, FALSE, '2026-07-10T00:00:00Z', 'unknown'),
+    ($2, 'B-3 Published Work B', $3, $4, TRUE, FALSE, '2026-07-10T00:00:00Z', 'unknown')`,
 		crossReferenceBookAID, crossReferenceBookBID, crossReferenceCategoryID, crossReferenceAuthorID)
+	permitBookFixtures(ctx, t, tx, crossReferenceBookAID, crossReferenceBookBID)
 	execFixtureSQL(t, ctx, tx, `
 INSERT INTO book_publications (book_id, status, featured, published_at, updated_at)
 VALUES

@@ -67,6 +67,42 @@ func TestPublicCacheHeaderIsAContract(t *testing.T) {
 	assert.Equal(t, "public, max-age=300, stale-while-revalidate=86400", resp.Header.Get("Cache-Control"))
 }
 
+// TestPublicRevalidatePreventsStaleReuse pins the license-sensitive public
+// cache policy. These responses may be retained for conditional requests, but
+// a client must contact the origin before using them again.
+func TestPublicRevalidatePreventsStaleReuse(t *testing.T) {
+	t.Parallel()
+
+	app := fiber.New()
+	app.Use(middleware.PublicRevalidate())
+	app.Get("/books/797", func(ctx *fiber.Ctx) error {
+		return ctx.JSON(fiber.Map{
+			"id":         797,
+			"updated_at": "2026-07-11T08:09:10Z",
+		})
+	})
+
+	resp, err := app.Test(httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/books/797", nil))
+	require.NoError(t, err)
+
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Equal(t, "public, max-age=0, must-revalidate", resp.Header.Get("Cache-Control"))
+	assert.NotEmpty(t, resp.Header.Get("ETag"))
+	assert.Equal(t, "Sat, 11 Jul 2026 08:09:10 GMT", resp.Header.Get("Last-Modified"))
+
+	revalidateReq := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/books/797", nil)
+	revalidateReq.Header.Set("If-None-Match", resp.Header.Get("ETag"))
+	notModifiedResp, err := app.Test(revalidateReq)
+	require.NoError(t, err)
+
+	defer notModifiedResp.Body.Close()
+
+	assert.Equal(t, http.StatusNotModified, notModifiedResp.StatusCode)
+	assert.Equal(t, "public, max-age=0, must-revalidate", notModifiedResp.Header.Get("Cache-Control"))
+}
+
 // TestPublicCacheExcludePath: dynamic endpoints inside a cached group (e.g.
 // /v1/quran/search) answer no-store while sibling routes stay cached (F1-D).
 func TestPublicCacheExcludePath(t *testing.T) {

@@ -646,7 +646,12 @@ func (r *EditorialRepo) ProductionPublishCheck(
 		return entity.BookProductionPublishCheck{}, err
 	}
 
-	return productionPublishCheckFromCompleteness(completeness), nil
+	licenseStatus, err := getBookLicenseStatusForPublish(ctx, r.Pool, project.BookID, false)
+	if err != nil {
+		return entity.BookProductionPublishCheck{}, err
+	}
+
+	return productionPublishCheckFromCompleteness(completeness, licenseStatus), nil
 }
 
 func (r *EditorialRepo) GetMetadataTranslationDraft(ctx context.Context, projectID string) (entity.BookMetadataTranslationEdit, error) {
@@ -1401,6 +1406,26 @@ func (r *EditorialRepo) PublishProductionProject(
 	}
 	defer rollbackTx(ctx, tx)
 
+	// Global B-4 lock order is Work/Edition first, then its publication rows.
+	// Read the FK optimistically, lock the book, then lock and revalidate the
+	// project so a concurrent license takedown cannot deadlock this publish.
+	var candidateBookID int
+	if err = tx.QueryRow(ctx, `
+SELECT book_id
+FROM book_production_projects
+WHERE id = $1`, projectID).Scan(&candidateBookID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return entity.BookProductionProject{}, entity.ErrProductionProjectNotFound
+		}
+
+		return entity.BookProductionProject{}, fmt.Errorf("EditorialRepo - PublishProductionProject - locate book: %w", err)
+	}
+
+	licenseStatus, err := getBookLicenseStatusForPublish(ctx, tx, candidateBookID, true)
+	if err != nil {
+		return entity.BookProductionProject{}, err
+	}
+
 	project, err := scanProductionProject(tx.QueryRow(ctx, `
 SELECT id, book_id, lang, workflow_status, publication_status, requires_review,
        requires_audio, priority, owner_id, notes, created_by, updated_by, published_by,
@@ -1416,9 +1441,17 @@ FOR UPDATE`, projectID))
 		return entity.BookProductionProject{}, fmt.Errorf("EditorialRepo - PublishProductionProject - lock: %w", err)
 	}
 
+	if project.BookID != candidateBookID {
+		return entity.BookProductionProject{}, entity.ErrPreconditionFailed
+	}
+
 	// The row is locked (FOR UPDATE); comparing here is race-free.
 	if expected != nil && !project.UpdatedAt.Equal(*expected) {
 		return entity.BookProductionProject{}, entity.ErrPreconditionFailed
+	}
+
+	if licenseStatus != entity.LicenseStatusPermitted {
+		return entity.BookProductionProject{}, entity.ErrLicenseNotPermitted
 	}
 
 	completeness, err := r.productionCompleteness(ctx, tx, project)
@@ -1430,7 +1463,7 @@ FOR UPDATE`, projectID))
 	}
 
 	if err = publishProductionAssets(ctx, tx, actorID, projectID); err != nil {
-		return entity.BookProductionProject{}, err
+		return entity.BookProductionProject{}, mapLicensePublishError(err)
 	}
 
 	published, err := scanProductionProject(tx.QueryRow(ctx, `
@@ -1446,11 +1479,17 @@ RETURNING id, book_id, lang, workflow_status, publication_status, requires_revie
           requires_audio, priority, owner_id, notes, created_by, updated_by, published_by,
           created_at, updated_at, published_at, archived_at`, projectID, actorID))
 	if err != nil {
-		return entity.BookProductionProject{}, fmt.Errorf("EditorialRepo - PublishProductionProject - update project: %w", err)
+		return entity.BookProductionProject{}, fmt.Errorf(
+			"EditorialRepo - PublishProductionProject - update project: %w",
+			mapLicensePublishError(err),
+		)
 	}
 
 	if err = tx.Commit(ctx); err != nil {
-		return entity.BookProductionProject{}, fmt.Errorf("EditorialRepo - PublishProductionProject - commit: %w", err)
+		return entity.BookProductionProject{}, fmt.Errorf(
+			"EditorialRepo - PublishProductionProject - commit: %w",
+			mapLicensePublishError(err),
+		)
 	}
 	published = r.attachProductionProjectOwner(ctx, published)
 
@@ -1594,8 +1633,20 @@ func (r *EditorialRepo) productionCompleteness(
 
 func productionPublishCheckFromCompleteness(
 	completeness entity.BookProductionCompleteness,
+	licenseStatus string,
 ) entity.BookProductionPublishCheck {
-	blocking := make([]entity.BookProductionBlocking, 0, len(completeness.Missing))
+	blockingCapacity := len(completeness.Missing)
+	if licenseStatus != entity.LicenseStatusPermitted {
+		blockingCapacity++
+	}
+
+	blocking := make([]entity.BookProductionBlocking, 0, blockingCapacity)
+	if licenseStatus != entity.LicenseStatusPermitted {
+		blocking = append(blocking, entity.BookProductionBlocking{
+			Code:    "license_not_permitted",
+			Message: "book license must be permitted before publication",
+		})
+	}
 	for _, missing := range completeness.Missing {
 		blocking = append(blocking, entity.BookProductionBlocking{
 			Code:      "missing_required_asset",
@@ -1608,7 +1659,8 @@ func productionPublishCheckFromCompleteness(
 	return entity.BookProductionPublishCheck{
 		Project:        completeness.Project,
 		Ready:          completeness.Ready,
-		CanPublish:     completeness.Ready,
+		CanPublish:     completeness.Ready && licenseStatus == entity.LicenseStatusPermitted,
+		LicenseStatus:  licenseStatus,
 		RequiredCount:  completeness.RequiredCount,
 		CompleteCount:  completeness.CompleteCount,
 		MissingCount:   completeness.MissingCount,

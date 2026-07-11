@@ -37,7 +37,7 @@ WITH published_books AS (
            COALESCE(me.category_id, b.category_id) AS category_id,
            b.has_content
     FROM books b
-    JOIN book_publications p ON p.book_id = b.id AND p.status = 'published'
+    JOIN public_book_publications p ON p.book_id = b.id
     LEFT JOIN book_metadata_edits me ON me.book_id = b.id AND me.status = 'published'
     WHERE b.is_deleted = false
 ),
@@ -65,7 +65,7 @@ WITH published_books AS (
     SELECT b.id AS book_id,
            COALESCE(me.category_id, b.category_id) AS category_id
     FROM books b
-    JOIN book_publications p ON p.book_id = b.id AND p.status = 'published'
+    JOIN public_book_publications p ON p.book_id = b.id
     LEFT JOIN book_metadata_edits me ON me.book_id = b.id AND me.status = 'published'
     WHERE b.is_deleted = false
 ),
@@ -367,7 +367,7 @@ func (r *ReaderRepo) ListBooks(ctx context.Context, filter repo.BookFilter) ([]e
 	countBuilder := r.Builder.
 		Select("COUNT(*)").
 		From("books b").
-		Join("book_publications p ON p.book_id = b.id AND p.status = 'published'").
+		Join("public_book_publications p ON p.book_id = b.id").
 		LeftJoin("book_metadata_edits me ON me.book_id = b.id AND me.status = 'published'").
 		LeftJoin("book_production_projects bpp ON bpp.book_id = b.id AND bpp.lang = ? AND bpp.workflow_status <> 'archived' AND ? <> 'ar'", filter.Lang, filter.Lang).
 		LeftJoin("book_metadata_translations bmt ON bmt.book_id = b.id AND bmt.lang = ? AND bmt.is_deleted = false AND bpp.publication_status = 'published'", filter.Lang).
@@ -533,7 +533,7 @@ func (r *ReaderRepo) ListBookPages(ctx context.Context, bookID int, filter repo.
 	countBuilder := r.Builder.
 		Select("COUNT(*)").
 		From("book_pages bp").
-		Join("book_publications p ON p.book_id = bp.book_id AND p.status = 'published'").
+		Join("public_book_publications p ON p.book_id = bp.book_id").
 		Where(sq.Eq{"bp.book_id": bookID, "bp.is_deleted": false})
 	total, err := r.count(ctx, countBuilder)
 	if err != nil {
@@ -600,7 +600,7 @@ func (r *ReaderRepo) ListBookHeadings(ctx context.Context, bookID int, filter re
 	countBuilder := r.Builder.
 		Select("COUNT(*)").
 		From("book_headings h").
-		Join("book_publications p ON p.book_id = h.book_id AND p.status = 'published'").
+		Join("public_book_publications p ON p.book_id = h.book_id").
 		LeftJoin("book_heading_edits he ON he.book_id = h.book_id AND he.heading_id = h.heading_id AND he.status = 'published'").
 		Where(sq.Eq{"h.book_id": bookID, "h.is_deleted": false})
 
@@ -698,6 +698,8 @@ SELECT h.book_id,
        sa.metadata,
        sa.updated_at
 FROM book_headings h
+JOIN public_book_publications public_book
+    ON public_book.book_id = h.book_id
 LEFT JOIN book_heading_edits he
     ON he.book_id = h.book_id AND he.heading_id = h.heading_id AND he.status = 'published'
 LEFT JOIN book_production_projects bpp
@@ -811,7 +813,7 @@ SELECT h.book_id,
 	       COALESCE(ehe.content, eh.content, '') AS end_heading_content
 FROM book_headings h
 JOIN book_heading_ranges hr ON hr.book_id = h.book_id AND hr.heading_id = h.heading_id
-JOIN book_publications p ON p.book_id = h.book_id AND p.status = 'published'
+JOIN public_book_publications p ON p.book_id = h.book_id
 LEFT JOIN book_heading_edits he ON he.book_id = h.book_id AND he.heading_id = h.heading_id AND he.status = 'published'
 LEFT JOIN book_headings eh
     ON eh.book_id = h.book_id
@@ -1094,7 +1096,7 @@ func (r *ReaderRepo) ensurePublishedBook(ctx context.Context, bookID int) error 
 		ctx, `
 SELECT 1
 FROM books b
-JOIN book_publications p ON p.book_id = b.id AND p.status = 'published'
+JOIN public_book_publications p ON p.book_id = b.id
 WHERE b.id = $1 AND b.is_deleted = false`,
 		bookID,
 	).Scan(&exists)
@@ -1187,6 +1189,7 @@ func (r *ReaderRepo) bookSelectBuilder(lang string) sq.SelectBuilder {
 			"bmt.translation_status",
 			"bmt.reviewed_by",
 			"bmt.reviewed_at",
+			"p.license_status",
 			"p.status AS publication_status",
 			"p.status AS catalog_publication_status",
 			"bpp.workflow_status AS production_workflow_status",
@@ -1241,7 +1244,7 @@ func (r *ReaderRepo) bookSelectBuilder(lang string) sq.SelectBuilder {
 			lang,
 		)).
 		From("books b").
-		Join("book_publications p ON p.book_id = b.id AND p.status = 'published'").
+		Join("public_book_publications p ON p.book_id = b.id").
 		LeftJoin("book_metadata_edits me ON me.book_id = b.id AND me.status = 'published'").
 		LeftJoin("book_production_projects bpp ON bpp.book_id = b.id AND bpp.lang = ? AND bpp.workflow_status <> 'archived' AND ? <> 'ar'", lang, lang).
 		LeftJoin("book_metadata_translations bmt ON bmt.book_id = b.id AND bmt.lang = ? AND bmt.is_deleted = false AND bpp.publication_status = 'published'", lang).
@@ -1275,7 +1278,7 @@ func (r *ReaderRepo) pageSelectBuilder() sq.SelectBuilder {
 		"bp.is_deleted",
 		"bp.updated_at",
 	).From("book_pages bp").
-		Join("book_publications p ON p.book_id = bp.book_id AND p.status = 'published'").
+		Join("public_book_publications p ON p.book_id = bp.book_id").
 		LeftJoin("book_page_edits pe ON pe.book_id = bp.book_id AND pe.page_id = bp.page_id AND pe.status = 'published'")
 }
 
@@ -1291,7 +1294,7 @@ func (r *ReaderRepo) headingSelectBuilder() sq.SelectBuilder {
 		"h.is_deleted",
 		"h.updated_at",
 	).From("book_headings h").
-		Join("book_publications p ON p.book_id = h.book_id AND p.status = 'published'").
+		Join("public_book_publications p ON p.book_id = h.book_id").
 		LeftJoin("book_heading_edits he ON he.book_id = h.book_id AND he.heading_id = h.heading_id AND he.status = 'published'")
 }
 
@@ -1334,17 +1337,29 @@ func (r *ReaderRepo) getSectionTranslation(ctx context.Context, bookID, headingI
 	}
 
 	sqlText := `
-SELECT book_id, heading_id, lang, title, content, source, translation_status, reviewed_by, reviewed_at, metadata, updated_at
-FROM section_translations
-WHERE book_id = $1
-  AND heading_id = $2
-  AND lang = $3
-  AND is_deleted = false
+SELECT st.book_id,
+       st.heading_id,
+       st.lang,
+       st.title,
+       st.content,
+       st.source,
+       st.translation_status,
+       st.reviewed_by,
+       st.reviewed_at,
+       st.metadata,
+       st.updated_at
+FROM section_translations st
+JOIN public_book_publications public_book
+  ON public_book.book_id = st.book_id
+WHERE st.book_id = $1
+  AND st.heading_id = $2
+  AND st.lang = $3
+  AND st.is_deleted = false
   AND EXISTS (
       SELECT 1
       FROM book_production_projects p
-      WHERE p.book_id = section_translations.book_id
-        AND p.lang = section_translations.lang
+      WHERE p.book_id = st.book_id
+        AND p.lang = st.lang
         AND p.publication_status = 'published'
         AND p.workflow_status <> 'archived'
   )`
@@ -1392,19 +1407,29 @@ func (r *ReaderRepo) getSectionAudio(ctx context.Context, bookID, headingID int,
 	}
 
 	sqlText := `
-SELECT book_id, heading_id, lang, url, narrator, duration_seconds, mime_type, metadata, updated_at
-FROM section_audio
-WHERE book_id = $1
-  AND heading_id = $2
-  AND lang = $3
-  AND is_deleted = false
+SELECT sa.book_id,
+       sa.heading_id,
+       sa.lang,
+       sa.url,
+       sa.narrator,
+       sa.duration_seconds,
+       sa.mime_type,
+       sa.metadata,
+       sa.updated_at
+FROM section_audio sa
+JOIN public_book_publications public_book
+  ON public_book.book_id = sa.book_id
+WHERE sa.book_id = $1
+  AND sa.heading_id = $2
+  AND sa.lang = $3
+  AND sa.is_deleted = false
   AND (
-      lang = 'ar'
+      sa.lang = 'ar'
       OR EXISTS (
           SELECT 1
           FROM book_production_projects p
-          WHERE p.book_id = section_audio.book_id
-            AND p.lang = section_audio.lang
+          WHERE p.book_id = sa.book_id
+            AND p.lang = sa.lang
             AND p.publication_status = 'published'
             AND p.workflow_status <> 'archived'
       )
@@ -1467,6 +1492,7 @@ SELECT l.lang,
        COALESCE(sa.audio_sections, 0) AS audio_sections
 FROM langs l
 JOIN published_langs pl ON pl.lang = l.lang
+JOIN public_book_publications public_book ON public_book.book_id = $1
 LEFT JOIN (
     SELECT lang, COUNT(*)::INT AS translated_sections
     FROM section_translations
@@ -1753,6 +1779,7 @@ func scanBook(row rowScanner) (entity.Book, error) {
 		&translationStatus,
 		&reviewedBy,
 		&reviewedAt,
+		&book.LicenseStatus,
 		&publicationStatus,
 		&catalogPublicationStatus,
 		&productionWorkflowStatus,

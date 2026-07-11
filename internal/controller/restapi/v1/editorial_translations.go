@@ -1104,7 +1104,7 @@ func (r *V1) editorialReviewProductionAsset(ctx *fiber.Ctx) error {
 }
 
 // @Summary     Publish production project
-// @Description Publish a complete book+language production project into final reader assets. Admin role required.
+// @Description Publish a complete book+language production project into final reader assets. Admin role required. A blocked publish, including a non-permitted book license, returns the rich ProductionPublishBlocked contract.
 // @ID          editorial-publish-production-project
 // @Tags        editorial-production
 // @Produce     json
@@ -1132,10 +1132,16 @@ func (r *V1) editorialPublishProductionProject(ctx *fiber.Ctx) error {
 	project, err := r.editorial.PublishProductionProject(ctx.UserContext(), actorID, ctx.Params("id"), expected)
 	if err != nil {
 		r.logEditorialError(ctx, err, "restapi - v1 - editorialPublishProductionProject")
-		if errors.Is(err, entity.ErrProductionNotReady) {
+
+		if errors.Is(err, entity.ErrProductionNotReady) || errors.Is(err, entity.ErrLicenseNotPermitted) {
 			check, checkErr := r.editorial.ProductionPublishCheck(ctx.UserContext(), ctx.Params("id"))
 			if checkErr == nil {
-				blocked := response.ProductionPublishBlockedFromCheck("production project is not ready", check)
+				message := "production project is not ready"
+				if errors.Is(err, entity.ErrLicenseNotPermitted) {
+					message = "license not permitted"
+				}
+
+				blocked := response.ProductionPublishBlockedFromCheck(message, check)
 				blocked.RequestID = requestID(ctx)
 
 				return ctx.Status(http.StatusConflict).JSON(blocked)

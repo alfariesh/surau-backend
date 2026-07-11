@@ -458,10 +458,16 @@ VALUES ($1, 'production-provenance-live', 'production-provenance-live@example.te
 		},
 		{
 			query: `
-INSERT INTO books (id, name, category_id, author_id, has_content)
-VALUES ($1, 'production provenance book', $2, $3, true)`,
+INSERT INTO books (id, name, category_id, author_id, has_content, license_status)
+VALUES ($1, 'production provenance book', $2, $3, true, 'unknown')`,
 			args: []any{productionProvenanceBookID, productionProvenanceCategory, productionProvenanceAuthor},
 		},
+		{query: `SET LOCAL session_replication_role = 'replica'`},
+		{
+			query: `UPDATE books SET license_status = 'permitted' WHERE id = $1`,
+			args:  []any{productionProvenanceBookID},
+		},
+		{query: `SET LOCAL session_replication_role = 'origin'`},
 		{
 			query: `
 INSERT INTO book_pages (book_id, page_id, content_html, content_text)

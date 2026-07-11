@@ -546,6 +546,9 @@ func seedMultilingualKitabFixture(t *testing.T) {
 		fixtureHeadingID,
 	)
 	execFixtureSQL(t, ctx, tx, `DELETE FROM book_production_projects WHERE book_id = $1 AND lang = 'id'`, fixtureBookID)
+	// Recreate the shared fixture Edition so a database left by an older test
+	// run cannot carry an unaudited/grandfathered status into B-4 source UPSERTs.
+	execFixtureSQL(t, ctx, tx, `DELETE FROM books WHERE id = $1`, fixtureBookID)
 
 	execFixtureSQL(
 		t, ctx, tx, `
@@ -569,9 +572,9 @@ ON CONFLICT (id) DO UPDATE SET
 		t, ctx, tx, `
 INSERT INTO books (
     id, name, category_id, author_id, type, printed, minor_release, major_release,
-    bibliography, hint, pdf_links, metadata, source_date, has_content
+    bibliography, hint, pdf_links, metadata, source_date, has_content, license_status
 )
-VALUES ($1, 'كتاب الاختبار', $2, $3, 1, 1, 0, 1, 'ببليوغرافيا عربية', 'تلميح عربي', '{}'::jsonb, '{}'::jsonb, '14450101', true)
+VALUES ($1, 'كتاب الاختبار', $2, $3, 1, 1, 0, 1, 'ببليوغرافيا عربية', 'تلميح عربي', '{}'::jsonb, '{}'::jsonb, '14450101', true, 'unknown')
 ON CONFLICT (id) DO UPDATE SET
     name = EXCLUDED.name,
     category_id = EXCLUDED.category_id,
@@ -583,6 +586,7 @@ ON CONFLICT (id) DO UPDATE SET
 		fixtureCategoryID,
 		fixtureAuthorID,
 	)
+	permitBookFixtures(ctx, t, tx, fixtureBookID)
 	execFixtureSQL(
 		t, ctx, tx, `
 INSERT INTO book_publications (book_id, status, featured, sort_order, published_at)
@@ -751,6 +755,17 @@ func execFixtureSQL(t *testing.T, ctx context.Context, tx pgx.Tx, sql string, ar
 	if _, err := tx.Exec(ctx, sql, args...); err != nil {
 		t.Fatalf("exec fixture sql: %v\n%s", err, sql)
 	}
+}
+
+// permitBookFixtures bypasses only the B-4 initial-status trigger for
+// pre-existing public test fixtures. Product writers never use this path: real
+// books start unknown and receive an evidence-backed audited decision later.
+func permitBookFixtures(ctx context.Context, t *testing.T, tx pgx.Tx, bookIDs ...int) {
+	t.Helper()
+
+	execFixtureSQL(t, ctx, tx, `SET LOCAL session_replication_role = 'replica'`)
+	execFixtureSQL(t, ctx, tx, `UPDATE books SET license_status = 'permitted' WHERE id = ANY($1)`, bookIDs)
+	execFixtureSQL(t, ctx, tx, `SET LOCAL session_replication_role = 'origin'`)
 }
 
 type bookResponse struct {

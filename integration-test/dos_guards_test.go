@@ -162,19 +162,35 @@ func seedDoSGuardBook(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), requestTimeout)
 	defer cancel()
 
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatalf("begin dos-guard fixture: %v", err)
+	}
+	defer tx.Rollback(ctx)
+
 	exec := func(sql string, args ...any) {
 		t.Helper()
 
-		if _, err := pool.Exec(ctx, sql, args...); err != nil {
+		if _, err := tx.Exec(ctx, sql, args...); err != nil {
 			t.Fatalf("seed dos-guard book: %v (sql %s)", err, sql)
 		}
 	}
 
 	exec(`
-INSERT INTO books (id, name, category_id, author_id, type, has_content)
-VALUES ($1, 'كتاب حراس التحميل', $2, $3, 1, true)
-ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, has_content = true, is_deleted = false`,
+INSERT INTO books (id, name, category_id, author_id, type, has_content, license_status)
+VALUES ($1, 'كتاب حراس التحميل', $2, $3, 1, true, 'unknown')
+ON CONFLICT (id) DO NOTHING`,
 		dosBookID, fixtureCategoryID, fixtureAuthorID)
+	permitBookFixtures(ctx, t, tx, dosBookID)
+	exec(`
+UPDATE books
+SET name = 'كتاب حراس التحميل',
+    category_id = $2,
+    author_id = $3,
+    type = 1,
+    has_content = true,
+    is_deleted = false
+WHERE id = $1`, dosBookID, fixtureCategoryID, fixtureAuthorID)
 	exec(`
 INSERT INTO book_publications (book_id, status, featured, sort_order, published_at)
 VALUES ($1, 'published', false, 99, now())
@@ -201,5 +217,9 @@ ON CONFLICT (book_id, heading_id) DO UPDATE SET
     ordinal = EXCLUDED.ordinal,
     is_deleted = false`,
 			dosBookID, row.id, row.ordinal, row.content)
+	}
+
+	if err = tx.Commit(ctx); err != nil {
+		t.Fatalf("commit dos-guard fixture: %v", err)
 	}
 }

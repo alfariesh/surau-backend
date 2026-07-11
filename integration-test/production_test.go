@@ -229,13 +229,14 @@ VALUES ($1, 'مؤلف الإنتاج', 'سيرة الإنتاج', '1445 هـ', 1
 		t, ctx, tx, `
 INSERT INTO books (
     id, name, category_id, author_id, type, printed, minor_release, major_release,
-    bibliography, hint, pdf_links, metadata, source_date, has_content
+    bibliography, hint, pdf_links, metadata, source_date, has_content, license_status
 )
-VALUES ($1, 'كتاب الإنتاج', $2, $3, 1, 1, 0, 1, 'مصدر الإنتاج', 'تلميح الإنتاج', '{}'::jsonb, '{}'::jsonb, '14450101', true)`,
+VALUES ($1, 'كتاب الإنتاج', $2, $3, 1, 1, 0, 1, 'مصدر الإنتاج', 'تلميح الإنتاج', '{}'::jsonb, '{}'::jsonb, '14450101', true, 'unknown')`,
 		productionFixtureBookID,
 		productionFixtureCategoryID,
 		productionFixtureAuthorID,
 	)
+	permitBookFixtures(ctx, t, tx, productionFixtureBookID)
 	execFixtureSQL(t, ctx, tx, `
 INSERT INTO book_publications (book_id, status, featured, sort_order, published_at)
 VALUES ($1, 'published', false, 10, now())`, productionFixtureBookID)

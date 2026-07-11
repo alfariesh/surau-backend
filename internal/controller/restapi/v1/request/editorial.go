@@ -9,6 +9,13 @@ type UpdatePublication struct {
 	SortOrder *int   `json:"sort_order" example:"10"`
 } // @name v1.UpdatePublication
 
+// UpdateBookLicense records one evidence-backed kitab license decision.
+type UpdateBookLicense struct {
+	LicenseStatus string  `json:"license_status" validate:"required,oneof=unknown needs_review permitted restricted public_domain" example:"permitted"`
+	Reason        string  `json:"reason" validate:"required,max=2000" example:"Publisher permission received"`
+	EvidenceURL   *string `json:"evidence_url" validate:"omitempty,max=2048" example:"https://example.org/license"`
+} // @name v1.UpdateBookLicense
+
 // SaveMetadataDraft -.
 type SaveMetadataDraft struct {
 	DisplayTitle *string `json:"display_title" validate:"omitempty,max=500"`

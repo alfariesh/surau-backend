@@ -4956,6 +4956,167 @@
                 ]
             }
         },
+        "/editorial/books/{book_id}/license": {
+            "get": {
+                "description": "Return the Edition-level decision and effective grandfather state. Requires CapReviewEditorial.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "editorial",
+                    "licenses"
+                ],
+                "summary": "Get one kitab license decision",
+                "operationId": "editorial-get-book-license",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Book ID",
+                        "name": "book_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.BookLicense"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            },
+            "patch": {
+                "description": "Atomically update the Edition-level license and audit history. Requires CapPublishProduction, fresh MFA, and If-Match; use * only for an explicit unconditional decision.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "editorial",
+                    "licenses"
+                ],
+                "summary": "Record a kitab license decision",
+                "operationId": "editorial-update-book-license",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Book ID",
+                        "name": "book_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Current ETag or *",
+                        "name": "If-Match",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "License decision",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.UpdateBookLicense"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.BookLicense"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "412": {
+                        "description": "Precondition Failed",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "428": {
+                        "description": "Precondition Required",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
         "/editorial/books/{book_id}/metadata-draft": {
             "get": {
                 "description": "Get the current source kitab metadata draft. Requires editor or admin role.",
@@ -5571,6 +5732,89 @@
                     },
                     "428": {
                         "description": "Precondition Required",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/editorial/license-audit": {
+            "get": {
+                "description": "Return a prioritized audit queue plus complete status counts. Defaults to unresolved; requires CapReviewEditorial.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "editorial",
+                    "licenses"
+                ],
+                "summary": "Report kitab license coverage",
+                "operationId": "editorial-license-audit",
+                "parameters": [
+                    {
+                        "enum": [
+                            "unresolved",
+                            "unknown",
+                            "needs_review",
+                            "permitted",
+                            "restricted",
+                            "public_domain",
+                            "all"
+                        ],
+                        "type": "string",
+                        "default": "unresolved",
+                        "description": "Queue status",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 50,
+                        "description": "Limit (max 200)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Offset (max 10000)",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.BookLicenseAuditReport"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
                         "schema": {
                             "$ref": "#/definitions/v1.Error"
                         }
@@ -7112,7 +7356,7 @@
         },
         "/editorial/production-projects/{id}/publish": {
             "post": {
-                "description": "Publish a complete book+language production project into final reader assets. Admin role required.",
+                "description": "Publish a complete book+language production project into final reader assets. Admin role required. A blocked publish, including a non-permitted book license, returns the rich ProductionPublishBlocked contract.",
                 "produces": [
                     "application/json"
                 ],
@@ -11740,6 +11984,10 @@
                         "$ref": "#/definitions/entity.LanguageCoverage"
                     }
                 },
+                "license_status": {
+                    "type": "string",
+                    "example": "permitted"
+                },
                 "localization": {
                     "$ref": "#/definitions/entity.LocalizationMeta"
                 },
@@ -11963,6 +12211,159 @@
                 },
                 "updated_by": {
                     "type": "string"
+                }
+            }
+        },
+        "entity.BookLicense": {
+            "type": "object",
+            "properties": {
+                "book_id": {
+                    "type": "integer",
+                    "example": 797
+                },
+                "book_title": {
+                    "type": "string"
+                },
+                "evidence_url": {
+                    "type": "string"
+                },
+                "grandfathered": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "grandfathered_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "license_status": {
+                    "type": "string",
+                    "example": "needs_review"
+                },
+                "publication_status": {
+                    "type": "string",
+                    "example": "published"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "updated_by": {
+                    "type": "string"
+                }
+            }
+        },
+        "entity.BookLicenseAuditCounts": {
+            "type": "object",
+            "properties": {
+                "grandfathered": {
+                    "type": "integer",
+                    "example": 700
+                },
+                "needs_review": {
+                    "type": "integer",
+                    "example": 50
+                },
+                "permitted": {
+                    "type": "integer",
+                    "example": 80
+                },
+                "public_domain": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "restricted": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 1000
+                },
+                "unknown": {
+                    "type": "integer",
+                    "example": 850
+                },
+                "unresolved": {
+                    "type": "integer",
+                    "example": 900
+                }
+            }
+        },
+        "entity.BookLicenseAuditItem": {
+            "type": "object",
+            "properties": {
+                "book_id": {
+                    "type": "integer",
+                    "example": 797
+                },
+                "book_title": {
+                    "type": "string"
+                },
+                "evidence_url": {
+                    "type": "string"
+                },
+                "grandfathered": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "grandfathered_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "last_activity_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "license_status": {
+                    "type": "string",
+                    "example": "needs_review"
+                },
+                "publication_status": {
+                    "type": "string",
+                    "example": "published"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "registered_reader_count": {
+                    "type": "integer",
+                    "example": 120
+                },
+                "saved_item_count": {
+                    "type": "integer",
+                    "example": 35
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "updated_by": {
+                    "type": "string"
+                }
+            }
+        },
+        "entity.BookLicenseAuditReport": {
+            "type": "object",
+            "properties": {
+                "counts": {
+                    "$ref": "#/definitions/entity.BookLicenseAuditCounts"
+                },
+                "generated_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.BookLicenseAuditItem"
+                    }
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 900
                 }
             }
         },
@@ -12462,6 +12863,10 @@
                 "complete_count": {
                     "type": "integer",
                     "example": 40
+                },
+                "license_status": {
+                    "type": "string",
+                    "example": "needs_review"
                 },
                 "missing": {
                     "type": "array",
@@ -16581,6 +16986,9 @@
                 "created_at": {
                     "type": "string"
                 },
+                "effective_license_status": {
+                    "type": "string"
+                },
                 "generation": {
                     "$ref": "#/definitions/entity.GenerationIdentity"
                 },
@@ -16597,6 +17005,9 @@
                     "type": "string"
                 },
                 "language": {
+                    "type": "string"
+                },
+                "license_source": {
                     "type": "string"
                 },
                 "license_status": {
@@ -18588,6 +18999,36 @@
                 "source": {
                     "type": "string",
                     "example": "auto"
+                }
+            }
+        },
+        "v1.UpdateBookLicense": {
+            "type": "object",
+            "required": [
+                "license_status",
+                "reason"
+            ],
+            "properties": {
+                "evidence_url": {
+                    "type": "string",
+                    "maxLength": 2048,
+                    "example": "https://example.org/license"
+                },
+                "license_status": {
+                    "type": "string",
+                    "enum": [
+                        "unknown",
+                        "needs_review",
+                        "permitted",
+                        "restricted",
+                        "public_domain"
+                    ],
+                    "example": "permitted"
+                },
+                "reason": {
+                    "type": "string",
+                    "maxLength": 2000,
+                    "example": "Publisher permission received"
                 }
             }
         },

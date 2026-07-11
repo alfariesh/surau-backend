@@ -236,18 +236,103 @@ describe("Surau API cache policy", () => {
 
   it("allowlists only safe public GET paths", () => {
     expect(cacheDecision(request("/v1/categories?lang=id")).cacheable).toBe(true);
-    expect(cacheDecision(request("/v1/books/797/toc/10/read?lang=id")).cacheable).toBe(true);
-    expect(cacheDecision(request("/v1/books/797/quran-references?status=approved")).cacheable).toBe(true);
     expect(cacheDecision(request("/v1/quran/surahs/1/ayahs?lang=id")).cacheable).toBe(true);
 
+    expect(cacheDecision(request("/v1/books/797/toc/10/read?lang=id"))).toEqual({
+      cacheable: false,
+      reason: "protected_or_operational_path"
+    });
+    expect(cacheDecision(request("/v1/books?lang=id"))).toEqual({
+      cacheable: false,
+      reason: "protected_or_operational_path"
+    });
+    expect(cacheDecision(request("/v1/books/797/quran-references?status=approved")).cacheable).toBe(false);
     expect(cacheDecision(request("/v1/books?q=hadith")).cacheable).toBe(false);
-    expect(cacheDecision(request("/v1/cross-references?anchor=quran%2F1%3A1&direction=incoming")).cacheable).toBe(false);
+    expect(cacheDecision(request("/v1/cross-references?anchor=quran%2F1%3A1&direction=incoming"))).toEqual({
+      cacheable: false,
+      reason: "protected_or_operational_path"
+    });
     expect(cacheDecision(request("/v1/books/797/quran-references?status=pending")).cacheable).toBe(false);
     expect(cacheDecision(request("/v1/quran/search?q=rahman")).cacheable).toBe(false);
-    expect(cacheDecision(request("/v1/anchors/resolve?anchor=quran%2F1%3A1")).cacheable).toBe(false);
+    expect(cacheDecision(request("/v1/anchors/resolve?anchor=quran%2F1%3A1"))).toEqual({
+      cacheable: false,
+      reason: "protected_or_operational_path"
+    });
     expect(cacheDecision(request("/v1/me/saved-items")).cacheable).toBe(false);
     expect(cacheDecision(request("/v1/categories", { headers: { Authorization: "Bearer token" } })).cacheable).toBe(false);
     expect(cacheDecision(request("/v1/books/797/rag", { method: "POST" })).cacheable).toBe(false);
+  });
+
+  it("never reads stale edge entries for license-sensitive public content", async () => {
+    const env = defaultEnv();
+    const ctx = new TestExecutionContext();
+    const l1 = installMemoryCache();
+    const bookURL = "https://api.surau.org/v1/books/797?lang=id";
+    await l1.put(
+      new Request(bookURL),
+      jsonResponse({ id: 797, title: "stale L1 title" })
+    );
+    (env.PUBLIC_API_CACHE as unknown as MemoryKV).values.set(
+      cacheKey(new URL(bookURL), "1"),
+      JSON.stringify({
+        status: 200,
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id: 797, title: "stale KV title" }),
+        cachedAt: Date.now(),
+        freshTtlSeconds: 300,
+        staleTtlSeconds: 86400
+      })
+    );
+
+    let revision = 0;
+    const fetchMock = vi.fn(async () => {
+      revision += 1;
+
+      return jsonResponse(
+        { id: 797, title: `origin revision ${revision}`, updated_at: "2026-07-11T08:09:10Z" },
+        {
+          headers: {
+            "Cache-Control": "public, max-age=0, must-revalidate",
+            ETag: `W/\"revision-${revision}\"`,
+            "Last-Modified": "Sat, 11 Jul 2026 08:09:10 GMT"
+          }
+        }
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const first = await handleRequest(request("/v1/books/797?lang=id"), env, ctx as unknown as ExecutionContext);
+    const second = await handleRequest(request("/v1/books/797?lang=id"), env, ctx as unknown as ExecutionContext);
+
+    expect(first.headers.get("X-Surau-Cache")).toBe("BYPASS");
+    expect(second.headers.get("X-Surau-Cache")).toBe("BYPASS");
+    expect(first.headers.get("Cache-Control")).toBe("public, max-age=0, must-revalidate");
+    expect(first.headers.get("ETag")).toBe('W/"revision-1"');
+    expect(first.headers.get("Last-Modified")).toBe("Sat, 11 Jul 2026 08:09:10 GMT");
+    expect(await first.json()).toMatchObject({ title: "origin revision 1" });
+    expect(await second.json()).toMatchObject({ title: "origin revision 2" });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("rate-limits kitab heading searches while keeping them out of edge caches", async () => {
+    const env = defaultEnv();
+    const ctx = new TestExecutionContext();
+    const fetchMock = vi.fn(async () => jsonResponse({ items: [], total: 0 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await handleRequest(
+      request("/v1/books/797/headings?q=iman", {
+        headers: { "CF-Connecting-IP": "203.0.113.79" }
+      }),
+      env,
+      ctx as unknown as ExecutionContext
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("X-Surau-Cache")).toBe("BYPASS");
+    expect(response.headers.get("X-Surau-RateLimit")).toBe("PASS");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(memoryRateLimit(env.SEARCH_RATE_LIMITER).keys).toEqual(["search:ip:203.0.113.79"]);
   });
 
   it("selects edge rate limit policies for expensive endpoints only", () => {
@@ -266,6 +351,10 @@ describe("Surau API cache policy", () => {
       group: "auth:forgot-password"
     });
     expect(edgeRateLimitDecision(request("/v1/books?q=hadith"))).toMatchObject({
+      bindingName: "SEARCH_RATE_LIMITER",
+      group: "search"
+    });
+    expect(edgeRateLimitDecision(request("/v1/books/797/headings?q=iman"))).toMatchObject({
       bindingName: "SEARCH_RATE_LIMITER",
       group: "search"
     });

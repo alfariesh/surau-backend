@@ -72,7 +72,7 @@ WITH checks AS (
         EXISTS (
             SELECT 1
             FROM books b
-            JOIN book_publications p ON p.book_id = b.id AND p.status = 'published'
+            JOIN public_book_publications p ON p.book_id = b.id
             WHERE b.id = $2 AND b.is_deleted = false
         ) AS book_ok,
         ($3::int IS NULL OR EXISTS (
@@ -204,7 +204,7 @@ func (r *PersonalRepo) ListProgress(
 SELECT COUNT(*)
 FROM reading_progress rp
 JOIN books b ON b.id = rp.book_id AND b.is_deleted = false
-JOIN book_publications p ON p.book_id = b.id AND p.status = 'published'
+JOIN public_book_publications p ON p.book_id = b.id
 WHERE rp.user_id = $1`
 
 	var total int
@@ -225,7 +225,7 @@ SELECT rp.user_id,
        CASE WHEN at.author_id IS NOT NULL THEN at.name ELSE a.name END AS author_name
 FROM reading_progress rp
 JOIN books b ON b.id = rp.book_id AND b.is_deleted = false
-JOIN book_publications p ON p.book_id = b.id AND p.status = 'published'
+JOIN public_book_publications p ON p.book_id = b.id
 LEFT JOIN book_metadata_edits me ON me.book_id = b.id AND me.status = 'published'
 LEFT JOIN book_production_projects bpp
     ON bpp.book_id = b.id AND bpp.lang = $2 AND bpp.workflow_status <> 'archived' AND $2 <> 'ar'
@@ -793,7 +793,7 @@ func savedItemChecks(itemType string) (savedItemTargetChecks, error) {
         EXISTS (
             SELECT 1
             FROM books b
-            JOIN book_publications p ON p.book_id = b.id AND p.status = 'published'
+            JOIN public_book_publications p ON p.book_id = b.id
             WHERE b.id = $4 AND b.is_deleted = false
         ) AS primary_ok,
         EXISTS (
@@ -808,7 +808,7 @@ func savedItemChecks(itemType string) (savedItemTargetChecks, error) {
         EXISTS (
             SELECT 1
             FROM books b
-            JOIN book_publications p ON p.book_id = b.id AND p.status = 'published'
+            JOIN public_book_publications p ON p.book_id = b.id
             WHERE b.id = $4 AND b.is_deleted = false
         ) AS primary_ok,
         EXISTS (

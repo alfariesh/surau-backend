@@ -197,13 +197,16 @@ Contoh unit lama yang telah terpecah:
 - `kitab/{book_id}` menyelesaikan Work publik aktif ke target `book`.
 - `kitab/{book_id}/h/{heading_id}` dan legacy `toc-{heading_id}` menyelesaikan heading logis.
   Bila registry B-1 sudah tersedia untuk heading tersebut, `active_targets` berisi seluruh
-  Citable Unit aktif dalam urutan dokumen; jika belum, resolver mengembalikan fallback
-  `book_heading` aktif.
-- Unit kitab aktif mengembalikan dirinya sebagai satu target `citable_unit`.
+  Citable Unit aktif yang license-eligible dalam urutan dokumen; jika bukunya belum pernah
+  di-derive, resolver mengembalikan fallback `book_heading` aktif. Buku derived dengan seluruh
+  unit terfilter mengembalikan target kosong, bukan fallback kasar.
+- Unit kitab aktif mengembalikan dirinya sebagai satu target `citable_unit` hanya bila override
+  lisensinya `NULL` (mewarisi) atau `permitted`.
 - `navigation_url` unit memakai reader kasar yang sudah ada: route heading untuk `heading_id>0`,
   atau route page untuk unit front-matter. Presisi unit tetap dibawa oleh `canonical_anchor` dan
   `unit_id`; tidak ada fragment DOM rekaan yang belum didukung FE.
-- Legacy page mengembalikan seluruh Citable Unit aktif pada page tersebut dalam urutan dokumen.
+- Legacy page mengembalikan seluruh Citable Unit aktif yang license-eligible pada page tersebut
+  dalam urutan dokumen; sibling non-eligible tidak menyembunyikan sibling eligible.
   Buku yang belum masuk pilot/derivasi B-1 tetap resolvable melalui satu fallback `book_page`.
 - Urutan target deterministik: urutan dokumen saat ini, lalu Anchor sebagai tie-breaker stabil.
   Hasil fan-out yang bertemu kembali pada target sama di-deduplicate.
@@ -215,7 +218,8 @@ Contoh unit lama yang telah terpecah:
 - `active`: point masih aktif; target aktif dikembalikan langsung. Canonical point aktif mempunyai
   `redirect_chain` kosong; input legacy dapat mempunyai edge pemetaan sintetis di bawah.
 - `superseded`: resolver menelusuri seluruh directed acyclic graph (DAG) lineage sampai semua
-  penerus `active`. Split 1→N, merge N→1, dan multi-hop didukung.
+  penerus `active` yang license-eligible. Split 1→N, merge N→1, dan multi-hop didukung; edge yang
+  menyentuh unit non-eligible tidak dipaparkan pada `redirect_chain` publik.
 - `tombstoned`: alamat pernah sah dan tidak didaur ulang. Resolver tetap menjawab `200`; target
   aktif dan redirect dapat kosong bila konten memang tidak mempunyai penerus.
 
@@ -251,11 +255,14 @@ Heading, page, Work, dan ayah yang aktif memakai `status=active`. Lifecycle
   `invalid_anchor` dan message `invalid anchor`.
 - Error internal, termasuk cycle lineage, memakai envelope standar `500 internal_server_error`.
   Client harus bercabang pada HTTP status atau `code`, bukan teks `message`.
-- Respons sukses memakai kontrak validator publik yang sudah ada: weak body-hash `ETag` dan
-  `Cache-Control: public, max-age=300, stale-while-revalidate=86400`; `Last-Modified` juga dikirim
-  ketika respons memiliki waktu pembaruan target. `If-None-Match` yang cocok mendapat `304`.
-  Endpoint resolver **tidak** masuk allowlist cache
-  L1/KV Cloudflare Worker agar perubahan lineage tidak tertahan oleh salinan edge lama.
+- Respons sukses memakai weak body-hash `ETag` dan
+  `Cache-Control: public, max-age=0, must-revalidate`; `Last-Modified` juga dikirim ketika respons
+  memiliki waktu pembaruan target. Browser boleh menyimpan respons untuk conditional request,
+  tetapi wajib memvalidasi ulang ke origin sebelum memakainya. `If-None-Match` yang cocok mendapat
+  `304`.
+- Seluruh prefix `/v1/anchors` **tidak** masuk cache L1/KV Cloudflare Worker. Setiap request mencapai
+  gerbang visibility backend sehingga perubahan lineage atau lisensi tidak tertahan salinan edge
+  lama.
 
 ## SLO p95 ≤50ms
 

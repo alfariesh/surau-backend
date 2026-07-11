@@ -335,6 +335,29 @@ func (r *EditorialRepo) UpdatePublication(
 	actorID string,
 	publication entity.BookPublication,
 ) (entity.BookPublication, error) {
+	tx, err := r.Pool.Begin(ctx)
+	if err != nil {
+		return entity.BookPublication{}, fmt.Errorf("EditorialRepo - UpdatePublication - begin: %w", err)
+	}
+	defer rollbackTx(ctx, tx)
+
+	// Keep the global B-4 order book -> publication. The trigger's FOR SHARE
+	// check then becomes a no-op lock upgrade and cannot race a license decision.
+	var bookID int
+
+	err = tx.QueryRow(ctx, `
+SELECT id
+FROM books
+WHERE id = $1 AND is_deleted = false
+FOR SHARE`, publication.BookID).Scan(&bookID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return entity.BookPublication{}, entity.ErrBookNotFound
+	}
+
+	if err != nil {
+		return entity.BookPublication{}, fmt.Errorf("EditorialRepo - UpdatePublication - lock book: %w", err)
+	}
+
 	sqlText := `
 INSERT INTO book_publications (book_id, status, featured, sort_order, published_at, updated_by, updated_at)
 VALUES ($1, $2, $3, $4, CASE WHEN $2 = 'published' THEN now() ELSE NULL END, $5, now())
@@ -351,7 +374,7 @@ ON CONFLICT (book_id) DO UPDATE SET
     updated_at = now()
 RETURNING book_id, status, featured, sort_order, published_at, updated_by, updated_at`
 
-	saved, err := scanPublication(r.Pool.QueryRow(
+	saved, err := scanPublication(tx.QueryRow(
 		ctx,
 		sqlText,
 		publication.BookID,
@@ -361,7 +384,17 @@ RETURNING book_id, status, featured, sort_order, published_at, updated_by, updat
 		actorID,
 	))
 	if err != nil {
-		return entity.BookPublication{}, fmt.Errorf("EditorialRepo - UpdatePublication - scanPublication: %w", err)
+		return entity.BookPublication{}, fmt.Errorf(
+			"EditorialRepo - UpdatePublication - scanPublication: %w",
+			mapLicensePublishError(err),
+		)
+	}
+
+	if err = tx.Commit(ctx); err != nil {
+		return entity.BookPublication{}, fmt.Errorf(
+			"EditorialRepo - UpdatePublication - commit: %w",
+			mapLicensePublishError(err),
+		)
 	}
 
 	_ = r.audit(ctx, actorID, "publication.update", publication.BookID, nil, nil, "", saved)
@@ -509,7 +542,10 @@ RETURNING book_id, status, display_title, bibliography, hint, description, cover
 SELECT EXISTS (SELECT 1 FROM book_metadata_edits WHERE book_id = $1 AND status = 'draft')`, bookID)
 		}
 
-		return entity.BookMetadataEdit{}, fmt.Errorf("EditorialRepo - PublishMetadataDraft - scanMetadataEdit: %w", err)
+		return entity.BookMetadataEdit{}, fmt.Errorf(
+			"EditorialRepo - PublishMetadataDraft - scanMetadataEdit: %w",
+			mapLicensePublishError(err),
+		)
 	}
 
 	_ = r.audit(ctx, actorID, "metadata.draft.publish", bookID, nil, nil, "", saved)
@@ -668,7 +704,10 @@ RETURNING book_id, page_id, status, content_html, content_text, updated_by, upda
 SELECT EXISTS (SELECT 1 FROM book_page_edits WHERE book_id = $1 AND page_id = $2 AND status = 'draft')`, bookID, pageID)
 		}
 
-		return entity.BookPageEdit{}, fmt.Errorf("EditorialRepo - PublishPageDraft - scanPageEdit: %w", err)
+		return entity.BookPageEdit{}, fmt.Errorf(
+			"EditorialRepo - PublishPageDraft - scanPageEdit: %w",
+			mapLicensePublishError(err),
+		)
 	}
 
 	_ = r.audit(ctx, actorID, "page.draft.publish", bookID, &pageID, nil, "", nil)
@@ -784,7 +823,10 @@ RETURNING book_id, heading_id, status, content, updated_by, updated_at, publishe
 SELECT EXISTS (SELECT 1 FROM book_heading_edits WHERE book_id = $1 AND heading_id = $2 AND status = 'draft')`, bookID, headingID)
 		}
 
-		return entity.BookHeadingEdit{}, fmt.Errorf("EditorialRepo - PublishHeadingDraft - scanHeadingEdit: %w", err)
+		return entity.BookHeadingEdit{}, fmt.Errorf(
+			"EditorialRepo - PublishHeadingDraft - scanHeadingEdit: %w",
+			mapLicensePublishError(err),
+		)
 	}
 
 	_ = r.audit(ctx, actorID, "heading.draft.publish", bookID, nil, &headingID, "", saved)
@@ -1126,6 +1168,7 @@ func (r *EditorialRepo) adminBookSelectBuilder() sq.SelectBuilder {
 			"NULL::TEXT AS translation_status",
 			"NULL::TEXT AS reviewed_by",
 			"NULL::TIMESTAMPTZ AS reviewed_at",
+			"b.license_status",
 			"COALESCE(p.status, 'hidden') AS publication_status",
 			"COALESCE(p.status, 'hidden') AS catalog_publication_status",
 			"NULL::TEXT AS production_workflow_status",

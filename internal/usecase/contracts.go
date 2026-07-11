@@ -344,6 +344,22 @@ type (
 		DeleteFinalProductionAsset(ctx context.Context, actorID, projectID, assetType string, headingID *int, reason *string) error
 	}
 
+	// LicenseAudit is the protected B-4 coverage and mutation surface. It is a
+	// narrow companion to Editorial so read-only reviewers are not coupled to
+	// every source-editing method.
+	LicenseAudit interface {
+		LicenseAuditReport(ctx context.Context, status string, limit, offset int) (entity.BookLicenseAuditReport, error)
+		BookLicense(ctx context.Context, bookID int) (entity.BookLicense, error)
+		UpdateBookLicense(
+			ctx context.Context,
+			actorID string,
+			bookID int,
+			status, reason string,
+			evidenceURL *string,
+			expectedUpdatedAt *time.Time,
+		) (entity.BookLicense, error)
+	}
+
 	// AnchorResolver exposes the additive B-2 public lookup contract. Exactly
 	// one canonical/legacy anchor or legacy page tuple is accepted per call.
 	AnchorResolver interface {

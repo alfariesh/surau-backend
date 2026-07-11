@@ -243,6 +243,9 @@ definitions:
         items:
           $ref: '#/definitions/entity.LanguageCoverage'
         type: array
+      license_status:
+        example: permitted
+        type: string
       localization:
         $ref: '#/definitions/entity.LocalizationMeta'
       major_release:
@@ -406,6 +409,115 @@ definitions:
         type: string
       updated_by:
         type: string
+    type: object
+  entity.BookLicense:
+    properties:
+      book_id:
+        example: 797
+        type: integer
+      book_title:
+        type: string
+      evidence_url:
+        type: string
+      grandfathered:
+        example: true
+        type: boolean
+      grandfathered_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      license_status:
+        example: needs_review
+        type: string
+      publication_status:
+        example: published
+        type: string
+      reason:
+        type: string
+      updated_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      updated_by:
+        type: string
+    type: object
+  entity.BookLicenseAuditCounts:
+    properties:
+      grandfathered:
+        example: 700
+        type: integer
+      needs_review:
+        example: 50
+        type: integer
+      permitted:
+        example: 80
+        type: integer
+      public_domain:
+        example: 10
+        type: integer
+      restricted:
+        example: 10
+        type: integer
+      total:
+        example: 1000
+        type: integer
+      unknown:
+        example: 850
+        type: integer
+      unresolved:
+        example: 900
+        type: integer
+    type: object
+  entity.BookLicenseAuditItem:
+    properties:
+      book_id:
+        example: 797
+        type: integer
+      book_title:
+        type: string
+      evidence_url:
+        type: string
+      grandfathered:
+        example: true
+        type: boolean
+      grandfathered_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      last_activity_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      license_status:
+        example: needs_review
+        type: string
+      publication_status:
+        example: published
+        type: string
+      reason:
+        type: string
+      registered_reader_count:
+        example: 120
+        type: integer
+      saved_item_count:
+        example: 35
+        type: integer
+      updated_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      updated_by:
+        type: string
+    type: object
+  entity.BookLicenseAuditReport:
+    properties:
+      counts:
+        $ref: '#/definitions/entity.BookLicenseAuditCounts'
+      generated_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      items:
+        items:
+          $ref: '#/definitions/entity.BookLicenseAuditItem'
+        type: array
+      total:
+        example: 900
+        type: integer
     type: object
   entity.BookMetadataEdit:
     properties:
@@ -759,6 +871,9 @@ definitions:
       complete_count:
         example: 40
         type: integer
+      license_status:
+        example: needs_review
+        type: string
       missing:
         items:
           $ref: '#/definitions/entity.BookProductionMissingAsset'
@@ -3663,6 +3778,8 @@ definitions:
         type: string
       created_at:
         type: string
+      effective_license_status:
+        type: string
       generation:
         $ref: '#/definitions/entity.GenerationIdentity'
       heading_id:
@@ -3674,6 +3791,8 @@ definitions:
       kind:
         type: string
       language:
+        type: string
+      license_source:
         type: string
       license_status:
         type: string
@@ -5079,6 +5198,29 @@ definitions:
     - destination
     - original
     - source
+    type: object
+  v1.UpdateBookLicense:
+    properties:
+      evidence_url:
+        example: https://example.org/license
+        maxLength: 2048
+        type: string
+      license_status:
+        enum:
+        - unknown
+        - needs_review
+        - permitted
+        - restricted
+        - public_domain
+        example: permitted
+        type: string
+      reason:
+        example: Publisher permission received
+        maxLength: 2000
+        type: string
+    required:
+    - license_status
+    - reason
     type: object
   v1.UpdateProductionProject:
     properties:
@@ -8616,6 +8758,115 @@ paths:
       summary: Get source heading draft
       tags:
       - editorial
+  /editorial/books/{book_id}/license:
+    get:
+      description: Return the Edition-level decision and effective grandfather state.
+        Requires CapReviewEditorial.
+      operationId: editorial-get-book-license
+      parameters:
+      - description: Book ID
+        in: path
+        name: book_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.BookLicense'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Get one kitab license decision
+      tags:
+      - editorial
+      - licenses
+    patch:
+      consumes:
+      - application/json
+      description: Atomically update the Edition-level license and audit history.
+        Requires CapPublishProduction, fresh MFA, and If-Match; use * only for an
+        explicit unconditional decision.
+      operationId: editorial-update-book-license
+      parameters:
+      - description: Book ID
+        in: path
+        name: book_id
+        required: true
+        type: integer
+      - description: Current ETag or *
+        in: header
+        name: If-Match
+        required: true
+        type: string
+      - description: License decision
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.UpdateBookLicense'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.BookLicense'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "412":
+          description: Precondition Failed
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "428":
+          description: Precondition Required
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Record a kitab license decision
+      tags:
+      - editorial
+      - licenses
   /editorial/books/{book_id}/metadata-draft:
     get:
       description: Get the current source kitab metadata draft. Requires editor or
@@ -9042,6 +9293,64 @@ paths:
       tags:
       - editorial
       - cross-references
+  /editorial/license-audit:
+    get:
+      description: Return a prioritized audit queue plus complete status counts. Defaults
+        to unresolved; requires CapReviewEditorial.
+      operationId: editorial-license-audit
+      parameters:
+      - default: unresolved
+        description: Queue status
+        enum:
+        - unresolved
+        - unknown
+        - needs_review
+        - permitted
+        - restricted
+        - public_domain
+        - all
+        in: query
+        name: status
+        type: string
+      - default: 50
+        description: Limit (max 200)
+        in: query
+        name: limit
+        type: integer
+      - default: 0
+        description: Offset (max 10000)
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.BookLicenseAuditReport'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Report kitab license coverage
+      tags:
+      - editorial
+      - licenses
   /editorial/production-activity:
     get:
       description: List recent operational timeline events across production projects.
@@ -10063,7 +10372,8 @@ paths:
   /editorial/production-projects/{id}/publish:
     post:
       description: Publish a complete book+language production project into final
-        reader assets. Admin role required.
+        reader assets. Admin role required. A blocked publish, including a non-permitted
+        book license, returns the rich ProductionPublishBlocked contract.
       operationId: editorial-publish-production-project
       parameters:
       - description: Production project ID

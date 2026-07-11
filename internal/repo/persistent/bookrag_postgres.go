@@ -32,10 +32,15 @@ SELECT b.id,
        COALESCE(bmt.display_title, me.display_title, b.name) AS title,
        COALESCE(bmt.description, me.description) AS description
 FROM books b
-JOIN book_publications p ON p.book_id = b.id AND p.status = 'published'
+JOIN public_book_publications p ON p.book_id = b.id
 LEFT JOIN book_metadata_edits me ON me.book_id = b.id AND me.status = 'published'
 LEFT JOIN book_production_projects bpp ON bpp.book_id = b.id AND bpp.lang = $2 AND bpp.publication_status = 'published' AND bpp.workflow_status <> 'archived' AND $2 <> 'ar'
-LEFT JOIN book_metadata_translations bmt ON bmt.book_id = b.id AND bmt.lang = $2 AND bmt.is_deleted = false AND bpp.id IS NOT NULL
+LEFT JOIN book_metadata_translations bmt
+       ON bmt.book_id = b.id
+      AND bmt.lang = $2
+      AND bmt.is_deleted = false
+      AND bpp.id IS NOT NULL
+      AND (bmt.provenance_class = 'source' OR bmt.translation_status = 'reviewed')
 WHERE b.id = $1 AND b.is_deleted = false`
 
 	var doc entity.RAGBookDocument
@@ -73,12 +78,30 @@ SELECT h.book_id,
        hr.end_page_id
 FROM book_headings h
 JOIN book_heading_ranges hr ON hr.book_id = h.book_id AND hr.heading_id = h.heading_id
-JOIN book_publications p ON p.book_id = h.book_id AND p.status = 'published'
+JOIN public_book_publications p ON p.book_id = h.book_id
 LEFT JOIN book_heading_edits he ON he.book_id = h.book_id AND he.heading_id = h.heading_id AND he.status = 'published'
 LEFT JOIN book_production_projects bpp ON bpp.book_id = h.book_id AND bpp.lang = $2 AND bpp.publication_status = 'published' AND bpp.workflow_status <> 'archived' AND $2 <> 'ar'
-LEFT JOIN section_translations st ON st.book_id = h.book_id AND st.heading_id = h.heading_id AND st.lang = $2 AND st.is_deleted = false AND bpp.id IS NOT NULL
-LEFT JOIN book_heading_summaries bhs_lang ON bhs_lang.book_id = h.book_id AND bhs_lang.heading_id = h.heading_id AND bhs_lang.lang = $2 AND bhs_lang.is_deleted = false AND ($2 = 'ar' OR bpp.id IS NOT NULL)
-LEFT JOIN book_heading_summaries bhs_ar ON bhs_ar.book_id = h.book_id AND bhs_ar.heading_id = h.heading_id AND bhs_ar.lang = 'ar' AND bhs_ar.is_deleted = false AND ($2 = 'ar' OR bpp.id IS NOT NULL)
+LEFT JOIN section_translations st
+       ON st.book_id = h.book_id
+      AND st.heading_id = h.heading_id
+      AND st.lang = $2
+      AND st.is_deleted = false
+      AND bpp.id IS NOT NULL
+      AND (st.provenance_class = 'source' OR st.translation_status = 'reviewed')
+LEFT JOIN book_heading_summaries bhs_lang
+       ON bhs_lang.book_id = h.book_id
+      AND bhs_lang.heading_id = h.heading_id
+      AND bhs_lang.lang = $2
+      AND bhs_lang.is_deleted = false
+      AND ($2 = 'ar' OR bpp.id IS NOT NULL)
+      AND (bhs_lang.provenance_class = 'source' OR bhs_lang.summary_status = 'reviewed')
+LEFT JOIN book_heading_summaries bhs_ar
+       ON bhs_ar.book_id = h.book_id
+      AND bhs_ar.heading_id = h.heading_id
+      AND bhs_ar.lang = 'ar'
+      AND bhs_ar.is_deleted = false
+      AND ($2 = 'ar' OR bpp.id IS NOT NULL)
+      AND (bhs_ar.provenance_class = 'source' OR bhs_ar.summary_status = 'reviewed')
 WHERE h.book_id = $1 AND h.is_deleted = false
 ORDER BY h.ordinal ASC, h.heading_id ASC`
 
@@ -132,7 +155,13 @@ WITH selected AS (
     JOIN book_heading_ranges hr ON hr.book_id = h.book_id AND hr.heading_id = h.heading_id
     LEFT JOIN book_heading_edits he ON he.book_id = h.book_id AND he.heading_id = h.heading_id AND he.status = 'published'
     LEFT JOIN book_production_projects bpp ON bpp.book_id = h.book_id AND bpp.lang = $4 AND bpp.publication_status = 'published' AND bpp.workflow_status <> 'archived' AND $4 <> 'ar'
-    LEFT JOIN section_translations st ON st.book_id = h.book_id AND st.heading_id = h.heading_id AND st.lang = $4 AND st.is_deleted = false AND bpp.id IS NOT NULL
+    LEFT JOIN section_translations st
+           ON st.book_id = h.book_id
+          AND st.heading_id = h.heading_id
+          AND st.lang = $4
+          AND st.is_deleted = false
+          AND bpp.id IS NOT NULL
+          AND (st.provenance_class = 'source' OR st.translation_status = 'reviewed')
     WHERE h.book_id = $1 AND h.heading_id = ANY($2) AND h.is_deleted = false
 ),
 ranked AS (
@@ -162,7 +191,7 @@ ranked AS (
            ) AS rn
     FROM selected s
     JOIN book_pages bp ON bp.book_id = s.book_id AND bp.page_id BETWEEN s.context_start_page_id AND s.end_page_id
-    JOIN book_publications p ON p.book_id = bp.book_id AND p.status = 'published'
+    JOIN public_book_publications p ON p.book_id = bp.book_id
     LEFT JOIN book_page_edits pe ON pe.book_id = bp.book_id AND pe.page_id = bp.page_id AND pe.status = 'published'
     WHERE bp.is_deleted = false
 )
@@ -251,13 +280,31 @@ SELECT h.heading_id,
 FROM book_headings h
 JOIN book_heading_ranges hr ON hr.book_id = h.book_id AND hr.heading_id = h.heading_id
 JOIN book_pages bp ON bp.book_id = h.book_id AND bp.page_id BETWEEN GREATEST(hr.start_page_id - 1, 1) AND hr.end_page_id
-JOIN book_publications p ON p.book_id = h.book_id AND p.status = 'published'
+JOIN public_book_publications p ON p.book_id = h.book_id
 LEFT JOIN book_heading_edits he ON he.book_id = h.book_id AND he.heading_id = h.heading_id AND he.status = 'published'
 LEFT JOIN book_page_edits pe ON pe.book_id = bp.book_id AND pe.page_id = bp.page_id AND pe.status = 'published'
 LEFT JOIN book_production_projects bpp ON bpp.book_id = h.book_id AND bpp.lang = $3 AND bpp.publication_status = 'published' AND bpp.workflow_status <> 'archived' AND $3 <> 'ar'
-LEFT JOIN section_translations st ON st.book_id = h.book_id AND st.heading_id = h.heading_id AND st.lang = $3 AND st.is_deleted = false AND bpp.id IS NOT NULL
-LEFT JOIN book_heading_summaries bhs_lang ON bhs_lang.book_id = h.book_id AND bhs_lang.heading_id = h.heading_id AND bhs_lang.lang = $3 AND bhs_lang.is_deleted = false AND ($3 = 'ar' OR bpp.id IS NOT NULL)
-LEFT JOIN book_heading_summaries bhs_ar ON bhs_ar.book_id = h.book_id AND bhs_ar.heading_id = h.heading_id AND bhs_ar.lang = 'ar' AND bhs_ar.is_deleted = false AND ($3 = 'ar' OR bpp.id IS NOT NULL)
+LEFT JOIN section_translations st
+       ON st.book_id = h.book_id
+      AND st.heading_id = h.heading_id
+      AND st.lang = $3
+      AND st.is_deleted = false
+      AND bpp.id IS NOT NULL
+      AND (st.provenance_class = 'source' OR st.translation_status = 'reviewed')
+LEFT JOIN book_heading_summaries bhs_lang
+       ON bhs_lang.book_id = h.book_id
+      AND bhs_lang.heading_id = h.heading_id
+      AND bhs_lang.lang = $3
+      AND bhs_lang.is_deleted = false
+      AND ($3 = 'ar' OR bpp.id IS NOT NULL)
+      AND (bhs_lang.provenance_class = 'source' OR bhs_lang.summary_status = 'reviewed')
+LEFT JOIN book_heading_summaries bhs_ar
+       ON bhs_ar.book_id = h.book_id
+      AND bhs_ar.heading_id = h.heading_id
+      AND bhs_ar.lang = 'ar'
+      AND bhs_ar.is_deleted = false
+      AND ($3 = 'ar' OR bpp.id IS NOT NULL)
+      AND (bhs_ar.provenance_class = 'source' OR bhs_ar.summary_status = 'reviewed')
 WHERE h.book_id = $1
   AND h.is_deleted = false
   AND bp.is_deleted = false

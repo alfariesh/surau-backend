@@ -17,7 +17,16 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-const maxReaderAssetLineBytes = 10 * 1024 * 1024
+const (
+	maxReaderAssetLineBytes          = 10 * 1024 * 1024
+	assetKindTranslation             = "translation"
+	assetKindHeadingSummary          = "heading_summary"
+	assetKindAudio                   = "audio"
+	assetKindBookMetadataTranslation = "book_metadata_translation"
+	assetKindAuthorTranslation       = "author_translation"
+	assetKindCategoryTranslation     = "category_translation"
+	reviewedAssetStatus              = "reviewed"
+)
 
 // AssetOptions configure JSONL asset import.
 type AssetOptions struct {
@@ -87,6 +96,7 @@ type ReaderAsset struct {
 	Generation        *ReaderAssetGeneration `json:"generation,omitempty"`
 	Metadata          json.RawMessage        `json:"metadata,omitempty"`
 	lineNumber        int
+	skipWrite         bool
 }
 
 // Validate checks the minimum shape of one asset record.
@@ -97,7 +107,8 @@ func (a ReaderAsset) Validate() error {
 	if _, err := readerlang.Normalize(a.Lang); err != nil {
 		return err
 	}
-	if a.Kind == "heading_summary" {
+
+	if a.Kind == assetKindHeadingSummary {
 		if err := validateSummaryStatus(a.SummaryStatus, a.SummaryReviewedBy, a.Status, a.ReviewedBy); err != nil {
 			return err
 		}
@@ -106,7 +117,7 @@ func (a ReaderAsset) Validate() error {
 	}
 
 	switch a.Kind {
-	case "translation":
+	case assetKindTranslation:
 		if a.BookID <= 0 {
 			return errors.New("book_id is required")
 		}
@@ -116,7 +127,7 @@ func (a ReaderAsset) Validate() error {
 		if strings.TrimSpace(a.Content) == "" {
 			return errors.New("content is required for translation")
 		}
-	case "heading_summary":
+	case assetKindHeadingSummary:
 		if a.BookID <= 0 {
 			return errors.New("book_id is required")
 		}
@@ -126,7 +137,7 @@ func (a ReaderAsset) Validate() error {
 		if strings.TrimSpace(a.Summary) == "" {
 			return errors.New("summary is required for heading summary")
 		}
-	case "audio":
+	case assetKindAudio:
 		if a.BookID <= 0 {
 			return errors.New("book_id is required")
 		}
@@ -136,21 +147,21 @@ func (a ReaderAsset) Validate() error {
 		if strings.TrimSpace(a.URL) == "" {
 			return errors.New("url is required for audio")
 		}
-	case "book_metadata_translation":
+	case assetKindBookMetadataTranslation:
 		if a.BookID <= 0 {
 			return errors.New("book_id is required")
 		}
 		if stringPtrBlank(a.DisplayTitle) && stringPtrBlank(a.Title) && stringPtrBlank(a.Name) {
 			return errors.New("display_title is required for book metadata translation")
 		}
-	case "author_translation":
+	case assetKindAuthorTranslation:
 		if a.AuthorID <= 0 {
 			return errors.New("author_id is required")
 		}
 		if stringPtrBlank(a.Name) {
 			return errors.New("name is required for author translation")
 		}
-	case "category_translation":
+	case assetKindCategoryTranslation:
 		if a.CategoryID <= 0 {
 			return errors.New("category_id is required")
 		}
@@ -165,7 +176,7 @@ func (a ReaderAsset) Validate() error {
 		return errors.New("metadata must be valid JSON")
 	}
 
-	if a.Kind == "audio" {
+	if a.Kind == assetKindAudio {
 		if a.ProvenanceClass != "" || a.Generation != nil {
 			return errors.New("audio assets must not carry text provenance")
 		}
@@ -242,6 +253,14 @@ func importAssets(ctx context.Context, database assetTransactionBeginner, reader
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
+	if err := resolveAssetReviewTimestamps(ctx, tx, assets); err != nil {
+		return AssetStats{}, err
+	}
+
+	if err := ensureVisibleAssetWritesPermitted(ctx, tx, assets); err != nil {
+		return AssetStats{}, err
+	}
+
 	if err := registerAssetGenerationRuns(ctx, tx, runs); err != nil {
 		return AssetStats{}, err
 	}
@@ -249,15 +268,21 @@ func importAssets(ctx context.Context, database assetTransactionBeginner, reader
 	stats := AssetStats{}
 	batch := &pgx.Batch{}
 	for i := range assets {
+		if assets[i].skipWrite {
+			stats.Skipped++
+
+			continue
+		}
+
 		queueReaderAsset(batch, &assets[i], &stats)
 	}
 
 	if err := execTxBatch(ctx, tx, batch); err != nil {
-		return stats, fmt.Errorf("upsert assets: %w", err)
+		return stats, fmt.Errorf("upsert assets: %w", mapLicenseGateError(err))
 	}
 
 	if err := tx.Commit(ctx); err != nil {
-		return stats, fmt.Errorf("commit asset import: %w", err)
+		return stats, fmt.Errorf("commit asset import: %w", mapLicenseGateError(err))
 	}
 
 	return stats, nil
@@ -310,7 +335,7 @@ func queueReaderAsset(batch *pgx.Batch, asset *ReaderAsset, stats *AssetStats) {
 	}
 
 	switch asset.Kind {
-	case "translation":
+	case assetKindTranslation:
 		stats.Translations++
 		status := normalizeTranslationStatus(asset.Status)
 		reviewedAt := reviewedAtOrNow(status, asset.ReviewedAt)
@@ -331,7 +356,17 @@ ON CONFLICT (book_id, heading_id, lang) DO UPDATE SET
     metadata = EXCLUDED.metadata,
     provenance_class = EXCLUDED.provenance_class,
     generation_run_id = EXCLUDED.generation_run_id,
-    updated_at = now()`,
+    updated_at = now()
+WHERE ROW(
+    section_translations.title, section_translations.content, section_translations.source,
+    section_translations.translation_status, section_translations.reviewed_by,
+    section_translations.reviewed_at, section_translations.metadata,
+    section_translations.provenance_class, section_translations.generation_run_id
+) IS DISTINCT FROM ROW(
+    EXCLUDED.title, EXCLUDED.content, EXCLUDED.source, EXCLUDED.translation_status,
+    EXCLUDED.reviewed_by, EXCLUDED.reviewed_at, EXCLUDED.metadata,
+    EXCLUDED.provenance_class, EXCLUDED.generation_run_id
+)`,
 			asset.BookID,
 			asset.HeadingID,
 			asset.Lang,
@@ -344,7 +379,7 @@ ON CONFLICT (book_id, heading_id, lang) DO UPDATE SET
 			metadata,
 			asset.Generation.RunID,
 		)
-	case "heading_summary":
+	case assetKindHeadingSummary:
 		stats.Summaries++
 		status := normalizeSummaryStatus(asset.SummaryStatus, asset.Status)
 		reviewedBy := firstNonBlankPtr(asset.SummaryReviewedBy, asset.ReviewedBy)
@@ -365,7 +400,17 @@ ON CONFLICT (book_id, heading_id, lang) DO UPDATE SET
     metadata = EXCLUDED.metadata,
     provenance_class = EXCLUDED.provenance_class,
     generation_run_id = EXCLUDED.generation_run_id,
-    updated_at = now()`,
+    updated_at = now()
+WHERE ROW(
+    book_heading_summaries.summary, book_heading_summaries.source,
+    book_heading_summaries.summary_status, book_heading_summaries.reviewed_by,
+    book_heading_summaries.reviewed_at, book_heading_summaries.metadata,
+    book_heading_summaries.provenance_class, book_heading_summaries.generation_run_id
+) IS DISTINCT FROM ROW(
+    EXCLUDED.summary, EXCLUDED.source, EXCLUDED.summary_status, EXCLUDED.reviewed_by,
+    EXCLUDED.reviewed_at, EXCLUDED.metadata, EXCLUDED.provenance_class,
+    EXCLUDED.generation_run_id
+)`,
 			asset.BookID,
 			asset.HeadingID,
 			asset.Lang,
@@ -377,7 +422,7 @@ ON CONFLICT (book_id, heading_id, lang) DO UPDATE SET
 			metadata,
 			asset.Generation.RunID,
 		)
-	case "audio":
+	case assetKindAudio:
 		stats.Audio++
 
 		batch.Queue(
@@ -390,7 +435,14 @@ ON CONFLICT (book_id, heading_id, lang) DO UPDATE SET
     duration_seconds = EXCLUDED.duration_seconds,
     mime_type = EXCLUDED.mime_type,
     metadata = EXCLUDED.metadata,
-    updated_at = now()`,
+    updated_at = now()
+WHERE ROW(
+    section_audio.url, section_audio.narrator, section_audio.duration_seconds,
+    section_audio.mime_type, section_audio.metadata
+) IS DISTINCT FROM ROW(
+    EXCLUDED.url, EXCLUDED.narrator, EXCLUDED.duration_seconds,
+    EXCLUDED.mime_type, EXCLUDED.metadata
+)`,
 			asset.BookID,
 			asset.HeadingID,
 			asset.Lang,
@@ -400,7 +452,7 @@ ON CONFLICT (book_id, heading_id, lang) DO UPDATE SET
 			asset.MIMEType,
 			metadata,
 		)
-	case "book_metadata_translation":
+	case assetKindBookMetadataTranslation:
 		stats.BookMetadataTranslations++
 		displayTitle := firstNonBlankPtr(asset.DisplayTitle, asset.Title, asset.Name)
 		status := normalizeTranslationStatus(asset.Status)
@@ -424,7 +476,20 @@ ON CONFLICT (book_id, lang) DO UPDATE SET
     metadata = EXCLUDED.metadata,
     provenance_class = EXCLUDED.provenance_class,
     generation_run_id = EXCLUDED.generation_run_id,
-    updated_at = now()`,
+    updated_at = now()
+WHERE ROW(
+    book_metadata_translations.display_title, book_metadata_translations.bibliography,
+    book_metadata_translations.hint, book_metadata_translations.description,
+    book_metadata_translations.source, book_metadata_translations.translation_status,
+    book_metadata_translations.reviewed_by, book_metadata_translations.reviewed_at,
+    book_metadata_translations.metadata, book_metadata_translations.provenance_class,
+    book_metadata_translations.generation_run_id
+) IS DISTINCT FROM ROW(
+    EXCLUDED.display_title, EXCLUDED.bibliography, EXCLUDED.hint, EXCLUDED.description,
+    EXCLUDED.source, EXCLUDED.translation_status, EXCLUDED.reviewed_by,
+    EXCLUDED.reviewed_at, EXCLUDED.metadata, EXCLUDED.provenance_class,
+    EXCLUDED.generation_run_id
+)`,
 			asset.BookID,
 			asset.Lang,
 			displayTitle,
@@ -438,7 +503,7 @@ ON CONFLICT (book_id, lang) DO UPDATE SET
 			metadata,
 			asset.Generation.RunID,
 		)
-	case "author_translation":
+	case assetKindAuthorTranslation:
 		stats.AuthorTranslations++
 		status := normalizeTranslationStatus(asset.Status)
 		reviewedAt := reviewedAtOrNow(status, asset.ReviewedAt)
@@ -460,7 +525,18 @@ ON CONFLICT (author_id, lang) DO UPDATE SET
     metadata = EXCLUDED.metadata,
     provenance_class = EXCLUDED.provenance_class,
     generation_run_id = EXCLUDED.generation_run_id,
-    updated_at = now()`,
+    updated_at = now()
+WHERE ROW(
+    author_translations.name, author_translations.biography,
+    author_translations.death_text, author_translations.source,
+    author_translations.translation_status, author_translations.reviewed_by,
+    author_translations.reviewed_at, author_translations.metadata,
+    author_translations.provenance_class, author_translations.generation_run_id
+) IS DISTINCT FROM ROW(
+    EXCLUDED.name, EXCLUDED.biography, EXCLUDED.death_text, EXCLUDED.source,
+    EXCLUDED.translation_status, EXCLUDED.reviewed_by, EXCLUDED.reviewed_at,
+    EXCLUDED.metadata, EXCLUDED.provenance_class, EXCLUDED.generation_run_id
+)`,
 			asset.AuthorID,
 			asset.Lang,
 			asset.Name,
@@ -473,7 +549,7 @@ ON CONFLICT (author_id, lang) DO UPDATE SET
 			metadata,
 			asset.Generation.RunID,
 		)
-	case "category_translation":
+	case assetKindCategoryTranslation:
 		stats.CategoryTranslations++
 		status := normalizeTranslationStatus(asset.Status)
 		reviewedAt := reviewedAtOrNow(status, asset.ReviewedAt)
@@ -493,7 +569,17 @@ ON CONFLICT (category_id, lang) DO UPDATE SET
     metadata = EXCLUDED.metadata,
     provenance_class = EXCLUDED.provenance_class,
     generation_run_id = EXCLUDED.generation_run_id,
-    updated_at = now()`,
+    updated_at = now()
+WHERE ROW(
+    category_translations.name, category_translations.source,
+    category_translations.translation_status, category_translations.reviewed_by,
+    category_translations.reviewed_at, category_translations.metadata,
+    category_translations.provenance_class, category_translations.generation_run_id
+) IS DISTINCT FROM ROW(
+    EXCLUDED.name, EXCLUDED.source, EXCLUDED.translation_status, EXCLUDED.reviewed_by,
+    EXCLUDED.reviewed_at, EXCLUDED.metadata, EXCLUDED.provenance_class,
+    EXCLUDED.generation_run_id
+)`,
 			asset.CategoryID,
 			asset.Lang,
 			asset.Name,
@@ -593,20 +679,20 @@ func sameAssetGeneration(first, second assetGenerationRegistration) bool {
 func generationTask(kind, promptVersion string) (string, error) {
 	switch strings.TrimSpace(promptVersion) {
 	case "reader-translation-v1":
-		if kind == "translation" {
+		if kind == assetKindTranslation {
 			return "reader_translation", nil
 		}
 	case "reader-summary-v1":
-		if kind == "heading_summary" {
+		if kind == assetKindHeadingSummary {
 			return "reader_summary", nil
 		}
 	case "reader-summary-translation-v1":
-		if kind == "heading_summary" {
+		if kind == assetKindHeadingSummary {
 			return "reader_summary_translation", nil
 		}
 	case "catalog-translation-v1":
 		switch kind {
-		case "book_metadata_translation", "author_translation", "category_translation":
+		case assetKindBookMetadataTranslation, assetKindAuthorTranslation, assetKindCategoryTranslation:
 			return "catalog_translation", nil
 		}
 	}
@@ -619,7 +705,7 @@ func validateTranslationStatus(status string, reviewedBy *string) error {
 	switch status {
 	case "generated":
 		return nil
-	case "reviewed":
+	case reviewedAssetStatus:
 		if stringPtrBlank(reviewedBy) {
 			return errors.New("translation_reviewed_by is required when translation_status is reviewed")
 		}
@@ -644,7 +730,7 @@ func validateSummaryStatus(summaryStatus string, summaryReviewedBy *string, lega
 	switch status {
 	case "generated":
 		return nil
-	case "reviewed":
+	case reviewedAssetStatus:
 		if stringPtrBlank(reviewedBy) {
 			return errors.New("summary_reviewed_by is required when summary_status is reviewed")
 		}
@@ -664,7 +750,7 @@ func normalizeSummaryStatus(summaryStatus, legacyStatus string) string {
 }
 
 func reviewedAtOrNow(status string, reviewedAt *time.Time) *time.Time {
-	if status != "reviewed" || reviewedAt != nil {
+	if status != reviewedAssetStatus || reviewedAt != nil {
 		return reviewedAt
 	}
 

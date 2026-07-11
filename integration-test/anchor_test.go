@@ -405,12 +405,13 @@ ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, is_deleted = FALSE`, anchor
 INSERT INTO authors (id, name) VALUES ($1, 'B-2 Anchor Fixture Author')
 ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, is_deleted = FALSE`, anchorFixtureAuthorID)
 	execFixtureSQL(t, ctx, tx, `
-INSERT INTO books (id, name, category_id, author_id, has_content, is_deleted, updated_at)
+INSERT INTO books (id, name, category_id, author_id, has_content, is_deleted, updated_at, license_status)
 VALUES
-    ($1, 'B-2 Anchor Published', $4, $5, TRUE, FALSE, '2026-07-10T00:00:00Z'),
-    ($2, 'B-2 Anchor Hidden', $4, $5, TRUE, FALSE, '2026-07-10T00:00:00Z'),
-    ($3, 'B-2 Anchor Fallback', $4, $5, TRUE, FALSE, '2026-07-10T00:00:00Z')`,
+    ($1, 'B-2 Anchor Published', $4, $5, TRUE, FALSE, '2026-07-10T00:00:00Z', 'unknown'),
+    ($2, 'B-2 Anchor Hidden', $4, $5, TRUE, FALSE, '2026-07-10T00:00:00Z', 'unknown'),
+    ($3, 'B-2 Anchor Fallback', $4, $5, TRUE, FALSE, '2026-07-10T00:00:00Z', 'unknown')`,
 		anchorFixtureBookID, anchorHiddenBookID, anchorFallbackBookID, anchorFixtureCategoryID, anchorFixtureAuthorID)
+	permitBookFixtures(ctx, t, tx, anchorFixtureBookID, anchorHiddenBookID, anchorFallbackBookID)
 	execFixtureSQL(t, ctx, tx, `
 INSERT INTO book_publications (book_id, status, featured, published_at, updated_at)
 VALUES
@@ -540,28 +541,36 @@ ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, is_deleted = FALSE`, anchor
 INSERT INTO authors (id, name) VALUES ($1, 'B-2 Performance Fixture Author')
 ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, is_deleted = FALSE`, anchorPerformanceAuthorID)
 	execFixtureSQL(t, ctx, tx, `
-INSERT INTO books (id, name, category_id, author_id, has_content, is_deleted, updated_at)
-VALUES ($1, 'B-2 Performance 20.5k Units', $2, $3, TRUE, FALSE, '2026-07-10T00:00:00Z')`,
+INSERT INTO books (id, name, category_id, author_id, has_content, is_deleted, updated_at, license_status)
+VALUES ($1, 'B-2 Performance 20.5k Units', $2, $3, TRUE, FALSE, '2026-07-10T00:00:00Z', 'unknown')`,
 		anchorPerformanceBookID, anchorPerformanceCategoryID, anchorPerformanceAuthorID)
 	// Keep dimension-table plans representative too: without a catalog-sized
 	// distribution PostgreSQL correctly scans a handful of Work/publication
 	// rows, which would make index assertions environment-dependent.
 	execFixtureSQL(
 		t, ctx, tx, `
-INSERT INTO books (id, name, category_id, author_id, has_content, is_deleted, updated_at)
+INSERT INTO books (id, name, category_id, author_id, has_content, is_deleted, updated_at, license_status)
 SELECT $1 + shadow_offset,
 	       'B-2 Shadow Work ' || shadow_offset::text,
        $3,
        $4,
        FALSE,
        FALSE,
-       '2026-07-10T00:00:00Z'
+	       '2026-07-10T00:00:00Z',
+	       'unknown'
 FROM generate_series(0, $2 - 1) AS shadow_offset`,
 		anchorPerformanceShadowStart,
 		anchorPerformanceShadowCount,
 		anchorPerformanceCategoryID,
 		anchorPerformanceAuthorID,
 	)
+	execFixtureSQL(t, ctx, tx, `SET LOCAL session_replication_role = 'replica'`)
+	execFixtureSQL(t, ctx, tx, `
+UPDATE books
+SET license_status = 'permitted'
+WHERE id = $1 OR (id >= $2 AND id < $2 + $3)`,
+		anchorPerformanceBookID, anchorPerformanceShadowStart, anchorPerformanceShadowCount)
+	execFixtureSQL(t, ctx, tx, `SET LOCAL session_replication_role = 'origin'`)
 	execFixtureSQL(t, ctx, tx, `
 INSERT INTO book_publications (book_id, status, featured, published_at, updated_at)
 VALUES ($1, 'published', FALSE, '2026-07-10T00:00:00Z', '2026-07-10T00:00:00Z')`, anchorPerformanceBookID)
@@ -909,7 +918,7 @@ SELECT u.id::text, u.anchor, u.book_id, u.heading_id, u.page_id,
        u.lifecycle, u.position, u.updated_at, COALESCE(h.ordinal, -1)
 FROM citable_units u
 JOIN books b ON b.id = u.book_id AND b.is_deleted = FALSE
-JOIN book_publications p ON p.book_id = b.id AND p.status = 'published'
+JOIN public_book_publications p ON p.book_id = b.id
 LEFT JOIN book_headings h ON h.book_id = u.book_id AND h.heading_id = u.heading_id
 WHERE u.corpus = 'kitab' AND u.anchor = $1`,
 			args: []any{fmt.Sprintf("kitab/%d/h/%d/u/1", anchorPerformanceBookID, anchorPerformanceHeadingStart)},
@@ -929,7 +938,7 @@ WHERE u.corpus = 'kitab' AND u.anchor = $1`,
 			query: `
 SELECT GREATEST(b.updated_at, p.updated_at)
 FROM books b
-JOIN book_publications p ON p.book_id = b.id AND p.status = 'published'
+JOIN public_book_publications p ON p.book_id = b.id
 WHERE b.id = $1 AND b.is_deleted = FALSE`,
 			args: []any{anchorPerformanceBookID},
 			wantIndexes: []string{
@@ -952,7 +961,7 @@ WITH candidate AS (
     SELECT h.book_id, h.heading_id, h.page_id, h.is_deleted,
            GREATEST(b.updated_at, p.updated_at, h.updated_at) AS updated_at
     FROM books b
-    JOIN book_publications p ON p.book_id = b.id AND p.status = 'published'
+    JOIN public_book_publications p ON p.book_id = b.id
     JOIN book_headings h ON h.book_id = b.id AND h.heading_id = $2
     WHERE b.id = $1 AND b.is_deleted = FALSE
 )
@@ -983,7 +992,7 @@ WITH candidate AS (
     SELECT bp.book_id, bp.page_id, bp.is_deleted,
            GREATEST(b.updated_at, p.updated_at, bp.updated_at) AS updated_at
     FROM books b
-    JOIN book_publications p ON p.book_id = b.id AND p.status = 'published'
+    JOIN public_book_publications p ON p.book_id = b.id
     JOIN book_pages bp ON bp.book_id = b.id AND bp.page_id = $2
     WHERE b.id = $1 AND b.is_deleted = FALSE
 )
@@ -1029,8 +1038,8 @@ JOIN citable_units predecessor ON predecessor.id = lineage.predecessor_id
 JOIN citable_units successor ON successor.id = lineage.successor_id
 LEFT JOIN books visible_book
   ON visible_book.id = successor.book_id AND visible_book.is_deleted = FALSE
-LEFT JOIN book_publications publication
-  ON publication.book_id = visible_book.id AND publication.status = 'published'
+LEFT JOIN public_book_publications publication
+  ON publication.book_id = visible_book.id
 LEFT JOIN book_headings heading
   ON heading.book_id = successor.book_id AND heading.heading_id = successor.heading_id
 WHERE lineage.predecessor_id = ANY(ARRAY(SELECT id FROM reachable))

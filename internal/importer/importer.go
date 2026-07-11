@@ -87,6 +87,27 @@ type masterBook struct {
 	Hint         *string
 	PDFLinks     string
 	Metadata     string
+	skipWrite    bool
+}
+
+type masterCategory struct {
+	ID           int
+	Name         string
+	DisplayOrder *int
+	IsDeleted    bool
+	skipWrite    bool
+}
+
+type masterAuthor struct {
+	ID                             int
+	Name                           string
+	Biography                      *string
+	DeathText                      *string
+	DeathNumber                    *int
+	IsDeleted                      bool
+	NameSearch                     string
+	NameSearchNormalizationVersion int
+	skipWrite                      bool
 }
 
 type sourcePage struct {
@@ -173,17 +194,7 @@ func Run(ctx context.Context, opts Options) (stats Stats, err error) {
 	}
 	defer categoriesDB.Close()
 
-	if err = importCategories(ctx, pool, categoriesDB); err != nil {
-		status = "failed"
-		return stats, err
-	}
-
-	if err = importAuthors(ctx, pool, authorsDB); err != nil {
-		status = "failed"
-		return stats, err
-	}
-
-	books, err := importBooksMetadata(ctx, pool, master)
+	books, err := importMasterMetadata(ctx, pool, categoriesDB, authorsDB, master)
 	if err != nil {
 		status = "failed"
 		return stats, err
@@ -275,24 +286,43 @@ func openSQLite(path string) (*stdsql.DB, error) {
 	return db, nil
 }
 
-func importCategories(ctx context.Context, pool *pgxpool.Pool, db *stdsql.DB) error {
+func readMasterCategories(ctx context.Context, db *stdsql.DB) ([]masterCategory, error) {
 	rows, err := db.QueryContext(ctx, `SELECT id, is_deleted, "order", name FROM category`)
 	if err != nil {
-		return fmt.Errorf("query categories: %w", err)
+		return nil, fmt.Errorf("query categories: %w", err)
 	}
 	defer rows.Close()
 
-	batch := &pgx.Batch{}
+	categories := make([]masterCategory, 0)
 	for rows.Next() {
-		var id int
+		var category masterCategory
 		var isDeleted stdsql.NullString
 		var displayOrder stdsql.NullString
 		var name stdsql.NullString
 
-		if err = rows.Scan(&id, &isDeleted, &displayOrder, &name); err != nil {
-			return fmt.Errorf("scan category: %w", err)
+		if err = rows.Scan(&category.ID, &isDeleted, &displayOrder, &name); err != nil {
+			return nil, fmt.Errorf("scan category: %w", err)
 		}
 
+		category.Name = nullStringValue(name)
+		category.DisplayOrder = nullStringToInt(displayOrder)
+		category.IsDeleted = rawBool(isDeleted)
+		categories = append(categories, category)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate categories: %w", err)
+	}
+
+	return categories, nil
+}
+
+func queueMasterCategories(batch *pgx.Batch, categories []masterCategory) {
+	for i := range categories {
+		category := &categories[i]
+		if category.skipWrite {
+			continue
+		}
 		batch.Queue(
 			`
 INSERT INTO categories (id, name, display_order, is_deleted, updated_at)
@@ -301,41 +331,61 @@ ON CONFLICT (id) DO UPDATE SET
     name = EXCLUDED.name,
     display_order = EXCLUDED.display_order,
     is_deleted = EXCLUDED.is_deleted,
-    updated_at = now()`,
-			id,
-			nullStringValue(name),
-			nullStringToInt(displayOrder),
-			rawBool(isDeleted),
+    updated_at = now()
+WHERE ROW(categories.name, categories.display_order, categories.is_deleted)
+      IS DISTINCT FROM
+      ROW(EXCLUDED.name, EXCLUDED.display_order, EXCLUDED.is_deleted)`,
+			category.ID,
+			category.Name,
+			category.DisplayOrder,
+			category.IsDeleted,
 		)
 	}
-
-	if err = rows.Err(); err != nil {
-		return fmt.Errorf("iterate categories: %w", err)
-	}
-
-	return execBatch(ctx, pool, batch)
 }
 
-func importAuthors(ctx context.Context, pool *pgxpool.Pool, db *stdsql.DB) error {
+func readMasterAuthors(ctx context.Context, db *stdsql.DB) ([]masterAuthor, error) {
 	rows, err := db.QueryContext(ctx, `SELECT id, is_deleted, name, biography, death_text, death_number FROM author`)
 	if err != nil {
-		return fmt.Errorf("query authors: %w", err)
+		return nil, fmt.Errorf("query authors: %w", err)
 	}
 	defer rows.Close()
 
-	batch := &pgx.Batch{}
+	authors := make([]masterAuthor, 0)
 	for rows.Next() {
-		var id int
+		var author masterAuthor
 		var isDeleted stdsql.NullString
 		var name stdsql.NullString
 		var biography stdsql.NullString
 		var deathText stdsql.NullString
 		var deathNumber stdsql.NullString
 
-		if err = rows.Scan(&id, &isDeleted, &name, &biography, &deathText, &deathNumber); err != nil {
-			return fmt.Errorf("scan author: %w", err)
+		if err = rows.Scan(&author.ID, &isDeleted, &name, &biography, &deathText, &deathNumber); err != nil {
+			return nil, fmt.Errorf("scan author: %w", err)
 		}
 
+		author.Name = nullStringValue(name)
+		author.Biography = nullStringPtr(biography)
+		author.DeathText = nullStringPtr(deathText)
+		author.DeathNumber = nullStringToInt(deathNumber)
+		author.IsDeleted = rawBool(isDeleted)
+		author.NameSearch = searchtext.Normalize(author.Name)
+		author.NameSearchNormalizationVersion = searchtext.ProfileVersion
+		authors = append(authors, author)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate authors: %w", err)
+	}
+
+	return authors, nil
+}
+
+func queueMasterAuthors(batch *pgx.Batch, authors []masterAuthor) {
+	for i := range authors {
+		author := &authors[i]
+		if author.skipWrite {
+			continue
+		}
 		// name_search and its profile version ride every author write (insert
 		// AND conflict-update) so re-imports never leave a stale or unversioned
 		// normalized form behind (F1-H / B-5).
@@ -354,26 +404,28 @@ ON CONFLICT (id) DO UPDATE SET
     is_deleted = EXCLUDED.is_deleted,
     updated_at = now(),
     name_search = EXCLUDED.name_search,
-    name_search_normalization_version = EXCLUDED.name_search_normalization_version`,
-			id,
-			nullStringValue(name),
-			nullStringPtr(biography),
-			nullStringPtr(deathText),
-			nullStringToInt(deathNumber),
-			rawBool(isDeleted),
-			searchtext.Normalize(nullStringValue(name)),
-			searchtext.ProfileVersion,
+    name_search_normalization_version = EXCLUDED.name_search_normalization_version
+WHERE ROW(
+    authors.name, authors.biography, authors.death_text, authors.death_number,
+    authors.is_deleted, authors.name_search, authors.name_search_normalization_version
+) IS DISTINCT FROM ROW(
+    EXCLUDED.name, EXCLUDED.biography, EXCLUDED.death_text, EXCLUDED.death_number,
+    EXCLUDED.is_deleted, EXCLUDED.name_search, EXCLUDED.name_search_normalization_version
+)`,
+			author.ID,
+			author.Name,
+			author.Biography,
+			author.DeathText,
+			author.DeathNumber,
+			author.IsDeleted,
+			author.NameSearch,
+			author.NameSearchNormalizationVersion,
 		)
 	}
-
-	if err = rows.Err(); err != nil {
-		return fmt.Errorf("iterate authors: %w", err)
-	}
-
-	return execBatch(ctx, pool, batch)
 }
 
-func importBooksMetadata(ctx context.Context, pool *pgxpool.Pool, db *stdsql.DB) ([]masterBook, error) {
+//nolint:funlen // Scanner assignments mirror the fixed Shamela master schema field-for-field.
+func readMasterBooks(ctx context.Context, db *stdsql.DB) ([]masterBook, error) {
 	rows, err := db.QueryContext(ctx, `
 SELECT id, name, is_deleted, category, type, date, author, printed,
        minor_release, major_release, bibliography, hint, pdf_links, metadata
@@ -384,7 +436,6 @@ FROM book`)
 	defer rows.Close()
 
 	books := make([]masterBook, 0)
-	batch := &pgx.Batch{}
 
 	for rows.Next() {
 		var b masterBook
@@ -436,6 +487,22 @@ FROM book`)
 			b.SourceDate = metadataDate
 		}
 
+		books = append(books, b)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate books: %w", err)
+	}
+
+	return books, nil
+}
+
+func queueMasterBooks(batch *pgx.Batch, books []masterBook) {
+	for i := range books {
+		b := &books[i]
+		if b.skipWrite {
+			continue
+		}
 		batch.Queue(
 			`
 INSERT INTO books (
@@ -457,32 +524,69 @@ ON CONFLICT (id) DO UPDATE SET
     metadata = EXCLUDED.metadata,
     source_date = EXCLUDED.source_date,
     is_deleted = EXCLUDED.is_deleted,
-    updated_at = now()`,
-			b.ID,
-			b.Name,
-			b.CategoryID,
-			b.AuthorID,
-			b.Type,
-			b.Printed,
-			b.MinorRelease,
-			b.MajorRelease,
-			b.Bibliography,
-			b.Hint,
-			b.PDFLinks,
-			b.Metadata,
-			b.SourceDate,
-			b.IsDeleted,
+    updated_at = now()
+WHERE ROW(
+    books.name, books.category_id, books.author_id, books.type, books.printed,
+    books.minor_release, books.major_release, books.bibliography, books.hint,
+    books.pdf_links, books.metadata, books.source_date, books.is_deleted
+) IS DISTINCT FROM ROW(
+    EXCLUDED.name, EXCLUDED.category_id, EXCLUDED.author_id, EXCLUDED.type, EXCLUDED.printed,
+    EXCLUDED.minor_release, EXCLUDED.major_release, EXCLUDED.bibliography, EXCLUDED.hint,
+    EXCLUDED.pdf_links, EXCLUDED.metadata, EXCLUDED.source_date, EXCLUDED.is_deleted
+)`,
+			b.ID, b.Name, b.CategoryID, b.AuthorID, b.Type, b.Printed,
+			b.MinorRelease, b.MajorRelease, b.Bibliography, b.Hint,
+			b.PDFLinks, b.Metadata, b.SourceDate, b.IsDeleted,
 		)
-
-		books = append(books, b)
 	}
+}
 
-	if err = rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate books: %w", err)
-	}
-
-	if err = execBatch(ctx, pool, batch); err != nil {
+// importMasterMetadata makes the three Shamela master snapshots one atomic
+// publication decision. All source rows are parsed and every B-4 preflight is
+// completed before the first PostgreSQL write. Shared author/category changes
+// therefore cannot leak into a grandfathered public Edition when a later book
+// metadata check rejects the same run.
+func importMasterMetadata(
+	ctx context.Context,
+	pool *pgxpool.Pool,
+	categoriesDB, authorsDB, booksDB *stdsql.DB,
+) ([]masterBook, error) {
+	categories, err := readMasterCategories(ctx, categoriesDB)
+	if err != nil {
 		return nil, err
+	}
+
+	authors, err := readMasterAuthors(ctx, authorsDB)
+	if err != nil {
+		return nil, err
+	}
+
+	books, err := readMasterBooks(ctx, booksDB)
+	if err != nil {
+		return nil, err
+	}
+
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("begin master metadata import: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	if gateErr := ensureMasterMetadataImportsPermitted(ctx, tx, categories, authors, books); gateErr != nil {
+		return nil, gateErr
+	}
+
+	batch := &pgx.Batch{}
+	queueMasterCategories(batch, categories)
+	queueMasterAuthors(batch, authors)
+	queueMasterBooks(batch, books)
+
+	if err = execTxBatch(ctx, tx, batch); err != nil {
+		return nil, fmt.Errorf("upsert master metadata: %w", mapLicenseGateError(err))
+	}
+
+	if err = tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("commit master metadata import: %w", mapLicenseGateError(err))
 	}
 
 	return books, nil
@@ -733,6 +837,11 @@ func importBookContent(
 		Headings:     diffHeadings(currentHeadings, decorated),
 	}
 
+	changed := !outcome.Pages.empty() || !outcome.Headings.empty()
+	if gateErr := ensureMaterialBookImportPermitted(ctx, tx, bookID, changed); gateErr != nil {
+		return bookImportOutcome{}, gateErr
+	}
+
 	pageBatch := &pgx.Batch{}
 	for _, page := range outcome.Pages.Upserts {
 		pageBatch.Queue(
@@ -762,7 +871,7 @@ ON CONFLICT (book_id, page_id) DO UPDATE SET
 	}
 
 	if err = execTxBatch(ctx, tx, pageBatch); err != nil {
-		return bookImportOutcome{}, fmt.Errorf("upsert pages: %w", err)
+		return bookImportOutcome{}, fmt.Errorf("upsert pages: %w", mapLicenseGateError(err))
 	}
 
 	headingBatch := &pgx.Batch{}
@@ -792,7 +901,7 @@ ON CONFLICT (book_id, heading_id) DO UPDATE SET
 	}
 
 	if err = execTxBatch(ctx, tx, headingBatch); err != nil {
-		return bookImportOutcome{}, fmt.Errorf("upsert headings: %w", err)
+		return bookImportOutcome{}, fmt.Errorf("upsert headings: %w", mapLicenseGateError(err))
 	}
 
 	hasRemovals := len(outcome.Pages.RemovedIDs) > 0 || len(outcome.Headings.RemovedIDs) > 0
@@ -811,7 +920,6 @@ ON CONFLICT (book_id, heading_id) DO UPDATE SET
 		}
 	}
 
-	changed := !outcome.Pages.empty() || !outcome.Headings.empty()
 	if changed {
 		ranges := readerutil.BuildHeadingRanges(bookID, lastPageID, decorated)
 
@@ -841,12 +949,12 @@ ON CONFLICT (book_id, heading_id) DO UPDATE SET
 		}
 
 		if _, err = tx.Exec(ctx, `UPDATE books SET has_content = true, updated_at = now() WHERE id = $1`, bookID); err != nil {
-			return bookImportOutcome{}, fmt.Errorf("mark book content: %w", err)
+			return bookImportOutcome{}, fmt.Errorf("mark book content: %w", mapLicenseGateError(err))
 		}
 	}
 
 	if err = tx.Commit(ctx); err != nil {
-		return bookImportOutcome{}, fmt.Errorf("commit tx: %w", err)
+		return bookImportOutcome{}, fmt.Errorf("commit tx: %w", mapLicenseGateError(err))
 	}
 
 	return outcome, nil

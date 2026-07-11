@@ -2,12 +2,16 @@ package importer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/alfariesh/surau-backend/internal/entity"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -48,7 +52,20 @@ func resetBookImportState(t *testing.T, pool *pgxpool.Pool, bookID int, releaseP
 
 	ctx := context.Background()
 	cleanup := func() {
-		_, err := pool.Exec(ctx, `DELETE FROM books WHERE id = $1`, bookID)
+		// The production audit log is deliberately append-only. A superuser-only,
+		// transaction-local trigger bypass is confined to fixture teardown so a
+		// previous crashed run cannot pin this suite's deterministic book id.
+		cleanupTx, err := pool.Begin(ctx)
+		require.NoError(t, err)
+		_, err = cleanupTx.Exec(ctx, `SET LOCAL session_replication_role = 'replica'`)
+		require.NoError(t, err)
+		_, err = cleanupTx.Exec(ctx, `DELETE FROM book_license_audits WHERE book_id = $1`, bookID)
+		require.NoError(t, err)
+		_, err = cleanupTx.Exec(ctx, `SET LOCAL session_replication_role = 'origin'`)
+		require.NoError(t, err)
+		require.NoError(t, cleanupTx.Commit(ctx))
+
+		_, err = pool.Exec(ctx, `DELETE FROM books WHERE id = $1`, bookID)
 		require.NoError(t, err)
 		_, err = pool.Exec(ctx, `DELETE FROM users WHERE id = $1`, bookImportUserID(bookID))
 		require.NoError(t, err)
@@ -117,6 +134,30 @@ func countRows(t *testing.T, pool *pgxpool.Pool, query string, args ...any) int 
 	require.NoError(t, pool.QueryRow(context.Background(), query, args...).Scan(&n))
 
 	return n
+}
+
+// emulateCatalogGrandfatherBackfill is test-only migration setup. Production
+// code can never mint this one-way marker: a PostgreSQL superuser temporarily
+// disables triggers only for the exact backfill UPDATE, then restores them in
+// the same transaction before any behavior under test runs.
+func emulateCatalogGrandfatherBackfill(ctx context.Context, t *testing.T, tx pgx.Tx, bookID int) {
+	t.Helper()
+
+	_, err := tx.Exec(ctx, `SET LOCAL session_replication_role = 'replica'`)
+	require.NoError(t, err)
+	_, err = tx.Exec(ctx, `
+UPDATE book_publications
+SET license_grandfathered_at = now()
+WHERE book_id = $1`, bookID)
+	require.NoError(t, err)
+	_, err = tx.Exec(ctx, `
+UPDATE book_production_projects
+SET license_grandfathered_at = now()
+WHERE book_id = $1
+  AND publication_status = 'published'`, bookID)
+	require.NoError(t, err)
+	_, err = tx.Exec(ctx, `SET LOCAL session_replication_role = 'origin'`)
+	require.NoError(t, err)
 }
 
 // seedEditorialAndUserData plants the work products that defect D1 used to
@@ -249,6 +290,131 @@ func TestLiveBookImportIdenticalNoOp(t *testing.T) {
 	assert.Zero(t, countRows(t, pool, `
 SELECT count(*) FROM book_import_removal_stages s
 JOIN import_runs r ON r.id = s.run_id WHERE r.release_key LIKE 'bi-noop%'`))
+}
+
+// TestLiveBookImportLicenseGate preserves O-1B-1 grandfathering without
+// letting a source re-import silently publish changed text. Exact no-ops may
+// continue so routine verification of the old snapshot remains operational.
+func TestLiveBookImportLicenseGate(t *testing.T) {
+	pool := liveBookImportPool(t)
+
+	t.Parallel()
+
+	bookID := 9008
+	resetBookImportState(t, pool, bookID, "bi-license")
+
+	v1 := t.TempDir()
+	writeBookSource(t, v1, fixtureV1(bookID))
+	_, err := runBookImport(t, v1, "bi-license-v1", bookID, "")
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	_, err = pool.Exec(ctx, `
+INSERT INTO users (id, username, email, password_hash)
+VALUES ($1, $2, $3, 'x')`,
+		bookImportUserID(bookID),
+		fmt.Sprintf("book-license-suite-%d", bookID),
+		fmt.Sprintf("book-license-suite-%d@test.local", bookID))
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, `
+UPDATE books
+SET license_status = 'permitted',
+    license_reason = 'live importer fixture: permit initial publication',
+    license_updated_by = $2
+WHERE id = $1`, bookID, bookImportUserID(bookID))
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, `INSERT INTO book_publications (book_id, status) VALUES ($1, 'published')`, bookID)
+	require.NoError(t, err)
+
+	grandfatherTx, err := pool.Begin(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = grandfatherTx.Rollback(context.Background()) })
+	emulateCatalogGrandfatherBackfill(ctx, t, grandfatherTx, bookID)
+	require.NoError(t, grandfatherTx.Commit(ctx))
+
+	_, err = pool.Exec(ctx, `
+UPDATE books
+SET license_status = 'unknown',
+    license_reason = 'live importer fixture: emulate migration grandfather',
+    license_updated_by = $2
+WHERE id = $1`, bookID, bookImportUserID(bookID))
+	require.NoError(t, err)
+
+	var publiclyVisible bool
+	require.NoError(t, pool.QueryRow(ctx, `
+SELECT EXISTS (SELECT 1 FROM public_book_publications WHERE book_id = $1)`, bookID).Scan(&publiclyVisible))
+	require.True(t, publiclyVisible, "fixture must exercise a genuinely grandfathered public Edition")
+
+	_, err = runBookImport(t, v1, "bi-license-noop", bookID, "")
+	require.NoError(t, err, "an exact re-import must remain a no-op")
+
+	metadataV2 := t.TempDir()
+	metadataChanged := fixtureV1(bookID)
+	metadataChanged.Name = "Changed public title"
+	writeBookSource(t, metadataV2, metadataChanged)
+
+	unrelatedCategoryID := 1_800_000_000 + bookID
+	unrelatedAuthorID := unrelatedCategoryID + 1
+	metadataMasterDir := filepath.Join(metadataV2, "update", "master")
+	categories := openFixtureSQLite(t, filepath.Join(metadataMasterDir, "category.sqlite"))
+	mustExec(t, categories,
+		`INSERT INTO category (id, is_deleted, "order", name) VALUES (?, '0', '2', 'must roll back')`,
+		unrelatedCategoryID)
+	closeFixtureSQLite(t, categories)
+	authors := openFixtureSQLite(t, filepath.Join(metadataMasterDir, "author.sqlite"))
+	mustExec(t, authors,
+		`INSERT INTO author (id, is_deleted, name) VALUES (?, '0', 'must roll back')`,
+		unrelatedAuthorID)
+	closeFixtureSQLite(t, authors)
+
+	_, err = runBookImport(t, metadataV2, "bi-license-metadata", bookID, "")
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, entity.ErrLicenseNotPermitted))
+	assert.Contains(t, err.Error(), "metadata import would change public book")
+
+	var storedTitle string
+	require.NoError(t, pool.QueryRow(ctx, `SELECT name FROM books WHERE id = $1`, bookID).Scan(&storedTitle))
+	assert.Equal(t, "Kitab Uji", storedTitle)
+	assert.Zero(t, countRows(t, pool, `SELECT count(*) FROM categories WHERE id = $1`, unrelatedCategoryID),
+		"a later book preflight failure must roll back the earlier shared category batch")
+	assert.Zero(t, countRows(t, pool, `SELECT count(*) FROM authors WHERE id = $1`, unrelatedAuthorID),
+		"a later book preflight failure must roll back the earlier shared author batch")
+
+	sharedV2 := t.TempDir()
+	writeBookSource(t, sharedV2, fixtureV1(bookID))
+	sharedMasterDir := filepath.Join(sharedV2, "update", "master")
+	categories = openFixtureSQLite(t, filepath.Join(sharedMasterDir, "category.sqlite"))
+	mustExec(t, categories, `UPDATE category SET name = 'Changed shared category' WHERE id = 1`)
+	closeFixtureSQLite(t, categories)
+	authors = openFixtureSQLite(t, filepath.Join(sharedMasterDir, "author.sqlite"))
+	mustExec(t, authors, `UPDATE author SET name = 'Changed shared author' WHERE id = 1`)
+	closeFixtureSQLite(t, authors)
+
+	_, err = runBookImport(t, sharedV2, "bi-license-shared", bookID, "")
+	require.Error(t, err)
+	assert.ErrorIs(t, err, entity.ErrLicenseNotPermitted)
+	assert.Contains(t, err.Error(), "master author")
+
+	var storedCategory, storedAuthor string
+	require.NoError(t, pool.QueryRow(ctx, `SELECT name FROM categories WHERE id = 1`).Scan(&storedCategory))
+	require.NoError(t, pool.QueryRow(ctx, `SELECT name FROM authors WHERE id = 1`).Scan(&storedAuthor))
+	assert.Equal(t, "Test Category", storedCategory)
+	assert.Equal(t, "Test Author", storedAuthor)
+
+	v2 := t.TempDir()
+	changed := fixtureV1(bookID)
+	changed.Pages[0].Content = "<p>changed public source</p>"
+	writeBookSource(t, v2, changed)
+
+	_, err = runBookImport(t, v2, "bi-license-changed", bookID, "")
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, entity.ErrLicenseNotPermitted))
+	assert.Contains(t, err.Error(), "source import would change public book")
+
+	var stored string
+	require.NoError(t, pool.QueryRow(ctx, `
+SELECT content_html FROM book_pages WHERE book_id = $1 AND page_id = 1`, bookID).Scan(&stored))
+	assert.Equal(t, "<p>page one</p>", stored, "the rejected import must not change public content")
 }
 
 func snapshotUpdatedAt(t *testing.T, pool *pgxpool.Pool, bookID int) map[string]time.Time {

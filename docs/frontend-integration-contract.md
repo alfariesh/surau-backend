@@ -333,17 +333,20 @@ FE handling:
 - `429 too many requests` (code `too_many_requests`): non-auth rate limiter (RAG/search/personal/editorial/session). Back off; honor `retry_after`.
 - `500 internal server error`: show retry UI and keep previous content if cached.
 
-## Public Cache Contract (F1-D)
+## Public Cache Contract (F1-D/B-4)
 
-Public catalog/Quran GET endpoints answer with
-`Cache-Control: public, max-age=300, stale-while-revalidate=86400`, a weak
-body-hash `ETag`, and `Last-Modified`; send `If-None-Match` to get 304s.
-Numbers are a contract: they equal the edge worker TTLs
-(`workers/api-cache/wrangler.jsonc` — FRESH 300 / STALE 86400). Exception:
-`GET /v1/quran/search` is dynamic and answers `Cache-Control: no-store`.
-Cache invalidation source of truth = the worker's `CACHE_VERSION` env (bump
-+ `wrangler deploy` = instant mass invalidation); the backend deliberately
-has no coupling to it until invalidation needs to be API-driven.
+Stable Quran, category, and author GET endpoints answer with
+`Cache-Control: public, max-age=300, stale-while-revalidate=86400`, a weak body-hash `ETag`, and
+`Last-Modified`. Those numbers equal the edge Worker TTLs (`workers/api-cache/wrangler.jsonc` —
+FRESH 300 / STALE 86400); `CACHE_VERSION` remains their mass-invalidation source of truth.
+
+License-sensitive public GETs under `/v1/books`, `/v1/anchors`, and `/v1/cross-references` instead
+answer `Cache-Control: public, max-age=0, must-revalidate` and are always `BYPASS` at the edge
+Worker. Browsers may retain their ETag/body, but must send a conditional request before reuse;
+`If-None-Match` can still produce a `304`. This guarantees that a license takedown is checked by
+the backend rather than hidden behind a fresh or stale edge copy.
+
+`GET /v1/quran/search` remains dynamic and answers `Cache-Control: no-store`.
 
 ## Editorial Gap Queues
 

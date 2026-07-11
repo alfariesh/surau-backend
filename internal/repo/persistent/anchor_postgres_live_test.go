@@ -150,15 +150,36 @@ func TestLiveAnchorRepoResolution(t *testing.T) {
 		assert.Nil(t, page.CanonicalAnchor, "physical pages never become canonical")
 		require.NotEmpty(t, page.ActiveRecords)
 		assert.Equal(t, fixture.splitB.anchor, *page.ActiveRecords[0].CanonicalAnchor)
+		assert.NotContains(t, anchorRecordUnitIDs(page.ActiveRecords), fixture.hiddenOverride.id)
+	})
+
+	t.Run("unit override filters canonical and lineage targets without hiding eligible siblings", func(t *testing.T) {
+		_, err := repo.ResolveCanonicalUnit(ctx, fixture.hiddenOverride.anchor)
+		require.ErrorIs(t, err, entity.ErrAnchorNotFound)
+
+		got, err := repo.ResolveCanonicalUnit(ctx, fixture.licenseRoot.anchor)
+		require.NoError(t, err)
+		require.Len(t, got.ActiveRecords, 1)
+		assert.Equal(t, fixture.direct.id, *got.ActiveRecords[0].UnitID)
+	})
+
+	t.Run("derived locators with only ineligible units never reconstruct a coarse row", func(t *testing.T) {
+		heading, err := repo.ResolveHeading(ctx, fixture.bookID, 13)
+		require.NoError(t, err)
+		assert.Empty(t, heading.ActiveRecords)
+
+		page, err := repo.ResolvePage(ctx, fixture.bookID, 3)
+		require.NoError(t, err)
+		assert.Empty(t, page.ActiveRecords)
 	})
 
 	t.Run("non derived heading and page fall back to source rows", func(t *testing.T) {
-		heading, err := repo.ResolveHeading(ctx, fixture.bookID, 13)
+		heading, err := repo.ResolveHeading(ctx, fixture.publicOtherBookID, 13)
 		require.NoError(t, err)
 		require.Len(t, heading.ActiveRecords, 1)
 		assert.Equal(t, entity.AnchorTargetBookHeading, heading.ActiveRecords[0].TargetType)
 
-		page, err := repo.ResolvePage(ctx, fixture.bookID, 3)
+		page, err := repo.ResolvePage(ctx, fixture.publicOtherBookID, 3)
 		require.NoError(t, err)
 		require.Len(t, page.ActiveRecords, 1)
 		assert.Equal(t, entity.AnchorTargetBookPage, page.ActiveRecords[0].TargetType)
@@ -271,41 +292,45 @@ type liveAnchorUnit struct {
 	ordinal   int
 	position  int
 	lifecycle string
+	license   *string
 }
 
 type liveAnchorFixture struct {
-	bookID            int
-	hiddenBookID      int
-	publicOtherBookID int
-	ayahKey           string
-	direct            liveAnchorUnit
-	root              liveAnchorUnit
-	mid               liveAnchorUnit
-	splitA            liveAnchorUnit
-	splitB            liveAnchorUnit
-	mergeRoot         liveAnchorUnit
-	tombstone         liveAnchorUnit
-	deletedRoot       liveAnchorUnit
-	moved             liveAnchorUnit
-	cycleA            liveAnchorUnit
-	cycleB            liveAnchorUnit
-	hiddenUnit        liveAnchorUnit
-	otherUnit         liveAnchorUnit
-	hiddenRoot        liveAnchorUnit
-	crossRoot         liveAnchorUnit
-	activeBad         liveAnchorUnit
-	activeBadEnd      liveAnchorUnit
-	orphan            liveAnchorUnit
-	orderRoot         liveAnchorUnit
-	orderFirst        liveAnchorUnit
-	orderSecond       liveAnchorUnit
-	longRoot          liveAnchorUnit
-	longTarget        liveAnchorUnit
-	longUnits         []liveAnchorUnit
-	diamondRoot       liveAnchorUnit
-	diamondEnd        liveAnchorUnit
-	diamondUnits      []liveAnchorUnit
-	diamondEdges      [][3]string
+	bookID             int
+	hiddenBookID       int
+	publicOtherBookID  int
+	ayahKey            string
+	direct             liveAnchorUnit
+	root               liveAnchorUnit
+	mid                liveAnchorUnit
+	splitA             liveAnchorUnit
+	splitB             liveAnchorUnit
+	mergeRoot          liveAnchorUnit
+	tombstone          liveAnchorUnit
+	deletedRoot        liveAnchorUnit
+	moved              liveAnchorUnit
+	cycleA             liveAnchorUnit
+	cycleB             liveAnchorUnit
+	hiddenUnit         liveAnchorUnit
+	otherUnit          liveAnchorUnit
+	hiddenRoot         liveAnchorUnit
+	crossRoot          liveAnchorUnit
+	activeBad          liveAnchorUnit
+	activeBadEnd       liveAnchorUnit
+	orphan             liveAnchorUnit
+	orderRoot          liveAnchorUnit
+	orderFirst         liveAnchorUnit
+	orderSecond        liveAnchorUnit
+	hiddenOverride     liveAnchorUnit
+	onlyHiddenOverride liveAnchorUnit
+	licenseRoot        liveAnchorUnit
+	longRoot           liveAnchorUnit
+	longTarget         liveAnchorUnit
+	longUnits          []liveAnchorUnit
+	diamondRoot        liveAnchorUnit
+	diamondEnd         liveAnchorUnit
+	diamondUnits       []liveAnchorUnit
+	diamondEdges       [][3]string
 }
 
 func seedLiveAnchorFixture(t *testing.T, pg *postgres.Postgres) liveAnchorFixture {
@@ -329,7 +354,9 @@ func seedLiveAnchorFixture(t *testing.T, pg *postgres.Postgres) liveAnchorFixtur
 	require.NoError(t, err)
 
 	for _, id := range []int{bookID, hiddenBookID, publicOtherBookID} {
-		_, err = pg.Pool.Exec(ctx, `INSERT INTO books (id, name) VALUES ($1, $2)`, id, fmt.Sprintf("anchor-live-%d", id))
+		_, err = pg.Pool.Exec(ctx, `
+			INSERT INTO books (id, name, license_status)
+			VALUES ($1, $2, 'unknown')`, id, fmt.Sprintf("anchor-live-%d", id))
 		require.NoError(t, err)
 
 		for pageID := 1; pageID <= 5; pageID++ {
@@ -349,6 +376,16 @@ func seedLiveAnchorFixture(t *testing.T, pg *postgres.Postgres) liveAnchorFixtur
 			require.NoError(t, err)
 		}
 	}
+
+	licenseTx, err := pg.Pool.Begin(ctx)
+	require.NoError(t, err)
+	_, err = licenseTx.Exec(ctx, `SET LOCAL session_replication_role = 'replica'`)
+	require.NoError(t, err)
+	_, err = licenseTx.Exec(ctx, `
+		UPDATE books SET license_status = 'permitted' WHERE id = ANY($1)`,
+		[]int{bookID, hiddenBookID, publicOtherBookID})
+	require.NoError(t, err)
+	require.NoError(t, licenseTx.Commit(ctx))
 
 	_, err = pg.Pool.Exec(ctx, `
 		INSERT INTO book_publications (book_id, status)
@@ -370,32 +407,39 @@ func seedLiveAnchorFixture(t *testing.T, pg *postgres.Postgres) liveAnchorFixtur
 	}
 
 	fixture := liveAnchorFixture{
-		bookID:            bookID,
-		hiddenBookID:      hiddenBookID,
-		publicOtherBookID: publicOtherBookID,
-		ayahKey:           ayahKey,
-		direct:            unit(bookID, 11, 1, 1, 30, entity.UnitLifecycleActive),
-		root:              unit(bookID, 11, 1, 2, 10, entity.UnitLifecycleSuperseded),
-		mid:               unit(bookID, 11, 1, 3, 10, entity.UnitLifecycleSuperseded),
-		splitA:            unit(bookID, 11, 1, 4, 20, entity.UnitLifecycleActive),
-		splitB:            unit(bookID, 11, 1, 5, 10, entity.UnitLifecycleActive),
-		mergeRoot:         unit(bookID, 11, 1, 6, 40, entity.UnitLifecycleSuperseded),
-		tombstone:         unit(bookID, 11, 1, 7, 50, entity.UnitLifecycleTombstoned),
-		deletedRoot:       unit(bookID, 12, 2, 1, 0, entity.UnitLifecycleSuperseded),
-		moved:             unit(bookID, 11, 1, 8, 25, entity.UnitLifecycleActive),
-		cycleA:            unit(bookID, 11, 1, 9, 60, entity.UnitLifecycleSuperseded),
-		cycleB:            unit(bookID, 11, 1, 10, 60, entity.UnitLifecycleSuperseded),
-		hiddenUnit:        unit(hiddenBookID, 11, 1, 1, 0, entity.UnitLifecycleActive),
-		otherUnit:         unit(publicOtherBookID, 11, 1, 1, 0, entity.UnitLifecycleActive),
-		hiddenRoot:        unit(bookID, 11, 1, 20, 70, entity.UnitLifecycleSuperseded),
-		crossRoot:         unit(bookID, 11, 1, 21, 71, entity.UnitLifecycleSuperseded),
-		activeBad:         unit(bookID, 16, 5, 1, 72, entity.UnitLifecycleActive),
-		activeBadEnd:      unit(bookID, 16, 5, 2, 73, entity.UnitLifecycleActive),
-		orphan:            unit(bookID, 16, 5, 3, 74, entity.UnitLifecycleSuperseded),
-		orderRoot:         unit(bookID, 11, 1, 24, 80, entity.UnitLifecycleSuperseded),
-		orderFirst:        unit(bookID, 11, 1, 25, 90, entity.UnitLifecycleActive),
-		orderSecond:       unit(bookID, 15, 1, 1, 0, entity.UnitLifecycleActive),
+		bookID:             bookID,
+		hiddenBookID:       hiddenBookID,
+		publicOtherBookID:  publicOtherBookID,
+		ayahKey:            ayahKey,
+		direct:             unit(bookID, 11, 1, 1, 30, entity.UnitLifecycleActive),
+		root:               unit(bookID, 11, 1, 2, 10, entity.UnitLifecycleSuperseded),
+		mid:                unit(bookID, 11, 1, 3, 10, entity.UnitLifecycleSuperseded),
+		splitA:             unit(bookID, 11, 1, 4, 20, entity.UnitLifecycleActive),
+		splitB:             unit(bookID, 11, 1, 5, 10, entity.UnitLifecycleActive),
+		mergeRoot:          unit(bookID, 11, 1, 6, 40, entity.UnitLifecycleSuperseded),
+		tombstone:          unit(bookID, 11, 1, 7, 50, entity.UnitLifecycleTombstoned),
+		deletedRoot:        unit(bookID, 12, 2, 1, 0, entity.UnitLifecycleSuperseded),
+		moved:              unit(bookID, 11, 1, 8, 25, entity.UnitLifecycleActive),
+		cycleA:             unit(bookID, 11, 1, 9, 60, entity.UnitLifecycleSuperseded),
+		cycleB:             unit(bookID, 11, 1, 10, 60, entity.UnitLifecycleSuperseded),
+		hiddenUnit:         unit(hiddenBookID, 11, 1, 1, 0, entity.UnitLifecycleActive),
+		otherUnit:          unit(publicOtherBookID, 11, 1, 1, 0, entity.UnitLifecycleActive),
+		hiddenRoot:         unit(bookID, 11, 1, 20, 70, entity.UnitLifecycleSuperseded),
+		crossRoot:          unit(bookID, 11, 1, 21, 71, entity.UnitLifecycleSuperseded),
+		activeBad:          unit(bookID, 16, 5, 1, 72, entity.UnitLifecycleActive),
+		activeBadEnd:       unit(bookID, 16, 5, 2, 73, entity.UnitLifecycleActive),
+		orphan:             unit(bookID, 16, 5, 3, 74, entity.UnitLifecycleSuperseded),
+		orderRoot:          unit(bookID, 11, 1, 24, 80, entity.UnitLifecycleSuperseded),
+		orderFirst:         unit(bookID, 11, 1, 25, 90, entity.UnitLifecycleActive),
+		orderSecond:        unit(bookID, 15, 1, 1, 0, entity.UnitLifecycleActive),
+		hiddenOverride:     unit(bookID, 11, 1, 3001, 10_000, entity.UnitLifecycleActive),
+		onlyHiddenOverride: unit(bookID, 13, 3, 1, 0, entity.UnitLifecycleActive),
+		licenseRoot:        unit(bookID, 11, 1, 3000, 9_000, entity.UnitLifecycleSuperseded),
 	}
+	restricted := entity.LicenseStatusRestricted
+	needsReview := entity.LicenseStatusNeedsReview
+	fixture.hiddenOverride.license = &restricted
+	fixture.onlyHiddenOverride.license = &needsReview
 	for ordinal := 100; ordinal <= 135; ordinal++ {
 		lifecycle := entity.UnitLifecycleSuperseded
 		if ordinal == 135 {
@@ -454,6 +498,7 @@ func seedLiveAnchorFixture(t *testing.T, pg *postgres.Postgres) liveAnchorFixtur
 		fixture.cycleA, fixture.cycleB, fixture.hiddenUnit, fixture.otherUnit,
 		fixture.hiddenRoot, fixture.crossRoot, fixture.activeBad, fixture.activeBadEnd, fixture.orphan,
 		fixture.orderRoot, fixture.orderFirst, fixture.orderSecond,
+		fixture.hiddenOverride, fixture.onlyHiddenOverride, fixture.licenseRoot,
 	}
 	units = append(units, fixture.longUnits...)
 	units = append(units, fixture.diamondUnits...)
@@ -470,13 +515,14 @@ func seedLiveAnchorFixture(t *testing.T, pg *postgres.Postgres) liveAnchorFixtur
 			INSERT INTO citable_units (
 				id, corpus, book_id, heading_id, page_id, kind, ordinal, position,
 				anchor, text, text_normalized, normalization_version, content_hash,
-				occurrence, language, provenance_class, provenance_detail, lifecycle, retired_at
+				occurrence, language, provenance_class, provenance_detail, license_status,
+				lifecycle, retired_at
 			) VALUES (
 				$1, 'kitab', $2, $3, $4, 'paragraph', $5, $6,
-				$7, $8, $8, 1, $9, 1, 'ar', 'source', '{}'::jsonb, $10, $11
+				$7, $8, $8, 1, $9, 1, 'ar', 'source', '{}'::jsonb, $10, $11, $12
 			)`,
 			item.id, item.bookID, item.headingID, item.pageID, item.ordinal, item.position,
-			item.anchor, "text-"+item.id, []byte("hash-"+item.id), item.lifecycle, retiredAt)
+			item.anchor, "text-"+item.id, []byte("hash-"+item.id), item.license, item.lifecycle, retiredAt)
 		require.NoError(t, err)
 	}
 
@@ -493,6 +539,8 @@ func seedLiveAnchorFixture(t *testing.T, pg *postgres.Postgres) liveAnchorFixtur
 		{fixture.activeBad.id, fixture.activeBadEnd.id, entity.UnitLineageReasonEdit},
 		{fixture.orderRoot.id, fixture.orderFirst.id, entity.UnitLineageReasonEdit},
 		{fixture.orderRoot.id, fixture.orderSecond.id, entity.UnitLineageReasonEdit},
+		{fixture.licenseRoot.id, fixture.direct.id, entity.UnitLineageReasonEdit},
+		{fixture.licenseRoot.id, fixture.hiddenOverride.id, entity.UnitLineageReasonEdit},
 	}
 	for i := 0; i < len(fixture.longUnits)-1; i++ {
 		edges = append(edges, [3]string{
@@ -511,6 +559,9 @@ func seedLiveAnchorFixture(t *testing.T, pg *postgres.Postgres) liveAnchorFixtur
 		require.NoError(t, err)
 	}
 
+	_, err = tx.Exec(ctx, `UPDATE books SET units_derived_at = now() WHERE id = $1`, bookID)
+	require.NoError(t, err)
+
 	require.NoError(t, tx.Commit(ctx))
 
 	t.Cleanup(func() {
@@ -525,6 +576,17 @@ func seedLiveAnchorFixture(t *testing.T, pg *postgres.Postgres) liveAnchorFixtur
 	})
 
 	return fixture
+}
+
+func anchorRecordUnitIDs(records []entity.AnchorRecord) []string {
+	ids := make([]string, 0, len(records))
+	for i := range records {
+		if records[i].UnitID != nil {
+			ids = append(ids, *records[i].UnitID)
+		}
+	}
+
+	return ids
 }
 
 func TestAnchorLineageSQLHasNoSilentDepthCap(t *testing.T) {
@@ -561,6 +623,39 @@ func TestPublicLineageVisibilityCorruptionKeeps404AndIntegritySignal(t *testing.
 	err := validateLineageSuccessor(&edge, publicLineagePolicy(797))
 	require.ErrorIs(t, err, entity.ErrAnchorNotFound)
 	require.ErrorIs(t, err, errUnsafeAnchorLineage)
+}
+
+func TestPublicLineageFiltersIneligibleActiveSibling(t *testing.T) {
+	t.Parallel()
+
+	root := lineageUnit{
+		ID: "root", Anchor: "kitab/797/h/1/u/1", BookID: 797,
+		Lifecycle: entity.UnitLifecycleSuperseded, PublicEligible: true,
+	}
+	eligible := lineageUnit{
+		ID: "eligible", Anchor: "kitab/797/h/1/u/2", BookID: 797,
+		Lifecycle: entity.UnitLifecycleActive, PublicEligible: true,
+	}
+	hidden := lineageUnit{
+		ID: "hidden", Anchor: "kitab/797/h/1/u/3", BookID: 797,
+		Lifecycle: entity.UnitLifecycleActive, PublicEligible: false,
+	}
+	units := map[string]lineageUnit{root.ID: root, eligible.ID: eligible, hidden.ID: hidden}
+	edges := map[[2]string]lineageGraphEdge{
+		{root.ID, eligible.ID}: {PredecessorID: root.ID, SuccessorID: eligible.ID},
+		{root.ID, hidden.ID}:   {PredecessorID: root.ID, SuccessorID: hidden.ID},
+	}
+	outgoing := map[string]int{root.ID: 2}
+
+	publicResult, err := finishLineageWalk(units, edges, outgoing, publicLineagePolicy(797))
+	require.NoError(t, err)
+	require.Len(t, publicResult.ActiveUnits, 1)
+	assert.Equal(t, eligible.ID, publicResult.ActiveUnits[0].ID)
+	assert.Len(t, publicResult.Redirects, 1, "a hidden unit Anchor must not leak through redirect metadata")
+
+	internalResult, err := finishLineageWalk(units, edges, outgoing, lineagePolicy{})
+	require.NoError(t, err)
+	assert.Len(t, internalResult.ActiveUnits, 2, "protected registry reads retain all units")
 }
 
 func readOwnSourceForContractTest(t *testing.T, name string) string {

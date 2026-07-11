@@ -57,6 +57,7 @@ type Author struct {
 type Book struct {
 	ID                          int                `json:"id"             example:"797"`
 	Name                        string             `json:"name"           example:"الزبد في مصطلح الحديث"`
+	LicenseStatus               string             `json:"license_status" example:"permitted"`
 	CategoryID                  *int               `json:"category_id"    example:"10"`
 	CategoryName                *string            `json:"category_name"  example:"علوم الحديث"`
 	AuthorID                    *int               `json:"author_id"      example:"177"`

@@ -100,6 +100,7 @@ DELETE FROM quran_ayahs WHERE surah_id = 114 AND ayah_number = ANY($1::int[])`,
 	otherWork := fmt.Sprintf("kitab/%d", fixture.publicOtherBookID)
 	hiddenWork := fmt.Sprintf("kitab/%d", fixture.hiddenBookID)
 	heading := fmt.Sprintf("kitab/%d/h/11", fixture.bookID)
+	hiddenDerivedHeading := fmt.Sprintf("kitab/%d/h/13", fixture.bookID)
 	ayah := "quran/" + fixture.ayahKey
 	rangeAnchor := fmt.Sprintf("%s..quran/114:%d", ayah, ayahNumber+1)
 	surah := "quran/114"
@@ -223,11 +224,16 @@ DELETE FROM quran_ayahs WHERE surah_id = 114 AND ayah_number = ANY($1::int[])`,
 		createApprovedHuman(ctx, t, uc, actorID, otherWork, ayah, entity.CrossReferenceKindCites, "ذكر آخر")
 		createApprovedHuman(ctx, t, uc, actorID, hiddenWork, ayah, entity.CrossReferenceKindCites, "كتاب مخفي")
 		createApprovedHuman(ctx, t, uc, actorID, otherWork, surah, entity.CrossReferenceKindCites, "السورة")
+		createApprovedHuman(ctx, t, uc, actorID, hiddenDerivedHeading, ayah,
+			entity.CrossReferenceKindCites, "عنوان كل وحداته محجوبة")
+		createApprovedHuman(ctx, t, uc, actorID, fixture.hiddenOverride.anchor, ayah,
+			entity.CrossReferenceKindCites, "وحدة ذات تجاوز ترخيص محجوب")
 
 		got, err := uc.ListPublic(ctx, ayah, entity.CrossReferenceDirectionIncoming,
 			entity.CrossReferenceKindCites, 50, 0)
 		require.NoError(t, err)
-		assert.Len(t, got.Items, 3, "hidden Work and surah-only edge must not match the ayah")
+		assert.Len(t, got.Items, 3,
+			"hidden Work, ineligible unit/heading, and surah-only edge must not match the ayah")
 		assert.Equal(t, 3, got.Total)
 		assert.Equal(t, 2, got.WorkTotal)
 

@@ -216,7 +216,15 @@ Kerjakan B-5 dan B-6 dari roadmap/phase-1b-content-backbone.md: (B-5) bekukan no
 Masuk PLAN MODE dulu; rencana wajib menyebut cara memenuhi setiap Acceptance Criterion keduanya. Setelah saya setujui: kerjakan sampai tuntas — branch fitur, test, Definition of Done, centang PROGRAM.md & SESI.md, merge, verifikasi dev-api. Laporan akhir bahasa awam.
 ```
 
-- [ ] **SESI 15 — Gerbang lisensi platform (B-4)** *(✅ PK-1 sudah dijawab: default aman a/a/a)*
+- [x] **SESI 15 — Gerbang lisensi platform (B-4)** — ✅ **SELESAI 2026-07-11**: seluruh kitab
+  kini memiliki License Status; Citable Unit mewarisi status Edition dengan override unit
+  fail-closed. Publikasi/mutasi konten publik baru wajib literal `permitted` di API, importer, dan
+  database; karya lama bertanda grandfather tetap tayang sampai audit `restricted` menurunkannya
+  dari seluruh jalur publik. Laporan cakupan terlindungi menyediakan hitungan lengkap, antrean
+  prioritas berdasarkan karya grandfathered dan penggunaan pembaca nyata, ETag, MFA segar, serta
+  histori keputusan append-only. Kontrak publik aditif, cache fail-closed, RAG mengecualikan
+  keluaran machine yang belum reviewed. Integration dari database kosong, live serial+race,
+  migrasi up→down-all→up, worker 22/22+typecheck, dan diff-cover 73,6% semuanya hijau.
 
 ```text
 Kerjakan B-4 dari roadmap/phase-1b-content-backbone.md sesuai jawaban PK-1 di roadmap/PROGRAM.md §5: adopsi enum license_status ke kitab (Work/Edition, pewarisan ke unit), publish BARU wajib permitted, karya existing di-grandfather sesuai keputusan O-1B-1, laporan cakupan lisensi untuk saya.
