@@ -244,7 +244,10 @@ Baca roadmap/PROGRAM.md §2 (Gelombang 3) + status centang di roadmap/SESI.md da
 
 ## GELOMBANG 3 — Konten inti (Quran + industrialisasi kitab + benih retrieval)
 
-- [ ] **SESI 17 — Editorial Quran setara kitab (Q-1)**
+- [x] **SESI 17 — Editorial Quran setara kitab (Q-1)** — ✅ **SELESAI 2026-07-11**:
+  draft/publish+ETag, race 412, revisi+restore+origin, grandfather populated tanpa perubahan API
+  publik, importer draft-default/explicit-publish, gerbang `published+permitted`, dan bukti tunggal
+  jalur tulis selesai end-to-end.
 
 ```text
 Kerjakan Q-1 dari roadmap/phase-3-quran.md: naikkan editorial surah dan ayah ke workflow standar kitab — draft/publish, ETag dengan 412/428/If-Match: *, riwayat revisi yang bisa di-restore, dan origin rest/import; grandfather data existing sebagai published tanpa mengubah isi atau API baca publik; importer menulis draft secara default dan hanya publish lewat flag eksplisit; konten publik tetap wajib published+permitted.

@@ -133,7 +133,18 @@ normalisasi hijau di dua runtime ✅ B-5; seluruh enrichment baru ber-generation
 B-1..B-3 terkunci.
 
 ### W3 — Konten inti (Quran + industrialisasi kitab + benih retrieval)
-**Isi:** Q-1 (editorial Quran → standar kitab) ∥ Q-2 (deklarasi Anchor ayat + unit Quran +
+**Isi:** Q-1 ✅ **SELESAI 2026-07-11 (SESI 17)** (editorial surah+ayah kini punya workspace
+draft/published, ETag wajib dengan 428/412/`If-Match: *`, histori immutable newest-first,
+restore-ke-draft, dan origin `rest|import|restore`; race HTTP dan SQL membuktikan tepat satu dari
+dua penyunting ber-ETag sama menang. Migrasi populated men-grandfather kedua tabel sebagai
+published + baseline v1/import yang restorable tanpa mengubah satu pun kolom lama atau bentuk/nilai
+API publik; drill `up→down-terlindungi→down→up` hidup di CI. Kedua importer default draft dan hanya
+publish lewat flag eksplisit, atomik, serta tetap wajib `permitted`; public view fail-closed tepat
+`published+permitted`. Trigger DB mencakup DML+TRUNCATE, marker transaksi hanya boleh hidup di satu
+writer, dan test sumber menolak jalur runtime lain. Revisi Q-1 sengaja mencakup baris editorial
+per-bahasa; histori/redirect tiga field routing global slug/order/ruku tetap milik Q-4, sementara
+default import tidak menyentuhnya dan hanya publish eksplisit boleh menerapkannya) ∥ Q-2
+(deklarasi Anchor ayat + unit Quran +
 test anti-tafsir) ∥ **K-1 (industrialisasi Citable Unit seluruh katalog + migrasi sitasi RAG —
 critical path, effort besar)** ∥ Q-4 (SEO sitemap/slug) + Q-6 (keandalan notifikasi);
 sisa F2: A-2 (identitas mesin ber-scope), A-4 (dual-key JWT + drill), A-5 (refresh 336h);
