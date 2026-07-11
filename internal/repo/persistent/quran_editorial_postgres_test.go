@@ -3,6 +3,7 @@ package persistent
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"testing"
 	"time"
@@ -10,9 +11,166 @@ import (
 	"github.com/alfariesh/surau-backend/internal/entity"
 	"github.com/alfariesh/surau-backend/pkg/postgres"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestQuranEditorialImportValidationSortsAndRejectsDuplicates(t *testing.T) {
+	t.Parallel()
+
+	surahPatches := []QuranSurahEditorialPatch{
+		{SurahID: 3, Lang: "id"},
+		{SurahID: 2, Lang: "en"},
+		{SurahID: 2, Lang: "ar"},
+	}
+	metadata := []QuranSurahMetadataUpdate{{SurahID: 3}, {SurahID: 1}}
+	require.NoError(t, sortAndValidateSurahImport(surahPatches, metadata))
+	assert.Equal(t, []int{2, 2, 3}, []int{
+		surahPatches[0].SurahID,
+		surahPatches[1].SurahID,
+		surahPatches[2].SurahID,
+	})
+	assert.Equal(t, []string{"ar", "en", "id"}, []string{
+		surahPatches[0].Lang,
+		surahPatches[1].Lang,
+		surahPatches[2].Lang,
+	})
+	assert.Equal(t, []int{1, 3}, []int{metadata[0].SurahID, metadata[1].SurahID})
+
+	err := sortAndValidateSurahImport([]QuranSurahEditorialPatch{
+		{SurahID: 2, Lang: "id"},
+		{SurahID: 2, Lang: "id"},
+	}, nil)
+	assert.ErrorIs(t, err, entity.ErrInvalidQuranEditorial)
+
+	err = sortAndValidateSurahImport(nil, []QuranSurahMetadataUpdate{
+		{SurahID: 2},
+		{SurahID: 2},
+	})
+	assert.ErrorIs(t, err, entity.ErrInvalidQuranEditorial)
+}
+
+func TestQuranAyahEditorialImportValidationSortsAndRejectsDuplicates(t *testing.T) {
+	t.Parallel()
+
+	patches := []QuranAyahEditorialPatch{
+		{SurahID: 3, AyahNumber: 1, Lang: "id"},
+		{SurahID: 2, AyahNumber: 2, Lang: "id"},
+		{SurahID: 2, AyahNumber: 1, Lang: "id"},
+		{SurahID: 2, AyahNumber: 1, Lang: "ar"},
+	}
+	require.NoError(t, sortAndValidateAyahImport(patches))
+	assert.Equal(t, []string{"2:1:ar", "2:1:id", "2:2:id", "3:1:id"}, []string{
+		quranPatchScope(&patches[0]),
+		quranPatchScope(&patches[1]),
+		quranPatchScope(&patches[2]),
+		quranPatchScope(&patches[3]),
+	})
+
+	err := sortAndValidateAyahImport([]QuranAyahEditorialPatch{
+		{SurahID: 2, AyahNumber: 1, Lang: "id"},
+		{SurahID: 2, AyahNumber: 1, Lang: "id"},
+	})
+	assert.ErrorIs(t, err, entity.ErrInvalidQuranEditorial)
+}
+
+func quranPatchScope(patch *QuranAyahEditorialPatch) string {
+	return fmt.Sprintf("%d:%d:%s", patch.SurahID, patch.AyahNumber, patch.Lang)
+}
+
+func TestQuranEditorialPreparationAndComparisonEdges(t *testing.T) {
+	t.Parallel()
+
+	reviewedAt := time.Date(2026, time.July, 11, 1, 2, 3, 987654321, time.FixedZone("WIB", 7*60*60))
+	ayah, err := prepareAyahEditorialEdit(&entity.QuranAyahEditorialEdit{
+		SurahID:       2,
+		AyahNumber:    255,
+		Lang:          "id",
+		ReviewedAt:    &reviewedAt,
+		LicenseStatus: entity.LicenseStatusPermitted,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "2:255", ayah.AyahKey)
+	assert.Empty(t, ayah.FAQ)
+	assert.JSONEq(t, `{}`, string(ayah.Metadata))
+	require.NotNil(t, ayah.ReviewedAt)
+	assert.Zero(t, ayah.ReviewedAt.Nanosecond()%int(time.Microsecond))
+
+	_, err = prepareAyahEditorialEdit(&entity.QuranAyahEditorialEdit{Metadata: entity.RawJSON(`{broken`)})
+	assert.ErrorIs(t, err, entity.ErrInvalidQuranEditorial)
+	_, err = prepareSurahEditorialEdit(&entity.QuranSurahEditorialEdit{Metadata: entity.RawJSON(`{broken`)})
+	assert.ErrorIs(t, err, entity.ErrInvalidQuranEditorial)
+
+	left := ayah
+	left.Metadata = entity.RawJSON(`{"a":1,"b":2}`)
+	right := left
+	right.Status = entity.EditStatusPublished
+	right.Metadata = entity.RawJSON(`{"b":2,"a":1}`)
+	right.UpdatedAt = time.Now()
+	right.PublishedAt = &right.UpdatedAt
+	assert.True(t, equalAyahEditorialContent(&left, &right))
+	right.FAQ = []entity.QuranAyahEditorialFAQ{{Question: "changed", AnswerHTML: "<p>yes</p>"}}
+	assert.False(t, equalAyahEditorialContent(&left, &right))
+	assert.False(t, equalJSON(entity.RawJSON(`{broken`), entity.RawJSON(`{}`)))
+}
+
+func TestQuranEditorialWorkspaceAndWriteErrorEdges(t *testing.T) {
+	t.Parallel()
+
+	current := time.Date(2026, time.July, 11, 1, 2, 3, 0, time.UTC)
+	surahWorkspace := entity.QuranSurahEditorialWorkspace{
+		Published: &entity.QuranSurahEditorialEdit{UpdatedAt: current},
+	}
+	ayahWorkspace := entity.QuranAyahEditorialWorkspace{
+		Published: &entity.QuranAyahEditorialEdit{UpdatedAt: current},
+	}
+
+	assert.NoError(t, ensureSurahEditorialExpected(surahWorkspace, nil))
+	assert.NoError(t, ensureSurahEditorialExpected(surahWorkspace, &current))
+	assert.ErrorIs(t, ensureSurahEditorialExpected(entity.QuranSurahEditorialWorkspace{}, &current),
+		entity.ErrPreconditionFailed)
+	assert.NoError(t, ensureAyahEditorialExpected(ayahWorkspace, &current))
+	assert.ErrorIs(t, ensureAyahEditorialExpected(entity.QuranAyahEditorialWorkspace{}, &current),
+		entity.ErrPreconditionFailed)
+
+	baseSurah, existed := baseSurahEditorialEdit(surahWorkspace)
+	assert.True(t, existed)
+	assert.Equal(t, current, baseSurah.UpdatedAt)
+
+	_, existed = baseSurahEditorialEdit(entity.QuranSurahEditorialWorkspace{})
+	assert.False(t, existed)
+	baseAyah, existed := baseAyahEditorialEdit(ayahWorkspace)
+	assert.True(t, existed)
+	assert.Equal(t, current, baseAyah.UpdatedAt)
+
+	_, existed = baseAyahEditorialEdit(entity.QuranAyahEditorialWorkspace{})
+	assert.False(t, existed)
+
+	status := ""
+	applyImportLicense(&status, false, "", false)
+	assert.Equal(t, entity.LicenseStatusNeedsReview, status)
+	applyImportLicense(&status, true, entity.LicenseStatusPermitted, false)
+	assert.Equal(t, entity.LicenseStatusNeedsReview, status)
+	applyImportLicense(&status, true, entity.LicenseStatusPermitted, true)
+	assert.Equal(t, entity.LicenseStatusPermitted, status)
+
+	licenseErr := &pgconn.PgError{Code: "P0001", Message: "license_not_permitted"}
+	assert.ErrorIs(t, mapQuranEditorialWriteError(licenseErr), entity.ErrLicenseNotPermitted)
+	assert.ErrorIs(t, mapQuranEditorialWriteError(errDatabaseUnavailable), errDatabaseUnavailable)
+}
+
+func TestQuranEditorialRepositoryRejectsInvalidAyahKeysBeforeDatabase(t *testing.T) {
+	t.Parallel()
+
+	repository := &EditorialRepo{}
+	_, err := repository.GetAyahEditorialWorkspace(t.Context(), "invalid", "id")
+	assert.ErrorIs(t, err, entity.ErrInvalidAyahKey)
+	_, err = repository.PublishAyahEditorialDraft(t.Context(), "", "invalid", "id", nil, "")
+	assert.ErrorIs(t, err, entity.ErrInvalidAyahKey)
+	_, err = repository.RestoreAyahEditorialRevision(t.Context(), "", "invalid", "id", "revision", nil)
+	assert.ErrorIs(t, err, entity.ErrInvalidAyahKey)
+}
 
 func TestMergeSurahEditorialImportPatchPreservesAbsentFields(t *testing.T) {
 	t.Parallel()
