@@ -2,7 +2,7 @@ package quranutil
 
 import "strings"
 
-//go:generate go run -tags normalization_generator ./gen_v1_unicode
+//go:generate go run -tags normalization_generator ../../cmd/gen-normalization-v1
 
 const (
 	SearchKeyV1ProfileName    = "search-key"

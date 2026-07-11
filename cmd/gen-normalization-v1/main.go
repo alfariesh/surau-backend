@@ -1,6 +1,6 @@
 //go:build normalization_generator
 
-// Command gen_v1_unicode snapshots the Go Unicode 15.0 letter/digit
+// Command gen-normalization-v1 snapshots the Go Unicode 15.0 letter/digit
 // classification used by search-key/v1. It deliberately refuses newer tables.
 package main
 
