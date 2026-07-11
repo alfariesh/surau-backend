@@ -1,6 +1,9 @@
 package request
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"time"
+)
 
 // UpdatePublication -.
 type UpdatePublication struct {
@@ -36,6 +39,45 @@ type SavePageDraft struct {
 type SaveHeadingDraft struct {
 	Content string `json:"content" validate:"required,max=2000"`
 } // @name v1.SaveHeadingDraft
+
+// SaveQuranSurahEditorialDraft is a complete editable snapshot for one
+// language-specific surah draft. Workflow identity/status fields come from
+// the route and use case, never from the client body.
+type SaveQuranSurahEditorialDraft struct {
+	MetaTitle       *string         `json:"meta_title" validate:"omitempty,max=500"`
+	MetaDescription *string         `json:"meta_description" validate:"omitempty,max=10000"`
+	ArtiNama        *string         `json:"arti_nama" validate:"omitempty,max=500"`
+	Keutamaan       *string         `json:"keutamaan_html" validate:"omitempty,max=300000"`
+	AsbabunNuzul    *string         `json:"asbabun_nuzul_html" validate:"omitempty,max=300000"`
+	PokokKandungan  *string         `json:"pokok_kandungan_html" validate:"omitempty,max=300000"`
+	AuthorName      *string         `json:"author_name" validate:"omitempty,max=500"`
+	ReviewedBy      *string         `json:"reviewed_by" validate:"omitempty,max=500"`
+	ReviewedAt      *time.Time      `json:"reviewed_at"`
+	LicenseStatus   string          `json:"license_status" validate:"required,oneof=unknown needs_review permitted restricted public_domain" example:"needs_review"`
+	Metadata        json.RawMessage `json:"metadata" swaggertype:"object"`
+} // @name v1.SaveQuranSurahEditorialDraft
+
+// QuranAyahEditorialFAQ is one validated FAQ entry in an ayah draft.
+type QuranAyahEditorialFAQ struct {
+	Question   string `json:"question" validate:"required,max=2000"`
+	AnswerHTML string `json:"answer_html" validate:"required,max=300000"`
+} // @name v1.QuranAyahEditorialFAQ
+
+// SaveQuranAyahEditorialDraft is a complete editable snapshot for one
+// language-specific ayah draft.
+type SaveQuranAyahEditorialDraft struct {
+	MetaTitle       *string                 `json:"meta_title" validate:"omitempty,max=500"`
+	MetaDescription *string                 `json:"meta_description" validate:"omitempty,max=10000"`
+	Intisari        *string                 `json:"intisari_html" validate:"omitempty,max=300000"`
+	Keutamaan       *string                 `json:"keutamaan_html" validate:"omitempty,max=300000"`
+	FAQ             []QuranAyahEditorialFAQ `json:"faq" validate:"max=100,dive"`
+	TafsirRange     *string                 `json:"tafsir_range" validate:"omitempty,max=50" example:"255"`
+	AuthorName      *string                 `json:"author_name" validate:"omitempty,max=500"`
+	ReviewedBy      *string                 `json:"reviewed_by" validate:"omitempty,max=500"`
+	ReviewedAt      *time.Time              `json:"reviewed_at"`
+	LicenseStatus   string                  `json:"license_status" validate:"required,oneof=unknown needs_review permitted restricted public_domain" example:"needs_review"`
+	Metadata        json.RawMessage         `json:"metadata" swaggertype:"object"`
+} // @name v1.SaveQuranAyahEditorialDraft
 
 // CollabSavePageDraft is the internal payload the collab server uses to sync
 // a merged collaborative document into the page draft pipeline. actor_id is

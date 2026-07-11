@@ -2982,6 +2982,235 @@ func (mr *MockEditorialMockRecorder) UpdatePublication(ctx, actorID, bookID, sta
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdatePublication", reflect.TypeOf((*MockEditorial)(nil).UpdatePublication), ctx, actorID, bookID, status, featured, sortOrder)
 }
 
+// MockQuranEditorial is a mock of QuranEditorial interface.
+type MockQuranEditorial struct {
+	ctrl     *gomock.Controller
+	recorder *MockQuranEditorialMockRecorder
+	isgomock struct{}
+}
+
+// MockQuranEditorialMockRecorder is the mock recorder for MockQuranEditorial.
+type MockQuranEditorialMockRecorder struct {
+	mock *MockQuranEditorial
+}
+
+// NewMockQuranEditorial creates a new mock instance.
+func NewMockQuranEditorial(ctrl *gomock.Controller) *MockQuranEditorial {
+	mock := &MockQuranEditorial{ctrl: ctrl}
+	mock.recorder = &MockQuranEditorialMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockQuranEditorial) EXPECT() *MockQuranEditorialMockRecorder {
+	return m.recorder
+}
+
+// AyahEditorialWorkspace mocks base method.
+func (m *MockQuranEditorial) AyahEditorialWorkspace(ctx context.Context, ayahKey, lang string) (entity.QuranAyahEditorialWorkspace, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AyahEditorialWorkspace", ctx, ayahKey, lang)
+	ret0, _ := ret[0].(entity.QuranAyahEditorialWorkspace)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// AyahEditorialWorkspace indicates an expected call of AyahEditorialWorkspace.
+func (mr *MockQuranEditorialMockRecorder) AyahEditorialWorkspace(ctx, ayahKey, lang any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AyahEditorialWorkspace", reflect.TypeOf((*MockQuranEditorial)(nil).AyahEditorialWorkspace), ctx, ayahKey, lang)
+}
+
+// PublishAyahEditorialDraft mocks base method.
+func (m *MockQuranEditorial) PublishAyahEditorialDraft(ctx context.Context, actorID, ayahKey, lang string, expected *time.Time) (entity.QuranAyahEditorialWorkspace, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "PublishAyahEditorialDraft", ctx, actorID, ayahKey, lang, expected)
+	ret0, _ := ret[0].(entity.QuranAyahEditorialWorkspace)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// PublishAyahEditorialDraft indicates an expected call of PublishAyahEditorialDraft.
+func (mr *MockQuranEditorialMockRecorder) PublishAyahEditorialDraft(ctx, actorID, ayahKey, lang, expected any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PublishAyahEditorialDraft", reflect.TypeOf((*MockQuranEditorial)(nil).PublishAyahEditorialDraft), ctx, actorID, ayahKey, lang, expected)
+}
+
+// PublishSurahEditorialDraft mocks base method.
+func (m *MockQuranEditorial) PublishSurahEditorialDraft(ctx context.Context, actorID string, surahID int, lang string, expected *time.Time) (entity.QuranSurahEditorialWorkspace, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "PublishSurahEditorialDraft", ctx, actorID, surahID, lang, expected)
+	ret0, _ := ret[0].(entity.QuranSurahEditorialWorkspace)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// PublishSurahEditorialDraft indicates an expected call of PublishSurahEditorialDraft.
+func (mr *MockQuranEditorialMockRecorder) PublishSurahEditorialDraft(ctx, actorID, surahID, lang, expected any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PublishSurahEditorialDraft", reflect.TypeOf((*MockQuranEditorial)(nil).PublishSurahEditorialDraft), ctx, actorID, surahID, lang, expected)
+}
+
+// QuranEditorialRevisions mocks base method.
+func (m *MockQuranEditorial) QuranEditorialRevisions(ctx context.Context, assetType string, surahID int, ayahNumber *int, lang string, limit, offset int) ([]entity.QuranEditorialRevision, int, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "QuranEditorialRevisions", ctx, assetType, surahID, ayahNumber, lang, limit, offset)
+	ret0, _ := ret[0].([]entity.QuranEditorialRevision)
+	ret1, _ := ret[1].(int)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
+}
+
+// QuranEditorialRevisions indicates an expected call of QuranEditorialRevisions.
+func (mr *MockQuranEditorialMockRecorder) QuranEditorialRevisions(ctx, assetType, surahID, ayahNumber, lang, limit, offset any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "QuranEditorialRevisions", reflect.TypeOf((*MockQuranEditorial)(nil).QuranEditorialRevisions), ctx, assetType, surahID, ayahNumber, lang, limit, offset)
+}
+
+// RestoreAyahEditorialRevision mocks base method.
+func (m *MockQuranEditorial) RestoreAyahEditorialRevision(ctx context.Context, actorID, ayahKey, lang, revisionID string, expected *time.Time) (entity.QuranAyahEditorialWorkspace, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RestoreAyahEditorialRevision", ctx, actorID, ayahKey, lang, revisionID, expected)
+	ret0, _ := ret[0].(entity.QuranAyahEditorialWorkspace)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// RestoreAyahEditorialRevision indicates an expected call of RestoreAyahEditorialRevision.
+func (mr *MockQuranEditorialMockRecorder) RestoreAyahEditorialRevision(ctx, actorID, ayahKey, lang, revisionID, expected any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RestoreAyahEditorialRevision", reflect.TypeOf((*MockQuranEditorial)(nil).RestoreAyahEditorialRevision), ctx, actorID, ayahKey, lang, revisionID, expected)
+}
+
+// RestoreSurahEditorialRevision mocks base method.
+func (m *MockQuranEditorial) RestoreSurahEditorialRevision(ctx context.Context, actorID string, surahID int, lang, revisionID string, expected *time.Time) (entity.QuranSurahEditorialWorkspace, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RestoreSurahEditorialRevision", ctx, actorID, surahID, lang, revisionID, expected)
+	ret0, _ := ret[0].(entity.QuranSurahEditorialWorkspace)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// RestoreSurahEditorialRevision indicates an expected call of RestoreSurahEditorialRevision.
+func (mr *MockQuranEditorialMockRecorder) RestoreSurahEditorialRevision(ctx, actorID, surahID, lang, revisionID, expected any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RestoreSurahEditorialRevision", reflect.TypeOf((*MockQuranEditorial)(nil).RestoreSurahEditorialRevision), ctx, actorID, surahID, lang, revisionID, expected)
+}
+
+// SaveAyahEditorialDraft mocks base method.
+func (m *MockQuranEditorial) SaveAyahEditorialDraft(ctx context.Context, actorID string, edit entity.QuranAyahEditorialEdit, expected *time.Time) (entity.QuranAyahEditorialWorkspace, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SaveAyahEditorialDraft", ctx, actorID, edit, expected)
+	ret0, _ := ret[0].(entity.QuranAyahEditorialWorkspace)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// SaveAyahEditorialDraft indicates an expected call of SaveAyahEditorialDraft.
+func (mr *MockQuranEditorialMockRecorder) SaveAyahEditorialDraft(ctx, actorID, edit, expected any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SaveAyahEditorialDraft", reflect.TypeOf((*MockQuranEditorial)(nil).SaveAyahEditorialDraft), ctx, actorID, edit, expected)
+}
+
+// SaveSurahEditorialDraft mocks base method.
+func (m *MockQuranEditorial) SaveSurahEditorialDraft(ctx context.Context, actorID string, edit entity.QuranSurahEditorialEdit, expected *time.Time) (entity.QuranSurahEditorialWorkspace, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SaveSurahEditorialDraft", ctx, actorID, edit, expected)
+	ret0, _ := ret[0].(entity.QuranSurahEditorialWorkspace)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// SaveSurahEditorialDraft indicates an expected call of SaveSurahEditorialDraft.
+func (mr *MockQuranEditorialMockRecorder) SaveSurahEditorialDraft(ctx, actorID, edit, expected any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SaveSurahEditorialDraft", reflect.TypeOf((*MockQuranEditorial)(nil).SaveSurahEditorialDraft), ctx, actorID, edit, expected)
+}
+
+// SurahEditorialWorkspace mocks base method.
+func (m *MockQuranEditorial) SurahEditorialWorkspace(ctx context.Context, surahID int, lang string) (entity.QuranSurahEditorialWorkspace, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SurahEditorialWorkspace", ctx, surahID, lang)
+	ret0, _ := ret[0].(entity.QuranSurahEditorialWorkspace)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// SurahEditorialWorkspace indicates an expected call of SurahEditorialWorkspace.
+func (mr *MockQuranEditorialMockRecorder) SurahEditorialWorkspace(ctx, surahID, lang any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SurahEditorialWorkspace", reflect.TypeOf((*MockQuranEditorial)(nil).SurahEditorialWorkspace), ctx, surahID, lang)
+}
+
+// MockLicenseAudit is a mock of LicenseAudit interface.
+type MockLicenseAudit struct {
+	ctrl     *gomock.Controller
+	recorder *MockLicenseAuditMockRecorder
+	isgomock struct{}
+}
+
+// MockLicenseAuditMockRecorder is the mock recorder for MockLicenseAudit.
+type MockLicenseAuditMockRecorder struct {
+	mock *MockLicenseAudit
+}
+
+// NewMockLicenseAudit creates a new mock instance.
+func NewMockLicenseAudit(ctrl *gomock.Controller) *MockLicenseAudit {
+	mock := &MockLicenseAudit{ctrl: ctrl}
+	mock.recorder = &MockLicenseAuditMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockLicenseAudit) EXPECT() *MockLicenseAuditMockRecorder {
+	return m.recorder
+}
+
+// BookLicense mocks base method.
+func (m *MockLicenseAudit) BookLicense(ctx context.Context, bookID int) (entity.BookLicense, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "BookLicense", ctx, bookID)
+	ret0, _ := ret[0].(entity.BookLicense)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// BookLicense indicates an expected call of BookLicense.
+func (mr *MockLicenseAuditMockRecorder) BookLicense(ctx, bookID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "BookLicense", reflect.TypeOf((*MockLicenseAudit)(nil).BookLicense), ctx, bookID)
+}
+
+// LicenseAuditReport mocks base method.
+func (m *MockLicenseAudit) LicenseAuditReport(ctx context.Context, status string, limit, offset int) (entity.BookLicenseAuditReport, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "LicenseAuditReport", ctx, status, limit, offset)
+	ret0, _ := ret[0].(entity.BookLicenseAuditReport)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// LicenseAuditReport indicates an expected call of LicenseAuditReport.
+func (mr *MockLicenseAuditMockRecorder) LicenseAuditReport(ctx, status, limit, offset any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LicenseAuditReport", reflect.TypeOf((*MockLicenseAudit)(nil).LicenseAuditReport), ctx, status, limit, offset)
+}
+
+// UpdateBookLicense mocks base method.
+func (m *MockLicenseAudit) UpdateBookLicense(ctx context.Context, actorID string, bookID int, status, reason string, evidenceURL *string, expectedUpdatedAt *time.Time) (entity.BookLicense, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateBookLicense", ctx, actorID, bookID, status, reason, evidenceURL, expectedUpdatedAt)
+	ret0, _ := ret[0].(entity.BookLicense)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// UpdateBookLicense indicates an expected call of UpdateBookLicense.
+func (mr *MockLicenseAuditMockRecorder) UpdateBookLicense(ctx, actorID, bookID, status, reason, evidenceURL, expectedUpdatedAt any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateBookLicense", reflect.TypeOf((*MockLicenseAudit)(nil).UpdateBookLicense), ctx, actorID, bookID, status, reason, evidenceURL, expectedUpdatedAt)
+}
+
 // MockAnchorResolver is a mock of AnchorResolver interface.
 type MockAnchorResolver struct {
 	ctrl     *gomock.Controller

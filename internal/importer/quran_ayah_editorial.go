@@ -13,8 +13,9 @@ import (
 	"time"
 
 	"github.com/alfariesh/surau-backend/internal/contentlang"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/alfariesh/surau-backend/internal/entity"
+	"github.com/alfariesh/surau-backend/internal/repo/persistent"
+	"github.com/alfariesh/surau-backend/pkg/postgres"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -24,15 +25,20 @@ type QuranAyahEditorialOptions struct {
 	PostgresURL string
 	Paths       []string
 	DryRun      bool
+	// Publish promotes every imported draft in the same transaction. The safe
+	// default is false: importing content alone must never make it public.
+	Publish bool
 }
 
 // QuranAyahEditorialStats summarizes one per-ayah editorial import run.
 type QuranAyahEditorialStats struct {
-	Files    int
-	AyahRows int // total records parsed
-	Upserted int // inserted or content-changed rows
-	Skipped  int // re-import with byte-identical content (no-op, updated_at preserved)
-	DryRun   bool
+	Files     int
+	AyahRows  int // total records parsed
+	Upserted  int // inserted or content-changed rows
+	Skipped   int // re-import with byte-identical content (no-op, updated_at preserved)
+	Published int // published rows effectively changed (requires Publish)
+	DryRun    bool
+	Publish   bool
 }
 
 type quranAyahEditorialFAQ struct {
@@ -69,56 +75,13 @@ const maxAyahNumber = 286 // Al-Baqarah; cheap upper bound for dry-run validatio
 
 const numSurahs = 114
 
-const ayahEditorialUpsertBatchSize = 1000
-
 var tafsirRangeRe = regexp.MustCompile(`^\d+(-\d+)?$`)
 
-const quranAyahEditorialUpsertSQL = `
-INSERT INTO quran_ayah_editorial (
-    surah_id, ayah_number, ayah_key, lang,
-    meta_title, meta_description, intisari_html, keutamaan_html,
-    faq, tafsir_range, author_name, reviewed_by, reviewed_at,
-    license_status, checksum, updated_at
-)
-VALUES (
-    $1, $2, ($1::integer)::text || ':' || ($2::integer)::text, $3,
-    $4, $5, $6, $7,
-    -- faq is NULL when the key was absent (keep stored); '[]'/[...] when provided.
-    COALESCE($8::jsonb, '[]'::jsonb), $9, $10, $11, $12,
-    $13, $14, now()
-)
-ON CONFLICT (surah_id, ayah_number, lang) DO UPDATE SET
-    meta_title = COALESCE(EXCLUDED.meta_title, quran_ayah_editorial.meta_title),
-    meta_description = COALESCE(EXCLUDED.meta_description, quran_ayah_editorial.meta_description),
-    intisari_html = COALESCE(EXCLUDED.intisari_html, quran_ayah_editorial.intisari_html),
-    keutamaan_html = COALESCE(EXCLUDED.keutamaan_html, quran_ayah_editorial.keutamaan_html),
-    -- $16 = faq key present. When present, overwrite (an explicit [] clears the FAQ);
-    -- when absent, keep the stored FAQ. (checksum already encodes presence-vs-empty.)
-    faq = CASE WHEN $16 THEN EXCLUDED.faq ELSE quran_ayah_editorial.faq END,
-    tafsir_range = COALESCE(EXCLUDED.tafsir_range, quran_ayah_editorial.tafsir_range),
-    author_name = COALESCE(EXCLUDED.author_name, quran_ayah_editorial.author_name),
-    reviewed_by = COALESCE(EXCLUDED.reviewed_by, quran_ayah_editorial.reviewed_by),
-    reviewed_at = COALESCE(EXCLUDED.reviewed_at, quran_ayah_editorial.reviewed_at),
-    -- LICENSE-PRESERVE: only an explicit override ($15=true) may change a stored
-    -- license, so the skill's default 'needs_review' never un-publishes a human's
-    -- 'permitted' on re-import.
-    license_status = CASE WHEN $15 THEN EXCLUDED.license_status ELSE quran_ayah_editorial.license_status END,
-    checksum = EXCLUDED.checksum,
-    -- Idempotent: don't advance freshness (sitemap lastmod) when CONTENT is unchanged.
-    -- Provenance-only changes (below) persist but must NOT bump updated_at.
-    updated_at = CASE WHEN EXCLUDED.checksum IS DISTINCT FROM quran_ayah_editorial.checksum THEN now() ELSE quran_ayah_editorial.updated_at END
--- Run the UPDATE when content changed, on an explicit license override, OR when a
--- provided provenance field actually differs (so reviewer/author back-fills are not
--- silently dropped by the content-only checksum gate).
-WHERE EXCLUDED.checksum IS DISTINCT FROM quran_ayah_editorial.checksum
-   OR $15
-   OR (EXCLUDED.author_name IS NOT NULL AND EXCLUDED.author_name IS DISTINCT FROM quran_ayah_editorial.author_name)
-   OR (EXCLUDED.reviewed_by IS NOT NULL AND EXCLUDED.reviewed_by IS DISTINCT FROM quran_ayah_editorial.reviewed_by)
-   OR (EXCLUDED.reviewed_at IS NOT NULL AND EXCLUDED.reviewed_at IS DISTINCT FROM quran_ayah_editorial.reviewed_at)`
-
-// RunQuranAyahEditorialImport parses per-ayah editorial JSON files and upserts them
-// into quran_ayah_editorial in one transaction (batched). Self-authored content, so
-// it does NOT write quran_import_runs.
+// RunQuranAyahEditorialImport parses per-ayah editorial JSON files and sends one
+// atomic partial-update batch through the protected workflow. The safe default
+// writes drafts; publishing is possible only with the explicit option and only
+// when every resulting draft is permitted. Self-authored content does not write
+// quran_import_runs.
 //
 //nolint:gocognit,gocyclo,cyclop,funlen // linear import pipeline (validate opts -> parse -> range-check -> batch upsert); each branch is a distinct guard, not tangled logic
 func RunQuranAyahEditorialImport(ctx context.Context, opts QuranAyahEditorialOptions) (QuranAyahEditorialStats, error) {
@@ -139,20 +102,21 @@ func RunQuranAyahEditorialImport(ctx context.Context, opts QuranAyahEditorialOpt
 		Files:    len(opts.Paths),
 		AyahRows: len(records),
 		DryRun:   opts.DryRun,
+		Publish:  opts.Publish,
 	}
 	if opts.DryRun {
 		return stats, nil
 	}
 
-	pool, err := pgxpool.New(ctx, opts.PostgresURL)
+	pg, err := postgres.New(opts.PostgresURL)
 	if err != nil {
 		return QuranAyahEditorialStats{}, fmt.Errorf("connecting postgres: %w", err)
 	}
-	defer pool.Close()
+	defer pg.Close()
 
 	// Friendly per-surah ayah_number bound (the FK is the hard gate; this gives a
 	// clear message instead of an opaque 23503).
-	ayahMax, err := loadAyahMaxNumbers(ctx, pool)
+	ayahMax, err := loadAyahMaxNumbers(ctx, pg.Pool)
 	if err != nil {
 		return QuranAyahEditorialStats{}, err
 	}
@@ -166,54 +130,52 @@ func RunQuranAyahEditorialImport(ctx context.Context, opts QuranAyahEditorialOpt
 		}
 	}
 
-	tx, err := pool.Begin(ctx)
+	patches := make([]persistent.QuranAyahEditorialPatch, 0, len(records))
+	for i := range records {
+		rec := records[i]
+		patches = append(patches, persistent.QuranAyahEditorialPatch{
+			SurahID:         rec.SurahID,
+			AyahNumber:      rec.AyahNumber,
+			Lang:            rec.Lang,
+			MetaTitle:       rec.MetaTitle,
+			MetaDescription: rec.MetaDescription,
+			IntisariHTML:    rec.IntisariHTML,
+			KeutamaanHTML:   rec.KeutamaanHTML,
+			FAQ:             quranAyahEditorialFAQs(rec.FAQ),
+			FAQProvided:     rec.faqProvided,
+			TafsirRange:     rec.TafsirRange,
+			AuthorName:      rec.AuthorName,
+			ReviewedBy:      rec.ReviewedBy,
+			ReviewedAt:      rec.ReviewedAt,
+			LicenseStatus:   rec.license,
+			LicenseOverride: rec.licenseOverride,
+		})
+	}
+
+	changed, published, err := persistent.NewEditorialRepo(pg).ImportAyahEditorialBatch(
+		ctx, patches, opts.Publish,
+	)
 	if err != nil {
-		return QuranAyahEditorialStats{}, fmt.Errorf("begin tx: %w", err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-
-	for start := 0; start < len(records); start += ayahEditorialUpsertBatchSize {
-		end := min(start+ayahEditorialUpsertBatchSize, len(records))
-
-		batch := &pgx.Batch{}
-
-		for i := start; i < end; i++ {
-			rec := records[i]
-			batch.Queue(
-				quranAyahEditorialUpsertSQL,
-				rec.SurahID, rec.AyahNumber, rec.Lang,
-				rec.MetaTitle, rec.MetaDescription, rec.IntisariHTML, rec.KeutamaanHTML,
-				rec.faqJSON, rec.TafsirRange, rec.AuthorName, rec.ReviewedBy, rec.ReviewedAt,
-				rec.license, rec.checksum, rec.licenseOverride, rec.faqProvided,
-			)
-		}
-
-		br := tx.SendBatch(ctx, batch)
-		for i := start; i < end; i++ {
-			tag, execErr := br.Exec()
-			if execErr != nil {
-				_ = br.Close()
-
-				return QuranAyahEditorialStats{}, ayahEditorialExecError(records[i], execErr)
-			}
-
-			if tag.RowsAffected() > 0 {
-				stats.Upserted++
-			} else {
-				stats.Skipped++
-			}
-		}
-
-		if closeErr := br.Close(); closeErr != nil {
-			return QuranAyahEditorialStats{}, fmt.Errorf("batch close: %w", closeErr)
-		}
+		return QuranAyahEditorialStats{}, fmt.Errorf("quran ayah editorial workflow: %w", err)
 	}
 
-	if err := tx.Commit(ctx); err != nil {
-		return QuranAyahEditorialStats{}, fmt.Errorf("commit: %w", err)
-	}
+	stats.Upserted = changed
+	stats.Skipped = len(records) - changed
+	stats.Published = published
 
 	return stats, nil
+}
+
+func quranAyahEditorialFAQs(items []quranAyahEditorialFAQ) []entity.QuranAyahEditorialFAQ {
+	result := make([]entity.QuranAyahEditorialFAQ, 0, len(items))
+	for _, item := range items {
+		result = append(result, entity.QuranAyahEditorialFAQ{
+			Question:   item.Question,
+			AnswerHTML: item.AnswerHTML,
+		})
+	}
+
+	return result
 }
 
 // parseQuranAyahEditorialFiles reads + validates all records before any DB work.
@@ -382,19 +344,4 @@ func loadAyahMaxNumbers(ctx context.Context, pool *pgxpool.Pool) (map[int]int, e
 	}
 
 	return out, rows.Err()
-}
-
-func ayahEditorialExecError(rec quranAyahEditorialRecord, err error) error { //nolint:gocritic // small value struct; a copy here is negligible on the error path
-	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) {
-		switch pgErr.Code {
-		case "23503":
-			return fmt.Errorf("ayah %d:%d not found in quran_ayahs: %w", rec.SurahID, rec.AyahNumber, err)
-		case "23514":
-			return fmt.Errorf("ayah %d:%d lang %s violates a check (license/faq/tafsir_range): %w",
-				rec.SurahID, rec.AyahNumber, rec.Lang, err)
-		}
-	}
-
-	return fmt.Errorf("ayah %d:%d lang %s upsert: %w", rec.SurahID, rec.AyahNumber, rec.Lang, err)
 }

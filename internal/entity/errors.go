@@ -92,6 +92,8 @@ var (
 	ErrInvalidAyahKey                  = errors.New("invalid ayah key")
 	ErrInvalidQuranRange               = errors.New("invalid quran range")
 	ErrInvalidQuranProgress            = errors.New("invalid quran progress")
+	ErrInvalidQuranEditorial           = errors.New("invalid quran editorial")
+	ErrEditorialUnavailable            = errors.New("editorial workflow unavailable")
 	ErrInvalidReadingProgress          = errors.New("invalid reading progress")
 	ErrKhatamCycleNotFound             = errors.New("khatam cycle not found")
 	ErrKhatamCycleActiveExists         = errors.New("active khatam cycle already exists")

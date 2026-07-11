@@ -8425,6 +8425,465 @@ const docTemplate = `{
                 ]
             }
         },
+        "/editorial/quran/ayahs/{ayah_key}": {
+            "get": {
+                "description": "Get draft and published editorial states for one ayah and language. Requires editorial review capability.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "editorial"
+                ],
+                "summary": "Get Quran ayah editorial workspace",
+                "operationId": "editorial-quran-ayah-workspace",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "example": "2:255",
+                        "description": "Canonical ayah key",
+                        "name": "ayah_key",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "default": "id",
+                        "description": "Language code",
+                        "name": "lang",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.QuranAyahEditorialWorkspace"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/editorial/quran/ayahs/{ayah_key}/draft": {
+            "put": {
+                "description": "Save a complete ayah editorial draft. If-Match is required; use * only for an explicit force-write.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "editorial"
+                ],
+                "summary": "Save Quran ayah editorial draft",
+                "operationId": "editorial-save-quran-ayah-draft",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "example": "2:255",
+                        "description": "Canonical ayah key",
+                        "name": "ayah_key",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "default": "id",
+                        "description": "Language code",
+                        "name": "lang",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Workspace ETag or *",
+                        "name": "If-Match",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "Complete draft snapshot",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.SaveQuranAyahEditorialDraft"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.QuranAyahEditorialWorkspace"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "412": {
+                        "description": "Precondition Failed",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "428": {
+                        "description": "Precondition Required",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/editorial/quran/ayahs/{ayah_key}/draft-revisions": {
+            "get": {
+                "description": "List newest-first revision snapshots for one ayah and language. Requires editorial review capability.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "editorial"
+                ],
+                "summary": "List Quran ayah editorial revisions",
+                "operationId": "editorial-list-quran-ayah-revisions",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "example": "2:255",
+                        "description": "Canonical ayah key",
+                        "name": "ayah_key",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "default": "id",
+                        "description": "Language code",
+                        "name": "lang",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page size (default 50, max 200)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Offset (max 10000)",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.QuranEditorialRevisionList"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/editorial/quran/ayahs/{ayah_key}/draft-revisions/{revision_id}/restore": {
+            "post": {
+                "description": "Restore a historical snapshot into draft only. The restore creates a new revision and never publishes automatically.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "editorial"
+                ],
+                "summary": "Restore Quran ayah editorial revision",
+                "operationId": "editorial-restore-quran-ayah-revision",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "example": "2:255",
+                        "description": "Canonical ayah key",
+                        "name": "ayah_key",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Revision ID",
+                        "name": "revision_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "default": "id",
+                        "description": "Language code",
+                        "name": "lang",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Workspace ETag or *",
+                        "name": "If-Match",
+                        "in": "header",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.QuranAyahEditorialWorkspace"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "412": {
+                        "description": "Precondition Failed",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "428": {
+                        "description": "Precondition Required",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/editorial/quran/ayahs/{ayah_key}/publish": {
+            "post": {
+                "description": "Publish the current permitted ayah draft. Requires production publish capability and fresh MFA.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "editorial"
+                ],
+                "summary": "Publish Quran ayah editorial draft",
+                "operationId": "editorial-publish-quran-ayah-draft",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "example": "2:255",
+                        "description": "Canonical ayah key",
+                        "name": "ayah_key",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "default": "id",
+                        "description": "Language code",
+                        "name": "lang",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Workspace ETag or *",
+                        "name": "If-Match",
+                        "in": "header",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.QuranAyahEditorialWorkspace"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "412": {
+                        "description": "Precondition Failed",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "428": {
+                        "description": "Precondition Required",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
         "/editorial/quran/missing-assets": {
             "get": {
                 "description": "Editorial queue of missing Quran surah info, ayah translations, translation sources, and app-owned public audio URLs. Source audio_url may still be playable.",
@@ -8501,6 +8960,470 @@ const docTemplate = `{
                     },
                     "403": {
                         "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/editorial/quran/surahs/{surah_id}": {
+            "get": {
+                "description": "Get draft and published editorial states for one surah and language. Requires editorial review capability.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "editorial"
+                ],
+                "summary": "Get Quran surah editorial workspace",
+                "operationId": "editorial-quran-surah-workspace",
+                "parameters": [
+                    {
+                        "maximum": 114,
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "Surah ID",
+                        "name": "surah_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "default": "id",
+                        "description": "Language code",
+                        "name": "lang",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.QuranSurahEditorialWorkspace"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/editorial/quran/surahs/{surah_id}/draft": {
+            "put": {
+                "description": "Save a complete surah editorial draft. If-Match is required; use * only for an explicit force-write.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "editorial"
+                ],
+                "summary": "Save Quran surah editorial draft",
+                "operationId": "editorial-save-quran-surah-draft",
+                "parameters": [
+                    {
+                        "maximum": 114,
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "Surah ID",
+                        "name": "surah_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "default": "id",
+                        "description": "Language code",
+                        "name": "lang",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Workspace ETag or *",
+                        "name": "If-Match",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "Complete draft snapshot",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.SaveQuranSurahEditorialDraft"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.QuranSurahEditorialWorkspace"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "412": {
+                        "description": "Precondition Failed",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "428": {
+                        "description": "Precondition Required",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/editorial/quran/surahs/{surah_id}/draft-revisions": {
+            "get": {
+                "description": "List newest-first revision snapshots for one surah and language. Requires editorial review capability.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "editorial"
+                ],
+                "summary": "List Quran surah editorial revisions",
+                "operationId": "editorial-list-quran-surah-revisions",
+                "parameters": [
+                    {
+                        "maximum": 114,
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "Surah ID",
+                        "name": "surah_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "default": "id",
+                        "description": "Language code",
+                        "name": "lang",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page size (default 50, max 200)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Offset (max 10000)",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.QuranEditorialRevisionList"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/editorial/quran/surahs/{surah_id}/draft-revisions/{revision_id}/restore": {
+            "post": {
+                "description": "Restore a historical snapshot into draft only. The restore creates a new revision and never publishes automatically.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "editorial"
+                ],
+                "summary": "Restore Quran surah editorial revision",
+                "operationId": "editorial-restore-quran-surah-revision",
+                "parameters": [
+                    {
+                        "maximum": 114,
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "Surah ID",
+                        "name": "surah_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Revision ID",
+                        "name": "revision_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "default": "id",
+                        "description": "Language code",
+                        "name": "lang",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Workspace ETag or *",
+                        "name": "If-Match",
+                        "in": "header",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.QuranSurahEditorialWorkspace"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "412": {
+                        "description": "Precondition Failed",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "428": {
+                        "description": "Precondition Required",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/editorial/quran/surahs/{surah_id}/publish": {
+            "post": {
+                "description": "Publish the current permitted surah draft. Requires production publish capability and fresh MFA.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "editorial"
+                ],
+                "summary": "Publish Quran surah editorial draft",
+                "operationId": "editorial-publish-quran-surah-draft",
+                "parameters": [
+                    {
+                        "maximum": 114,
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "Surah ID",
+                        "name": "surah_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "default": "id",
+                        "description": "Language code",
+                        "name": "lang",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Workspace ETag or *",
+                        "name": "If-Match",
+                        "in": "header",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.QuranSurahEditorialWorkspace"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "412": {
+                        "description": "Precondition Failed",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "428": {
+                        "description": "Precondition Required",
                         "schema": {
                             "$ref": "#/definitions/v1.Error"
                         }
@@ -15091,6 +16014,88 @@ const docTemplate = `{
                 }
             }
         },
+        "entity.QuranAyahEditorialEdit": {
+            "type": "object",
+            "properties": {
+                "author_name": {
+                    "type": "string"
+                },
+                "ayah_key": {
+                    "type": "string",
+                    "example": "2:255"
+                },
+                "ayah_number": {
+                    "type": "integer",
+                    "example": 255
+                },
+                "checksum": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "faq": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.QuranAyahEditorialFAQ"
+                    }
+                },
+                "intisari_html": {
+                    "type": "string"
+                },
+                "keutamaan_html": {
+                    "type": "string"
+                },
+                "lang": {
+                    "type": "string",
+                    "example": "id"
+                },
+                "license_status": {
+                    "type": "string",
+                    "example": "needs_review"
+                },
+                "meta_description": {
+                    "type": "string"
+                },
+                "meta_title": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "type": "object"
+                },
+                "published_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "reviewed_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "reviewed_by": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string",
+                    "example": "draft"
+                },
+                "surah_id": {
+                    "type": "integer",
+                    "example": 2
+                },
+                "tafsir_range": {
+                    "type": "string",
+                    "example": "255"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "updated_by": {
+                    "type": "string"
+                }
+            }
+        },
         "entity.QuranAyahEditorialFAQ": {
             "type": "object",
             "properties": {
@@ -15099,6 +16104,68 @@ const docTemplate = `{
                 },
                 "question": {
                     "type": "string"
+                }
+            }
+        },
+        "entity.QuranAyahEditorialWorkspace": {
+            "type": "object",
+            "properties": {
+                "draft": {
+                    "$ref": "#/definitions/entity.QuranAyahEditorialEdit"
+                },
+                "published": {
+                    "$ref": "#/definitions/entity.QuranAyahEditorialEdit"
+                }
+            }
+        },
+        "entity.QuranEditorialRevision": {
+            "type": "object",
+            "properties": {
+                "actor_id": {
+                    "type": "string"
+                },
+                "asset_type": {
+                    "type": "string",
+                    "example": "ayah"
+                },
+                "ayah_key": {
+                    "type": "string",
+                    "example": "2:255"
+                },
+                "ayah_number": {
+                    "type": "integer",
+                    "example": 255
+                },
+                "created_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "lang": {
+                    "type": "string",
+                    "example": "id"
+                },
+                "origin": {
+                    "type": "string",
+                    "example": "rest"
+                },
+                "snapshot": {
+                    "type": "object"
+                },
+                "status": {
+                    "type": "string",
+                    "example": "draft"
+                },
+                "surah_id": {
+                    "type": "integer",
+                    "example": 2
+                },
+                "version": {
+                    "type": "integer",
+                    "example": 3
                 }
             }
         },
@@ -15474,6 +16541,87 @@ const docTemplate = `{
                 "updated_at": {
                     "type": "string",
                     "example": "2026-01-01T00:00:00Z"
+                }
+            }
+        },
+        "entity.QuranSurahEditorialEdit": {
+            "type": "object",
+            "properties": {
+                "arti_nama": {
+                    "type": "string"
+                },
+                "asbabun_nuzul_html": {
+                    "type": "string"
+                },
+                "author_name": {
+                    "type": "string"
+                },
+                "checksum": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "keutamaan_html": {
+                    "type": "string"
+                },
+                "lang": {
+                    "type": "string",
+                    "example": "id"
+                },
+                "license_status": {
+                    "type": "string",
+                    "example": "needs_review"
+                },
+                "meta_description": {
+                    "type": "string"
+                },
+                "meta_title": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "type": "object"
+                },
+                "pokok_kandungan_html": {
+                    "type": "string"
+                },
+                "published_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "reviewed_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "reviewed_by": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string",
+                    "example": "draft"
+                },
+                "surah_id": {
+                    "type": "integer",
+                    "example": 73
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "updated_by": {
+                    "type": "string"
+                }
+            }
+        },
+        "entity.QuranSurahEditorialWorkspace": {
+            "type": "object",
+            "properties": {
+                "draft": {
+                    "$ref": "#/definitions/entity.QuranSurahEditorialEdit"
+                },
+                "published": {
+                    "$ref": "#/definitions/entity.QuranSurahEditorialEdit"
                 }
             }
         },
@@ -18068,6 +19216,23 @@ const docTemplate = `{
                 }
             }
         },
+        "v1.QuranAyahEditorialFAQ": {
+            "type": "object",
+            "required": [
+                "answer_html",
+                "question"
+            ],
+            "properties": {
+                "answer_html": {
+                    "type": "string",
+                    "maxLength": 300000
+                },
+                "question": {
+                    "type": "string",
+                    "maxLength": 2000
+                }
+            }
+        },
         "v1.QuranAyahList": {
             "type": "object",
             "properties": {
@@ -18080,6 +19245,21 @@ const docTemplate = `{
                 "total": {
                     "type": "integer",
                     "example": 7
+                }
+            }
+        },
+        "v1.QuranEditorialRevisionList": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.QuranEditorialRevision"
+                    }
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 42
                 }
             }
         },
@@ -18701,6 +19881,67 @@ const docTemplate = `{
                 }
             }
         },
+        "v1.SaveQuranAyahEditorialDraft": {
+            "type": "object",
+            "required": [
+                "license_status"
+            ],
+            "properties": {
+                "author_name": {
+                    "type": "string",
+                    "maxLength": 500
+                },
+                "faq": {
+                    "type": "array",
+                    "maxItems": 100,
+                    "items": {
+                        "$ref": "#/definitions/v1.QuranAyahEditorialFAQ"
+                    }
+                },
+                "intisari_html": {
+                    "type": "string",
+                    "maxLength": 300000
+                },
+                "keutamaan_html": {
+                    "type": "string",
+                    "maxLength": 300000
+                },
+                "license_status": {
+                    "type": "string",
+                    "enum": [
+                        "unknown",
+                        "needs_review",
+                        "permitted",
+                        "restricted",
+                        "public_domain"
+                    ],
+                    "example": "needs_review"
+                },
+                "meta_description": {
+                    "type": "string",
+                    "maxLength": 10000
+                },
+                "meta_title": {
+                    "type": "string",
+                    "maxLength": 500
+                },
+                "metadata": {
+                    "type": "object"
+                },
+                "reviewed_at": {
+                    "type": "string"
+                },
+                "reviewed_by": {
+                    "type": "string",
+                    "maxLength": 500
+                },
+                "tafsir_range": {
+                    "type": "string",
+                    "maxLength": 50,
+                    "example": "255"
+                }
+            }
+        },
         "v1.SaveQuranProgress": {
             "type": "object",
             "required": [
@@ -18715,6 +19956,63 @@ const docTemplate = `{
                 "client_observed_at": {
                     "type": "string",
                     "example": "2026-01-01T00:00:00Z"
+                }
+            }
+        },
+        "v1.SaveQuranSurahEditorialDraft": {
+            "type": "object",
+            "required": [
+                "license_status"
+            ],
+            "properties": {
+                "arti_nama": {
+                    "type": "string",
+                    "maxLength": 500
+                },
+                "asbabun_nuzul_html": {
+                    "type": "string",
+                    "maxLength": 300000
+                },
+                "author_name": {
+                    "type": "string",
+                    "maxLength": 500
+                },
+                "keutamaan_html": {
+                    "type": "string",
+                    "maxLength": 300000
+                },
+                "license_status": {
+                    "type": "string",
+                    "enum": [
+                        "unknown",
+                        "needs_review",
+                        "permitted",
+                        "restricted",
+                        "public_domain"
+                    ],
+                    "example": "needs_review"
+                },
+                "meta_description": {
+                    "type": "string",
+                    "maxLength": 10000
+                },
+                "meta_title": {
+                    "type": "string",
+                    "maxLength": 500
+                },
+                "metadata": {
+                    "type": "object"
+                },
+                "pokok_kandungan_html": {
+                    "type": "string",
+                    "maxLength": 300000
+                },
+                "reviewed_at": {
+                    "type": "string"
+                },
+                "reviewed_by": {
+                    "type": "string",
+                    "maxLength": 500
                 }
             }
         },

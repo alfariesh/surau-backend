@@ -1,6 +1,6 @@
 # Frontend Integration Contract
 
-Last updated: 2026-07-10
+Last updated: 2026-07-11
 
 This is the main FE integration entrypoint for kitab reader and Quran reader.
 Use it together with:
@@ -150,7 +150,7 @@ Email addresses are case-insensitive. The backend trims and lowercases the email
 - Failed login and registering an already-used email return a generic error and never reveal whether an email exists. Do not branch UI on account existence.
 - Auth endpoints are rate limited per client IP and per email/account. On `429 too many auth attempts`, show a retry-later state and back off; do not retry immediately.
 - Verification and reset emails are queued and delivered asynchronously by a background dispatcher (typically within ~15-30 seconds), so tell the user the email may take up to ~30 seconds to arrive. `503 email delivery failed` now only means the backend could not durably queue the message; email-provider outages no longer fail signup or add latency.
-- Browser clients: the API serves CORS itself for origins listed in the backend `CORS_ALLOWED_ORIGINS` env (dev defaults allow `http://localhost:3000` and `http://localhost:3005`); a web frontend on another origin must be added there. `AllowCredentials` is `false` — auth is pure Bearer token, never cookies — so do not send `credentials: "include"`. Allowed request headers are `Authorization`, `Content-Type`, and `X-Request-ID`; exposed response headers are `ETag`, `Retry-After`, and `X-Request-ID`.
+- Browser clients: the API serves CORS itself for origins listed in the backend `CORS_ALLOWED_ORIGINS` env (dev defaults allow `http://localhost:3000` and `http://localhost:3005`); a web frontend on another origin must be added there. `AllowCredentials` is `false` — auth is pure Bearer token, never cookies — so do not send `credentials: "include"`. Allowed request headers are `Authorization`, `Content-Type`, `If-Match`, and `X-Request-ID`; exposed response headers are `ETag`, `Retry-After`, and `X-Request-ID`.
 
 Request/response shapes and status codes are unchanged; see `/swagger/index.html` on a running backend for full auth schemas.
 
@@ -237,6 +237,9 @@ Quran display rules:
 - Missing `lang=en` translation returns `translation: null` and `available_translation_langs` tells FE whether to offer `id`.
 - `BookQuranReference.ayahs[]` uses the same `QuranAyah` metadata contract.
 - Search may match Arabic, requested translation, or another imported translation, but result display still follows exact requested-language rules.
+- Surah and ayah `editorial` is public only when the backend row is both
+  `published` and `license_status=permitted`. Do not infer draft/review state
+  from a missing public field; protected workflow state never appears here.
 
 ## Quran Audio Sync
 
@@ -331,6 +334,12 @@ FE handling:
 - `404 translation not found` on kitab feedback: hide feedback because exact requested translation is missing.
 - `429 too many auth attempts` (code `AUTH_RATE_LIMITED`): auth rate limit hit (per client IP and per email/account). Back off; honor `retry_after`.
 - `429 too many requests` (code `too_many_requests`): non-auth rate limiter (RAG/search/personal/editorial/session). Back off; honor `retry_after`.
+- `409 license not permitted` (code `license_not_permitted`): keep the Quran
+  draft private and disable publish until its license is `permitted`.
+- `412 precondition failed` (code `precondition_failed`): another Quran
+  editorial write won; refetch the workspace and show a conflict.
+- `428 if-match header required` (code `if_match_header_required`): fix the
+  mutation caller to send the workspace ETag (or an intentional `*`).
 - `500 internal server error`: show retry UI and keep previous content if cached.
 
 ## Public Cache Contract (F1-D/B-4)
@@ -368,6 +377,45 @@ Notes:
 - Empty `target_lang` means `id,en`.
 - `target_lang=ar` returns `400` because Arabic is source content.
 - Quran `audio_public` means tracks missing app-owned `public_url`; they may still be playable from source `audio_url`.
+
+## Editorial Quran Workflow
+
+Use the protected workflow below for both surah and ayah copy. Editors with
+editorial review capability can load/save/inspect/restore; publishing requires
+production publish capability plus fresh MFA.
+
+```text
+GET  /v1/editorial/quran/surahs/{surah_id}?lang=id
+PUT  /v1/editorial/quran/surahs/{surah_id}/draft?lang=id
+POST /v1/editorial/quran/surahs/{surah_id}/publish?lang=id
+GET  /v1/editorial/quran/surahs/{surah_id}/draft-revisions?lang=id&limit=50&offset=0
+POST /v1/editorial/quran/surahs/{surah_id}/draft-revisions/{revision_id}/restore?lang=id
+
+GET  /v1/editorial/quran/ayahs/{ayah_key}?lang=id
+PUT  /v1/editorial/quran/ayahs/{ayah_key}/draft?lang=id
+POST /v1/editorial/quran/ayahs/{ayah_key}/publish?lang=id
+GET  /v1/editorial/quran/ayahs/{ayah_key}/draft-revisions?lang=id&limit=50&offset=0
+POST /v1/editorial/quran/ayahs/{ayah_key}/draft-revisions/{revision_id}/restore?lang=id
+```
+
+The workspace response is `{ "draft": ..., "published": ... }`. Store its
+`ETag`, then send that value as `If-Match` on every save, publish, or restore.
+Use the new ETag returned after each successful mutation. Missing headers return
+`428`; malformed/stale values return `412`. Refetch and present a conflict—do
+not silently overwrite. `If-Match: *` is reserved for an explicit first or
+force write.
+
+Revision lists use `{ "items": [...], "total": number }`. `origin=rest`
+identifies API edits, `origin=import` identifies importer/baseline writes, and
+`origin=restore` identifies restored snapshots. An effective restore creates a
+new draft revision and never publishes it; restoring a snapshot already
+identical to the draft is a no-op. Publish is permitted only for
+`license_status=permitted`; public Quran remains sourced exclusively from the
+published + permitted slot.
+
+Surah revision snapshots cover the per-language editorial row. Global routing
+fields (`slug`, `chronological_order`, `ruku_count`) change only during an
+explicit importer publish; Q-4 owns their permanent redirect/history contract.
 
 ## Editorial Book Production
 

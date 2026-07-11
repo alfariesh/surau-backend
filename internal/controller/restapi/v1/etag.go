@@ -58,13 +58,20 @@ func parseIfMatch(ctx *fiber.Ctx) (expected *time.Time, present, ok bool) {
 		return nil, false, true
 	}
 
+	// updated_at tokens are strictly monotonic. Keep the newest strong token so
+	// a normal validator list such as "stale", "current" remains one atomic CAS
+	// at the repo layer. Wildcard has precedence wherever it appears. A weak
+	// validator never satisfies If-Match's strong-comparison requirement.
+	var newest *time.Time
 	for candidate := range strings.SplitSeq(header, ",") {
 		candidate = strings.TrimSpace(candidate)
 		if candidate == "*" {
 			return nil, true, true
 		}
 
-		candidate = strings.TrimSpace(strings.TrimPrefix(candidate, "W/"))
+		if strings.HasPrefix(candidate, "W/") {
+			continue
+		}
 
 		unquoted, err := strconv.Unquote(candidate)
 		if err != nil {
@@ -77,8 +84,13 @@ func parseIfMatch(ctx *fiber.Ctx) (expected *time.Time, present, ok bool) {
 		}
 
 		parsed := time.Unix(0, nanos).UTC()
+		if newest == nil || parsed.After(*newest) {
+			newest = &parsed
+		}
+	}
 
-		return &parsed, true, true
+	if newest != nil {
+		return newest, true, true
 	}
 
 	return nil, true, false

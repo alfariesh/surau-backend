@@ -20,6 +20,9 @@ For generic incoming/outgoing content links and the Quran compatibility bridge, 
 - Use `/v1/quran/juz` or `/v1/quran/hizbs` for mushaf navigation tabs; use their `/ayahs` endpoints for the actual reader payload.
 - For persisted/shared cross-corpus addresses, use canonical Anchor `quran/{ayah_key}` and resolve
   it with `GET /v1/anchors/resolve`; bare `ayah_key` remains a permanent legacy resolver input.
+- Public surah and ayah editorial is present only when the row is both
+  `published` and `license_status=permitted`. Draft/workflow fields never leak
+  into the public response shape.
 
 ## Base Contract
 
@@ -75,13 +78,35 @@ Surah-level fields (language-independent, on every surah object):
 - `ruku_count` — number of ruku, nullable.
 - `content_updated_at` — `GREATEST(surah, editorial)` for the requested lang. Use it as the sitemap `lastmod` so editorial edits move freshness; falls back to surah `updated_at` when no editorial.
 
-`editorial` (per-language object, present **only when reviewed**):
+`editorial` (per-language object, present **only when published and permitted**):
 
-- Returned **only when `license_status = 'permitted'`** — unreviewed/draft copy is never exposed by the API (the gate is in the backend, not just the FE).
+- Returned only when `status = 'published'` **and**
+  `license_status = 'permitted'` — draft, unknown, needs-review, restricted,
+  and public-domain rows are never exposed by the API (the gate is in the
+  backend, not just the FE).
 - Heavy HTML (`keutamaan_html`, `asbabun_nuzul_html`, `pokok_kandungan_html`) is returned **only on the detail endpoint** `GET /v1/quran/surahs/{surah_id}`. The list endpoint (`?include_info`) carries only the **light** editorial metadata (`meta_title`, `meta_description`, `arti_nama`, `license_status`, `created_at`, `updated_at`) so the 114-row payload stays under the edge-cache limit.
 - Fields: `meta_title`, `meta_description` (SEO), `arti_nama`, the three `*_html` bodies, `author_name`/`reviewed_by`/`reviewed_at` (E-E-A-T), `license_status`, `created_at`, `updated_at`.
 - HTML is backend-sanitized on read; render only inside the editorial area.
 - Populate via the CLI loader `cmd/import-quran-surah-editorial` (see README).
+
+The Q-1 workflow adds protected editorial endpoints but does not add workflow
+fields to `QuranSurah`; the existing public JSON contract remains unchanged.
+Editorial rows that existed before Q-1 are grandfathered as `published` with a
+restorable version-1 baseline; their copy and public timestamps are not
+rewritten by that migration.
+
+### Ayah Editorial (SEO/SGE)
+
+Full/default ayah responses may carry a language-specific `editorial` object.
+It follows the same backend gate: only a row with `status=published` and
+`license_status=permitted` is eligible. Drafts and non-permitted rows behave as
+if no editorial exists.
+
+The single-ayah endpoint can include heavy `intisari_html`, `keutamaan_html`,
+and `faq` content. Full ayah lists keep the light editorial metadata; the
+`reader_minimal` view omits editorial. `tafsir_range` is a pointer for the UI,
+not a reproduced tafsir body. The protected workflow does not change any of
+these public response shapes.
 
 ### Multilingual Availability
 
@@ -1225,6 +1250,55 @@ Response:
   ]
 }
 ```
+
+### 11. Protected Quran Editorial Workflow
+
+These routes are for the editorial application, not public Quran readers.
+Workspace, draft, history, and restore require a Bearer token plus editorial
+review capability. Publish requires production publish capability and a fresh
+MFA session.
+
+| Action | Surah route | Ayah route |
+| --- | --- | --- |
+| Load draft + published workspace | `GET /v1/editorial/quran/surahs/{surah_id}?lang=id` | `GET /v1/editorial/quran/ayahs/{ayah_key}?lang=id` |
+| Save complete draft snapshot | `PUT /v1/editorial/quran/surahs/{surah_id}/draft?lang=id` | `PUT /v1/editorial/quran/ayahs/{ayah_key}/draft?lang=id` |
+| Publish current draft | `POST /v1/editorial/quran/surahs/{surah_id}/publish?lang=id` | `POST /v1/editorial/quran/ayahs/{ayah_key}/publish?lang=id` |
+| List newest-first history | `GET /v1/editorial/quran/surahs/{surah_id}/draft-revisions?lang=id&limit=50&offset=0` | `GET /v1/editorial/quran/ayahs/{ayah_key}/draft-revisions?lang=id&limit=50&offset=0` |
+| Restore revision to draft | `POST /v1/editorial/quran/surahs/{surah_id}/draft-revisions/{revision_id}/restore?lang=id` | `POST /v1/editorial/quran/ayahs/{ayah_key}/draft-revisions/{revision_id}/restore?lang=id` |
+
+Workspace GET returns `{ "draft": ..., "published": ... }` and an `ETag`
+header. `draft` or `published` can be `null`; when both exist, the ETag tracks
+the draft because it is the next editable state. Keep the body and ETag
+together in FE state.
+
+Every mutation—save, publish, and restore—requires `If-Match`:
+
+- Send the exact ETag from the latest workspace GET or successful mutation.
+- Missing `If-Match` returns `428 if-match header required`.
+- A malformed or stale value returns `412 precondition failed`; refetch the
+  workspace and show a conflict before retrying.
+- `If-Match: *` is an explicit unconditional write. Use it for the first draft
+  when workspace GET returns `404`, or only behind a deliberate force-write UI.
+
+Publish succeeds only when the draft is `license_status=permitted`; otherwise
+it returns `409 license not permitted`. Publication copies the draft into the
+published slot without deleting the draft. Public reads still see only the
+published + permitted slot.
+
+History uses the standard `{ "items": [...], "total": number }` envelope.
+Each immutable revision includes `version`, the snapshotted `status`, nullable
+`actor_id`, and `origin`: `rest` for API saves/publishes, `import` for importer
+writes (including grandfathered baseline snapshots), and `restore` for a
+restore operation. An effective restore creates a new draft revision and never
+publishes automatically; restoring content already identical to the draft is a
+no-op. Effective changes retain the latest 50 snapshots per
+resource; no-op saves do not create a revision or advance the ETag.
+
+For surahs, this Q-1 history covers the per-language editorial row. The global
+`slug`, `chronological_order`, and `ruku_count` fields remain publish-only: the
+default importer never changes them, and `--publish` applies them atomically.
+Permanent slug history and redirects are deliberately owned by Q-4, so these
+three routing fields are not replayed by a Q-1 draft restore.
 
 ## Response Shape Reference
 

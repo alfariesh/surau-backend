@@ -36,6 +36,13 @@ type SourceEditRevisionList struct {
 	Total     int                             `json:"total" example:"42"`
 } // @name v1.SourceEditRevisionList
 
+// QuranEditorialRevisionList uses the standard list envelope for the new Q-1
+// API rather than inheriting the legacy kitab revision key.
+type QuranEditorialRevisionList struct {
+	Items []entity.QuranEditorialRevision `json:"items"`
+	Total int                             `json:"total" example:"42"`
+} // @name v1.QuranEditorialRevisionList
+
 // CollabPageDraft is the seeding payload for a fresh collaborative document:
 // the current draft when one exists, otherwise the raw page content.
 type CollabPageDraft struct {

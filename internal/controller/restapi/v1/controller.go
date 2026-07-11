@@ -19,6 +19,7 @@ type V1 struct {
 	unitRegistry       usecase.UnitRegistry
 	personal           usecase.Personal
 	editorial          usecase.Editorial
+	quranEditorial     usecase.QuranEditorial
 	licenseAudit       usecase.LicenseAudit
 	email              usecase.EmailAdmin
 	emailWebhookSecret string

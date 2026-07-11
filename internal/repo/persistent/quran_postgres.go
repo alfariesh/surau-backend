@@ -176,11 +176,11 @@ const quranAyahEditorialFullColumnsSQL = `,
 
 // Only permitted (reviewed) editorial is joined, so drafts never leave the API.
 const quranAyahEditorialJoinSQL = `
-LEFT JOIN quran_ayah_editorial ae
+LEFT JOIN quran_ayah_editorial_public ae
        ON ae.surah_id = a.surah_id
       AND ae.ayah_number = a.ayah_number
       AND ae.lang = $2
-      AND ae.license_status = 'permitted'`
+`
 
 const quranAyahAvailableLangsJoinSQL = `
 LEFT JOIN LATERAL (
@@ -1388,7 +1388,7 @@ SELECT s.surah_id,
        $1::text AS requested_lang,
        COALESCE(av.available_langs, ARRAY[]::TEXT[]) AS available_info_langs
 FROM quran_surahs s` + infoJoin + `
-LEFT JOIN quran_surah_editorial ed ON ed.surah_id = s.surah_id AND ed.lang = $1 AND ed.license_status = 'permitted'
+LEFT JOIN quran_surah_editorial_public ed ON ed.surah_id = s.surah_id AND ed.lang = $1
 LEFT JOIN LATERAL (
     SELECT array_agg(DISTINCT lang ORDER BY lang) AS available_langs
     FROM quran_surah_infos

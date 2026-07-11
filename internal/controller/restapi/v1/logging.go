@@ -84,8 +84,16 @@ func isExpectedEditorialError(err error) bool {
 		errors.Is(err, entity.ErrInvalidStatus) ||
 		errors.Is(err, entity.ErrInvalidRole) ||
 		errors.Is(err, entity.ErrInvalidAssetType) ||
+		errors.Is(err, entity.ErrInvalidLicenseStatus) ||
+		errors.Is(err, entity.ErrLicenseNotPermitted) ||
+		errors.Is(err, entity.ErrInvalidQuranEditorial) ||
+		errors.Is(err, entity.ErrInvalidAyahKey) ||
+		errors.Is(err, entity.ErrQuranSurahNotFound) ||
+		errors.Is(err, entity.ErrQuranAyahNotFound) ||
 		errors.Is(err, entity.ErrDraftNotFound) ||
 		errors.Is(err, entity.ErrFeedbackNotFound) ||
+		errors.Is(err, entity.ErrPreconditionFailed) ||
+		errors.Is(err, entity.ErrPreconditionRequired) ||
 		errors.Is(err, entity.ErrForbidden)
 }
 

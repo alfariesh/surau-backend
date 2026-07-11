@@ -286,6 +286,7 @@ func TestParseIfMatch(t *testing.T) {
 	t.Parallel()
 
 	updatedAt := time.Date(2026, 2, 3, 4, 5, 6, 123456000, time.UTC)
+	stale := updatedAt.Add(-time.Second)
 
 	tests := []struct {
 		name        string
@@ -297,7 +298,10 @@ func TestParseIfMatch(t *testing.T) {
 		{name: "absent header", header: "", wantExpect: nil, wantPresent: false, wantOK: true},
 		{name: "wildcard", header: "*", wantExpect: nil, wantPresent: true, wantOK: true},
 		{name: "valid etag", header: updatedAtETag(updatedAt), wantExpect: &updatedAt, wantPresent: true, wantOK: true},
-		{name: "weak etag", header: "W/" + updatedAtETag(updatedAt), wantExpect: &updatedAt, wantPresent: true, wantOK: true},
+		{name: "weak etag", header: "W/" + updatedAtETag(updatedAt), wantExpect: nil, wantPresent: true, wantOK: false},
+		{name: "stale then current", header: updatedAtETag(stale) + ", " + updatedAtETag(updatedAt), wantExpect: &updatedAt, wantPresent: true, wantOK: true},
+		{name: "current then stale", header: updatedAtETag(updatedAt) + ", " + updatedAtETag(stale), wantExpect: &updatedAt, wantPresent: true, wantOK: true},
+		{name: "stale then wildcard", header: updatedAtETag(stale) + ", *", wantExpect: nil, wantPresent: true, wantOK: true},
 		{name: "garbage", header: "garbage", wantExpect: nil, wantPresent: true, wantOK: false},
 		{name: "quoted non-numeric", header: `"abc"`, wantExpect: nil, wantPresent: true, wantOK: false},
 	}

@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/alfariesh/surau-backend/internal/contentlang"
-	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/alfariesh/surau-backend/internal/repo/persistent"
+	"github.com/alfariesh/surau-backend/pkg/postgres"
 )
 
 // QuranSurahEditorialOptions configures a surah editorial (keutamaan / asbabun
@@ -22,14 +22,20 @@ type QuranSurahEditorialOptions struct {
 	PostgresURL string
 	Paths       []string
 	DryRun      bool
+	// Publish promotes every imported draft in the same transaction. The safe
+	// default is false: importing content alone must never make it public.
+	Publish bool
 }
 
 // QuranSurahEditorialStats summarizes one editorial import run.
 type QuranSurahEditorialStats struct {
 	Files         int
 	SurahRows     int // distinct surah_id with slug/chronological_order/ruku_count set
-	EditorialRows int // surah_id+lang rows upserted
+	EditorialRows int // surah_id+lang records parsed
+	Changed       int // drafts effectively changed (no-op imports excluded)
+	Published     int // published rows effectively changed (requires Publish)
 	DryRun        bool
+	Publish       bool
 }
 
 // quranSurahEditorialRecord is one JSON entry. All editorial fields are optional;
@@ -57,10 +63,11 @@ type quranSurahEditorialRecord struct {
 	checksum        string
 }
 
-// RunQuranSurahEditorialImport parses editorial JSON files and upserts them into
-// quran_surahs (slug/chronological_order/ruku_count) and quran_surah_editorial
-// (per-language editorial + SEO copy) within a single transaction. Self-authored
-// content, so it does NOT write quran_import_runs.
+// RunQuranSurahEditorialImport parses editorial JSON files and sends one atomic
+// partial-update batch through the protected Quran editorial workflow. The safe
+// default creates/updates drafts only. --publish additionally promotes every
+// permitted draft and then applies slug/order/ruku metadata in the same commit.
+// Self-authored content does not write quran_import_runs.
 func RunQuranSurahEditorialImport(ctx context.Context, opts QuranSurahEditorialOptions) (QuranSurahEditorialStats, error) {
 	if len(opts.Paths) == 0 {
 		return QuranSurahEditorialStats{}, errors.New("at least one -editorial-json path is required")
@@ -148,7 +155,7 @@ func RunQuranSurahEditorialImport(ctx context.Context, opts QuranSurahEditorialO
 			return QuranSurahEditorialStats{}, fmt.Errorf("surah %d: %w", rec.SurahID, err)
 		}
 
-		rec.checksum = surahEditorialChecksum(*rec)
+		rec.checksum = surahEditorialChecksum(rec)
 		if rec.Slug != nil || rec.ChronologicalOrder != nil || rec.RukuCount != nil {
 			surahSeen[rec.SurahID] = struct{}{}
 		}
@@ -159,109 +166,124 @@ func RunQuranSurahEditorialImport(ctx context.Context, opts QuranSurahEditorialO
 		SurahRows:     len(surahSeen),
 		EditorialRows: len(records),
 		DryRun:        opts.DryRun,
+		Publish:       opts.Publish,
 	}
 	if opts.DryRun {
 		return stats, nil
 	}
 
-	pool, err := pgxpool.New(ctx, opts.PostgresURL)
+	pg, err := postgres.New(opts.PostgresURL)
 	if err != nil {
 		return QuranSurahEditorialStats{}, fmt.Errorf("connecting postgres: %w", err)
 	}
-	defer pool.Close()
+	defer pg.Close()
 
-	tx, err := pool.Begin(ctx)
-	if err != nil {
-		return QuranSurahEditorialStats{}, fmt.Errorf("begin tx: %w", err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
+	patches := make([]persistent.QuranSurahEditorialPatch, 0, len(records))
+	metadataBySurah := make(map[int]persistent.QuranSurahMetadataUpdate, len(surahSeen))
 
 	for i := range records {
-		rec := records[i]
+		rec := &records[i]
+		patches = append(patches, persistent.QuranSurahEditorialPatch{
+			SurahID:            rec.SurahID,
+			Lang:               rec.Lang,
+			MetaTitle:          rec.MetaTitle,
+			MetaDescription:    rec.MetaDescription,
+			ArtiNama:           rec.ArtiNama,
+			KeutamaanHTML:      rec.KeutamaanHTML,
+			AsbabunNuzulHTML:   rec.AsbabunNuzulHTML,
+			PokokKandunganHTML: rec.PokokKandunganHTML,
+			AuthorName:         rec.AuthorName,
+			ReviewedBy:         rec.ReviewedBy,
+			ReviewedAt:         rec.ReviewedAt,
+			LicenseStatus:      rec.license,
+			LicenseOverride:    rec.licenseOverride,
+		})
 
-		if rec.Slug != nil || rec.ChronologicalOrder != nil || rec.RukuCount != nil {
-			tag, err := tx.Exec(
-				ctx, `
-UPDATE quran_surahs SET
-    slug = COALESCE($2, slug),
-    chronological_order = COALESCE($3, chronological_order),
-    ruku_count = COALESCE($4, ruku_count),
-    updated_at = now()
-WHERE surah_id = $1`,
-				rec.SurahID, rec.Slug, rec.ChronologicalOrder, rec.RukuCount,
-			)
-			if err != nil {
-				return QuranSurahEditorialStats{}, surahEditorialExecError("surah", rec, err)
-			}
-
-			if tag.RowsAffected() == 0 {
-				return QuranSurahEditorialStats{}, fmt.Errorf("surah %d not found in quran_surahs", rec.SurahID)
-			}
-		}
-
-		if _, err := tx.Exec(
-			ctx, `
-INSERT INTO quran_surah_editorial (
-    surah_id, lang, meta_title, meta_description, arti_nama,
-    keutamaan_html, asbabun_nuzul_html, pokok_kandungan_html,
-    author_name, reviewed_by, reviewed_at, license_status, checksum, updated_at
-)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, now())
-ON CONFLICT (surah_id, lang) DO UPDATE SET
-    meta_title = COALESCE(EXCLUDED.meta_title, quran_surah_editorial.meta_title),
-    meta_description = COALESCE(EXCLUDED.meta_description, quran_surah_editorial.meta_description),
-    arti_nama = COALESCE(EXCLUDED.arti_nama, quran_surah_editorial.arti_nama),
-    keutamaan_html = COALESCE(EXCLUDED.keutamaan_html, quran_surah_editorial.keutamaan_html),
-    asbabun_nuzul_html = COALESCE(EXCLUDED.asbabun_nuzul_html, quran_surah_editorial.asbabun_nuzul_html),
-    pokok_kandungan_html = COALESCE(EXCLUDED.pokok_kandungan_html, quran_surah_editorial.pokok_kandungan_html),
-    author_name = COALESCE(EXCLUDED.author_name, quran_surah_editorial.author_name),
-    reviewed_by = COALESCE(EXCLUDED.reviewed_by, quran_surah_editorial.reviewed_by),
-    reviewed_at = COALESCE(EXCLUDED.reviewed_at, quran_surah_editorial.reviewed_at),
-    license_status = CASE WHEN $14 THEN EXCLUDED.license_status ELSE quran_surah_editorial.license_status END,
-    checksum = EXCLUDED.checksum,
-    -- Idempotent + backfill-safe: only bump lastmod when the row ALREADY had a
-    -- checksum that differs. A pre-existing row whose checksum is still NULL (added
-    -- by migration 20260623000002 with no backfill) gets its checksum populated on
-    -- the first re-import WITHOUT a one-time mass updated_at/lastmod churn.
-    updated_at = CASE WHEN quran_surah_editorial.checksum IS NOT NULL AND EXCLUDED.checksum IS DISTINCT FROM quran_surah_editorial.checksum THEN now() ELSE quran_surah_editorial.updated_at END
--- Run the UPDATE when content changed (or checksum is being backfilled), on an
--- explicit license override, OR when a provided provenance field differs (so
--- reviewer/author back-fills are not dropped by the content-only checksum gate).
-WHERE EXCLUDED.checksum IS DISTINCT FROM quran_surah_editorial.checksum
-   OR $14
-   OR (EXCLUDED.author_name IS NOT NULL AND EXCLUDED.author_name IS DISTINCT FROM quran_surah_editorial.author_name)
-   OR (EXCLUDED.reviewed_by IS NOT NULL AND EXCLUDED.reviewed_by IS DISTINCT FROM quran_surah_editorial.reviewed_by)
-   OR (EXCLUDED.reviewed_at IS NOT NULL AND EXCLUDED.reviewed_at IS DISTINCT FROM quran_surah_editorial.reviewed_at)`,
-			rec.SurahID, rec.Lang, rec.MetaTitle, rec.MetaDescription, rec.ArtiNama,
-			rec.KeutamaanHTML, rec.AsbabunNuzulHTML, rec.PokokKandunganHTML,
-			rec.AuthorName, rec.ReviewedBy, rec.ReviewedAt, rec.license, rec.checksum, rec.licenseOverride,
-		); err != nil {
-			return QuranSurahEditorialStats{}, surahEditorialExecError("editorial", rec, err)
+		if mergeErr := mergeSurahMetadataUpdate(metadataBySurah, rec); mergeErr != nil {
+			return QuranSurahEditorialStats{}, mergeErr
 		}
 	}
 
-	if err := tx.Commit(ctx); err != nil {
-		return QuranSurahEditorialStats{}, fmt.Errorf("commit: %w", err)
+	metadata := make([]persistent.QuranSurahMetadataUpdate, 0, len(metadataBySurah))
+	for _, update := range metadataBySurah {
+		metadata = append(metadata, update)
 	}
+
+	changed, published, err := persistent.NewEditorialRepo(pg).ImportSurahEditorialBatch(
+		ctx, patches, metadata, opts.Publish,
+	)
+	if err != nil {
+		return QuranSurahEditorialStats{}, fmt.Errorf("quran surah editorial workflow: %w", err)
+	}
+
+	stats.Changed = changed
+	stats.Published = published
 
 	return stats, nil
 }
 
-// surahEditorialExecError gives a readable message for a slug collision (the most
-// likely failure when hand-authoring slugs) and falls back to a generic wrap.
-func surahEditorialExecError(stage string, rec quranSurahEditorialRecord, err error) error {
-	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) && pgErr.Code == "23505" && rec.Slug != nil {
-		return fmt.Errorf("slug %q already assigned to another surah (surah %d): %w", *rec.Slug, rec.SurahID, err)
+func mergeSurahMetadataUpdate(
+	updates map[int]persistent.QuranSurahMetadataUpdate,
+	rec *quranSurahEditorialRecord,
+) error {
+	if rec.Slug == nil && rec.ChronologicalOrder == nil && rec.RukuCount == nil {
+		return nil
 	}
 
-	return fmt.Errorf("surah %d lang %s %s upsert: %w", rec.SurahID, rec.Lang, stage, err)
+	update := updates[rec.SurahID]
+
+	update.SurahID = rec.SurahID
+	if err := mergeConsistentString(&update.Slug, rec.Slug, "slug", rec.SurahID); err != nil {
+		return err
+	}
+
+	if err := mergeConsistentInt(
+		&update.ChronologicalOrder, rec.ChronologicalOrder, "chronological_order", rec.SurahID,
+	); err != nil {
+		return err
+	}
+
+	if err := mergeConsistentInt(&update.RukuCount, rec.RukuCount, "ruku_count", rec.SurahID); err != nil {
+		return err
+	}
+
+	updates[rec.SurahID] = update
+
+	return nil
+}
+
+func mergeConsistentString(target **string, incoming *string, field string, surahID int) error {
+	if incoming == nil {
+		return nil
+	}
+
+	if *target != nil && **target != *incoming {
+		return fmt.Errorf("surah %d has conflicting %s values", surahID, field)
+	}
+
+	*target = incoming
+
+	return nil
+}
+
+func mergeConsistentInt(target **int, incoming *int, field string, surahID int) error {
+	if incoming == nil {
+		return nil
+	}
+
+	if *target != nil && **target != *incoming {
+		return fmt.Errorf("surah %d has conflicting %s values", surahID, field)
+	}
+
+	*target = incoming
+
+	return nil
 }
 
 // surahEditorialChecksum hashes only the content-bearing fields (NOT license or
 // provenance), so a no-op re-import or a publish does not bump updated_at / the
 // sitemap lastmod.
-func surahEditorialChecksum(rec quranSurahEditorialRecord) string { //nolint:gocritic // small value struct; a copy here is negligible on the import path
+func surahEditorialChecksum(rec *quranSurahEditorialRecord) string {
 	h := sha256.New()
 	writeOpt := func(p *string) {
 		if p != nil {

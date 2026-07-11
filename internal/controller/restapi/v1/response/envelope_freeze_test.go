@@ -47,6 +47,7 @@ func TestStandardListEnvelopesUseItemsTotal(t *testing.T) {
 	for _, value := range []any{
 		response.AuthorList{},
 		response.EmailMessageList{},
+		response.QuranEditorialRevisionList{},
 	} {
 		keys := jsonKeys(value)
 		assert.Equal(t, []string{"items", "total"}, keys,

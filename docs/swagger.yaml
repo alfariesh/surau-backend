@@ -2418,12 +2418,114 @@ definitions:
         example: "2026-01-01T00:00:00Z"
         type: string
     type: object
+  entity.QuranAyahEditorialEdit:
+    properties:
+      author_name:
+        type: string
+      ayah_key:
+        example: 2:255
+        type: string
+      ayah_number:
+        example: 255
+        type: integer
+      checksum:
+        type: string
+      created_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      faq:
+        items:
+          $ref: '#/definitions/entity.QuranAyahEditorialFAQ'
+        type: array
+      intisari_html:
+        type: string
+      keutamaan_html:
+        type: string
+      lang:
+        example: id
+        type: string
+      license_status:
+        example: needs_review
+        type: string
+      meta_description:
+        type: string
+      meta_title:
+        type: string
+      metadata:
+        type: object
+      published_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      reviewed_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      reviewed_by:
+        type: string
+      status:
+        example: draft
+        type: string
+      surah_id:
+        example: 2
+        type: integer
+      tafsir_range:
+        example: "255"
+        type: string
+      updated_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      updated_by:
+        type: string
+    type: object
   entity.QuranAyahEditorialFAQ:
     properties:
       answer_html:
         type: string
       question:
         type: string
+    type: object
+  entity.QuranAyahEditorialWorkspace:
+    properties:
+      draft:
+        $ref: '#/definitions/entity.QuranAyahEditorialEdit'
+      published:
+        $ref: '#/definitions/entity.QuranAyahEditorialEdit'
+    type: object
+  entity.QuranEditorialRevision:
+    properties:
+      actor_id:
+        type: string
+      asset_type:
+        example: ayah
+        type: string
+      ayah_key:
+        example: 2:255
+        type: string
+      ayah_number:
+        example: 255
+        type: integer
+      created_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      lang:
+        example: id
+        type: string
+      origin:
+        example: rest
+        type: string
+      snapshot:
+        type: object
+      status:
+        example: draft
+        type: string
+      surah_id:
+        example: 2
+        type: integer
+      version:
+        example: 3
+        type: integer
     type: object
   entity.QuranKhatamCycle:
     properties:
@@ -2700,6 +2802,62 @@ definitions:
       updated_at:
         example: "2026-01-01T00:00:00Z"
         type: string
+    type: object
+  entity.QuranSurahEditorialEdit:
+    properties:
+      arti_nama:
+        type: string
+      asbabun_nuzul_html:
+        type: string
+      author_name:
+        type: string
+      checksum:
+        type: string
+      created_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      keutamaan_html:
+        type: string
+      lang:
+        example: id
+        type: string
+      license_status:
+        example: needs_review
+        type: string
+      meta_description:
+        type: string
+      meta_title:
+        type: string
+      metadata:
+        type: object
+      pokok_kandungan_html:
+        type: string
+      published_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      reviewed_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      reviewed_by:
+        type: string
+      status:
+        example: draft
+        type: string
+      surah_id:
+        example: 73
+        type: integer
+      updated_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      updated_by:
+        type: string
+    type: object
+  entity.QuranSurahEditorialWorkspace:
+    properties:
+      draft:
+        $ref: '#/definitions/entity.QuranSurahEditorialEdit'
+      published:
+        $ref: '#/definitions/entity.QuranSurahEditorialEdit'
     type: object
   entity.QuranSurahInfo:
     properties:
@@ -4529,6 +4687,18 @@ definitions:
         example: 42
         type: integer
     type: object
+  v1.QuranAyahEditorialFAQ:
+    properties:
+      answer_html:
+        maxLength: 300000
+        type: string
+      question:
+        maxLength: 2000
+        type: string
+    required:
+    - answer_html
+    - question
+    type: object
   v1.QuranAyahList:
     properties:
       items:
@@ -4537,6 +4707,16 @@ definitions:
         type: array
       total:
         example: 7
+        type: integer
+    type: object
+  v1.QuranEditorialRevisionList:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/entity.QuranEditorialRevision'
+        type: array
+      total:
+        example: 42
         type: integer
     type: object
   v1.QuranNavigationSegmentList:
@@ -4984,6 +5164,51 @@ definitions:
         minimum: 0
         type: number
     type: object
+  v1.SaveQuranAyahEditorialDraft:
+    properties:
+      author_name:
+        maxLength: 500
+        type: string
+      faq:
+        items:
+          $ref: '#/definitions/v1.QuranAyahEditorialFAQ'
+        maxItems: 100
+        type: array
+      intisari_html:
+        maxLength: 300000
+        type: string
+      keutamaan_html:
+        maxLength: 300000
+        type: string
+      license_status:
+        enum:
+        - unknown
+        - needs_review
+        - permitted
+        - restricted
+        - public_domain
+        example: needs_review
+        type: string
+      meta_description:
+        maxLength: 10000
+        type: string
+      meta_title:
+        maxLength: 500
+        type: string
+      metadata:
+        type: object
+      reviewed_at:
+        type: string
+      reviewed_by:
+        maxLength: 500
+        type: string
+      tafsir_range:
+        example: "255"
+        maxLength: 50
+        type: string
+    required:
+    - license_status
+    type: object
   v1.SaveQuranProgress:
     properties:
       ayah_key:
@@ -4995,6 +5220,48 @@ definitions:
         type: string
     required:
     - ayah_key
+    type: object
+  v1.SaveQuranSurahEditorialDraft:
+    properties:
+      arti_nama:
+        maxLength: 500
+        type: string
+      asbabun_nuzul_html:
+        maxLength: 300000
+        type: string
+      author_name:
+        maxLength: 500
+        type: string
+      keutamaan_html:
+        maxLength: 300000
+        type: string
+      license_status:
+        enum:
+        - unknown
+        - needs_review
+        - permitted
+        - restricted
+        - public_domain
+        example: needs_review
+        type: string
+      meta_description:
+        maxLength: 10000
+        type: string
+      meta_title:
+        maxLength: 500
+        type: string
+      metadata:
+        type: object
+      pokok_kandungan_html:
+        maxLength: 300000
+        type: string
+      reviewed_at:
+        type: string
+      reviewed_by:
+        maxLength: 500
+        type: string
+    required:
+    - license_status
     type: object
   v1.SaveSectionAudioDraft:
     properties:
@@ -11077,6 +11344,315 @@ paths:
       summary: Get production workspace
       tags:
       - editorial-production
+  /editorial/quran/ayahs/{ayah_key}:
+    get:
+      description: Get draft and published editorial states for one ayah and language.
+        Requires editorial review capability.
+      operationId: editorial-quran-ayah-workspace
+      parameters:
+      - description: Canonical ayah key
+        example: 2:255
+        in: path
+        name: ayah_key
+        required: true
+        type: string
+      - default: id
+        description: Language code
+        in: query
+        name: lang
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.QuranAyahEditorialWorkspace'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Get Quran ayah editorial workspace
+      tags:
+      - editorial
+  /editorial/quran/ayahs/{ayah_key}/draft:
+    put:
+      consumes:
+      - application/json
+      description: Save a complete ayah editorial draft. If-Match is required; use
+        * only for an explicit force-write.
+      operationId: editorial-save-quran-ayah-draft
+      parameters:
+      - description: Canonical ayah key
+        example: 2:255
+        in: path
+        name: ayah_key
+        required: true
+        type: string
+      - default: id
+        description: Language code
+        in: query
+        name: lang
+        type: string
+      - description: Workspace ETag or *
+        in: header
+        name: If-Match
+        required: true
+        type: string
+      - description: Complete draft snapshot
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/v1.SaveQuranAyahEditorialDraft'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.QuranAyahEditorialWorkspace'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "412":
+          description: Precondition Failed
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "428":
+          description: Precondition Required
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Save Quran ayah editorial draft
+      tags:
+      - editorial
+  /editorial/quran/ayahs/{ayah_key}/draft-revisions:
+    get:
+      description: List newest-first revision snapshots for one ayah and language.
+        Requires editorial review capability.
+      operationId: editorial-list-quran-ayah-revisions
+      parameters:
+      - description: Canonical ayah key
+        example: 2:255
+        in: path
+        name: ayah_key
+        required: true
+        type: string
+      - default: id
+        description: Language code
+        in: query
+        name: lang
+        type: string
+      - description: Page size (default 50, max 200)
+        in: query
+        name: limit
+        type: integer
+      - description: Offset (max 10000)
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.QuranEditorialRevisionList'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: List Quran ayah editorial revisions
+      tags:
+      - editorial
+  /editorial/quran/ayahs/{ayah_key}/draft-revisions/{revision_id}/restore:
+    post:
+      description: Restore a historical snapshot into draft only. The restore creates
+        a new revision and never publishes automatically.
+      operationId: editorial-restore-quran-ayah-revision
+      parameters:
+      - description: Canonical ayah key
+        example: 2:255
+        in: path
+        name: ayah_key
+        required: true
+        type: string
+      - description: Revision ID
+        in: path
+        name: revision_id
+        required: true
+        type: string
+      - default: id
+        description: Language code
+        in: query
+        name: lang
+        type: string
+      - description: Workspace ETag or *
+        in: header
+        name: If-Match
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.QuranAyahEditorialWorkspace'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "412":
+          description: Precondition Failed
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "428":
+          description: Precondition Required
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Restore Quran ayah editorial revision
+      tags:
+      - editorial
+  /editorial/quran/ayahs/{ayah_key}/publish:
+    post:
+      description: Publish the current permitted ayah draft. Requires production publish
+        capability and fresh MFA.
+      operationId: editorial-publish-quran-ayah-draft
+      parameters:
+      - description: Canonical ayah key
+        example: 2:255
+        in: path
+        name: ayah_key
+        required: true
+        type: string
+      - default: id
+        description: Language code
+        in: query
+        name: lang
+        type: string
+      - description: Workspace ETag or *
+        in: header
+        name: If-Match
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.QuranAyahEditorialWorkspace'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "412":
+          description: Precondition Failed
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "428":
+          description: Precondition Required
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Publish Quran ayah editorial draft
+      tags:
+      - editorial
   /editorial/quran/missing-assets:
     get:
       description: Editorial queue of missing Quran surah info, ayah translations,
@@ -11140,6 +11716,320 @@ paths:
       security:
       - BearerAuth: []
       summary: List missing Quran assets
+      tags:
+      - editorial
+  /editorial/quran/surahs/{surah_id}:
+    get:
+      description: Get draft and published editorial states for one surah and language.
+        Requires editorial review capability.
+      operationId: editorial-quran-surah-workspace
+      parameters:
+      - description: Surah ID
+        in: path
+        maximum: 114
+        minimum: 1
+        name: surah_id
+        required: true
+        type: integer
+      - default: id
+        description: Language code
+        in: query
+        name: lang
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.QuranSurahEditorialWorkspace'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Get Quran surah editorial workspace
+      tags:
+      - editorial
+  /editorial/quran/surahs/{surah_id}/draft:
+    put:
+      consumes:
+      - application/json
+      description: Save a complete surah editorial draft. If-Match is required; use
+        * only for an explicit force-write.
+      operationId: editorial-save-quran-surah-draft
+      parameters:
+      - description: Surah ID
+        in: path
+        maximum: 114
+        minimum: 1
+        name: surah_id
+        required: true
+        type: integer
+      - default: id
+        description: Language code
+        in: query
+        name: lang
+        type: string
+      - description: Workspace ETag or *
+        in: header
+        name: If-Match
+        required: true
+        type: string
+      - description: Complete draft snapshot
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/v1.SaveQuranSurahEditorialDraft'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.QuranSurahEditorialWorkspace'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "412":
+          description: Precondition Failed
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "428":
+          description: Precondition Required
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Save Quran surah editorial draft
+      tags:
+      - editorial
+  /editorial/quran/surahs/{surah_id}/draft-revisions:
+    get:
+      description: List newest-first revision snapshots for one surah and language.
+        Requires editorial review capability.
+      operationId: editorial-list-quran-surah-revisions
+      parameters:
+      - description: Surah ID
+        in: path
+        maximum: 114
+        minimum: 1
+        name: surah_id
+        required: true
+        type: integer
+      - default: id
+        description: Language code
+        in: query
+        name: lang
+        type: string
+      - description: Page size (default 50, max 200)
+        in: query
+        name: limit
+        type: integer
+      - description: Offset (max 10000)
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.QuranEditorialRevisionList'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: List Quran surah editorial revisions
+      tags:
+      - editorial
+  /editorial/quran/surahs/{surah_id}/draft-revisions/{revision_id}/restore:
+    post:
+      description: Restore a historical snapshot into draft only. The restore creates
+        a new revision and never publishes automatically.
+      operationId: editorial-restore-quran-surah-revision
+      parameters:
+      - description: Surah ID
+        in: path
+        maximum: 114
+        minimum: 1
+        name: surah_id
+        required: true
+        type: integer
+      - description: Revision ID
+        in: path
+        name: revision_id
+        required: true
+        type: string
+      - default: id
+        description: Language code
+        in: query
+        name: lang
+        type: string
+      - description: Workspace ETag or *
+        in: header
+        name: If-Match
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.QuranSurahEditorialWorkspace'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "412":
+          description: Precondition Failed
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "428":
+          description: Precondition Required
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Restore Quran surah editorial revision
+      tags:
+      - editorial
+  /editorial/quran/surahs/{surah_id}/publish:
+    post:
+      description: Publish the current permitted surah draft. Requires production
+        publish capability and fresh MFA.
+      operationId: editorial-publish-quran-surah-draft
+      parameters:
+      - description: Surah ID
+        in: path
+        maximum: 114
+        minimum: 1
+        name: surah_id
+        required: true
+        type: integer
+      - default: id
+        description: Language code
+        in: query
+        name: lang
+        type: string
+      - description: Workspace ETag or *
+        in: header
+        name: If-Match
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.QuranSurahEditorialWorkspace'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "412":
+          description: Precondition Failed
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "428":
+          description: Precondition Required
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Publish Quran surah editorial draft
       tags:
       - editorial
   /editorial/reader/missing-assets:

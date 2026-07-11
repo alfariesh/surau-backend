@@ -344,6 +344,20 @@ type (
 		DeleteFinalProductionAsset(ctx context.Context, actorID, projectID, assetType string, headingID *int, reason *string) error
 	}
 
+	// QuranEditorial is the protected Q-1 workflow surfaced by the existing
+	// editorial usecase through a narrow companion interface.
+	QuranEditorial interface {
+		SurahEditorialWorkspace(ctx context.Context, surahID int, lang string) (entity.QuranSurahEditorialWorkspace, error)
+		SaveSurahEditorialDraft(ctx context.Context, actorID string, edit entity.QuranSurahEditorialEdit, expected *time.Time) (entity.QuranSurahEditorialWorkspace, error)
+		PublishSurahEditorialDraft(ctx context.Context, actorID string, surahID int, lang string, expected *time.Time) (entity.QuranSurahEditorialWorkspace, error)
+		RestoreSurahEditorialRevision(ctx context.Context, actorID string, surahID int, lang, revisionID string, expected *time.Time) (entity.QuranSurahEditorialWorkspace, error)
+		AyahEditorialWorkspace(ctx context.Context, ayahKey, lang string) (entity.QuranAyahEditorialWorkspace, error)
+		SaveAyahEditorialDraft(ctx context.Context, actorID string, edit entity.QuranAyahEditorialEdit, expected *time.Time) (entity.QuranAyahEditorialWorkspace, error)
+		PublishAyahEditorialDraft(ctx context.Context, actorID, ayahKey, lang string, expected *time.Time) (entity.QuranAyahEditorialWorkspace, error)
+		RestoreAyahEditorialRevision(ctx context.Context, actorID, ayahKey, lang, revisionID string, expected *time.Time) (entity.QuranAyahEditorialWorkspace, error)
+		QuranEditorialRevisions(ctx context.Context, assetType string, surahID int, ayahNumber *int, lang string, limit, offset int) ([]entity.QuranEditorialRevision, int, error)
+	}
+
 	// LicenseAudit is the protected B-4 coverage and mutation surface. It is a
 	// narrow companion to Editorial so read-only reviewers are not coupled to
 	// every source-editing method.

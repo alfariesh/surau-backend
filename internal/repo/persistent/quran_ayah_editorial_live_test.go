@@ -9,6 +9,7 @@ import (
 	"github.com/alfariesh/surau-backend/internal/entity"
 	repocontract "github.com/alfariesh/surau-backend/internal/repo"
 	"github.com/alfariesh/surau-backend/pkg/postgres"
+	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -16,7 +17,7 @@ import (
 // TestLiveAyahEditorialReadPath exercises the real repo read path against a
 // live Postgres using a SELF-SEEDED fixture (F1-E): throwaway ayahs on surah
 // 113 far above its real ayah_count, so nothing collides with a real corpus
-// or with the other live tests (the importer test owns 2:255; the coverage
+// or with the other live tests (the importer test owns 113:280; the coverage
 // test owns 113:901-903 but pre-cleans and runs serially). Gated on
 // SURAU_LIVE_PG so it never runs in normal `go test ./...`.
 //
@@ -37,6 +38,24 @@ func TestLiveAyahEditorialReadPath(t *testing.T) {
 
 	repo := NewQuranRepo(pg)
 	ctx := context.Background()
+	withFixtureWriter := func(fn func(pgx.Tx) error) error {
+		tx, txErr := pg.Pool.Begin(ctx)
+		if txErr != nil {
+			return txErr
+		}
+		defer rollbackTx(ctx, tx)
+
+		if _, txErr = tx.Exec(ctx,
+			`SET LOCAL surau.quran_editorial_writer = 'quran-editorial-service'`); txErr != nil {
+			return txErr
+		}
+
+		if txErr := fn(tx); txErr != nil {
+			return txErr
+		}
+
+		return tx.Commit(ctx)
+	}
 
 	const (
 		surahID     = 113
@@ -55,17 +74,26 @@ func TestLiveAyahEditorialReadPath(t *testing.T) {
 	cleanup := func() {
 		// Source delete cascades to its translations; ayah delete cascades to
 		// editorial rows. Explicit editorial deletes keep this idempotent even
-		// if a previous run died halfway.
+		// if a previous run died halfway; fixture DML carries the same local
+		// workflow marker production writes require.
 		if _, err := pg.Pool.Exec(ctx, `DELETE FROM quran_translation_sources WHERE id = $1`, sourceID); err != nil {
 			t.Logf("cleanup source: %v", err)
 		}
 
-		for _, n := range seededNumbers {
-			if _, err := pg.Pool.Exec(ctx,
-				`DELETE FROM quran_ayah_editorial WHERE surah_id = $1 AND ayah_number = $2`, surahID, n); err != nil {
-				t.Logf("cleanup editorial %d: %v", n, err)
+		if err := withFixtureWriter(func(tx pgx.Tx) error {
+			for _, n := range seededNumbers {
+				if _, txErr := tx.Exec(ctx,
+					`DELETE FROM quran_ayah_editorial WHERE surah_id = $1 AND ayah_number = $2`, surahID, n); txErr != nil {
+					return txErr
+				}
 			}
 
+			return nil
+		}); err != nil {
+			t.Logf("cleanup editorial: %v", err)
+		}
+
+		for _, n := range seededNumbers {
 			if _, err := pg.Pool.Exec(ctx,
 				`DELETE FROM quran_ayahs WHERE surah_id = $1 AND ayah_number = $2`, surahID, n); err != nil {
 				t.Logf("cleanup ayah %d: %v", n, err)
@@ -90,24 +118,33 @@ ON CONFLICT (surah_id, ayah_number) DO NOTHING`, surahID, n, fmt.Sprintf("%d:%d"
 
 	// One fully-populated permitted editorial (the public read path must expose
 	// it) and three needs_review rows (it must hide them).
-	_, err = pg.Pool.Exec(ctx, `
+	err = withFixtureWriter(func(tx pgx.Tx) error {
+		if _, txErr := tx.Exec(ctx, `
 INSERT INTO quran_ayah_editorial (
     surah_id, ayah_number, ayah_key, lang, meta_title, meta_description,
-    intisari_html, keutamaan_html, faq, tafsir_range, license_status
+    intisari_html, keutamaan_html, faq, tafsir_range, license_status,
+    status, published_at
 ) VALUES (
     $1, $2, $3, 'id', 'Fixture meta title 905', 'Fixture meta description',
     '<p>Intisari fixture.</p>', '<p>Keutamaan fixture.</p>',
     '[{"question":"Q1?","answer_html":"<p>A1.</p>"},{"question":"Q2?","answer_html":"<p>A2.</p>"}]'::jsonb,
-    $4, 'permitted'
-)`, surahID, permittedNo, permittedKey, fmt.Sprintf("%d", permittedNo))
-	require.NoError(t, err)
+    $4, 'permitted', 'published', now()
+)`, surahID, permittedNo, permittedKey, fmt.Sprintf("%d", permittedNo)); txErr != nil {
+			return txErr
+		}
 
-	for _, n := range reviewNumbers {
-		_, err = pg.Pool.Exec(ctx, `
+		for _, n := range reviewNumbers {
+			if _, txErr := tx.Exec(ctx, `
 INSERT INTO quran_ayah_editorial (surah_id, ayah_number, ayah_key, lang, meta_title, license_status)
-VALUES ($1, $2, $3, 'id', 'Draft fixture', 'needs_review')`, surahID, n, fmt.Sprintf("%d:%d", surahID, n))
-		require.NoError(t, err)
-	}
+VALUES ($1, $2, $3, 'id', 'Draft fixture', 'needs_review')`,
+				surahID, n, fmt.Sprintf("%d:%d", surahID, n)); txErr != nil {
+				return txErr
+			}
+		}
+
+		return nil
+	})
+	require.NoError(t, err)
 
 	// A throwaway translation source + one row carrying the unique token, so
 	// the search sub-test matches exactly the seeded ayah.

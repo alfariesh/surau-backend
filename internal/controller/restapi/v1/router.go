@@ -53,6 +53,11 @@ func NewRoutes(
 	jwtManager *jwt.Manager,
 	l logger.Interface,
 ) {
+	var quranEditorial usecase.QuranEditorial
+	if implementation, ok := editorial.(usecase.QuranEditorial); ok {
+		quranEditorial = implementation
+	}
+
 	var licenseAudit usecase.LicenseAudit
 	if implementation, ok := editorial.(usecase.LicenseAudit); ok {
 		licenseAudit = implementation
@@ -68,6 +73,7 @@ func NewRoutes(
 		u:                  u,
 		personal:           personal,
 		editorial:          editorial,
+		quranEditorial:     quranEditorial,
 		licenseAudit:       licenseAudit,
 		email:              email,
 		emailWebhookSecret: strings.TrimSpace(emailWebhookSecret),
@@ -291,6 +297,14 @@ func NewRoutes(
 		editorialReviewGroup.Patch("/cross-references/:id/review", r.editorialReviewCrossReference)
 		editorialReviewGroup.Get("/reader/missing-assets", r.editorialMissingReaderAssets)
 		editorialReviewGroup.Get("/quran/missing-assets", r.editorialMissingQuranAssets)
+		editorialReviewGroup.Get("/quran/surahs/:surah_id", r.editorialQuranSurahWorkspace)
+		editorialReviewGroup.Put("/quran/surahs/:surah_id/draft", r.editorialSaveQuranSurahDraft)
+		editorialReviewGroup.Get("/quran/surahs/:surah_id/draft-revisions", r.editorialListQuranSurahRevisions)
+		editorialReviewGroup.Post("/quran/surahs/:surah_id/draft-revisions/:revision_id/restore", r.editorialRestoreQuranSurahRevision)
+		editorialReviewGroup.Get("/quran/ayahs/:ayah_key", r.editorialQuranAyahWorkspace)
+		editorialReviewGroup.Put("/quran/ayahs/:ayah_key/draft", r.editorialSaveQuranAyahDraft)
+		editorialReviewGroup.Get("/quran/ayahs/:ayah_key/draft-revisions", r.editorialListQuranAyahRevisions)
+		editorialReviewGroup.Post("/quran/ayahs/:ayah_key/draft-revisions/:revision_id/restore", r.editorialRestoreQuranAyahRevision)
 		editorialReviewGroup.Get("/translation-feedbacks", r.editorialListTranslationFeedbacks)
 		editorialReviewGroup.Get("/translation-feedbacks/summary", r.editorialTranslationFeedbackSummary)
 		editorialReviewGroup.Post("/translation-feedbacks/:id/resolve", r.editorialResolveTranslationFeedback)
@@ -345,6 +359,8 @@ func NewRoutes(
 		editorialAdminGroup.Post("/books/:book_id/metadata-draft/publish", r.editorialPublishMetadataDraft)
 		editorialAdminGroup.Post("/books/:book_id/pages/:page_id/publish", r.editorialPublishPageDraft)
 		editorialAdminGroup.Post("/books/:book_id/headings/:heading_id/publish", r.editorialPublishHeadingDraft)
+		editorialAdminGroup.Post("/quran/surahs/:surah_id/publish", r.editorialPublishQuranSurahDraft)
+		editorialAdminGroup.Post("/quran/ayahs/:ayah_key/publish", r.editorialPublishQuranAyahDraft)
 		editorialAdminGroup.Post("/collections/:slug/items", r.editorialAddCollectionItem)
 		editorialAdminGroup.Post("/production-projects/:id/publish", r.editorialPublishProductionProject)
 		editorialAdminGroup.Post("/production-projects/:id/unpublish", r.editorialUnpublishProductionProject)
