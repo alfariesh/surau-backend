@@ -30,6 +30,11 @@ from translate_reader_assets import (  # noqa: E402
     request_json,
     write_jsonl,
 )
+from generation_identity import (  # noqa: E402
+    MACHINE_PROVENANCE_CLASS,
+    READER_SUMMARY_PROMPT_VERSION,
+    new_generation_identity,
+)
 
 
 DEFAULT_ENV_FILE = PROJECT_ROOT / ".env.local"
@@ -55,6 +60,7 @@ def main() -> int:
     validate_summary_language(args)
     load_env_file(Path(args.env_file).expanduser())
     resolve_llm_config(args)
+    args.generation = new_generation_identity(args.model, READER_SUMMARY_PROMPT_VERSION)
 
     api_key = os.environ.get(args.api_key_env) or os.environ.get("RAG_LLM_API_KEY", "")
     if not api_key and not args.dry_run:
@@ -271,6 +277,8 @@ def generate_summary_asset(
         "summary": summary,
         "source": args.model,
         "summary_status": "generated",
+        "provenance_class": MACHINE_PROVENANCE_CLASS,
+        "generation": dict(args.generation),
         "metadata": {
             "provider": args.provider_name,
             "model": args.model,

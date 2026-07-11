@@ -10,6 +10,7 @@ import (
 	sq "github.com/Masterminds/squirrel"
 	anchorgrammar "github.com/alfariesh/surau-backend/internal/anchor"
 	"github.com/alfariesh/surau-backend/internal/entity"
+	"github.com/alfariesh/surau-backend/internal/quranutil"
 	"github.com/alfariesh/surau-backend/internal/repo"
 	"github.com/alfariesh/surau-backend/pkg/postgres"
 	"github.com/jackc/pgx/v5"
@@ -21,16 +22,16 @@ const crossReferenceWriterGUC = "SET LOCAL surau.cross_reference_writer = 'cross
 const crossReferenceReturning = `
 id::text, source_anchor, target_anchor, source_corpus, target_corpus,
 source_work_id, target_work_id, target_quran_surah_id,
-target_quran_from_ayah, target_quran_to_ayah, kind, method, method_detail,
-confidence, review_status, evidence_text, evidence_normalized,
+	target_quran_from_ayah, target_quran_to_ayah, kind, method, method_detail,
+	generation_run_id::text, confidence, review_status, evidence_text, evidence_normalized,
 normalization_version, origin, origin_key, created_by::text,
 reviewed_by::text, reviewed_at, metadata, created_at, updated_at`
 
 const crossReferenceSelect = `
 cr.id::text, cr.source_anchor, cr.target_anchor, cr.source_corpus, cr.target_corpus,
 cr.source_work_id, cr.target_work_id, cr.target_quran_surah_id,
-cr.target_quran_from_ayah, cr.target_quran_to_ayah, cr.kind, cr.method, cr.method_detail,
-cr.confidence, cr.review_status, cr.evidence_text, cr.evidence_normalized,
+	cr.target_quran_from_ayah, cr.target_quran_to_ayah, cr.kind, cr.method, cr.method_detail,
+	cr.generation_run_id::text, cr.confidence, cr.review_status, cr.evidence_text, cr.evidence_normalized,
 cr.normalization_version, cr.origin, cr.origin_key, cr.created_by::text,
 cr.reviewed_by::text, cr.reviewed_at, cr.metadata, cr.created_at, cr.updated_at`
 
@@ -170,7 +171,7 @@ func (r *CrossReferenceRepo) UpsertDerived(
 	}
 
 	if bridge != nil {
-		if err := insertQuranBridge(ctx, tx, bridge); err != nil {
+		if err := insertQuranBridge(ctx, tx, bridge, ref.NormalizationVersion); err != nil {
 			return entity.CrossReference{}, err
 		}
 	}
@@ -527,14 +528,14 @@ func insertCrossReference(
 	query := `
 INSERT INTO cross_references (
     id, source_anchor, target_anchor, source_corpus, target_corpus,
-    source_work_id, target_work_id, target_quran_surah_id,
-    target_quran_from_ayah, target_quran_to_ayah, kind, method, method_detail,
-    confidence, review_status, evidence_text, evidence_normalized,
-    normalization_version, origin, origin_key, created_by, reviewed_by,
-    reviewed_at, metadata, created_at, updated_at
+	    source_work_id, target_work_id, target_quran_surah_id,
+	    target_quran_from_ayah, target_quran_to_ayah, kind, method, method_detail,
+	    generation_run_id, confidence, review_status, evidence_text, evidence_normalized,
+	    normalization_version, origin, origin_key, created_by, reviewed_by,
+	    reviewed_at, metadata, created_at, updated_at
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
-    $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26
+	    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
+	    $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27
 )`
 	if idempotent {
 		// A no-op assignment gives RETURNING access to the canonical existing
@@ -549,7 +550,7 @@ SET origin_key = cross_references.origin_key`
 		ref.ID, ref.SourceAnchor, ref.TargetAnchor, ref.SourceCorpus, ref.TargetCorpus,
 		ref.SourceWorkID, ref.TargetWorkID, ref.TargetQuranSurahID,
 		ref.TargetQuranFromAyah, ref.TargetQuranToAyah, ref.Kind, ref.Method, detail,
-		ref.Confidence, ref.ReviewStatus, ref.EvidenceText, ref.EvidenceNormalized,
+		ref.GenerationRunID, ref.Confidence, ref.ReviewStatus, ref.EvidenceText, ref.EvidenceNormalized,
 		ref.NormalizationVersion, ref.Origin, ref.OriginKey, ref.CreatedBy, ref.ReviewedBy,
 		ref.ReviewedAt, []byte(ref.Metadata), ref.CreatedAt, ref.UpdatedAt,
 	)
@@ -583,17 +584,17 @@ func insertLegacyQuranReference(
 		ctx, `
 INSERT INTO quran_book_references (
     id, book_id, page_id, heading_id, knowledge_mention_id, source_text,
-    normalized_text, reference_kind, surah_id, from_ayah_number,
+    normalized_text, normalization_version, reference_kind, surah_id, from_ayah_number,
     to_ayah_number, from_ayah_key, to_ayah_key, match_strategy, confidence,
     review_status, metadata, created_at, updated_at
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
-    $15, $16, $17, $18, $19
+    $15, $16, $17, $18, $19, $20
 )
 ON CONFLICT DO NOTHING
 RETURNING id::text`,
 		bridge.ID, bridge.BookID, bridge.PageID, bridge.HeadingID, bridge.KnowledgeMentionID,
-		bridge.SourceText, bridge.NormalizedText, bridge.ReferenceKind, bridge.SurahID,
+		bridge.SourceText, bridge.NormalizedText, ref.NormalizationVersion, bridge.ReferenceKind, bridge.SurahID,
 		bridge.FromAyahNumber, bridge.ToAyahNumber, bridge.FromAyahKey, bridge.ToAyahKey,
 		bridge.MatchStrategy, ref.Confidence, ref.ReviewStatus, []byte(bridge.Metadata),
 		createdAt, updatedAt,
@@ -615,6 +616,7 @@ FOR UPDATE`, bridge.ID, bridge.KnowledgeMentionID).Scan(&canonicalID)
 	return canonicalID, nil
 }
 
+//nolint:nestif // legacy NULL verification and atomic v1 upgrade stay next to the locked row load
 func loadLegacyReviewState(
 	ctx context.Context,
 	tx pgx.Tx,
@@ -622,25 +624,55 @@ func loadLegacyReviewState(
 	bridge *entity.QuranCrossReferenceBridge,
 ) error {
 	var (
-		metadata           []byte
-		knowledgeMentionID *string
+		metadata             []byte
+		knowledgeMentionID   *string
+		normalizationVersion *int
 	)
 
 	err := tx.QueryRow(ctx, `
-SELECT book_id, page_id, heading_id, knowledge_mention_id::text,
-       source_text, normalized_text, reference_kind, surah_id,
+	SELECT book_id, page_id, heading_id, knowledge_mention_id::text,
+	       source_text, normalized_text, normalization_version, reference_kind, surah_id,
        from_ayah_number, to_ayah_number, from_ayah_key, to_ayah_key,
        match_strategy, confidence, review_status, metadata, created_at, updated_at
 FROM quran_book_references
 WHERE id = $1`, bridge.ID).Scan(
 		&bridge.BookID, &bridge.PageID, &bridge.HeadingID, &knowledgeMentionID,
-		&bridge.SourceText, &bridge.NormalizedText, &bridge.ReferenceKind, &bridge.SurahID,
+		&bridge.SourceText, &bridge.NormalizedText, &normalizationVersion, &bridge.ReferenceKind, &bridge.SurahID,
 		&bridge.FromAyahNumber, &bridge.ToAyahNumber, &bridge.FromAyahKey, &bridge.ToAyahKey,
 		&bridge.MatchStrategy, &ref.Confidence, &ref.ReviewStatus, &metadata,
 		&bridge.CreatedAt, &bridge.UpdatedAt,
 	)
 	if err != nil {
 		return fmt.Errorf("CrossReferenceRepo load legacy review state: %w", err)
+	}
+
+	if normalizationVersion == nil {
+		expected := quranutil.NormalizeKeyV1(bridge.SourceText)
+		if bridge.NormalizedText != expected {
+			return fmt.Errorf(
+				"%w: legacy Quran reference %s has unverified normalized text %q, expected search-key/v1 %q",
+				entity.ErrInvalidCrossReference,
+				bridge.ID,
+				bridge.NormalizedText,
+				expected,
+			)
+		}
+
+		tag, updateErr := tx.Exec(ctx, `
+UPDATE quran_book_references
+SET normalization_version = $2
+WHERE id = $1 AND normalization_version IS NULL`, bridge.ID, quranutil.SearchKeyV1ProfileVersion)
+		if updateErr != nil {
+			return fmt.Errorf("CrossReferenceRepo stamp verified legacy normalization: %w", updateErr)
+		}
+
+		if tag.RowsAffected() != 1 {
+			return fmt.Errorf("CrossReferenceRepo stamp verified legacy normalization: %w", entity.ErrCrossReferenceConflict)
+		}
+
+		ref.NormalizationVersion = quranutil.SearchKeyV1ProfileVersion
+	} else {
+		ref.NormalizationVersion = *normalizationVersion
 	}
 
 	if err := normalizeLegacyAmbiguousReview(ctx, tx, ref, bridge); err != nil {
@@ -695,21 +727,26 @@ RETURNING review_status, updated_at`, bridge.ID).Scan(&ref.ReviewStatus, &bridge
 	return nil
 }
 
-func insertQuranBridge(ctx context.Context, tx pgx.Tx, bridge *entity.QuranCrossReferenceBridge) error {
+func insertQuranBridge(
+	ctx context.Context,
+	tx pgx.Tx,
+	bridge *entity.QuranCrossReferenceBridge,
+	normalizationVersion int,
+) error {
 	_, err := tx.Exec(
 		ctx, `
 INSERT INTO quran_cross_reference_bridge (
     cross_reference_id, book_id, page_id, heading_id, knowledge_mention_id,
-    source_text, normalized_text, reference_kind, surah_id, from_ayah_number,
+    source_text, normalized_text, normalization_version, reference_kind, surah_id, from_ayah_number,
     to_ayah_number, from_ayah_key, to_ayah_key, match_strategy, metadata,
     created_at, updated_at
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
-    $15, $16, $17
+    $15, $16, $17, $18
 )
 ON CONFLICT (cross_reference_id) DO NOTHING`,
 		bridge.ID, bridge.BookID, bridge.PageID, bridge.HeadingID, bridge.KnowledgeMentionID,
-		bridge.SourceText, bridge.NormalizedText, bridge.ReferenceKind, bridge.SurahID,
+		bridge.SourceText, bridge.NormalizedText, normalizationVersion, bridge.ReferenceKind, bridge.SurahID,
 		bridge.FromAyahNumber, bridge.ToAyahNumber, bridge.FromAyahKey, bridge.ToAyahKey,
 		bridge.MatchStrategy, []byte(bridge.Metadata), bridge.CreatedAt, bridge.UpdatedAt,
 	)
@@ -733,7 +770,7 @@ func scanCrossReference(row rowScanner) (entity.CrossReference, error) {
 		&ref.ID, &ref.SourceAnchor, &ref.TargetAnchor, &ref.SourceCorpus, &ref.TargetCorpus,
 		&ref.SourceWorkID, &ref.TargetWorkID, &ref.TargetQuranSurahID,
 		&ref.TargetQuranFromAyah, &ref.TargetQuranToAyah, &ref.Kind, &ref.Method, &detailJSON,
-		&ref.Confidence, &ref.ReviewStatus, &ref.EvidenceText, &ref.EvidenceNormalized,
+		&ref.GenerationRunID, &ref.Confidence, &ref.ReviewStatus, &ref.EvidenceText, &ref.EvidenceNormalized,
 		&ref.NormalizationVersion, &ref.Origin, &ref.OriginKey, &createdBy, &reviewedBy,
 		&ref.ReviewedAt, &metadataJSON, &ref.CreatedAt, &ref.UpdatedAt,
 	)
@@ -743,6 +780,14 @@ func scanCrossReference(row rowScanner) (entity.CrossReference, error) {
 
 	if err := json.Unmarshal(detailJSON, &ref.MethodDetail); err != nil {
 		return entity.CrossReference{}, fmt.Errorf("decode method_detail: %w", err)
+	}
+
+	if ref.Method == entity.CrossReferenceMethodMachine {
+		ref.Generation = &entity.GenerationIdentity{
+			RunID:         ref.MethodDetail.RunID,
+			ModelID:       ref.MethodDetail.ModelID,
+			PromptVersion: ref.MethodDetail.PromptVersion,
+		}
 	}
 
 	ref.CreatedBy = createdBy

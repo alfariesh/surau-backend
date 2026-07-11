@@ -29,6 +29,7 @@ var goldenCodes = map[string]string{
 	"active khatam cycle already exists": "active_khatam_cycle_already_exists",
 	"anchor not found":                   "anchor_not_found",
 	"book not found":                     "book_not_found",
+	"citable unit not found":             "citable_unit_not_found",
 	"invalid mfa challenge":              "invalid_mfa_challenge",
 	"invalid mfa code":                   "invalid_mfa_code",
 	"invalid mfa reset":                  "invalid_mfa_reset",

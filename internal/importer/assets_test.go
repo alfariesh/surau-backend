@@ -196,13 +196,30 @@ func TestReaderAssetValidate(t *testing.T) {
 			},
 			wantErr: true,
 		},
+		{
+			name: "machine text missing generation identity",
+			asset: importer.ReaderAsset{
+				Kind:            "translation",
+				BookID:          797,
+				HeadingID:       10,
+				Lang:            "id",
+				Content:         "Terjemahan",
+				ProvenanceClass: "machine",
+			},
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			err := tt.asset.Validate()
+			asset := tt.asset
+			if !tt.wantErr && asset.Kind != "audio" {
+				attachTestGeneration(&asset)
+			}
+
+			err := asset.Validate()
 			if tt.wantErr {
 				require.Error(t, err)
 				return
@@ -210,6 +227,24 @@ func TestReaderAssetValidate(t *testing.T) {
 
 			require.NoError(t, err)
 		})
+	}
+}
+
+func attachTestGeneration(asset *importer.ReaderAsset) {
+	promptVersion := "reader-translation-v1"
+
+	switch asset.Kind {
+	case "heading_summary":
+		promptVersion = "reader-summary-v1"
+	case "book_metadata_translation", "author_translation", "category_translation":
+		promptVersion = "catalog-translation-v1"
+	}
+
+	asset.ProvenanceClass = "machine"
+	asset.Generation = &importer.ReaderAssetGeneration{
+		RunID:         "550e8400-e29b-41d4-a716-446655440000",
+		ModelID:       "test-model",
+		PromptVersion: promptVersion,
 	}
 }
 

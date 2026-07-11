@@ -11,7 +11,7 @@ from typing import Any
 from urllib.parse import quote
 import uuid
 
-from .arabic_normalize import normalized_key
+from .arabic_normalize import PROFILE_VERSION, normalized_key
 
 
 DEFAULT_ENV_FILE = Path(__file__).resolve().parents[2] / ".env.local"
@@ -77,6 +77,33 @@ def json_dumps(value: Any) -> str:
 
 def new_uuid() -> str:
     return str(uuid.uuid4())
+
+
+def machine_generation_tuple(record: dict[str, Any], line: int) -> tuple[str, str, str]:
+    """Validate one knowledge output before any row from its batch is written."""
+    if record.get("provenance_class") != "machine":
+        raise ValueError(f"line {line}: provenance_class machine is required")
+
+    generation = record.get("generation")
+    if not isinstance(generation, dict):
+        raise ValueError(f"line {line}: generation identity is required")
+
+    try:
+        run_id = str(uuid.UUID(str(generation.get("run_id") or "").strip()))
+        record_run_id = str(uuid.UUID(str(record.get("run_id") or "").strip()))
+    except ValueError as err:
+        raise ValueError(f"line {line}: generation run_id must be a valid UUID") from err
+    if record_run_id != run_id:
+        raise ValueError(f"line {line}: run_id must equal generation.run_id")
+
+    model_id = str(generation.get("model_id") or "").strip()
+    prompt_version = str(generation.get("prompt_version") or "").strip()
+    if not model_id:
+        raise ValueError(f"line {line}: generation.model_id is required")
+    if not prompt_version:
+        raise ValueError(f"line {line}: generation.prompt_version is required")
+
+    return run_id, model_id, prompt_version
 
 
 def entity_type_for_class(extraction_class: str) -> str:
@@ -240,30 +267,84 @@ WHERE d.book_id = %s
             return {int(row[0]) for row in cur.fetchall()}
 
     def create_run(self, run: dict[str, Any]) -> None:
-        sql = """
+        provider = run.get("provider", "openai")
+        generation_metadata = json_dumps(
+            {
+                "source": "knowledge_extraction_runs",
+                "parameters": run.get("parameters") or {},
+                "source_scope": run.get("source_scope") or {},
+            }
+        )
+        generation_sql = """
+WITH inserted AS (
+    INSERT INTO generation_runs (
+        id, task_name, model_id, prompt_version, provider, metadata
+    )
+    VALUES (%s, %s, %s, %s, %s, %s::jsonb)
+    ON CONFLICT (id) DO NOTHING
+    RETURNING TRUE AS descriptor_matches
+)
+SELECT descriptor_matches
+FROM inserted
+UNION ALL
+SELECT task_name = %s
+   AND model_id = %s
+   AND prompt_version = %s
+   AND provider IS NOT DISTINCT FROM %s
+   AND metadata = %s::jsonb AS descriptor_matches
+FROM generation_runs
+WHERE id = %s
+LIMIT 1
+"""
+        extraction_sql = """
 INSERT INTO knowledge_extraction_runs (
     id, task_name, prompt_version, model_id, provider, provider_base_url,
     parameters, source_scope, status, total_documents
 )
 VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s, %s)
 """
-        with self._cursor() as cur:
-            cur.execute(
-                sql,
-                (
-                    run["id"],
-                    run["task_name"],
-                    run["prompt_version"],
-                    run["model_id"],
-                    run.get("provider", "openai"),
-                    run.get("provider_base_url"),
-                    json_dumps(run.get("parameters")),
-                    json_dumps(run.get("source_scope")),
-                    run.get("status", "running"),
-                    int(run.get("total_documents") or 0),
-                ),
-            )
-        self.conn.commit()
+        try:
+            with self._cursor() as cur:
+                cur.execute(
+                    generation_sql,
+                    (
+                        run["id"],
+                        run["task_name"],
+                        run["model_id"],
+                        run["prompt_version"],
+                        provider,
+                        generation_metadata,
+                        run["task_name"],
+                        run["model_id"],
+                        run["prompt_version"],
+                        provider,
+                        generation_metadata,
+                        run["id"],
+                    ),
+                )
+                descriptor_row = cur.fetchone()
+                if not descriptor_row or not bool(descriptor_row[0]):
+                    raise ValueError(f"generation run {run['id']} conflicts with its registered descriptor")
+
+                cur.execute(
+                    extraction_sql,
+                    (
+                        run["id"],
+                        run["task_name"],
+                        run["prompt_version"],
+                        run["model_id"],
+                        provider,
+                        run.get("provider_base_url"),
+                        json_dumps(run.get("parameters")),
+                        json_dumps(run.get("source_scope")),
+                        run.get("status", "running"),
+                        int(run.get("total_documents") or 0),
+                    ),
+                )
+            self.conn.commit()
+        except Exception:
+            self.conn.rollback()
+            raise
 
     def register_prompt_version(self, prompt: Any) -> None:
         """Persist the exact prompt/examples used for reproducible runs."""
@@ -443,12 +524,12 @@ WHERE id = %s
 INSERT INTO knowledge_mentions (
     id, run_id, book_id, page_id, heading_id, document_id, extraction_class,
     extraction_text, exact_quote, char_start, char_end, alignment_status,
-    attributes, normalized_text, grounded, confidence, review_status, source_hash,
+    attributes, normalized_text, normalization_version, grounded, confidence, review_status, source_hash,
     source_span_id, token_start, token_end, extraction_index, group_index, pass_index
 )
 VALUES (
     %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-    %s::jsonb, %s, %s, %s, %s, %s,
+    %s::jsonb, %s, %s, %s, %s, %s, %s,
     %s, %s, %s, %s, %s, %s
 )
 ON CONFLICT (run_id, book_id, page_id, extraction_class, char_start, char_end)
@@ -458,6 +539,7 @@ DO UPDATE SET
     alignment_status = EXCLUDED.alignment_status,
     attributes = EXCLUDED.attributes,
     normalized_text = EXCLUDED.normalized_text,
+    normalization_version = EXCLUDED.normalization_version,
     grounded = EXCLUDED.grounded,
     confidence = EXCLUDED.confidence,
     review_status = EXCLUDED.review_status,
@@ -487,6 +569,7 @@ RETURNING id
                     record["alignment_status"],
                     json_dumps(record.get("attributes")),
                     record["normalized_text"],
+                    record["normalization_version"],
                     bool(record.get("grounded", True)),
                     record.get("confidence"),
                     record.get("review_status", "pending"),
@@ -630,6 +713,8 @@ VALUES (
         return inserted
 
     def insert_mentions_with_candidates(self, records: list[dict[str, Any]]) -> int:
+        self._verify_mention_generation_identities(records)
+
         stored = 0
         for record in records:
             mention_id = self.insert_mention(record)
@@ -640,6 +725,36 @@ VALUES (
             else:
                 self.upsert_candidates_for_mention(record)
         return stored
+
+    def _verify_mention_generation_identities(self, records: list[dict[str, Any]]) -> None:
+        identities: dict[str, tuple[str, str]] = {}
+        for index, record in enumerate(records, start=1):
+            run_id, model_id, prompt_version = machine_generation_tuple(record, index)
+            previous = identities.get(run_id)
+            if previous is not None and previous != (model_id, prompt_version):
+                raise ValueError(f"line {index}: generation run {run_id} has a conflicting descriptor")
+            identities[run_id] = (model_id, prompt_version)
+
+        with self._cursor() as cur:
+            for run_id, (model_id, prompt_version) in identities.items():
+                cur.execute(
+                    """
+SELECT EXISTS (
+    SELECT 1
+    FROM generation_runs gr
+    JOIN knowledge_extraction_runs er ON er.id = gr.id
+    WHERE gr.id = %s
+      AND gr.model_id = %s
+      AND gr.prompt_version = %s
+      AND er.model_id = gr.model_id
+      AND er.prompt_version = gr.prompt_version
+)
+""",
+                    (run_id, model_id, prompt_version),
+                )
+                row = cur.fetchone()
+                if not row or not bool(row[0]):
+                    raise ValueError(f"generation run {run_id} is not registered with this model/prompt tuple")
 
     def insert_relation_or_claim(self, mention: dict[str, Any]) -> None:
         attrs = mention.get("attributes") or {}
@@ -790,12 +905,12 @@ LIMIT 10
         sql = """
 INSERT INTO knowledge_entities (
     id, entity_type, canonical_name_ar, normalized_name_ar,
-    created_from_mention_id, review_status
+    normalization_version, created_from_mention_id, review_status
 )
-VALUES (%s, %s, %s, %s, %s, 'pending')
+VALUES (%s, %s, %s, %s, %s, %s, 'pending')
 """
         with self._cursor() as cur:
-            cur.execute(sql, (entity_id, entity_type, text, normalized_alias, mention["id"]))
+            cur.execute(sql, (entity_id, entity_type, text, normalized_alias, PROFILE_VERSION, mention["id"]))
         self.upsert_entity_label(entity_id, "ar", text, "primary", "langextract")
         self.upsert_entity_alias(
             entity_id,
@@ -839,11 +954,12 @@ ON CONFLICT (entity_id, lang, label_kind, label) DO NOTHING
         sql = """
 INSERT INTO knowledge_entity_aliases (
     id, entity_id, alias_text, normalized_alias, language,
-    alias_type, source_mention_id, review_status
+    normalization_version, alias_type, source_mention_id, review_status
 )
-VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
 ON CONFLICT (entity_id, normalized_alias, language, alias_type) DO UPDATE SET
     alias_text = EXCLUDED.alias_text,
+    normalization_version = EXCLUDED.normalization_version,
     source_mention_id = COALESCE(knowledge_entity_aliases.source_mention_id, EXCLUDED.source_mention_id),
     review_status = EXCLUDED.review_status
 """
@@ -856,6 +972,7 @@ ON CONFLICT (entity_id, normalized_alias, language, alias_type) DO UPDATE SET
                     alias_text,
                     normalized_alias,
                     language,
+                    PROFILE_VERSION,
                     alias_type,
                     source_mention_id,
                     review_status,
@@ -905,6 +1022,7 @@ SELECT 'knowledge_mention' AS kind,
        alignment_status,
        attributes,
        normalized_text,
+       normalization_version,
        grounded,
        confidence,
        review_status,

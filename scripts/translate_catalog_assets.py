@@ -19,6 +19,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from generation_identity import (
+    CATALOG_TRANSLATION_PROMPT_VERSION,
+    MACHINE_PROVENANCE_CLASS,
+    new_generation_identity,
+)
+
 from translate_reader_assets import (
     DEFAULT_ENV_FILE,
     TARGET_NAMES,
@@ -73,6 +79,7 @@ def main() -> int:
         args.model = os.environ.get("DEEPSEEK_MODEL", "deepseek-v4-flash")
     if not args.deepseek_base_url:
         args.deepseek_base_url = os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+    args.generation = new_generation_identity(args.model, CATALOG_TRANSLATION_PROMPT_VERSION)
 
     api_key = os.environ.get(args.api_key_env)
     if not api_key and not args.dry_run:
@@ -227,6 +234,8 @@ def translate_item(
             "description": translated.get("description", ""),
             "source": args.model,
             "translation_status": "generated",
+            "provenance_class": MACHINE_PROVENANCE_CLASS,
+            "generation": dict(args.generation),
             "metadata": metadata,
         }
     if item_type == "author":
@@ -239,6 +248,8 @@ def translate_item(
             "death_text": translated.get("death_text", ""),
             "source": args.model,
             "translation_status": "generated",
+            "provenance_class": MACHINE_PROVENANCE_CLASS,
+            "generation": dict(args.generation),
             "metadata": metadata,
         }
     if item_type == "category":
@@ -249,6 +260,8 @@ def translate_item(
             "name": translated["name"],
             "source": args.model,
             "translation_status": "generated",
+            "provenance_class": MACHINE_PROVENANCE_CLASS,
+            "generation": dict(args.generation),
             "metadata": metadata,
         }
 

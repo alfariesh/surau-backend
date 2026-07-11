@@ -237,6 +237,16 @@ Production project responses expose both `owner_id` and optional `owner` (`id`, 
 
 Every successful production draft save creates an immutable draft revision. Use `GET /draft-revisions` to inspect history for one asset and `POST /restore` to roll back a snapshot into the active draft.
 
+Text draft responses for metadata, author, category, section translation, and heading summary
+also expose `provenance_class` plus optional typed
+`generation: {run_id,model_id,prompt_version}`. On the first save, the backend inherits the run
+when a machine final asset already exists for the same project target; otherwise the new draft is
+`editorial` with no generation. A machine-derived draft remains `machine` through editing and
+human review; approval does not erase its run. Revision snapshots and restore preserve this attribution, and publish
+copies it unchanged to final reader tables. Existing rows whose origin cannot be proven are
+`legacy_unknown`, never retroactively assigned a model or prompt. See
+[`docs/generation-runs.md`](generation-runs.md).
+
 Use `GET /publish-check` for a read-only publish validator that mirrors publish readiness and returns structured blocking errors. Use `GET /activity` to render the project timeline for create/update, draft save/delete/restore, review, publish, unpublish, and final asset soft-delete events.
 
 Public reader behavior for `lang=ar` is unchanged. For `lang=id|en`, final translation/audio/summary data is exposed only when the matching production project has `publication_status=published`; otherwise reader responses safely fall back to Arabic/source content or omit the unpublished asset.

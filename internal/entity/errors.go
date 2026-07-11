@@ -105,6 +105,9 @@ var (
 	ErrCrossReferenceNotFound          = errors.New("cross-reference not found")
 	ErrInvalidCrossReference           = errors.New("invalid cross-reference")
 	ErrCrossReferenceConflict          = errors.New("cross-reference origin already exists")
+	ErrGenerationRunNotFound           = errors.New("generation run not found")
+	ErrInvalidGenerationRun            = errors.New("invalid generation run")
+	ErrGenerationRunConflict           = errors.New("generation run descriptor conflicts with registered run")
 )
 
 // AuthRateLimitedError carries the retry-after hint computed by the rate

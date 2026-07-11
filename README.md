@@ -263,7 +263,7 @@ automatically clears its tombstone.
 Translation:
 
 ```json
-{"kind":"translation","book_id":797,"heading_id":10,"lang":"id","title":"Mukadimah","content":"...","source":"manual","translation_status":"generated"}
+{"kind":"translation","book_id":797,"heading_id":10,"lang":"id","title":"Mukadimah","content":"...","source":"glm-5.1","translation_status":"generated","provenance_class":"machine","generation":{"run_id":"11111111-1111-4111-8111-111111111111","model_id":"glm-5.1","prompt_version":"reader-translation-v1"}}
 ```
 
 Audio:
@@ -275,12 +275,12 @@ Audio:
 Catalog metadata translation:
 
 ```json
-{"kind":"book_metadata_translation","book_id":797,"lang":"id","display_title":"Judul Kitab","bibliography":"...","hint":"...","description":"...","source":"manual","translation_status":"generated"}
-{"kind":"author_translation","author_id":177,"lang":"id","name":"Nama Penulis","biography":"...","death_text":"...","source":"manual","translation_status":"reviewed","translation_reviewed_by":"Editor A"}
-{"kind":"category_translation","category_id":10,"lang":"id","name":"Ilmu Hadis","source":"manual","translation_status":"reviewed","translation_reviewed_by":"Editor B"}
+{"kind":"book_metadata_translation","book_id":797,"lang":"id","display_title":"Judul Kitab","bibliography":"...","hint":"...","description":"...","source":"glm-5.1","translation_status":"generated","provenance_class":"machine","generation":{"run_id":"22222222-2222-4222-8222-222222222222","model_id":"glm-5.1","prompt_version":"catalog-translation-v1"}}
+{"kind":"author_translation","author_id":177,"lang":"id","name":"Nama Penulis","biography":"...","death_text":"...","source":"glm-5.1","translation_status":"reviewed","translation_reviewed_by":"Editor A","provenance_class":"machine","generation":{"run_id":"22222222-2222-4222-8222-222222222222","model_id":"glm-5.1","prompt_version":"catalog-translation-v1"}}
+{"kind":"category_translation","category_id":10,"lang":"id","name":"Ilmu Hadis","source":"glm-5.1","translation_status":"reviewed","translation_reviewed_by":"Editor B","provenance_class":"machine","generation":{"run_id":"22222222-2222-4222-8222-222222222222","model_id":"glm-5.1","prompt_version":"catalog-translation-v1"}}
 ```
 
-Audio and section translations are keyed by TOC heading, not by page. Catalog translations are keyed by book, author, or category plus language. Translation status is informational only: `generated` means LLM/import generated content, while `reviewed` requires `translation_reviewed_by` and is shown publicly as a reader label. It does not decide whether a book is published. See `examples/reader-assets.sample.jsonl` for a ready-to-edit template with section, audio, and catalog rows.
+Audio and section translations are keyed by TOC heading, not by page. Catalog translations are keyed by book, author, or category plus language. Every imported text row is machine enrichment and therefore requires `provenance_class=machine` plus `generation.run_id`, `model_id`, and the exact prompt version for its kind. The importer validates the full file first and commits run registration plus every row atomically; one invalid row aborts the file with its line number. Human review never removes the machine identity. Translation status is informational only: `generated` means LLM/import generated content, while `reviewed` requires `translation_reviewed_by` and is shown publicly as a reader label. It does not decide whether a book is published. Audio rows do not carry text provenance. See `examples/reader-assets.sample.jsonl` and `docs/generation-runs.md` for the complete contract.
 
 Run:
 
@@ -388,7 +388,7 @@ translation profile from book/category metadata, while `--profile fiqh`,
 `--profile history`, and similar overrides are available for manual curation.
 Generated JSONL metadata stores the profile and `style_version`.
 
-See [scripts/README.md](/Users/macmini/Downloads/surau-backend/scripts/README.md) for script-specific usage and the recommended translation batching strategy.
+See [`scripts/README.md`](scripts/README.md) for script-specific usage and the recommended translation batching strategy.
 
 Catalog endpoints support an optional `lang` query parameter:
 

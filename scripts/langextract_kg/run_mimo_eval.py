@@ -20,8 +20,10 @@ if __package__ in (None, ""):
     from langextract_kg import db as kg_db  # type: ignore
     from langextract_kg.extract_knowledge import (  # type: ignore
         attach_chunk_counts,
+        attach_machine_generation,
         assign_failure_chunks,
         dedupe_records_with_rejections,
+        machine_generation_identity,
         run_extraction,
         run_status_for_failures,
         write_jsonl,
@@ -33,8 +35,10 @@ else:
     from . import db as kg_db
     from .extract_knowledge import (
         attach_chunk_counts,
+        attach_machine_generation,
         assign_failure_chunks,
         dedupe_records_with_rejections,
+        machine_generation_identity,
         run_extraction,
         run_status_for_failures,
         write_jsonl,
@@ -330,14 +334,18 @@ def run_eval(
             batch_length=args.batch_length,
             out_dir=str(out_dir),
         )
+        generation = machine_generation_identity(run_id, args.model, prompt.version)
         started = time.perf_counter()
-        result = run_extraction(run_args, prompt, pages, api_key)
+        result = run_extraction(run_args, prompt, pages, api_key, generation)
         elapsed = round(time.perf_counter() - started, 2)
 
         records, duplicate_failures = dedupe_records_with_rejections(result["records"])
         failures = [*result["failures"], *duplicate_failures]
         assign_failure_chunks(failures, result["chunks_audit"])
         chunks = attach_chunk_counts(result["chunks_audit"], records, failures)
+
+        for output_rows in (records, chunks, failures):
+            attach_machine_generation(output_rows, generation)
 
         records_path = out_dir / f"{run_id}.{task}.mentions.jsonl"
         chunks_path = out_dir / f"{run_id}.{task}.chunks.jsonl"
@@ -349,6 +357,7 @@ def run_eval(
             result["annotated_docs"],
             out_dir=out_dir,
             output_stem=f"{run_id}.{task}.langextract",
+            generation=generation,
             show_progress=False,
         )
 

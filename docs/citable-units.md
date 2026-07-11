@@ -1,7 +1,10 @@
-# Citable Unit registry (Fase 1B / B-1 dan B-2)
+# Citable Unit registry (Fase 1B / B-1, B-2, B-5, dan B-6)
 
-Dokumen ini menjelaskan registry INTERNAL B-1. Kontrak Anchor yang diratifikasi dan endpoint
-resolusi publik B-2 ada di [`docs/anchors.md`](anchors.md). Sumber kebenaran desain:
+Last updated: 2026-07-11
+
+Dokumen ini menjelaskan registry B-1 dan permukaan kurasi protected B-6. Kontrak Anchor yang
+diratifikasi dan endpoint resolusi publik B-2 ada di [`docs/anchors.md`](anchors.md). Sumber
+kebenaran desain:
 `roadmap/phase-1b-content-backbone.md` §C1/C2 dan register keputusan B-D1..D11.
 
 ## Apa ini
@@ -41,6 +44,7 @@ yang sama.
 | `occurrence` | pembeda kembar se-scope (naik melewati kembar pensiun ⇒ ID tak didaur) |
 | `provenance_class` | `source`/`editorial`/`machine` — **immutable** (B-D11); review = dimensi terpisah |
 | `provenance_detail` JSONB | `release` (source) / `edit_actor_id` (editorial) / `footnote_link` |
+| `generation_run_id` | FK immutable ke `generation_runs`; wajib hanya ketika `provenance_class=machine` (B-6) |
 | `license_status` | override per-unit; NULL = mewarisi Work (kolom Work datang di B-4) |
 | `lifecycle` + `retired_at` | `active`/`superseded`/`tombstoned` (CHECK: active ⟺ retired_at NULL) |
 
@@ -55,6 +59,62 @@ yang sama.
   `42501`) kecuali transaksinya menjalankan `SET LOCAL surau.registry_writer = 'unit-service'`
   ATAU `pg_trigger_depth() > 1` (agar cascade FK internal lolos). Inilah penegakan "satu jalur
   tulis" di tingkat data (C2). Escape hatch & implikasi restore: `docs/data-change-playbook.md` §6.
+- **Trigger identitas generation**: Citable Unit machine wajib membawa run terdaftar; unit
+  source/editorial tidak boleh membawa run. Provenance Class dan run tidak dapat diubah setelah
+  unit dicetak. Detail kontrak registry ada di [`docs/generation-runs.md`](generation-runs.md).
+
+## Endpoint kurasi
+
+Endpoint protected berikut membutuhkan JWT dengan capability `CapReviewEditorial`:
+
+```http
+GET /v1/editorial/citable-units/{id}
+Authorization: Bearer <token>
+```
+
+Respons memuat unit yang diminta dan semua penerus aktif yang dicapai melalui lineage. Untuk
+unit aktif, `successors` adalah array kosong. Untuk unit superseded, client kurasi dapat tetap
+membaca identitas lama sekaligus berpindah ke satu atau beberapa penerus aktif.
+
+```json
+{
+  "unit": {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "corpus": "kitab",
+    "book_id": 797,
+    "heading_id": 11,
+    "page_id": 12,
+    "kind": "paragraph",
+    "ordinal": 42,
+    "position": 8,
+    "anchor": "kitab/797/h/11/u/42",
+    "text": "...",
+    "text_normalized": "...",
+    "normalization_version": 1,
+    "occurrence": 1,
+    "language": "id",
+    "provenance_class": "machine",
+    "generation": {
+      "run_id": "f76535b0-5e15-4a9e-99a6-0da4ad1ef315",
+      "model_id": "glm-5.1",
+      "prompt_version": "reader-translation-v1"
+    },
+    "lifecycle": "active",
+    "created_at": "2026-07-11T12:00:00Z",
+    "updated_at": "2026-07-11T12:00:00Z"
+  },
+  "successors": []
+}
+```
+
+`generation` hanya hadir untuk Provenance Class `machine`. Unit `source`/`editorial` tidak
+mengirim field tersebut. `normalization_version` adalah versi profil pada
+`text_normalized`, bukan versi teks tampilan. Bentuk lengkap juga memuat locator, parent,
+marker/HTML, license override, dan retirement time bila tersedia.
+
+Error contract: tanpa autentikasi `401`, tanpa capability `403`, UUID/unit yang tidak ditemukan
+`404 {"error":"citable unit not found"}`. Endpoint resolver Anchor publik tetap locator-only;
+detail provenance dan generation hanya tersedia di permukaan kurasi ini.
 
 ## Satu jalur tulis: service `unitregistry`
 

@@ -59,6 +59,21 @@ python3 scripts/langextract_kg/qa_extractions.py --run-id <run_uuid>
 ## Notes
 
 - Source text comes from `book_pages.content_text`; raw reader tables are not modified.
+- Every DB-backed extraction creates one UUID that is shared by
+  `generation_runs` and `knowledge_extraction_runs`. Registration and
+  extraction-run creation happen in one transaction; a reused UUID with a
+  different task/model/prompt/provider descriptor is rejected.
+- Mention, chunk-audit, and rejection JSONL rows carry
+  `provenance_class=machine` plus the typed `generation` model/prompt/run tuple,
+  including runs without `--write-db`. QA rejects missing, malformed, or
+  conflicting identities before the files are accepted.
+- Raw `*.langextract.jsonl` review documents carry the same typed identity on
+  every line. Each `*.raw_chunks/chunk-*.json` wraps the original model output
+  with that identity; the LangExtract visualizer remains compatible with the
+  additive document fields.
+- The run records the exact prompt version from `prompts.py` (`mentions_v2`,
+  `terms_v2`, `citations_v3`, or `relations_v1`) and the configured model.
+  New machine knowledge rows must never be written without that run identity.
 - `glm-5.1` uses the local `OpenAICompatibleJSONModel` adapter because the
   installed LangExtract package is 1.3.0 and does not expose the newer OpenAI
   schema provider available in `temp-langextract`.
@@ -68,4 +83,9 @@ python3 scripts/langextract_kg/qa_extractions.py --run-id <run_uuid>
   `quran_reference`.
 - DB writes store prompt versions, document/chunk audit rows, source spans, and
   rejected extractions alongside grounded mentions.
+- Persisted normalized mention/entity/alias fields use the shared
+  `search-key` v1 contract and write `normalization_version=1` atomically.
+  `normalized_grounding_key` remains separate because fallback grounding must
+  preserve source-span mapping. The shared Go-Python corpus and legacy rules
+  are documented in [`docs/arabic-normalization.md`](../../docs/arabic-normalization.md).
 - Relations are disabled unless `--enable-relations` is passed.

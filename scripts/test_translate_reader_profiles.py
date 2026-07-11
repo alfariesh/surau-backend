@@ -13,6 +13,18 @@ sys.path.insert(0, str(SCRIPT_DIR))
 import translate_reader_assets as tr  # noqa: E402
 
 
+TRANSLATION_GENERATION = {
+    "run_id": "44444444-4444-4444-8444-444444444444",
+    "model_id": "deepseek-v4-flash",
+    "prompt_version": "reader-translation-v1",
+}
+SUMMARY_TRANSLATION_GENERATION = {
+    "run_id": "55555555-5555-4555-8555-555555555555",
+    "model_id": "glm-5.1",
+    "prompt_version": "reader-summary-translation-v1",
+}
+
+
 class TranslationProfileTest(unittest.TestCase):
     def setUp(self) -> None:
         self.profile_map = tr.load_translation_profiles(SCRIPT_DIR / "translation_profiles.json")
@@ -111,6 +123,7 @@ class TranslationProfileTest(unittest.TestCase):
                 selected_profile="fiqh",
                 selected_profile_source="manual",
                 selected_profile_config=self.profile_map["profiles"]["fiqh"],
+                translation_generation=TRANSLATION_GENERATION,
             )
             asset = tr.translate_heading_asset(args, "test-key", 5, 1, 1)
         finally:
@@ -122,6 +135,8 @@ class TranslationProfileTest(unittest.TestCase):
         self.assertEqual(metadata["translation_profile"], "fiqh")
         self.assertEqual(metadata["profile_source"], "manual")
         self.assertEqual(metadata["category_id"], 2)
+        self.assertEqual(asset["provenance_class"], "machine")
+        self.assertEqual(asset["generation"], TRANSLATION_GENERATION)
 
     def test_summary_only_asset_translates_source_summary(self) -> None:
         original_fetch = tr.fetch_toc_section
@@ -155,6 +170,7 @@ class TranslationProfileTest(unittest.TestCase):
                 selected_profile="general",
                 selected_profile_source="manual",
                 selected_profile_config=self.profile_map["profiles"]["general"],
+                summary_translation_generation=SUMMARY_TRANSLATION_GENERATION,
             )
             assets = tr.translate_heading_assets(args, "test-key", 5, 1, 1)
         finally:
@@ -165,6 +181,30 @@ class TranslationProfileTest(unittest.TestCase):
         self.assertEqual(assets[0]["kind"], "heading_summary")
         self.assertEqual(assets[0]["summary"], "Bab ini menjelaskan makna takwa.")
         self.assertEqual(assets[0]["metadata"]["source_lang"], "ar")
+        self.assertEqual(assets[0]["provenance_class"], "machine")
+        self.assertEqual(assets[0]["generation"], SUMMARY_TRANSLATION_GENERATION)
+
+    def test_invocation_uses_distinct_runs_for_each_prompt_family(self) -> None:
+        args = argparse.Namespace(
+            model="test-model",
+            include_summary=True,
+            summary_only=False,
+        )
+
+        tr.initialize_generation_runs(args)
+
+        self.assertNotEqual(
+            args.translation_generation["run_id"],
+            args.summary_translation_generation["run_id"],
+        )
+        self.assertEqual(
+            args.translation_generation["prompt_version"],
+            "reader-translation-v1",
+        )
+        self.assertEqual(
+            args.summary_translation_generation["prompt_version"],
+            "reader-summary-translation-v1",
+        )
 
 
 if __name__ == "__main__":

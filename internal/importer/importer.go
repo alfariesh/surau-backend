@@ -336,12 +336,16 @@ func importAuthors(ctx context.Context, pool *pgxpool.Pool, db *stdsql.DB) error
 			return fmt.Errorf("scan author: %w", err)
 		}
 
-		// name_search rides every author write (insert AND conflict-update)
-		// so re-imports never leave a stale normalized form behind (F1-H).
+		// name_search and its profile version ride every author write (insert
+		// AND conflict-update) so re-imports never leave a stale or unversioned
+		// normalized form behind (F1-H / B-5).
 		batch.Queue(
 			`
-INSERT INTO authors (id, name, biography, death_text, death_number, is_deleted, updated_at, name_search)
-VALUES ($1, $2, $3, $4, $5, $6, now(), $7)
+INSERT INTO authors (
+    id, name, biography, death_text, death_number, is_deleted, updated_at,
+    name_search, name_search_normalization_version
+)
+VALUES ($1, $2, $3, $4, $5, $6, now(), $7, $8)
 ON CONFLICT (id) DO UPDATE SET
     name = EXCLUDED.name,
     biography = EXCLUDED.biography,
@@ -349,7 +353,8 @@ ON CONFLICT (id) DO UPDATE SET
     death_number = EXCLUDED.death_number,
     is_deleted = EXCLUDED.is_deleted,
     updated_at = now(),
-    name_search = EXCLUDED.name_search`,
+    name_search = EXCLUDED.name_search,
+    name_search_normalization_version = EXCLUDED.name_search_normalization_version`,
 			id,
 			nullStringValue(name),
 			nullStringPtr(biography),
@@ -357,6 +362,7 @@ ON CONFLICT (id) DO UPDATE SET
 			nullStringToInt(deathNumber),
 			rawBool(isDeleted),
 			searchtext.Normalize(nullStringValue(name)),
+			searchtext.ProfileVersion,
 		)
 	}
 

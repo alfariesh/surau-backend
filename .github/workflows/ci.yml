@@ -125,6 +125,51 @@ jobs:
           name: coverage-unit
           path: coverage.txt
 
+  # B-5: one immutable search-key/v1 corpus is executed by both runtimes.
+  # Any semantic drift fails here before normalized database rows can diverge.
+  normalization-contract:
+    name: runner / contracts / normalization-go-python
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # The v1 immutability gate compares semantic artifacts with the
+          # pull request merge-base, not with a checksum edited in the PR.
+          fetch-depth: 0
+      - uses: actions/setup-go@v6
+        with:
+          go-version: 1.26.5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - name: Go search-key v1 golden corpus
+        run: go test ./internal/quranutil ./internal/searchtext
+      - name: Python parity against the same corpus
+        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts.langextract_kg.test_arabic_normalize
+      - name: Immutability guard tests
+        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts.test_check_normalization_contract
+      - name: Compare frozen profiles with PR base
+        env:
+          NORMALIZATION_BASE_REF: origin/${{ github.base_ref }}
+        run: python3 scripts/check_normalization_contract.py
+
+  # B-6: every active machine-enrichment generator and QA gate must preserve
+  # model + prompt version + run identity, including resume and mixed prompts.
+  enrichment-contracts:
+    name: runner / contracts / enrichment-generation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: scripts/langextract_kg/requirements.txt
+      - name: Install extraction test dependencies
+        run: python3 -m pip install -r scripts/langextract_kg/requirements.txt
+      - name: Python enrichment contract tests
+        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts -p 'test_*.py'
+
   # Runs the SURAU_LIVE_PG-gated live tests (self-seeding DB invariants: coverage_count
   # triggers, audio-import atomicity, progress double-count, default recitation, editorial
   # idempotency) against a real Postgres so they are a true CI gate, not skipped.

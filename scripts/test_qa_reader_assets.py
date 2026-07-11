@@ -22,6 +22,16 @@ LONG_CONTENT = (
     "Paragraf kedua menjaga format Markdown tetap normal dan memberi ruang "
     "cukup agar QA tidak menganggap konten sebagai hasil yang terlalu pendek."
 )
+TRANSLATION_GENERATION = {
+    "run_id": "11111111-1111-4111-8111-111111111111",
+    "model_id": "test-model",
+    "prompt_version": "reader-translation-v1",
+}
+SUMMARY_GENERATION = {
+    "run_id": "22222222-2222-4222-8222-222222222222",
+    "model_id": "test-model",
+    "prompt_version": "reader-summary-v1",
+}
 
 
 def make_args(path: Path, **kwargs: object):
@@ -59,6 +69,8 @@ def translation(
     metadata: dict[str, object] | None = None,
     translation_status: str = "generated",
     reviewed_by: str = "",
+    provenance_class: object = "machine",
+    generation: object = TRANSLATION_GENERATION,
 ) -> dict[str, object]:
     row: dict[str, object] = {
         "kind": "translation",
@@ -76,6 +88,10 @@ def translation(
             "translation_profile": "general",
         },
     }
+    if provenance_class is not None:
+        row["provenance_class"] = provenance_class
+    if generation is not None:
+        row["generation"] = dict(generation) if isinstance(generation, dict) else generation
     if reviewed_by:
         row["translation_reviewed_by"] = reviewed_by
     return row
@@ -90,6 +106,8 @@ def heading_summary(
     metadata: dict[str, object] | None = None,
     summary_status: str = "generated",
     reviewed_by: str = "",
+    provenance_class: object = "machine",
+    generation: object = SUMMARY_GENERATION,
 ) -> dict[str, object]:
     row: dict[str, object] = {
         "kind": "heading_summary",
@@ -108,6 +126,10 @@ def heading_summary(
             "truncated_source": False,
         },
     }
+    if provenance_class is not None:
+        row["provenance_class"] = provenance_class
+    if generation is not None:
+        row["generation"] = dict(generation) if isinstance(generation, dict) else generation
     if reviewed_by:
         row["summary_reviewed_by"] = reviewed_by
     return row
@@ -257,6 +279,46 @@ class QATest(unittest.TestCase):
         report = self.run_qa_for_rows([heading_summary(summary_status="reviewed")])
 
         self.assertIn("MISSING_SUMMARY_REVIEWED_BY", self.issue_codes(report))
+
+    def test_machine_provenance_is_required(self) -> None:
+        report = self.run_qa_for_rows([translation(provenance_class=None)])
+
+        self.assertIn("MISSING_PROVENANCE_CLASS", self.issue_codes(report))
+
+    def test_generation_identity_is_required(self) -> None:
+        report = self.run_qa_for_rows([translation(generation=None)])
+
+        self.assertIn("MISSING_GENERATION", self.issue_codes(report))
+
+    def test_generation_identity_rejects_empty_fields(self) -> None:
+        report = self.run_qa_for_rows(
+            [translation(generation={"run_id": "", "model_id": "", "prompt_version": ""})]
+        )
+
+        self.assertIn("MISSING_GENERATION_RUN_ID", self.issue_codes(report))
+        self.assertIn("MISSING_GENERATION_MODEL_ID", self.issue_codes(report))
+        self.assertIn("MISSING_GENERATION_PROMPT_VERSION", self.issue_codes(report))
+
+    def test_generation_identity_rejects_invalid_uuid(self) -> None:
+        generation = dict(TRANSLATION_GENERATION, run_id="not-a-uuid")
+        report = self.run_qa_for_rows([translation(generation=generation)])
+
+        self.assertIn("INVALID_GENERATION_RUN_ID", self.issue_codes(report))
+
+    def test_generation_tuple_conflict_fails(self) -> None:
+        first = dict(TRANSLATION_GENERATION)
+        second = dict(TRANSLATION_GENERATION, model_id="different-model")
+        report = self.run_qa_for_rows(
+            [translation(heading_id=1, generation=first), translation(heading_id=2, generation=second)]
+        )
+
+        self.assertIn("GENERATION_TUPLE_CONFLICT", self.issue_codes(report))
+
+    def test_prompt_version_must_match_asset_kind(self) -> None:
+        generation = dict(TRANSLATION_GENERATION, prompt_version="catalog-translation-v1")
+        report = self.run_qa_for_rows([translation(generation=generation)])
+
+        self.assertIn("INVALID_GENERATION_PROMPT_VERSION", self.issue_codes(report))
 
     def test_raw_bracket_question_fails(self) -> None:
         content = (

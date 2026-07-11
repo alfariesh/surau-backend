@@ -15,6 +15,7 @@ package apierror
 //
 //nolint:gochecknoglobals,gosec // frozen contract table, read-only at runtime; the "credentials"-looking keys are error-message sentences, not secrets
 var frozenCodes = map[string]string{
+	"citable unit not found": "citable_unit_not_found",
 	// Explicit auth codes (pre-F1-D, SCREAMING_SNAKE by design).
 	"missing authorization header":        CodeAuthHeaderMissing,
 	"invalid authorization header format": CodeAuthHeaderInvalid,

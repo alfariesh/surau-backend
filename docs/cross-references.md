@@ -27,6 +27,12 @@ type CrossReferenceReviewStatus =
   | "ambiguous"
   | "needs_review";
 
+type GenerationIdentity = {
+  run_id: string;
+  model_id: string;
+  prompt_version: string;
+};
+
 type CrossReference = {
   id: string;
   source_anchor: string;
@@ -47,6 +53,7 @@ type CrossReference = {
     run_id?: string;
     actor_id?: string;
   };
+  generation?: GenerationIdentity;
   confidence?: number;
   review_status: CrossReferenceReviewStatus;
   evidence_text: string;
@@ -80,7 +87,8 @@ berarti surah secara umum, `quran/73:4` berarti satu ayah, dan
 
 - `resolver` wajib membawa `method_detail.strategy`.
 - `machine` wajib membawa `model_id`, `prompt_version`, dan `run_id`. Ketiganya adalah identitas
-  pekerjaan mesin dan tidak boleh direka atau dihapus setelah review.
+  pekerjaan mesin dan tidak boleh direka atau dihapus setelah review. Run wajib terdaftar di
+  registry immutable `generation_runs`.
 - `human` wajib membawa `actor_id` yang diambil server dari sesi terautentikasi; payload tidak
   boleh menentukan atau menyamar sebagai aktor lain.
 - Tulisan baru wajib memiliki `confidence` dalam rentang `0..1`. `null` hanya dapat muncul pada
@@ -89,6 +97,11 @@ berarti surah secara umum, `quran/73:4` berarti satu ayah, dan
 `evidence_text` menyimpan kutipan bukti asli. `evidence_normalized` menyimpan bentuk hasil profil
 normalisasi kanonik dan `normalization_version` menyatakan versi profil itu. Metadata adalah
 pelengkap, bukan pengganti bukti maupun atribusi metode.
+
+`generation` adalah representasi typed B-6 dari tuple machine yang sama. `method_detail` tetap
+dipertahankan agar client lama tidak rusak; client baru sebaiknya membaca `generation` untuk
+atribusi model+prompt+run. Untuk `resolver` dan `human`, `generation` tidak dikirim. Review hanya
+mengubah `review_status`, reviewer, dan waktu review; identitas machine tetap utuh.
 
 Kolom corpus, Work, dan rentang Quran adalah projection untuk query/visibility. Identitas tetap
 dua Anchor; projection tidak boleh dipakai sebagai identitas kedua.
@@ -198,6 +211,28 @@ List editorial memakai envelope `{items,total,work_total}` dan mendukung filter 
 `direction`, `kind`, `method`, `review_status`, `limit`, dan `offset`. Berbeda dari endpoint
 publik, queue editorial boleh membaca kelima status review.
 
+List dan get editorial mengirim `generation` untuk setiap row `method=machine`, misalnya:
+
+```json
+{
+  "method": "machine",
+  "method_detail": {
+    "model_id": "glm-5.1",
+    "prompt_version": "quran-reference-v1",
+    "run_id": "550e8400-e29b-41d4-a716-446655440000"
+  },
+  "generation": {
+    "run_id": "550e8400-e29b-41d4-a716-446655440000",
+    "model_id": "glm-5.1",
+    "prompt_version": "quran-reference-v1"
+  }
+}
+```
+
+Server dan trigger database memastikan kedua bentuk itu sama persis. UUID run tidak dapat diganti
+setelah row dibuat. Descriptor lengkap registry dan aturan provenance ada di
+[`docs/generation-runs.md`](generation-runs.md).
+
 ### Membuat tautan manusia
 
 ```http
@@ -246,9 +281,10 @@ hilang.
 ## Bridge Quran dan kontrak endpoint lama
 
 `quran_cross_reference_bridge` menyimpan projection locator fisik lama: `book_id`, `page_id`,
-`heading_id`, mention, source/normalized text, kind lama, rentang ayah, `match_strategy`, metadata,
-dan timestamp. UUID row lama dipakai juga sebagai UUID Cross-Reference. Ini membuat parity,
-idempotensi, dan rollback dapat dibuktikan tanpa pencocokan heuristik.
+`heading_id`, mention, source/normalized text beserta `normalization_version`, kind lama, rentang
+ayah, `match_strategy`, metadata, dan timestamp. UUID row lama dipakai juga sebagai UUID
+Cross-Reference. Ini membuat parity, idempotensi, dan rollback dapat dibuktikan tanpa pencocokan
+heuristik.
 
 Pemetaan legacy:
 
@@ -275,7 +311,8 @@ Selama backfill belum selesai, endpoint lama membaca projection registry lalu me
 ke row legacy yang belum mempunyai bridge. Anti-join mencegah UUID yang sudah di-bridge muncul dua
 kali. Kontrak berikut tidak berubah:
 
-- envelope `{items,total}` dan shape `BookQuranReference` lama;
+- envelope `{items,total}` dan shape `BookQuranReference` lama, dengan tambahan aditif
+  `normalization_version` (`1` bila terverifikasi; `null` untuk legacy yang belum terbukti);
 - approved-only dan gerbang buku published;
 - filter `heading_id`, bahasa ayah terlampir, paginasi, total, serta urutan lama;
 - `ayahs` terlampir dan embed

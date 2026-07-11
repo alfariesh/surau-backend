@@ -12,7 +12,13 @@ from langextract_kg.qa_extractions import validate_rows  # noqa: E402
 def valid_row(**overrides: object) -> dict[str, object]:
     row: dict[str, object] = {
         "kind": "knowledge_mention",
-        "run_id": "00000000-0000-0000-0000-000000000001",
+        "run_id": "00000000-0000-4000-8000-000000000001",
+        "provenance_class": "machine",
+        "generation": {
+            "run_id": "00000000-0000-4000-8000-000000000001",
+            "model_id": "test-model",
+            "prompt_version": "mentions_v1",
+        },
         "book_id": 797,
         "page_id": 4,
         "heading_id": 3,
@@ -25,6 +31,7 @@ def valid_row(**overrides: object) -> dict[str, object]:
         "alignment_status": "match_exact",
         "attributes": {"certainty": "explicit"},
         "normalized_text": "ابو حامد الغزالي",
+        "normalization_version": 1,
         "grounded": True,
         "confidence": 0.8,
         "review_status": "pending",
@@ -43,6 +50,44 @@ class QAExtractionsTest(unittest.TestCase):
     def test_non_exact_quote_fails(self) -> None:
         codes = self.issue_codes([valid_row(exact_quote="الغزالي")])
         self.assertIn("NON_EXACT_QUOTE", codes)
+
+    def test_normalization_version_is_required_and_frozen(self) -> None:
+        self.assertIn("MISSING_FIELD", self.issue_codes([valid_row(normalization_version=None)]))
+        self.assertIn("INVALID_NORMALIZATION_VERSION", self.issue_codes([valid_row(normalization_version=2)]))
+
+    def test_generation_identity_is_required_and_matches_run(self) -> None:
+        self.assertIn("INVALID_PROVENANCE_CLASS", self.issue_codes([valid_row(provenance_class=None)]))
+        self.assertIn("MISSING_GENERATION", self.issue_codes([valid_row(generation=None)]))
+        self.assertIn(
+            "INVALID_GENERATION_RUN_ID",
+            self.issue_codes([valid_row(generation={"run_id": "bad", "model_id": "m", "prompt_version": "p"})]),
+        )
+        self.assertIn(
+            "GENERATION_RUN_MISMATCH",
+            self.issue_codes(
+                [
+                    valid_row(
+                        generation={
+                            "run_id": "00000000-0000-4000-8000-000000000099",
+                            "model_id": "test-model",
+                            "prompt_version": "mentions_v1",
+                        }
+                    )
+                ]
+            ),
+        )
+
+    def test_one_run_cannot_change_generation_descriptor(self) -> None:
+        second = valid_row(
+            page_id=5,
+            document_id="book:797:page:5",
+            generation={
+                "run_id": "00000000-0000-4000-8000-000000000001",
+                "model_id": "different-model",
+                "prompt_version": "mentions_v1",
+            },
+        )
+        self.assertIn("CONFLICTING_GENERATION_IDENTITY", self.issue_codes([valid_row(), second]))
 
     def test_generic_extraction_fails(self) -> None:
         codes = self.issue_codes(

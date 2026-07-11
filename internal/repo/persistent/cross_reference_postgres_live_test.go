@@ -276,6 +276,10 @@ DELETE FROM quran_ayahs WHERE surah_id = 114 AND ayah_number = ANY($1::int[])`,
 		runID, mentionID := uuid.NewString(), uuid.NewString()
 		canonicalID := uuid.NewString()
 		_, err := pg.Pool.Exec(ctx, `
+INSERT INTO generation_runs (id, task_name, prompt_version, model_id, provider, metadata)
+VALUES ($1, 'mentions', 'live-v1', 'live-model', 'openai', '{"source":"cross-reference-live-test"}')`, runID)
+		require.NoError(t, err)
+		_, err = pg.Pool.Exec(ctx, `
 INSERT INTO knowledge_extraction_runs (id, task_name, prompt_version, model_id)
 VALUES ($1, 'mentions', 'live-v1', 'live-model')`, runID)
 		require.NoError(t, err)
@@ -283,18 +287,18 @@ VALUES ($1, 'mentions', 'live-v1', 'live-model')`, runID)
 INSERT INTO knowledge_mentions (
     id, run_id, book_id, page_id, document_id, extraction_class,
     extraction_text, exact_quote, char_start, char_end, alignment_status,
-    normalized_text, review_status
+    normalized_text, normalization_version, review_status
 ) VALUES ($1, $2, $3, 1, 'live-race', 'citation', 'سورة', 'سورة', 0, 4,
-          'aligned', $4, 'needs_review')`,
-			mentionID, runID, fixture.bookID, searchtext.Normalize("سورة"))
+          'aligned', $4, $5, 'needs_review')`,
+			mentionID, runID, fixture.bookID, searchtext.Normalize("سورة"), searchtext.ProfileVersion)
 		require.NoError(t, err)
 		_, err = pg.Pool.Exec(ctx, `
 INSERT INTO quran_book_references (
     id, book_id, page_id, knowledge_mention_id, source_text, normalized_text,
-    reference_kind, surah_id, match_strategy, confidence, review_status, metadata
-) VALUES ($1, $2, 1, $3, 'سورة', $4, 'surah', 114, 'explicit_surah', 0.8,
+    normalization_version, reference_kind, surah_id, match_strategy, confidence, review_status, metadata
+) VALUES ($1, $2, 1, $3, 'سورة', $4, $5, 'surah', 114, 'explicit_surah', 0.8,
           'needs_review', '{"winner":"legacy"}')`,
-			canonicalID, fixture.bookID, mentionID, searchtext.Normalize("سورة"))
+			canonicalID, fixture.bookID, mentionID, searchtext.Normalize("سورة"), searchtext.ProfileVersion)
 		require.NoError(t, err)
 
 		ref, bridge := liveLegacyBridge(fixture.bookID, 1, ayahNumber, "surah", entity.CrossReferenceStatusApproved)

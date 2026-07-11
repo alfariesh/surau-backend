@@ -225,80 +225,90 @@ type BookProductionMissingAsset struct {
 
 // BookMetadataTranslationEdit stores production draft metadata translation.
 type BookMetadataTranslationEdit struct {
-	ProjectID    string     `json:"project_id" example:"550e8400-e29b-41d4-a716-446655440000"`
-	DisplayTitle string     `json:"display_title"`
-	Bibliography *string    `json:"bibliography,omitempty"`
-	Hint         *string    `json:"hint,omitempty"`
-	Description  *string    `json:"description,omitempty"`
-	Source       *string    `json:"source,omitempty"`
-	Metadata     RawJSON    `json:"metadata,omitempty" swaggertype:"object"`
-	ReviewStatus string     `json:"review_status" example:"draft"`
-	ReviewNote   *string    `json:"review_note,omitempty"`
-	UpdatedBy    *string    `json:"updated_by,omitempty"`
-	ReviewedBy   *string    `json:"reviewed_by,omitempty"`
-	UpdatedAt    time.Time  `json:"updated_at" example:"2026-01-01T00:00:00Z"`
-	ReviewedAt   *time.Time `json:"reviewed_at,omitempty" example:"2026-01-01T00:00:00Z"`
+	ProjectID       string              `json:"project_id" example:"550e8400-e29b-41d4-a716-446655440000"`
+	DisplayTitle    string              `json:"display_title"`
+	Bibliography    *string             `json:"bibliography,omitempty"`
+	Hint            *string             `json:"hint,omitempty"`
+	Description     *string             `json:"description,omitempty"`
+	Source          *string             `json:"source,omitempty"`
+	Metadata        RawJSON             `json:"metadata,omitempty" swaggertype:"object"`
+	ProvenanceClass string              `json:"provenance_class" example:"editorial"`
+	Generation      *GenerationIdentity `json:"generation,omitempty"`
+	ReviewStatus    string              `json:"review_status" example:"draft"`
+	ReviewNote      *string             `json:"review_note,omitempty"`
+	UpdatedBy       *string             `json:"updated_by,omitempty"`
+	ReviewedBy      *string             `json:"reviewed_by,omitempty"`
+	UpdatedAt       time.Time           `json:"updated_at" example:"2026-01-01T00:00:00Z"`
+	ReviewedAt      *time.Time          `json:"reviewed_at,omitempty" example:"2026-01-01T00:00:00Z"`
 } // @name entity.BookMetadataTranslationEdit
 
 // AuthorTranslationEdit stores production draft author translation.
 type AuthorTranslationEdit struct {
-	ProjectID    string     `json:"project_id" example:"550e8400-e29b-41d4-a716-446655440000"`
-	Name         string     `json:"name"`
-	Biography    *string    `json:"biography,omitempty"`
-	DeathText    *string    `json:"death_text,omitempty"`
-	Source       *string    `json:"source,omitempty"`
-	Metadata     RawJSON    `json:"metadata,omitempty" swaggertype:"object"`
-	ReviewStatus string     `json:"review_status" example:"draft"`
-	ReviewNote   *string    `json:"review_note,omitempty"`
-	UpdatedBy    *string    `json:"updated_by,omitempty"`
-	ReviewedBy   *string    `json:"reviewed_by,omitempty"`
-	UpdatedAt    time.Time  `json:"updated_at" example:"2026-01-01T00:00:00Z"`
-	ReviewedAt   *time.Time `json:"reviewed_at,omitempty" example:"2026-01-01T00:00:00Z"`
+	ProjectID       string              `json:"project_id" example:"550e8400-e29b-41d4-a716-446655440000"`
+	Name            string              `json:"name"`
+	Biography       *string             `json:"biography,omitempty"`
+	DeathText       *string             `json:"death_text,omitempty"`
+	Source          *string             `json:"source,omitempty"`
+	Metadata        RawJSON             `json:"metadata,omitempty" swaggertype:"object"`
+	ProvenanceClass string              `json:"provenance_class" example:"editorial"`
+	Generation      *GenerationIdentity `json:"generation,omitempty"`
+	ReviewStatus    string              `json:"review_status" example:"draft"`
+	ReviewNote      *string             `json:"review_note,omitempty"`
+	UpdatedBy       *string             `json:"updated_by,omitempty"`
+	ReviewedBy      *string             `json:"reviewed_by,omitempty"`
+	UpdatedAt       time.Time           `json:"updated_at" example:"2026-01-01T00:00:00Z"`
+	ReviewedAt      *time.Time          `json:"reviewed_at,omitempty" example:"2026-01-01T00:00:00Z"`
 } // @name entity.AuthorTranslationEdit
 
 // CategoryTranslationEdit stores production draft category translation.
 type CategoryTranslationEdit struct {
-	ProjectID    string     `json:"project_id" example:"550e8400-e29b-41d4-a716-446655440000"`
-	Name         string     `json:"name"`
-	Source       *string    `json:"source,omitempty"`
-	Metadata     RawJSON    `json:"metadata,omitempty" swaggertype:"object"`
-	ReviewStatus string     `json:"review_status" example:"draft"`
-	ReviewNote   *string    `json:"review_note,omitempty"`
-	UpdatedBy    *string    `json:"updated_by,omitempty"`
-	ReviewedBy   *string    `json:"reviewed_by,omitempty"`
-	UpdatedAt    time.Time  `json:"updated_at" example:"2026-01-01T00:00:00Z"`
-	ReviewedAt   *time.Time `json:"reviewed_at,omitempty" example:"2026-01-01T00:00:00Z"`
+	ProjectID       string              `json:"project_id" example:"550e8400-e29b-41d4-a716-446655440000"`
+	Name            string              `json:"name"`
+	Source          *string             `json:"source,omitempty"`
+	Metadata        RawJSON             `json:"metadata,omitempty" swaggertype:"object"`
+	ProvenanceClass string              `json:"provenance_class" example:"editorial"`
+	Generation      *GenerationIdentity `json:"generation,omitempty"`
+	ReviewStatus    string              `json:"review_status" example:"draft"`
+	ReviewNote      *string             `json:"review_note,omitempty"`
+	UpdatedBy       *string             `json:"updated_by,omitempty"`
+	ReviewedBy      *string             `json:"reviewed_by,omitempty"`
+	UpdatedAt       time.Time           `json:"updated_at" example:"2026-01-01T00:00:00Z"`
+	ReviewedAt      *time.Time          `json:"reviewed_at,omitempty" example:"2026-01-01T00:00:00Z"`
 } // @name entity.CategoryTranslationEdit
 
 // SectionTranslationEdit stores production draft section translation.
 type SectionTranslationEdit struct {
-	ProjectID    string     `json:"project_id" example:"550e8400-e29b-41d4-a716-446655440000"`
-	HeadingID    int        `json:"heading_id" example:"10"`
-	Title        *string    `json:"title,omitempty"`
-	Content      string     `json:"content"`
-	Source       *string    `json:"source,omitempty"`
-	Metadata     RawJSON    `json:"metadata,omitempty" swaggertype:"object"`
-	ReviewStatus string     `json:"review_status" example:"draft"`
-	ReviewNote   *string    `json:"review_note,omitempty"`
-	UpdatedBy    *string    `json:"updated_by,omitempty"`
-	ReviewedBy   *string    `json:"reviewed_by,omitempty"`
-	UpdatedAt    time.Time  `json:"updated_at" example:"2026-01-01T00:00:00Z"`
-	ReviewedAt   *time.Time `json:"reviewed_at,omitempty" example:"2026-01-01T00:00:00Z"`
+	ProjectID       string              `json:"project_id" example:"550e8400-e29b-41d4-a716-446655440000"`
+	HeadingID       int                 `json:"heading_id" example:"10"`
+	Title           *string             `json:"title,omitempty"`
+	Content         string              `json:"content"`
+	Source          *string             `json:"source,omitempty"`
+	Metadata        RawJSON             `json:"metadata,omitempty" swaggertype:"object"`
+	ProvenanceClass string              `json:"provenance_class" example:"editorial"`
+	Generation      *GenerationIdentity `json:"generation,omitempty"`
+	ReviewStatus    string              `json:"review_status" example:"draft"`
+	ReviewNote      *string             `json:"review_note,omitempty"`
+	UpdatedBy       *string             `json:"updated_by,omitempty"`
+	ReviewedBy      *string             `json:"reviewed_by,omitempty"`
+	UpdatedAt       time.Time           `json:"updated_at" example:"2026-01-01T00:00:00Z"`
+	ReviewedAt      *time.Time          `json:"reviewed_at,omitempty" example:"2026-01-01T00:00:00Z"`
 } // @name entity.SectionTranslationEdit
 
 // HeadingSummaryEdit stores production draft heading summary.
 type HeadingSummaryEdit struct {
-	ProjectID    string     `json:"project_id" example:"550e8400-e29b-41d4-a716-446655440000"`
-	HeadingID    int        `json:"heading_id" example:"10"`
-	Summary      string     `json:"summary"`
-	Source       *string    `json:"source,omitempty"`
-	Metadata     RawJSON    `json:"metadata,omitempty" swaggertype:"object"`
-	ReviewStatus string     `json:"review_status" example:"draft"`
-	ReviewNote   *string    `json:"review_note,omitempty"`
-	UpdatedBy    *string    `json:"updated_by,omitempty"`
-	ReviewedBy   *string    `json:"reviewed_by,omitempty"`
-	UpdatedAt    time.Time  `json:"updated_at" example:"2026-01-01T00:00:00Z"`
-	ReviewedAt   *time.Time `json:"reviewed_at,omitempty" example:"2026-01-01T00:00:00Z"`
+	ProjectID       string              `json:"project_id" example:"550e8400-e29b-41d4-a716-446655440000"`
+	HeadingID       int                 `json:"heading_id" example:"10"`
+	Summary         string              `json:"summary"`
+	Source          *string             `json:"source,omitempty"`
+	Metadata        RawJSON             `json:"metadata,omitempty" swaggertype:"object"`
+	ProvenanceClass string              `json:"provenance_class" example:"editorial"`
+	Generation      *GenerationIdentity `json:"generation,omitempty"`
+	ReviewStatus    string              `json:"review_status" example:"draft"`
+	ReviewNote      *string             `json:"review_note,omitempty"`
+	UpdatedBy       *string             `json:"updated_by,omitempty"`
+	ReviewedBy      *string             `json:"reviewed_by,omitempty"`
+	UpdatedAt       time.Time           `json:"updated_at" example:"2026-01-01T00:00:00Z"`
+	ReviewedAt      *time.Time          `json:"reviewed_at,omitempty" example:"2026-01-01T00:00:00Z"`
 } // @name entity.HeadingSummaryEdit
 
 // SectionAudioEdit stores production draft audio metadata.
