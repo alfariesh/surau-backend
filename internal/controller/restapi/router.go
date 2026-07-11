@@ -85,7 +85,7 @@ func NewRouter(
 		app.Use(cors.New(cors.Config{
 			AllowOrigins: strings.Join(cfg.CORS.AllowedOrigins, ","),
 			AllowMethods: "GET,POST,PUT,PATCH,DELETE,OPTIONS",
-			AllowHeaders: "Authorization,Content-Type,X-Request-ID",
+			AllowHeaders: "Authorization,Content-Type,If-Match,X-Request-ID",
 			// AllowCredentials stays false: auth uses bearer tokens, not
 			// cookies, and fiber panics on wildcard origins with credentials.
 			ExposeHeaders: "ETag,Retry-After,X-Request-ID",

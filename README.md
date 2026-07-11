@@ -30,6 +30,12 @@ The runtime app wires only REST + Postgres + JWT; the template's RabbitMQ/NATS/g
   `GET /v1/editorial/books/{book_id}/pages/{page_id}/draft-revisions` lists
   history; `POST .../draft-revisions/{revision_id}/restore` replays a snapshot
   as a new draft.
+- Quran surah and ayah editorial use the same protected workflow. Every REST
+  save, publish, and restore requires `If-Match`; the workspace GET returns the ETag
+  to reuse, while `If-Match: *` is required for an intentional first/force
+  write. Effective changes keep a restorable, newest-first revision history
+  with `origin=rest|import|restore`. Public Quran reads remain unchanged and
+  can only see the `published` + `permitted` row.
 
 ## Main Endpoints
 
@@ -103,6 +109,22 @@ Editorial feedback review:
 - `GET /v1/editorial/translation-feedbacks/summary?book_id=&heading_id=&lang=&vote=&status=&limit=`
 - `POST /v1/editorial/translation-feedbacks/{id}/resolve`
 - `POST /v1/editorial/translation-feedbacks/{id}/reopen`
+
+Editorial Quran workflow:
+
+- `GET /v1/editorial/quran/surahs/{surah_id}`
+- `PUT /v1/editorial/quran/surahs/{surah_id}/draft`
+- `POST /v1/editorial/quran/surahs/{surah_id}/publish`
+- `GET /v1/editorial/quran/surahs/{surah_id}/draft-revisions`
+- `POST /v1/editorial/quran/surahs/{surah_id}/draft-revisions/{revision_id}/restore`
+- `GET /v1/editorial/quran/ayahs/{ayah_key}`
+- `PUT /v1/editorial/quran/ayahs/{ayah_key}/draft`
+- `POST /v1/editorial/quran/ayahs/{ayah_key}/publish`
+- `GET /v1/editorial/quran/ayahs/{ayah_key}/draft-revisions`
+- `POST /v1/editorial/quran/ayahs/{ayah_key}/draft-revisions/{revision_id}/restore`
+
+Workspace, draft, history, and restore require editorial review capability.
+Publishing additionally requires production publish capability plus fresh MFA.
 
 Editorial book production:
 
@@ -374,7 +396,57 @@ Each file is an array of records keyed by `surah_id` + `lang`:
 ]
 ```
 
-Only `surah_id` and `lang` are required; every other field is optional and uses a COALESCE upsert (an absent field keeps the existing value on re-import). `slug`/`chronological_order`/`ruku_count` update the `quran_surahs` row; the rest update `quran_surah_editorial` for that language. `license_status` defaults to `needs_review` — **set it to `permitted` to publish**, since the API and the public `/surah/{slug}` page only expose and index editorial that is `permitted`. `--editorial-json` is repeatable; use `--dry-run` to parse and count without writing.
+Only `surah_id` and `lang` are required; every other field is optional and uses
+a partial update (an absent field keeps the existing value on re-import).
+`license_status` defaults to `needs_review` for a new row.
+
+The safe default writes or updates a **draft only**. It never changes public
+content. Add `--publish` only for an intentional publish run:
+
+```sh
+PG_URL='postgres://user:myAwEsOm3pa55@w0rd@localhost:5432/db' \
+go run ./cmd/import-quran-surah-editorial \
+  --editorial-json=/path/to/al-mulk.id.json \
+  --publish
+```
+
+Every resulting draft in a `--publish` batch must have
+`license_status=permitted`; one non-permitted row rolls back the whole batch.
+The public Quran API exposes only rows that are both `published` and
+`permitted`. `slug`, `chronological_order`, and `ruku_count` are validated on
+every import, but are applied to `quran_surahs` only after a successful explicit
+publish; a default draft import leaves those public routing fields untouched.
+Every effective per-language editorial change is recorded in revision history
+with `origin=import`. The three language-independent routing fields are applied
+only by explicit publish, but their redirect/history lifecycle belongs to Q-4
+(the dedicated slug contract), not to Q-1's per-language revision snapshots.
+`--editorial-json` is repeatable; use `--dry-run` to parse and count without
+writing.
+
+## Import Ayah Editorial (SEO/SGE)
+
+Per-ayah editorial enrichment (intisari, keutamaan, FAQ, tafsir range pointer,
+and SEO meta) uses the same workflow:
+
+```sh
+PG_URL='postgres://user:myAwEsOm3pa55@w0rd@localhost:5432/db' \
+go run ./cmd/import-quran-ayah-editorial \
+  --ayah-editorial-json=/path/to/ayah-editorial.id.json
+```
+
+Each JSON file is an array keyed by `surah_id` + `ayah_number` + `lang`.
+Content fields are optional; examples include `meta_title`,
+`meta_description`, `intisari_html`, `keutamaan_html`, `faq`, `tafsir_range`,
+`author_name`, `reviewed_by`, `reviewed_at`, and `license_status`. The importer
+rejects a `tafsir_html` body because this layer stores an editorial pointer, not
+reproduced tafsir.
+
+The default is draft-only. Pass `--publish` explicitly to promote the imported
+drafts; every resulting row must be `permitted`, or the whole import rolls
+back. Public ayah reads continue to expose only `published` + `permitted`
+editorial. Effective importer changes create revisions with `origin=import`;
+byte-identical re-imports are no-ops. `--ayah-editorial-json` is repeatable, and
+`--dry-run` validates without writing.
 
 ## Generate Test Translations with DeepSeek
 

@@ -16,6 +16,7 @@ const (
 
 	EditOriginREST    = "rest"
 	EditOriginCollab  = "collab"
+	EditOriginImport  = "import"
 	EditOriginRestore = "restore"
 
 	SourceEditAssetPage     = "page"

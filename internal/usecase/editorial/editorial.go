@@ -43,10 +43,11 @@ type UnitReconciler interface {
 
 // UseCase provides editorial operations.
 type UseCase struct {
-	repo    repo.EditorialRepo
-	license repo.LicenseRepo
-	units   UnitReconciler
-	log     logger.Interface
+	repo           repo.EditorialRepo
+	license        repo.LicenseRepo
+	quranEditorial repo.QuranEditorialRepo
+	units          UnitReconciler
+	log            logger.Interface
 }
 
 // New creates an editorial usecase. units and l are optional (nil-safe): when
@@ -56,6 +57,10 @@ func New(r repo.EditorialRepo, units UnitReconciler, l logger.Interface) *UseCas
 	uc := &UseCase{repo: r, units: units, log: l}
 	if licenseRepo, ok := r.(repo.LicenseRepo); ok {
 		uc.license = licenseRepo
+	}
+
+	if quranRepo, ok := r.(repo.QuranEditorialRepo); ok {
+		uc.quranEditorial = quranRepo
 	}
 
 	return uc

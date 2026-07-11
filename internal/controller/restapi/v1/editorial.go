@@ -51,6 +51,10 @@ func (r *V1) editorialError(ctx *fiber.Ctx, err error) error {
 		return errorResponse(ctx, http.StatusBadRequest, "invalid review decision")
 	case errors.Is(err, entity.ErrInvalidProductionDraft):
 		return errorResponse(ctx, http.StatusBadRequest, "invalid production draft")
+	case errors.Is(err, entity.ErrInvalidQuranEditorial):
+		return errorResponse(ctx, http.StatusBadRequest, "invalid request body")
+	case errors.Is(err, entity.ErrInvalidAyahKey):
+		return errorResponse(ctx, http.StatusBadRequest, "invalid ayah key")
 	case errors.Is(err, entity.ErrFeedbackNotFound):
 		return errorResponse(ctx, http.StatusNotFound, "feedback not found")
 	case errors.Is(err, entity.ErrTranslationNotFound):
@@ -61,6 +65,10 @@ func (r *V1) editorialError(ctx *fiber.Ctx, err error) error {
 		return errorResponse(ctx, http.StatusNotFound, "page not found")
 	case errors.Is(err, entity.ErrHeadingNotFound):
 		return errorResponse(ctx, http.StatusNotFound, "heading not found")
+	case errors.Is(err, entity.ErrQuranSurahNotFound):
+		return errorResponse(ctx, http.StatusNotFound, "quran surah not found")
+	case errors.Is(err, entity.ErrQuranAyahNotFound):
+		return errorResponse(ctx, http.StatusNotFound, "quran ayah not found")
 	case errors.Is(err, entity.ErrForbidden):
 		return errorResponse(ctx, http.StatusForbidden, "forbidden")
 	case errors.Is(err, entity.ErrPreconditionFailed):

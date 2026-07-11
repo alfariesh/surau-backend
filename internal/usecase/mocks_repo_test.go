@@ -3636,6 +3636,237 @@ func (mr *MockEditorialRepoMockRecorder) UpdatePublication(ctx, actorID, publica
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdatePublication", reflect.TypeOf((*MockEditorialRepo)(nil).UpdatePublication), ctx, actorID, publication)
 }
 
+// MockQuranEditorialRepo is a mock of QuranEditorialRepo interface.
+type MockQuranEditorialRepo struct {
+	ctrl     *gomock.Controller
+	recorder *MockQuranEditorialRepoMockRecorder
+	isgomock struct{}
+}
+
+// MockQuranEditorialRepoMockRecorder is the mock recorder for MockQuranEditorialRepo.
+type MockQuranEditorialRepoMockRecorder struct {
+	mock *MockQuranEditorialRepo
+}
+
+// NewMockQuranEditorialRepo creates a new mock instance.
+func NewMockQuranEditorialRepo(ctrl *gomock.Controller) *MockQuranEditorialRepo {
+	mock := &MockQuranEditorialRepo{ctrl: ctrl}
+	mock.recorder = &MockQuranEditorialRepoMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockQuranEditorialRepo) EXPECT() *MockQuranEditorialRepoMockRecorder {
+	return m.recorder
+}
+
+// GetAyahEditorialWorkspace mocks base method.
+func (m *MockQuranEditorialRepo) GetAyahEditorialWorkspace(ctx context.Context, ayahKey, lang string) (entity.QuranAyahEditorialWorkspace, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetAyahEditorialWorkspace", ctx, ayahKey, lang)
+	ret0, _ := ret[0].(entity.QuranAyahEditorialWorkspace)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetAyahEditorialWorkspace indicates an expected call of GetAyahEditorialWorkspace.
+func (mr *MockQuranEditorialRepoMockRecorder) GetAyahEditorialWorkspace(ctx, ayahKey, lang any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetAyahEditorialWorkspace", reflect.TypeOf((*MockQuranEditorialRepo)(nil).GetAyahEditorialWorkspace), ctx, ayahKey, lang)
+}
+
+// GetSurahEditorialWorkspace mocks base method.
+func (m *MockQuranEditorialRepo) GetSurahEditorialWorkspace(ctx context.Context, surahID int, lang string) (entity.QuranSurahEditorialWorkspace, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetSurahEditorialWorkspace", ctx, surahID, lang)
+	ret0, _ := ret[0].(entity.QuranSurahEditorialWorkspace)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetSurahEditorialWorkspace indicates an expected call of GetSurahEditorialWorkspace.
+func (mr *MockQuranEditorialRepoMockRecorder) GetSurahEditorialWorkspace(ctx, surahID, lang any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetSurahEditorialWorkspace", reflect.TypeOf((*MockQuranEditorialRepo)(nil).GetSurahEditorialWorkspace), ctx, surahID, lang)
+}
+
+// ListQuranEditorialRevisions mocks base method.
+func (m *MockQuranEditorialRepo) ListQuranEditorialRevisions(ctx context.Context, filter repo.QuranEditorialRevisionFilter) ([]entity.QuranEditorialRevision, int, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListQuranEditorialRevisions", ctx, filter)
+	ret0, _ := ret[0].([]entity.QuranEditorialRevision)
+	ret1, _ := ret[1].(int)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
+}
+
+// ListQuranEditorialRevisions indicates an expected call of ListQuranEditorialRevisions.
+func (mr *MockQuranEditorialRepoMockRecorder) ListQuranEditorialRevisions(ctx, filter any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListQuranEditorialRevisions", reflect.TypeOf((*MockQuranEditorialRepo)(nil).ListQuranEditorialRevisions), ctx, filter)
+}
+
+// PublishAyahEditorialDraft mocks base method.
+func (m *MockQuranEditorialRepo) PublishAyahEditorialDraft(ctx context.Context, actorID, ayahKey, lang string, expected *time.Time, origin string) (entity.QuranAyahEditorialWorkspace, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "PublishAyahEditorialDraft", ctx, actorID, ayahKey, lang, expected, origin)
+	ret0, _ := ret[0].(entity.QuranAyahEditorialWorkspace)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// PublishAyahEditorialDraft indicates an expected call of PublishAyahEditorialDraft.
+func (mr *MockQuranEditorialRepoMockRecorder) PublishAyahEditorialDraft(ctx, actorID, ayahKey, lang, expected, origin any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PublishAyahEditorialDraft", reflect.TypeOf((*MockQuranEditorialRepo)(nil).PublishAyahEditorialDraft), ctx, actorID, ayahKey, lang, expected, origin)
+}
+
+// PublishSurahEditorialDraft mocks base method.
+func (m *MockQuranEditorialRepo) PublishSurahEditorialDraft(ctx context.Context, actorID string, surahID int, lang string, expected *time.Time, origin string) (entity.QuranSurahEditorialWorkspace, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "PublishSurahEditorialDraft", ctx, actorID, surahID, lang, expected, origin)
+	ret0, _ := ret[0].(entity.QuranSurahEditorialWorkspace)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// PublishSurahEditorialDraft indicates an expected call of PublishSurahEditorialDraft.
+func (mr *MockQuranEditorialRepoMockRecorder) PublishSurahEditorialDraft(ctx, actorID, surahID, lang, expected, origin any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PublishSurahEditorialDraft", reflect.TypeOf((*MockQuranEditorialRepo)(nil).PublishSurahEditorialDraft), ctx, actorID, surahID, lang, expected, origin)
+}
+
+// RestoreAyahEditorialRevision mocks base method.
+func (m *MockQuranEditorialRepo) RestoreAyahEditorialRevision(ctx context.Context, actorID, ayahKey, lang, revisionID string, expected *time.Time) (entity.QuranAyahEditorialWorkspace, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RestoreAyahEditorialRevision", ctx, actorID, ayahKey, lang, revisionID, expected)
+	ret0, _ := ret[0].(entity.QuranAyahEditorialWorkspace)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// RestoreAyahEditorialRevision indicates an expected call of RestoreAyahEditorialRevision.
+func (mr *MockQuranEditorialRepoMockRecorder) RestoreAyahEditorialRevision(ctx, actorID, ayahKey, lang, revisionID, expected any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RestoreAyahEditorialRevision", reflect.TypeOf((*MockQuranEditorialRepo)(nil).RestoreAyahEditorialRevision), ctx, actorID, ayahKey, lang, revisionID, expected)
+}
+
+// RestoreSurahEditorialRevision mocks base method.
+func (m *MockQuranEditorialRepo) RestoreSurahEditorialRevision(ctx context.Context, actorID string, surahID int, lang, revisionID string, expected *time.Time) (entity.QuranSurahEditorialWorkspace, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RestoreSurahEditorialRevision", ctx, actorID, surahID, lang, revisionID, expected)
+	ret0, _ := ret[0].(entity.QuranSurahEditorialWorkspace)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// RestoreSurahEditorialRevision indicates an expected call of RestoreSurahEditorialRevision.
+func (mr *MockQuranEditorialRepoMockRecorder) RestoreSurahEditorialRevision(ctx, actorID, surahID, lang, revisionID, expected any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RestoreSurahEditorialRevision", reflect.TypeOf((*MockQuranEditorialRepo)(nil).RestoreSurahEditorialRevision), ctx, actorID, surahID, lang, revisionID, expected)
+}
+
+// SaveAyahEditorialDraft mocks base method.
+func (m *MockQuranEditorialRepo) SaveAyahEditorialDraft(ctx context.Context, actorID string, edit entity.QuranAyahEditorialEdit, expected *time.Time, origin string) (entity.QuranAyahEditorialWorkspace, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SaveAyahEditorialDraft", ctx, actorID, edit, expected, origin)
+	ret0, _ := ret[0].(entity.QuranAyahEditorialWorkspace)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// SaveAyahEditorialDraft indicates an expected call of SaveAyahEditorialDraft.
+func (mr *MockQuranEditorialRepoMockRecorder) SaveAyahEditorialDraft(ctx, actorID, edit, expected, origin any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SaveAyahEditorialDraft", reflect.TypeOf((*MockQuranEditorialRepo)(nil).SaveAyahEditorialDraft), ctx, actorID, edit, expected, origin)
+}
+
+// SaveSurahEditorialDraft mocks base method.
+func (m *MockQuranEditorialRepo) SaveSurahEditorialDraft(ctx context.Context, actorID string, edit entity.QuranSurahEditorialEdit, expected *time.Time, origin string) (entity.QuranSurahEditorialWorkspace, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SaveSurahEditorialDraft", ctx, actorID, edit, expected, origin)
+	ret0, _ := ret[0].(entity.QuranSurahEditorialWorkspace)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// SaveSurahEditorialDraft indicates an expected call of SaveSurahEditorialDraft.
+func (mr *MockQuranEditorialRepoMockRecorder) SaveSurahEditorialDraft(ctx, actorID, edit, expected, origin any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SaveSurahEditorialDraft", reflect.TypeOf((*MockQuranEditorialRepo)(nil).SaveSurahEditorialDraft), ctx, actorID, edit, expected, origin)
+}
+
+// MockLicenseRepo is a mock of LicenseRepo interface.
+type MockLicenseRepo struct {
+	ctrl     *gomock.Controller
+	recorder *MockLicenseRepoMockRecorder
+	isgomock struct{}
+}
+
+// MockLicenseRepoMockRecorder is the mock recorder for MockLicenseRepo.
+type MockLicenseRepoMockRecorder struct {
+	mock *MockLicenseRepo
+}
+
+// NewMockLicenseRepo creates a new mock instance.
+func NewMockLicenseRepo(ctrl *gomock.Controller) *MockLicenseRepo {
+	mock := &MockLicenseRepo{ctrl: ctrl}
+	mock.recorder = &MockLicenseRepoMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockLicenseRepo) EXPECT() *MockLicenseRepoMockRecorder {
+	return m.recorder
+}
+
+// GetBookLicense mocks base method.
+func (m *MockLicenseRepo) GetBookLicense(ctx context.Context, bookID int) (entity.BookLicense, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetBookLicense", ctx, bookID)
+	ret0, _ := ret[0].(entity.BookLicense)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetBookLicense indicates an expected call of GetBookLicense.
+func (mr *MockLicenseRepoMockRecorder) GetBookLicense(ctx, bookID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetBookLicense", reflect.TypeOf((*MockLicenseRepo)(nil).GetBookLicense), ctx, bookID)
+}
+
+// ListBookLicenseAudit mocks base method.
+func (m *MockLicenseRepo) ListBookLicenseAudit(ctx context.Context, filter repo.LicenseAuditFilter) ([]entity.BookLicenseAuditItem, int, entity.BookLicenseAuditCounts, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListBookLicenseAudit", ctx, filter)
+	ret0, _ := ret[0].([]entity.BookLicenseAuditItem)
+	ret1, _ := ret[1].(int)
+	ret2, _ := ret[2].(entity.BookLicenseAuditCounts)
+	ret3, _ := ret[3].(error)
+	return ret0, ret1, ret2, ret3
+}
+
+// ListBookLicenseAudit indicates an expected call of ListBookLicenseAudit.
+func (mr *MockLicenseRepoMockRecorder) ListBookLicenseAudit(ctx, filter any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListBookLicenseAudit", reflect.TypeOf((*MockLicenseRepo)(nil).ListBookLicenseAudit), ctx, filter)
+}
+
+// UpdateBookLicense mocks base method.
+func (m *MockLicenseRepo) UpdateBookLicense(ctx context.Context, actorID string, update entity.BookLicenseUpdate, expectedUpdatedAt *time.Time) (entity.BookLicense, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateBookLicense", ctx, actorID, update, expectedUpdatedAt)
+	ret0, _ := ret[0].(entity.BookLicense)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// UpdateBookLicense indicates an expected call of UpdateBookLicense.
+func (mr *MockLicenseRepoMockRecorder) UpdateBookLicense(ctx, actorID, update, expectedUpdatedAt any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateBookLicense", reflect.TypeOf((*MockLicenseRepo)(nil).UpdateBookLicense), ctx, actorID, update, expectedUpdatedAt)
+}
+
 // MockCitableUnitRepo is a mock of CitableUnitRepo interface.
 type MockCitableUnitRepo struct {
 	ctrl     *gomock.Controller

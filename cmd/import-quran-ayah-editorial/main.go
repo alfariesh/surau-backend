@@ -31,6 +31,7 @@ func main() {
 	flag.StringVar(&opts.PostgresURL, "pg-url", os.Getenv("PG_URL"), "PostgreSQL URL")
 	flag.Var(&paths, "ayah-editorial-json", "per-ayah editorial JSON file; repeat for multiple files")
 	flag.BoolVar(&opts.DryRun, "dry-run", false, "parse files and print counts without writing")
+	flag.BoolVar(&opts.Publish, "publish", false, "explicitly publish all imported drafts (requires permitted licenses)")
 	flag.Parse()
 
 	opts.Paths = []string(paths)
@@ -41,11 +42,13 @@ func main() {
 	}
 
 	fmt.Printf(
-		"files=%d ayah_rows=%d upserted=%d skipped=%d dry_run=%t\n",
+		"files=%d ayah_rows=%d upserted=%d skipped=%d published=%d dry_run=%t publish=%t\n",
 		stats.Files,
 		stats.AyahRows,
 		stats.Upserted,
 		stats.Skipped,
+		stats.Published,
 		stats.DryRun,
+		stats.Publish,
 	)
 }

@@ -452,6 +452,22 @@ type (
 		DeleteFinalProductionAsset(ctx context.Context, actorID, projectID, assetType string, headingID *int, reason *string) error
 	}
 
+	// QuranEditorialRepo is the Q-1 companion to EditorialRepo. Keeping the
+	// workflow narrow prevents every kitab-only integration from becoming a
+	// Quran writer while the concrete EditorialRepo remains the single
+	// persistent implementation for both domains.
+	QuranEditorialRepo interface {
+		GetSurahEditorialWorkspace(ctx context.Context, surahID int, lang string) (entity.QuranSurahEditorialWorkspace, error)
+		SaveSurahEditorialDraft(ctx context.Context, actorID string, edit entity.QuranSurahEditorialEdit, expected *time.Time, origin string) (entity.QuranSurahEditorialWorkspace, error)
+		PublishSurahEditorialDraft(ctx context.Context, actorID string, surahID int, lang string, expected *time.Time, origin string) (entity.QuranSurahEditorialWorkspace, error)
+		RestoreSurahEditorialRevision(ctx context.Context, actorID string, surahID int, lang, revisionID string, expected *time.Time) (entity.QuranSurahEditorialWorkspace, error)
+		GetAyahEditorialWorkspace(ctx context.Context, ayahKey, lang string) (entity.QuranAyahEditorialWorkspace, error)
+		SaveAyahEditorialDraft(ctx context.Context, actorID string, edit entity.QuranAyahEditorialEdit, expected *time.Time, origin string) (entity.QuranAyahEditorialWorkspace, error)
+		PublishAyahEditorialDraft(ctx context.Context, actorID, ayahKey, lang string, expected *time.Time, origin string) (entity.QuranAyahEditorialWorkspace, error)
+		RestoreAyahEditorialRevision(ctx context.Context, actorID, ayahKey, lang, revisionID string, expected *time.Time) (entity.QuranAyahEditorialWorkspace, error)
+		ListQuranEditorialRevisions(ctx context.Context, filter QuranEditorialRevisionFilter) ([]entity.QuranEditorialRevision, int, error)
+	}
+
 	// LicenseRepo owns the B-4 kitab license audit queue and the atomic,
 	// actor-attributed status transition. It stays separate from EditorialRepo
 	// so existing editorial integrations do not accidentally become license
@@ -647,6 +663,17 @@ type (
 		HeadingID *int
 		Limit     uint64
 		Offset    uint64
+	}
+
+	// QuranEditorialRevisionFilter identifies one surah/ayah editorial
+	// resource. Versioning is per resource and language, across both statuses.
+	QuranEditorialRevisionFilter struct {
+		AssetType  string
+		SurahID    int
+		AyahNumber *int
+		Lang       string
+		Limit      uint64
+		Offset     uint64
 	}
 
 	// TranslationFeedbackFilter -.
