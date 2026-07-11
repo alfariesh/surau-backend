@@ -235,8 +235,91 @@ Masuk PLAN MODE dulu; rencana wajib menyebut cara memenuhi setiap Acceptance Cri
 
 ## SETELAH SESI 15 — perpanjang antrean ini
 
-- [ ] **SESI 16 — Susun antrean gelombang berikutnya**
+- [x] **SESI 16 — Susun antrean gelombang berikutnya** — ✅ **SELESAI 2026-07-11**: antrean
+  SESI 17–26 Gelombang 3 ditambahkan.
 
 ```text
 Baca roadmap/PROGRAM.md §2 (Gelombang 3) + status centang di roadmap/SESI.md dan PROGRAM.md. Perbarui roadmap/SESI.md: tambahkan antrean prompt sesi siap-paste untuk Gelombang 3 (Q-1, Q-2, K-1 [ultracode], Q-4, Q-6, A-2, A-4, A-5, U-0, U-6) memakai format & aturan yang sama persis dengan sesi-sesi sebelumnya, termasuk checkpoint keputusan (PK-2 sebelum W4, O-4-2 untuk arah K-1). Tandai sesi yang layak "ultracode". Jangan mengubah bagian lain file.
 ```
+
+## GELOMBANG 3 — Konten inti (Quran + industrialisasi kitab + benih retrieval)
+
+- [ ] **SESI 17 — Editorial Quran setara kitab (Q-1)**
+
+```text
+Kerjakan Q-1 dari roadmap/phase-3-quran.md: naikkan editorial surah dan ayah ke workflow standar kitab — draft/publish, ETag dengan 412/428/If-Match: *, riwayat revisi yang bisa di-restore, dan origin rest/import; grandfather data existing sebagai published tanpa mengubah isi atau API baca publik; importer menulis draft secara default dan hanya publish lewat flag eksplisit; konten publik tetap wajib published+permitted.
+Masuk PLAN MODE dulu; rencana wajib menyebut cara memenuhi setiap Acceptance Criterion Q-1, termasuk test concurrent edit dan pembuktian tidak ada jalur tulis yang melewati workflow. Setelah saya setujui: kerjakan sampai tuntas — branch fitur, test, Definition of Done, centang PROGRAM.md & SESI.md, merge, verifikasi dev-api. Laporan akhir bahasa awam.
+```
+
+- [ ] **SESI 18 — Anchor + Citable Unit Quran + gerbang anti-tafsir (Q-2)**
+
+```text
+Kerjakan Q-2 dari roadmap/phase-3-quran.md dengan mengaudit dan MEMAKAI hasil B-2/B-3 yang sudah hidup — jangan menduplikasi atau menulis ulang registry Anchor, resolver, maupun bridge Quran: lengkapi Citable Unit deterministik untuk ayah sebagai teks primer, rendering terjemahan per sumber+ayat beratribusi dan berlisensi, footnote tertaut, serta transliterasi; pastikan seluruh locator legacy FE yang tersisa resolvable; tegakkan di level data/indeks bahwa unit Quran tidak pernah eligible untuk retrieval interpretatif; pertahankan parity rujukan approved lama dan rujuk test anti-tafsir ini dari U-6.
+Masuk PLAN MODE dulu; rencana wajib menyebut cara memenuhi setiap Acceptance Criterion Q-2, memetakan mana yang sudah dipenuhi B-2/B-3 dan gap yang benar-benar tersisa. Setelah saya setujui: kerjakan sampai tuntas — branch fitur, test, Definition of Done, centang PROGRAM.md & SESI.md, merge, verifikasi dev-api. Laporan akhir bahasa awam.
+```
+
+> **⚠️ CHECKPOINT KEPUTUSAN — O-4-2 (arah backfill K-1).** Bila ingin memilih sendiri,
+> jawab sebelum SESI 19: (a) tafsir & syarah dulu; (b) urut trafik baca; atau (c) merata.
+> Tidak menjawab = default aman PROGRAM.md §5 PK-6: **(a), dengan trafik sebagai tie-break**.
+
+- [ ] **SESI 19 — Industrialisasi seluruh katalog + migrasi sitasi RAG (K-1)**
+
+```text
+ultracode. Kerjakan K-1 dari roadmap/phase-4-kitab-editorial.md sesuai keputusan/default O-4-2: backfill 100% buku published dengan runner F1-H yang resumable dan ter-metrik, keraskan deriver pilot untuk footnote/quran_quote/HTML, petakan Provenance Class + generation identity B-6 + pewarisan License Status B-4, re-anchor knowledge_mentions dari halaman ke unit, lalu migrasikan sitasi book-RAG lewat dual-write legacy+unit di belakang flag → verifikasi parity → tukar default → pertahankan fallback legacy satu rilis; unit machine-unreviewed wajib tidak eligible secara struktural untuk retrieval interpretatif.
+Masuk PLAN MODE dulu; rencana wajib menyebut cara memenuhi setiap Acceptance Criterion K-1, termasuk determinisme 100%, audit sitasi menggantung = 0, anchor tetap resolve setelah edit, rollout tanpa big-bang, dan bukti 100% katalog published termaterialisasi. Setelah saya setujui: kerjakan sampai tuntas — branch fitur, test, Definition of Done, centang PROGRAM.md & SESI.md, merge, verifikasi dev-api. Laporan akhir bahasa awam.
+```
+
+- [ ] **SESI 20 — Sitemap/feed + slug permanen Quran (Q-4)**
+
+```text
+Kerjakan Q-4 dari roadmap/phase-3-quran.md: sediakan data sitemap/feed untuk halaman surah dan ayah dengan lastmod dari updated_at efektif, hreflang id/en sesuai ketersediaan, dan hanya konten published+permitted; formalkan registry slug sehingga perubahan slug menyisakan redirect permanen dan slug lama tetap resolvable; tambah laporan cakupan editorial per bahasa untuk operator.
+Masuk PLAN MODE dulu; rencana wajib menyebut cara memenuhi setiap Acceptance Criterion Q-4, termasuk 100% halaman published masuk sitemap, akurasi lastmod ≤5 menit, dan test redirect slug lama. Setelah saya setujui: kerjakan sampai tuntas — branch fitur, test, Definition of Done, centang PROGRAM.md & SESI.md, merge, verifikasi dev-api. Laporan akhir bahasa awam + tunjukkan URL sitemap dan laporan cakupannya.
+```
+
+- [ ] **SESI 21 — Notifikasi Quran yang terbukti & sopan waktu (Q-6)**
+
+```text
+Kerjakan Q-6 dari roadmap/phase-3-quran.md: simpan jejak delivery OneSignal accepted/failed beserta alasan, ekspor metrik+alert kegagalan massal ≤5 menit, tambah kunci dedupe idempoten per user+jenis+hari di atas cooldown 20 jam existing, terapkan quiet-hours per timezone user (default 21:00–07:00 waktu lokal untuk reminder non-kritis), dan masukkan loop reminder ke supervisi F1-C dengan recovery, backoff, serta metrik last-success.
+Masuk PLAN MODE dulu; rencana wajib menyebut cara memenuhi setiap Acceptance Criterion Q-6, termasuk test lintas restart untuk anti-duplikat dan batas waktu lokal pengguna. Setelah saya setujui: kerjakan sampai tuntas — branch fitur, test, Definition of Done, centang PROGRAM.md & SESI.md, merge, verifikasi dev-api. Laporan akhir bahasa awam + tunjukkan cara saya melihat jumlah reminder terkirim/gagal.
+```
+
+- [ ] **SESI 22 — Identitas mesin + token layanan ber-scope (A-2)**
+
+```text
+Kerjakan A-2 dari roadmap/phase-2-auth.md: registry identitas layanan dengan nama principal, scope, kedaluwarsa ≤90 hari, hash-at-rest, dan pencabutan per-identitas; migrasikan collab-server (scope tulis-draft), runner eval (baca), otomasi enrichment HTTP, dan U-0 (kelola prompt-registry/budget) lewat overlap dua token tanpa downtime; audit setiap /internal/* dengan nama principal; formalkan role DB terpisah ber-grant sempit untuk pipeline ekstraksi pending-only dan importer, plus runbook rotasi.
+Masuk PLAN MODE dulu; rencana wajib menyebut cara memenuhi setiap Acceptance Criterion A-2, termasuk bukti token collab yang dicabut berhenti tanpa restart, test grants yang melarang pipeline mengubah review status, serta migrasi konsumen tanpa putus layanan. Setelah saya setujui: kerjakan sampai tuntas — branch fitur, test, Definition of Done, centang PROGRAM.md & SESI.md, merge, verifikasi dev-api. Laporan akhir bahasa awam.
+```
+
+- [ ] **SESI 23 — Rotasi JWT tanpa logout (A-4)**
+
+```text
+Kerjakan A-4 dari roadmap/phase-2-auth.md: tambahkan kid pada token baru, verifikasi terhadap himpunan kunci HS256 aktif lama+baru selama overlap, pindahkan penerbitan ke kunci baru seketika, lalu tolak kunci lama setelah masa hidup token terlama; tulis runbook dan lakukan drill rotasi pertama di dev lalu prod tanpa logout pengguna.
+Masuk PLAN MODE dulu; rencana wajib menyebut cara memenuhi setiap Acceptance Criterion A-4, termasuk kompatibilitas token tanpa kid yang masih hidup, strategi rollback aman, bukti token lama valid selama overlap lalu ditolak setelahnya, serta nol sesi terputus pada drill. Setelah saya setujui: kerjakan sampai tuntas — branch fitur, test, Definition of Done, centang PROGRAM.md & SESI.md, merge, verifikasi dev-api dan hasil drill. Laporan akhir bahasa awam.
+```
+
+- [ ] **SESI 24 — Refresh 14 hari + sesi berlabel perangkat (A-5)**
+
+```text
+Kerjakan A-5 dari roadmap/phase-2-auth.md: ubah umur refresh dari 720h menjadi 336h (14 hari) sliding sehingga pemakaian aktif memperpanjang sesi dan token diam 14 hari ditolak; tambahkan label perangkat/klien yang terbaca manusia pada daftar sesi; pertahankan deteksi reuse, revoke per-sesi, rotasi, dan notifikasi perangkat baru; dokumentasikan perubahan perilaku untuk komunikasi rilis FE/mobile.
+Masuk PLAN MODE dulu; rencana wajib menyebut cara memenuhi setiap Acceptance Criterion A-5, termasuk test waktu untuk sesi aktif vs diam, kompatibilitas sesi existing, dan label perangkat yang aman saat metadata klien tidak lengkap. Setelah saya setujui: kerjakan sampai tuntas — branch fitur, test, Definition of Done, centang PROGRAM.md & SESI.md, merge, verifikasi dev-api. Laporan akhir bahasa awam.
+```
+
+- [ ] **SESI 25 — Lapisan inferensi LLM bersama (U-0)**
+
+```text
+Kerjakan U-0 dari roadmap/phase-7-unified-rag.md di atas identitas layanan A-2 dan generation_runs B-6: bangun registry provider/model per tugas (rewrite/rerank/embed/jawab/judge), registry prompt + skema jawaban ber-versi di DB, metering token+biaya per panggilan ke trace F1-B, baseline/cap+alert 80% dengan penolakan anggun sesuai default aman O-7-3, cache yang aman, serta failover dua provider; semua call-site LLM aktif wajib memakai lapisan ini tanpa jalur ad-hoc.
+Masuk PLAN MODE dulu; rencana wajib menyebut cara memenuhi setiap Acceptance Criterion U-0, inventaris migrasi seluruh call-site, bukti setiap panggilan membawa task+model+prompt+run+token+biaya, test failover dua provider, serta perilaku saat cap terlampaui. Setelah saya setujui: kerjakan sampai tuntas — branch fitur, test, Definition of Done, centang PROGRAM.md & SESI.md, merge, verifikasi dev-api. Laporan akhir bahasa awam + tunjukkan cara saya melihat biaya harian dan pagarnya.
+```
+
+- [ ] **SESI 26 — Mulai eval-as-gate (U-6, tahap W3)**
+
+```text
+Mulai tahap W3 U-6 dari roadmap/phase-7-unified-rag.md: perluas harness BookRAG existing menjadi fondasi eval lintas-korpus; hidupkan sekarang kasus kitab + keamanan Quran dari Q-2 (anti-tafsir dan routing ayat→tafsir) + not-found + injeksi-lewat-konten, lalu siapkan kategori/seed id↔ar, validitas struktur, lensa-tak-meratakan, hadith, dan wiki untuk diaktifkan saat U-1/U-3/U-4/H-7/W-7 mendarat; prioritaskan asersi deterministik, pakai LLM-judge ber-rubrik-versi hanya untuk groundedness/ikhtilaf dengan sampling manusia; tampilkan pass-rate per kategori dan naikkan CI bertahap dari non-gating ke gate PR retrieval/release, tanpa reroute buku atau pensiun tree sebelum parity menang.
+Masuk PLAN MODE dulu; rencana wajib memetakan setiap Acceptance Criterion U-6 menjadi (a) tercapai pada tahap W3 atau (b) sengaja ditunda dengan owner/dependensi eksplisit U-1/U-3/U-4/H-7/W-7, serta menyertakan mutation-test yang membuktikan gate menahan regresi. Setelah saya setujui: kerjakan sampai tuntas — branch fitur, test, Definition of Done, centang SESI.md dan catat progres tahap W3 di PROGRAM.md, tetapi JANGAN tandai U-6 selesai penuh sebelum seluruh dependensinya mendarat; merge dan verifikasi dev-api. Laporan akhir bahasa awam.
+```
+
+> **⚠️ CHECKPOINT KEPUTUSAN — PK-2 (Hadith): WAJIB sebelum W4; memblokir H-0 total.**
+> Jawab `PK-2: default aman semua` atau pilih per poin di PROGRAM.md §5. Default: Bukhari lalu
+> Muslim; hanya sumber machine-readable berlisensi jelas/terbuka; penomoran kanon yang paling
+> lazim dikutip; grading internal-koleksi saja; terjemahan matn publik hanya yang reviewed.
+> Verifikasi sumber legal tetap gerbang mutlak meski semua default dipakai.
