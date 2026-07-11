@@ -131,6 +131,10 @@ func TestQuranMultilingualContract(t *testing.T) {
 	if refs.Total != 1 || len(refs.References) != 1 || len(refs.References[0].Ayahs) != 1 {
 		t.Fatalf("book quran references = %+v", refs)
 	}
+
+	if refs.References[0].NormalizationVersion == nil || *refs.References[0].NormalizationVersion != 1 {
+		t.Fatalf("book quran reference normalization_version = %v, want 1", refs.References[0].NormalizationVersion)
+	}
 	refAyah := refs.References[0].Ayahs[0]
 	if refAyah.Translation != nil || !refAyah.TranslationMissing {
 		t.Fatalf("book quran reference ayah lang=en = %+v", refAyah)
@@ -391,11 +395,11 @@ VALUES ($1, 'ayah', $2, $3, $4, 'https://example.test/source-audio.mp3',
 	execFixtureSQL(
 		t, ctx, tx, `
 INSERT INTO quran_book_references (
-    id, book_id, page_id, heading_id, source_text, normalized_text, reference_kind,
+    id, book_id, page_id, heading_id, source_text, normalized_text, normalization_version, reference_kind,
     surah_id, from_ayah_number, to_ayah_number, from_ayah_key, to_ayah_key,
     match_strategy, confidence, review_status, metadata
 )
-VALUES ($1, $2, 1, $3, 'QS. An-Nas:1', 'qs an nas 1', 'surah_ayah',
+VALUES ($1, $2, 1, $3, 'QS. An-Nas:1', 'qs an nas 1', 1, 'surah_ayah',
         $4, $5, $5, $6, $6, 'integration_fixture', 1.0, 'approved', '{}'::jsonb)`,
 		fixtureQuranReferenceID,
 		fixtureBookID,
@@ -491,8 +495,9 @@ type bookQuranReferencesResponse struct {
 }
 
 type bookQuranReferenceResponse struct {
-	ID    string              `json:"id"`
-	Ayahs []quranAyahResponse `json:"ayahs"`
+	ID                   string              `json:"id"`
+	NormalizationVersion *int                `json:"normalization_version"`
+	Ayahs                []quranAyahResponse `json:"ayahs"`
 }
 
 type missingQuranAssetsResponse struct {

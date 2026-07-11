@@ -38,5 +38,6 @@ func TestProfileVersionIsStable(t *testing.T) {
 
 	// Bumping this is a DELIBERATE act: it must come with re-running every
 	// backfill that persists normalized text (see package doc).
+	assert.Equal(t, "search-key", searchtext.ProfileName)
 	assert.Equal(t, 1, searchtext.ProfileVersion)
 }

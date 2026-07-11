@@ -961,6 +961,7 @@ const quranBookReferenceProjectionSQL = `(
         b.knowledge_mention_id,
         b.source_text,
         b.normalized_text,
+        b.normalization_version,
         b.reference_kind,
         b.surah_id,
         b.from_ayah_number,
@@ -986,6 +987,7 @@ const quranBookReferenceProjectionSQL = `(
         legacy.knowledge_mention_id,
         legacy.source_text,
         legacy.normalized_text,
+        legacy.normalization_version,
         legacy.reference_kind,
         legacy.surah_id,
         legacy.from_ayah_number,
@@ -2056,6 +2058,7 @@ func quranBookReferenceColumns() []string {
 		"qbr.knowledge_mention_id::text",
 		"qbr.source_text",
 		"qbr.normalized_text",
+		"qbr.normalization_version",
 		"qbr.reference_kind",
 		"qbr.surah_id",
 		"qbr.from_ayah_number",
@@ -2944,16 +2947,17 @@ func scanEditorialMissingQuranAsset(row rowScanner) (entity.EditorialMissingQura
 
 func scanBookQuranReference(row rowScanner) (entity.BookQuranReference, error) {
 	var (
-		reference          entity.BookQuranReference
-		headingID          sql.NullInt64
-		knowledgeMentionID sql.NullString
-		surahID            sql.NullInt64
-		fromAyah           sql.NullInt64
-		toAyah             sql.NullInt64
-		fromAyahKey        sql.NullString
-		toAyahKey          sql.NullString
-		confidence         sql.NullFloat64
-		metadata           []byte
+		reference            entity.BookQuranReference
+		headingID            sql.NullInt64
+		knowledgeMentionID   sql.NullString
+		surahID              sql.NullInt64
+		fromAyah             sql.NullInt64
+		toAyah               sql.NullInt64
+		fromAyahKey          sql.NullString
+		toAyahKey            sql.NullString
+		confidence           sql.NullFloat64
+		normalizationVersion sql.NullInt64
+		metadata             []byte
 	)
 
 	err := row.Scan(
@@ -2964,6 +2968,7 @@ func scanBookQuranReference(row rowScanner) (entity.BookQuranReference, error) {
 		&knowledgeMentionID,
 		&reference.SourceText,
 		&reference.NormalizedText,
+		&normalizationVersion,
 		&reference.ReferenceKind,
 		&surahID,
 		&fromAyah,
@@ -2983,6 +2988,7 @@ func scanBookQuranReference(row rowScanner) (entity.BookQuranReference, error) {
 
 	reference.HeadingID = nullableInt(headingID)
 	reference.KnowledgeMentionID = nullableString(knowledgeMentionID)
+	reference.NormalizationVersion = nullableInt(normalizationVersion)
 	reference.SurahID = nullableInt(surahID)
 	reference.FromAyahNumber = nullableInt(fromAyah)
 	reference.ToAyahNumber = nullableInt(toAyah)

@@ -49,7 +49,9 @@ func resetLiveBackfillState(t *testing.T, pool *pgxpool.Pool) {
 		liveBackfillSeedBase, liveBackfillSeedBase+10_000)
 	require.NoError(t, err)
 
-	_, err = pool.Exec(ctx, `DELETE FROM backfill_jobs WHERE job_name = 'authors-name-search'`)
+	_, err = pool.Exec(ctx, `
+DELETE FROM backfill_jobs
+WHERE job_name IN ('authors-name-search', 'authors-name-search-v1-version')`)
 	require.NoError(t, err)
 }
 
@@ -182,8 +184,9 @@ func TestLiveBackfillAuthorsPauseResumeWithoutLoss(t *testing.T) {
 	require.NoError(t, pool.QueryRow(
 		context.Background(), `
 SELECT count(*) FROM authors
-WHERE id >= $1 AND id < $2 AND name_search IS NULL`,
-		liveBackfillSeedBase, liveBackfillSeedBase+int64(liveBackfillSeedCount),
+WHERE id >= $1 AND id < $2
+  AND (name_search IS NULL OR name_search_normalization_version IS DISTINCT FROM $3)`,
+		liveBackfillSeedBase, liveBackfillSeedBase+int64(liveBackfillSeedCount), searchtext.ProfileVersion,
 	).Scan(&mismatched))
 	assert.Zero(t, mismatched, "all seeded authors must be filled")
 
@@ -197,6 +200,71 @@ WHERE id >= $1 AND id < $2 AND name_search IS NULL`,
 	// A completed job refuses to run again without -restart.
 	err = runner.Run(context.Background(), job, false)
 	require.ErrorIs(t, err, ErrJobCompleted)
+}
+
+//nolint:paralleltest // serial: temporarily seeds trigger-bypassed legacy rows in the shared live database
+func TestLiveBackfillAuthorNormalizationVersionVerifiesBeforeStamping(t *testing.T) {
+	pool := liveBackfillPool(t)
+	resetLiveBackfillState(t, pool)
+	t.Cleanup(func() { resetLiveBackfillState(t, pool) })
+
+	const (
+		goodID = liveBackfillSeedBase + 1_001
+		nilID  = liveBackfillSeedBase + 1_002
+		badID  = liveBackfillSeedBase + 1_003
+	)
+
+	ctx := context.Background()
+	tx, err := pool.Begin(ctx)
+	require.NoError(t, err)
+
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	_, err = tx.Exec(ctx, `SET LOCAL session_replication_role = replica`)
+	require.NoError(t, err)
+
+	_, err = tx.Exec(ctx, `
+INSERT INTO authors (id, name, name_search)
+VALUES
+    ($1, 'أحمد بن حنبل', 'احمد بن حنبل'),
+    ($2, 'إسحاق بن راهويه', NULL),
+    ($3, 'سفيان الثوري', 'drift')`, goodID, nilID, badID)
+	require.NoError(t, err)
+	require.NoError(t, tx.Commit(ctx))
+
+	job := authorsNameSearchVersionJob{}
+	_, processed, _, err := job.ProcessChunk(ctx, pool, goodID-1, 10)
+	require.ErrorIs(t, err, errAuthorNormalizationDrift)
+	assert.Zero(t, processed)
+
+	var stamped int
+	require.NoError(t, pool.QueryRow(ctx, `
+SELECT count(*)
+FROM authors
+WHERE id = ANY($1)
+  AND name_search_normalization_version IS NOT NULL`, []int64{goodID, nilID, badID}).Scan(&stamped))
+	assert.Zero(t, stamped, "drift must abort the whole chunk before any version is stamped")
+
+	_, err = pool.Exec(ctx, `DELETE FROM authors WHERE id = $1`, badID)
+	require.NoError(t, err)
+	newCursor, processed, _, err := job.ProcessChunk(ctx, pool, goodID-1, 10)
+	require.NoError(t, err)
+	assert.Equal(t, nilID, newCursor)
+	assert.Equal(t, int64(2), processed)
+
+	var mismatched int
+	require.NoError(t, pool.QueryRow(ctx, `
+SELECT count(*)
+FROM authors
+WHERE id = ANY($1)
+  AND (
+      name_search IS DISTINCT FROM CASE id
+          WHEN $2 THEN 'احمد بن حنبل'
+          WHEN $3 THEN 'اسحاق بن راهويه'
+      END
+      OR name_search_normalization_version IS DISTINCT FROM $4
+  )`, []int64{goodID, nilID}, goodID, nilID, searchtext.ProfileVersion).Scan(&mismatched))
+	assert.Zero(t, mismatched)
 }
 
 //nolint:paralleltest // serial by design: takes the same advisory lock the resume test's runner uses

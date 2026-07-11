@@ -273,24 +273,25 @@ type QuranSearchResult struct {
 
 // BookQuranReference links a kitab location to a Quran surah or ayah range.
 type BookQuranReference struct {
-	ID                 string      `json:"id" example:"550e8400-e29b-41d4-a716-446655440000"`
-	BookID             int         `json:"book_id" example:"797"`
-	PageID             int         `json:"page_id" example:"12"`
-	HeadingID          *int        `json:"heading_id,omitempty" example:"10"`
-	KnowledgeMentionID *string     `json:"knowledge_mention_id,omitempty"`
-	SourceText         string      `json:"source_text"`
-	NormalizedText     string      `json:"normalized_text"`
-	ReferenceKind      string      `json:"reference_kind" example:"surah_ayah"`
-	SurahID            *int        `json:"surah_id,omitempty" example:"73"`
-	FromAyahNumber     *int        `json:"from_ayah_number,omitempty" example:"4"`
-	ToAyahNumber       *int        `json:"to_ayah_number,omitempty" example:"4"`
-	FromAyahKey        *string     `json:"from_ayah_key,omitempty" example:"73:4"`
-	ToAyahKey          *string     `json:"to_ayah_key,omitempty" example:"73:4"`
-	MatchStrategy      string      `json:"match_strategy" example:"explicit_surah_ayah"`
-	Confidence         *float64    `json:"confidence,omitempty" example:"1"`
-	ReviewStatus       string      `json:"review_status" example:"approved"`
-	Ayahs              []QuranAyah `json:"ayahs,omitempty"`
-	Metadata           RawJSON     `json:"metadata,omitempty" swaggertype:"object"`
-	CreatedAt          time.Time   `json:"created_at" example:"2026-01-01T00:00:00Z"`
-	UpdatedAt          time.Time   `json:"updated_at" example:"2026-01-01T00:00:00Z"`
+	ID                   string      `json:"id" example:"550e8400-e29b-41d4-a716-446655440000"`
+	BookID               int         `json:"book_id" example:"797"`
+	PageID               int         `json:"page_id" example:"12"`
+	HeadingID            *int        `json:"heading_id,omitempty" example:"10"`
+	KnowledgeMentionID   *string     `json:"knowledge_mention_id,omitempty"`
+	SourceText           string      `json:"source_text"`
+	NormalizedText       string      `json:"normalized_text"`
+	NormalizationVersion *int        `json:"normalization_version" example:"1"`
+	ReferenceKind        string      `json:"reference_kind" example:"surah_ayah"`
+	SurahID              *int        `json:"surah_id,omitempty" example:"73"`
+	FromAyahNumber       *int        `json:"from_ayah_number,omitempty" example:"4"`
+	ToAyahNumber         *int        `json:"to_ayah_number,omitempty" example:"4"`
+	FromAyahKey          *string     `json:"from_ayah_key,omitempty" example:"73:4"`
+	ToAyahKey            *string     `json:"to_ayah_key,omitempty" example:"73:4"`
+	MatchStrategy        string      `json:"match_strategy" example:"explicit_surah_ayah"`
+	Confidence           *float64    `json:"confidence,omitempty" example:"1"`
+	ReviewStatus         string      `json:"review_status" example:"approved"`
+	Ayahs                []QuranAyah `json:"ayahs,omitempty"`
+	Metadata             RawJSON     `json:"metadata,omitempty" swaggertype:"object"`
+	CreatedAt            time.Time   `json:"created_at" example:"2026-01-01T00:00:00Z"`
+	UpdatedAt            time.Time   `json:"updated_at" example:"2026-01-01T00:00:00Z"`
 } // @name entity.BookQuranReference

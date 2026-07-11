@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import re
 
+from .search_key import PROFILE_NAME, PROFILE_VERSION, normalized_key  # noqa: F401 - compatibility re-export
+
 ARABIC_MARKS_RE = re.compile(r"[\u0610-\u061a\u064b-\u065f\u0670\u06d6-\u06ed]")
 TATWEEL = "\u0640"
 SPACE_RE = re.compile(r"\s+")
@@ -129,13 +131,6 @@ def normalized_grounding_key(value: str) -> str:
     """Normalize Arabic for source-span fallback matching."""
     normalized = "".join(normalize_grounding_char(char) for char in value)
     return SPACE_RE.sub(" ", normalized).strip()
-
-
-def normalized_key(value: str) -> str:
-    """Normalize spacing, selected punctuation, and Arabic orthography."""
-    value = normalize_arabic(value)
-    value = re.sub(r"[\"'“”‘’«»()[\]{}:؛،,.!?؟ـ-]+", " ", value)
-    return SPACE_RE.sub(" ", value).strip()
 
 
 def is_generic_extraction(value: str) -> bool:

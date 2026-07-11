@@ -189,9 +189,10 @@ type quranReferenceCompatibilityList struct {
 }
 
 type quranReferenceCompatibilityItem struct {
-	ID           string `json:"id"`
-	ReviewStatus string `json:"review_status"`
-	Ayahs        []struct {
+	ID                   string          `json:"id"`
+	ReviewStatus         string          `json:"review_status"`
+	NormalizationVersion json.RawMessage `json:"normalization_version"`
+	Ayahs                []struct {
 		AyahKey string `json:"ayah_key"`
 	} `json:"ayahs"`
 }
@@ -249,6 +250,12 @@ VALUES
 		crossReferenceCompatPage2ID, 2, 2, "approved", "surah_ayah",
 		crossReferenceAyahOutside, crossReferenceAyahOutside, "2026-07-10T00:00:04Z",
 	)
+	execFixtureSQL(t, ctx, tx, `SET LOCAL session_replication_role = replica`)
+	execFixtureSQL(t, ctx, tx, `
+UPDATE quran_book_references
+SET normalization_version = NULL
+WHERE id = $1::uuid`, crossReferenceCompatPointID)
+	execFixtureSQL(t, ctx, tx, `SET LOCAL session_replication_role = origin`)
 
 	if err := tx.Commit(ctx); err != nil {
 		t.Fatalf("commit Quran compatibility fixture: %v", err)
@@ -272,13 +279,13 @@ func insertLegacyQuranCompatibilityRow(
 		t, ctx, tx, `
 INSERT INTO quran_book_references (
     id, book_id, page_id, heading_id, source_text, normalized_text,
-    reference_kind, surah_id, from_ayah_number, to_ayah_number,
+    normalization_version, reference_kind, surah_id, from_ayah_number, to_ayah_number,
     from_ayah_key, to_ayah_key, match_strategy, confidence, review_status,
     metadata, created_at, updated_at
 ) VALUES (
     $1::uuid, $2::integer, $3::integer, $4::integer,
     'B-3 legacy evidence ' || $1::text,
-    'b-3 legacy evidence ' || $1::text, $5::text, $6::integer,
+    'b-3 legacy evidence ' || $1::text, 1, $5::text, $6::integer,
     $7::integer, $8::integer,
     $6::text || ':' || $7::text, $6::text || ':' || $8::text,
     'explicit_surah_ayah', 0.9500, $9::text,
@@ -342,13 +349,13 @@ WHERE qbr.id = ANY($1::uuid[])`, ids)
 	execFixtureSQL(t, ctx, tx, `
 INSERT INTO quran_cross_reference_bridge (
     cross_reference_id, book_id, page_id, heading_id, knowledge_mention_id,
-    source_text, normalized_text, reference_kind, surah_id, from_ayah_number,
+    source_text, normalized_text, normalization_version, reference_kind, surah_id, from_ayah_number,
     to_ayah_number, from_ayah_key, to_ayah_key, match_strategy, metadata,
     created_at, updated_at
 )
 SELECT
     id, book_id, page_id, heading_id, knowledge_mention_id,
-    source_text, normalized_text, reference_kind, surah_id, from_ayah_number,
+    source_text, normalized_text, normalization_version, reference_kind, surah_id, from_ayah_number,
     to_ayah_number, from_ayah_key, to_ayah_key, match_strategy, metadata,
     created_at, updated_at
 FROM quran_book_references
@@ -431,9 +438,18 @@ func assertQuranReferenceContract(t *testing.T, result quranReferenceCompatibili
 		{fmt.Sprintf("%d:%d", crossReferenceSurahID, crossReferenceAyahTo)},
 		{fmt.Sprintf("%d:%d", crossReferenceSurahID, crossReferenceAyahOutside)},
 	}
+	wantNormalizationVersions := []string{"1", "null", "1"}
 	for index, item := range result.Items {
 		if item.ReviewStatus != "approved" {
 			t.Fatalf("reference %s status = %q, want approved", item.ID, item.ReviewStatus)
+		}
+		if string(item.NormalizationVersion) != wantNormalizationVersions[index] {
+			t.Fatalf(
+				"reference %s normalization_version = %s, want %s",
+				item.ID,
+				item.NormalizationVersion,
+				wantNormalizationVersions[index],
+			)
 		}
 		if len(item.Ayahs) != len(wantAyahs[index]) {
 			t.Fatalf("reference %s ayahs = %d, want %d", item.ID, len(item.Ayahs), len(wantAyahs[index]))
