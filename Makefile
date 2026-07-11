@@ -99,6 +99,13 @@ test: ### run test
 	go test -v -race -covermode atomic -coverpkg=./internal/...,./pkg/... -coverprofile=coverage.txt ./internal/... ./pkg/...
 .PHONY: test
 
+normalization-contract: ### Run the shared Go/Python Arabic search-key v1 corpus
+	go test ./internal/quranutil ./internal/searchtext
+	PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts.langextract_kg.test_arabic_normalize
+	PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts.test_check_normalization_contract
+	PYTHONDONTWRITEBYTECODE=1 python3 scripts/check_normalization_contract.py
+.PHONY: normalization-contract
+
 diff-cover: ### coverage of new code vs origin/main (the CI ratchet, F1-E); uses live coverage when available
 	@profiles="-profile coverage.txt"; \
 	if [ -f coverage-live.txt ]; then profiles="$$profiles -profile coverage-live.txt"; fi; \
@@ -127,5 +134,5 @@ bin-deps: ### install tools
 	go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate
 .PHONY: bin-deps
 
-pre-commit: deps format linter-golangci test ### run pre-commit
+pre-commit: deps format linter-golangci test normalization-contract ### run pre-commit
 .PHONY: pre-commit

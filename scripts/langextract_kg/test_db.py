@@ -9,10 +9,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from langextract_kg import db as kg_db  # noqa: E402
 from langextract_kg.extract_knowledge import (  # noqa: E402
+    attach_machine_generation,
     canonical_extraction_class,
     chunk_rejections_from_audits,
     dedupe_records,
     find_unique_exact_span,
+    machine_generation_identity,
     mention_record_from_extraction,
     run_status_for_failures,
 )
@@ -164,12 +166,16 @@ class _FakeConn:
     def __init__(self, cursor: _FakeCursor) -> None:
         self._cursor = cursor
         self.commits = 0
+        self.rollbacks = 0
 
     def cursor(self) -> _FakeCursor:
         return self._cursor
 
     def commit(self) -> None:
         self.commits += 1
+
+    def rollback(self) -> None:
+        self.rollbacks += 1
 
 
 class _SourceSpanDBClient(kg_db.DBClient):
@@ -209,6 +215,24 @@ class _CandidateSpyDBClient(kg_db.DBClient):
 
 
 class DBHelpersTest(unittest.TestCase):
+    def test_machine_generation_identity_is_typed_on_every_jsonl_row(self) -> None:
+        generation = machine_generation_identity(
+            "00000000-0000-4000-8000-000000000012",
+            "model-v1",
+            "mentions_v1",
+        )
+        rows = [{"kind": "knowledge_mention"}, {"code": "MODEL_OUTPUT_PARSE_ERROR"}]
+
+        attach_machine_generation(rows, generation)
+
+        for row in rows:
+            self.assertEqual(row["provenance_class"], "machine")
+            self.assertEqual(row["run_id"], generation["run_id"])
+            self.assertEqual(row["generation"], generation)
+
+        with self.assertRaisesRegex(ValueError, "valid UUID"):
+            machine_generation_identity("bad", "model-v1", "mentions_v1")
+
     def test_entity_type_for_class(self) -> None:
         self.assertEqual(kg_db.entity_type_for_class("fiqh_term"), "concept")
         self.assertEqual(kg_db.entity_type_for_class("qiraat_term"), "concept")
@@ -220,6 +244,100 @@ class DBHelpersTest(unittest.TestCase):
 
     def test_json_dumps_is_object_default(self) -> None:
         self.assertEqual(json.loads(kg_db.json_dumps(None)), {})
+
+    def test_create_run_registers_generation_before_extraction_atomically(self) -> None:
+        cursor = _FakeCursor([(True,)])
+        conn = _FakeConn(cursor)
+        client = kg_db.DBClient(conn, "fake")
+        run = {
+            "id": "00000000-0000-4000-8000-000000000001",
+            "task_name": "mentions",
+            "prompt_version": "mentions_v1",
+            "model_id": "model-v1",
+            "provider": "openai",
+            "provider_base_url": "https://example.test/v1",
+            "parameters": {"temperature": 0},
+            "source_scope": {"book_id": 797},
+            "status": "running",
+            "total_documents": 4,
+        }
+
+        client.create_run(run)
+
+        self.assertEqual(len(cursor.executions), 2)
+        generation_sql, generation_params = cursor.executions[0]
+        extraction_sql, extraction_params = cursor.executions[1]
+        self.assertIn("INSERT INTO generation_runs", generation_sql)
+        self.assertIn("INSERT INTO knowledge_extraction_runs", extraction_sql)
+        self.assertEqual(generation_params[1:5], ("mentions", "model-v1", "mentions_v1", "openai"))
+        self.assertEqual(json.loads(str(generation_params[5]))["source_scope"], {"book_id": 797})
+        identity_keys = ("id", "task_name", "prompt_version", "model_id", "provider")
+        self.assertEqual(extraction_params[:5], tuple(run[key] for key in identity_keys))
+        self.assertEqual(conn.commits, 1)
+        self.assertEqual(conn.rollbacks, 0)
+
+    def test_create_run_rejects_conflicting_generation_descriptor(self) -> None:
+        cursor = _FakeCursor([(False,)])
+        conn = _FakeConn(cursor)
+        client = kg_db.DBClient(conn, "fake")
+        run = {
+            "id": "00000000-0000-4000-8000-000000000002",
+            "task_name": "mentions",
+            "prompt_version": "mentions_v1",
+            "model_id": "conflicting-model",
+            "parameters": {},
+            "source_scope": {},
+        }
+
+        with self.assertRaisesRegex(ValueError, "conflicts with its registered descriptor"):
+            client.create_run(run)
+
+        self.assertEqual(len(cursor.executions), 1)
+        self.assertEqual(conn.commits, 0)
+        self.assertEqual(conn.rollbacks, 1)
+
+    def test_knowledge_writer_validates_generation_before_any_insert(self) -> None:
+        cursor = _FakeCursor([(True,)])
+        client = kg_db.DBClient(_FakeConn(cursor), "fake")
+        record = {
+            "run_id": "00000000-0000-4000-8000-000000000010",
+            "provenance_class": "machine",
+            "generation": {
+                "run_id": "00000000-0000-4000-8000-000000000010",
+                "model_id": "model-v1",
+                "prompt_version": "mentions_v1",
+            },
+        }
+
+        client._verify_mention_generation_identities([record])
+
+        self.assertEqual(len(cursor.executions), 1)
+        self.assertIn("JOIN knowledge_extraction_runs", cursor.sql)
+        self.assertEqual(
+            cursor.params,
+            ("00000000-0000-4000-8000-000000000010", "model-v1", "mentions_v1"),
+        )
+
+        cursor.executions.clear()
+        with self.assertRaisesRegex(ValueError, "line 1: generation identity is required"):
+            client.insert_mentions_with_candidates([{"run_id": record["run_id"], "provenance_class": "machine"}])
+        self.assertEqual(cursor.executions, [])
+
+    def test_knowledge_writer_rejects_unregistered_generation_tuple(self) -> None:
+        cursor = _FakeCursor([(False,)])
+        client = kg_db.DBClient(_FakeConn(cursor), "fake")
+        record = {
+            "run_id": "00000000-0000-4000-8000-000000000011",
+            "provenance_class": "machine",
+            "generation": {
+                "run_id": "00000000-0000-4000-8000-000000000011",
+                "model_id": "wrong-model",
+                "prompt_version": "mentions_v1",
+            },
+        }
+
+        with self.assertRaisesRegex(ValueError, "not registered with this model/prompt tuple"):
+            client._verify_mention_generation_identities([record])
 
     def test_normalize_postgres_url_quotes_unescaped_password_at_sign(self) -> None:
         normalized = kg_db.normalize_postgres_url(
@@ -280,6 +398,7 @@ class DBHelpersTest(unittest.TestCase):
             "alignment_status": "match_exact",
             "attributes": {"certainty": "explicit"},
             "normalized_text": "صحيح البخاري",
+            "normalization_version": 1,
             "grounded": True,
             "confidence": 0.8,
             "review_status": "pending",
@@ -295,7 +414,8 @@ class DBHelpersTest(unittest.TestCase):
         self.assertEqual(client.source_span_calls[0][0]["source_span_id"], "new-source-span-id")
         insert_sql, insert_params = cursor.executions[0]
         self.assertIn("INSERT INTO knowledge_mentions", insert_sql)
-        self.assertIsNone(insert_params[18])
+        self.assertEqual(insert_params[14], 1)
+        self.assertIsNone(insert_params[19])
         update_sql, update_params = cursor.executions[1]
         self.assertIn("UPDATE knowledge_mentions", update_sql)
         self.assertEqual(update_params, ("existing-source-span-id", "existing-mention-id"))
@@ -322,6 +442,7 @@ class DBHelpersTest(unittest.TestCase):
         assert record is not None
         self.assertEqual(record["review_status"], "ambiguous")
         self.assertEqual(record["normalized_text"], "احمد")
+        self.assertEqual(record["normalization_version"], 1)
 
     def test_unique_exact_span_fallback_handles_arabic_clitic(self) -> None:
         page = kg_db.PageSource(

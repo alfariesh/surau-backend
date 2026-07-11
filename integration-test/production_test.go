@@ -9,11 +9,13 @@ import (
 )
 
 const (
-	productionFixtureCategoryID = 990101
-	productionFixtureAuthorID   = 990101
-	productionFixtureBookID     = 990101
-	productionFixtureHeadingOne = 990101
-	productionFixtureHeadingTwo = 990102
+	productionFixtureCategoryID      = 990101
+	productionFixtureAuthorID        = 990101
+	productionFixtureBookID          = 990101
+	productionFixtureHeadingOne      = 990101
+	productionFixtureHeadingTwo      = 990102
+	productionFixtureGenerationRunID = "99010100-0000-4000-8000-000000000001"
+	productionFixtureLegacyRevision  = "99010100-0000-4000-8000-000000000002"
 )
 
 func TestEditorialProductionPublishFlow(t *testing.T) {
@@ -54,6 +56,7 @@ func TestEditorialProductionPublishFlow(t *testing.T) {
 		t.Fatalf("initial publish check should block publish: %+v", initialCheck)
 	}
 
+	seedProductionMachineFinalAssets(t)
 	putProductionDraft(t, adminToken, fmt.Sprintf("/v1/editorial/production-projects/%s/metadata-draft", project.ID),
 		`{"display_title":"Old Production Book EN","bibliography":"Old production bibliography"}`)
 	putProductionDraft(t, adminToken, fmt.Sprintf("/v1/editorial/production-projects/%s/metadata-draft", project.ID),
@@ -65,17 +68,28 @@ func TestEditorialProductionPublishFlow(t *testing.T) {
 	if revisions.Revisions[0].Version != 2 || revisions.Revisions[1].Version != 1 {
 		t.Fatalf("metadata revisions should be ordered newest-first: %+v", revisions.Revisions)
 	}
+
+	forceProductionMetadataEditorial(t, project.ID)
 	restored := restoreProductionDraftRevision(t, adminToken, project.ID, revisions.Revisions[1].ID)
 	if restored.Version != 3 {
 		t.Fatalf("restored revision should create version 3: %+v", restored)
 	}
 	metadataDraft := getProductionMetadataDraft(t, adminToken, project.ID)
-	if metadataDraft.DisplayTitle != "Old Production Book EN" {
+	if metadataDraft.DisplayTitle != "Old Production Book EN" || metadataDraft.ProvenanceClass != "machine" {
 		t.Fatalf("metadata restore did not restore old title: %+v", metadataDraft)
 	}
 
+	if metadataDraft.Generation == nil ||
+		metadataDraft.Generation.RunID != productionFixtureGenerationRunID ||
+		metadataDraft.Generation.ModelID != "integration-model" ||
+		metadataDraft.Generation.PromptVersion != "reader-translation-v1" {
+		t.Fatalf("metadata restore lost generation identity: %+v", metadataDraft)
+	}
+
 	saveProductionDrafts(t, adminToken, project.ID)
+	assertProductionTextProvenance(t, project.ID, false)
 	approveProductionDrafts(t, adminToken, project.ID)
+	assertProductionTextProvenance(t, project.ID, false)
 
 	completeness := getProductionCompleteness(t, adminToken, project.ID)
 	if !completeness.Ready || completeness.RequiredCount != 9 || completeness.MissingCount != 0 {
@@ -100,6 +114,8 @@ func TestEditorialProductionPublishFlow(t *testing.T) {
 	if published.PublicationStatus != "published" || published.WorkflowStatus != "published" {
 		t.Fatalf("published project = %+v", published)
 	}
+
+	assertProductionTextProvenance(t, project.ID, true)
 
 	workspace = getProductionWorkspace(t, adminToken, project.ID)
 	if !workspace.Metadata.FinalExists {
@@ -138,6 +154,39 @@ func TestEditorialProductionPublishFlow(t *testing.T) {
 	assertProductionActivityContains(t, activity, "production_asset.draft_restore", "book_metadata")
 	assertProductionActivityContains(t, activity, "production_asset.review", "heading_summary")
 	assertProductionActivityContains(t, activity, "production_project.publish", "")
+}
+
+func TestEditorialProductionLegacyRestoreKeepsUnknownProvenance(t *testing.T) {
+	seedProductionKitabFixture(t)
+
+	adminToken := adminJWT(t)
+	project := createProductionProject(t, adminToken, productionFixtureBookID, "en")
+	seedLegacyProductionRevision(t, project.ID)
+
+	restoreProductionDraftRevision(t, adminToken, project.ID, productionFixtureLegacyRevision)
+
+	draft := getProductionMetadataDraft(t, adminToken, project.ID)
+	if draft.DisplayTitle != "Legacy snapshot title" ||
+		draft.ProvenanceClass != "legacy_unknown" || draft.Generation != nil {
+		t.Fatalf("legacy restore invented provenance: %+v", draft)
+	}
+
+	path := fmt.Sprintf("/v1/editorial/production-projects/%s/metadata-draft", project.ID)
+	putProductionDraft(t, adminToken, path,
+		`{"display_title":"Legacy snapshot title","source":"metadata-only change"}`)
+
+	draft = getProductionMetadataDraft(t, adminToken, project.ID)
+	if draft.ProvenanceClass != "legacy_unknown" || draft.Generation != nil {
+		t.Fatalf("source-only edit invented provenance: %+v", draft)
+	}
+
+	putProductionDraft(t, adminToken, path,
+		`{"display_title":"Human rewritten title","source":"editorial workflow"}`)
+
+	draft = getProductionMetadataDraft(t, adminToken, project.ID)
+	if draft.ProvenanceClass != "editorial" || draft.Generation != nil {
+		t.Fatalf("human text rewrite provenance = %+v", draft)
+	}
 }
 
 func seedProductionKitabFixture(t *testing.T) {
@@ -218,6 +267,165 @@ VALUES ($1, $2, 1, 1),
 
 	if err = tx.Commit(ctx); err != nil {
 		t.Fatalf("commit production fixture tx: %v", err)
+	}
+}
+
+func seedProductionMachineFinalAssets(t *testing.T) {
+	t.Helper()
+
+	pool := integrationDB(t)
+	defer pool.Close()
+
+	ctx, cancel := context.WithTimeout(t.Context(), requestTimeout)
+	defer cancel()
+
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatalf("begin production machine assets fixture: %v", err)
+	}
+	defer tx.Rollback(ctx)
+
+	execFixtureSQL(t, ctx, tx, `
+INSERT INTO generation_runs (id, task_name, model_id, prompt_version)
+	VALUES ($1, 'production-integration', 'integration-model', 'reader-translation-v1')
+	ON CONFLICT (id) DO NOTHING`, productionFixtureGenerationRunID)
+	execFixtureSQL(t, ctx, tx, `
+	INSERT INTO book_metadata_translations (
+	    book_id, lang, display_title, provenance_class, generation_run_id
+	)
+	VALUES ($1, 'en', 'Machine metadata', 'machine', $2)`, productionFixtureBookID, productionFixtureGenerationRunID)
+	execFixtureSQL(t, ctx, tx, `
+	INSERT INTO author_translations (author_id, lang, name, provenance_class, generation_run_id)
+	VALUES ($1, 'en', 'Machine author', 'machine', $2)`, productionFixtureAuthorID, productionFixtureGenerationRunID)
+	execFixtureSQL(t, ctx, tx, `
+	INSERT INTO category_translations (category_id, lang, name, provenance_class, generation_run_id)
+	VALUES ($1, 'en', 'Machine category', 'machine', $2)`, productionFixtureCategoryID, productionFixtureGenerationRunID)
+	execFixtureSQL(t, ctx, tx, `
+	INSERT INTO section_translations (
+	    book_id, heading_id, lang, content, provenance_class, generation_run_id
+	)
+	VALUES ($1, $2, 'en', 'Machine section one', 'machine', $4),
+	       ($1, $3, 'en', 'Machine section two', 'machine', $4)`,
+		productionFixtureBookID, productionFixtureHeadingOne, productionFixtureHeadingTwo, productionFixtureGenerationRunID)
+	execFixtureSQL(t, ctx, tx, `
+	INSERT INTO book_heading_summaries (
+	    book_id, heading_id, lang, summary, provenance_class, generation_run_id
+	)
+	VALUES ($1, $2, 'en', 'Machine summary one', 'machine', $4),
+	       ($1, $3, 'en', 'Machine summary two', 'machine', $4)`,
+		productionFixtureBookID, productionFixtureHeadingOne, productionFixtureHeadingTwo, productionFixtureGenerationRunID)
+
+	if err = tx.Commit(ctx); err != nil {
+		t.Fatalf("commit production machine assets fixture: %v", err)
+	}
+}
+
+func seedLegacyProductionRevision(t *testing.T, projectID string) {
+	t.Helper()
+
+	pool := integrationDB(t)
+	defer pool.Close()
+
+	ctx, cancel := context.WithTimeout(t.Context(), requestTimeout)
+	defer cancel()
+
+	_, err := pool.Exec(ctx, `
+INSERT INTO book_production_draft_revisions (
+    id, project_id, asset_type, version, snapshot
+) VALUES (
+    $1, $2, 'book_metadata', 1,
+    '{"display_title":"Legacy snapshot title","source":"legacy import"}'::jsonb
+)`, productionFixtureLegacyRevision, projectID)
+	if err != nil {
+		t.Fatalf("seed legacy production revision: %v", err)
+	}
+}
+
+func forceProductionMetadataEditorial(t *testing.T, projectID string) {
+	t.Helper()
+
+	pool := integrationDB(t)
+	defer pool.Close()
+
+	ctx, cancel := context.WithTimeout(t.Context(), requestTimeout)
+	defer cancel()
+
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatalf("begin production provenance fixture: %v", err)
+	}
+	defer tx.Rollback(ctx)
+
+	execFixtureSQL(t, ctx, tx, `SET LOCAL surau.production_restore = 'on'`)
+	execFixtureSQL(t, ctx, tx, `
+UPDATE book_metadata_translation_edits
+SET display_title = 'Temporary editorial version',
+    provenance_class = 'editorial',
+    generation_run_id = NULL
+WHERE project_id = $1`, projectID)
+
+	if err = tx.Commit(ctx); err != nil {
+		t.Fatalf("commit production provenance fixture: %v", err)
+	}
+}
+
+func assertProductionTextProvenance(t *testing.T, projectID string, final bool) {
+	t.Helper()
+
+	pool := integrationDB(t)
+	defer pool.Close()
+
+	ctx, cancel := context.WithTimeout(t.Context(), requestTimeout)
+	defer cancel()
+
+	query := `
+SELECT count(*), count(*) FILTER (
+    WHERE provenance_class = 'machine' AND generation_run_id = $2
+)
+FROM (
+    SELECT provenance_class, generation_run_id FROM book_metadata_translation_edits WHERE project_id = $1
+    UNION ALL
+    SELECT provenance_class, generation_run_id FROM author_translation_edits WHERE project_id = $1
+    UNION ALL
+    SELECT provenance_class, generation_run_id FROM category_translation_edits WHERE project_id = $1
+    UNION ALL
+    SELECT provenance_class, generation_run_id FROM section_translation_edits WHERE project_id = $1
+    UNION ALL
+    SELECT provenance_class, generation_run_id FROM heading_summary_edits WHERE project_id = $1
+) assets`
+	args := []any{projectID, productionFixtureGenerationRunID}
+
+	if final {
+		query = `
+SELECT count(*), count(*) FILTER (
+    WHERE provenance_class = 'machine' AND generation_run_id = $4
+)
+FROM (
+    SELECT provenance_class, generation_run_id FROM book_metadata_translations WHERE book_id = $1 AND lang = 'en'
+    UNION ALL
+    SELECT provenance_class, generation_run_id FROM author_translations WHERE author_id = $2 AND lang = 'en'
+    UNION ALL
+    SELECT provenance_class, generation_run_id FROM category_translations WHERE category_id = $3 AND lang = 'en'
+    UNION ALL
+    SELECT provenance_class, generation_run_id FROM section_translations WHERE book_id = $1 AND lang = 'en'
+    UNION ALL
+    SELECT provenance_class, generation_run_id FROM book_heading_summaries WHERE book_id = $1 AND lang = 'en'
+) assets`
+		args = []any{
+			productionFixtureBookID,
+			productionFixtureAuthorID,
+			productionFixtureCategoryID,
+			productionFixtureGenerationRunID,
+		}
+	}
+
+	var total, attributed int
+	if err := pool.QueryRow(ctx, query, args...).Scan(&total, &attributed); err != nil {
+		t.Fatalf("query production provenance: %v", err)
+	}
+
+	if total != 7 || attributed != total {
+		t.Fatalf("production provenance final=%t: total=%d attributed=%d", final, total, attributed)
 	}
 }
 
@@ -579,7 +787,15 @@ type productionDraftRevisionResponse struct {
 }
 
 type productionMetadataDraftResponse struct {
-	DisplayTitle string `json:"display_title"`
+	DisplayTitle    string                                `json:"display_title"`
+	ProvenanceClass string                                `json:"provenance_class"`
+	Generation      *productionGenerationIdentityResponse `json:"generation"`
+}
+
+type productionGenerationIdentityResponse struct {
+	RunID         string `json:"run_id"`
+	ModelID       string `json:"model_id"`
+	PromptVersion string `json:"prompt_version"`
 }
 
 type productionWorkspaceResponse struct {

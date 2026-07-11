@@ -12,8 +12,10 @@ from typing import Any
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from generation_identity import MACHINE_PROVENANCE_CLASS, parse_generation_identity  # type: ignore
     from langextract_kg import db as kg_db  # type: ignore
     from langextract_kg.arabic_normalize import (  # type: ignore
+        PROFILE_VERSION,
         is_ambiguous_person_name,
         is_generic_extraction,
         is_person_reference,
@@ -21,8 +23,11 @@ if __package__ in (None, ""):
         is_theonym,
     )
 else:
+    from scripts.generation_identity import MACHINE_PROVENANCE_CLASS, parse_generation_identity
+
     from . import db as kg_db
     from .arabic_normalize import (
+        PROFILE_VERSION,
         is_ambiguous_person_name,
         is_generic_extraction,
         is_person_reference,
@@ -142,8 +147,27 @@ def read_jsonl(path: Path) -> tuple[list[dict[str, Any]], list[Issue]]:
 def validate_rows(rows: list[dict[str, Any]]) -> list[Issue]:
     issues: list[Issue] = []
     seen: set[tuple[Any, ...]] = set()
+    generation_runs: dict[str, tuple[str, str, int | None]] = {}
+
     for row in rows:
         issues.extend(validate_row(row))
+
+        identity, identity_errors = parse_generation_identity(row.get("generation"))
+        if not identity_errors and identity is not None:
+            run_id, model_id, prompt_version = identity
+            previous = generation_runs.get(run_id)
+            if previous is not None and previous[:2] != (model_id, prompt_version):
+                issues.append(
+                    row_issue(
+                        FAIL,
+                        "CONFLICTING_GENERATION_IDENTITY",
+                        f"generation.run_id conflicts with its descriptor at line {previous[2]}",
+                        row,
+                    )
+                )
+            else:
+                generation_runs[run_id] = (model_id, prompt_version, as_int(row.get("_line")))
+
         key = (
             row.get("run_id"),
             row.get("book_id"),
@@ -177,10 +201,39 @@ def validate_row(row: dict[str, Any]) -> list[Issue]:
         "char_end",
         "alignment_status",
         "normalized_text",
+        "normalization_version",
         "review_status",
     ]:
         if row.get(field) in {None, ""}:
             issues.append(row_issue(FAIL, "MISSING_FIELD", f"{field} is required", row))
+
+    if row.get("provenance_class") != MACHINE_PROVENANCE_CLASS:
+        issues.append(
+            row_issue(
+                FAIL,
+                "INVALID_PROVENANCE_CLASS",
+                "knowledge extraction rows require provenance_class machine",
+                row,
+            )
+        )
+
+    identity, identity_errors = parse_generation_identity(row.get("generation"))
+    for code, message in identity_errors:
+        issues.append(row_issue(FAIL, code, message, row))
+    if identity is not None and row.get("run_id") != identity[0]:
+        issues.append(
+            row_issue(
+                FAIL,
+                "GENERATION_RUN_MISMATCH",
+                "run_id must equal generation.run_id",
+                row,
+            )
+        )
+
+    if row.get("normalization_version") not in {None, "", PROFILE_VERSION}:
+        issues.append(
+            row_issue(FAIL, "INVALID_NORMALIZATION_VERSION", "normalization_version must match search-key v1", row)
+        )
 
     start = as_int(row.get("char_start"))
     end = as_int(row.get("char_end"))

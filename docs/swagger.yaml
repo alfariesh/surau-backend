@@ -140,12 +140,17 @@ definitions:
         type: string
       death_text:
         type: string
+      generation:
+        $ref: '#/definitions/entity.GenerationIdentity'
       metadata:
         type: object
       name:
         type: string
       project_id:
         example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      provenance_class:
+        example: editorial
         type: string
       review_note:
         type: string
@@ -441,12 +446,17 @@ definitions:
         type: string
       display_title:
         type: string
+      generation:
+        $ref: '#/definitions/entity.GenerationIdentity'
       hint:
         type: string
       metadata:
         type: object
       project_id:
         example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      provenance_class:
+        example: editorial
         type: string
       review_note:
         type: string
@@ -868,6 +878,9 @@ definitions:
         type: string
       metadata:
         type: object
+      normalization_version:
+        example: 1
+        type: integer
       normalized_text:
         type: string
       page_id:
@@ -1398,12 +1411,17 @@ definitions:
     type: object
   entity.CategoryTranslationEdit:
     properties:
+      generation:
+        $ref: '#/definitions/entity.GenerationIdentity'
       metadata:
         type: object
       name:
         type: string
       project_id:
         example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      provenance_class:
+        example: editorial
         type: string
       review_note:
         type: string
@@ -1463,6 +1481,8 @@ definitions:
         type: string
       evidence_text:
         type: string
+      generation:
+        $ref: '#/definitions/entity.GenerationIdentity'
       id:
         example: 550e8400-e29b-41d4-a716-446655440000
         type: string
@@ -1962,8 +1982,22 @@ definitions:
       suppressed:
         type: integer
     type: object
+  entity.GenerationIdentity:
+    properties:
+      model_id:
+        example: gpt-5-mini-2026-06-01
+        type: string
+      prompt_version:
+        example: reader-translation-v1
+        type: string
+      run_id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+    type: object
   entity.HeadingSummaryEdit:
     properties:
+      generation:
+        $ref: '#/definitions/entity.GenerationIdentity'
       heading_id:
         example: 10
         type: integer
@@ -1971,6 +2005,9 @@ definitions:
         type: object
       project_id:
         example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      provenance_class:
+        example: editorial
         type: string
       review_note:
         type: string
@@ -2938,6 +2975,8 @@ definitions:
     properties:
       content:
         type: string
+      generation:
+        $ref: '#/definitions/entity.GenerationIdentity'
       heading_id:
         example: 10
         type: integer
@@ -2945,6 +2984,9 @@ definitions:
         type: object
       project_id:
         example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      provenance_class:
+        example: editorial
         type: string
       review_note:
         type: string
@@ -3610,6 +3652,69 @@ definitions:
       reason:
         maxLength: 2000
         type: string
+    type: object
+  v1.EditorialCitableUnit:
+    properties:
+      anchor:
+        type: string
+      book_id:
+        type: integer
+      corpus:
+        type: string
+      created_at:
+        type: string
+      generation:
+        $ref: '#/definitions/entity.GenerationIdentity'
+      heading_id:
+        type: integer
+      html:
+        type: string
+      id:
+        type: string
+      kind:
+        type: string
+      language:
+        type: string
+      license_status:
+        type: string
+      lifecycle:
+        type: string
+      marker:
+        type: string
+      normalization_version:
+        type: integer
+      occurrence:
+        type: integer
+      ordinal:
+        type: integer
+      page_id:
+        type: integer
+      parent_unit_id:
+        type: string
+      position:
+        type: integer
+      provenance_class:
+        type: string
+      provenance_detail:
+        additionalProperties: {}
+        type: object
+      retired_at:
+        type: string
+      text:
+        type: string
+      text_normalized:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  v1.EditorialCitableUnitResolution:
+    properties:
+      successors:
+        items:
+          $ref: '#/definitions/v1.EditorialCitableUnit'
+        type: array
+      unit:
+        $ref: '#/definitions/v1.EditorialCitableUnit'
     type: object
   v1.EmailAudience:
     properties:
@@ -8663,6 +8768,46 @@ paths:
       summary: Restore page draft revision
       tags:
       - editorial
+  /editorial/citable-units/{id}:
+    get:
+      description: Return normalized text, lifecycle, provenance, generation identity,
+        and active lineage successors. Requires CapReviewEditorial.
+      operationId: editorial-get-citable-unit
+      parameters:
+      - description: Citable Unit UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.EditorialCitableUnitResolution'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Get one Citable Unit for editorial review
+      tags:
+      - editorial
+      - citable-units
   /editorial/cross-references:
     get:
       description: List the protected review queue. Requires CapReviewEditorial; unlike

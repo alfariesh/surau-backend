@@ -16,6 +16,7 @@ type V1 struct {
 	quran              usecase.Quran
 	anchor             usecase.AnchorResolver
 	crossReference     usecase.CrossReference
+	unitRegistry       usecase.UnitRegistry
 	personal           usecase.Personal
 	editorial          usecase.Editorial
 	email              usecase.EmailAdmin

@@ -591,6 +591,10 @@ WHERE id = $1 AND project_id = $2`, revisionID, projectID))
 		}
 	}
 
+	if _, err = tx.Exec(ctx, `SET LOCAL surau.production_restore = 'on'`); err != nil {
+		return entity.BookProductionDraftRevision{}, fmt.Errorf("EditorialRepo - RestoreProductionDraftRevision - provenance scope: %w", err)
+	}
+
 	restoredSnapshot, err := restoreProductionDraftSnapshot(ctx, tx, actorID, projectID, revision)
 	if err != nil {
 		return entity.BookProductionDraftRevision{}, err
@@ -647,10 +651,12 @@ func (r *EditorialRepo) ProductionPublishCheck(
 
 func (r *EditorialRepo) GetMetadataTranslationDraft(ctx context.Context, projectID string) (entity.BookMetadataTranslationEdit, error) {
 	return scanMetadataTranslationEditOrNotFound(r.Pool.QueryRow(ctx, `
-SELECT project_id, display_title, bibliography, hint, description, source, metadata, review_status,
-       review_note, updated_by, reviewed_by, updated_at, reviewed_at
-FROM book_metadata_translation_edits
-WHERE project_id = $1`, projectID))
+SELECT e.project_id, e.display_title, e.bibliography, e.hint, e.description, e.source, e.metadata,
+       e.provenance_class, gr.id::TEXT, gr.model_id, gr.prompt_version, e.review_status,
+       e.review_note, e.updated_by, e.reviewed_by, e.updated_at, e.reviewed_at
+FROM book_metadata_translation_edits e
+LEFT JOIN generation_runs gr ON gr.id = e.generation_run_id
+WHERE e.project_id = $1`, projectID))
 }
 
 func (r *EditorialRepo) SaveMetadataTranslationDraft(
@@ -674,12 +680,20 @@ func (r *EditorialRepo) SaveMetadataTranslationDraft(
 		return entity.BookMetadataTranslationEdit{}, err
 	}
 
+	initialProvenance, initialGenerationRunID, err := productionDraftInitialProvenance(
+		ctx, tx, projectID, entity.ProductionAssetBookMetadata, nil,
+	)
+	if err != nil {
+		return entity.BookMetadataTranslationEdit{}, err
+	}
+
 	sqlText := `
+WITH saved AS (
 INSERT INTO book_metadata_translation_edits (
     project_id, display_title, bibliography, hint, description, source, metadata,
-    review_status, review_note, updated_by, updated_at
+    provenance_class, generation_run_id, review_status, review_note, updated_by, updated_at
 )
-VALUES ($1, $2, $3, $4, $5, $6, nullif($7, '')::jsonb, 'draft', NULL, $8, now())
+VALUES ($1, $2, $3, $4, $5, $6, nullif($7, '')::jsonb, $9, $10::uuid, 'draft', NULL, $8, now())
 ON CONFLICT (project_id) DO UPDATE SET
     display_title = EXCLUDED.display_title,
     bibliography = EXCLUDED.bibliography,
@@ -687,14 +701,32 @@ ON CONFLICT (project_id) DO UPDATE SET
     description = EXCLUDED.description,
     source = EXCLUDED.source,
     metadata = EXCLUDED.metadata,
+    provenance_class = CASE
+        WHEN book_metadata_translation_edits.provenance_class = 'legacy_unknown'
+         AND ROW(book_metadata_translation_edits.display_title, book_metadata_translation_edits.bibliography,
+                 book_metadata_translation_edits.hint, book_metadata_translation_edits.description)
+             IS DISTINCT FROM ROW(EXCLUDED.display_title, EXCLUDED.bibliography, EXCLUDED.hint,
+                                  EXCLUDED.description)
+        THEN 'editorial'
+        ELSE book_metadata_translation_edits.provenance_class
+    END,
+    generation_run_id = book_metadata_translation_edits.generation_run_id,
     review_status = 'draft',
     review_note = NULL,
     reviewed_by = NULL,
     reviewed_at = NULL,
     updated_by = EXCLUDED.updated_by,
     updated_at = now()
-RETURNING project_id, display_title, bibliography, hint, description, source, metadata, review_status,
-          review_note, updated_by, reviewed_by, updated_at, reviewed_at`
+RETURNING project_id, display_title, bibliography, hint, description, source, metadata,
+          provenance_class, generation_run_id, review_status, review_note, updated_by,
+          reviewed_by, updated_at, reviewed_at
+)
+SELECT saved.project_id, saved.display_title, saved.bibliography, saved.hint, saved.description,
+       saved.source, saved.metadata, saved.provenance_class, gr.id::TEXT, gr.model_id,
+       gr.prompt_version, saved.review_status, saved.review_note, saved.updated_by,
+       saved.reviewed_by, saved.updated_at, saved.reviewed_at
+FROM saved
+LEFT JOIN generation_runs gr ON gr.id = saved.generation_run_id`
 
 	saved, err := scanMetadataTranslationEditOrNotFound(tx.QueryRow(
 		ctx,
@@ -707,6 +739,8 @@ RETURNING project_id, display_title, bibliography, hint, description, source, me
 		edit.Source,
 		jsonString(edit.Metadata),
 		actorID,
+		initialProvenance,
+		initialGenerationRunID,
 	))
 	if err != nil {
 		return entity.BookMetadataTranslationEdit{}, fmt.Errorf("EditorialRepo - SaveMetadataTranslationDraft - scan: %w", err)
@@ -738,10 +772,12 @@ func (r *EditorialRepo) DeleteMetadataTranslationDraft(ctx context.Context, acto
 
 func (r *EditorialRepo) GetAuthorTranslationDraft(ctx context.Context, projectID string) (entity.AuthorTranslationEdit, error) {
 	return scanAuthorTranslationEditOrNotFound(r.Pool.QueryRow(ctx, `
-SELECT project_id, name, biography, death_text, source, metadata, review_status,
-       review_note, updated_by, reviewed_by, updated_at, reviewed_at
-FROM author_translation_edits
-WHERE project_id = $1`, projectID))
+SELECT e.project_id, e.name, e.biography, e.death_text, e.source, e.metadata,
+       e.provenance_class, gr.id::TEXT, gr.model_id, gr.prompt_version, e.review_status,
+       e.review_note, e.updated_by, e.reviewed_by, e.updated_at, e.reviewed_at
+FROM author_translation_edits e
+LEFT JOIN generation_runs gr ON gr.id = e.generation_run_id
+WHERE e.project_id = $1`, projectID))
 }
 
 func (r *EditorialRepo) SaveAuthorTranslationDraft(
@@ -765,25 +801,49 @@ func (r *EditorialRepo) SaveAuthorTranslationDraft(
 		return entity.AuthorTranslationEdit{}, err
 	}
 
+	initialProvenance, initialGenerationRunID, err := productionDraftInitialProvenance(
+		ctx, tx, projectID, entity.ProductionAssetAuthorMetadata, nil,
+	)
+	if err != nil {
+		return entity.AuthorTranslationEdit{}, err
+	}
+
 	sqlText := `
+WITH saved AS (
 INSERT INTO author_translation_edits (
-    project_id, name, biography, death_text, source, metadata, review_status, review_note, updated_by, updated_at
+    project_id, name, biography, death_text, source, metadata, provenance_class, generation_run_id,
+    review_status, review_note, updated_by, updated_at
 )
-VALUES ($1, $2, $3, $4, $5, nullif($6, '')::jsonb, 'draft', NULL, $7, now())
+VALUES ($1, $2, $3, $4, $5, nullif($6, '')::jsonb, $8, $9::uuid, 'draft', NULL, $7, now())
 ON CONFLICT (project_id) DO UPDATE SET
     name = EXCLUDED.name,
     biography = EXCLUDED.biography,
     death_text = EXCLUDED.death_text,
     source = EXCLUDED.source,
     metadata = EXCLUDED.metadata,
+    provenance_class = CASE
+        WHEN author_translation_edits.provenance_class = 'legacy_unknown'
+         AND ROW(author_translation_edits.name, author_translation_edits.biography,
+                 author_translation_edits.death_text)
+             IS DISTINCT FROM ROW(EXCLUDED.name, EXCLUDED.biography, EXCLUDED.death_text)
+        THEN 'editorial'
+        ELSE author_translation_edits.provenance_class
+    END,
+    generation_run_id = author_translation_edits.generation_run_id,
     review_status = 'draft',
     review_note = NULL,
     reviewed_by = NULL,
     reviewed_at = NULL,
     updated_by = EXCLUDED.updated_by,
     updated_at = now()
-RETURNING project_id, name, biography, death_text, source, metadata, review_status,
-          review_note, updated_by, reviewed_by, updated_at, reviewed_at`
+RETURNING project_id, name, biography, death_text, source, metadata, provenance_class,
+          generation_run_id, review_status, review_note, updated_by, reviewed_by, updated_at, reviewed_at
+)
+SELECT saved.project_id, saved.name, saved.biography, saved.death_text, saved.source, saved.metadata,
+       saved.provenance_class, gr.id::TEXT, gr.model_id, gr.prompt_version, saved.review_status,
+       saved.review_note, saved.updated_by, saved.reviewed_by, saved.updated_at, saved.reviewed_at
+FROM saved
+LEFT JOIN generation_runs gr ON gr.id = saved.generation_run_id`
 
 	saved, err := scanAuthorTranslationEditOrNotFound(tx.QueryRow(
 		ctx,
@@ -795,6 +855,8 @@ RETURNING project_id, name, biography, death_text, source, metadata, review_stat
 		edit.Source,
 		jsonString(edit.Metadata),
 		actorID,
+		initialProvenance,
+		initialGenerationRunID,
 	))
 	if err != nil {
 		return entity.AuthorTranslationEdit{}, fmt.Errorf("EditorialRepo - SaveAuthorTranslationDraft - scan: %w", err)
@@ -826,9 +888,12 @@ func (r *EditorialRepo) DeleteAuthorTranslationDraft(ctx context.Context, actorI
 
 func (r *EditorialRepo) GetCategoryTranslationDraft(ctx context.Context, projectID string) (entity.CategoryTranslationEdit, error) {
 	return scanCategoryTranslationEditOrNotFound(r.Pool.QueryRow(ctx, `
-SELECT project_id, name, source, metadata, review_status, review_note, updated_by, reviewed_by, updated_at, reviewed_at
-FROM category_translation_edits
-WHERE project_id = $1`, projectID))
+SELECT e.project_id, e.name, e.source, e.metadata, e.provenance_class, gr.id::TEXT,
+       gr.model_id, gr.prompt_version, e.review_status, e.review_note, e.updated_by,
+       e.reviewed_by, e.updated_at, e.reviewed_at
+FROM category_translation_edits e
+LEFT JOIN generation_runs gr ON gr.id = e.generation_run_id
+WHERE e.project_id = $1`, projectID))
 }
 
 func (r *EditorialRepo) SaveCategoryTranslationDraft(
@@ -852,22 +917,45 @@ func (r *EditorialRepo) SaveCategoryTranslationDraft(
 		return entity.CategoryTranslationEdit{}, err
 	}
 
+	initialProvenance, initialGenerationRunID, err := productionDraftInitialProvenance(
+		ctx, tx, projectID, entity.ProductionAssetCategoryMetadata, nil,
+	)
+	if err != nil {
+		return entity.CategoryTranslationEdit{}, err
+	}
+
 	sqlText := `
+WITH saved AS (
 INSERT INTO category_translation_edits (
-    project_id, name, source, metadata, review_status, review_note, updated_by, updated_at
+    project_id, name, source, metadata, provenance_class, generation_run_id,
+    review_status, review_note, updated_by, updated_at
 )
-VALUES ($1, $2, $3, nullif($4, '')::jsonb, 'draft', NULL, $5, now())
+VALUES ($1, $2, $3, nullif($4, '')::jsonb, $6, $7::uuid, 'draft', NULL, $5, now())
 ON CONFLICT (project_id) DO UPDATE SET
     name = EXCLUDED.name,
     source = EXCLUDED.source,
     metadata = EXCLUDED.metadata,
+    provenance_class = CASE
+        WHEN category_translation_edits.provenance_class = 'legacy_unknown'
+         AND category_translation_edits.name IS DISTINCT FROM EXCLUDED.name
+        THEN 'editorial'
+        ELSE category_translation_edits.provenance_class
+    END,
+    generation_run_id = category_translation_edits.generation_run_id,
     review_status = 'draft',
     review_note = NULL,
     reviewed_by = NULL,
     reviewed_at = NULL,
     updated_by = EXCLUDED.updated_by,
     updated_at = now()
-RETURNING project_id, name, source, metadata, review_status, review_note, updated_by, reviewed_by, updated_at, reviewed_at`
+RETURNING project_id, name, source, metadata, provenance_class, generation_run_id,
+          review_status, review_note, updated_by, reviewed_by, updated_at, reviewed_at
+)
+SELECT saved.project_id, saved.name, saved.source, saved.metadata, saved.provenance_class,
+       gr.id::TEXT, gr.model_id, gr.prompt_version, saved.review_status, saved.review_note,
+       saved.updated_by, saved.reviewed_by, saved.updated_at, saved.reviewed_at
+FROM saved
+LEFT JOIN generation_runs gr ON gr.id = saved.generation_run_id`
 
 	saved, err := scanCategoryTranslationEditOrNotFound(tx.QueryRow(
 		ctx,
@@ -877,6 +965,8 @@ RETURNING project_id, name, source, metadata, review_status, review_note, update
 		edit.Source,
 		jsonString(edit.Metadata),
 		actorID,
+		initialProvenance,
+		initialGenerationRunID,
 	))
 	if err != nil {
 		return entity.CategoryTranslationEdit{}, fmt.Errorf("EditorialRepo - SaveCategoryTranslationDraft - scan: %w", err)
@@ -912,10 +1002,12 @@ func (r *EditorialRepo) GetSectionTranslationDraft(
 	headingID int,
 ) (entity.SectionTranslationEdit, error) {
 	return scanSectionTranslationEditOrNotFound(r.Pool.QueryRow(ctx, `
-SELECT project_id, heading_id, title, content, source, metadata, review_status,
-       review_note, updated_by, reviewed_by, updated_at, reviewed_at
-FROM section_translation_edits
-WHERE project_id = $1 AND heading_id = $2`, projectID, headingID))
+SELECT e.project_id, e.heading_id, e.title, e.content, e.source, e.metadata,
+       e.provenance_class, gr.id::TEXT, gr.model_id, gr.prompt_version, e.review_status,
+       e.review_note, e.updated_by, e.reviewed_by, e.updated_at, e.reviewed_at
+FROM section_translation_edits e
+LEFT JOIN generation_runs gr ON gr.id = e.generation_run_id
+WHERE e.project_id = $1 AND e.heading_id = $2`, projectID, headingID))
 }
 
 func (r *EditorialRepo) SaveSectionTranslationDraft(
@@ -942,24 +1034,47 @@ func (r *EditorialRepo) SaveSectionTranslationDraft(
 		return entity.SectionTranslationEdit{}, err
 	}
 
+	initialProvenance, initialGenerationRunID, err := productionDraftInitialProvenance(
+		ctx, tx, projectID, entity.ProductionAssetSectionTranslation, &edit.HeadingID,
+	)
+	if err != nil {
+		return entity.SectionTranslationEdit{}, err
+	}
+
 	sqlText := `
+WITH saved AS (
 INSERT INTO section_translation_edits (
-    project_id, heading_id, title, content, source, metadata, review_status, review_note, updated_by, updated_at
+    project_id, heading_id, title, content, source, metadata, provenance_class, generation_run_id,
+    review_status, review_note, updated_by, updated_at
 )
-VALUES ($1, $2, $3, $4, $5, nullif($6, '')::jsonb, 'draft', NULL, $7, now())
+VALUES ($1, $2, $3, $4, $5, nullif($6, '')::jsonb, $8, $9::uuid, 'draft', NULL, $7, now())
 ON CONFLICT (project_id, heading_id) DO UPDATE SET
     title = EXCLUDED.title,
     content = EXCLUDED.content,
     source = EXCLUDED.source,
     metadata = EXCLUDED.metadata,
+    provenance_class = CASE
+        WHEN section_translation_edits.provenance_class = 'legacy_unknown'
+         AND ROW(section_translation_edits.title, section_translation_edits.content)
+             IS DISTINCT FROM ROW(EXCLUDED.title, EXCLUDED.content)
+        THEN 'editorial'
+        ELSE section_translation_edits.provenance_class
+    END,
+    generation_run_id = section_translation_edits.generation_run_id,
     review_status = 'draft',
     review_note = NULL,
     reviewed_by = NULL,
     reviewed_at = NULL,
     updated_by = EXCLUDED.updated_by,
     updated_at = now()
-RETURNING project_id, heading_id, title, content, source, metadata, review_status,
-          review_note, updated_by, reviewed_by, updated_at, reviewed_at`
+RETURNING project_id, heading_id, title, content, source, metadata, provenance_class,
+          generation_run_id, review_status, review_note, updated_by, reviewed_by, updated_at, reviewed_at
+)
+SELECT saved.project_id, saved.heading_id, saved.title, saved.content, saved.source, saved.metadata,
+       saved.provenance_class, gr.id::TEXT, gr.model_id, gr.prompt_version, saved.review_status,
+       saved.review_note, saved.updated_by, saved.reviewed_by, saved.updated_at, saved.reviewed_at
+FROM saved
+LEFT JOIN generation_runs gr ON gr.id = saved.generation_run_id`
 
 	saved, err := scanSectionTranslationEditOrNotFound(tx.QueryRow(
 		ctx,
@@ -971,6 +1086,8 @@ RETURNING project_id, heading_id, title, content, source, metadata, review_statu
 		edit.Source,
 		jsonString(edit.Metadata),
 		actorID,
+		initialProvenance,
+		initialGenerationRunID,
 	))
 	if err != nil {
 		return entity.SectionTranslationEdit{}, fmt.Errorf("EditorialRepo - SaveSectionTranslationDraft - scan: %w", err)
@@ -1007,10 +1124,12 @@ func (r *EditorialRepo) GetHeadingSummaryDraft(
 	headingID int,
 ) (entity.HeadingSummaryEdit, error) {
 	return scanHeadingSummaryEditOrNotFound(r.Pool.QueryRow(ctx, `
-SELECT project_id, heading_id, summary, source, metadata, review_status,
-       review_note, updated_by, reviewed_by, updated_at, reviewed_at
-FROM heading_summary_edits
-WHERE project_id = $1 AND heading_id = $2`, projectID, headingID))
+SELECT e.project_id, e.heading_id, e.summary, e.source, e.metadata, e.provenance_class,
+       gr.id::TEXT, gr.model_id, gr.prompt_version, e.review_status, e.review_note,
+       e.updated_by, e.reviewed_by, e.updated_at, e.reviewed_at
+FROM heading_summary_edits e
+LEFT JOIN generation_runs gr ON gr.id = e.generation_run_id
+WHERE e.project_id = $1 AND e.heading_id = $2`, projectID, headingID))
 }
 
 func (r *EditorialRepo) SaveHeadingSummaryDraft(
@@ -1037,23 +1156,45 @@ func (r *EditorialRepo) SaveHeadingSummaryDraft(
 		return entity.HeadingSummaryEdit{}, err
 	}
 
+	initialProvenance, initialGenerationRunID, err := productionDraftInitialProvenance(
+		ctx, tx, projectID, entity.ProductionAssetHeadingSummary, &edit.HeadingID,
+	)
+	if err != nil {
+		return entity.HeadingSummaryEdit{}, err
+	}
+
 	sqlText := `
+WITH saved AS (
 INSERT INTO heading_summary_edits (
-    project_id, heading_id, summary, source, metadata, review_status, review_note, updated_by, updated_at
+    project_id, heading_id, summary, source, metadata, provenance_class, generation_run_id,
+    review_status, review_note, updated_by, updated_at
 )
-VALUES ($1, $2, $3, $4, nullif($5, '')::jsonb, 'draft', NULL, $6, now())
+VALUES ($1, $2, $3, $4, nullif($5, '')::jsonb, $7, $8::uuid, 'draft', NULL, $6, now())
 ON CONFLICT (project_id, heading_id) DO UPDATE SET
     summary = EXCLUDED.summary,
     source = EXCLUDED.source,
     metadata = EXCLUDED.metadata,
+    provenance_class = CASE
+        WHEN heading_summary_edits.provenance_class = 'legacy_unknown'
+         AND heading_summary_edits.summary IS DISTINCT FROM EXCLUDED.summary
+        THEN 'editorial'
+        ELSE heading_summary_edits.provenance_class
+    END,
+    generation_run_id = heading_summary_edits.generation_run_id,
     review_status = 'draft',
     review_note = NULL,
     reviewed_by = NULL,
     reviewed_at = NULL,
     updated_by = EXCLUDED.updated_by,
     updated_at = now()
-RETURNING project_id, heading_id, summary, source, metadata, review_status,
-          review_note, updated_by, reviewed_by, updated_at, reviewed_at`
+RETURNING project_id, heading_id, summary, source, metadata, provenance_class,
+          generation_run_id, review_status, review_note, updated_by, reviewed_by, updated_at, reviewed_at
+)
+SELECT saved.project_id, saved.heading_id, saved.summary, saved.source, saved.metadata,
+       saved.provenance_class, gr.id::TEXT, gr.model_id, gr.prompt_version, saved.review_status,
+       saved.review_note, saved.updated_by, saved.reviewed_by, saved.updated_at, saved.reviewed_at
+FROM saved
+LEFT JOIN generation_runs gr ON gr.id = saved.generation_run_id`
 
 	saved, err := scanHeadingSummaryEditOrNotFound(tx.QueryRow(
 		ctx,
@@ -1064,6 +1205,8 @@ RETURNING project_id, heading_id, summary, source, metadata, review_status,
 		edit.Source,
 		jsonString(edit.Metadata),
 		actorID,
+		initialProvenance,
+		initialGenerationRunID,
 	))
 	if err != nil {
 		return entity.HeadingSummaryEdit{}, fmt.Errorf("EditorialRepo - SaveHeadingSummaryDraft - scan: %w", err)
@@ -1647,13 +1790,19 @@ ORDER BY h.ordinal ASC, h.heading_id ASC`, table, field, statusCondition)
 }
 
 func publishProductionAssets(ctx context.Context, tx pgx.Tx, actorID, projectID string) error {
+	if _, err := tx.Exec(ctx, `SET LOCAL surau.production_publish = 'on'`); err != nil {
+		return fmt.Errorf("production publish provenance scope: %w", err)
+	}
+
 	statements := []string{
 		`
 INSERT INTO book_metadata_translations (
     book_id, lang, display_title, bibliography, hint, description, source, metadata,
-    translation_status, reviewed_by, reviewed_at, is_deleted, deleted_by, deleted_at, delete_reason, updated_at
+    provenance_class, generation_run_id, translation_status, reviewed_by, reviewed_at,
+    is_deleted, deleted_by, deleted_at, delete_reason, updated_at
 )
 SELECT p.book_id, p.lang, e.display_title, e.bibliography, e.hint, e.description, e.source, e.metadata,
+       e.provenance_class, e.generation_run_id,
        CASE WHEN e.review_status = 'approved' THEN 'reviewed' ELSE 'generated' END,
        CASE WHEN e.review_status = 'approved' THEN COALESCE(e.reviewed_by::TEXT, $2) ELSE NULL END,
        CASE WHEN e.review_status = 'approved' THEN COALESCE(e.reviewed_at, now()) ELSE NULL END,
@@ -1668,6 +1817,8 @@ ON CONFLICT (book_id, lang) DO UPDATE SET
     description = EXCLUDED.description,
     source = EXCLUDED.source,
     metadata = EXCLUDED.metadata,
+    provenance_class = EXCLUDED.provenance_class,
+    generation_run_id = EXCLUDED.generation_run_id,
     translation_status = EXCLUDED.translation_status,
     reviewed_by = EXCLUDED.reviewed_by,
     reviewed_at = EXCLUDED.reviewed_at,
@@ -1679,9 +1830,11 @@ ON CONFLICT (book_id, lang) DO UPDATE SET
 		`
 INSERT INTO author_translations (
     author_id, lang, name, biography, death_text, source, metadata,
-    translation_status, reviewed_by, reviewed_at, is_deleted, deleted_by, deleted_at, delete_reason, updated_at
+    provenance_class, generation_run_id, translation_status, reviewed_by, reviewed_at,
+    is_deleted, deleted_by, deleted_at, delete_reason, updated_at
 )
 SELECT b.author_id, p.lang, e.name, e.biography, e.death_text, e.source, e.metadata,
+       e.provenance_class, e.generation_run_id,
        CASE WHEN e.review_status = 'approved' THEN 'reviewed' ELSE 'generated' END,
        CASE WHEN e.review_status = 'approved' THEN COALESCE(e.reviewed_by::TEXT, $2) ELSE NULL END,
        CASE WHEN e.review_status = 'approved' THEN COALESCE(e.reviewed_at, now()) ELSE NULL END,
@@ -1696,6 +1849,8 @@ ON CONFLICT (author_id, lang) DO UPDATE SET
     death_text = EXCLUDED.death_text,
     source = EXCLUDED.source,
     metadata = EXCLUDED.metadata,
+    provenance_class = EXCLUDED.provenance_class,
+    generation_run_id = EXCLUDED.generation_run_id,
     translation_status = EXCLUDED.translation_status,
     reviewed_by = EXCLUDED.reviewed_by,
     reviewed_at = EXCLUDED.reviewed_at,
@@ -1707,9 +1862,11 @@ ON CONFLICT (author_id, lang) DO UPDATE SET
 		`
 INSERT INTO category_translations (
     category_id, lang, name, source, metadata,
-    translation_status, reviewed_by, reviewed_at, is_deleted, deleted_by, deleted_at, delete_reason, updated_at
+    provenance_class, generation_run_id, translation_status, reviewed_by, reviewed_at,
+    is_deleted, deleted_by, deleted_at, delete_reason, updated_at
 )
 SELECT COALESCE(me.category_id, b.category_id), p.lang, e.name, e.source, e.metadata,
+       e.provenance_class, e.generation_run_id,
        CASE WHEN e.review_status = 'approved' THEN 'reviewed' ELSE 'generated' END,
        CASE WHEN e.review_status = 'approved' THEN COALESCE(e.reviewed_by::TEXT, $2) ELSE NULL END,
        CASE WHEN e.review_status = 'approved' THEN COALESCE(e.reviewed_at, now()) ELSE NULL END,
@@ -1723,6 +1880,8 @@ ON CONFLICT (category_id, lang) DO UPDATE SET
     name = EXCLUDED.name,
     source = EXCLUDED.source,
     metadata = EXCLUDED.metadata,
+    provenance_class = EXCLUDED.provenance_class,
+    generation_run_id = EXCLUDED.generation_run_id,
     translation_status = EXCLUDED.translation_status,
     reviewed_by = EXCLUDED.reviewed_by,
     reviewed_at = EXCLUDED.reviewed_at,
@@ -1734,9 +1893,11 @@ ON CONFLICT (category_id, lang) DO UPDATE SET
 		`
 INSERT INTO section_translations (
     book_id, heading_id, lang, title, content, source, metadata,
-    translation_status, reviewed_by, reviewed_at, is_deleted, deleted_by, deleted_at, delete_reason, updated_at
+    provenance_class, generation_run_id, translation_status, reviewed_by, reviewed_at,
+    is_deleted, deleted_by, deleted_at, delete_reason, updated_at
 )
 SELECT p.book_id, e.heading_id, p.lang, e.title, e.content, e.source, e.metadata,
+       e.provenance_class, e.generation_run_id,
        CASE WHEN e.review_status = 'approved' THEN 'reviewed' ELSE 'generated' END,
        CASE WHEN e.review_status = 'approved' THEN COALESCE(e.reviewed_by::TEXT, $2) ELSE NULL END,
        CASE WHEN e.review_status = 'approved' THEN COALESCE(e.reviewed_at, now()) ELSE NULL END,
@@ -1749,6 +1910,8 @@ ON CONFLICT (book_id, heading_id, lang) DO UPDATE SET
     content = EXCLUDED.content,
     source = EXCLUDED.source,
     metadata = EXCLUDED.metadata,
+    provenance_class = EXCLUDED.provenance_class,
+    generation_run_id = EXCLUDED.generation_run_id,
     translation_status = EXCLUDED.translation_status,
     reviewed_by = EXCLUDED.reviewed_by,
     reviewed_at = EXCLUDED.reviewed_at,
@@ -1760,13 +1923,14 @@ ON CONFLICT (book_id, heading_id, lang) DO UPDATE SET
 		`
 INSERT INTO book_heading_summaries (
     book_id, heading_id, lang, summary, source, summary_status, reviewed_by, reviewed_at,
-    metadata, is_deleted, deleted_by, deleted_at, delete_reason, updated_at
+    metadata, provenance_class, generation_run_id, is_deleted, deleted_by, deleted_at,
+    delete_reason, updated_at
 )
 SELECT p.book_id, e.heading_id, p.lang, e.summary, e.source,
        CASE WHEN e.review_status = 'approved' THEN 'reviewed' ELSE 'generated' END,
        CASE WHEN e.review_status = 'approved' THEN COALESCE(e.reviewed_by::TEXT, $2) ELSE NULL END,
        CASE WHEN e.review_status = 'approved' THEN COALESCE(e.reviewed_at, now()) ELSE NULL END,
-       e.metadata, false, NULL, NULL, NULL, now()
+       e.metadata, e.provenance_class, e.generation_run_id, false, NULL, NULL, NULL, now()
 FROM book_production_projects p
 JOIN heading_summary_edits e ON e.project_id = p.id
 WHERE p.id = $1
@@ -1777,6 +1941,8 @@ ON CONFLICT (book_id, heading_id, lang) DO UPDATE SET
     reviewed_by = EXCLUDED.reviewed_by,
     reviewed_at = EXCLUDED.reviewed_at,
     metadata = EXCLUDED.metadata,
+    provenance_class = EXCLUDED.provenance_class,
+    generation_run_id = EXCLUDED.generation_run_id,
     is_deleted = false,
     deleted_by = NULL,
     deleted_at = NULL,
@@ -2112,6 +2278,82 @@ SET workflow_status = CASE
 WHERE id = $1`, projectID, actorID, workflowStatus)
 
 	return err
+}
+
+//nolint:cyclop,funlen // closed mapping keeps all five machine-backed production asset targets explicit
+func productionDraftInitialProvenance(
+	ctx context.Context,
+	tx pgx.Tx,
+	projectID,
+	assetType string,
+	headingID *int,
+) (provenanceClass string, generationRunID *string, err error) {
+	var query string
+
+	switch assetType {
+	case entity.ProductionAssetBookMetadata:
+		query = `
+SELECT final.generation_run_id::text
+FROM book_production_projects project
+JOIN book_metadata_translations final
+  ON final.book_id = project.book_id AND final.lang = project.lang
+WHERE project.id = $1 AND final.is_deleted = false AND final.provenance_class = 'machine'`
+	case entity.ProductionAssetAuthorMetadata:
+		query = `
+SELECT final.generation_run_id::text
+FROM book_production_projects project
+JOIN books book ON book.id = project.book_id
+JOIN author_translations final
+  ON final.author_id = book.author_id AND final.lang = project.lang
+WHERE project.id = $1 AND final.is_deleted = false AND final.provenance_class = 'machine'`
+	case entity.ProductionAssetCategoryMetadata:
+		query = `
+SELECT final.generation_run_id::text
+FROM book_production_projects project
+JOIN books book ON book.id = project.book_id
+LEFT JOIN book_metadata_edits metadata_edit
+  ON metadata_edit.book_id = book.id AND metadata_edit.status = 'published'
+JOIN category_translations final
+  ON final.category_id = COALESCE(metadata_edit.category_id, book.category_id)
+ AND final.lang = project.lang
+WHERE project.id = $1 AND final.is_deleted = false AND final.provenance_class = 'machine'`
+	case entity.ProductionAssetSectionTranslation:
+		query = `
+SELECT final.generation_run_id::text
+FROM book_production_projects project
+JOIN section_translations final
+  ON final.book_id = project.book_id AND final.lang = project.lang AND final.heading_id = $2
+WHERE project.id = $1 AND final.is_deleted = false AND final.provenance_class = 'machine'`
+	case entity.ProductionAssetHeadingSummary:
+		query = `
+SELECT final.generation_run_id::text
+FROM book_production_projects project
+JOIN book_heading_summaries final
+  ON final.book_id = project.book_id AND final.lang = project.lang AND final.heading_id = $2
+WHERE project.id = $1 AND final.is_deleted = false AND final.provenance_class = 'machine'`
+	default:
+		return "", nil, entity.ErrInvalidAssetType
+	}
+
+	args := []any{projectID}
+	if headingID != nil {
+		args = append(args, *headingID)
+	}
+
+	var runID *string
+	if err := tx.QueryRow(ctx, query, args...).Scan(&runID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return entity.ProvenanceClassEditorial, nil, nil
+		}
+
+		return "", nil, fmt.Errorf("load production draft source generation: %w", err)
+	}
+
+	if runID == nil {
+		return "", nil, fmt.Errorf("machine production source is missing generation run: %w", entity.ErrInvalidGenerationRun)
+	}
+
+	return entity.ProvenanceClassMachine, runID, nil
 }
 
 func productionDraftReviewTarget(projectID, assetType string, headingID *int) (string, string, []any) {
@@ -2636,9 +2878,11 @@ func restoreProductionDraftSnapshot(
 	switch revision.AssetType {
 	case entity.ProductionAssetBookMetadata:
 		return scanMetadataTranslationEditOrNotFound(tx.QueryRow(ctx, `
+WITH restored AS (
 INSERT INTO book_metadata_translation_edits (
     project_id, display_title, bibliography, hint, description, source, metadata,
-    review_status, review_note, updated_by, reviewed_by, updated_at, reviewed_at
+    provenance_class, generation_run_id, review_status, review_note, updated_by,
+    reviewed_by, updated_at, reviewed_at
 )
 VALUES (
     $1,
@@ -2648,6 +2892,13 @@ VALUES (
     $2::jsonb ->> 'description',
     $2::jsonb ->> 'source',
     NULLIF(($2::jsonb -> 'metadata')::text, 'null')::jsonb,
+    CASE COALESCE(NULLIF($2::jsonb ->> 'provenance_class', ''), 'legacy_unknown')
+        WHEN 'machine' THEN 'machine'
+        WHEN 'source' THEN 'source'
+        WHEN 'editorial' THEN 'editorial'
+        ELSE 'legacy_unknown'
+    END,
+    NULLIF($2::jsonb #>> '{generation,run_id}', '')::UUID,
     'draft',
     NULL,
     $3,
@@ -2662,19 +2913,32 @@ ON CONFLICT (project_id) DO UPDATE SET
     description = EXCLUDED.description,
     source = EXCLUDED.source,
     metadata = EXCLUDED.metadata,
+    provenance_class = EXCLUDED.provenance_class,
+    generation_run_id = EXCLUDED.generation_run_id,
     review_status = 'draft',
     review_note = NULL,
     reviewed_by = NULL,
     reviewed_at = NULL,
     updated_by = EXCLUDED.updated_by,
     updated_at = now()
-RETURNING project_id, display_title, bibliography, hint, description, source, metadata, review_status,
-          review_note, updated_by, reviewed_by, updated_at, reviewed_at`, projectID, snapshot, actorID))
+RETURNING project_id, display_title, bibliography, hint, description, source, metadata,
+          provenance_class, generation_run_id, review_status, review_note, updated_by,
+          reviewed_by, updated_at, reviewed_at
+)
+SELECT restored.project_id, restored.display_title, restored.bibliography, restored.hint,
+       restored.description, restored.source, restored.metadata, restored.provenance_class,
+       gr.id::TEXT, gr.model_id, gr.prompt_version, restored.review_status,
+       restored.review_note, restored.updated_by, restored.reviewed_by, restored.updated_at,
+       restored.reviewed_at
+FROM restored
+LEFT JOIN generation_runs gr ON gr.id = restored.generation_run_id`, projectID, snapshot, actorID))
 	case entity.ProductionAssetAuthorMetadata:
 		return scanAuthorTranslationEditOrNotFound(tx.QueryRow(ctx, `
+WITH restored AS (
 INSERT INTO author_translation_edits (
     project_id, name, biography, death_text, source, metadata,
-    review_status, review_note, updated_by, reviewed_by, updated_at, reviewed_at
+    provenance_class, generation_run_id, review_status, review_note, updated_by,
+    reviewed_by, updated_at, reviewed_at
 )
 VALUES (
     $1,
@@ -2683,6 +2947,13 @@ VALUES (
     $2::jsonb ->> 'death_text',
     $2::jsonb ->> 'source',
     NULLIF(($2::jsonb -> 'metadata')::text, 'null')::jsonb,
+    CASE COALESCE(NULLIF($2::jsonb ->> 'provenance_class', ''), 'legacy_unknown')
+        WHEN 'machine' THEN 'machine'
+        WHEN 'source' THEN 'source'
+        WHEN 'editorial' THEN 'editorial'
+        ELSE 'legacy_unknown'
+    END,
+    NULLIF($2::jsonb #>> '{generation,run_id}', '')::UUID,
     'draft',
     NULL,
     $3,
@@ -2696,24 +2967,43 @@ ON CONFLICT (project_id) DO UPDATE SET
     death_text = EXCLUDED.death_text,
     source = EXCLUDED.source,
     metadata = EXCLUDED.metadata,
+    provenance_class = EXCLUDED.provenance_class,
+    generation_run_id = EXCLUDED.generation_run_id,
     review_status = 'draft',
     review_note = NULL,
     reviewed_by = NULL,
     reviewed_at = NULL,
     updated_by = EXCLUDED.updated_by,
     updated_at = now()
-RETURNING project_id, name, biography, death_text, source, metadata, review_status,
-          review_note, updated_by, reviewed_by, updated_at, reviewed_at`, projectID, snapshot, actorID))
+RETURNING project_id, name, biography, death_text, source, metadata, provenance_class,
+          generation_run_id, review_status, review_note, updated_by, reviewed_by,
+          updated_at, reviewed_at
+)
+SELECT restored.project_id, restored.name, restored.biography, restored.death_text,
+       restored.source, restored.metadata, restored.provenance_class, gr.id::TEXT,
+       gr.model_id, gr.prompt_version, restored.review_status, restored.review_note,
+       restored.updated_by, restored.reviewed_by, restored.updated_at, restored.reviewed_at
+FROM restored
+LEFT JOIN generation_runs gr ON gr.id = restored.generation_run_id`, projectID, snapshot, actorID))
 	case entity.ProductionAssetCategoryMetadata:
 		return scanCategoryTranslationEditOrNotFound(tx.QueryRow(ctx, `
+WITH restored AS (
 INSERT INTO category_translation_edits (
-    project_id, name, source, metadata, review_status, review_note, updated_by, reviewed_by, updated_at, reviewed_at
+    project_id, name, source, metadata, provenance_class, generation_run_id,
+    review_status, review_note, updated_by, reviewed_by, updated_at, reviewed_at
 )
 VALUES (
     $1,
     $2::jsonb ->> 'name',
     $2::jsonb ->> 'source',
     NULLIF(($2::jsonb -> 'metadata')::text, 'null')::jsonb,
+    CASE COALESCE(NULLIF($2::jsonb ->> 'provenance_class', ''), 'legacy_unknown')
+        WHEN 'machine' THEN 'machine'
+        WHEN 'source' THEN 'source'
+        WHEN 'editorial' THEN 'editorial'
+        ELSE 'legacy_unknown'
+    END,
+    NULLIF($2::jsonb #>> '{generation,run_id}', '')::UUID,
     'draft',
     NULL,
     $3,
@@ -2725,19 +3015,30 @@ ON CONFLICT (project_id) DO UPDATE SET
     name = EXCLUDED.name,
     source = EXCLUDED.source,
     metadata = EXCLUDED.metadata,
+    provenance_class = EXCLUDED.provenance_class,
+    generation_run_id = EXCLUDED.generation_run_id,
     review_status = 'draft',
     review_note = NULL,
     reviewed_by = NULL,
     reviewed_at = NULL,
     updated_by = EXCLUDED.updated_by,
     updated_at = now()
-RETURNING project_id, name, source, metadata, review_status,
-          review_note, updated_by, reviewed_by, updated_at, reviewed_at`, projectID, snapshot, actorID))
+RETURNING project_id, name, source, metadata, provenance_class, generation_run_id,
+          review_status, review_note, updated_by, reviewed_by, updated_at, reviewed_at
+)
+SELECT restored.project_id, restored.name, restored.source, restored.metadata,
+       restored.provenance_class, gr.id::TEXT, gr.model_id, gr.prompt_version,
+       restored.review_status, restored.review_note, restored.updated_by,
+       restored.reviewed_by, restored.updated_at, restored.reviewed_at
+FROM restored
+LEFT JOIN generation_runs gr ON gr.id = restored.generation_run_id`, projectID, snapshot, actorID))
 	case entity.ProductionAssetSectionTranslation:
 		return scanSectionTranslationEditOrNotFound(tx.QueryRow(ctx, `
+WITH restored AS (
 INSERT INTO section_translation_edits (
     project_id, heading_id, title, content, source, metadata,
-    review_status, review_note, updated_by, reviewed_by, updated_at, reviewed_at
+    provenance_class, generation_run_id, review_status, review_note, updated_by,
+    reviewed_by, updated_at, reviewed_at
 )
 VALUES (
     $1,
@@ -2746,6 +3047,13 @@ VALUES (
     $3::jsonb ->> 'content',
     $3::jsonb ->> 'source',
     NULLIF(($3::jsonb -> 'metadata')::text, 'null')::jsonb,
+    CASE COALESCE(NULLIF($3::jsonb ->> 'provenance_class', ''), 'legacy_unknown')
+        WHEN 'machine' THEN 'machine'
+        WHEN 'source' THEN 'source'
+        WHEN 'editorial' THEN 'editorial'
+        ELSE 'legacy_unknown'
+    END,
+    NULLIF($3::jsonb #>> '{generation,run_id}', '')::UUID,
     'draft',
     NULL,
     $4,
@@ -2758,19 +3066,31 @@ ON CONFLICT (project_id, heading_id) DO UPDATE SET
     content = EXCLUDED.content,
     source = EXCLUDED.source,
     metadata = EXCLUDED.metadata,
+    provenance_class = EXCLUDED.provenance_class,
+    generation_run_id = EXCLUDED.generation_run_id,
     review_status = 'draft',
     review_note = NULL,
     reviewed_by = NULL,
     reviewed_at = NULL,
     updated_by = EXCLUDED.updated_by,
     updated_at = now()
-RETURNING project_id, heading_id, title, content, source, metadata, review_status,
-          review_note, updated_by, reviewed_by, updated_at, reviewed_at`, projectID, *revision.HeadingID, snapshot, actorID))
+RETURNING project_id, heading_id, title, content, source, metadata, provenance_class,
+          generation_run_id, review_status, review_note, updated_by, reviewed_by,
+          updated_at, reviewed_at
+)
+SELECT restored.project_id, restored.heading_id, restored.title, restored.content,
+       restored.source, restored.metadata, restored.provenance_class, gr.id::TEXT,
+       gr.model_id, gr.prompt_version, restored.review_status, restored.review_note,
+       restored.updated_by, restored.reviewed_by, restored.updated_at, restored.reviewed_at
+FROM restored
+LEFT JOIN generation_runs gr ON gr.id = restored.generation_run_id`, projectID, *revision.HeadingID, snapshot, actorID))
 	case entity.ProductionAssetHeadingSummary:
 		return scanHeadingSummaryEditOrNotFound(tx.QueryRow(ctx, `
+WITH restored AS (
 INSERT INTO heading_summary_edits (
     project_id, heading_id, summary, source, metadata,
-    review_status, review_note, updated_by, reviewed_by, updated_at, reviewed_at
+    provenance_class, generation_run_id, review_status, review_note, updated_by,
+    reviewed_by, updated_at, reviewed_at
 )
 VALUES (
     $1,
@@ -2778,6 +3098,13 @@ VALUES (
     $3::jsonb ->> 'summary',
     $3::jsonb ->> 'source',
     NULLIF(($3::jsonb -> 'metadata')::text, 'null')::jsonb,
+    CASE COALESCE(NULLIF($3::jsonb ->> 'provenance_class', ''), 'legacy_unknown')
+        WHEN 'machine' THEN 'machine'
+        WHEN 'source' THEN 'source'
+        WHEN 'editorial' THEN 'editorial'
+        ELSE 'legacy_unknown'
+    END,
+    NULLIF($3::jsonb #>> '{generation,run_id}', '')::UUID,
     'draft',
     NULL,
     $4,
@@ -2789,14 +3116,24 @@ ON CONFLICT (project_id, heading_id) DO UPDATE SET
     summary = EXCLUDED.summary,
     source = EXCLUDED.source,
     metadata = EXCLUDED.metadata,
+    provenance_class = EXCLUDED.provenance_class,
+    generation_run_id = EXCLUDED.generation_run_id,
     review_status = 'draft',
     review_note = NULL,
     reviewed_by = NULL,
     reviewed_at = NULL,
     updated_by = EXCLUDED.updated_by,
     updated_at = now()
-RETURNING project_id, heading_id, summary, source, metadata, review_status,
-          review_note, updated_by, reviewed_by, updated_at, reviewed_at`, projectID, *revision.HeadingID, snapshot, actorID))
+RETURNING project_id, heading_id, summary, source, metadata, provenance_class,
+          generation_run_id, review_status, review_note, updated_by, reviewed_by,
+          updated_at, reviewed_at
+)
+SELECT restored.project_id, restored.heading_id, restored.summary, restored.source,
+       restored.metadata, restored.provenance_class, gr.id::TEXT, gr.model_id,
+       gr.prompt_version, restored.review_status, restored.review_note, restored.updated_by,
+       restored.reviewed_by, restored.updated_at, restored.reviewed_at
+FROM restored
+LEFT JOIN generation_runs gr ON gr.id = restored.generation_run_id`, projectID, *revision.HeadingID, snapshot, actorID))
 	case entity.ProductionAssetSectionAudio:
 		return scanSectionAudioEditOrNotFound(tx.QueryRow(ctx, `
 INSERT INTO section_audio_edits (
@@ -3039,16 +3376,21 @@ func scanProductionProjectWithOwner(row rowScanner) (entity.BookProductionProjec
 }
 
 func scanMetadataTranslationEditOrNotFound(row rowScanner) (entity.BookMetadataTranslationEdit, error) {
-	var edit entity.BookMetadataTranslationEdit
-	var bibliography sql.NullString
-	var hint sql.NullString
-	var description sql.NullString
-	var source sql.NullString
-	var metadata []byte
-	var reviewNote sql.NullString
-	var updatedBy sql.NullString
-	var reviewedBy sql.NullString
-	var reviewedAt sql.NullTime
+	var (
+		edit                    entity.BookMetadataTranslationEdit
+		bibliography            sql.NullString
+		hint                    sql.NullString
+		description             sql.NullString
+		source                  sql.NullString
+		metadata                []byte
+		generationRunID         sql.NullString
+		generationModelID       sql.NullString
+		generationPromptVersion sql.NullString
+		reviewNote              sql.NullString
+		updatedBy               sql.NullString
+		reviewedBy              sql.NullString
+		reviewedAt              sql.NullTime
+	)
 
 	err := row.Scan(
 		&edit.ProjectID,
@@ -3058,6 +3400,10 @@ func scanMetadataTranslationEditOrNotFound(row rowScanner) (entity.BookMetadataT
 		&description,
 		&source,
 		&metadata,
+		&edit.ProvenanceClass,
+		&generationRunID,
+		&generationModelID,
+		&generationPromptVersion,
 		&edit.ReviewStatus,
 		&reviewNote,
 		&updatedBy,
@@ -3077,6 +3423,7 @@ func scanMetadataTranslationEditOrNotFound(row rowScanner) (entity.BookMetadataT
 	edit.Description = nullableString(description)
 	edit.Source = nullableString(source)
 	edit.Metadata = entity.RawJSON(metadata)
+	edit.Generation = productionGenerationIdentity(generationRunID, generationModelID, generationPromptVersion)
 	edit.ReviewNote = nullableString(reviewNote)
 	edit.UpdatedBy = nullableString(updatedBy)
 	edit.ReviewedBy = nullableString(reviewedBy)
@@ -3086,15 +3433,20 @@ func scanMetadataTranslationEditOrNotFound(row rowScanner) (entity.BookMetadataT
 }
 
 func scanAuthorTranslationEditOrNotFound(row rowScanner) (entity.AuthorTranslationEdit, error) {
-	var edit entity.AuthorTranslationEdit
-	var biography sql.NullString
-	var deathText sql.NullString
-	var source sql.NullString
-	var metadata []byte
-	var reviewNote sql.NullString
-	var updatedBy sql.NullString
-	var reviewedBy sql.NullString
-	var reviewedAt sql.NullTime
+	var (
+		edit                    entity.AuthorTranslationEdit
+		biography               sql.NullString
+		deathText               sql.NullString
+		source                  sql.NullString
+		metadata                []byte
+		generationRunID         sql.NullString
+		generationModelID       sql.NullString
+		generationPromptVersion sql.NullString
+		reviewNote              sql.NullString
+		updatedBy               sql.NullString
+		reviewedBy              sql.NullString
+		reviewedAt              sql.NullTime
+	)
 
 	err := row.Scan(
 		&edit.ProjectID,
@@ -3103,6 +3455,10 @@ func scanAuthorTranslationEditOrNotFound(row rowScanner) (entity.AuthorTranslati
 		&deathText,
 		&source,
 		&metadata,
+		&edit.ProvenanceClass,
+		&generationRunID,
+		&generationModelID,
+		&generationPromptVersion,
 		&edit.ReviewStatus,
 		&reviewNote,
 		&updatedBy,
@@ -3121,6 +3477,7 @@ func scanAuthorTranslationEditOrNotFound(row rowScanner) (entity.AuthorTranslati
 	edit.DeathText = nullableString(deathText)
 	edit.Source = nullableString(source)
 	edit.Metadata = entity.RawJSON(metadata)
+	edit.Generation = productionGenerationIdentity(generationRunID, generationModelID, generationPromptVersion)
 	edit.ReviewNote = nullableString(reviewNote)
 	edit.UpdatedBy = nullableString(updatedBy)
 	edit.ReviewedBy = nullableString(reviewedBy)
@@ -3130,19 +3487,28 @@ func scanAuthorTranslationEditOrNotFound(row rowScanner) (entity.AuthorTranslati
 }
 
 func scanCategoryTranslationEditOrNotFound(row rowScanner) (entity.CategoryTranslationEdit, error) {
-	var edit entity.CategoryTranslationEdit
-	var source sql.NullString
-	var metadata []byte
-	var reviewNote sql.NullString
-	var updatedBy sql.NullString
-	var reviewedBy sql.NullString
-	var reviewedAt sql.NullTime
+	var (
+		edit                    entity.CategoryTranslationEdit
+		source                  sql.NullString
+		metadata                []byte
+		generationRunID         sql.NullString
+		generationModelID       sql.NullString
+		generationPromptVersion sql.NullString
+		reviewNote              sql.NullString
+		updatedBy               sql.NullString
+		reviewedBy              sql.NullString
+		reviewedAt              sql.NullTime
+	)
 
 	err := row.Scan(
 		&edit.ProjectID,
 		&edit.Name,
 		&source,
 		&metadata,
+		&edit.ProvenanceClass,
+		&generationRunID,
+		&generationModelID,
+		&generationPromptVersion,
 		&edit.ReviewStatus,
 		&reviewNote,
 		&updatedBy,
@@ -3159,6 +3525,7 @@ func scanCategoryTranslationEditOrNotFound(row rowScanner) (entity.CategoryTrans
 
 	edit.Source = nullableString(source)
 	edit.Metadata = entity.RawJSON(metadata)
+	edit.Generation = productionGenerationIdentity(generationRunID, generationModelID, generationPromptVersion)
 	edit.ReviewNote = nullableString(reviewNote)
 	edit.UpdatedBy = nullableString(updatedBy)
 	edit.ReviewedBy = nullableString(reviewedBy)
@@ -3168,14 +3535,19 @@ func scanCategoryTranslationEditOrNotFound(row rowScanner) (entity.CategoryTrans
 }
 
 func scanSectionTranslationEditOrNotFound(row rowScanner) (entity.SectionTranslationEdit, error) {
-	var edit entity.SectionTranslationEdit
-	var title sql.NullString
-	var source sql.NullString
-	var metadata []byte
-	var reviewNote sql.NullString
-	var updatedBy sql.NullString
-	var reviewedBy sql.NullString
-	var reviewedAt sql.NullTime
+	var (
+		edit                    entity.SectionTranslationEdit
+		title                   sql.NullString
+		source                  sql.NullString
+		metadata                []byte
+		generationRunID         sql.NullString
+		generationModelID       sql.NullString
+		generationPromptVersion sql.NullString
+		reviewNote              sql.NullString
+		updatedBy               sql.NullString
+		reviewedBy              sql.NullString
+		reviewedAt              sql.NullTime
+	)
 
 	err := row.Scan(
 		&edit.ProjectID,
@@ -3184,6 +3556,10 @@ func scanSectionTranslationEditOrNotFound(row rowScanner) (entity.SectionTransla
 		&edit.Content,
 		&source,
 		&metadata,
+		&edit.ProvenanceClass,
+		&generationRunID,
+		&generationModelID,
+		&generationPromptVersion,
 		&edit.ReviewStatus,
 		&reviewNote,
 		&updatedBy,
@@ -3201,6 +3577,7 @@ func scanSectionTranslationEditOrNotFound(row rowScanner) (entity.SectionTransla
 	edit.Title = nullableString(title)
 	edit.Source = nullableString(source)
 	edit.Metadata = entity.RawJSON(metadata)
+	edit.Generation = productionGenerationIdentity(generationRunID, generationModelID, generationPromptVersion)
 	edit.ReviewNote = nullableString(reviewNote)
 	edit.UpdatedBy = nullableString(updatedBy)
 	edit.ReviewedBy = nullableString(reviewedBy)
@@ -3210,13 +3587,18 @@ func scanSectionTranslationEditOrNotFound(row rowScanner) (entity.SectionTransla
 }
 
 func scanHeadingSummaryEditOrNotFound(row rowScanner) (entity.HeadingSummaryEdit, error) {
-	var edit entity.HeadingSummaryEdit
-	var source sql.NullString
-	var metadata []byte
-	var reviewNote sql.NullString
-	var updatedBy sql.NullString
-	var reviewedBy sql.NullString
-	var reviewedAt sql.NullTime
+	var (
+		edit                    entity.HeadingSummaryEdit
+		source                  sql.NullString
+		metadata                []byte
+		generationRunID         sql.NullString
+		generationModelID       sql.NullString
+		generationPromptVersion sql.NullString
+		reviewNote              sql.NullString
+		updatedBy               sql.NullString
+		reviewedBy              sql.NullString
+		reviewedAt              sql.NullTime
+	)
 
 	err := row.Scan(
 		&edit.ProjectID,
@@ -3224,6 +3606,10 @@ func scanHeadingSummaryEditOrNotFound(row rowScanner) (entity.HeadingSummaryEdit
 		&edit.Summary,
 		&source,
 		&metadata,
+		&edit.ProvenanceClass,
+		&generationRunID,
+		&generationModelID,
+		&generationPromptVersion,
 		&edit.ReviewStatus,
 		&reviewNote,
 		&updatedBy,
@@ -3240,12 +3626,29 @@ func scanHeadingSummaryEditOrNotFound(row rowScanner) (entity.HeadingSummaryEdit
 
 	edit.Source = nullableString(source)
 	edit.Metadata = entity.RawJSON(metadata)
+	edit.Generation = productionGenerationIdentity(generationRunID, generationModelID, generationPromptVersion)
 	edit.ReviewNote = nullableString(reviewNote)
 	edit.UpdatedBy = nullableString(updatedBy)
 	edit.ReviewedBy = nullableString(reviewedBy)
 	edit.ReviewedAt = nullableTime(reviewedAt)
 
 	return edit, nil
+}
+
+func productionGenerationIdentity(
+	runID,
+	modelID,
+	promptVersion sql.NullString,
+) *entity.GenerationIdentity {
+	if !runID.Valid {
+		return nil
+	}
+
+	return &entity.GenerationIdentity{
+		RunID:         runID.String,
+		ModelID:       modelID.String,
+		PromptVersion: promptVersion.String,
+	}
 }
 
 func scanSectionAudioEditOrNotFound(row rowScanner) (entity.SectionAudioEdit, error) {

@@ -162,6 +162,18 @@ export type ProductionReviewStatus =
 
 export type ProductionReviewDecision = "submit" | "approve" | "reject";
 
+export type ProductionProvenanceClass =
+  | "legacy_unknown"
+  | "source"
+  | "editorial"
+  | "machine";
+
+export interface GenerationIdentity {
+  run_id: string;
+  model_id: string;
+  prompt_version: string;
+}
+
 export type ProductionAssetType =
   | "book_metadata"
   | "author_metadata"
@@ -344,7 +356,10 @@ export interface BookProductionDraftRevision {
 
 ## Draft Data Types
 
-Every draft response includes audit and review fields. Save payloads do not include `project_id`, `heading_id`, or review fields because the backend derives them.
+Every text draft response includes immutable provenance/generation attribution plus audit and
+review fields. Save payloads do not include `project_id`, `heading_id`, provenance, generation,
+or review fields because the backend derives or preserves them. Frontend must render attribution
+as read-only metadata, never offer a control to relabel it.
 
 ```ts
 export interface BookMetadataTranslationEdit {
@@ -355,6 +370,8 @@ export interface BookMetadataTranslationEdit {
   description?: string | null;
   source?: string | null;
   metadata?: Record<string, unknown> | null;
+  provenance_class: ProductionProvenanceClass;
+  generation?: GenerationIdentity | null;
   review_status: ProductionReviewStatus;
   review_note?: string | null;
   updated_by?: string | null;
@@ -381,6 +398,8 @@ export interface AuthorTranslationEdit {
   death_text?: string | null;
   source?: string | null;
   metadata?: Record<string, unknown> | null;
+  provenance_class: ProductionProvenanceClass;
+  generation?: GenerationIdentity | null;
   review_status: ProductionReviewStatus;
   review_note?: string | null;
   updated_by?: string | null;
@@ -404,6 +423,8 @@ export interface CategoryTranslationEdit {
   name: string;
   source?: string | null;
   metadata?: Record<string, unknown> | null;
+  provenance_class: ProductionProvenanceClass;
+  generation?: GenerationIdentity | null;
   review_status: ProductionReviewStatus;
   review_note?: string | null;
   updated_by?: string | null;
@@ -427,6 +448,8 @@ export interface SectionTranslationEdit {
   content: string;
   source?: string | null;
   metadata?: Record<string, unknown> | null;
+  provenance_class: ProductionProvenanceClass;
+  generation?: GenerationIdentity | null;
   review_status: ProductionReviewStatus;
   review_note?: string | null;
   updated_by?: string | null;
@@ -450,6 +473,8 @@ export interface HeadingSummaryEdit {
   summary: string;
   source?: string | null;
   metadata?: Record<string, unknown> | null;
+  provenance_class: ProductionProvenanceClass;
+  generation?: GenerationIdentity | null;
   review_status: ProductionReviewStatus;
   review_note?: string | null;
   updated_by?: string | null;
@@ -1103,10 +1128,18 @@ Backend behavior:
 
 - Every successful draft save creates a draft revision.
 - Every save resets `review_status` to `draft`.
+- On first save, the backend inherits `provenance_class=machine` and the exact `generation` tuple
+  when a machine final asset exists for that target. With no machine source, a new human draft is
+  `provenance_class=editorial` with no `generation`; the client never submits this decision.
+- Saving or reviewing a machine-derived draft preserves its class and run even when the editor
+  changes the text. Human approval never turns machine lineage into editorial lineage.
+- An untouched migrated draft can report `legacy_unknown`. A real human text rewrite upgrades it
+  to `editorial`; the UI must not infer or submit this label itself.
 - Save updates project workflow to `drafting`.
 - Save emits a `production_asset.draft_save` activity event.
 - Delete emits `production_asset.draft_delete`.
-- Restore emits `production_asset.draft_restore`, resets current draft review status to `draft`, and creates a new revision.
+- Restore emits `production_asset.draft_restore`, restores provenance/generation from the chosen
+  snapshot, resets current draft review status to `draft`, and creates a new revision.
 
 Frontend behavior:
 
@@ -1306,7 +1339,8 @@ BookProductionProject
 Publish behavior:
 
 - Backend re-validates readiness.
-- Draft assets are upserted into final reader tables.
+- Draft assets are upserted into final reader tables with Provenance Class and generation run
+  unchanged.
 - Soft-delete flags on final rows are cleared.
 - Project becomes published.
 - Public reader starts exposing `lang=id|en` final assets for this book+lang.

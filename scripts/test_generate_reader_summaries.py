@@ -170,6 +170,52 @@ class GenerateReaderSummariesTest(unittest.TestCase):
         self.assertEqual(payload["model"], "glm-5.1")
         self.assertIn("response_format", payload)
 
+    def test_summary_asset_carries_generation_identity(self) -> None:
+        original_fetch = gs.fetch_toc_section
+        original_generate = gs.generate_summary
+
+        def fake_fetch(*args: object, **kwargs: object) -> dict[str, object]:
+            return {"original_text": "نص عربي طويل بما يكفي للتلخيص"}
+
+        def fake_generate(**kwargs: object) -> str:
+            return "ملخص عربي صالح وطويل بما يكفي للعرض في واجهة القارئ."
+
+        generation = gs.new_generation_identity("glm-5.1", gs.READER_SUMMARY_PROMPT_VERSION)
+        args = argparse.Namespace(
+            base_url="http://127.0.0.1:8080",
+            book_id=1,
+            source_lang="ar",
+            summary_lang="ar",
+            max_source_chars=0,
+            dry_run=False,
+            llm_base_url="https://example.test/v1",
+            model="glm-5.1",
+            max_tokens=200,
+            timeout_seconds=1,
+            retries=0,
+            provider_name="test-provider",
+            generation=generation,
+        )
+        gs.fetch_toc_section = fake_fetch
+        gs.generate_summary = fake_generate
+        try:
+            asset = gs.generate_summary_asset(
+                args,
+                "test-key",
+                {"heading_id": 2, "title": "باب"},
+                {},
+                {},
+                1,
+                1,
+            )
+        finally:
+            gs.fetch_toc_section = original_fetch
+            gs.generate_summary = original_generate
+
+        self.assertEqual(asset["provenance_class"], "machine")
+        self.assertEqual(asset["generation"], generation)
+        self.assertEqual(asset["generation"]["prompt_version"], "reader-summary-v1")
+
 
 if __name__ == "__main__":
     unittest.main()

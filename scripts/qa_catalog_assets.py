@@ -20,6 +20,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from generation_identity import (
+    CATALOG_TRANSLATION_PROMPT_VERSION,
+    MACHINE_PROVENANCE_CLASS,
+    parse_generation_identity,
+)
+
 
 FAIL = "FAIL"
 WARN = "WARN"
@@ -141,8 +147,26 @@ def run_qa(args: argparse.Namespace) -> dict[str, Any]:
         issues.append(Issue(FAIL, "NO_CATALOG_ROWS", "file contains no catalog translation rows"))
 
     seen: dict[tuple[str, int, str], CatalogRow] = {}
+    generation_runs: dict[str, tuple[str, str, CatalogRow]] = {}
     for row in catalog_rows:
         issues.extend(validate_catalog_row(row, expected_lang))
+        generation_issues, identity = validate_machine_generation(row)
+        issues.extend(generation_issues)
+        if identity is not None:
+            run_id, model_id, prompt_version = identity
+            previous = generation_runs.get(run_id)
+            if previous is not None and previous[:2] != (model_id, prompt_version):
+                issues.append(
+                    row_issue(
+                        FAIL,
+                        "GENERATION_TUPLE_CONFLICT",
+                        "generation.run_id was already used with model_id="
+                        f"{previous[0]} and prompt_version={previous[1]} at line {previous[2].line}",
+                        row,
+                    )
+                )
+            elif previous is None:
+                generation_runs[run_id] = (model_id, prompt_version, row)
         key = (row.kind, row.object_id or 0, row.lang)
         if all(key):
             if key in seen:
@@ -253,6 +277,65 @@ def validate_catalog_row(row: CatalogRow, expected_lang: str | None) -> list[Iss
             issues.append(row_issue(WARN, "ARABIC_HEAVY_TEXT", f"{field} still looks mostly Arabic", row))
 
     return issues
+
+
+def validate_machine_generation(
+    row: CatalogRow,
+) -> tuple[list[Issue], tuple[str, str, str] | None]:
+    issues: list[Issue] = []
+    provenance_class = row.raw.get("provenance_class")
+    if not isinstance(provenance_class, str) or not provenance_class.strip():
+        issues.append(row_issue(FAIL, "MISSING_PROVENANCE_CLASS", "provenance_class is required", row))
+    elif provenance_class.strip() != MACHINE_PROVENANCE_CLASS:
+        issues.append(
+            row_issue(
+                FAIL,
+                "INVALID_PROVENANCE_CLASS",
+                f"provenance_class must be {MACHINE_PROVENANCE_CLASS}",
+                row,
+            )
+        )
+
+    identity, identity_errors = parse_generation_identity(row.raw.get("generation"))
+    for code, message in identity_errors:
+        issues.append(row_issue(FAIL, code, message, row))
+    if identity is None:
+        return issues, None
+
+    _, model_id, prompt_version = identity
+    if prompt_version != CATALOG_TRANSLATION_PROMPT_VERSION:
+        issues.append(
+            row_issue(
+                FAIL,
+                "INVALID_GENERATION_PROMPT_VERSION",
+                f"generation.prompt_version must be {CATALOG_TRANSLATION_PROMPT_VERSION}",
+                row,
+            )
+        )
+
+    source_model = str(row.raw.get("source") or "").strip()
+    if source_model and source_model != model_id:
+        issues.append(
+            row_issue(
+                FAIL,
+                "GENERATION_MODEL_CONFLICT",
+                "generation.model_id conflicts with source",
+                row,
+            )
+        )
+    metadata = row.raw.get("metadata")
+    metadata_model = str(metadata.get("model") or "").strip() if isinstance(metadata, dict) else ""
+    if metadata_model and metadata_model != model_id:
+        issues.append(
+            row_issue(
+                FAIL,
+                "GENERATION_MODEL_CONFLICT",
+                "generation.model_id conflicts with metadata.model",
+                row,
+            )
+        )
+
+    return issues, identity
 
 
 def translatable_text_fields(row: CatalogRow) -> dict[str, str]:

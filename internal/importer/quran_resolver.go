@@ -20,6 +20,7 @@ import (
 	"github.com/alfariesh/surau-backend/internal/usecase/crossreference"
 	"github.com/alfariesh/surau-backend/pkg/postgres"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -40,6 +41,8 @@ var (
 var errUnmappableLegacyQuranReference = errors.New("legacy Quran reference has no valid pair of Anchors")
 
 var errUnavailableLegacyQuranSource = errors.New("legacy Quran reference source Work is deleted")
+
+var errQuranReferenceNormalizationDrift = errors.New("legacy Quran reference does not match search-key v1")
 
 type quranMentionSource struct {
 	ID             string
@@ -274,6 +277,135 @@ func FreezeLegacyQuranReferenceWrites(ctx context.Context, pool *pgxpool.Pool) e
 func UnfreezeLegacyQuranReferenceWrites(ctx context.Context, pool *pgxpool.Pool) error {
 	if err := newCrossReferenceService(pool).UnfreezeLegacyQuranWrites(ctx); err != nil {
 		return fmt.Errorf("unfreeze direct legacy Quran reference writes: %w", err)
+	}
+
+	return nil
+}
+
+// StampQuranReferenceNormalizationV1ForBook verifies every unversioned legacy
+// derivative for one Work before stamping quran_book_references and its bridge
+// atomically. Any drift aborts the transaction; it is never corrected or
+// labeled v1 silently.
+func StampQuranReferenceNormalizationV1ForBook(
+	ctx context.Context,
+	pool *pgxpool.Pool,
+	bookID int,
+) (int64, error) {
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("begin Quran normalization version stamp: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	if err := lockLegacyQuranNormalizationV1(ctx, tx, bookID); err != nil {
+		return 0, err
+	}
+
+	if err := verifyLegacyQuranNormalizationV1(ctx, tx, bookID); err != nil {
+		return 0, err
+	}
+
+	if _, err := tx.Exec(ctx, `SET LOCAL surau.cross_reference_writer = 'cross-reference-service'`); err != nil {
+		return 0, fmt.Errorf("enable guarded Quran normalization version stamp: %w", err)
+	}
+
+	legacyTag, err := tx.Exec(ctx, `
+UPDATE quran_book_references
+SET normalization_version = $2
+WHERE book_id = $1
+	  AND normalization_version IS NULL`, bookID, quranutil.SearchKeyV1ProfileVersion)
+	if err != nil {
+		return 0, fmt.Errorf("stamp quran_book_references normalization v1 for Work %d: %w", bookID, err)
+	}
+
+	bridgeTag, err := tx.Exec(ctx, `
+UPDATE quran_cross_reference_bridge
+SET normalization_version = $2
+WHERE book_id = $1
+	  AND normalization_version IS NULL`, bookID, quranutil.SearchKeyV1ProfileVersion)
+	if err != nil {
+		return 0, fmt.Errorf("stamp quran_cross_reference_bridge normalization v1 for Work %d: %w", bookID, err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return 0, fmt.Errorf("commit Quran normalization version stamp for Work %d: %w", bookID, err)
+	}
+
+	return legacyTag.RowsAffected() + bridgeTag.RowsAffected(), nil
+}
+
+func lockLegacyQuranNormalizationV1(ctx context.Context, tx pgx.Tx, bookID int) error {
+	// Keep the order aligned with the official dual writer: legacy projection
+	// first, then bridge. The locks remain held through verification and both
+	// version updates, so source text cannot become stale between those steps.
+	if _, err := tx.Exec(ctx, `
+SELECT id
+FROM quran_book_references
+WHERE book_id = $1 AND normalization_version IS NULL
+ORDER BY id
+FOR UPDATE`, bookID); err != nil {
+		return fmt.Errorf("lock legacy Quran references for Work %d: %w", bookID, err)
+	}
+
+	if _, err := tx.Exec(ctx, `
+SELECT cross_reference_id
+FROM quran_cross_reference_bridge
+WHERE book_id = $1 AND normalization_version IS NULL
+ORDER BY cross_reference_id
+FOR UPDATE`, bookID); err != nil {
+		return fmt.Errorf("lock legacy Quran bridge rows for Work %d: %w", bookID, err)
+	}
+
+	return nil
+}
+
+func verifyLegacyQuranNormalizationV1(ctx context.Context, tx pgx.Tx, bookID int) error {
+	rows, err := tx.Query(ctx, `
+SELECT relation_name, row_id, source_text, normalized_text
+FROM (
+    SELECT 'quran_book_references' AS relation_name,
+           id::text AS row_id,
+           source_text,
+           normalized_text
+    FROM quran_book_references
+    WHERE book_id = $1 AND normalization_version IS NULL
+
+    UNION ALL
+
+    SELECT 'quran_cross_reference_bridge' AS relation_name,
+           cross_reference_id::text AS row_id,
+           source_text,
+           normalized_text
+    FROM quran_cross_reference_bridge
+    WHERE book_id = $1 AND normalization_version IS NULL
+) pending
+ORDER BY relation_name, row_id`, bookID)
+	if err != nil {
+		return fmt.Errorf("load legacy Quran normalization for Work %d: %w", bookID, err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var relationName, rowID, sourceText, normalizedText string
+		if err := rows.Scan(&relationName, &rowID, &sourceText, &normalizedText); err != nil {
+			return fmt.Errorf("scan legacy Quran normalization for Work %d: %w", bookID, err)
+		}
+
+		expected := quranutil.NormalizeKeyV1(sourceText)
+		if normalizedText != expected {
+			return fmt.Errorf(
+				"%w: %s row %s has %q, expected %q",
+				errQuranReferenceNormalizationDrift,
+				relationName,
+				rowID,
+				normalizedText,
+				expected,
+			)
+		}
+	}
+
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate legacy Quran normalization for Work %d: %w", bookID, err)
 	}
 
 	return nil

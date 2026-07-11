@@ -57,6 +57,8 @@ type CitableUnit struct {
 	Language             string
 	ProvenanceClass      string
 	ProvenanceDetail     map[string]any
+	GenerationRunID      *string
+	Generation           *GenerationIdentity
 	LicenseStatus        *string // nil = inherit from Work (B-4)
 	Lifecycle            string
 	RetiredAt            *time.Time

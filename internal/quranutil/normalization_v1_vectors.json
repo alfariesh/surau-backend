@@ -1,0 +1,118 @@
+{
+  "profile": {
+    "name": "search-key",
+    "version": 1
+  },
+  "vectors": [
+    {
+      "name": "empty",
+      "input": "",
+      "expected": ""
+    },
+    {
+      "name": "only separators",
+      "input": "  ،؛!?—_()[]{}  ",
+      "expected": ""
+    },
+    {
+      "name": "alef hamza and final letter folds",
+      "input": "أ إ آ ٱ ؤ ئ ى",
+      "expected": "ا ا ا ا و ي ي"
+    },
+    {
+      "name": "standalone hamza and ta marbuta remain distinct",
+      "input": "ء ة ه",
+      "expected": "ء ة ه"
+    },
+    {
+      "name": "tatweel",
+      "input": "الـعــلـم",
+      "expected": "العلم"
+    },
+    {
+      "name": "arabic marks range 0610 through 061a",
+      "input": "ب\u0610\u0611\u0612\u0613\u0614\u0615\u0616\u0617\u0618\u0619\u061aت",
+      "expected": "بت"
+    },
+    {
+      "name": "arabic marks range 064b through 065f",
+      "input": "ب\u064b\u064c\u064d\u064e\u064f\u0650\u0651\u0652\u0653\u0654\u0655\u0656\u0657\u0658\u0659\u065a\u065b\u065c\u065d\u065e\u065fت",
+      "expected": "بت"
+    },
+    {
+      "name": "superscript alef 0670",
+      "input": "ه\u0670ذا",
+      "expected": "هذا"
+    },
+    {
+      "name": "quranic marks range 06d6 through 06ed",
+      "input": "ب\u06d6\u06d7\u06d8\u06d9\u06da\u06db\u06dc\u06dd\u06de\u06df\u06e0\u06e1\u06e2\u06e3\u06e4\u06e5\u06e6\u06e7\u06e8\u06e9\u06ea\u06eb\u06ec\u06edت",
+      "expected": "بت"
+    },
+    {
+      "name": "stacked tashkil",
+      "input": "اللَّٰهُ",
+      "expected": "الله"
+    },
+    {
+      "name": "quran verse",
+      "input": "إِنَّا أَنزَلْنَـٰهُ فِي لَيْلَةِ ٱلْقَدْرِ",
+      "expected": "انا انزلنه في ليلة القدر"
+    },
+    {
+      "name": "arabic punctuation",
+      "input": "قال،زيد؛ثم:سكت؟",
+      "expected": "قال زيد ثم سكت"
+    },
+    {
+      "name": "latin punctuation",
+      "input": "one,two.three:four;five!?six-seven_eight",
+      "expected": "one two three four five six seven eight"
+    },
+    {
+      "name": "quotes and brackets",
+      "input": "«قال» (زيد) [هنا] {الآن} \"نعم\" 'حقا'",
+      "expected": "قال زيد هنا الان نعم حقا"
+    },
+    {
+      "name": "symbols and emoji",
+      "input": "علم✅نافع + فقه/حديث © 2026",
+      "expected": "علم نافع فقه حديث 2026"
+    },
+    {
+      "name": "mixed latin arabic",
+      "input": "Kitab إحياءُ علومِ الدّين v2",
+      "expected": "Kitab احياء علوم الدين v2"
+    },
+    {
+      "name": "digits from supported scripts",
+      "input": "2026 ١٤٤٨ ۱۲۳",
+      "expected": "2026 ١٤٤٨ ۱۲۳"
+    },
+    {
+      "name": "unicode whitespace collapses",
+      "input": "  أبو\tحامد\nالغزالي\r\nفي\u00a0طوس  ",
+      "expected": "ابو حامد الغزالي في طوس"
+    },
+    {
+      "name": "case is preserved",
+      "input": "Quran quran QURAN",
+      "expected": "Quran quran QURAN"
+    },
+    {
+      "name": "non arabic letters remain",
+      "input": "café Ελληνικά Кириллица",
+      "expected": "café Ελληνικά Кириллица"
+    },
+    {
+      "name": "non arabic combining mark becomes separator",
+      "input": "e\u0301cole",
+      "expected": "e cole"
+    },
+    {
+      "name": "isolated punctuation does not concatenate words",
+      "input": "عبد@الله#بن$عمر%",
+      "expected": "عبد الله بن عمر"
+    }
+  ]
+}

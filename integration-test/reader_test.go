@@ -627,8 +627,8 @@ ON CONFLICT (book_id, heading_id) DO UPDATE SET
 	)
 	execFixtureSQL(
 		t, ctx, tx, `
-INSERT INTO category_translations (category_id, lang, name, source)
-VALUES ($1, 'id', 'Kategori Fixture', 'integration-test')
+INSERT INTO category_translations (category_id, lang, name, source, provenance_class)
+VALUES ($1, 'id', 'Kategori Fixture', 'integration-test', 'editorial')
 ON CONFLICT (category_id, lang) DO UPDATE SET
     name = EXCLUDED.name,
     is_deleted = false,
@@ -639,8 +639,8 @@ ON CONFLICT (category_id, lang) DO UPDATE SET
 	)
 	execFixtureSQL(
 		t, ctx, tx, `
-INSERT INTO author_translations (author_id, lang, name, biography, death_text, source)
-VALUES ($1, 'id', 'Penulis Fixture', 'Biografi fixture', '1445 H', 'integration-test')
+INSERT INTO author_translations (author_id, lang, name, biography, death_text, source, provenance_class)
+VALUES ($1, 'id', 'Penulis Fixture', 'Biografi fixture', '1445 H', 'integration-test', 'editorial')
 ON CONFLICT (author_id, lang) DO UPDATE SET
     name = EXCLUDED.name,
     biography = EXCLUDED.biography,
@@ -653,8 +653,13 @@ ON CONFLICT (author_id, lang) DO UPDATE SET
 	)
 	execFixtureSQL(
 		t, ctx, tx, `
-INSERT INTO book_metadata_translations (book_id, lang, display_title, bibliography, hint, description, source)
-VALUES ($1, 'id', 'Kitab Fixture Indonesia', 'Bibliografi fixture', 'Hint fixture', 'Deskripsi fixture', 'integration-test')
+INSERT INTO book_metadata_translations (
+    book_id, lang, display_title, bibliography, hint, description, source, provenance_class
+)
+VALUES (
+    $1, 'id', 'Kitab Fixture Indonesia', 'Bibliografi fixture', 'Hint fixture',
+    'Deskripsi fixture', 'integration-test', 'editorial'
+)
 ON CONFLICT (book_id, lang) DO UPDATE SET
     display_title = EXCLUDED.display_title,
     bibliography = EXCLUDED.bibliography,
@@ -668,8 +673,8 @@ ON CONFLICT (book_id, lang) DO UPDATE SET
 	)
 	execFixtureSQL(
 		t, ctx, tx, `
-INSERT INTO section_translations (book_id, heading_id, lang, title, content, source)
-VALUES ($1, $2, 'id', 'Bab Fixture Indonesia', 'Konten terjemahan Indonesia', 'integration-test')
+INSERT INTO section_translations (book_id, heading_id, lang, title, content, source, provenance_class)
+VALUES ($1, $2, 'id', 'Bab Fixture Indonesia', 'Konten terjemahan Indonesia', 'integration-test', 'editorial')
 ON CONFLICT (book_id, heading_id, lang) DO UPDATE SET
     title = EXCLUDED.title,
     content = EXCLUDED.content,
@@ -698,8 +703,8 @@ ON CONFLICT (book_id, heading_id, lang) DO UPDATE SET
 	)
 	execFixtureSQL(
 		t, ctx, tx, `
-INSERT INTO book_heading_summaries (book_id, heading_id, lang, summary, source)
-VALUES ($1, $2, 'ar', 'ملخص عربي للاختبار', 'integration-test')
+INSERT INTO book_heading_summaries (book_id, heading_id, lang, summary, source, provenance_class)
+VALUES ($1, $2, 'ar', 'ملخص عربي للاختبار', 'integration-test', 'editorial')
 ON CONFLICT (book_id, heading_id, lang) DO UPDATE SET
     summary = EXCLUDED.summary,
     is_deleted = false,
@@ -711,8 +716,8 @@ ON CONFLICT (book_id, heading_id, lang) DO UPDATE SET
 	)
 	execFixtureSQL(
 		t, ctx, tx, `
-INSERT INTO book_heading_summaries (book_id, heading_id, lang, summary, source)
-VALUES ($1, $2, 'id', 'Ringkasan fixture Indonesia', 'integration-test')
+INSERT INTO book_heading_summaries (book_id, heading_id, lang, summary, source, provenance_class)
+VALUES ($1, $2, 'id', 'Ringkasan fixture Indonesia', 'integration-test', 'editorial')
 ON CONFLICT (book_id, heading_id, lang) DO UPDATE SET
     summary = EXCLUDED.summary,
     is_deleted = false,

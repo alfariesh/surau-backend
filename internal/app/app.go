@@ -376,6 +376,7 @@ func initServers(cfg *config.Config, pg *postgres.Postgres, uc useCases, jwtMana
 		uc.quran,
 		uc.anchor,
 		uc.crossReference,
+		uc.unitRegistry,
 		uc.user,
 		uc.personal,
 		uc.editorial,

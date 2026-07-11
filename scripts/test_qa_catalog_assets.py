@@ -13,6 +13,13 @@ sys.path.insert(0, str(SCRIPT_DIR))
 import qa_catalog_assets as qa  # noqa: E402
 
 
+CATALOG_GENERATION = {
+    "run_id": "33333333-3333-4333-8333-333333333333",
+    "model_id": "test-model",
+    "prompt_version": "catalog-translation-v1",
+}
+
+
 def make_args(path: Path, **kwargs: object):
     defaults = {
         "file": str(path),
@@ -45,6 +52,8 @@ def book_row(**overrides: object) -> dict[str, object]:
         "hint": "Ringkasan katalog.",
         "description": "Deskripsi katalog untuk halaman detail kitab.",
         "translation_status": "generated",
+        "provenance_class": "machine",
+        "generation": dict(CATALOG_GENERATION),
         "metadata": {"unit": "catalog_book"},
     }
     row.update(overrides)
@@ -59,6 +68,8 @@ def author_row(**overrides: object) -> dict[str, object]:
         "name": "Ibnu Utsaimin",
         "biography": "Biografi singkat penulis.",
         "translation_status": "generated",
+        "provenance_class": "machine",
+        "generation": dict(CATALOG_GENERATION),
         "metadata": {"unit": "catalog_author"},
     }
     row.update(overrides)
@@ -118,6 +129,50 @@ class CatalogQATest(unittest.TestCase):
 
         self.assertIn("ARABIC_HEAVY_TEXT", self.issue_codes(report))
         self.assertEqual(report["summary"]["failures"], 0)  # type: ignore[index]
+
+    def test_machine_provenance_is_required(self) -> None:
+        row = book_row()
+        row.pop("provenance_class")
+        report = self.run_qa_for_rows([row])
+
+        self.assertIn("MISSING_PROVENANCE_CLASS", self.issue_codes(report))
+
+    def test_generation_identity_is_required(self) -> None:
+        row = book_row()
+        row.pop("generation")
+        report = self.run_qa_for_rows([row])
+
+        self.assertIn("MISSING_GENERATION", self.issue_codes(report))
+
+    def test_generation_identity_rejects_empty_fields(self) -> None:
+        report = self.run_qa_for_rows(
+            [book_row(generation={"run_id": "", "model_id": "", "prompt_version": ""})]
+        )
+
+        self.assertIn("MISSING_GENERATION_RUN_ID", self.issue_codes(report))
+        self.assertIn("MISSING_GENERATION_MODEL_ID", self.issue_codes(report))
+        self.assertIn("MISSING_GENERATION_PROMPT_VERSION", self.issue_codes(report))
+
+    def test_generation_identity_rejects_invalid_uuid(self) -> None:
+        generation = dict(CATALOG_GENERATION, run_id="invalid")
+        report = self.run_qa_for_rows([book_row(generation=generation)])
+
+        self.assertIn("INVALID_GENERATION_RUN_ID", self.issue_codes(report))
+
+    def test_generation_tuple_conflict_fails(self) -> None:
+        first = dict(CATALOG_GENERATION)
+        second = dict(CATALOG_GENERATION, prompt_version="catalog-translation-v2")
+        report = self.run_qa_for_rows(
+            [book_row(generation=first), author_row(generation=second)]
+        )
+
+        self.assertIn("GENERATION_TUPLE_CONFLICT", self.issue_codes(report))
+
+    def test_catalog_prompt_version_is_frozen(self) -> None:
+        generation = dict(CATALOG_GENERATION, prompt_version="reader-translation-v1")
+        report = self.run_qa_for_rows([book_row(generation=generation)])
+
+        self.assertIn("INVALID_GENERATION_PROMPT_VERSION", self.issue_codes(report))
 
     def test_no_catalog_rows_fails(self) -> None:
         report = self.run_qa_for_rows(

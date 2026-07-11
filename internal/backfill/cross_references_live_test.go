@@ -55,10 +55,11 @@ func resetLiveQuranBridgeState(t *testing.T, pool *pgxpool.Pool) {
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, `
 		DELETE FROM backfill_jobs
-		WHERE job_name IN ($1, $2, $3)`,
+		WHERE job_name IN ($1, $2, $3, $4)`,
 		quranCrossReferenceBridgeJobName,
 		quranCrossReferenceFreezeJobName,
-		quranCrossReferenceUnfreezeJobName)
+		quranCrossReferenceUnfreezeJobName,
+		quranReferenceNormalizationVersionJobName)
 	require.NoError(t, err)
 }
 
@@ -116,7 +117,7 @@ func cleanupLiveQuranBridgeTarget(t *testing.T, pool *pgxpool.Pool) {
 	require.NoError(t, err)
 }
 
-func seedLiveQuranBridgeBook(t *testing.T, pool *pgxpool.Pool, fixtureIndex int, kind, status string) {
+func seedLiveQuranBridgeBook(t *testing.T, pool *pgxpool.Pool, fixtureIndex int, kind string) {
 	t.Helper()
 
 	ctx := context.Background()
@@ -133,14 +134,14 @@ func seedLiveQuranBridgeBook(t *testing.T, pool *pgxpool.Pool, fixtureIndex int,
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, `
 		INSERT INTO quran_book_references (
-			id, book_id, page_id, source_text, normalized_text, reference_kind,
+			id, book_id, page_id, source_text, normalized_text, normalization_version, reference_kind,
 			surah_id, from_ayah_number, to_ayah_number, from_ayah_key, to_ayah_key,
 			match_strategy, confidence, review_status, metadata)
 		VALUES (
-			$1::uuid, $2, 1, $3, $4, $5,
+			$1::uuid, $2, 1, $3, $4, $5, $6,
 			1, 1, 1, '1:1', '1:1',
-			'explicit_surah_ayah', 0.95, $6, '{"fixture":"b3-backfill"}'::jsonb)`,
-		id, bookID, sourceText, searchtext.Normalize(sourceText), kind, status)
+			'explicit_surah_ayah', 0.95, $7, '{"fixture":"b3-backfill"}'::jsonb)`,
+		id, bookID, sourceText, searchtext.Normalize(sourceText), searchtext.ProfileVersion, kind, "approved")
 	require.NoError(t, err)
 }
 
@@ -160,8 +161,8 @@ func TestLiveCrossReferencesQuranBridgePauseResumeAndRerun(t *testing.T) {
 		resetLiveQuranBridgeState(t, pool)
 		setLiveQuranReferenceWritesFrozen(t, pool, originalFrozen)
 	})
-	seedLiveQuranBridgeBook(t, pool, 0, "surah_ayah", "approved")
-	seedLiveQuranBridgeBook(t, pool, 1, "quote", "approved")
+	seedLiveQuranBridgeBook(t, pool, 0, "surah_ayah")
+	seedLiveQuranBridgeBook(t, pool, 1, "quote")
 
 	job, err := ByName(quranCrossReferenceBridgeJobName)
 	require.NoError(t, err)
@@ -275,6 +276,202 @@ func TestLiveCrossReferencesQuranBridgePauseResumeAndRerun(t *testing.T) {
 	require.NoError(t, err, "old-binary compatible direct write must work after explicit unfreeze")
 }
 
+//nolint:paralleltest // serial: shares the B-3 guarded registry and fixed fixture ids
+func TestLiveQuranNormalizationVersionBackfillVerifiesAndStampsAtomically(t *testing.T) {
+	pool := liveBackfillPool(t)
+	seedLiveQuranBridgeTarget(t, pool)
+	resetLiveQuranBridgeState(t, pool)
+	t.Cleanup(func() { resetLiveQuranBridgeState(t, pool) })
+
+	seedLiveQuranBridgeBook(t, pool, 0, "surah_ayah")
+	bridged, err := importer.BridgeLegacyQuranReferencesForBook(
+		context.Background(),
+		pool,
+		liveQuranBridgeFixtureBooks[0],
+	)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), bridged)
+
+	forceLiveQuranNormalizationLegacy(t, pool, false)
+
+	// An unrelated update leaves an unversioned legacy derivative readable.
+	_, err = pool.Exec(context.Background(), `
+UPDATE quran_book_references
+SET review_status = review_status
+WHERE id = $1::uuid`, liveQuranBridgeFixtureIDs[0])
+	require.NoError(t, err)
+
+	// Changing the derivative without its version is rejected by the DB gate.
+	_, err = pool.Exec(context.Background(), `
+UPDATE quran_book_references
+SET normalized_text = normalized_text || ' changed'
+WHERE id = $1::uuid`, liveQuranBridgeFixtureIDs[0])
+
+	var pgErr *pgconn.PgError
+	require.ErrorAs(t, err, &pgErr)
+	assert.Equal(t, "23514", pgErr.Code)
+
+	job := quranReferenceNormalizationVersionJob{}
+	newCursor, processed, done, err := job.ProcessChunk(
+		context.Background(),
+		pool,
+		int64(liveQuranBridgeFixtureBooks[0]-1),
+		1,
+	)
+	require.NoError(t, err)
+	assert.Equal(t, int64(liveQuranBridgeFixtureBooks[0]), newCursor)
+	assert.Equal(t, int64(1), processed)
+	assert.False(t, done)
+	assertLiveQuranNormalizationVersions(t, pool, searchtext.ProfileVersion, searchtext.ProfileVersion)
+
+	// One drifted row aborts before either table receives a version.
+	forceLiveQuranNormalizationLegacy(t, pool, true)
+	_, processed, _, err = job.ProcessChunk(
+		context.Background(),
+		pool,
+		int64(liveQuranBridgeFixtureBooks[0]-1),
+		1,
+	)
+	require.Error(t, err)
+	require.ErrorContains(t, err, "does not match search-key v1")
+	assert.Zero(t, processed)
+	assertLiveQuranNormalizationVersions(t, pool, 0, 0)
+}
+
+//nolint:paralleltest // serial: mutates fixed legacy Quran fixtures and guarded registry rows
+func TestLiveQuranBridgeLabelsOnlyVerifiedLegacyNormalization(t *testing.T) {
+	pool := liveBackfillPool(t)
+	seedLiveQuranBridgeTarget(t, pool)
+	t.Cleanup(func() { resetLiveQuranBridgeState(t, pool) })
+
+	t.Run("matching legacy text is stamped atomically", func(t *testing.T) {
+		resetLiveQuranBridgeState(t, pool)
+		seedLiveQuranBridgeBook(t, pool, 0, "surah_ayah")
+		setLiveUnbridgedQuranNormalization(t, pool, false)
+
+		bridged, err := importer.BridgeLegacyQuranReferencesForBook(
+			context.Background(), pool, liveQuranBridgeFixtureBooks[0],
+		)
+		require.NoError(t, err)
+		assert.Equal(t, int64(1), bridged)
+		assertLiveQuranNormalizationVersions(
+			t,
+			pool,
+			searchtext.ProfileVersion,
+			searchtext.ProfileVersion,
+		)
+	})
+
+	t.Run("drift aborts every derived write", func(t *testing.T) {
+		resetLiveQuranBridgeState(t, pool)
+		seedLiveQuranBridgeBook(t, pool, 0, "surah_ayah")
+		setLiveUnbridgedQuranNormalization(t, pool, true)
+
+		bridged, err := importer.BridgeLegacyQuranReferencesForBook(
+			context.Background(), pool, liveQuranBridgeFixtureBooks[0],
+		)
+		require.Error(t, err)
+		require.ErrorContains(t, err, "invalid cross-reference")
+		assert.Zero(t, bridged)
+
+		var (
+			version     *int
+			derivedRows int
+		)
+		require.NoError(t, pool.QueryRow(context.Background(), `
+SELECT normalization_version,
+       (SELECT count(*) FROM cross_references WHERE id = $1::uuid)
+     + (SELECT count(*) FROM quran_cross_reference_bridge WHERE cross_reference_id = $1::uuid)
+FROM quran_book_references
+WHERE id = $1::uuid`, liveQuranBridgeFixtureIDs[0]).Scan(&version, &derivedRows))
+		assert.Nil(t, version)
+		assert.Zero(t, derivedRows)
+	})
+}
+
+func setLiveUnbridgedQuranNormalization(t *testing.T, pool *pgxpool.Pool, drift bool) {
+	t.Helper()
+
+	ctx := context.Background()
+	tx, err := pool.Begin(ctx)
+	require.NoError(t, err)
+
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	_, err = tx.Exec(ctx, `SET LOCAL session_replication_role = replica`)
+	require.NoError(t, err)
+
+	normalized := searchtext.Normalize(fmt.Sprintf("سورة الفاتحة: 1 تجربة %d", 0))
+	if drift {
+		normalized = "drift"
+	}
+
+	_, err = tx.Exec(ctx, `
+UPDATE quran_book_references
+SET normalized_text = $2, normalization_version = NULL
+WHERE id = $1::uuid`, liveQuranBridgeFixtureIDs[0], normalized)
+	require.NoError(t, err)
+	require.NoError(t, tx.Commit(ctx))
+}
+
+func forceLiveQuranNormalizationLegacy(t *testing.T, pool *pgxpool.Pool, drift bool) {
+	t.Helper()
+
+	ctx := context.Background()
+	tx, err := pool.Begin(ctx)
+	require.NoError(t, err)
+
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	_, err = tx.Exec(ctx, `SET LOCAL session_replication_role = replica`)
+	require.NoError(t, err)
+
+	if drift {
+		_, err = tx.Exec(ctx, `
+UPDATE quran_book_references
+SET normalized_text = 'drift', normalization_version = NULL
+WHERE id = $1::uuid`, liveQuranBridgeFixtureIDs[0])
+	} else {
+		_, err = tx.Exec(ctx, `
+UPDATE quran_book_references
+SET normalization_version = NULL
+WHERE id = $1::uuid`, liveQuranBridgeFixtureIDs[0])
+	}
+
+	require.NoError(t, err)
+	_, err = tx.Exec(ctx, `
+UPDATE quran_cross_reference_bridge
+SET normalization_version = NULL
+WHERE cross_reference_id = $1::uuid`, liveQuranBridgeFixtureIDs[0])
+	require.NoError(t, err)
+	require.NoError(t, tx.Commit(ctx))
+}
+
+func assertLiveQuranNormalizationVersions(t *testing.T, pool *pgxpool.Pool, legacyWant, bridgeWant int) {
+	t.Helper()
+
+	var legacyVersion, bridgeVersion *int
+	require.NoError(t, pool.QueryRow(context.Background(), `
+SELECT qbr.normalization_version, bridge.normalization_version
+FROM quran_book_references qbr
+JOIN quran_cross_reference_bridge bridge ON bridge.cross_reference_id = qbr.id
+WHERE qbr.id = $1::uuid`, liveQuranBridgeFixtureIDs[0]).Scan(&legacyVersion, &bridgeVersion))
+
+	if legacyWant == 0 {
+		assert.Nil(t, legacyVersion)
+	} else {
+		require.NotNil(t, legacyVersion)
+		assert.Equal(t, legacyWant, *legacyVersion)
+	}
+
+	if bridgeWant == 0 {
+		assert.Nil(t, bridgeVersion)
+	} else {
+		require.NotNil(t, bridgeVersion)
+		assert.Equal(t, bridgeWant, *bridgeVersion)
+	}
+}
+
 //nolint:paralleltest // serial: overrides quranBridgeBookScope and shares fixture ids
 func TestLiveCrossReferencesQuranBridgePreflightRejectsApprovedAmbiguous(t *testing.T) {
 	pool := liveBackfillPool(t)
@@ -291,7 +488,7 @@ func TestLiveCrossReferencesQuranBridgePreflightRejectsApprovedAmbiguous(t *test
 		resetLiveQuranBridgeState(t, pool)
 		setLiveQuranReferenceWritesFrozen(t, pool, originalFrozen)
 	})
-	seedLiveQuranBridgeBook(t, pool, 2, "ambiguous", "approved")
+	seedLiveQuranBridgeBook(t, pool, 2, "ambiguous")
 
 	job, err := ByName(quranCrossReferenceBridgeJobName)
 	require.NoError(t, err)

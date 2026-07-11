@@ -351,18 +351,40 @@ func validateMethodDetail(ref *entity.CrossReference) error {
 
 	switch ref.Method {
 	case entity.CrossReferenceMethodResolver:
+		if ref.GenerationRunID != nil {
+			return invalid("resolver method must not carry a generation run")
+		}
 		if strings.TrimSpace(detail.Strategy) == "" {
 			return invalid("resolver method requires strategy")
 		}
+
+		ref.Generation = nil
 	case entity.CrossReferenceMethodMachine:
 		if strings.TrimSpace(detail.ModelID) == "" || strings.TrimSpace(detail.PromptVersion) == "" ||
-			strings.TrimSpace(detail.RunID) == "" {
+			!validUUID(detail.RunID) {
 			return invalid("machine method requires model_id, prompt_version, and run_id")
 		}
+
+		if ref.GenerationRunID != nil && *ref.GenerationRunID != detail.RunID {
+			return invalid("machine generation_run_id must match method_detail.run_id")
+		}
+
+		runID := detail.RunID
+		ref.GenerationRunID = &runID
+		ref.Generation = &entity.GenerationIdentity{
+			RunID:         detail.RunID,
+			ModelID:       detail.ModelID,
+			PromptVersion: detail.PromptVersion,
+		}
 	case entity.CrossReferenceMethodHuman:
+		if ref.GenerationRunID != nil {
+			return invalid("human method must not carry a generation run")
+		}
 		if ref.CreatedBy == nil || !validUUID(*ref.CreatedBy) || detail.ActorID != *ref.CreatedBy {
 			return invalid("human method actor must come from created_by")
 		}
+
+		ref.Generation = nil
 	default:
 		return invalid("unknown method")
 	}

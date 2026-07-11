@@ -13,6 +13,7 @@ from pathlib import Path
 import re
 import sys
 from typing import Any
+from uuid import UUID
 
 import langextract as lx
 from langextract import chunking as lx_chunking
@@ -23,6 +24,7 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     from langextract_kg import db as kg_db  # type: ignore
     from langextract_kg.arabic_normalize import (  # type: ignore
+        PROFILE_VERSION,
         is_ambiguous_person_name,
         is_devotional_formula,
         is_generic_extraction,
@@ -39,6 +41,7 @@ if __package__ in (None, ""):
 else:
     from . import db as kg_db
     from .arabic_normalize import (
+        PROFILE_VERSION,
         is_ambiguous_person_name,
         is_devotional_formula,
         is_generic_extraction,
@@ -74,6 +77,8 @@ def main() -> int:
 
     prompt = get_prompt(args.task)
     run_id = args.run_id or kg_db.new_uuid()
+    generation = machine_generation_identity(run_id, args.model, prompt.version)
+    run_id = generation["run_id"]
     args.run_id = run_id
     out_dir = Path(args.out_dir).expanduser()
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -103,13 +108,16 @@ def main() -> int:
             client.register_prompt_version(prompt)
             client.create_run(run_record)
 
-        result = run_extraction(args, prompt, pages, api_key)
+        result = run_extraction(args, prompt, pages, api_key, generation)
         records, duplicate_failures = dedupe_records_with_rejections(result["records"])
         annotated_docs = result["annotated_docs"]
         failures = [*result["failures"], *duplicate_failures]
         documents_audit = result["documents_audit"]
         assign_failure_chunks(failures, result["chunks_audit"])
         chunks_audit = attach_chunk_counts(result["chunks_audit"], records, failures)
+
+        for rows in (records, chunks_audit, failures):
+            attach_machine_generation(rows, generation)
 
         jsonl_path = out_dir / f"{run_id}.{args.task}.mentions.jsonl"
         chunks_jsonl_path = out_dir / f"{run_id}.{args.task}.chunks.jsonl"
@@ -121,6 +129,7 @@ def main() -> int:
             annotated_docs,
             out_dir=out_dir,
             output_stem=f"{run_id}.{args.task}.langextract",
+            generation=generation,
             show_progress=False,
         )
 
@@ -262,11 +271,47 @@ def build_run_record(args: argparse.Namespace, prompt_version: str, run_id: str,
     }
 
 
+def machine_generation_identity(run_id: str, model_id: str, prompt_version: str) -> dict[str, str]:
+    """Return one canonical machine identity or fail before inference starts."""
+    try:
+        canonical_run_id = str(UUID(str(run_id or "").strip()))
+    except ValueError as err:
+        raise ValueError("generation run_id must be a valid UUID") from err
+
+    model_id = str(model_id or "").strip()
+    prompt_version = str(prompt_version or "").strip()
+    if not model_id:
+        raise ValueError("generation model_id is required")
+    if not prompt_version:
+        raise ValueError("generation prompt_version is required")
+
+    return {
+        "run_id": canonical_run_id,
+        "model_id": model_id,
+        "prompt_version": prompt_version,
+    }
+
+
+def attach_machine_generation(rows: list[dict[str, Any]], generation: dict[str, str]) -> None:
+    """Attach the same typed descriptor to every JSONL/DB audit row in a run."""
+    for row in rows:
+        existing_run_id = row.get("run_id")
+        if existing_run_id not in {None, "", generation["run_id"]}:
+            raise ValueError(
+                f"row run_id {existing_run_id!r} conflicts with generation run {generation['run_id']}"
+            )
+
+        row["run_id"] = generation["run_id"]
+        row["provenance_class"] = "machine"
+        row["generation"] = dict(generation)
+
+
 def run_extraction(
     args: argparse.Namespace,
     prompt: Any,
     pages: list[kg_db.PageSource],
     api_key: str,
+    generation: dict[str, str],
 ) -> dict[str, Any]:
     raw_audits: list[dict[str, Any]] = []
     model = OpenAICompatibleJSONModel(
@@ -320,7 +365,14 @@ def run_extraction(
         show_progress=True,
         tokenizer=tokenizer,
     )
-    hydrate_chunk_audits(chunks_audit, raw_audits, Path(args.out_dir).expanduser(), args.run_id, args.task)
+    hydrate_chunk_audits(
+        chunks_audit,
+        raw_audits,
+        Path(args.out_dir).expanduser(),
+        args.run_id,
+        args.task,
+        generation,
+    )
     annotated_docs = extracted if isinstance(extracted, list) else [extracted]
     records: list[dict[str, Any]] = []
     failures: list[dict[str, Any]] = []
@@ -430,6 +482,7 @@ def hydrate_chunk_audits(
     out_dir: Path,
     run_id: str,
     task: str,
+    generation: dict[str, str],
 ) -> None:
     raw_dir = out_dir / f"{run_id}.{task}.raw_chunks"
     raw_dir.mkdir(parents=True, exist_ok=True)
@@ -439,7 +492,17 @@ def hydrate_chunk_audits(
         if not audit:
             continue
         raw_path = raw_dir / f"chunk-{index:05d}.json"
-        raw_path.write_text(str(audit.get("raw_output") or ""), encoding="utf-8")
+        raw_path.write_text(
+            json.dumps(
+                {
+                    "provenance_class": "machine",
+                    "generation": dict(generation),
+                    "raw_output": str(audit.get("raw_output") or ""),
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
         chunk.update(
             {
                 "prompt_hash": audit.get("prompt_hash"),
@@ -802,6 +865,7 @@ def mention_record_from_extraction(
             "alignment_status": alignment_status,
             "attributes": attributes,
             "normalized_text": normalized_key(extraction_text),
+            "normalization_version": PROFILE_VERSION,
             "grounded": True,
             "confidence": confidence,
             "review_status": review_status,

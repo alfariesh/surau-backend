@@ -7,19 +7,26 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestValuesUpdateSQL(t *testing.T) {
+func TestVersionedValuesUpdateSQL(t *testing.T) {
 	t.Parallel()
 
-	sqlText, args := valuesUpdateSQL("authors", "name_search", []int64{7, 9}, []string{"a", "b"})
+	sqlText, args := versionedValuesUpdateSQL(
+		"authors",
+		"name_search",
+		"name_search_normalization_version",
+		[]int64{7, 9},
+		[]string{"a", "b"},
+		1,
+	)
 
 	assert.Equal(
 		t,
-		"UPDATE authors AS t SET name_search = v.value "+
+		"UPDATE authors AS t SET name_search = v.value, name_search_normalization_version = ($5)::integer "+
 			"FROM (VALUES (($1)::bigint, ($2)::text), (($3)::bigint, ($4)::text)) AS v(id, value) "+
-			"WHERE t.id = v.id",
+			"WHERE t.id = v.id AND t.name_search_normalization_version IS NULL",
 		sqlText,
 	)
-	assert.Equal(t, []any{int64(7), "a", int64(9), "b"}, args)
+	assert.Equal(t, []any{int64(7), "a", int64(9), "b", 1}, args)
 }
 
 func TestAdvisoryLockKeyStableAndDistinct(t *testing.T) {
@@ -39,6 +46,14 @@ func TestByName(t *testing.T) {
 	job, err := ByName("authors-name-search")
 	require.NoError(t, err)
 	assert.Equal(t, "authors-name-search", job.Name())
+
+	versionJob, err := ByName(authorsNameSearchVersionJobName)
+	require.NoError(t, err)
+	assert.Equal(t, 1, versionJob.ProfileVersion())
+
+	quranVersionJob, err := ByName(quranReferenceNormalizationVersionJobName)
+	require.NoError(t, err)
+	assert.Equal(t, 1, quranVersionJob.ProfileVersion())
 
 	_, err = ByName("nope")
 	require.ErrorIs(t, err, ErrJobUnknown)

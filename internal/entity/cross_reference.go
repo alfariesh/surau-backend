@@ -58,6 +58,8 @@ type CrossReference struct {
 	Kind                 string                     `json:"kind"                               example:"quotes"`
 	Method               string                     `json:"method"                             example:"resolver"`
 	MethodDetail         CrossReferenceMethodDetail `json:"method_detail"`
+	GenerationRunID      *string                    `json:"-"`
+	Generation           *GenerationIdentity        `json:"generation,omitempty"`
 	Confidence           *float64                   `json:"confidence,omitempty"                example:"1"`
 	ReviewStatus         string                     `json:"review_status"                      example:"approved"`
 	EvidenceText         string                     `json:"evidence_text"`

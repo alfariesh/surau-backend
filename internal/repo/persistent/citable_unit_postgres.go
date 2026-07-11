@@ -9,6 +9,7 @@ import (
 
 	"github.com/alfariesh/surau-backend/internal/entity"
 	"github.com/alfariesh/surau-backend/pkg/postgres"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -258,13 +259,13 @@ func (r *CitableUnitRepo) ApplyReconcile(ctx context.Context, plan *entity.UnitR
 			INSERT INTO citable_units (
 				id, corpus, book_id, heading_id, page_id, kind, ordinal, position,
 				parent_unit_id, anchor, marker, text, html, text_normalized,
-				normalization_version, content_hash, occurrence, language,
-				provenance_class, provenance_detail, license_status, lifecycle
-			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,'active')`,
+					normalization_version, content_hash, occurrence, language,
+					provenance_class, provenance_detail, generation_run_id, license_status, lifecycle
+				) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,'active')`,
 			u.ID, u.Corpus, u.BookID, u.HeadingID, u.PageID, u.Kind, u.Ordinal, u.Position,
 			u.ParentUnitID, u.Anchor, u.Marker, u.Text, u.HTML, u.TextNormalized,
 			u.NormalizationVersion, u.ContentHash, u.Occurrence, u.Language,
-			u.ProvenanceClass, detail, u.LicenseStatus)
+			u.ProvenanceClass, detail, u.GenerationRunID, u.LicenseStatus)
 
 		mintCount++
 
@@ -427,7 +428,7 @@ const citableUnitColumns = `
 	id, corpus, book_id, heading_id, page_id, kind, ordinal, position,
 	parent_unit_id, anchor, marker, text, html, text_normalized,
 	normalization_version, content_hash, occurrence, language,
-	provenance_class, provenance_detail, license_status, lifecycle,
+	provenance_class, provenance_detail, generation_run_id::text, license_status, lifecycle,
 	retired_at, created_at, updated_at`
 
 func scanCitableUnit(row pgx.Row) (entity.CitableUnit, error) {
@@ -439,7 +440,7 @@ func scanCitableUnit(row pgx.Row) (entity.CitableUnit, error) {
 	err := row.Scan(&u.ID, &u.Corpus, &u.BookID, &u.HeadingID, &u.PageID, &u.Kind, &u.Ordinal,
 		&u.Position, &u.ParentUnitID, &u.Anchor, &u.Marker, &u.Text, &u.HTML, &u.TextNormalized,
 		&u.NormalizationVersion, &u.ContentHash, &u.Occurrence, &u.Language,
-		&u.ProvenanceClass, &detail, &u.LicenseStatus, &u.Lifecycle,
+		&u.ProvenanceClass, &detail, &u.GenerationRunID, &u.LicenseStatus, &u.Lifecycle,
 		&u.RetiredAt, &u.CreatedAt, &u.UpdatedAt)
 	if err != nil {
 		return u, err
@@ -461,6 +462,9 @@ func scanCitableUnit(row pgx.Row) (entity.CitableUnit, error) {
 //nolint:cyclop,gocyclo // guarded root read, shared lineage walk, and ordered batch hydration
 func (r *CitableUnitRepo) ResolveUnit(ctx context.Context, unitID string) (entity.UnitResolution, error) {
 	var res entity.UnitResolution
+	if _, err := uuid.Parse(unitID); err != nil {
+		return res, entity.ErrUnitNotFound
+	}
 
 	unit, err := scanCitableUnit(r.Pool.QueryRow(ctx,
 		`SELECT `+citableUnitColumns+` FROM citable_units WHERE id = $1`, unitID))
@@ -470,6 +474,10 @@ func (r *CitableUnitRepo) ResolveUnit(ctx context.Context, unitID string) (entit
 
 	if err != nil {
 		return res, fmt.Errorf("CitableUnitRepo.ResolveUnit: %w", err)
+	}
+
+	if err := r.hydrateUnitGeneration(ctx, &unit); err != nil {
+		return res, err
 	}
 
 	res.Unit = unit
@@ -511,6 +519,10 @@ func (r *CitableUnitRepo) ResolveUnit(ctx context.Context, unitID string) (entit
 			return res, fmt.Errorf("CitableUnitRepo.ResolveUnit scan successor: %w", err)
 		}
 
+		if err := r.hydrateUnitGeneration(ctx, &successor); err != nil {
+			return res, err
+		}
+
 		byID[successor.ID] = successor
 	}
 
@@ -528,6 +540,26 @@ func (r *CitableUnitRepo) ResolveUnit(ctx context.Context, unitID string) (entit
 	}
 
 	return res, nil
+}
+
+func (r *CitableUnitRepo) hydrateUnitGeneration(ctx context.Context, unit *entity.CitableUnit) error {
+	if unit.GenerationRunID == nil {
+		unit.Generation = nil
+
+		return nil
+	}
+
+	identity := entity.GenerationIdentity{RunID: *unit.GenerationRunID}
+	if err := r.Pool.QueryRow(ctx, `
+SELECT model_id, prompt_version
+FROM generation_runs
+WHERE id = $1`, *unit.GenerationRunID).Scan(&identity.ModelID, &identity.PromptVersion); err != nil {
+		return fmt.Errorf("CitableUnitRepo generation run %s: %w", *unit.GenerationRunID, err)
+	}
+
+	unit.Generation = &identity
+
+	return nil
 }
 
 // AuditCounts runs the SQL half of the scheduled integrity audit: registry

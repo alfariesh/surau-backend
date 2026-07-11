@@ -142,13 +142,17 @@ VALUES ($1, $2, 'draft', '<p>edited</p>', 'edited')`, bookID, pageID)
 	require.NoError(t, err)
 
 	_, err = pool.Exec(ctx, `
-INSERT INTO section_translations (book_id, heading_id, lang, title, content)
-VALUES ($1, $2, 'id', 'judul', 'terjemahan editorial')`, bookID, headingID)
+INSERT INTO section_translations (
+    book_id, heading_id, lang, title, content, provenance_class
+)
+VALUES ($1, $2, 'id', 'judul', 'terjemahan editorial', 'editorial')`, bookID, headingID)
 	require.NoError(t, err)
 
 	_, err = pool.Exec(ctx, `
-INSERT INTO book_heading_summaries (book_id, heading_id, lang, summary)
-VALUES ($1, $2, 'id', 'ringkasan editorial')`, bookID, headingID)
+INSERT INTO book_heading_summaries (
+    book_id, heading_id, lang, summary, provenance_class
+)
+VALUES ($1, $2, 'id', 'ringkasan editorial', 'editorial')`, bookID, headingID)
 	require.NoError(t, err)
 
 	_, err = pool.Exec(ctx, `

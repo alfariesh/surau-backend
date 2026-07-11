@@ -164,6 +164,22 @@ Implikasi operasional:
 - **Restore data-only** (`pg_restore --data-only`) butuh `--disable-triggers`; restore penuh
   normal aman (trigger dibuat SETELAH data di fase post-data).
 
+### Catatan khusus versi normalisasi (B-5)
+
+Profil persisten kini dibekukan sebagai `search-key` v1. Dua job berikut hanya memberi cap versi
+setelah membuktikan nilai lama sama dengan keluaran Go v1:
+
+```sh
+/backfill -job=authors-name-search-v1-version
+/backfill -job=quran-references-normalization-v1
+```
+
+Job pertama berjalan per chunk author; job kedua berjalan atomik per Work untuk legacy Quran
+reference dan bridge. Drift menghentikan chunk/Work tanpa memberi cap sebagian. Data knowledge
+Python lama sengaja tetap `NULL` sampai dinormalisasi ulang, jadi jangan menjadikan semua kolom
+versi non-NULL sebagai target buta. Semantik, kolom, dan gerbang Go-Python lengkap ada di
+[`docs/arabic-normalization.md`](arabic-normalization.md).
+
 ## 7. Checklist per-backfill (salin ke PR)
 
 ```text
@@ -181,6 +197,6 @@ Implikasi operasional:
 
 | # | Job | Tabel | Status | Catatan |
 |---|---|---|---|---|
-| 1 | `authors-name-search` | authors (3.187 baris dev) | SELESAI di dev (S6, 2026-07-08): drill pause di 500/3.187 → resume → completed; endpoint publik 200 sepanjang drill; pending=0 | Bukti produk: `/v1/authors?q=احمد` 19 → 209 hasil (192/192 nama ber-hamzah terjangkau); CONTRACT (index/NOT NULL/konsolidasi lengan translate() buku) ditunda — keputusan profil ء/ة milik B-5 |
+| 1 | `authors-name-search` | authors (3.187 baris dev) | SELESAI di dev (S6, 2026-07-08): drill pause di 500/3.187 → resume → completed; endpoint publik 200 sepanjang drill; pending=0 | Bukti produk: `/v1/authors?q=احمد` 19 → 209 hasil (192/192 nama ber-hamzah terjangkau); B-5 kini membekukan profil `search-key` v1 tanpa melipat `ء`/`ة`, dan cap versinya diberikan terpisah oleh `authors-name-search-v1-version` |
 | 2 | `citable-units-kitab-pilot` | citable_units (dari book_*) | SELESAI B-1 (SESI 11, 2026-07-09): 4 buku eval nyata (797/7312/12876/22842) → 16.205 unit; predikat staleness = job yang sama melayani derive awal & re-derive pasca-re-import | 1 buku per chunk (reconcile atomik); laporan per-buku di stdout |
 | 3 | `citable-units-kitab-rederive` | citable_units | Drill determinisme AC-1: re-run tanpa syarat atas buku ter-derive; TERBUKTI lokal 2026-07-09 — matched=16.205, minted=0, checksum registry MD5 identik | Juga jalur pemulihan setelah perubahan parser/profil yang disengaja (gelombang supersede diserap lineage) |

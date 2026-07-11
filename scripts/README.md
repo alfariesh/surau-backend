@@ -20,11 +20,13 @@ The same importer command also accepts catalog rows:
 author biographies, and category names; they are separate from TOC section
 translation rows.
 
-Generated scripts write `translation_status=generated`. After a human review,
-the same JSONL row can be re-imported with `translation_status=reviewed` and
-`translation_reviewed_by="Reviewer Name"`. This status is only a public
-transparency label; publication is still controlled by editorial book
-publication status.
+Generated scripts write `translation_status=generated`,
+`provenance_class=machine`, and an immutable `generation` identity. After a
+human review, the same JSONL row can be re-imported with
+`translation_status=reviewed` and `translation_reviewed_by="Reviewer Name"`,
+but its machine Provenance Class and generation tuple must remain unchanged.
+Review status is only a public transparency label; publication is still
+controlled by editorial book publication status.
 
 ### Environment
 
@@ -51,6 +53,44 @@ LLM_PROVIDER_NAME=sumopod
 `translate_reader_assets.py` still accepts the historical DeepSeek flag names,
 but it can call any OpenAI-compatible `/chat/completions` provider. Metadata
 provider labels are inferred from the base URL or `LLM_PROVIDER_NAME`.
+
+### Generation Identity Contract
+
+Every generated text row contains this required shape:
+
+```json
+{
+  "provenance_class": "machine",
+  "generation": {
+    "run_id": "550e8400-e29b-41d4-a716-446655440000",
+    "model_id": "glm-5.1",
+    "prompt_version": "reader-translation-v1"
+  }
+}
+```
+
+One script invocation creates one UUID per active prompt family and reuses it
+for all rows in that family:
+
+| Output | Prompt version |
+|---|---|
+| Section translation | `reader-translation-v1` |
+| Canonical Arabic heading summary | `reader-summary-v1` |
+| Translated heading summary | `reader-summary-translation-v1` |
+| Book/author/category catalog translation | `catalog-translation-v1` |
+
+An invocation with section translation plus summary translation has two run
+IDs, not one. `--resume` preserves rows already present and does not rewrite
+their generation identity.
+
+`cmd/import-reader-assets` preflights the complete JSONL file before starting
+the database transaction. A missing identity, malformed UUID, prompt/kind
+mismatch, or conflicting tuple for the same `run_id` rejects the whole file
+with a line number. Run registration and asset upserts commit atomically.
+Audio rows are excluded from this text provenance contract and must not carry
+`provenance_class` or `generation`. See
+[`docs/generation-runs.md`](../docs/generation-runs.md) for the normative B-6
+contract.
 
 ### Smoke Test Without LLM
 
@@ -390,6 +430,11 @@ python3 scripts/qa_reader_assets.py \
 Common fatal checks:
 
 - invalid JSONL rows
+- missing or non-machine `provenance_class`
+- missing/malformed `generation.run_id`, `generation.model_id`, or
+  `generation.prompt_version`
+- prompt version incompatible with the row kind
+- one `run_id` reused with a conflicting model/prompt tuple
 - duplicate `(book_id, heading_id, lang)` translation rows
 - duplicate `(book_id, heading_id, lang)` summary rows
 - mismatched `book_id` or `lang`
@@ -491,6 +536,9 @@ block import unless `--strict` is used.
 Common fatal checks:
 
 - invalid JSONL rows
+- missing or non-machine `provenance_class`
+- missing/malformed generation identity, wrong `catalog-translation-v1`, or a
+  conflicting tuple for the same run
 - duplicate `(kind, object_id, lang)` catalog rows
 - missing required translated text, such as `display_title` or `name`
 - dry-run or placeholder text

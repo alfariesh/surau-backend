@@ -1,6 +1,6 @@
 # Quran API Contract
 
-Last updated: 2026-07-10
+Last updated: 2026-07-11
 
 This document is the FE-facing contract for the Quran backend. It covers the public Quran read APIs, response shapes, audio behavior, errors, and the recommended fetch flow. The Quran domain is standalone: Quran rows live in dedicated Quran tables and are linked to kitab data only through Quran reference records.
 
@@ -1130,6 +1130,7 @@ Status: `200`
       "knowledge_mention_id": "mention-id",
       "source_text": "QS Al-Muzzammil: 4",
       "normalized_text": "al-muzzammil 4",
+      "normalization_version": 1,
       "reference_kind": "surah_ayah",
       "surah_id": 73,
       "from_ayah_number": 4,
@@ -1168,6 +1169,7 @@ Status: `200`
 | --- | --- |
 | `source_text` | Text found in kitab/import pipeline. |
 | `normalized_text` | Normalized resolver text. |
+| `normalization_version` | `1` when `normalized_text` is verified as `search-key` v1; `null` means honest, unverified legacy data. |
 | `reference_kind` | Example: `surah`, `surah_ayah`, `ayah_range`, `quote`. |
 | `match_strategy` | Example: `explicit_surah_ayah`, `exact_quote`, `surah_alias`. |
 | `review_status` | Always `approved` on this public endpoint. Other review states are editorial-only. |
@@ -1511,6 +1513,7 @@ type BookQuranReference = {
   knowledge_mention_id?: string;
   source_text: string;
   normalized_text: string;
+  normalization_version: number | null;
   reference_kind: string;
   surah_id?: number;
   from_ayah_number?: number;

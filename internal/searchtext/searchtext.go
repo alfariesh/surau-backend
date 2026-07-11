@@ -12,10 +12,13 @@ package searchtext
 
 import "github.com/alfariesh/surau-backend/internal/quranutil"
 
-// ProfileVersion identifies the normalization profile used for persisted
-// search text. Stored on backfill checkpoints so a profile change is
-// re-runnable instead of silently mixed.
-const ProfileVersion = 1
+// ProfileName and ProfileVersion identify the normalization profile used for
+// persisted search text. They alias the canonical quranutil contract so
+// callers cannot accidentally version the wrapper independently.
+const (
+	ProfileName    = quranutil.ProfileName
+	ProfileVersion = quranutil.ProfileVersion
+)
 
 // Normalize returns the canonical normalized form for search/linking.
 // Never use the result as display text.

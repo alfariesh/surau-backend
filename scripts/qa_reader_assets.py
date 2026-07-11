@@ -19,6 +19,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from generation_identity import (
+    MACHINE_PROVENANCE_CLASS,
+    READER_SUMMARY_PROMPT_VERSION,
+    READER_SUMMARY_TRANSLATION_PROMPT_VERSION,
+    READER_TRANSLATION_PROMPT_VERSION,
+    parse_generation_identity,
+)
+
 
 FAIL = "FAIL"
 WARN = "WARN"
@@ -38,6 +46,13 @@ DEFAULT_PROFILE_MAP = SCRIPT_DIR / "translation_profiles.json"
 STYLE_VERSION = "reader-profile-v1"
 SUMMARY_STYLE_VERSION = "reader-summary-v1"
 TECHNICAL_ITALIC_CHECK_CHARS = 1200
+EXPECTED_PROMPT_VERSIONS = {
+    "translation": {READER_TRANSLATION_PROMPT_VERSION},
+    "heading_summary": {
+        READER_SUMMARY_PROMPT_VERSION,
+        READER_SUMMARY_TRANSLATION_PROMPT_VERSION,
+    },
+}
 
 RAW_BRACKET_RE = re.compile(
     r"\[\s*(?:Mereka\s+berkata|They\s+said|قالوا|قال)\s*[:：][^\]]{10,}\]",
@@ -192,8 +207,26 @@ def run_qa(args: argparse.Namespace) -> dict[str, Any]:
     selected_kind = select_asset_kind(args.kind, translation_rows, summary_rows)
     selected_rows = summary_rows if selected_kind == "heading_summary" else translation_rows
 
+    generation_runs: dict[str, tuple[str, str, AssetRow]] = {}
     for row in [*translation_rows, *summary_rows]:
         issues.extend(validate_common_shape(row, expected_book_id, expected_lang))
+        generation_issues, identity = validate_machine_generation(row)
+        issues.extend(generation_issues)
+        if identity is not None:
+            run_id, model_id, prompt_version = identity
+            previous = generation_runs.get(run_id)
+            if previous is not None and previous[:2] != (model_id, prompt_version):
+                issues.append(
+                    row_issue(
+                        FAIL,
+                        "GENERATION_TUPLE_CONFLICT",
+                        "generation.run_id was already used with model_id="
+                        f"{previous[0]} and prompt_version={previous[1]} at line {previous[2].line}",
+                        row,
+                    )
+                )
+            elif previous is None:
+                generation_runs[run_id] = (model_id, prompt_version, row)
 
     seen_translations: dict[tuple[int, int, str], AssetRow] = {}
     for row in translation_rows:
@@ -342,6 +375,66 @@ def validate_common_shape(row: AssetRow, expected_book_id: int | None, expected_
         issues.append(row_issue(FAIL, "INVALID_METADATA", "metadata must be a JSON object", row))
 
     return issues
+
+
+def validate_machine_generation(
+    row: AssetRow,
+) -> tuple[list[Issue], tuple[str, str, str] | None]:
+    issues: list[Issue] = []
+    provenance_class = row.raw.get("provenance_class")
+    if not isinstance(provenance_class, str) or not provenance_class.strip():
+        issues.append(row_issue(FAIL, "MISSING_PROVENANCE_CLASS", "provenance_class is required", row))
+    elif provenance_class.strip() != MACHINE_PROVENANCE_CLASS:
+        issues.append(
+            row_issue(
+                FAIL,
+                "INVALID_PROVENANCE_CLASS",
+                f"provenance_class must be {MACHINE_PROVENANCE_CLASS}",
+                row,
+            )
+        )
+
+    identity, identity_errors = parse_generation_identity(row.raw.get("generation"))
+    for code, message in identity_errors:
+        issues.append(row_issue(FAIL, code, message, row))
+    if identity is None:
+        return issues, None
+
+    _, model_id, prompt_version = identity
+    expected_versions = EXPECTED_PROMPT_VERSIONS.get(row.kind, set())
+    if prompt_version not in expected_versions:
+        issues.append(
+            row_issue(
+                FAIL,
+                "INVALID_GENERATION_PROMPT_VERSION",
+                f"generation.prompt_version is invalid for kind={row.kind}",
+                row,
+            )
+        )
+
+    source_model = str(row.raw.get("source") or "").strip()
+    if source_model and source_model != model_id:
+        issues.append(
+            row_issue(
+                FAIL,
+                "GENERATION_MODEL_CONFLICT",
+                "generation.model_id conflicts with source",
+                row,
+            )
+        )
+    metadata = row.metadata
+    metadata_model = str(metadata.get("model") or "").strip() if isinstance(metadata, dict) else ""
+    if metadata_model and metadata_model != model_id:
+        issues.append(
+            row_issue(
+                FAIL,
+                "GENERATION_MODEL_CONFLICT",
+                "generation.model_id conflicts with metadata.model",
+                row,
+            )
+        )
+
+    return issues, identity
 
 
 def validate_translation_row(row: AssetRow, profile_map: dict[str, Any]) -> list[Issue]:

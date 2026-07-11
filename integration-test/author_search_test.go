@@ -83,11 +83,12 @@ func seedHamzaAuthorFixture(t *testing.T) {
 	defer cancel()
 
 	_, err := pool.Exec(ctx, `
-INSERT INTO authors (id, name, name_search, is_deleted)
-VALUES ($1, 'مصنف أحكام التكامل', 'مصنف احكام التكامل', false)
+INSERT INTO authors (id, name, name_search, name_search_normalization_version, is_deleted)
+VALUES ($1, 'مصنف أحكام التكامل', 'مصنف احكام التكامل', 1, false)
 ON CONFLICT (id) DO UPDATE SET
     name = EXCLUDED.name,
     name_search = EXCLUDED.name_search,
+    name_search_normalization_version = EXCLUDED.name_search_normalization_version,
     is_deleted = false`, hamzaFixtureAuthorID)
 	if err != nil {
 		t.Fatalf("seed hamza author fixture: %v", err)

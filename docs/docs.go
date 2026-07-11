@@ -5190,6 +5190,66 @@ const docTemplate = `{
                 ]
             }
         },
+        "/editorial/citable-units/{id}": {
+            "get": {
+                "description": "Return normalized text, lifecycle, provenance, generation identity, and active lineage successors. Requires CapReviewEditorial.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "editorial",
+                    "citable-units"
+                ],
+                "summary": "Get one Citable Unit for editorial review",
+                "operationId": "editorial-get-citable-unit",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Citable Unit UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.EditorialCitableUnitResolution"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
         "/editorial/cross-references": {
             "get": {
                 "description": "List the protected review queue. Requires CapReviewEditorial; unlike the public endpoint this surface can inspect all five review states.",
@@ -11541,6 +11601,9 @@ const docTemplate = `{
                 "death_text": {
                     "type": "string"
                 },
+                "generation": {
+                    "$ref": "#/definitions/entity.GenerationIdentity"
+                },
                 "metadata": {
                     "type": "object"
                 },
@@ -11550,6 +11613,10 @@ const docTemplate = `{
                 "project_id": {
                     "type": "string",
                     "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "provenance_class": {
+                    "type": "string",
+                    "example": "editorial"
                 },
                 "review_note": {
                     "type": "string"
@@ -11962,6 +12029,9 @@ const docTemplate = `{
                 "display_title": {
                     "type": "string"
                 },
+                "generation": {
+                    "$ref": "#/definitions/entity.GenerationIdentity"
+                },
                 "hint": {
                     "type": "string"
                 },
@@ -11971,6 +12041,10 @@ const docTemplate = `{
                 "project_id": {
                     "type": "string",
                     "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "provenance_class": {
+                    "type": "string",
+                    "example": "editorial"
                 },
                 "review_note": {
                     "type": "string"
@@ -12564,6 +12638,10 @@ const docTemplate = `{
                 },
                 "metadata": {
                     "type": "object"
+                },
+                "normalization_version": {
+                    "type": "integer",
+                    "example": 1
                 },
                 "normalized_text": {
                     "type": "string"
@@ -13312,6 +13390,9 @@ const docTemplate = `{
         "entity.CategoryTranslationEdit": {
             "type": "object",
             "properties": {
+                "generation": {
+                    "$ref": "#/definitions/entity.GenerationIdentity"
+                },
                 "metadata": {
                     "type": "object"
                 },
@@ -13321,6 +13402,10 @@ const docTemplate = `{
                 "project_id": {
                     "type": "string",
                     "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "provenance_class": {
+                    "type": "string",
+                    "example": "editorial"
                 },
                 "review_note": {
                     "type": "string"
@@ -13403,6 +13488,9 @@ const docTemplate = `{
                 },
                 "evidence_text": {
                     "type": "string"
+                },
+                "generation": {
+                    "$ref": "#/definitions/entity.GenerationIdentity"
                 },
                 "id": {
                     "type": "string",
@@ -14141,9 +14229,29 @@ const docTemplate = `{
                 }
             }
         },
+        "entity.GenerationIdentity": {
+            "type": "object",
+            "properties": {
+                "model_id": {
+                    "type": "string",
+                    "example": "gpt-5-mini-2026-06-01"
+                },
+                "prompt_version": {
+                    "type": "string",
+                    "example": "reader-translation-v1"
+                },
+                "run_id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                }
+            }
+        },
         "entity.HeadingSummaryEdit": {
             "type": "object",
             "properties": {
+                "generation": {
+                    "$ref": "#/definitions/entity.GenerationIdentity"
+                },
                 "heading_id": {
                     "type": "integer",
                     "example": 10
@@ -14154,6 +14262,10 @@ const docTemplate = `{
                 "project_id": {
                     "type": "string",
                     "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "provenance_class": {
+                    "type": "string",
+                    "example": "editorial"
                 },
                 "review_note": {
                     "type": "string"
@@ -15507,6 +15619,9 @@ const docTemplate = `{
                 "content": {
                     "type": "string"
                 },
+                "generation": {
+                    "$ref": "#/definitions/entity.GenerationIdentity"
+                },
                 "heading_id": {
                     "type": "integer",
                     "example": 10
@@ -15517,6 +15632,10 @@ const docTemplate = `{
                 "project_id": {
                     "type": "string",
                     "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "provenance_class": {
+                    "type": "string",
+                    "example": "editorial"
                 },
                 "review_note": {
                     "type": "string"
@@ -16450,6 +16569,101 @@ const docTemplate = `{
                 "reason": {
                     "type": "string",
                     "maxLength": 2000
+                }
+            }
+        },
+        "v1.EditorialCitableUnit": {
+            "type": "object",
+            "properties": {
+                "anchor": {
+                    "type": "string"
+                },
+                "book_id": {
+                    "type": "integer"
+                },
+                "corpus": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "generation": {
+                    "$ref": "#/definitions/entity.GenerationIdentity"
+                },
+                "heading_id": {
+                    "type": "integer"
+                },
+                "html": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "kind": {
+                    "type": "string"
+                },
+                "language": {
+                    "type": "string"
+                },
+                "license_status": {
+                    "type": "string"
+                },
+                "lifecycle": {
+                    "type": "string"
+                },
+                "marker": {
+                    "type": "string"
+                },
+                "normalization_version": {
+                    "type": "integer"
+                },
+                "occurrence": {
+                    "type": "integer"
+                },
+                "ordinal": {
+                    "type": "integer"
+                },
+                "page_id": {
+                    "type": "integer"
+                },
+                "parent_unit_id": {
+                    "type": "string"
+                },
+                "position": {
+                    "type": "integer"
+                },
+                "provenance_class": {
+                    "type": "string"
+                },
+                "provenance_detail": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "retired_at": {
+                    "type": "string"
+                },
+                "text": {
+                    "type": "string"
+                },
+                "text_normalized": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "v1.EditorialCitableUnitResolution": {
+            "type": "object",
+            "properties": {
+                "successors": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/v1.EditorialCitableUnit"
+                    }
+                },
+                "unit": {
+                    "$ref": "#/definitions/v1.EditorialCitableUnit"
                 }
             }
         },

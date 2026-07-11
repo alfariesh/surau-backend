@@ -23,6 +23,13 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
 
+from generation_identity import (
+    MACHINE_PROVENANCE_CLASS,
+    READER_SUMMARY_TRANSLATION_PROMPT_VERSION,
+    READER_TRANSLATION_PROMPT_VERSION,
+    new_generation_identity,
+)
+
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parent
@@ -143,6 +150,7 @@ def main() -> int:
         )
     if not args.provider_name:
         args.provider_name = resolve_provider_name(args.deepseek_base_url)
+    initialize_generation_runs(args)
 
     api_key = os.environ.get(args.api_key_env) or os.environ.get("RAG_LLM_API_KEY")
     if not api_key and not args.dry_run:
@@ -312,6 +320,20 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def initialize_generation_runs(args: argparse.Namespace) -> None:
+    """Create one run per active prompt family for this invocation."""
+    if not args.summary_only:
+        args.translation_generation = new_generation_identity(
+            args.model,
+            READER_TRANSLATION_PROMPT_VERSION,
+        )
+    if args.include_summary or args.summary_only:
+        args.summary_translation_generation = new_generation_identity(
+            args.model,
+            READER_SUMMARY_TRANSLATION_PROMPT_VERSION,
+        )
+
+
 def translate_heading_asset(
     args: argparse.Namespace,
     api_key: str,
@@ -410,6 +432,8 @@ def build_translation_asset(
         "content": translated["content"],
         "source": args.model,
         "translation_status": "generated",
+        "provenance_class": MACHINE_PROVENANCE_CLASS,
+        "generation": dict(args.translation_generation),
         "metadata": {
             "provider": provider_name,
             "model": args.model,
@@ -474,6 +498,8 @@ def translate_summary_asset(
         "summary": translated_summary,
         "source": args.model,
         "summary_status": "generated",
+        "provenance_class": MACHINE_PROVENANCE_CLASS,
+        "generation": dict(args.summary_translation_generation),
         "metadata": {
             "provider": provider_name,
             "model": args.model,

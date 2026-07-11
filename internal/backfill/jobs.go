@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/alfariesh/surau-backend/internal/searchtext"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -14,6 +15,8 @@ import (
 func Jobs() []Job {
 	return []Job{
 		authorsNameSearchJob{},
+		authorsNameSearchVersionJob{},
+		quranReferenceNormalizationVersionJob{},
 		citableUnitsPilotJob{},
 		citableUnitsRederiveJob{},
 		crossReferencesQuranBridgeJob{},
@@ -60,12 +63,21 @@ func (authorsNameSearchJob) ProcessChunk(
 	cursor int64,
 	limit int,
 ) (newCursor, processed int64, done bool, err error) {
-	rows, err := pool.Query(ctx, `
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return cursor, 0, false, fmt.Errorf("authors-name-search: begin chunk: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	// Keep the source name locked through the versioned write so an importer
+	// cannot make the normalized value stale between SELECT and UPDATE.
+	rows, err := tx.Query(ctx, `
 SELECT id, name
 FROM authors
 WHERE id > $1 AND name_search IS NULL
 ORDER BY id
-LIMIT $2`, cursor, limit)
+LIMIT $2
+FOR UPDATE`, cursor, limit)
 	if err != nil {
 		return cursor, 0, false, fmt.Errorf("authors-name-search: select chunk: %w", err)
 	}
@@ -99,27 +111,77 @@ LIMIT $2`, cursor, limit)
 		return cursor, 0, true, nil
 	}
 
-	sqlText, args := valuesUpdateSQL("authors", "name_search", ids, normalized)
-
-	tag, err := pool.Exec(ctx, sqlText, args...)
+	processed, err = writeAuthorSearchVersionChunk(
+		ctx,
+		tx,
+		"authors-name-search",
+		ids,
+		normalized,
+		searchtext.ProfileVersion,
+	)
 	if err != nil {
-		return cursor, 0, false, fmt.Errorf("authors-name-search: update chunk: %w", err)
+		return cursor, 0, false, err
 	}
 
 	// Deliberately no updated_at bump: the column is derived; mass-churning
 	// row timestamps would lie to consumers that treat them as content
 	// changes.
-	return ids[len(ids)-1], tag.RowsAffected(), len(ids) < limit, nil
+	return ids[len(ids)-1], processed, len(ids) < limit, nil
+}
+
+func writeAuthorSearchVersionChunk(
+	ctx context.Context,
+	tx pgx.Tx,
+	jobName string,
+	ids []int64,
+	normalized []string,
+	profileVersion int,
+) (int64, error) {
+	sqlText, args := versionedValuesUpdateSQL(
+		"authors",
+		"name_search",
+		"name_search_normalization_version",
+		ids,
+		normalized,
+		profileVersion,
+	)
+
+	tag, err := tx.Exec(ctx, sqlText, args...)
+	if err != nil {
+		return 0, fmt.Errorf("%s: update chunk: %w", jobName, err)
+	}
+
+	if tag.RowsAffected() != int64(len(ids)) {
+		return 0, fmt.Errorf(
+			"%w: %s affected %d of %d locked rows",
+			errAuthorChunkWriteConflict,
+			jobName,
+			tag.RowsAffected(),
+			len(ids),
+		)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return 0, fmt.Errorf("%s: commit chunk: %w", jobName, err)
+	}
+
+	return tag.RowsAffected(), nil
 }
 
 // argsPerRow: each VALUES row binds (id, value).
 const argsPerRow = 2
 
-// valuesUpdateSQL builds one batched UPDATE ... FROM (VALUES ...) statement
+// versionedValuesUpdateSQL builds one batched UPDATE ... FROM (VALUES ...)
+// statement that stamps text and its normalization version atomically.
 // (UPDATE has no ORDER BY/LIMIT in Postgres, so chunking happens in the
 // SELECT and the write is a single VALUES join). Explicit casts keep
 // parameter types unambiguous inside VALUES.
-func valuesUpdateSQL(table, column string, ids []int64, values []string) (sqlText string, args []any) {
+func versionedValuesUpdateSQL(
+	table, column, versionColumn string,
+	ids []int64,
+	values []string,
+	profileVersion int,
+) (sqlText string, args []any) {
 	var builder strings.Builder
 
 	args = make([]any, 0, len(ids)*argsPerRow)
@@ -137,9 +199,13 @@ func valuesUpdateSQL(table, column string, ids []int64, values []string) (sqlTex
 		args = append(args, ids[i], values[i])
 	}
 
+	versionArg := len(args) + 1
+	args = append(args, profileVersion)
+
 	sqlText = fmt.Sprintf(
-		"UPDATE %s AS t SET %s = v.value FROM (VALUES %s) AS v(id, value) WHERE t.id = v.id",
-		table, column, builder.String(),
+		"UPDATE %s AS t SET %s = v.value, %s = ($%d)::integer "+
+			"FROM (VALUES %s) AS v(id, value) WHERE t.id = v.id AND t.%s IS NULL",
+		table, column, versionColumn, versionArg, builder.String(), versionColumn,
 	)
 
 	return sqlText, args

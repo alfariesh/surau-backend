@@ -44,6 +44,7 @@ func NewRoutes(
 	quran usecase.Quran,
 	anchor usecase.AnchorResolver,
 	crossReference usecase.CrossReference,
+	unitRegistry usecase.UnitRegistry,
 	u usecase.User,
 	personal usecase.Personal,
 	editorial usecase.Editorial,
@@ -58,6 +59,7 @@ func NewRoutes(
 		quran:              quran,
 		anchor:             anchor,
 		crossReference:     crossReference,
+		unitRegistry:       unitRegistry,
 		u:                  u,
 		personal:           personal,
 		editorial:          editorial,
@@ -275,6 +277,7 @@ func NewRoutes(
 		)
 		editorialReviewGroup.Get("/books", r.editorialListBooks)
 		editorialReviewGroup.Get("/cross-references", r.editorialListCrossReferences)
+		editorialReviewGroup.Get("/citable-units/:id", r.editorialGetCitableUnit)
 		editorialReviewGroup.Post("/cross-references", r.editorialCreateCrossReference)
 		editorialReviewGroup.Get("/cross-references/:id", r.editorialGetCrossReference)
 		editorialReviewGroup.Patch("/cross-references/:id/review", r.editorialReviewCrossReference)
