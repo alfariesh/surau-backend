@@ -1,6 +1,6 @@
-# Kitab License Governance (B-4)
+# License Governance kitab + sumber Quran (B-4 / Q-2)
 
-Last updated: 2026-07-11
+Last updated: 2026-07-12
 
 Dokumen ini adalah kontrak operasional **License Status** kitab. Keputusan produk yang berlaku
 adalah PK-1/O3/O-1B-1: hanya status literal `permitted` yang boleh menghasilkan publikasi baru;
@@ -29,7 +29,9 @@ keputusan disimpan bersama riwayat audit immutable.
 
 ## Pewarisan ke Citable Unit
 
-`citable_units.license_status` tetap nullable sebagai override unit. API kurasi memaparkan tiga
+`citable_units.license_status` tetap nullable sebagai override unit kitab. Unit Quran wajib NULL
+di level constraint dan selalu mewarisi source secara dinamis; override unit tidak dapat
+menghidupkan kembali source Quran yang ditarik. API kurasi memaparkan tiga
 field agar tidak ada tebakan di client:
 
 - `license_status`: override unit; `null` berarti mewarisi.
@@ -83,6 +85,47 @@ publikasi baru, berakhir ketika konten di-unpublish/diarsipkan, dan tidak pernah
 Seluruh reader, Book RAG, Anchor, Cross-Reference, rujukan Quran↔kitab, serta proyeksi data personal
 memakai satu view `public_book_publications`. Karena itu takedown tidak bergantung pada setiap query
 mengingat aturan lisensi secara terpisah.
+
+## Tata kelola sumber Quran Q-2
+
+Quran tidak menyalin status lisensi ke setiap ayah. Keputusan hidup pada tiga jenis sumber:
+`script`, `translation`, dan `transliteration`; semua Citable Unit mewarisinya secara dinamis lewat
+`citable_units_with_effective_license`.
+
+Aturan publiknya fail-closed:
+
+- translation/transliteration hanya tampil bila source literal `permitted` **dan** atribusi
+  penerjemah/penanggung jawab tidak kosong;
+- `unknown`, `needs_review`, `public_domain`, dan `restricted` tidak pernah tampil;
+- source import baru dipaksa database mulai `needs_review`/`unknown`; INSERT `permitted` langsung
+  ditolak. Identitas source (`id`, bahasa, resource QUL, format) immutable. Release dengan checksum
+  atau footnote-set berbeda juga ditolak ketika status masih `permitted`/`restricted`; operator
+  harus memindahkannya ke `needs_review` lebih dahulu atau memakai source ID baru;
+- QPC Hafs yang sudah publik sebelum Q-2 mendapat `license_grandfathered_at` eksplisit. Marker ini
+  terikat ke checksum script exact, migration-owned, dan tidak dapat dibuat/diubah runtime.
+  Keputusan `restricted` menghapus marker secara permanen; perubahan berikutnya ke `needs_review`
+  tidak menghidupkannya lagi. Takedown mencabut teks primer, Anchor unit, dan kandidat
+  reader/search segera;
+- footnote mewarisi sumber terjemahan induknya; ia tidak dapat tetap publik jika terjemahan ditarik.
+
+Endpoint protected untuk queue, detail+history, dan keputusan:
+
+```http
+GET   /v1/editorial/quran/source-licenses?source_kind=&status=unresolved&limit=50&offset=0
+GET   /v1/editorial/quran/source-licenses/{source_kind}/{source_id}
+PATCH /v1/editorial/quran/source-licenses/{source_kind}/{source_id}
+```
+
+GET membutuhkan `CapReviewEditorial`. PATCH membutuhkan `CapPublishProduction`, MFA segar, alasan
+bukti, serta `If-Match`; missing/stale ETag menghasilkan 428/412. Setiap perubahan efektif
+menambah baris immutable `quran_source_license_audits` berisi status lama/baru, atribusi
+lama/baru, URL bukti, aktor, dan waktu. `quran_source_license_inventory` mengurutkan queue
+unresolved berdasarkan cakupan agar sumber berdampak terbesar ditinjau lebih dulu.
+
+Rollback Q-2 sengaja menolak berjalan setelah keputusan audit Quran pertama tercatat. Ini
+fail-closed: rollback tidak boleh menghapus aktor/alasan/bukti lalu membuat script restricted
+ter-grandfather kembali. Pemulihan pada kondisi itu memakai restore/roll-forward, bukan down yang
+destruktif.
 
 ## Laporan cakupan untuk operator
 

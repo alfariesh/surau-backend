@@ -2,6 +2,7 @@ package persistent
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"os"
 	"testing"
@@ -23,7 +24,7 @@ import (
 //
 //	SURAU_LIVE_PG=postgres://... go test ./internal/repo/persistent/ -run TestLiveAyahEditorialReadPath -v
 //
-//nolint:paralleltest // serial live-DB read-path checks over shared seeded rows (gated on SURAU_LIVE_PG)
+//nolint:paralleltest,wsl_v5 // serial linear live-DB read-path checks over shared seeded rows (gated on SURAU_LIVE_PG)
 func TestLiveAyahEditorialReadPath(t *testing.T) {
 	url := os.Getenv("SURAU_LIVE_PG")
 	if url == "" {
@@ -38,6 +39,52 @@ func TestLiveAyahEditorialReadPath(t *testing.T) {
 
 	repo := NewQuranRepo(pg)
 	ctx := context.Background()
+
+	var (
+		originalScriptStatus    string
+		originalScriptReason    sql.NullString
+		originalScriptEvidence  sql.NullString
+		originalScriptUpdatedBy sql.NullString
+		originalScriptUpdatedAt sql.NullTime
+	)
+	require.NoError(t, pg.Pool.QueryRow(ctx, `
+SELECT license_status, license_reason, license_evidence_url,
+       license_updated_by::text, license_updated_at
+FROM quran_script_sources
+WHERE id = 'qpc-hafs'`).Scan(
+		&originalScriptStatus, &originalScriptReason, &originalScriptEvidence,
+		&originalScriptUpdatedBy, &originalScriptUpdatedAt,
+	))
+
+	setScriptFixture := func(status string, reason, evidence, updatedBy, updatedAt any) error {
+		tx, txErr := pg.Pool.Begin(ctx)
+		if txErr != nil {
+			return txErr
+		}
+		defer rollbackTx(ctx, tx)
+		if _, txErr = tx.Exec(ctx, `SET LOCAL session_replication_role = 'replica'`); txErr != nil {
+			return txErr
+		}
+		if _, txErr = tx.Exec(ctx, `
+UPDATE quran_script_sources
+SET license_status = $1, license_reason = $2, license_evidence_url = $3,
+    license_updated_by = $4::uuid, license_updated_at = $5
+WHERE id = 'qpc-hafs'`, status, reason, evidence, updatedBy, updatedAt); txErr != nil {
+			return txErr
+		}
+
+		return tx.Commit(ctx)
+	}
+	require.NoError(t, setScriptFixture("permitted", nil, nil, nil, originalScriptUpdatedAt.Time))
+	t.Cleanup(func() {
+		if cleanupErr := setScriptFixture(
+			originalScriptStatus, nullableSQLString(originalScriptReason),
+			nullableSQLString(originalScriptEvidence), nullableSQLString(originalScriptUpdatedBy),
+			originalScriptUpdatedAt.Time,
+		); cleanupErr != nil {
+			t.Logf("restore QPC script license fixture: %v", cleanupErr)
+		}
+	})
 	withFixtureWriter := func(fn func(pgx.Tx) error) error {
 		tx, txErr := pg.Pool.Begin(ctx)
 		if txErr != nil {
@@ -149,9 +196,23 @@ VALUES ($1, $2, $3, 'id', 'Draft fixture', 'needs_review')`,
 	// A throwaway translation source + one row carrying the unique token, so
 	// the search sub-test matches exactly the seeded ayah.
 	_, err = pg.Pool.Exec(ctx, `
-INSERT INTO quran_translation_sources (id, lang, name, format, license_status, coverage_count)
-VALUES ($1, 'id', 'F1-E Read Path Fixture', 'json', 'permitted', 0)`, sourceID)
+INSERT INTO quran_translation_sources (
+    id, lang, name, responsible_name, responsible_role,
+    format, license_status, coverage_count
+)
+VALUES (
+	    $1, 'id', 'F1-E Read Path Fixture', 'F1-E Fixture Publisher', 'publisher',
+	    'json', 'needs_review', 0
+)`, sourceID)
 	require.NoError(t, err)
+	tx, err := pg.Pool.Begin(ctx)
+	require.NoError(t, err)
+	_, err = tx.Exec(ctx, `SET LOCAL session_replication_role = 'replica'`)
+	require.NoError(t, err)
+	_, err = tx.Exec(ctx, `
+UPDATE quran_translation_sources SET license_status = 'permitted' WHERE id = $1`, sourceID)
+	require.NoError(t, err)
+	require.NoError(t, tx.Commit(ctx))
 
 	_, err = pg.Pool.Exec(ctx, `
 INSERT INTO quran_ayah_translations (source_id, surah_id, ayah_number, ayah_key, lang, text)

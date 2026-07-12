@@ -19,6 +19,16 @@ type UpdateBookLicense struct {
 	EvidenceURL   *string `json:"evidence_url" validate:"omitempty,max=2048" example:"https://example.org/license"`
 } // @name v1.UpdateBookLicense
 
+// UpdateQuranSourceLicense records attribution together with an evidence-backed decision.
+type UpdateQuranSourceLicense struct {
+	LicenseStatus   string  `json:"license_status" validate:"required,oneof=unknown needs_review permitted restricted public_domain" example:"permitted"`
+	Reason          string  `json:"reason" validate:"required,max=2000"`
+	EvidenceURL     *string `json:"evidence_url" validate:"omitempty,max=2048"`
+	Translator      *string `json:"translator" validate:"omitempty,max=500"`
+	ResponsibleName *string `json:"responsible_name" validate:"omitempty,max=500"`
+	ResponsibleRole *string `json:"responsible_role" validate:"omitempty,max=200"`
+} // @name v1.UpdateQuranSourceLicense
+
 // SaveMetadataDraft -.
 type SaveMetadataDraft struct {
 	DisplayTitle *string `json:"display_title" validate:"omitempty,max=500"`

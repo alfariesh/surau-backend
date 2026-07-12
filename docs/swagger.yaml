@@ -47,8 +47,26 @@ definitions:
       form:
         example: legacy_toc
         type: string
+      from_ayah_number:
+        example: 1
+        type: integer
+      hizb_number:
+        example: 58
+        type: integer
+      juz_number:
+        example: 29
+        type: integer
       page_id:
         example: 12
+        type: integer
+      page_number:
+        example: 574
+        type: integer
+      surah_id:
+        example: 73
+        type: integer
+      to_ayah_number:
+        example: 20
         type: integer
     type: object
   entity.AnchorResolution:
@@ -87,6 +105,10 @@ definitions:
       page_id:
         example: 12
         type: integer
+      primary_unit_anchor:
+        type: string
+      primary_unit_id:
+        type: string
       surah_id:
         example: 73
         type: integer
@@ -2352,6 +2374,10 @@ definitions:
         type: object
       page_number:
         type: integer
+      primary_unit_anchor:
+        type: string
+      primary_unit_id:
+        type: string
       requested_lang:
         example: en
         type: string
@@ -2489,6 +2515,21 @@ definitions:
         $ref: '#/definitions/entity.QuranAyahEditorialEdit'
       published:
         $ref: '#/definitions/entity.QuranAyahEditorialEdit'
+    type: object
+  entity.QuranCitableFootnote:
+    properties:
+      anchor:
+        type: string
+      footnote_key:
+        type: string
+      marker:
+        type: string
+      parent_unit_id:
+        type: string
+      text:
+        type: string
+      unit_id:
+        type: string
     type: object
   entity.QuranEditorialRevision:
     properties:
@@ -2721,6 +2762,73 @@ definitions:
         example: 0.82
         type: number
     type: object
+  entity.QuranSourceLicense:
+    properties:
+      coverage_count:
+        type: integer
+      evidence_url:
+        type: string
+      grandfathered_at:
+        type: string
+      history:
+        items:
+          $ref: '#/definitions/entity.QuranSourceLicenseAudit'
+        type: array
+      lang:
+        type: string
+      license_status:
+        type: string
+      name:
+        type: string
+      reason:
+        type: string
+      responsible_name:
+        type: string
+      responsible_role:
+        type: string
+      source_id:
+        type: string
+      source_kind:
+        type: string
+      source_url:
+        type: string
+      translator:
+        type: string
+      updated_at:
+        type: string
+      updated_by:
+        type: string
+    type: object
+  entity.QuranSourceLicenseAudit:
+    properties:
+      actor_id:
+        type: string
+      created_at:
+        type: string
+      evidence_url:
+        type: string
+      id:
+        type: integer
+      new_attribution:
+        type: object
+      new_status:
+        type: string
+      old_attribution:
+        type: object
+      old_status:
+        type: string
+      reason:
+        type: string
+    type: object
+  entity.QuranSourceLicenseList:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/entity.QuranSourceLicense'
+        type: array
+      total:
+        type: integer
+    type: object
   entity.QuranSurah:
     properties:
       ayah_count:
@@ -2897,19 +3005,40 @@ definitions:
     type: object
   entity.QuranTranslation:
     properties:
+      anchor:
+        type: string
       chunks:
         type: object
+      footnote_units:
+        items:
+          $ref: '#/definitions/entity.QuranCitableFootnote'
+        type: array
       footnotes:
         type: object
       lang:
         example: id
         type: string
+      license_status:
+        example: permitted
+        type: string
       metadata:
         type: object
+      responsible_name:
+        type: string
+      responsible_role:
+        type: string
       source_id:
         example: kemenag-id-translation
         type: string
+      source_name:
+        type: string
+      source_url:
+        type: string
       text:
+        type: string
+      translator:
+        type: string
+      unit_id:
         type: string
       updated_at:
         example: "2026-01-01T00:00:00Z"
@@ -2959,6 +3088,10 @@ definitions:
       qul_resource_id:
         example: "173"
         type: string
+      responsible_name:
+        type: string
+      responsible_role:
+        type: string
       source_url:
         type: string
       translator:
@@ -2969,15 +3102,30 @@ definitions:
     type: object
   entity.QuranTransliteration:
     properties:
+      anchor:
+        type: string
       lang:
         example: id
         type: string
+      license_status:
+        example: permitted
+        type: string
       metadata:
         type: object
+      responsible_name:
+        type: string
+      responsible_role:
+        type: string
       source_id:
         example: kemenag-id-latin
         type: string
+      source_name:
+        type: string
+      source_url:
+        type: string
       text:
+        type: string
+      unit_id:
         type: string
       updated_at:
         example: "2026-01-01T00:00:00Z"
@@ -4757,6 +4905,10 @@ definitions:
       page_number:
         example: 574
         type: integer
+      primary_unit_anchor:
+        type: string
+      primary_unit_id:
+        type: string
       surah_id:
         example: 73
         type: integer
@@ -4815,12 +4967,52 @@ definitions:
     type: object
   v1.QuranReaderAyahTranslation:
     properties:
+      anchor:
+        type: string
+      footnote_units:
+        items:
+          $ref: '#/definitions/entity.QuranCitableFootnote'
+        type: array
+      footnotes:
+        type: object
+      license_status:
+        type: string
+      responsible_name:
+        type: string
+      responsible_role:
+        type: string
+      source_id:
+        type: string
+      source_name:
+        type: string
+      source_url:
+        type: string
       text:
+        type: string
+      translator:
+        type: string
+      unit_id:
         type: string
     type: object
   v1.QuranReaderAyahTransliteration:
     properties:
+      anchor:
+        type: string
+      license_status:
+        type: string
+      responsible_name:
+        type: string
+      responsible_role:
+        type: string
+      source_id:
+        type: string
+      source_name:
+        type: string
+      source_url:
+        type: string
       text:
+        type: string
+      unit_id:
         type: string
     type: object
   v1.QuranRecitationList:
@@ -5512,6 +5704,36 @@ definitions:
         - published
         - archived
         type: string
+    type: object
+  v1.UpdateQuranSourceLicense:
+    properties:
+      evidence_url:
+        maxLength: 2048
+        type: string
+      license_status:
+        enum:
+        - unknown
+        - needs_review
+        - permitted
+        - restricted
+        - public_domain
+        example: permitted
+        type: string
+      reason:
+        maxLength: 2000
+        type: string
+      responsible_name:
+        maxLength: 500
+        type: string
+      responsible_role:
+        maxLength: 200
+        type: string
+      translator:
+        maxLength: 500
+        type: string
+    required:
+    - license_status
+    - reason
     type: object
   v1.UpdateSavedItem:
     properties:
@@ -7378,6 +7600,30 @@ paths:
       - description: Legacy physical page locator; requires book_id and no anchor
         in: query
         name: page_id
+        type: integer
+      - description: Legacy Quran surah/range locator
+        in: query
+        name: surah_id
+        type: integer
+      - description: Inclusive range start; requires surah_id and to_ayah_number
+        in: query
+        name: from_ayah_number
+        type: integer
+      - description: Inclusive range end; requires surah_id and from_ayah_number
+        in: query
+        name: to_ayah_number
+        type: integer
+      - description: Legacy Quran juz locator
+        in: query
+        name: juz_number
+        type: integer
+      - description: Legacy Quran hizb locator
+        in: query
+        name: hizb_number
+        type: integer
+      - description: Legacy Quran mushaf-page locator
+        in: query
+        name: page_number
         type: integer
       produces:
       - application/json
@@ -11718,6 +11964,167 @@ paths:
       summary: List missing Quran assets
       tags:
       - editorial
+  /editorial/quran/source-licenses:
+    get:
+      description: Protected inventory; defaults to unresolved sources. Requires CapReviewEditorial.
+      operationId: editorial-quran-source-licenses
+      parameters:
+      - description: Source kind
+        enum:
+        - script
+        - translation
+        - transliteration
+        in: query
+        name: source_kind
+        type: string
+      - default: unresolved
+        description: Status
+        enum:
+        - unresolved
+        - unknown
+        - needs_review
+        - permitted
+        - restricted
+        - public_domain
+        - all
+        in: query
+        name: status
+        type: string
+      - default: 50
+        description: Limit
+        in: query
+        name: limit
+        type: integer
+      - default: 0
+        description: Offset
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.QuranSourceLicenseList'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: List Quran source license decisions
+      tags:
+      - editorial
+      - licenses
+      - quran
+  /editorial/quran/source-licenses/{source_kind}/{source_id}:
+    get:
+      description: Return current attribution, ETag state, and append-only history.
+      operationId: editorial-quran-source-license
+      parameters:
+      - description: Source kind
+        enum:
+        - script
+        - translation
+        - transliteration
+        in: path
+        name: source_kind
+        required: true
+        type: string
+      - description: Source ID
+        in: path
+        name: source_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.QuranSourceLicense'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Get one Quran source license decision
+      tags:
+      - editorial
+      - licenses
+      - quran
+    patch:
+      consumes:
+      - application/json
+      description: Requires CapPublishProduction, fresh MFA, evidence, attribution,
+        and If-Match.
+      operationId: editorial-update-quran-source-license
+      parameters:
+      - description: Source kind
+        enum:
+        - script
+        - translation
+        - transliteration
+        in: path
+        name: source_kind
+        required: true
+        type: string
+      - description: Source ID
+        in: path
+        name: source_id
+        required: true
+        type: string
+      - description: Current ETag or *
+        in: header
+        name: If-Match
+        required: true
+        type: string
+      - description: Decision and attribution
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.UpdateQuranSourceLicense'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.QuranSourceLicense'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "412":
+          description: Precondition Failed
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "428":
+          description: Precondition Required
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Record a Quran source license decision
+      tags:
+      - editorial
+      - licenses
+      - quran
   /editorial/quran/surahs/{surah_id}:
     get:
       description: Get draft and published editorial states for one surah and language.
@@ -13335,6 +13742,70 @@ paths:
           schema:
             $ref: '#/definitions/v1.Error'
       summary: List Quran ayahs in a juz
+      tags:
+      - quran
+  /quran/pages/{page_number}/ayahs:
+    get:
+      description: Resolve the legacy FE page_number locator to the ordered ayahs
+        on that QPC page.
+      operationId: list-quran-page-ayahs
+      parameters:
+      - description: QPC mushaf page number
+        in: path
+        minimum: 1
+        name: page_number
+        required: true
+        type: integer
+      - default: id
+        description: Language code
+        in: query
+        name: lang
+        type: string
+      - description: Permitted translation source ID. Empty uses language default.
+        in: query
+        name: translation_source
+        type: string
+      - default: true
+        description: Include selected translation
+        in: query
+        name: include_translation
+        type: boolean
+      - default: false
+        description: Include audio
+        in: query
+        name: include_audio
+        type: boolean
+      - description: Recitation ID
+        in: query
+        name: recitation_id
+        type: string
+      - description: Response view
+        enum:
+        - full
+        - reader_minimal
+        in: query
+        name: view
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.QuranAyahList'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      summary: List Quran ayahs on a mushaf page
       tags:
       - quran
   /quran/recitations:

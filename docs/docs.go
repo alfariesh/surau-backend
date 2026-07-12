@@ -2530,6 +2530,42 @@ const docTemplate = `{
                         "description": "Legacy physical page locator; requires book_id and no anchor",
                         "name": "page_id",
                         "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Legacy Quran surah/range locator",
+                        "name": "surah_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Inclusive range start; requires surah_id and to_ayah_number",
+                        "name": "from_ayah_number",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Inclusive range end; requires surah_id and from_ayah_number",
+                        "name": "to_ayah_number",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Legacy Quran juz locator",
+                        "name": "juz_number",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Legacy Quran hizb locator",
+                        "name": "hizb_number",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Legacy Quran mushaf-page locator",
+                        "name": "page_number",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -8978,6 +9014,240 @@ const docTemplate = `{
                 ]
             }
         },
+        "/editorial/quran/source-licenses": {
+            "get": {
+                "description": "Protected inventory; defaults to unresolved sources. Requires CapReviewEditorial.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "editorial",
+                    "licenses",
+                    "quran"
+                ],
+                "summary": "List Quran source license decisions",
+                "operationId": "editorial-quran-source-licenses",
+                "parameters": [
+                    {
+                        "enum": [
+                            "script",
+                            "translation",
+                            "transliteration"
+                        ],
+                        "type": "string",
+                        "description": "Source kind",
+                        "name": "source_kind",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "unresolved",
+                            "unknown",
+                            "needs_review",
+                            "permitted",
+                            "restricted",
+                            "public_domain",
+                            "all"
+                        ],
+                        "type": "string",
+                        "default": "unresolved",
+                        "description": "Status",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 50,
+                        "description": "Limit",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Offset",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.QuranSourceLicenseList"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/editorial/quran/source-licenses/{source_kind}/{source_id}": {
+            "get": {
+                "description": "Return current attribution, ETag state, and append-only history.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "editorial",
+                    "licenses",
+                    "quran"
+                ],
+                "summary": "Get one Quran source license decision",
+                "operationId": "editorial-quran-source-license",
+                "parameters": [
+                    {
+                        "enum": [
+                            "script",
+                            "translation",
+                            "transliteration"
+                        ],
+                        "type": "string",
+                        "description": "Source kind",
+                        "name": "source_kind",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Source ID",
+                        "name": "source_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.QuranSourceLicense"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            },
+            "patch": {
+                "description": "Requires CapPublishProduction, fresh MFA, evidence, attribution, and If-Match.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "editorial",
+                    "licenses",
+                    "quran"
+                ],
+                "summary": "Record a Quran source license decision",
+                "operationId": "editorial-update-quran-source-license",
+                "parameters": [
+                    {
+                        "enum": [
+                            "script",
+                            "translation",
+                            "transliteration"
+                        ],
+                        "type": "string",
+                        "description": "Source kind",
+                        "name": "source_kind",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Source ID",
+                        "name": "source_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Current ETag or *",
+                        "name": "If-Match",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "Decision and attribution",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.UpdateQuranSourceLicense"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.QuranSourceLicense"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "412": {
+                        "description": "Precondition Failed",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "428": {
+                        "description": "Precondition Required",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
         "/editorial/quran/surahs/{surah_id}": {
             "get": {
                 "description": "Get draft and published editorial states for one surah and language. Requires editorial review capability.",
@@ -11372,6 +11642,98 @@ const docTemplate = `{
                 }
             }
         },
+        "/quran/pages/{page_number}/ayahs": {
+            "get": {
+                "description": "Resolve the legacy FE page_number locator to the ordered ayahs on that QPC page.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "quran"
+                ],
+                "summary": "List Quran ayahs on a mushaf page",
+                "operationId": "list-quran-page-ayahs",
+                "parameters": [
+                    {
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "QPC mushaf page number",
+                        "name": "page_number",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "default": "id",
+                        "description": "Language code",
+                        "name": "lang",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Permitted translation source ID. Empty uses language default.",
+                        "name": "translation_source",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "default": true,
+                        "description": "Include selected translation",
+                        "name": "include_translation",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Include audio",
+                        "name": "include_audio",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Recitation ID",
+                        "name": "recitation_id",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "full",
+                            "reader_minimal"
+                        ],
+                        "type": "string",
+                        "description": "Response view",
+                        "name": "view",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.QuranAyahList"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
         "/quran/recitations": {
             "get": {
                 "description": "List imported recitation resources and audio coverage. Exactly one fully playable recitation may be marked is_default. A track is playable when public_url or source audio_url exists.",
@@ -12638,9 +13000,33 @@ const docTemplate = `{
                     "type": "string",
                     "example": "legacy_toc"
                 },
+                "from_ayah_number": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "hizb_number": {
+                    "type": "integer",
+                    "example": 58
+                },
+                "juz_number": {
+                    "type": "integer",
+                    "example": 29
+                },
                 "page_id": {
                     "type": "integer",
                     "example": 12
+                },
+                "page_number": {
+                    "type": "integer",
+                    "example": 574
+                },
+                "surah_id": {
+                    "type": "integer",
+                    "example": 73
+                },
+                "to_ayah_number": {
+                    "type": "integer",
+                    "example": 20
                 }
             }
         },
@@ -12693,6 +13079,12 @@ const docTemplate = `{
                 "page_id": {
                     "type": "integer",
                     "example": 12
+                },
+                "primary_unit_anchor": {
+                    "type": "string"
+                },
+                "primary_unit_id": {
+                    "type": "string"
                 },
                 "surah_id": {
                     "type": "integer",
@@ -15918,6 +16310,12 @@ const docTemplate = `{
                 "page_number": {
                     "type": "integer"
                 },
+                "primary_unit_anchor": {
+                    "type": "string"
+                },
+                "primary_unit_id": {
+                    "type": "string"
+                },
                 "requested_lang": {
                     "type": "string",
                     "example": "en"
@@ -16115,6 +16513,29 @@ const docTemplate = `{
                 },
                 "published": {
                     "$ref": "#/definitions/entity.QuranAyahEditorialEdit"
+                }
+            }
+        },
+        "entity.QuranCitableFootnote": {
+            "type": "object",
+            "properties": {
+                "anchor": {
+                    "type": "string"
+                },
+                "footnote_key": {
+                    "type": "string"
+                },
+                "marker": {
+                    "type": "string"
+                },
+                "parent_unit_id": {
+                    "type": "string"
+                },
+                "text": {
+                    "type": "string"
+                },
+                "unit_id": {
+                    "type": "string"
                 }
             }
         },
@@ -16432,6 +16853,108 @@ const docTemplate = `{
                 }
             }
         },
+        "entity.QuranSourceLicense": {
+            "type": "object",
+            "properties": {
+                "coverage_count": {
+                    "type": "integer"
+                },
+                "evidence_url": {
+                    "type": "string"
+                },
+                "grandfathered_at": {
+                    "type": "string"
+                },
+                "history": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.QuranSourceLicenseAudit"
+                    }
+                },
+                "lang": {
+                    "type": "string"
+                },
+                "license_status": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "responsible_name": {
+                    "type": "string"
+                },
+                "responsible_role": {
+                    "type": "string"
+                },
+                "source_id": {
+                    "type": "string"
+                },
+                "source_kind": {
+                    "type": "string"
+                },
+                "source_url": {
+                    "type": "string"
+                },
+                "translator": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
+                    "type": "string"
+                }
+            }
+        },
+        "entity.QuranSourceLicenseAudit": {
+            "type": "object",
+            "properties": {
+                "actor_id": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "evidence_url": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "new_attribution": {
+                    "type": "object"
+                },
+                "new_status": {
+                    "type": "string"
+                },
+                "old_attribution": {
+                    "type": "object"
+                },
+                "old_status": {
+                    "type": "string"
+                },
+                "reason": {
+                    "type": "string"
+                }
+            }
+        },
+        "entity.QuranSourceLicenseList": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.QuranSourceLicense"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
         "entity.QuranSurah": {
             "type": "object",
             "properties": {
@@ -16679,8 +17202,17 @@ const docTemplate = `{
         "entity.QuranTranslation": {
             "type": "object",
             "properties": {
+                "anchor": {
+                    "type": "string"
+                },
                 "chunks": {
                     "type": "object"
+                },
+                "footnote_units": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.QuranCitableFootnote"
+                    }
                 },
                 "footnotes": {
                     "type": "object"
@@ -16689,14 +17221,36 @@ const docTemplate = `{
                     "type": "string",
                     "example": "id"
                 },
+                "license_status": {
+                    "type": "string",
+                    "example": "permitted"
+                },
                 "metadata": {
                     "type": "object"
+                },
+                "responsible_name": {
+                    "type": "string"
+                },
+                "responsible_role": {
+                    "type": "string"
                 },
                 "source_id": {
                     "type": "string",
                     "example": "kemenag-id-translation"
                 },
+                "source_name": {
+                    "type": "string"
+                },
+                "source_url": {
+                    "type": "string"
+                },
                 "text": {
+                    "type": "string"
+                },
+                "translator": {
+                    "type": "string"
+                },
+                "unit_id": {
                     "type": "string"
                 },
                 "updated_at": {
@@ -16766,6 +17320,12 @@ const docTemplate = `{
                     "type": "string",
                     "example": "173"
                 },
+                "responsible_name": {
+                    "type": "string"
+                },
+                "responsible_role": {
+                    "type": "string"
+                },
                 "source_url": {
                     "type": "string"
                 },
@@ -16781,18 +17341,40 @@ const docTemplate = `{
         "entity.QuranTransliteration": {
             "type": "object",
             "properties": {
+                "anchor": {
+                    "type": "string"
+                },
                 "lang": {
                     "type": "string",
                     "example": "id"
                 },
+                "license_status": {
+                    "type": "string",
+                    "example": "permitted"
+                },
                 "metadata": {
                     "type": "object"
+                },
+                "responsible_name": {
+                    "type": "string"
+                },
+                "responsible_role": {
+                    "type": "string"
                 },
                 "source_id": {
                     "type": "string",
                     "example": "kemenag-id-latin"
                 },
+                "source_name": {
+                    "type": "string"
+                },
+                "source_url": {
+                    "type": "string"
+                },
                 "text": {
+                    "type": "string"
+                },
+                "unit_id": {
                     "type": "string"
                 },
                 "updated_at": {
@@ -19318,6 +19900,12 @@ const docTemplate = `{
                     "type": "integer",
                     "example": 574
                 },
+                "primary_unit_anchor": {
+                    "type": "string"
+                },
+                "primary_unit_id": {
+                    "type": "string"
+                },
                 "surah_id": {
                     "type": "integer",
                     "example": 73
@@ -19402,7 +19990,43 @@ const docTemplate = `{
         "v1.QuranReaderAyahTranslation": {
             "type": "object",
             "properties": {
+                "anchor": {
+                    "type": "string"
+                },
+                "footnote_units": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.QuranCitableFootnote"
+                    }
+                },
+                "footnotes": {
+                    "type": "object"
+                },
+                "license_status": {
+                    "type": "string"
+                },
+                "responsible_name": {
+                    "type": "string"
+                },
+                "responsible_role": {
+                    "type": "string"
+                },
+                "source_id": {
+                    "type": "string"
+                },
+                "source_name": {
+                    "type": "string"
+                },
+                "source_url": {
+                    "type": "string"
+                },
                 "text": {
+                    "type": "string"
+                },
+                "translator": {
+                    "type": "string"
+                },
+                "unit_id": {
                     "type": "string"
                 }
             }
@@ -19410,7 +20034,31 @@ const docTemplate = `{
         "v1.QuranReaderAyahTransliteration": {
             "type": "object",
             "properties": {
+                "anchor": {
+                    "type": "string"
+                },
+                "license_status": {
+                    "type": "string"
+                },
+                "responsible_name": {
+                    "type": "string"
+                },
+                "responsible_role": {
+                    "type": "string"
+                },
+                "source_id": {
+                    "type": "string"
+                },
+                "source_name": {
+                    "type": "string"
+                },
+                "source_url": {
+                    "type": "string"
+                },
                 "text": {
+                    "type": "string"
+                },
+                "unit_id": {
                     "type": "string"
                 }
             }
@@ -20366,6 +21014,46 @@ const docTemplate = `{
                         "published",
                         "archived"
                     ]
+                }
+            }
+        },
+        "v1.UpdateQuranSourceLicense": {
+            "type": "object",
+            "required": [
+                "license_status",
+                "reason"
+            ],
+            "properties": {
+                "evidence_url": {
+                    "type": "string",
+                    "maxLength": 2048
+                },
+                "license_status": {
+                    "type": "string",
+                    "enum": [
+                        "unknown",
+                        "needs_review",
+                        "permitted",
+                        "restricted",
+                        "public_domain"
+                    ],
+                    "example": "permitted"
+                },
+                "reason": {
+                    "type": "string",
+                    "maxLength": 2000
+                },
+                "responsible_name": {
+                    "type": "string",
+                    "maxLength": 500
+                },
+                "responsible_role": {
+                    "type": "string",
+                    "maxLength": 200
+                },
+                "translator": {
+                    "type": "string",
+                    "maxLength": 500
                 }
             }
         },

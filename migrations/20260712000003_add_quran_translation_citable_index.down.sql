@@ -1,0 +1,1 @@
+DROP INDEX CONCURRENTLY IF EXISTS idx_quran_ayah_translations_source_ayah;

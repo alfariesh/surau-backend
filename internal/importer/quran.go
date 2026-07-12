@@ -12,11 +12,16 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 
 	"github.com/alfariesh/surau-backend/internal/contentlang"
+	"github.com/alfariesh/surau-backend/internal/entity"
 	"github.com/alfariesh/surau-backend/internal/quranutil"
+	"github.com/alfariesh/surau-backend/internal/repo/persistent"
+	"github.com/alfariesh/surau-backend/internal/usecase/unitregistry"
+	"github.com/alfariesh/surau-backend/pkg/postgres"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -40,6 +45,7 @@ const (
 	defaultEnglishTransliterationSourceID   = "local-en-syllables-transliteration"
 	defaultKemenagTransliterationSourceName = "Kemenag Quran Latin transliteration"
 	defaultEnglishTransliterationSourceName = "Local English syllables transliteration"
+	quranJSONFormat                         = "json"
 )
 
 // QuranAssetOptions configure local QUL export import.
@@ -89,6 +95,7 @@ type QuranAssetStats struct {
 	AudioSegments     int
 	BookReferences    int
 	SkippedReferences int
+	CitableSurahs     int
 	DryRun            bool
 }
 
@@ -318,6 +325,8 @@ var quranCanonicalHizbStarts = []quranDivisionStart{
 }
 
 // RunQuranAssetImport imports local QUL exports into PostgreSQL.
+//
+//nolint:wsl_v5 // parse, import, optional bridge resolution, and touched-surah reconcile are sequential stages
 func RunQuranAssetImport(ctx context.Context, opts QuranAssetOptions) (QuranAssetStats, error) {
 	if err := opts.validate(); err != nil {
 		return QuranAssetStats{}, err
@@ -349,7 +358,11 @@ func RunQuranAssetImport(ctx context.Context, opts QuranAssetOptions) (QuranAsse
 	}
 	defer pool.Close()
 
-	if err := importQuranAssets(ctx, pool, opts.withDefaults(), assets); err != nil {
+	opts = opts.withDefaults()
+	if err := preflightQuranAssetIdentity(ctx, pool, &opts, &assets); err != nil {
+		return QuranAssetStats{}, err
+	}
+	if err := importQuranAssets(ctx, pool, opts, assets); err != nil {
 		return QuranAssetStats{}, err
 	}
 
@@ -362,7 +375,219 @@ func RunQuranAssetImport(ctx context.Context, opts QuranAssetOptions) (QuranAsse
 		stats.SkippedReferences = skipped
 	}
 
+	reconciled, err := reconcileImportedQuranSurahs(ctx, pool, &assets)
+	if err != nil {
+		return QuranAssetStats{}, err
+	}
+	stats.CitableSurahs = reconciled
+
 	return stats, nil
+}
+
+// preflightQuranAssetIdentity runs before the first import-run/source write.
+// Primary Quran text is immutable once present, while a permitted/restricted
+// rendering source cannot silently inherit its decision after a release or
+// provenance identity changes.
+//
+//nolint:gocognit,gocyclo,cyclop,funlen,wsl_v5 // three source families share one fail-before-write audit boundary
+func preflightQuranAssetIdentity(
+	ctx context.Context,
+	pool *pgxpool.Pool,
+	opts *QuranAssetOptions,
+	assets *quranAssetSet,
+) error {
+	ayahKeys := make([]string, 0, len(assets.ayahs))
+	primaryTexts := make([]string, 0, len(assets.ayahs))
+	for _, ayah := range assets.ayahs {
+		if ayah.TextQPCHafs == nil {
+			continue
+		}
+		ayahKeys = append(ayahKeys, ayah.AyahKey)
+		primaryTexts = append(primaryTexts, *ayah.TextQPCHafs)
+	}
+
+	if len(ayahKeys) > 0 {
+		var driftKey string
+		err := pool.QueryRow(ctx, `
+SELECT a.ayah_key
+FROM unnest($1::text[], $2::text[]) incoming(ayah_key, primary_text)
+JOIN quran_ayahs a ON a.ayah_key = incoming.ayah_key
+WHERE NULLIF(btrim(a.text_qpc_hafs), '') IS NOT NULL
+  AND a.text_qpc_hafs IS DISTINCT FROM incoming.primary_text
+ORDER BY a.surah_id, a.ayah_number
+LIMIT 1`, ayahKeys, primaryTexts).Scan(&driftKey)
+		if err == nil {
+			return fmt.Errorf("quran primary text %s: %w", driftKey, entity.ErrQuranPrimaryTextDrift)
+		}
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("preflight quran primary text: %w", err)
+		}
+	}
+
+	if checksum := assets.checksums["qpc_hafs"]; checksum != "" {
+		incoming := quranSourceIdentity{
+			name:       "QPC Hafs script - Ayah by Ayah",
+			sourceURL:  "https://qul.tarteel.ai/resources/quran-script/86",
+			resourceID: "86", format: quranJSONFormat, checksum: checksum,
+		}
+		if err := preflightQuranSourceIdentity(ctx, pool, "quran_script_sources",
+			"qpc-hafs", &incoming); err != nil {
+			return err
+		}
+	}
+
+	if len(assets.translations) > 0 {
+		incoming := quranSourceIdentity{
+			lang: opts.TranslationLang, name: opts.TranslationSourceName,
+			sourceURL: opts.TranslationSourceURL, resourceID: opts.TranslationResourceID,
+			format: opts.TranslationFormat, checksum: assets.checksums["translation_simple"],
+			footnoteChecksum: assets.checksums["translation_footnote_tags"],
+		}
+		if err := preflightQuranSourceIdentity(ctx, pool, "quran_translation_sources",
+			opts.TranslationSourceID, &incoming); err != nil {
+			return err
+		}
+	}
+
+	for _, source := range assets.transliterationSources {
+		incoming := quranSourceIdentity{
+			lang: source.Lang, name: source.Name, sourceURL: source.SourceURL,
+			format: source.Format, checksum: source.Checksum,
+		}
+		if err := preflightQuranSourceIdentity(ctx, pool, "quran_transliteration_sources",
+			source.ID, &incoming); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+type quranSourceIdentity struct {
+	lang             string
+	name             string
+	sourceURL        string
+	resourceID       string
+	format           string
+	checksum         string
+	footnoteChecksum string
+}
+
+func preflightQuranSourceIdentity(
+	ctx context.Context,
+	pool *pgxpool.Pool,
+	table, sourceID string,
+	incoming *quranSourceIdentity,
+) error {
+	query, err := quranSourceIdentityQuery(table)
+	if err != nil {
+		return err
+	}
+
+	var (
+		existing      quranSourceIdentity
+		licenseStatus string
+	)
+
+	err = pool.QueryRow(ctx, query, sourceID).Scan(
+		&existing.lang, &existing.name, &existing.sourceURL, &existing.resourceID,
+		&existing.format, &existing.checksum, &existing.footnoteChecksum, &licenseStatus,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil
+	}
+
+	if err != nil {
+		return fmt.Errorf("preflight quran source %s: %w", sourceID, err)
+	}
+
+	if !sameQuranSourceIdentity(&existing, incoming) {
+		return fmt.Errorf("quran source %s identity drift; use a new source_id and audit it", sourceID)
+	}
+
+	if quranSourceLicenseReviewed(licenseStatus) && quranSourceReleaseChanged(&existing, incoming) {
+		return fmt.Errorf("quran source %s release changed while license is %s; move it to needs_review first",
+			sourceID, licenseStatus)
+	}
+
+	return nil
+}
+
+func quranSourceIdentityQuery(table string) (string, error) {
+	switch table {
+	case "quran_script_sources":
+		return `
+SELECT ''::text, name, COALESCE(source_url, ''), COALESCE(qul_resource_id, ''),
+       format, COALESCE(checksum, ''), ''::text, license_status
+FROM quran_script_sources
+			WHERE id = $1`, nil
+	case "quran_translation_sources":
+		return `
+SELECT lang, name, COALESCE(source_url, ''), COALESCE(qul_resource_id, ''),
+       format, COALESCE(checksum, ''), COALESCE(metadata ->> 'footnote_checksum', ''),
+       license_status
+FROM quran_translation_sources
+			WHERE id = $1`, nil
+	case "quran_transliteration_sources":
+		return `
+SELECT lang, name, COALESCE(source_url, ''), ''::text,
+       format, COALESCE(checksum, ''), ''::text, license_status
+FROM quran_transliteration_sources
+			WHERE id = $1`, nil
+	default:
+		return "", fmt.Errorf("unsupported quran source identity table %q", table)
+	}
+}
+
+func sameQuranSourceIdentity(existing, incoming *quranSourceIdentity) bool {
+	return existing.lang == incoming.lang &&
+		existing.name == incoming.name &&
+		existing.sourceURL == incoming.sourceURL &&
+		existing.resourceID == incoming.resourceID &&
+		existing.format == incoming.format
+}
+
+func quranSourceLicenseReviewed(status string) bool {
+	return status == entity.LicenseStatusPermitted || status == entity.LicenseStatusRestricted
+}
+
+func quranSourceReleaseChanged(existing, incoming *quranSourceIdentity) bool {
+	return (incoming.checksum != "" && existing.checksum != incoming.checksum) ||
+		incoming.footnoteChecksum != existing.footnoteChecksum
+}
+
+//nolint:wsl_v5 // collect, sort, and reconcile touched surahs as one deterministic post-import stage
+func reconcileImportedQuranSurahs(
+	ctx context.Context,
+	pool *pgxpool.Pool,
+	assets *quranAssetSet,
+) (int, error) {
+	surahSet := make(map[int]struct{})
+	for _, ayah := range assets.ayahs {
+		surahSet[ayah.SurahID] = struct{}{}
+	}
+	for _, translation := range assets.translations {
+		surahSet[translation.SurahID] = struct{}{}
+	}
+	for _, transliteration := range assets.transliterations {
+		surahSet[transliteration.SurahID] = struct{}{}
+	}
+
+	surahIDs := make([]int, 0, len(surahSet))
+	for surahID := range surahSet {
+		surahIDs = append(surahIDs, surahID)
+	}
+	sort.Ints(surahIDs)
+
+	repo := persistent.NewCitableUnitRepo(&postgres.Postgres{Pool: pool})
+	registry := unitregistry.New(repo)
+	for _, surahID := range surahIDs {
+		if _, err := registry.ReconcileQuranSurah(ctx, surahID); err != nil {
+			return 0, fmt.Errorf("reconcile Quran Citable Units for surah %d: %w", surahID, err)
+		}
+	}
+
+	return len(surahIDs), nil
 }
 
 func (opts QuranAssetOptions) validate() error {
@@ -651,7 +876,7 @@ func parseSurahInfo(path, langOverride string, assets *quranAssetSet) error {
 			SourceName:    "QUL Surah information",
 			SourceURL:     "https://qul.tarteel.ai/resources/surah-info",
 			QULResourceID: "",
-			Format:        "json",
+			Format:        quranJSONFormat,
 			Checksum:      checksum,
 			Metadata:      cloneRaw(row),
 		}
@@ -893,7 +1118,7 @@ func parseRecitation(path string, assets *quranAssetSet) error {
 		Name:       inferRecitationName(path),
 		Mode:       "unknown",
 		ResourceID: "",
-		Format:     "json",
+		Format:     quranJSONFormat,
 		Checksum:   checksum,
 		Metadata:   json.RawMessage(`{}`),
 	}
@@ -1052,6 +1277,10 @@ func importQuranAssets(ctx context.Context, pool *pgxpool.Pool, opts QuranAssetO
 		return err
 	}
 
+	if err := upsertQuranScriptSource(ctx, pool, &assets); err != nil {
+		return err
+	}
+
 	batch := &pgx.Batch{}
 	for _, surah := range assets.surahs {
 		batch.Queue(
@@ -1129,11 +1358,40 @@ ON CONFLICT (surah_id, ayah_number) DO UPDATE SET
 	if err := upsertQuranTranslations(ctx, pool, opts, assets); err != nil {
 		return err
 	}
-	if err := upsertQuranTransliterations(ctx, pool, opts, assets); err != nil {
+
+	if err := upsertQuranTransliterations(ctx, pool, assets); err != nil {
 		return err
 	}
 	if err := upsertQuranAudio(ctx, pool, opts, assets); err != nil {
 		return err
+	}
+
+	return nil
+}
+
+func upsertQuranScriptSource(ctx context.Context, pool *pgxpool.Pool, assets *quranAssetSet) error {
+	checksum := assets.checksums["qpc_hafs"]
+	if checksum == "" {
+		return nil
+	}
+
+	_, err := pool.Exec(ctx, `
+INSERT INTO quran_script_sources (
+    id, name, responsible_name, responsible_role, source_url, qul_resource_id,
+    format, license_status, checksum, imported_at, updated_at
+)
+VALUES (
+    'qpc-hafs', 'QPC Hafs script - Ayah by Ayah',
+    'QPC Hafs script - Ayah by Ayah', 'source_organization',
+    'https://qul.tarteel.ai/resources/quran-script/86', '86', 'json',
+    'needs_review', $1, now(), now()
+)
+ON CONFLICT (id) DO UPDATE SET
+	checksum = EXCLUDED.checksum,
+    imported_at = EXCLUDED.imported_at,
+    updated_at = now()`, checksum)
+	if err != nil {
+		return fmt.Errorf("upsert Quran script source: %w", err)
 	}
 
 	return nil
@@ -1202,9 +1460,9 @@ func insertQuranImportRuns(ctx context.Context, pool *pgxpool.Pool, opts QuranAs
 		resourceType string
 		format       string
 	}{
-		{"surah_names", "QUL Surah names", "https://qul.tarteel.ai/resources/quran-metadata", "", "surah_metadata", "json"},
-		{"qpc_hafs", "QPC Hafs script - Ayah by Ayah", "https://qul.tarteel.ai/resources/quran-script/86", "86", "script", "json"},
-		{"imlaei_simple", "Imlaei simple script", "https://qul.tarteel.ai/resources/quran-script", "", "script", "json"},
+		{"surah_names", "QUL Surah names", "https://qul.tarteel.ai/resources/quran-metadata", "", "surah_metadata", quranJSONFormat},
+		{"qpc_hafs", "QPC Hafs script - Ayah by Ayah", "https://qul.tarteel.ai/resources/quran-script/86", "86", "script", quranJSONFormat},
+		{"imlaei_simple", "Imlaei simple script", "https://qul.tarteel.ai/resources/quran-script", "", "script", quranJSONFormat},
 		{
 			"translation_simple",
 			opts.TranslationSourceName,
@@ -1221,7 +1479,7 @@ func insertQuranImportRuns(ctx context.Context, pool *pgxpool.Pool, opts QuranAs
 			"translation",
 			opts.TranslationFootnoteFormat,
 		},
-		{"recitation", "QUL Recitation", "https://qul.tarteel.ai/resources/recitation", "", "recitation", "json"},
+		{"recitation", "QUL Recitation", "https://qul.tarteel.ai/resources/recitation", "", "recitation", quranJSONFormat},
 	}
 	for key := range assets.checksums {
 		if !strings.HasPrefix(key, "surah_info:") {
@@ -1241,7 +1499,7 @@ func insertQuranImportRuns(ctx context.Context, pool *pgxpool.Pool, opts QuranAs
 			sourceURL:    "https://qul.tarteel.ai/resources/surah-info",
 			resourceID:   "",
 			resourceType: "surah_info",
-			format:       "json",
+			format:       quranJSONFormat,
 		})
 	}
 	for _, source := range assets.transliterationSources {
@@ -1315,18 +1573,13 @@ func upsertQuranTranslationSource(
 	_, err := pool.Exec(
 		ctx, `
 INSERT INTO quran_translation_sources (
-    id, lang, name, source_url, qul_resource_id, format, license_status,
-    checksum, metadata, imported_at, updated_at
+    id, lang, name, responsible_name, responsible_role, source_url,
+    qul_resource_id, format, license_status, checksum, metadata, imported_at, updated_at
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, now(), now())
+VALUES ($1, $2, $3, $3, 'source_organization', $4, $5, $6,
+        'needs_review', $7, $8::jsonb, now(), now())
 ON CONFLICT (id) DO UPDATE SET
-    lang = EXCLUDED.lang,
-    name = EXCLUDED.name,
-    source_url = EXCLUDED.source_url,
-    qul_resource_id = EXCLUDED.qul_resource_id,
-    format = EXCLUDED.format,
-    license_status = EXCLUDED.license_status,
-    checksum = EXCLUDED.checksum,
+	checksum = EXCLUDED.checksum,
     metadata = EXCLUDED.metadata,
     imported_at = EXCLUDED.imported_at,
     updated_at = now()`,
@@ -1336,7 +1589,6 @@ ON CONFLICT (id) DO UPDATE SET
 		opts.TranslationSourceURL,
 		opts.TranslationResourceID,
 		opts.TranslationFormat,
-		opts.LicenseStatus,
 		checksum,
 		string(metadataJSON),
 	)
@@ -1393,7 +1645,6 @@ ON CONFLICT (source_id, surah_id, ayah_number) DO UPDATE SET
 func upsertQuranTransliterations(
 	ctx context.Context,
 	pool *pgxpool.Pool,
-	opts QuranAssetOptions,
 	assets quranAssetSet,
 ) error {
 	if len(assets.transliterationSources) == 0 {
@@ -1405,16 +1656,13 @@ func upsertQuranTransliterations(
 		sourceBatch.Queue(
 			`
 INSERT INTO quran_transliteration_sources (
-    id, lang, name, source_url, format, license_status, checksum, metadata, imported_at, updated_at
+    id, lang, name, responsible_name, responsible_role, source_url, format,
+    license_status, checksum, metadata, imported_at, updated_at
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE(nullif($8, '')::jsonb, '{}'::jsonb), now(), now())
+VALUES ($1, $2, $3, $3, 'source_organization', $4, $5, 'needs_review', $6,
+        COALESCE(nullif($7, '')::jsonb, '{}'::jsonb), now(), now())
 ON CONFLICT (id) DO UPDATE SET
-    lang = EXCLUDED.lang,
-    name = EXCLUDED.name,
-    source_url = EXCLUDED.source_url,
-    format = EXCLUDED.format,
-    license_status = EXCLUDED.license_status,
-    checksum = EXCLUDED.checksum,
+	checksum = EXCLUDED.checksum,
     metadata = EXCLUDED.metadata,
     imported_at = EXCLUDED.imported_at,
     updated_at = now()`,
@@ -1423,7 +1671,6 @@ ON CONFLICT (id) DO UPDATE SET
 			source.Name,
 			source.SourceURL,
 			source.Format,
-			opts.LicenseStatus,
 			source.Checksum,
 			stringOrEmpty(source.Metadata),
 		)

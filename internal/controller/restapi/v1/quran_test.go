@@ -43,6 +43,7 @@ func TestQuranRoutes(t *testing.T) {
 		{name: "hizb navigation", path: "/v1/quran/hizbs?lang=id", wantStatus: http.StatusOK, wantBody: `"kind":"hizb"`},
 		{name: "hizb ayahs", path: "/v1/quran/hizbs/57/ayahs", wantStatus: http.StatusOK, wantBody: `"hizb_number":57`},
 		{name: "hizb missing", path: "/v1/quran/hizbs/58/ayahs", wantStatus: http.StatusNotFound, wantBody: `"quran navigation not found"`},
+		{name: "mushaf page ayahs", path: "/v1/quran/pages/574/ayahs?view=reader_minimal", wantStatus: http.StatusOK, wantBody: `"primary_unit_id"`},
 		{name: "ayah uses default audio without recitation id", path: "/v1/quran/ayahs/73:1?include_audio=true", wantStatus: http.StatusOK, wantBody: `"recitation_id":"rec-default"`},
 		{name: "ayah invalid recitation returns not found", path: "/v1/quran/ayahs/73:1?include_audio=true&recitation_id=bad-id", wantStatus: http.StatusNotFound, wantBody: `"quran recitation not found"`},
 		{name: "ayah invalid include audio", path: "/v1/quran/ayahs/73:1?include_audio=wat", wantStatus: http.StatusBadRequest, wantBody: `"invalid include_audio"`},
@@ -98,8 +99,13 @@ func TestQuranReaderMinimalView(t *testing.T) {
 				`"text_qpc_hafs"`,
 				`"juz_number":29`,
 				`"page_number":574`,
-				`"translation":{"text":"Wahai orang yang berselimut!"}`,
-				`"transliteration":{"text":"Yā ayyuhal-muzzammil(u)."}`,
+				`"primary_unit_id"`,
+				`"source_id":"qul-kfgqpc-id-simple"`,
+				`"source_name":"King Fahad Quran Complex"`,
+				`"license_status":"permitted"`,
+				`"text":"Wahai orang yang berselimut!"`,
+				`"source_id":"kemenag-id-latin"`,
+				`"text":"Yā ayyuhal-muzzammil(u)."`,
 				`"recitation_id":"rec-1"`,
 				`"url":"https://cdn.example/73-1.mp3"`,
 				`"segment_index":1`,
@@ -112,7 +118,6 @@ func TestQuranReaderMinimalView(t *testing.T) {
 				`"script_type"`,
 				`"font_family"`,
 				`"hizb_number"`,
-				`"source_id"`,
 				`"available_translation_langs"`,
 				`"translation_missing"`,
 				`"availability"`,
@@ -143,7 +148,7 @@ func TestQuranReaderMinimalView(t *testing.T) {
 			path: "/v1/quran/hizbs/57/ayahs?view=reader_minimal",
 			wantBody: []string{
 				`"surah_id":73`,
-				`"translation":{"text":"Wahai orang yang berselimut!"}`,
+				`"text":"Wahai orang yang berselimut!"`,
 			},
 			wantNotBody: []string{
 				`"hizb_number"`,
@@ -224,6 +229,7 @@ func newQuranTestApp(quran usecase.Quran) *fiber.App {
 	app.Get("/v1/quran/juz/:juz_number/ayahs", controller.listQuranJuzAyahs)
 	app.Get("/v1/quran/hizbs", controller.listQuranHizbs)
 	app.Get("/v1/quran/hizbs/:hizb_number/ayahs", controller.listQuranHizbAyahs)
+	app.Get("/v1/quran/pages/:page_number/ayahs", controller.listQuranPageAyahs)
 	app.Get("/v1/quran/ayahs/:ayah_key", controller.getQuranAyah)
 	app.Get("/v1/quran/surahs/:surah_id", controller.getQuranSurah)
 	app.Get("/v1/quran/surahs/:surah_id/audio", controller.getQuranSurahAudio)
@@ -338,7 +344,7 @@ func (f *fakeQuran) TranslationSources(_ context.Context, _ string) ([]entity.Qu
 		Lang:          "id",
 		Name:          "King Fahad Quran Complex",
 		Format:        "simple.json",
-		LicenseStatus: "needs_review",
+		LicenseStatus: "permitted",
 		Coverage:      entity.QuranTranslationCoverage{TranslatedAyahs: 6236, TotalAyahs: 6236, Percent: 100},
 		IsDefault:     true,
 	}}, nil
@@ -380,6 +386,23 @@ func (f *fakeQuran) HizbAyahs(
 	}
 
 	return fakeNavigationAyahs("hizb", hizbNumber, includeAudio, includeEditorial, recitationID)
+}
+
+func (f *fakeQuran) PageAyahs(
+	_ context.Context,
+	pageNumber int,
+	_ string,
+	_ string,
+	_ bool,
+	includeAudio bool,
+	includeEditorial bool,
+	recitationID string,
+) ([]entity.QuranAyah, error) {
+	if pageNumber != 574 {
+		return nil, entity.ErrQuranNavigationNotFound
+	}
+
+	return fakeNavigationAyahs("page", pageNumber, includeAudio, includeEditorial, recitationID)
 }
 
 func (f *fakeQuran) Ayah(
@@ -527,33 +550,46 @@ func fakeQuranAyah(surahID int, includeTranslation, includeAudio bool, recitatio
 	juzNumber := 29
 	hizbNumber := 57
 	ayah := entity.QuranAyah{
-		SurahID:          surahID,
-		AyahNumber:       ayahNumber,
-		AyahKey:          "73:1",
-		TextQPCHafs:      &text,
-		TextImlaeiSimple: &imlaei,
-		SearchText:       &searchText,
-		ScriptType:       &scriptType,
-		FontFamily:       &fontFamily,
-		PageNumber:       &pageNumber,
-		JuzNumber:        &juzNumber,
-		HizbNumber:       &hizbNumber,
-		Metadata:         entity.RawJSON(`{"debug":true}`),
+		SurahID:           surahID,
+		AyahNumber:        ayahNumber,
+		AyahKey:           "73:1",
+		TextQPCHafs:       &text,
+		TextImlaeiSimple:  &imlaei,
+		SearchText:        &searchText,
+		ScriptType:        &scriptType,
+		FontFamily:        &fontFamily,
+		PageNumber:        &pageNumber,
+		JuzNumber:         &juzNumber,
+		HizbNumber:        &hizbNumber,
+		Metadata:          entity.RawJSON(`{"debug":true}`),
+		PrimaryUnitID:     new("00000000-0000-4000-8000-000000000001"),
+		PrimaryUnitAnchor: new("quran/73:1/u/1"),
 	}
+
 	if includeTranslation {
 		ayah.Translation = &entity.QuranTranslation{
-			SourceID:  "qul-kfgqpc-id-simple",
-			Lang:      "id",
-			Text:      "Wahai orang yang berselimut!",
-			Footnotes: entity.RawJSON(`[]`),
-			Metadata:  entity.RawJSON(`{"debug":true}`),
+			SourceID:        "qul-kfgqpc-id-simple",
+			SourceName:      "King Fahad Quran Complex",
+			ResponsibleName: new("King Fahad Quran Complex"),
+			LicenseStatus:   "permitted",
+			UnitID:          new("00000000-0000-4000-8000-000000000002"),
+			Anchor:          new("quran/73:1/u/2"),
+			Lang:            "id",
+			Text:            "Wahai orang yang berselimut!",
+			Footnotes:       entity.RawJSON(`[]`),
+			Metadata:        entity.RawJSON(`{"debug":true}`),
 		}
 	}
 	ayah.Transliteration = &entity.QuranTransliteration{
-		SourceID: "kemenag-id-latin",
-		Lang:     "id",
-		Text:     "Yā ayyuhal-muzzammil(u).",
-		Metadata: entity.RawJSON(`{"debug":true}`),
+		SourceID:        "kemenag-id-latin",
+		SourceName:      "Kemenag Latin",
+		ResponsibleName: new("Kemenag"),
+		LicenseStatus:   "permitted",
+		UnitID:          new("00000000-0000-4000-8000-000000000003"),
+		Anchor:          new("quran/73:1/u/3"),
+		Lang:            "id",
+		Text:            "Yā ayyuhal-muzzammil(u).",
+		Metadata:        entity.RawJSON(`{"debug":true}`),
 	}
 	if includeAudio {
 		ayah.Audio = []entity.QuranAudioTrack{fakeQuranAudioTrack(surahID, ayahNumber, recitationID)}

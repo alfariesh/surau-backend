@@ -374,6 +374,24 @@ type (
 		) (entity.BookLicense, error)
 	}
 
+	QuranSourceLicenseAudit interface {
+		QuranSourceLicenses(
+			ctx context.Context,
+			sourceKind, status string,
+			limit, offset int,
+		) (entity.QuranSourceLicenseList, error)
+		QuranSourceLicense(
+			ctx context.Context,
+			sourceKind, sourceID string,
+		) (entity.QuranSourceLicense, error)
+		UpdateQuranSourceLicense(
+			ctx context.Context,
+			actorID, sourceKind, sourceID, status, reason string,
+			evidenceURL, translator, responsibleName, responsibleRole *string,
+			expectedUpdatedAt *time.Time,
+		) (entity.QuranSourceLicense, error)
+	}
+
 	// AnchorResolver exposes the additive B-2 public lookup contract. Exactly
 	// one canonical/legacy anchor or legacy page tuple is accepted per call.
 	AnchorResolver interface {

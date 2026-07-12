@@ -304,6 +304,9 @@ dan **lensa-tak-meratakan-ikhtilaf**; asersi deterministik dulu, LLM-judge ber-r
 untuk groundedness/ikhtilaf (audit manusia sampling); **gating**: CI utk PR retrieval + gate rilis
 ≥90% + kategori keamanan blokir-mutlak; **parity-gate migrasi**: endpoint book-RAG lama di-reroute
 per-buku hanya setelah jalur baru ≥ tree pada golden kitab; tree pensiun per-buku setelahnya.
+Gerbang konstruksi anti-tafsir Q-2 yang WAJIB dipanggil suite ini adalah
+`internal/repo/persistent/quran_citable_unit_live_test.go::TestLiveQuranCitableUnitsNeverInterpretiveEligible`;
+U-6 tidak boleh menggantinya dengan asersi prompt atau sampling hasil.
 **AC:** PR yang sengaja dirusak tertahan gate; dashboard pass-rate per kategori; tidak ada
 reroute tanpa parity; tidak ada pensiun tree tanpa eval menang.
 **DS:** "mesin baru lebih baik" adalah angka di dashboard, bukan klaim.

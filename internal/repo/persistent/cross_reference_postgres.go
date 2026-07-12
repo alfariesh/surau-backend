@@ -893,9 +893,8 @@ func applyPublicCrossReferenceVisibility(builder sq.SelectBuilder) sq.SelectBuil
             OFFSET 0
         ) cr_source_anchor_visibility ON TRUE`).
 		JoinClause(`JOIN LATERAL (
-            SELECT CASE
-                WHEN cr.target_corpus = 'quran' THEN TRUE
-                WHEN cr.target_corpus = 'kitab'
+			SELECT CASE
+				WHEN cr.target_corpus = 'kitab'
                  AND cr.target_anchor = 'kitab/' || cr.target_work_id::text THEN TRUE
                 ELSE cross_reference_anchor_visible(cr.target_anchor)
             END AS visible
@@ -916,7 +915,9 @@ AND cr_source_anchor_visibility.visible
 AND cr_target_anchor_visibility.visible`
 
 func crossReferenceLineageLookup(value *anchorgrammar.Value) bool {
-	return value != nil && !value.IsRange() && value.Start().Kind() == anchorgrammar.PointKindKitabUnit
+	return value != nil && !value.IsRange() &&
+		(value.Start().Kind() == anchorgrammar.PointKindKitabUnit ||
+			value.Start().Kind() == anchorgrammar.PointKindQuranUnit)
 }
 
 func crossReferenceWorkKey(side string) string {
@@ -986,7 +987,7 @@ SELECT EXISTS (
 )`, point.BookID(), point.HeadingID()).Scan(&exists); err != nil {
 			return fmt.Errorf("CrossReferenceRepo validate heading: %w", err)
 		}
-	case anchorgrammar.PointKindKitabUnit:
+	case anchorgrammar.PointKindKitabUnit, anchorgrammar.PointKindQuranUnit:
 		var cycle bool
 		if err := tx.QueryRow(ctx, `
 WITH RECURSIVE walk(id, lifecycle, path, cycle, depth) AS (

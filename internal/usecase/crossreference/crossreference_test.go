@@ -125,6 +125,27 @@ func TestCreateHumanSetsServerOwnedFieldsForEveryKind(t *testing.T) {
 	}
 }
 
+func TestCreateHumanProjectsQuranCitableUnitToAyahCompatibilityColumns(t *testing.T) {
+	t.Parallel()
+
+	fake := &fakeCrossReferenceRepo{}
+	got, err := New(fake).CreateHuman(t.Context(), entity.CrossReferenceCreateInput{
+		SourceAnchor: "kitab/797/h/11/u/42",
+		TargetAnchor: "quran/73:4/u/7",
+		Kind:         entity.CrossReferenceKindCites,
+		Confidence:   1,
+		EvidenceText: "سورة المزمل",
+	}, uuid.NewString())
+	require.NoError(t, err)
+	assert.Equal(t, entity.UnitCorpusQuran, got.TargetCorpus)
+	require.NotNil(t, got.TargetQuranSurahID)
+	require.NotNil(t, got.TargetQuranFromAyah)
+	require.NotNil(t, got.TargetQuranToAyah)
+	assert.Equal(t, []int{73, 4, 4}, []int{
+		*got.TargetQuranSurahID, *got.TargetQuranFromAyah, *got.TargetQuranToAyah,
+	})
+}
+
 func TestCreateHumanRejectsUntrustedOrMalformedInput(t *testing.T) {
 	t.Parallel()
 

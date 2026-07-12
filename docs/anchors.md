@@ -1,4 +1,6 @@
-# Kontrak grammar Anchor dan resolusi (Fase 1B / B-2)
+# Kontrak grammar Anchor dan resolusi (Fase 1B / B-2 + Q-2)
+
+Last updated: 2026-07-12
 
 Dokumen ini adalah kontrak normatif untuk **Anchor** dan endpoint publik
 `GET /v1/anchors/resolve`. Anchor adalah alamat logis lintas-korpus; **Citable Unit** adalah
@@ -13,10 +15,11 @@ Notasi EBNF berikut adalah sumber kebenaran sintaks B-2:
 ```ebnf
 anchor        = point | range ;
 range         = point, "..", point ;
-point         = quran-surah | quran-ayah | kitab-work | kitab-heading | kitab-unit ;
+point         = quran-surah | quran-ayah | quran-unit | kitab-work | kitab-heading | kitab-unit ;
 
 quran-surah   = "quran/", positive-int ;
 quran-ayah    = quran-surah, ":", positive-int ;
+quran-unit    = quran-ayah, "/u/", positive-int ;
 kitab-work    = "kitab/", positive-int ;
 kitab-heading = kitab-work, "/h/", positive-int ;
 kitab-unit    = kitab-work, "/h/", heading-scope, "/u/", positive-int ;
@@ -49,6 +52,7 @@ Aturan byte-level:
 |---|---|---|
 | Quran surah | `quran/73` | Surah 73 sebagai target logis tanpa menganggapnya rujukan ke setiap ayah. |
 | Quran ayah | `quran/73:4` | Ayah 4 dalam surah 73; Quran adalah satu Work implisit. |
+| Quran Citable Unit | `quran/73:4/u/2` | Rendering/footnote bernomor stabil di bawah ayah 73:4. |
 | Kitab Work | `kitab/797` | Karya kitab dengan `book_id=797`. |
 | Kitab heading | `kitab/797/h/11` | Heading logis 11 dalam kitab 797. |
 | Kitab Citable Unit | `kitab/797/h/11/u/42` | Unit ordinal 42 di bawah heading 11. |
@@ -85,11 +89,17 @@ Endpoint tidak memerlukan autentikasi. Query harus cocok dengan **tepat satu** b
 | `legacy_ayah_key` | `anchor=<surah>:<ayah>` | `?anchor=73%3A4` | `quran/73:4`. |
 | `legacy_toc` | `anchor=toc-<heading_id>&book_id=<book_id>` | `?anchor=toc-11&book_id=797` | `kitab/797/h/11`. |
 | `legacy_page` | `book_id=<book_id>&page_id=<page_id>` tanpa `anchor` | `?book_id=797&page_id=12` | `null`, karena page fisik bukan Anchor. |
+| `legacy_quran_surah` | `surah_id=<surah>` | `?surah_id=73` | `quran/73`. |
+| `legacy_quran_range` | `surah_id`, `from_ayah_number`, `to_ayah_number` | `?surah_id=73&from_ayah_number=1&to_ayah_number=4` | `quran/73:1..quran/73:4`. |
+| `legacy_quran_juz` | `juz_number=<1..30>` | `?juz_number=29` | `null`; dua boundary ayah dikembalikan. |
+| `legacy_quran_hizb` | `hizb_number=<1..60>` | `?hizb_number=57` | `null`; dua boundary ayah dikembalikan. |
+| `legacy_quran_page` | `page_number=<positive>` | `?page_number=574` | `null`; dua boundary ayah dikembalikan. |
 
 `book_id`, `page_id`, dan semua angka dalam legacy query harus positif dan tanpa bentuk ambigu.
 Contoh yang ditolak: query kosong, `toc-11` tanpa `book_id`, canonical Anchor dengan `book_id`
 tambahan, `anchor` bersama `page_id`, page dengan salah satu scope hilang, parameter duplikat, atau
-nama parameter di luar tiga parameter kontrak. Legacy mapping adalah kontrak permanen agar tautan
+nama parameter di luar sembilan parameter kontrak. Keluarga locator Quran tidak boleh dicampur
+dengan `anchor`/locator kitab atau satu sama lain. Legacy mapping adalah kontrak permanen agar tautan
 FE lama tetap dapat dibuka; FE baru sebaiknya menyimpan Anchor kanonik.
 
 ## Bentuk respons
@@ -100,10 +110,25 @@ atau satu unit yang terpecah dapat memiliki lebih dari satu tujuan aktif.
 ```ts
 type AnchorResolutionResponse = {
   requested: {
-    form: "canonical" | "legacy_ayah_key" | "legacy_toc" | "legacy_page";
+    form:
+      | "canonical"
+      | "legacy_ayah_key"
+      | "legacy_toc"
+      | "legacy_page"
+      | "legacy_quran_surah"
+      | "legacy_quran_range"
+      | "legacy_quran_juz"
+      | "legacy_quran_hizb"
+      | "legacy_quran_page";
     anchor?: string;
     book_id?: number;
     page_id?: number;
+    surah_id?: number;
+    from_ayah_number?: number;
+    to_ayah_number?: number;
+    juz_number?: number;
+    hizb_number?: number;
+    page_number?: number;
   };
   canonical_anchor: string | null;
   boundaries: AnchorBoundary[];
@@ -122,6 +147,8 @@ type AnchorTarget = {
   corpus: "kitab" | "quran";
   canonical_anchor?: string;
   unit_id?: string;
+  primary_unit_id?: string;
+  primary_unit_anchor?: string;
   book_id?: number;
   heading_id?: number;
   page_id?: number;
@@ -194,6 +221,13 @@ Contoh unit lama yang telah terpecah:
   `quran_surah`, membawa `surah_id`, dan memakai detail surah sebagai `navigation_url`.
 - `quran/{ayah_key}` dan legacy `ayah_key` menyelesaikan baris Quran aktif yang sama. Targetnya
   bertipe `quran_ayah`, membawa `ayah_key`, dan memakai detail ayah sebagai `navigation_url`.
+  Setelah Q-2 selesai di ayah itu, target juga membawa `primary_unit_id` dan
+  `primary_unit_anchor`; fallback ayah legacy tetap resolvable selama backfill berlangsung.
+- `quran/{ayah_key}/u/{ordinal}` memakai walker lineage B-1/B-2 yang sama. Target aktif bertipe
+  `citable_unit`, membawa `unit_id`, dan menavigasi ke `/v1/quran/ayahs/{ayah_key}`. Unit lama
+  yang superseded mengikuti penerusnya; sumber non-permitted atau rendering stale gagal tertutup.
+- Locator `surah_id`, range ayah, juz, hizb, dan halaman mushaf diproyeksikan menjadi satu point
+  atau dua boundary ayah. Aggregate tidak mencetak Anchor baru dan tidak mengekspansi isi.
 - `kitab/{book_id}` menyelesaikan Work publik aktif ke target `book`.
 - `kitab/{book_id}/h/{heading_id}` dan legacy `toc-{heading_id}` menyelesaikan heading logis.
   Bila registry B-1 sudah tersedia untuk heading tersebut, `active_targets` berisi seluruh
@@ -245,8 +279,9 @@ Heading, page, Work, dan ayah yang aktif memakai `status=active`. Lifecycle
 
 ## Visibility, errors, dan cache
 
-- Resolver memakai gerbang visibility endpoint reader yang sudah ada. Quran hanya terselesaikan
-  bila data publiknya memenuhi gerbang lisensi; kitab unpublished/deleted tidak dapat ditemukan.
+- Resolver memakai gerbang visibility endpoint reader yang sudah ada. Anchor logis surah/ayah
+  tetap menjadi alamat struktural permanen untuk parity rujukan lama; Anchor anak Citable Unit
+  Quran wajib current dan license-eligible. Kitab unpublished/deleted tidak dapat ditemukan.
   Endpoint ini tidak boleh menjadi jalur samping untuk mengetahui konten tersembunyi.
 - Anchor berformat benar tetapi tidak dikenal, locator legacy tidak dikenal, atau target di luar
   visibility publik menjawab envelope standar `404` dengan code `anchor_not_found` dan message

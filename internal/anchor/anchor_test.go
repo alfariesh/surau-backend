@@ -22,6 +22,7 @@ func TestParseCanonicalPoints(t *testing.T) {
 	}{
 		{name: "Quran surah", raw: "quran/73", kind: PointKindQuranSurah, corpus: CorpusQuran, surah: 73},
 		{name: "Quran ayah", raw: "quran/73:4", kind: PointKindQuranAyah, corpus: CorpusQuran, surah: 73, ayah: 4},
+		{name: "Quran Citable Unit", raw: "quran/73:4/u/7", kind: PointKindQuranUnit, corpus: CorpusQuran, ordinal: 7, surah: 73, ayah: 4},
 		{name: "kitab Work", raw: "kitab/797", kind: PointKindKitabWork, corpus: CorpusKitab, bookID: 797},
 		{name: "kitab heading", raw: "kitab/797/h/11", kind: PointKindKitabHeading, corpus: CorpusKitab, bookID: 797, headingID: 11},
 		{name: "kitab unit", raw: "kitab/797/h/11/u/42", kind: PointKindKitabUnit, corpus: CorpusKitab, bookID: 797, headingID: 11, ordinal: 42},
@@ -111,6 +112,10 @@ func TestParseRejectsInvalidCanonicalValues(t *testing.T) {
 		{name: "Quran zero surah point", raw: "quran/0"},
 		{name: "Quran surah trailing colon", raw: "quran/73:"},
 		{name: "Quran extra colon", raw: "quran/73:4:5"},
+		{name: "Quran unit zero ordinal", raw: "quran/73:4/u/0"},
+		{name: "Quran unit leading zero ordinal", raw: "quran/73:4/u/07"},
+		{name: "Quran unit wrong hierarchy", raw: "quran/73:4/unit/7"},
+		{name: "Quran unit extra segment", raw: "quran/73:4/u/7/x"},
 		{name: "Quran overflow", raw: "quran/2147483648:1"},
 		{name: "Quran surah point overflow", raw: "quran/2147483648"},
 		{name: "kitab zero Work", raw: "kitab/0"},
@@ -219,6 +224,7 @@ func TestConstructorsAndRangeValidation(t *testing.T) {
 
 	_, quranSurahErr := NewQuranSurah(0)
 	_, quranAyahErr := NewQuranAyah(0, 1)
+	_, quranUnitErr := NewQuranUnit(1, 1, 0)
 	_, workErr := NewKitabWork(-1)
 	_, headingErr := NewKitabHeading(1, 0)
 	_, unitErr := NewKitabUnit(1, -1, 1)
@@ -227,6 +233,7 @@ func TestConstructorsAndRangeValidation(t *testing.T) {
 	invalidConstructors := []error{
 		quranSurahErr,
 		quranAyahErr,
+		quranUnitErr,
 		workErr,
 		headingErr,
 		unitErr,
@@ -243,6 +250,7 @@ func FuzzParse(f *testing.F) {
 	seeds := []string{
 		"quran/73",
 		"quran/73:4",
+		"quran/73:4/u/7",
 		"kitab/797/h/11/u/42",
 		"quran/73:1..quran/73:4",
 		"kitab/797/h/1/u/1..kitab/798/h/1/u/2",

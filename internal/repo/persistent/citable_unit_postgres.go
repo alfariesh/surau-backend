@@ -118,7 +118,7 @@ func (r *CitableUnitRepo) LoadBookSource(ctx context.Context, bookID int) (entit
 // afterwards is caught at apply time as a retryable ErrUnitReconcileConflict
 // (rather than defeating the check with a fingerprint read from a later state).
 //
-//nolint:gocyclo,cyclop,funlen // linear: repeatable-read tx + active-units scan loop + ordinal/id scan loop + fingerprint, each guarded
+//nolint:gocyclo,cyclop,funlen,wsl_v5 // linear: repeatable-read tx + active-units scan loop + ordinal/id scan loop + fingerprint, each guarded
 func (r *CitableUnitRepo) Snapshot(ctx context.Context, bookID int) (entity.UnitRegistrySnapshot, error) {
 	snap := entity.UnitRegistrySnapshot{
 		MaxOrdinalByScope: map[int]int{},
@@ -142,7 +142,8 @@ func (r *CitableUnitRepo) Snapshot(ctx context.Context, bookID int) (entity.Unit
 	defer rows.Close()
 
 	for rows.Next() {
-		u := entity.CitableUnit{Corpus: entity.UnitCorpusKitab, BookID: bookID}
+		bookIDValue := bookID
+		u := entity.CitableUnit{Corpus: entity.UnitCorpusKitab, BookID: &bookIDValue}
 		if err := rows.Scan(&u.ID, &u.HeadingID, &u.PageID, &u.Kind, &u.Ordinal, &u.Position,
 			&u.ParentUnitID, &u.Marker, &u.ContentHash, &u.Occurrence, &u.Lifecycle); err != nil {
 			return snap, fmt.Errorf("CitableUnitRepo.Snapshot scan: %w", err)
@@ -618,9 +619,12 @@ func (r *CitableUnitRepo) AuditCounts(ctx context.Context) (entity.CitableAuditR
 	}
 
 	if err := count(&report.Violations.AnchorMalformed, "anchor_malformed", `
-		SELECT COUNT(*) FROM citable_units
-		WHERE corpus = 'kitab'
-		  AND anchor <> 'kitab/' || book_id || '/h/' || COALESCE(heading_id, 0) || '/u/' || ordinal`); err != nil {
+		SELECT COUNT(*) FROM citable_units u
+		LEFT JOIN quran_citable_unit_bindings qb ON qb.unit_id = u.id
+		WHERE (u.corpus = 'kitab'
+		       AND u.anchor <> 'kitab/' || u.book_id || '/h/' || COALESCE(u.heading_id, 0) || '/u/' || u.ordinal)
+		   OR (u.corpus = 'quran'
+		       AND u.anchor <> 'quran/' || qb.surah_id || ':' || qb.ayah_number || '/u/' || qb.ordinal)`); err != nil {
 		return report, err
 	}
 
@@ -635,6 +639,46 @@ func (r *CitableUnitRepo) AuditCounts(ctx context.Context) (entity.CitableAuditR
 		return report, err
 	}
 
+	if err := count(&report.Violations.QuranBinding, "quran_binding", `
+		SELECT COUNT(*)
+		FROM citable_units u
+		FULL JOIN quran_citable_unit_bindings qb ON qb.unit_id = u.id
+		LEFT JOIN quran_ayahs a
+		  ON a.surah_id = qb.surah_id AND a.ayah_number = qb.ayah_number
+		LEFT JOIN quran_ayah_translations t
+		  ON t.source_id = qb.translation_source_id
+		 AND t.surah_id = qb.surah_id AND t.ayah_number = qb.ayah_number
+		LEFT JOIN quran_ayah_transliterations x
+		  ON x.source_id = qb.transliteration_source_id
+		 AND x.surah_id = qb.surah_id AND x.ayah_number = qb.ayah_number
+		WHERE (u.corpus = 'quran' AND qb.unit_id IS NULL)
+		   OR (qb.unit_id IS NOT NULL AND (u.id IS NULL OR u.corpus <> 'quran'))
+		   OR (qb.unit_id IS NOT NULL AND (
+		       u.ordinal <> qb.ordinal
+		       OR a.surah_id IS NULL
+		       OR (qb.role = 'primary_text' AND u.kind <> 'primary_text')
+		       OR (qb.role = 'translation' AND (u.kind <> 'translation' OR t.source_id IS NULL))
+		       OR (qb.role = 'footnote' AND (u.kind <> 'footnote' OR t.source_id IS NULL))
+		       OR (qb.role = 'transliteration' AND (u.kind <> 'transliteration' OR x.source_id IS NULL))
+		       OR (u.lifecycle = 'active' AND qb.role = 'primary_text' AND u.text <> a.text_qpc_hafs)
+		       OR (u.lifecycle = 'active' AND qb.role = 'translation' AND u.text <> t.text)
+		       OR (u.lifecycle = 'active' AND qb.role = 'transliteration' AND u.text <> x.text)
+		       OR (u.lifecycle = 'active' AND qb.role = 'primary_text'
+		           AND qb.source_updated_at IS DISTINCT FROM a.updated_at)
+		       OR (u.lifecycle = 'active' AND qb.role IN ('translation', 'footnote')
+		           AND qb.source_updated_at IS DISTINCT FROM t.updated_at)
+		       OR (u.lifecycle = 'active' AND qb.role = 'transliteration'
+		           AND qb.source_updated_at IS DISTINCT FROM x.updated_at)
+		   ))`); err != nil {
+		return report, err
+	}
+
+	if err := count(&report.Violations.QuranInterpretive, "quran_interpretive", `
+		SELECT COUNT(*) FROM citable_units
+		WHERE corpus = 'quran' AND interpretive_corpus_eligible`); err != nil {
+		return report, err
+	}
+
 	if err := count(&report.Info.StaleBooks, "stale_books", `
 		SELECT COUNT(*) FROM books b
 		WHERE b.units_derived_at IS NOT NULL
@@ -642,6 +686,12 @@ func (r *CitableUnitRepo) AuditCounts(ctx context.Context) (entity.CitableAuditR
 			COALESCE((SELECT MAX(updated_at) FROM book_pages WHERE book_id = b.id), 'epoch'::timestamptz),
 			COALESCE((SELECT MAX(updated_at) FROM book_headings WHERE book_id = b.id), 'epoch'::timestamptz),
 			COALESCE((SELECT MAX(updated_at) FROM book_page_edits WHERE book_id = b.id AND status = 'published'), 'epoch'::timestamptz))`); err != nil {
+		return report, err
+	}
+
+	if err := count(&report.Info.StaleQuranSurahs, "stale_quran_surahs", `
+		SELECT COUNT(*) FROM quran_surahs
+		WHERE units_derived_at IS NOT NULL AND units_stale_at IS NOT NULL`); err != nil {
 		return report, err
 	}
 

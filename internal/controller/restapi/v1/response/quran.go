@@ -4,25 +4,46 @@ import "github.com/alfariesh/surau-backend/internal/entity"
 
 // QuranReaderAyah is a compact ayah payload for Quran reader list screens.
 type QuranReaderAyah struct {
-	SurahID         int                             `json:"surah_id" example:"73"`
-	AyahNumber      int                             `json:"ayah_number" example:"4"`
-	AyahKey         string                          `json:"ayah_key" example:"73:4"`
-	TextQPCHafs     *string                         `json:"text_qpc_hafs,omitempty"`
-	JuzNumber       *int                            `json:"juz_number,omitempty" example:"29"`
-	PageNumber      *int                            `json:"page_number,omitempty" example:"574"`
-	Translation     *QuranReaderAyahTranslation     `json:"translation,omitempty"`
-	Transliteration *QuranReaderAyahTransliteration `json:"transliteration,omitempty"`
-	Audio           []QuranReaderAyahAudioTrack     `json:"audio,omitempty"`
+	SurahID           int                             `json:"surah_id" example:"73"`
+	AyahNumber        int                             `json:"ayah_number" example:"4"`
+	AyahKey           string                          `json:"ayah_key" example:"73:4"`
+	PrimaryUnitID     *string                         `json:"primary_unit_id,omitempty"`
+	PrimaryUnitAnchor *string                         `json:"primary_unit_anchor,omitempty"`
+	TextQPCHafs       *string                         `json:"text_qpc_hafs,omitempty"`
+	JuzNumber         *int                            `json:"juz_number,omitempty" example:"29"`
+	PageNumber        *int                            `json:"page_number,omitempty" example:"574"`
+	Translation       *QuranReaderAyahTranslation     `json:"translation,omitempty"`
+	Transliteration   *QuranReaderAyahTransliteration `json:"transliteration,omitempty"`
+	Audio             []QuranReaderAyahAudioTrack     `json:"audio,omitempty"`
 } // @name v1.QuranReaderAyah
 
 // QuranReaderAyahTranslation contains only reader-visible translation text.
 type QuranReaderAyahTranslation struct {
-	Text string `json:"text"`
+	UnitID          *string                       `json:"unit_id,omitempty"`
+	Anchor          *string                       `json:"anchor,omitempty"`
+	SourceID        string                        `json:"source_id"`
+	SourceName      string                        `json:"source_name"`
+	Translator      *string                       `json:"translator,omitempty"`
+	ResponsibleName *string                       `json:"responsible_name,omitempty"`
+	ResponsibleRole *string                       `json:"responsible_role,omitempty"`
+	SourceURL       *string                       `json:"source_url,omitempty"`
+	LicenseStatus   string                        `json:"license_status"`
+	Text            string                        `json:"text"`
+	Footnotes       entity.RawJSON                `json:"footnotes,omitempty" swaggertype:"object"`
+	FootnoteUnits   []entity.QuranCitableFootnote `json:"footnote_units,omitempty"`
 } // @name v1.QuranReaderAyahTranslation
 
 // QuranReaderAyahTransliteration contains reader-visible transliteration text.
 type QuranReaderAyahTransliteration struct {
-	Text string `json:"text"`
+	UnitID          *string `json:"unit_id,omitempty"`
+	Anchor          *string `json:"anchor,omitempty"`
+	SourceID        string  `json:"source_id"`
+	SourceName      string  `json:"source_name"`
+	ResponsibleName *string `json:"responsible_name,omitempty"`
+	ResponsibleRole *string `json:"responsible_role,omitempty"`
+	SourceURL       *string `json:"source_url,omitempty"`
+	LicenseStatus   string  `json:"license_status"`
+	Text            string  `json:"text"`
 } // @name v1.QuranReaderAyahTransliteration
 
 // QuranReaderAyahAudioTrack contains only playback data needed by the reader.
@@ -102,19 +123,44 @@ func QuranReaderAyahs(ayahs []entity.QuranAyah) []QuranReaderAyah {
 // QuranReaderAyahFromEntity maps one domain ayah to the compact reader payload.
 func QuranReaderAyahFromEntity(ayah entity.QuranAyah) QuranReaderAyah {
 	item := QuranReaderAyah{
-		SurahID:     ayah.SurahID,
-		AyahNumber:  ayah.AyahNumber,
-		AyahKey:     ayah.AyahKey,
-		TextQPCHafs: ayah.TextQPCHafs,
-		JuzNumber:   ayah.JuzNumber,
-		PageNumber:  ayah.PageNumber,
-		Audio:       readerAudioTracks(ayah.Audio),
+		SurahID:           ayah.SurahID,
+		AyahNumber:        ayah.AyahNumber,
+		AyahKey:           ayah.AyahKey,
+		PrimaryUnitID:     ayah.PrimaryUnitID,
+		PrimaryUnitAnchor: ayah.PrimaryUnitAnchor,
+		TextQPCHafs:       ayah.TextQPCHafs,
+		JuzNumber:         ayah.JuzNumber,
+		PageNumber:        ayah.PageNumber,
+		Audio:             readerAudioTracks(ayah.Audio),
 	}
 	if ayah.Translation != nil {
-		item.Translation = &QuranReaderAyahTranslation{Text: ayah.Translation.Text}
+		item.Translation = &QuranReaderAyahTranslation{
+			UnitID:          ayah.Translation.UnitID,
+			Anchor:          ayah.Translation.Anchor,
+			SourceID:        ayah.Translation.SourceID,
+			SourceName:      ayah.Translation.SourceName,
+			Translator:      ayah.Translation.Translator,
+			ResponsibleName: ayah.Translation.ResponsibleName,
+			ResponsibleRole: ayah.Translation.ResponsibleRole,
+			SourceURL:       ayah.Translation.SourceURL,
+			LicenseStatus:   ayah.Translation.LicenseStatus,
+			Text:            ayah.Translation.Text,
+			Footnotes:       ayah.Translation.Footnotes,
+			FootnoteUnits:   ayah.Translation.FootnoteUnits,
+		}
 	}
 	if ayah.Transliteration != nil {
-		item.Transliteration = &QuranReaderAyahTransliteration{Text: ayah.Transliteration.Text}
+		item.Transliteration = &QuranReaderAyahTransliteration{
+			UnitID:          ayah.Transliteration.UnitID,
+			Anchor:          ayah.Transliteration.Anchor,
+			SourceID:        ayah.Transliteration.SourceID,
+			SourceName:      ayah.Transliteration.SourceName,
+			ResponsibleName: ayah.Transliteration.ResponsibleName,
+			ResponsibleRole: ayah.Transliteration.ResponsibleRole,
+			SourceURL:       ayah.Transliteration.SourceURL,
+			LicenseStatus:   ayah.Transliteration.LicenseStatus,
+			Text:            ayah.Transliteration.Text,
+		}
 	}
 
 	return item

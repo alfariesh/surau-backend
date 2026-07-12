@@ -237,6 +237,7 @@ func seedCrossReferenceFixture(t *testing.T) {
 
 	execFixtureSQL(t, ctx, tx, `SET LOCAL surau.registry_writer = 'unit-service'`)
 	execFixtureSQL(t, ctx, tx, `SET LOCAL surau.cross_reference_writer = 'cross-reference-service'`)
+	permitQuranPrimaryScriptFixture(ctx, t, tx)
 	execFixtureSQL(t, ctx, tx, `
 DELETE FROM cross_references
 WHERE source_work_id = ANY($1) OR target_work_id = ANY($1)`,

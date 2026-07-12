@@ -7,6 +7,12 @@ import (
 	"net/url"
 	"testing"
 	"time"
+
+	"github.com/alfariesh/surau-backend/internal/repo/persistent"
+	"github.com/alfariesh/surau-backend/internal/usecase/unitregistry"
+	"github.com/alfariesh/surau-backend/pkg/postgres"
+	"github.com/jackc/pgx/v5"
+	"github.com/stretchr/testify/require"
 )
 
 const (
@@ -16,6 +22,7 @@ const (
 	fixtureQuranSourceID     = "integration-id-source"
 	fixtureQuranRecitationID = "integration-recitation"
 	fixtureQuranReferenceID  = "00000000-0000-0000-0000-000000000991"
+	fixtureQuranLicenseActor = "00000000-0000-4000-8000-000000000992"
 )
 
 func TestQuranMultilingualContract(t *testing.T) {
@@ -65,8 +72,19 @@ func TestQuranMultilingualContract(t *testing.T) {
 	}
 
 	idAyah := getQuranAyah(t, "id")
+	if idAyah.PrimaryUnitID == nil || *idAyah.PrimaryUnitID == "" {
+		t.Fatalf("id ayah primary Citable Unit missing: %+v", idAyah)
+	}
 	if idAyah.Translation == nil || idAyah.Translation.Text != "Terjemah fixture Indonesia" {
 		t.Fatalf("id ayah translation = %+v", idAyah.Translation)
+	}
+
+	if idAyah.Translation.UnitID == nil || idAyah.Translation.Anchor == nil ||
+		idAyah.Translation.SourceName != "Fixture Indonesian Source" ||
+		idAyah.Translation.Translator == nil || *idAyah.Translation.Translator != "Translator Fixture" ||
+		idAyah.Translation.LicenseStatus != "permitted" || len(idAyah.Translation.FootnoteUnits) != 1 ||
+		idAyah.Translation.FootnoteUnits[0].ParentUnitID != *idAyah.Translation.UnitID {
+		t.Fatalf("id ayah attributed Citable translation = %+v", idAyah.Translation)
 	}
 	if idAyah.TranslationMissing {
 		t.Fatal("id ayah exact translation should not be missing")
@@ -104,6 +122,19 @@ func TestQuranMultilingualContract(t *testing.T) {
 		t.Fatal("ar ayah should not be marked translation_missing")
 	}
 	assertAvailability(t, arAyah.Availability.Translation, "hide_translation_tab", "ar", "ar", false)
+
+	pageResp := doJSON(t, http.MethodGet, baseURL()+"/v1/quran/pages/604/ayahs?lang=id", nil, "")
+
+	var page struct {
+		Items []quranAyahResponse `json:"items"`
+		Total int                 `json:"total"`
+	}
+	decodeAndClose(t, pageResp, &page)
+
+	if pageResp.StatusCode != http.StatusOK || page.Total != 1 || len(page.Items) != 1 ||
+		page.Items[0].AyahKey != fixtureQuranAyahKey {
+		t.Fatalf("Quran page locator response = status %d body %+v", pageResp.StatusCode, page)
+	}
 
 	resp = doJSON(t, http.MethodGet, baseURL()+"/v1/quran/ayahs/114:1?lang=id&translation_source=missing-source", nil, "")
 	decodeAndClose(t, resp, &errorBody)
@@ -307,6 +338,17 @@ func seedMultilingualQuranFixture(t *testing.T) {
 	}
 	defer tx.Rollback(ctx)
 
+	execFixtureSQL(t, ctx, tx, `SET LOCAL surau.registry_writer = 'unit-service'`)
+	execFixtureSQL(t, ctx, tx, `SET LOCAL session_replication_role = 'replica'`)
+	execFixtureSQL(t, ctx, tx, `
+DELETE FROM quran_source_license_audits
+WHERE source_kind = 'translation' AND source_id = $1`, fixtureQuranSourceID)
+	execFixtureSQL(t, ctx, tx, `SET LOCAL session_replication_role = 'origin'`)
+	permitQuranPrimaryScriptFixture(ctx, t, tx)
+	execFixtureSQL(t, ctx, tx, `
+DELETE FROM citable_units u
+USING quran_citable_unit_bindings b
+WHERE b.unit_id = u.id AND b.surah_id = $1`, fixtureQuranSurahID)
 	execFixtureSQL(t, ctx, tx, `DELETE FROM quran_book_references WHERE id = $1`, fixtureQuranReferenceID)
 	execFixtureSQL(t, ctx, tx, `DELETE FROM quran_audio_segments WHERE recitation_id = $1`, fixtureQuranRecitationID)
 	execFixtureSQL(t, ctx, tx, `DELETE FROM quran_audio_tracks WHERE recitation_id = $1`, fixtureQuranRecitationID)
@@ -352,17 +394,26 @@ INSERT INTO quran_translation_sources (
     id, lang, name, translator, source_url, qul_resource_id, format,
     license_status, checksum, metadata, imported_at
 )
-VALUES ($1, 'id', 'Fixture Indonesian Source', 'Translator Fixture',
-        'https://example.test/quran-translation', 'fixture-source', 'json',
-        'permitted', 'fixture-source-checksum', '{}'::jsonb, now())`,
+	VALUES ($1, 'id', 'Fixture Indonesian Source', 'Translator Fixture',
+	        'https://example.test/quran-translation', 'fixture-source', 'json',
+	        'needs_review', 'fixture-source-checksum', '{}'::jsonb, now())`,
 		fixtureQuranSourceID,
 	)
+	execFixtureSQL(t, ctx, tx, `
+UPDATE quran_translation_sources
+SET license_status = 'permitted', license_reason = 'Q-2 integration fixture',
+    license_updated_by = $2::uuid
+WHERE id = $1`, fixtureQuranSourceID, fixtureQuranLicenseActor)
 	execFixtureSQL(
 		t, ctx, tx, `
 INSERT INTO quran_ayah_translations (
     source_id, surah_id, ayah_number, ayah_key, lang, text, footnotes, chunks, metadata
 )
-VALUES ($1, $2, $3, $4, 'id', 'Terjemah fixture Indonesia', '[]'::jsonb, '[]'::jsonb, '{}'::jsonb)`,
+VALUES (
+	$1, $2, $3, $4, 'id', 'Terjemah fixture Indonesia',
+	'[{"number":1,"marker":"1","text":"Footnote fixture"}]'::jsonb,
+	'[]'::jsonb, '{}'::jsonb
+)`,
 		fixtureQuranSourceID,
 		fixtureQuranSurahID,
 		fixtureQuranAyahNumber,
@@ -412,6 +463,29 @@ VALUES ($1, $2, 1, $3, 'QS. An-Nas:1', 'qs an nas 1', 1, 'surah_ayah',
 	if err = tx.Commit(ctx); err != nil {
 		t.Fatalf("commit quran fixture tx: %v", err)
 	}
+
+	registry := unitregistry.New(persistent.NewCitableUnitRepo(&postgres.Postgres{Pool: pool}))
+	report, err := registry.ReconcileQuranSurah(ctx, fixtureQuranSurahID)
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, report.Derived, 3)
+}
+
+// permitQuranPrimaryScriptFixture follows the production audit path so a
+// clean integration database never depends on test ordering or a reused
+// Docker volume to make primary Quran text publicly visible.
+func permitQuranPrimaryScriptFixture(ctx context.Context, t *testing.T, tx pgx.Tx) {
+	t.Helper()
+
+	execFixtureSQL(t, ctx, tx, `
+INSERT INTO users (id, username, email, password_hash)
+VALUES ($1, 'q2-integration-license', 'q2-integration-license@example.test', 'x')
+ON CONFLICT (id) DO NOTHING`, fixtureQuranLicenseActor)
+	execFixtureSQL(t, ctx, tx, `
+UPDATE quran_script_sources
+SET license_status = 'permitted',
+    license_reason = 'Q-2 integration primary-script fixture',
+    license_updated_by = $1::uuid
+WHERE id = 'qpc-hafs'`, fixtureQuranLicenseActor)
 }
 
 type quranSurahResponse struct {
@@ -442,6 +516,7 @@ type quranAyahResponse struct {
 	SurahID                   int                       `json:"surah_id"`
 	AyahNumber                int                       `json:"ayah_number"`
 	AyahKey                   string                    `json:"ayah_key"`
+	PrimaryUnitID             *string                   `json:"primary_unit_id"`
 	Translation               *quranTranslationResponse `json:"translation"`
 	Audio                     []quranAudioTrackResponse `json:"audio"`
 	RequestedLang             string                    `json:"requested_lang"`
@@ -451,9 +526,20 @@ type quranAyahResponse struct {
 }
 
 type quranTranslationResponse struct {
-	SourceID string `json:"source_id"`
-	Lang     string `json:"lang"`
-	Text     string `json:"text"`
+	UnitID        *string                        `json:"unit_id"`
+	Anchor        *string                        `json:"anchor"`
+	SourceID      string                         `json:"source_id"`
+	SourceName    string                         `json:"source_name"`
+	Translator    *string                        `json:"translator"`
+	LicenseStatus string                         `json:"license_status"`
+	Lang          string                         `json:"lang"`
+	Text          string                         `json:"text"`
+	FootnoteUnits []quranCitableFootnoteResponse `json:"footnote_units"`
+}
+
+type quranCitableFootnoteResponse struct {
+	UnitID       string `json:"unit_id"`
+	ParentUnitID string `json:"parent_unit_id"`
 }
 
 type quranAyahAvailability struct {

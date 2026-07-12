@@ -10,6 +10,7 @@ const maxPostgresInteger = 1<<31 - 1
 
 const (
 	quranPointSegments       = 2
+	quranCitableUnitSegments = 4
 	kitabWorkSegments        = 2
 	kitabHeadingSegments     = 4
 	kitabCitableUnitSegments = 6
@@ -117,6 +118,24 @@ func parsePoint(raw string) (Point, error) {
 }
 
 func parseQuranPoint(parts []string) (Point, error) {
+	if len(parts) == quranCitableUnitSegments {
+		if parts[2] != "u" {
+			return Point{}, fmt.Errorf("%w: Quran unit hierarchy must use u", ErrInvalid)
+		}
+
+		surah, ayah, err := parseAyahLocator(parts[1])
+		if err != nil {
+			return Point{}, err
+		}
+
+		ordinal, err := parseDecimal(parts[3], false)
+		if err != nil {
+			return Point{}, err
+		}
+
+		return NewQuranUnit(surah, ayah, ordinal)
+	}
+
 	if len(parts) != quranPointSegments {
 		return Point{}, fmt.Errorf("%w: Quran point must use quran/{surah} or quran/{surah}:{ayah}", ErrInvalid)
 	}

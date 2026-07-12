@@ -1,6 +1,9 @@
 package entity
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 // Citable Unit registry vocabulary (roadmap/phase-1b-content-backbone.md C1/C2),
 // mirroring the CHECK constraints on citable_units / citable_unit_lineage.
@@ -10,11 +13,14 @@ const (
 	UnitCorpusHadith = "hadith"
 	UnitCorpusWiki   = "wiki"
 
-	UnitKindParagraph  = "paragraph"
-	UnitKindHeading    = "heading"
-	UnitKindQuranQuote = "quran_quote"
-	UnitKindFootnote   = "footnote"
-	UnitKindHTML       = "html"
+	UnitKindParagraph       = "paragraph"
+	UnitKindHeading         = "heading"
+	UnitKindQuranQuote      = "quran_quote"
+	UnitKindFootnote        = "footnote"
+	UnitKindHTML            = "html"
+	UnitKindPrimaryText     = "primary_text"
+	UnitKindTranslation     = "translation"
+	UnitKindTransliteration = "transliteration"
 
 	UnitLifecycleActive     = "active"
 	UnitLifecycleSuperseded = "superseded"
@@ -26,6 +32,11 @@ const (
 
 	UnitLineageReasonEdit        = "edit"
 	UnitLineageReasonContentMove = "content_move"
+
+	QuranUnitRolePrimaryText     = "primary_text"
+	QuranUnitRoleTranslation     = "translation"
+	QuranUnitRoleFootnote        = "footnote"
+	QuranUnitRoleTransliteration = "transliteration"
 
 	// Footnote parent linkage methods recorded in provenance_detail.
 	FootnoteLinkMarker   = "marker"
@@ -39,7 +50,7 @@ const (
 type CitableUnit struct {
 	ID                     string
 	Corpus                 string
-	BookID                 int
+	BookID                 *int
 	HeadingID              *int // nil = front-matter before the first heading anchor
 	PageID                 *int // physical locator, secondary metadata (B-D2)
 	Kind                   string
@@ -66,6 +77,112 @@ type CitableUnit struct {
 	RetiredAt              *time.Time
 	CreatedAt              time.Time
 	UpdatedAt              time.Time
+}
+
+// QuranCitableUnitBinding is the Quran-specific natural key attached to a row
+// in the shared Citable Unit registry. Source attribution and license stay in
+// their normalized source tables so changes take effect without rewriting all
+// derived units.
+type QuranCitableUnitBinding struct {
+	UnitID                  string
+	SurahID                 int
+	AyahNumber              int
+	Ordinal                 int
+	Role                    string
+	TranslationSourceID     *string
+	TransliterationSourceID *string
+	FootnoteKey             *string
+	SourceUpdatedAt         time.Time
+}
+
+// QuranUnitSource is one surah loaded from the existing Quran corpus tables.
+// LoadedAt is persisted only after the whole surah reconciles atomically.
+type QuranUnitSource struct {
+	SurahID  int
+	LoadedAt time.Time
+	Ayahs    []QuranUnitSourceAyah
+}
+
+type QuranUnitSourceAyah struct {
+	AyahNumber       int
+	PageNumber       *int
+	PrimaryText      string
+	PrimaryUpdatedAt time.Time
+	Translations     []QuranUnitSourceTranslation
+	Transliterations []QuranUnitSourceTransliteration
+}
+
+type QuranUnitSourceTranslation struct {
+	SourceID  string
+	Language  string
+	Text      string
+	Footnotes json.RawMessage
+	UpdatedAt time.Time
+}
+
+type QuranUnitSourceTransliteration struct {
+	SourceID  string
+	Language  string
+	Text      string
+	UpdatedAt time.Time
+}
+
+// QuranCitableUnitRecord is the joined registry/binding row used by the
+// deterministic planner.
+type QuranCitableUnitRecord struct {
+	Unit    CitableUnit
+	Binding QuranCitableUnitBinding
+}
+
+type QuranUnitRegistryFingerprint struct {
+	ActiveCount  int64
+	MaxOrdinal   int64
+	MaxUpdatedAt time.Time
+}
+
+type QuranUnitRegistrySnapshot struct {
+	Active           []QuranCitableUnitRecord
+	MaxOrdinalByAyah map[int]int
+	ExistingIDs      map[string]struct{}
+	Fingerprint      QuranUnitRegistryFingerprint
+}
+
+type QuranUnitMint struct {
+	Unit    CitableUnit
+	Binding QuranCitableUnitBinding
+}
+
+type QuranUnitPlanUpdate struct {
+	ID              string
+	PageID          *int
+	Position        int
+	ParentUnitID    *string
+	SourceUpdatedAt time.Time
+}
+
+type QuranUnitReconcileReport struct {
+	SurahID    int
+	Ayahs      int
+	Derived    int
+	Matched    int
+	Minted     int
+	Updated    int
+	Superseded int
+	Tombstoned int
+	Edges      int
+	Attempts   int
+}
+
+type QuranUnitReconcilePlan struct {
+	SurahID        int
+	LoadedAt       time.Time
+	BasedOn        QuranUnitRegistryFingerprint
+	Mints          []QuranUnitMint
+	Updates        []QuranUnitPlanUpdate
+	Retires        []UnitPlanRetire
+	Edges          []CitableUnitLineage
+	ExpectedActive int64
+	Report         QuranUnitReconcileReport
 }
 
 // CitableUnitLineage is one supersede edge (B-D3): a retired predecessor points
@@ -140,12 +257,15 @@ type CitableAuditViolations struct {
 	HashMismatch          int64 // recomputed content hash / normalized text drift
 	AnchorMalformed       int64
 	FootnoteParent        int64 // active footnote with missing/non-active parent
+	QuranBinding          int64 // Quran unit missing/invalid binding or source match
+	QuranInterpretive     int64 // must remain zero by generated-column construction
 }
 
 // CitableAuditInfo are dashboard-only observations (no alert): normal
 // operational states and pre-registry legacy dangling owned by B-3.
 type CitableAuditInfo struct {
 	StaleBooks                 int64 // units_derived_at older than latest source change
+	StaleQuranSurahs           int64
 	LegacyQuranBookReferences  int64 // rows pointing at is_deleted pages/headings
 	LegacyKnowledgeMentions    int64
 	LegacyKnowledgeSourceSpans int64

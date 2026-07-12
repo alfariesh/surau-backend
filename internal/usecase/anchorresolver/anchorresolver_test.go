@@ -25,8 +25,19 @@ type fakeAnchorRepo struct {
 	headings map[[2]int]entity.AnchorLookupResult
 	pages    map[[2]int]entity.AnchorLookupResult
 	units    map[string]entity.AnchorLookupResult
+	locators map[fakeQuranLocatorKey]fakeQuranLocatorResult
 	err      error
 	calls    []string
+}
+
+type fakeQuranLocatorKey struct {
+	kind   string
+	number int
+}
+
+type fakeQuranLocatorResult struct {
+	start entity.AnchorLookupResult
+	end   entity.AnchorLookupResult
 }
 
 func (f *fakeAnchorRepo) ResolveQuran(_ context.Context, ayahKey string) (entity.AnchorLookupResult, error) {
@@ -51,6 +62,27 @@ func (f *fakeAnchorRepo) ResolvePage(_ context.Context, bookID, pageID int) (ent
 
 func (f *fakeAnchorRepo) ResolveCanonicalUnit(_ context.Context, canonical string) (entity.AnchorLookupResult, error) {
 	return f.lookup("unit:"+canonical, f.units[canonical])
+}
+
+func (f *fakeAnchorRepo) ResolveQuranLocator(
+	_ context.Context,
+	kind string,
+	number int,
+) (start, end entity.AnchorLookupResult, err error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.calls = append(f.calls, "quran-locator:"+kind+":"+strconv.Itoa(number))
+	if f.err != nil {
+		return entity.AnchorLookupResult{}, entity.AnchorLookupResult{}, f.err
+	}
+
+	result, exists := f.locators[fakeQuranLocatorKey{kind: kind, number: number}]
+	if !exists {
+		return entity.AnchorLookupResult{}, entity.AnchorLookupResult{}, entity.ErrAnchorNotFound
+	}
+
+	return result.start, result.end, nil
 }
 
 //nolint:gocritic // the value mirrors the repository interface and keeps the fake compact
@@ -95,6 +127,10 @@ func TestResolveCanonicalPointProfiles(t *testing.T) {
 			{797, 11}: activeLookup("kitab/797/h/11", headingRecord(797, 11, 12, updatedAt)),
 		},
 		units: map[string]entity.AnchorLookupResult{
+			"quran/73:4/u/7": activeLookup(
+				"quran/73:4/u/7",
+				quranUnitRecord("quran-unit-7", "quran/73:4/u/7", "73:4", updatedAt),
+			),
 			"kitab/797/h/11/u/42": activeLookup(
 				"kitab/797/h/11/u/42",
 				unitRecord("unit-42", "kitab/797/h/11/u/42", 797, 11, 12, updatedAt),
@@ -111,6 +147,7 @@ func TestResolveCanonicalPointProfiles(t *testing.T) {
 	}{
 		{name: "Quran surah", anchor: "quran/73", wantTargetType: entity.AnchorTargetQuranSurah, wantURL: "/v1/quran/surahs/73"},
 		{name: "Quran ayah", anchor: "quran/73:4", wantTargetType: entity.AnchorTargetQuranAyah, wantURL: "/v1/quran/ayahs/73:4"},
+		{name: "Quran Citable Unit", anchor: "quran/73:4/u/7", wantTargetType: entity.AnchorTargetCitableUnit, wantURL: "/v1/quran/ayahs/73:4"},
 		{name: "kitab Work", anchor: "kitab/797", wantTargetType: entity.AnchorTargetBook, wantURL: "/v1/books/797"},
 		{name: "kitab heading", anchor: "kitab/797/h/11", wantTargetType: entity.AnchorTargetBookHeading, wantURL: "/v1/books/797/toc/11/read"},
 		{name: "kitab unit", anchor: "kitab/797/h/11/u/42", wantTargetType: entity.AnchorTargetCitableUnit, wantURL: "/v1/books/797/toc/11/read"},
@@ -142,6 +179,90 @@ func TestResolveCanonicalPointProfiles(t *testing.T) {
 			assert.Empty(t, got.Boundaries[0].RedirectChain)
 		})
 	}
+}
+
+func TestResolveLegacyQuranLocatorForms(t *testing.T) {
+	t.Parallel()
+
+	updatedAt := time.Date(2026, time.July, 12, 10, 0, 0, 0, time.UTC)
+	start := activeLookup("quran/73:1", quranRecord("73:1", updatedAt))
+	end := activeLookup("quran/73:4", quranRecord("73:4", updatedAt))
+	repo := &fakeAnchorRepo{
+		surahs: map[int]entity.AnchorLookupResult{
+			73: activeLookup("quran/73", quranSurahRecord(73, updatedAt)),
+		},
+		quran: map[string]entity.AnchorLookupResult{
+			"73:1": start,
+			"73:4": end,
+		},
+		locators: map[fakeQuranLocatorKey]fakeQuranLocatorResult{
+			{kind: "juz", number: 29}:   {start: start, end: end},
+			{kind: "hizb", number: 57}:  {start: start, end: end},
+			{kind: "page", number: 574}: {start: start, end: end},
+		},
+	}
+	resolver := anchorresolver.New(repo)
+
+	t.Run("surah", func(t *testing.T) {
+		t.Parallel()
+
+		got, err := resolver.ResolveInput(t.Context(), entity.AnchorResolveInput{SurahID: new(73)})
+		require.NoError(t, err)
+		assert.Equal(t, entity.AnchorFormLegacyQuranSurah, got.Requested.Form)
+		require.NotNil(t, got.CanonicalAnchor)
+		assert.Equal(t, "quran/73", *got.CanonicalAnchor)
+		require.Len(t, got.Boundaries, 1)
+	})
+
+	t.Run("ayah range", func(t *testing.T) {
+		t.Parallel()
+
+		got, err := resolver.ResolveInput(t.Context(), entity.AnchorResolveInput{
+			SurahID: new(73), FromAyahNumber: new(1), ToAyahNumber: new(4),
+		})
+		require.NoError(t, err)
+		assert.Equal(t, entity.AnchorFormLegacyQuranRange, got.Requested.Form)
+		require.NotNil(t, got.CanonicalAnchor)
+		assert.Equal(t, "quran/73:1..quran/73:4", *got.CanonicalAnchor)
+		require.Len(t, got.Boundaries, 2)
+	})
+
+	for _, test := range []struct {
+		name  string
+		input entity.AnchorResolveInput
+		form  string
+		alias string
+	}{
+		{name: "juz", input: entity.AnchorResolveInput{JuzNumber: new(29)}, form: entity.AnchorFormLegacyQuranJuz, alias: "juz:29"},
+		{name: "hizb", input: entity.AnchorResolveInput{HizbNumber: new(57)}, form: entity.AnchorFormLegacyQuranHizb, alias: "hizb:57"},
+		{name: "mushaf page", input: entity.AnchorResolveInput{PageNumber: new(574)}, form: entity.AnchorFormLegacyQuranPage, alias: "page:574"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := resolver.ResolveInput(t.Context(), test.input)
+			require.NoError(t, err)
+			assert.Equal(t, test.form, got.Requested.Form)
+			assert.Nil(t, got.CanonicalAnchor, "aggregate locator covers multiple canonical ayahs")
+			require.Len(t, got.Boundaries, 2)
+
+			for _, boundary := range got.Boundaries {
+				require.NotEmpty(t, boundary.RedirectChain)
+				assert.Equal(t, test.alias, boundary.RedirectChain[0].From)
+			}
+		})
+	}
+}
+
+func TestResolveLegacyQuranLocatorRejectsMixedFamilies(t *testing.T) {
+	t.Parallel()
+
+	repo := &fakeAnchorRepo{}
+	_, err := anchorresolver.New(repo).ResolveInput(t.Context(), entity.AnchorResolveInput{
+		SurahID: new(73), JuzNumber: new(29),
+	})
+	assert.ErrorIs(t, err, entity.ErrInvalidAnchor)
+	assert.Zero(t, repo.callCount())
 }
 
 func TestResolveCanonicalRangeResolvesBoundariesOnly(t *testing.T) {
@@ -448,6 +569,18 @@ func quranSurahRecord(surahID int, updatedAt time.Time) entity.AnchorRecord {
 		Corpus:          entity.UnitCorpusQuran,
 		CanonicalAnchor: &canonical,
 		SurahID:         new(surahID),
+		Lifecycle:       entity.UnitLifecycleActive,
+		UpdatedAt:       updatedAt,
+	}
+}
+
+func quranUnitRecord(id, canonical, ayahKey string, updatedAt time.Time) entity.AnchorRecord {
+	return entity.AnchorRecord{
+		TargetType:      entity.AnchorTargetCitableUnit,
+		Corpus:          entity.UnitCorpusQuran,
+		CanonicalAnchor: new(canonical),
+		UnitID:          new(id),
+		AyahKey:         new(ayahKey),
 		Lifecycle:       entity.UnitLifecycleActive,
 		UpdatedAt:       updatedAt,
 	}

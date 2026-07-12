@@ -200,3 +200,13 @@ versi non-NULL sebagai target buta. Semantik, kolom, dan gerbang Go-Python lengk
 | 1 | `authors-name-search` | authors (3.187 baris dev) | SELESAI di dev (S6, 2026-07-08): drill pause di 500/3.187 → resume → completed; endpoint publik 200 sepanjang drill; pending=0 | Bukti produk: `/v1/authors?q=احمد` 19 → 209 hasil (192/192 nama ber-hamzah terjangkau); B-5 kini membekukan profil `search-key` v1 tanpa melipat `ء`/`ة`, dan cap versinya diberikan terpisah oleh `authors-name-search-v1-version` |
 | 2 | `citable-units-kitab-pilot` | citable_units (dari book_*) | SELESAI B-1 (SESI 11, 2026-07-09): 4 buku eval nyata (797/7312/12876/22842) → 16.205 unit; predikat staleness = job yang sama melayani derive awal & re-derive pasca-re-import | 1 buku per chunk (reconcile atomik); laporan per-buku di stdout |
 | 3 | `citable-units-kitab-rederive` | citable_units | Drill determinisme AC-1: re-run tanpa syarat atas buku ter-derive; TERBUKTI lokal 2026-07-09 — matched=16.205, minted=0, checksum registry MD5 identik | Juga jalur pemulihan setelah perubahan parser/profil yang disengaja (gelombang supersede diserap lineage) |
+| 4 | `citable-units-quran` | citable_units + quran_citable_unit_bindings | Q-2 initial/stale-only; atomik satu surah, cursor circular, aman di-resume | Importer langsung reconcile surah tersentuh; trigger `units_stale_at` + compare-and-set source adalah recovery bila hook gagal/race |
+| 5 | `citable-units-quran-rederive` | citable_units + quran_citable_unit_bindings | Drill determinisme semua surah derived; live test membuktikan re-run tidak menambah unit | Jalur pemulihan sesudah perubahan deriver non-primer; drift teks primer gagal tertutup |
+
+Q-2 juga memiliki drill migrasi populated khusus di CI:
+`TestQuranCitableUnitMigrationDrill`. Drill menjalankan core migration `up→down→up` sambil menjaga
+snapshot B-1, B-3, dan source row Quran legacy identik; index `CONCURRENTLY` diuji oleh job
+round-trip migrasi umum di luar transaksi drill.
+Dua unique index registry pengganti dibangun lebih dahulu lewat migrasi expand `CONCURRENTLY`,
+lalu hanya di-swap secara metadata oleh core migration. Down Q-2 ditolak bila histori/keputusan
+lisensi Quran sudah ada agar rollback tidak menghapus bukti takedown.

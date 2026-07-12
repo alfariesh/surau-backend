@@ -45,6 +45,7 @@ type UnitReconciler interface {
 type UseCase struct {
 	repo           repo.EditorialRepo
 	license        repo.LicenseRepo
+	quranLicense   repo.QuranSourceLicenseRepo
 	quranEditorial repo.QuranEditorialRepo
 	units          UnitReconciler
 	log            logger.Interface
@@ -57,6 +58,10 @@ func New(r repo.EditorialRepo, units UnitReconciler, l logger.Interface) *UseCas
 	uc := &UseCase{repo: r, units: units, log: l}
 	if licenseRepo, ok := r.(repo.LicenseRepo); ok {
 		uc.license = licenseRepo
+	}
+
+	if quranLicenseRepo, ok := r.(repo.QuranSourceLicenseRepo); ok {
+		uc.quranLicense = quranLicenseRepo
 	}
 
 	if quranRepo, ok := r.(repo.QuranEditorialRepo); ok {

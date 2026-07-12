@@ -65,6 +65,27 @@ func AnchorFor(bookID, scopeKey, ordinal int) string {
 	return fmt.Sprintf("kitab/%d/h/%d/u/%d", bookID, scopeKey, ordinal)
 }
 
+// QuranUnitID uses the same fixed B-1 namespace while making the Quran source
+// slot explicit. Content edits mint successors; unchanged re-runs reproduce the
+// same UUID exactly.
+func QuranUnitID(
+	surahID, ayahNumber int,
+	role, sourceID, footnoteKey string,
+	contentHash []byte,
+	occurrence int,
+) string {
+	name := fmt.Sprintf("quran|%d|%d|%s|%s|%s|%x|%d",
+		surahID, ayahNumber, role, sourceID, footnoteKey, contentHash, occurrence)
+
+	return uuid.NewSHA1(nsCitableUnit, []byte(name)).String()
+}
+
+// QuranAnchorFor is the child Citable Unit anchor under the grandfathered
+// logical ayah Anchor quran/{surah}:{ayah}.
+func QuranAnchorFor(surahID, ayahNumber, ordinal int) string {
+	return fmt.Sprintf("quran/%d:%d/u/%d", surahID, ayahNumber, ordinal)
+}
+
 // Latin, Arabic-Indic (U+0660–0669), and Extended Arabic-Indic (U+06F0–06F9)
 // digit runs; the char-range warning is expected for the Arabic blocks.
 //

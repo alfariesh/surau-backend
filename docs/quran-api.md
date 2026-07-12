@@ -1,6 +1,6 @@
 # Quran API Contract
 
-Last updated: 2026-07-11
+Last updated: 2026-07-12
 
 This document is the FE-facing contract for the Quran backend. It covers the public Quran read APIs, response shapes, audio behavior, errors, and the recommended fetch flow. The Quran domain is standalone: Quran rows live in dedicated Quran tables and are linked to kitab data only through Quran reference records.
 
@@ -17,9 +17,15 @@ For generic incoming/outgoing content links and the Quran compatibility bridge, 
 - For audio playback, use `public_url ?? audio_url`. `public_url` is preferred, but source `audio_url` is a valid playable fallback.
 - Segment timestamps are milliseconds.
 - When audio is enabled, fetch `/v1/quran/recitations`, use `is_default=true` initially, then store the user's chosen `recitation_id`.
-- Use `/v1/quran/juz` or `/v1/quran/hizbs` for mushaf navigation tabs; use their `/ayahs` endpoints for the actual reader payload.
+- Use `/v1/quran/juz` or `/v1/quran/hizbs` for segmented navigation; use
+  `/v1/quran/pages/{page_number}/ayahs` when FE already carries the legacy mushaf page locator.
 - For persisted/shared cross-corpus addresses, use canonical Anchor `quran/{ayah_key}` and resolve
   it with `GET /v1/anchors/resolve`; bare `ayah_key` remains a permanent legacy resolver input.
+- Retain `primary_unit_id`/`primary_unit_anchor` and rendering `unit_id`/`anchor` when creating
+  citations. Never construct unit ordinals in FE.
+- Render a translation/transliteration only from the object returned by API; it already carries
+  source attribution and literal `license_status=permitted`. Do not cache or resurrect a missing
+  source locally after a takedown.
 - Public surah and ayah editorial is present only when the row is both
   `published` and `license_status=permitted`. Draft/workflow fields never leak
   into the public response shape.
@@ -38,6 +44,8 @@ For generic incoming/outgoing content links and the Quran compatibility bridge, 
 - Ayah numbers are numeric inside each surah.
 - Juz numbers are `1` through `30`; hizb numbers are `1` through `60`.
 - Quran text is imported from QUL files. The app does not call QUL at request time.
+- Public Quran GET responses use `Cache-Control: public, max-age=0, must-revalidate` plus ETag and
+  bypass the edge Worker cache so source-license changes take effect immediately.
 
 ## Data Model Notes
 
@@ -54,6 +62,25 @@ For generic incoming/outgoing content links and the Quran compatibility bridge, 
 | `transliteration.text` | Exact requested-language transliteration, when imported for `id` or `en` | Latin/romanized reading aid. Hidden for `lang=ar`. |
 
 Use `text_qpc_hafs` for Quran display when present. Use `text_imlaei_simple` as fallback if display text is missing.
+
+### Citable Unit, attribution, footnote, dan lisensi
+
+Q-2 menambahkan identitas aditif tanpa menghapus field lama:
+
+- ayah: `primary_unit_id` + `primary_unit_anchor`;
+- translation/transliteration: `unit_id` + `anchor`, `source_id`, `source_name`, pihak
+  bertanggung jawab/penerjemah, `source_url`, dan `license_status`;
+- translation mempertahankan `footnotes` mentah untuk kompatibilitas dan menambah
+  `footnote_units[]`. Setiap footnote memuat `unit_id`, `anchor`, `parent_unit_id`,
+  `footnote_key`, marker, dan teks.
+
+Hanya sumber dengan status literal `permitted` dan atribusi non-kosong yang dapat muncul sebagai
+translation/transliteration. `unknown`, `needs_review`, `public_domain`, dan `restricted` berlaku
+seolah sumber tidak tersedia. QPC Hafs yang sudah publik saat migrasi mendapat grandfather marker
+yang terikat checksum exact; keputusan `restricted` mencabut marker secara permanen beserta reader
+teks primer dan Anchor unitnya. Surah yang belum selesai backfill atau sedang stale boleh memakai
+field display legacy yang tetap lolos lisensi, tetapi `unit_id`/`anchor`/`footnote_units`
+dihilangkan sampai reconcile selesai sehingga client tidak pernah menerima identitas stale.
 
 ### Surah Info
 
@@ -117,7 +144,8 @@ Quran uses the same `lang` contract as kitab reader:
 - Region tags normalize to primary language, for example `en-US -> en`.
 - Unsupported explicit languages return `400 {"error":"unsupported language"}`.
 - No automatic `en -> id` translation fallback.
-- Arabic Quran text is canonical source content and always remains available.
+- Arabic Quran text adalah source content kanonik dan tersedia melalui grandfather QPC yang
+  eksplisit; keputusan takedown `restricted` tetap menang.
 
 FE should use `localization` on surah responses and `availability.translation|audio` on ayah responses as the source of truth for tabs, empty states, labels, and language offers.
 
@@ -639,10 +667,13 @@ Status: `200`
       "id": "qul-kfgqpc-id-simple",
       "lang": "id",
       "name": "King Fahad Quran Complex",
+      "translator": "Tim penerjemah teratribusi",
+      "responsible_name": "King Fahad Quran Complex",
+      "responsible_role": "source_organization",
       "source_url": "https://qul.tarteel.ai/resources/translation/173",
       "qul_resource_id": "173",
       "format": "simple.json",
-      "license_status": "needs_review",
+      "license_status": "permitted",
       "coverage": {
         "translated_ayahs": 6236,
         "total_ayahs": 6236,
@@ -657,7 +688,8 @@ Status: `200`
 }
 ```
 
-For `lang=ar`, `items` is empty and `total` is `0` because Arabic is source text, not a translation source.
+Endpoint ini hanya mencantumkan sumber `permitted` dengan atribusi. Untuk `lang=ar`, `items`
+kosong dan `total=0` karena Arabic adalah teks primer, bukan sumber terjemahan.
 
 ### 5. Get One Ayah
 
@@ -691,6 +723,8 @@ Status: `200`
   "surah_id": 1,
   "ayah_number": 1,
   "ayah_key": "1:1",
+  "primary_unit_id": "d226f019-5f95-5f4c-b490-c5d80209cd31",
+  "primary_unit_anchor": "quran/1:1/u/1",
   "text_qpc_hafs": "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ",
   "text_imlaei_simple": "بسم الله الرحمن الرحيم",
   "search_text": "بسم الله الرحمن الرحيم",
@@ -700,9 +734,27 @@ Status: `200`
   "juz_number": 1,
   "hizb_number": 1,
   "translation": {
+    "unit_id": "73893777-f2a1-5a95-a979-c3ff36cf5a6d",
+    "anchor": "quran/1:1/u/2",
     "source_id": "qul-kfgqpc-id-simple",
+    "source_name": "King Fahad Quran Complex",
+    "translator": "Tim penerjemah teratribusi",
+    "responsible_name": "King Fahad Quran Complex",
+    "responsible_role": "source_organization",
+    "source_url": "https://qul.tarteel.ai/resources/translation/173",
+    "license_status": "permitted",
     "lang": "id",
     "text": "Dengan nama Allah Yang Maha Pengasih, Maha Penyayang.",
+    "footnote_units": [
+      {
+        "unit_id": "d999909c-b131-51d4-bf65-c635f40a0983",
+        "anchor": "quran/1:1/u/3",
+        "parent_unit_id": "73893777-f2a1-5a95-a979-c3ff36cf5a6d",
+        "footnote_key": "1",
+        "marker": "1",
+        "text": "Catatan dari sumber terjemahan."
+      }
+    ],
     "metadata": {},
     "updated_at": "2026-05-28T00:00:00Z"
   },
@@ -909,6 +961,8 @@ Status: `200`
       "surah_id": 73,
       "ayah_number": 1,
       "ayah_key": "73:1",
+      "primary_unit_id": "d226f019-5f95-5f4c-b490-c5d80209cd31",
+      "primary_unit_anchor": "quran/73:1/u/1",
       "text_qpc_hafs": "يَٰٓأَيُّهَا ٱلْمُزَّمِّلُ",
       "text_imlaei_simple": "يا أيها المزمل",
       "translation": {
@@ -938,6 +992,13 @@ When `view=reader_minimal`, each item omits import/debug/localization/search fie
       "juz_number": 29,
       "page_number": 574,
       "translation": {
+        "unit_id": "73893777-f2a1-5a95-a979-c3ff36cf5a6d",
+        "anchor": "quran/73:1/u/2",
+        "source_id": "qul-kfgqpc-id-simple",
+        "source_name": "King Fahad Quran Complex",
+        "responsible_name": "King Fahad Quran Complex",
+        "responsible_role": "source_organization",
+        "license_status": "permitted",
         "text": "Wahai orang yang berselimut!"
       },
       "audio": [
@@ -963,7 +1024,12 @@ When `view=reader_minimal`, each item omits import/debug/localization/search fie
 }
 ```
 
-`translation` is omitted when translation is not requested or not available. `audio` is omitted when `include_audio=false` or no playable URL exists. Audio `url` is already resolved from `public_url` fallback to source `audio_url`.
+`translation` is omitted when translation is not requested, tidak berlisensi, atau tidak
+tersedia. Saat surah stale, teks legacy berlisensi dapat tetap tampil tanpa identitas unit sampai
+reconcile; jangan membuat sitasi darinya. Bentuk minimal current membawa identitas+atribusi yang
+diperlukan untuk sitasi. `audio`
+is omitted when `include_audio=false` or no playable URL exists. Audio `url` is already resolved
+from `public_url` fallback to source `audio_url`.
 
 ### Errors
 
@@ -1024,9 +1090,12 @@ Status: `200`
 ```http
 GET /v1/quran/juz/{juz_number}/ayahs?lang=id&translation_source=&include_translation=true&include_audio=false&recitation_id=&view=
 GET /v1/quran/hizbs/{hizb_number}/ayahs?lang=id&translation_source=&include_translation=true&include_audio=false&recitation_id=&view=
+GET /v1/quran/pages/{page_number}/ayahs?lang=id&translation_source=&include_translation=true&include_audio=false&recitation_id=&view=
 ```
 
-These endpoints return the same full or `reader_minimal` ayah shape and audio behavior as `/v1/quran/surahs/{surah_id}/ayahs`.
+These endpoints return the same full or `reader_minimal` ayah shape and audio behavior as
+`/v1/quran/surahs/{surah_id}/ayahs`. Route page adalah resolver baca untuk locator legacy
+`page_number`; tidak mencetak Anchor halaman baru.
 
 ### Query Params
 
@@ -1045,10 +1114,11 @@ These endpoints return the same full or `reader_minimal` ayah shape and audio be
 | --- | --- | --- |
 | `400` | `{"error":"invalid juz_number"}` | Juz path value is not an integer. |
 | `400` | `{"error":"invalid hizb_number"}` | Hizb path value is not an integer. |
+| `400` | `{"error":"invalid page_number"}` | Mushaf page path value is not a positive integer. |
 | `400` | `{"error":"invalid include_translation"}` | Boolean query value cannot be parsed. |
 | `400` | `{"error":"invalid include_audio"}` | Boolean query value cannot be parsed. |
 | `400` | `{"error":"invalid view"}` | `view` is not empty, `full`, or `reader_minimal`. |
-| `400` | `{"error":"invalid quran range"}` | Juz is outside `1..30` or hizb is outside `1..60`. |
+| `400` | `{"error":"invalid quran range"}` | Juz is outside `1..30`, hizb outside `1..60`, or page is non-positive. |
 | `404` | `{"error":"quran navigation not found"}` | Number is valid but imported ayah metadata has no rows for that segment. |
 | `404` | `{"error":"quran recitation not found"}` | Explicit `recitation_id` does not exist. |
 
@@ -1060,7 +1130,9 @@ GET /v1/quran/search?q=&lang=id&limit=50&offset=0
 
 Searches Arabic Quran text, the requested translation, and other imported translations for discoverability. Result display still returns exact requested-language translation only.
 
-Rate limit: per-IP limiter; exceeding it returns `429` with the standard error envelope (`code: too_many_requests`, `retry_after` mirrors the `Retry-After` header). Caching: unlike the other Quran GET endpoints (which send `Cache-Control: public, max-age=300, stale-while-revalidate=86400` + `ETag`), search is dynamic and answers `Cache-Control: no-store` (F1-D).
+Rate limit: per-IP limiter; exceeding it returns `429` with the standard error envelope (`code: too_many_requests`, `retry_after` mirrors the `Retry-After` header). Caching: search answers
+`Cache-Control: no-store`; Quran GET lainnya mengirim `public, max-age=0, must-revalidate` + ETag
+dan seluruh prefix `/v1/quran` bypass cache Worker agar takedown lisensi langsung berlaku.
 
 ### Query Params
 
@@ -1300,6 +1372,35 @@ default importer never changes them, and `--publish` applies them atomically.
 Permanent slug history and redirects are deliberately owned by Q-4, so these
 three routing fields are not replayed by a Q-1 draft restore.
 
+### 12. Protected Quran Source License Audit
+
+Read routes require `CapReviewEditorial`; mutation additionally requires
+`CapPublishProduction`, fresh MFA, and `If-Match`:
+
+```http
+GET   /v1/editorial/quran/source-licenses?source_kind=&status=unresolved&limit=50&offset=0
+GET   /v1/editorial/quran/source-licenses/{script|translation|transliteration}/{source_id}
+PATCH /v1/editorial/quran/source-licenses/{script|translation|transliteration}/{source_id}
+```
+
+List memakai `{items,total}`. Detail mengirim ETag dan riwayat keputusan append-only. PATCH body:
+
+```json
+{
+  "license_status": "permitted",
+  "reason": "Bukti izin telah diverifikasi",
+  "evidence_url": "https://example.org/license",
+  "translator": "Nama penerjemah",
+  "responsible_name": "Organisasi penanggung jawab",
+  "responsible_role": "publisher"
+}
+```
+
+Sumber `permitted` wajib memiliki `translator` atau `responsible_name`. Missing ETag = 428,
+stale ETag = 412. Source ID/resource/format immutable; checksum atau footnote release baru atas
+source `permitted`/`restricted` ditolak sampai status dipindahkan ke `needs_review`. Importer tidak
+boleh menimpa keputusan manusia ini. Rincian operasional ada di `docs/license-governance.md`.
+
 ## Response Shape Reference
 
 List endpoints wrap the item shapes below in the shared `{ "items": [...], "total": number }` envelope; the types describe one item.
@@ -1367,6 +1468,8 @@ type QuranAyah = {
   surah_id: number;
   ayah_number: number;
   ayah_key: string;
+  primary_unit_id?: string;
+  primary_unit_anchor?: string;
   text_qpc_hafs?: string;
   text_imlaei_simple?: string;
   search_text?: string;
@@ -1398,16 +1501,46 @@ type QuranReaderAyah = {
   surah_id: number;
   ayah_number: number;
   ayah_key: string;
+  primary_unit_id?: string;
+  primary_unit_anchor?: string;
   text_qpc_hafs?: string;
   juz_number?: number;
   page_number?: number;
   translation?: {
+    unit_id?: string;
+    anchor?: string;
+    source_id: string;
+    source_name: string;
+    translator?: string;
+    responsible_name?: string;
+    responsible_role?: string;
+    source_url?: string;
+    license_status: "permitted";
     text: string;
+    footnotes?: unknown;
+    footnote_units?: QuranCitableFootnote[];
   };
   transliteration?: {
+    unit_id?: string;
+    anchor?: string;
+    source_id: string;
+    source_name: string;
+    responsible_name?: string;
+    responsible_role?: string;
+    source_url?: string;
+    license_status: "permitted";
     text: string;
   };
   audio?: QuranReaderAyahAudioTrack[];
+};
+
+type QuranCitableFootnote = {
+  unit_id: string;
+  anchor: string;
+  parent_unit_id: string;
+  footnote_key: string;
+  marker?: string;
+  text: string;
 };
 
 type QuranReaderAyahAudioTrack = {
@@ -1469,10 +1602,19 @@ type QuranAyahAvailability = {
 
 ```ts
 type QuranTranslation = {
+  unit_id?: string;
+  anchor?: string;
   source_id: string;
+  source_name: string;
+  translator?: string;
+  responsible_name?: string;
+  responsible_role?: string;
+  source_url?: string;
+  license_status: "permitted";
   lang: string;
   text: string;
   footnotes?: unknown;
+  footnote_units?: QuranCitableFootnote[];
   chunks?: unknown;
   metadata?: Record<string, unknown>;
   updated_at: string;
@@ -1483,7 +1625,14 @@ type QuranTranslation = {
 
 ```ts
 type QuranTransliteration = {
+  unit_id?: string;
+  anchor?: string;
   source_id: string;
+  source_name: string;
+  responsible_name?: string;
+  responsible_role?: string;
+  source_url?: string;
+  license_status: "permitted";
   lang: "id" | "en";
   text: string;
   metadata?: Record<string, unknown>;
@@ -1499,6 +1648,8 @@ type QuranTranslationSource = {
   lang: "id" | "en";
   name: string;
   translator?: string;
+  responsible_name?: string;
+  responsible_role?: string;
   source_url?: string;
   qul_resource_id?: string;
   format: string;
@@ -1724,9 +1875,11 @@ http://localhost:8080/v1/quran/ayahs/1:1?lang=en
 http://localhost:8080/v1/quran/ayahs/1:1?lang=fr
 http://localhost:8080/v1/quran/ayahs/1:1?lang=id&include_audio=true&recitation_id=bad-id
 http://localhost:8080/v1/quran/surahs/73/ayahs?from=1&to=5&lang=id&include_translation=true
+http://localhost:8080/v1/quran/pages/574/ayahs?lang=id&view=reader_minimal
 http://localhost:8080/v1/quran/search?q=rahman&lang=id&limit=10&offset=0
 http://localhost:8080/v1/anchors/resolve?anchor=quran%2F73%3A4
 http://localhost:8080/v1/anchors/resolve?anchor=73%3A4
+http://localhost:8080/v1/anchors/resolve?page_number=574
 ```
 
 Expected key checks:
@@ -1743,13 +1896,16 @@ Expected key checks:
 
 ## Integration Checklist
 
-- Use `/v1/quran/surahs` as the cacheable surah index.
+- Use `/v1/quran/surahs` as the ETag-revalidated surah index; jangan menyimpan salinan edge
+  melewati perubahan lisensi.
 - Use `/v1/quran/surahs/{surah_id}` for surah background HTML.
 - Use `ayah_key` as the Quran reader route key.
 - Use `quran/{ayah_key}` as the canonical cross-corpus Anchor for new persisted/shared links;
   existing bare `ayah_key` links remain resolvable.
 - Use `text_qpc_hafs` for Arabic display.
 - Use `translation.text` for Indonesian translation.
+- Preserve the server-provided Citable Unit IDs/Anchors and source attribution; never mint them in FE.
+- Use `/v1/quran/pages/{page_number}/ayahs` for a stored legacy mushaf-page locator.
 - Use `GET /v1/quran/recitations` before building audio controls.
 - Use `public_url ?? audio_url` for audio playback.
 - Handle both `ayah` and `surah` audio tracks.

@@ -88,22 +88,49 @@ type QuranAyahEditorial struct {
 
 // QuranTranslation is one ayah translation from an imported source.
 type QuranTranslation struct {
-	SourceID  string    `json:"source_id" example:"kemenag-id-translation"`
-	Lang      string    `json:"lang" example:"id"`
-	Text      string    `json:"text"`
-	Footnotes RawJSON   `json:"footnotes,omitempty" swaggertype:"object"`
-	Chunks    RawJSON   `json:"chunks,omitempty" swaggertype:"object"`
-	Metadata  RawJSON   `json:"metadata,omitempty" swaggertype:"object"`
-	UpdatedAt time.Time `json:"updated_at" example:"2026-01-01T00:00:00Z"`
+	SourceID        string                 `json:"source_id" example:"kemenag-id-translation"`
+	SourceName      string                 `json:"source_name"`
+	Translator      *string                `json:"translator,omitempty"`
+	ResponsibleName *string                `json:"responsible_name,omitempty"`
+	ResponsibleRole *string                `json:"responsible_role,omitempty"`
+	SourceURL       *string                `json:"source_url,omitempty"`
+	LicenseStatus   string                 `json:"license_status" example:"permitted"`
+	UnitID          *string                `json:"unit_id,omitempty"`
+	Anchor          *string                `json:"anchor,omitempty"`
+	Lang            string                 `json:"lang" example:"id"`
+	Text            string                 `json:"text"`
+	Footnotes       RawJSON                `json:"footnotes,omitempty" swaggertype:"object"`
+	FootnoteUnits   []QuranCitableFootnote `json:"footnote_units,omitempty"`
+	Chunks          RawJSON                `json:"chunks,omitempty" swaggertype:"object"`
+	Metadata        RawJSON                `json:"metadata,omitempty" swaggertype:"object"`
+	UpdatedAt       time.Time              `json:"updated_at" example:"2026-01-01T00:00:00Z"`
 } // @name entity.QuranTranslation
+
+// QuranCitableFootnote is a translation footnote with its own stable Citable
+// Unit identity and an explicit link back to the owning translation unit.
+type QuranCitableFootnote struct {
+	UnitID       string  `json:"unit_id"`
+	Anchor       string  `json:"anchor"`
+	ParentUnitID string  `json:"parent_unit_id"`
+	FootnoteKey  string  `json:"footnote_key"`
+	Marker       *string `json:"marker,omitempty"`
+	Text         string  `json:"text"`
+} // @name entity.QuranCitableFootnote
 
 // QuranTransliteration is one ayah transliteration from an imported source.
 type QuranTransliteration struct {
-	SourceID  string    `json:"source_id" example:"kemenag-id-latin"`
-	Lang      string    `json:"lang" example:"id"`
-	Text      string    `json:"text"`
-	Metadata  RawJSON   `json:"metadata,omitempty" swaggertype:"object"`
-	UpdatedAt time.Time `json:"updated_at" example:"2026-01-01T00:00:00Z"`
+	SourceID        string    `json:"source_id" example:"kemenag-id-latin"`
+	SourceName      string    `json:"source_name"`
+	ResponsibleName *string   `json:"responsible_name,omitempty"`
+	ResponsibleRole *string   `json:"responsible_role,omitempty"`
+	SourceURL       *string   `json:"source_url,omitempty"`
+	LicenseStatus   string    `json:"license_status" example:"permitted"`
+	UnitID          *string   `json:"unit_id,omitempty"`
+	Anchor          *string   `json:"anchor,omitempty"`
+	Lang            string    `json:"lang" example:"id"`
+	Text            string    `json:"text"`
+	Metadata        RawJSON   `json:"metadata,omitempty" swaggertype:"object"`
+	UpdatedAt       time.Time `json:"updated_at" example:"2026-01-01T00:00:00Z"`
 } // @name entity.QuranTransliteration
 
 // QuranTranslationCoverage summarizes source coverage against imported ayahs.
@@ -115,20 +142,22 @@ type QuranTranslationCoverage struct {
 
 // QuranTranslationSource describes one imported Quran translation source.
 type QuranTranslationSource struct {
-	ID            string                   `json:"id"             example:"qul-kfgqpc-id-simple"`
-	Lang          string                   `json:"lang"           example:"id"`
-	Name          string                   `json:"name"           example:"King Fahad Quran Complex"`
-	Translator    *string                  `json:"translator,omitempty"`
-	SourceURL     *string                  `json:"source_url,omitempty"`
-	QULResourceID *string                  `json:"qul_resource_id,omitempty" example:"173"`
-	Format        string                   `json:"format"         example:"simple.json"`
-	LicenseStatus string                   `json:"license_status" example:"needs_review"`
-	Checksum      *string                  `json:"checksum,omitempty"`
-	Coverage      QuranTranslationCoverage `json:"coverage"`
-	IsDefault     bool                     `json:"is_default"     example:"true"`
-	Metadata      RawJSON                  `json:"metadata,omitempty" swaggertype:"object"`
-	ImportedAt    *time.Time               `json:"imported_at,omitempty" example:"2026-01-01T00:00:00Z"`
-	UpdatedAt     time.Time                `json:"updated_at"     example:"2026-01-01T00:00:00Z"`
+	ID              string                   `json:"id"             example:"qul-kfgqpc-id-simple"`
+	Lang            string                   `json:"lang"           example:"id"`
+	Name            string                   `json:"name"           example:"King Fahad Quran Complex"`
+	Translator      *string                  `json:"translator,omitempty"`
+	ResponsibleName *string                  `json:"responsible_name,omitempty"`
+	ResponsibleRole *string                  `json:"responsible_role,omitempty"`
+	SourceURL       *string                  `json:"source_url,omitempty"`
+	QULResourceID   *string                  `json:"qul_resource_id,omitempty" example:"173"`
+	Format          string                   `json:"format"         example:"simple.json"`
+	LicenseStatus   string                   `json:"license_status" example:"needs_review"`
+	Checksum        *string                  `json:"checksum,omitempty"`
+	Coverage        QuranTranslationCoverage `json:"coverage"`
+	IsDefault       bool                     `json:"is_default"     example:"true"`
+	Metadata        RawJSON                  `json:"metadata,omitempty" swaggertype:"object"`
+	ImportedAt      *time.Time               `json:"imported_at,omitempty" example:"2026-01-01T00:00:00Z"`
+	UpdatedAt       time.Time                `json:"updated_at"     example:"2026-01-01T00:00:00Z"`
 } // @name entity.QuranTranslationSource
 
 // QuranNavigationBoundary is the first or last ayah marker for a juz/hizb segment.
@@ -233,6 +262,8 @@ type QuranAyah struct {
 	SurahID                   int                   `json:"surah_id" example:"73"`
 	AyahNumber                int                   `json:"ayah_number" example:"4"`
 	AyahKey                   string                `json:"ayah_key" example:"73:4"`
+	PrimaryUnitID             *string               `json:"primary_unit_id,omitempty"`
+	PrimaryUnitAnchor         *string               `json:"primary_unit_anchor,omitempty"`
 	TextQPCHafs               *string               `json:"text_qpc_hafs,omitempty"`
 	TextImlaeiSimple          *string               `json:"text_imlaei_simple,omitempty"`
 	SearchText                *string               `json:"search_text,omitempty"`

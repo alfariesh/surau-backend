@@ -57,6 +57,7 @@ func TestCrossReferenceLineageCTEOnlyForUnitPoints(t *testing.T) {
 		{anchor: "kitab/797/h/11", wantLineage: false},
 		{anchor: "quran/73", wantLineage: false},
 		{anchor: "quran/73:4", wantLineage: false},
+		{anchor: "quran/73:4/u/2", wantLineage: true},
 		{anchor: "kitab/797/h/11/u/42..kitab/797/h/11/u/43", wantLineage: false},
 	}
 
@@ -75,6 +76,11 @@ func TestCrossReferenceLineageCTEOnlyForUnitPoints(t *testing.T) {
 			sql, _, err := builder.ToSql()
 			require.NoError(t, err)
 			assert.Equal(t, test.wantLineage, strings.Contains(sql, "WITH RECURSIVE"))
+
+			if strings.Contains(test.anchor, "quran/73:4/u/") {
+				assert.NotContains(t, sql, "int4range",
+					"a Quran child Anchor must match exact identity/lineage, not ayah containment")
+			}
 		})
 	}
 }

@@ -36,6 +36,7 @@ type PointKind string
 const (
 	PointKindQuranSurah   PointKind = "quran_surah"
 	PointKindQuranAyah    PointKind = "quran_ayah"
+	PointKindQuranUnit    PointKind = "quran_unit"
 	PointKindKitabWork    PointKind = "kitab_work"
 	PointKindKitabHeading PointKind = "kitab_heading"
 	PointKindKitabUnit    PointKind = "kitab_unit"
@@ -70,6 +71,21 @@ func NewQuranAyah(surah, ayah int) (Point, error) {
 	}
 
 	return Point{corpus: CorpusQuran, kind: PointKindQuranAyah, surah: surah, ayah: ayah}, nil
+}
+
+// NewQuranUnit constructs quran/{surah}:{ayah}/u/{ordinal}.
+func NewQuranUnit(surah, ayah, ordinal int) (Point, error) {
+	if !positiveInteger(surah) || !positiveInteger(ayah) || !positiveInteger(ordinal) {
+		return Point{}, fmt.Errorf(
+			"%w: Quran surah, ayah, and unit ordinal must be positive PostgreSQL integers",
+			ErrInvalid,
+		)
+	}
+
+	return Point{
+		corpus: CorpusQuran, kind: PointKindQuranUnit,
+		surah: surah, ayah: ayah, ordinal: ordinal,
+	}, nil
 }
 
 // NewKitabWork constructs kitab/{book_id}.
@@ -151,6 +167,8 @@ func (p Point) String() string {
 		return fmt.Sprintf("quran/%d", p.surah)
 	case PointKindQuranAyah:
 		return fmt.Sprintf("quran/%d:%d", p.surah, p.ayah)
+	case PointKindQuranUnit:
+		return fmt.Sprintf("quran/%d:%d/u/%d", p.surah, p.ayah, p.ordinal)
 	case PointKindKitabWork:
 		return fmt.Sprintf("kitab/%d", p.bookID)
 	case PointKindKitabHeading:
@@ -232,6 +250,8 @@ func (p Point) valid() bool {
 		return p.validQuranSurah()
 	case PointKindQuranAyah:
 		return p.validQuranAyah()
+	case PointKindQuranUnit:
+		return p.validQuranUnit()
 	case PointKindKitabWork:
 		return p.validKitabWork()
 	case PointKindKitabHeading:
@@ -249,6 +269,10 @@ func (p Point) validQuranSurah() bool {
 
 func (p Point) validQuranAyah() bool {
 	return p.corpus == CorpusQuran && positiveInteger(p.surah) && positiveInteger(p.ayah)
+}
+
+func (p Point) validQuranUnit() bool {
+	return p.validQuranAyah() && positiveInteger(p.ordinal)
 }
 
 func (p Point) validKitabWork() bool {

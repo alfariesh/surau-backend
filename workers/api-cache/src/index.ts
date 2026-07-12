@@ -111,7 +111,8 @@ const BYPASS_PREFIXES = [
   // In particular, an old L1/KV entry must never resurrect restricted kitab.
   "/v1/books",
   "/v1/anchors",
-  "/v1/cross-references"
+  "/v1/cross-references",
+  "/v1/quran"
 ];
 
 const TRACKING_PARAMS = new Set(["fbclid", "gclid", "gbraid", "wbraid", "mc_cid", "mc_eid"]);

@@ -21,6 +21,7 @@ type V1 struct {
 	editorial          usecase.Editorial
 	quranEditorial     usecase.QuranEditorial
 	licenseAudit       usecase.LicenseAudit
+	quranLicenseAudit  usecase.QuranSourceLicenseAudit
 	email              usecase.EmailAdmin
 	emailWebhookSecret string
 	l                  logger.Interface

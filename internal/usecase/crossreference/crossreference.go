@@ -331,7 +331,8 @@ func applyProjection(ref *entity.CrossReference, value *anchorgrammar.Value, sou
 		ref.TargetWorkID = new(point.BookID())
 	case anchorgrammar.CorpusQuran:
 		ref.TargetQuranSurahID = new(point.Surah())
-		if point.Kind() == anchorgrammar.PointKindQuranAyah {
+		if point.Kind() == anchorgrammar.PointKindQuranAyah ||
+			point.Kind() == anchorgrammar.PointKindQuranUnit {
 			ref.TargetQuranFromAyah = new(point.Ayah())
 			to := point.Ayah()
 			if end, ok := value.End(); ok {
