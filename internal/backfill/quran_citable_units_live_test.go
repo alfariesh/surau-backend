@@ -84,11 +84,16 @@ INSERT INTO quran_ayahs (
 	assert.Equal(t, int64(112)*quranPageCursorMultiplier+1, pageCursor)
 	assert.Equal(t, int64(1), processed)
 	assert.False(t, done)
-	pageCursor, processed, done, err = pageJob.ProcessChunk(ctx, pg.Pool, pageCursor, 0)
+	// Prove the default chunk size and exhausted-cursor path without scanning
+	// unrelated synthetic ayahs owned by earlier packages in the shared CI DB.
+	const exhaustedCursorStart int64 = 1<<63 - 1
+	emptyCursor, emptyProcessed, emptyDone, err := pageJob.ProcessChunk(
+		ctx, pg.Pool, exhaustedCursorStart, 0,
+	)
 	require.NoError(t, err)
-	assert.Equal(t, int64(112)*quranPageCursorMultiplier+1, pageCursor)
-	assert.Zero(t, processed)
-	assert.True(t, done, "a default-sized follow-up chunk must complete an exhausted page backfill")
+	assert.Equal(t, exhaustedCursorStart, emptyCursor)
+	assert.Zero(t, emptyProcessed)
+	assert.True(t, emptyDone, "a default-sized chunk must complete an exhausted page backfill")
 
 	canceledCtx, cancel := context.WithCancel(ctx)
 	cancel()
