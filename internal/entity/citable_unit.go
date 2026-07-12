@@ -117,6 +117,7 @@ type QuranUnitSourceTranslation struct {
 	Language  string
 	Text      string
 	Footnotes json.RawMessage
+	Metadata  json.RawMessage
 	UpdatedAt time.Time
 }
 

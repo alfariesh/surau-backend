@@ -145,6 +145,57 @@ func TestDeriveQuranSurahRejectsMalformedNonNullFootnotes(t *testing.T) {
 	assert.ErrorIs(t, err, entity.ErrInvalidQuranFootnotes)
 }
 
+func TestParseQuranFootnotesSupportsQULObjectMap(t *testing.T) {
+	t.Parallel()
+
+	footnotes, err := parseQuranFootnotes(
+		json.RawMessage(`{"77647":"Catatan kedua","77646":"Catatan pertama"}`),
+		`Teks <sup foot_note="77646">1</sup> dan <sup class="note" foot_note='77647'>2&amp;</sup>`,
+	)
+	require.NoError(t, err)
+	assert.Equal(t, []derivedQuranFootnote{
+		{key: "77646", marker: "1", text: "Catatan pertama"},
+		{key: "77647", marker: "2&", text: "Catatan kedua"},
+	}, footnotes)
+
+	empty, err := parseQuranFootnotes(json.RawMessage(`{}`), "Terjemahan tanpa catatan")
+	require.NoError(t, err)
+	assert.Empty(t, empty)
+}
+
+func TestQuranFootnoteMarkersUseTaggedSourceMetadata(t *testing.T) {
+	t.Parallel()
+
+	translation := entity.QuranUnitSourceTranslation{
+		Text: "Teks tampilan tanpa tag",
+		Metadata: json.RawMessage(
+			`{"verse_key":"88:17","t":"Teks <sup foot_note=\"77646\">1</sup>"}`,
+		),
+	}
+	footnotes, err := parseQuranFootnotes(
+		json.RawMessage(`{"77646":"Catatan sumber"}`),
+		quranFootnoteMarkerText(&translation),
+	)
+	require.NoError(t, err)
+	require.Len(t, footnotes, 1)
+	assert.Equal(t, "1", footnotes[0].marker)
+}
+
+func TestParseQuranFootnotesRejectsMalformedQULObjectMap(t *testing.T) {
+	t.Parallel()
+
+	tests := []json.RawMessage{
+		json.RawMessage(`{"note":"Teks"}`),
+		json.RawMessage(`{"1":7}`),
+		json.RawMessage(`{"1":""}`),
+		json.RawMessage(`{"01":"Satu","1":"Duplikat kanonik"}`),
+	}
+	for _, raw := range tests {
+		_, err := parseQuranFootnotes(raw, "")
+		assert.ErrorIs(t, err, entity.ErrInvalidQuranFootnotes, string(raw))
+	}
+}
+
 func snapshotFromQuranMints(mints []entity.QuranUnitMint) entity.QuranUnitRegistrySnapshot {
 	snapshot := entity.QuranUnitRegistrySnapshot{
 		MaxOrdinalByAyah: map[int]int{}, ExistingIDs: map[string]struct{}{},

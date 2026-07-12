@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"maps"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -173,7 +175,9 @@ func deriveQuranSurah(source *entity.QuranUnitSource) ([]derivedQuranUnit, error
 			))
 			position++
 
-			footnotes, err := parseQuranFootnotes(translation.Footnotes)
+			footnotes, err := parseQuranFootnotes(
+				translation.Footnotes, quranFootnoteMarkerText(translation),
+			)
 			if err != nil {
 				return nil, fmt.Errorf("surah %d ayah %d source %s: %w",
 					source.SurahID, ayah.AyahNumber, translation.SourceID, err)
@@ -252,11 +256,22 @@ func newDerivedQuranUnit(
 	}
 }
 
+var quranFootnoteMarkerRE = regexp.MustCompile(
+	`(?i)<sup\b[^>]*\bfoot_note\s*=\s*["']([^"']+)["'][^>]*>([^<]*)</sup\s*>`,
+)
+
 //nolint:gocognit,gocyclo,cyclop,wsl_v5 // one flat compatibility parser validates both supported source shapes
-func parseQuranFootnotes(raw json.RawMessage) ([]derivedQuranFootnote, error) {
+func parseQuranFootnotes(raw json.RawMessage, translationText string) ([]derivedQuranFootnote, error) {
 	trimmed := bytes.TrimSpace(raw)
 	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
 		return nil, nil
+	}
+
+	if trimmed[0] == '{' {
+		return parseQULQuranFootnotes(trimmed, translationText)
+	}
+	if trimmed[0] != '[' {
+		return nil, fmt.Errorf("%w: expected array or QUL object map", entity.ErrInvalidQuranFootnotes)
 	}
 
 	var wire []quranFootnoteWire
@@ -305,6 +320,106 @@ func parseQuranFootnotes(raw json.RawMessage) ([]derivedQuranFootnote, error) {
 	})
 
 	return result, nil
+}
+
+// parseQULQuranFootnotes normalizes QUL's footnote-tags JSON shape. The map key
+// is the stable footnote ID, while the human-facing marker lives in the
+// matching <sup foot_note="ID">marker</sup> tag in the tagged source payload.
+func parseQULQuranFootnotes(
+	raw json.RawMessage,
+	translationText string,
+) ([]derivedQuranFootnote, error) {
+	var wire map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &wire); err != nil {
+		return nil, fmt.Errorf("%w: %w", entity.ErrInvalidQuranFootnotes, err)
+	}
+
+	markers := quranFootnoteMarkers(translationText)
+	result := make([]derivedQuranFootnote, 0, len(wire))
+
+	seen := make(map[string]struct{}, len(wire))
+	for rawKey, rawText := range wire {
+		key, err := quranObjectFootnoteKey(rawKey)
+		if err != nil {
+			return nil, fmt.Errorf("%w: object key %q must be a positive integer",
+				entity.ErrInvalidQuranFootnotes, rawKey)
+		}
+
+		if _, exists := seen[key]; exists {
+			return nil, fmt.Errorf("%w: duplicate canonical key %q",
+				entity.ErrInvalidQuranFootnotes, key)
+		}
+
+		seen[key] = struct{}{}
+
+		var text string
+		if err := json.Unmarshal(rawText, &text); err != nil || strings.TrimSpace(text) == "" {
+			return nil, fmt.Errorf("%w: object key %q requires non-empty string text",
+				entity.ErrInvalidQuranFootnotes, rawKey)
+		}
+
+		marker := markers[key]
+		if marker == "" {
+			marker = key
+		}
+
+		result = append(result, derivedQuranFootnote{
+			key: key, marker: marker, text: strings.TrimSpace(text),
+		})
+	}
+
+	sort.Slice(result, func(i, j int) bool {
+		if len(result[i].key) != len(result[j].key) {
+			return len(result[i].key) < len(result[j].key)
+		}
+
+		return result[i].key < result[j].key
+	})
+
+	return result, nil
+}
+
+func quranObjectFootnoteKey(raw string) (string, error) {
+	trimmed := strings.TrimSpace(raw)
+
+	number, err := strconv.ParseUint(trimmed, 10, 64)
+	if err != nil || number == 0 {
+		return "", entity.ErrInvalidQuranFootnotes
+	}
+
+	return strconv.FormatUint(number, 10), nil
+}
+
+func quranFootnoteMarkers(translationText string) map[string]string {
+	result := make(map[string]string)
+
+	for _, match := range quranFootnoteMarkerRE.FindAllStringSubmatch(translationText, -1) {
+		key, err := quranObjectFootnoteKey(match[1])
+
+		marker := strings.TrimSpace(html.UnescapeString(match[2]))
+		if err != nil || marker == "" || result[key] != "" {
+			continue
+		}
+
+		result[key] = marker
+	}
+
+	return result
+}
+
+func quranFootnoteMarkerText(translation *entity.QuranUnitSourceTranslation) string {
+	var metadata struct {
+		T           string `json:"t"`
+		Text        string `json:"text"`
+		Translation string `json:"translation"`
+	}
+	if err := json.Unmarshal(translation.Metadata, &metadata); err != nil {
+		return translation.Text
+	}
+
+	return strings.Join([]string{
+		translation.Text, metadata.T, metadata.Text, metadata.Translation,
+	}, "\n")
 }
 
 //nolint:wsl_v5 // string and numeric compatibility forms are validated in sequence

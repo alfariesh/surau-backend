@@ -136,8 +136,11 @@ INSERT INTO quran_translation_sources (
 	require.NoError(t, err)
 	_, err = pg.Pool.Exec(ctx, `
 INSERT INTO quran_ayah_translations (
-    source_id, surah_id, ayah_number, ayah_key, lang, text, footnotes
-) VALUES ($1, 1, 1, '1:1', 'id', 'Dengan nama Allah', '[{"n":1,"t":"Catatan sumber"}]')`,
+    source_id, surah_id, ayah_number, ayah_key, lang, text, footnotes, metadata
+) VALUES ($1, 1, 1, '1:1', 'id',
+	  'Dengan nama Allah',
+	  '{"77123":"Catatan sumber"}',
+	  jsonb_build_object('t', 'Dengan nama Allah<sup foot_note="77123">1</sup>'))`,
 		translationSourceID)
 	require.NoError(t, err)
 	_, err = pg.Pool.Exec(ctx, `
@@ -210,6 +213,9 @@ WHERE surah_id = 1 AND ayah_number = 999`).Scan(&incompleteUnits))
 	require.NotNil(t, ayah.Translation.UnitID)
 	require.Len(t, ayah.Translation.FootnoteUnits, 1)
 	assert.Equal(t, *ayah.Translation.UnitID, ayah.Translation.FootnoteUnits[0].ParentUnitID)
+	assert.Equal(t, "77123", ayah.Translation.FootnoteUnits[0].FootnoteKey)
+	require.NotNil(t, ayah.Translation.FootnoteUnits[0].Marker)
+	assert.Equal(t, "1", *ayah.Translation.FootnoteUnits[0].Marker)
 	require.NotNil(t, ayah.Transliteration)
 	require.NotNil(t, ayah.Transliteration.UnitID)
 
@@ -253,7 +259,7 @@ WHERE b.surah_id = 1 AND b.ayah_number = 1 AND u.page_id IS DISTINCT FROM 2`).Sc
 	require.NoError(t, err)
 	_, err = pg.Pool.Exec(ctx, `
 UPDATE quran_ayah_translations
-SET footnotes = '[{"n":1,"t":"Catatan sumber yang diperbarui"}]'::jsonb
+SET footnotes = '[{"n":77123,"marker":"1","t":"Catatan sumber yang diperbarui"}]'::jsonb
 WHERE source_id = $1 AND surah_id = 1 AND ayah_number = 1`, translationSourceID)
 	require.NoError(t, err)
 	err = registryRepo.ApplyQuranReconcile(ctx, &entity.QuranUnitReconcilePlan{
