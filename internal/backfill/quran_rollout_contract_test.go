@@ -29,5 +29,8 @@ func TestQuranDevRolloutOrdersNavigationBeforeCitableReconcile(t *testing.T) {
 	assert.Less(t, navigation, citable)
 	assert.Less(t, citable, pageSmoke)
 	assert.Less(t, pageSmoke, resolverSmoke)
-	assert.Contains(t, text, `grep -q '"target_type":"citable_unit"'`)
+	assert.Contains(t, text, `grep -q '"target_type":"quran_ayah"'`)
+	assert.Contains(t, text, `grep -Eq '"primary_unit_id":"[0-9a-f-]+"'`)
+	assert.Contains(t, text, `grep -Eq '"primary_unit_anchor":"quran/[0-9]+:[0-9]+/u/1"'`)
+	assert.NotContains(t, text, `grep -q '"target_type":"citable_unit"'`)
 }

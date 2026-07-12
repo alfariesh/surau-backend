@@ -168,7 +168,9 @@ Aplikasi auto-migrate saat boot (build `-tags migrate`). Pipeline deploy sudah: 
 
 Deploy dev juga menjalankan recovery Q-2 yang idempotent setelah aplikasi baru sehat:
 `quran-page-navigation-v1 -restart` lalu `citable-units-quran -restart`. Workflow baru dianggap
-berhasil bila locator halaman 1 dan resolver B-2 sama-sama mengembalikan Citable Unit aktif.
+berhasil bila reader halaman 1 mengembalikan `primary_unit_id`, dan target `quran_ayah` pada
+resolver B-2 membawa `primary_unit_id` serta `primary_unit_anchor` aktif. Sesuai kontrak Anchor,
+target baru bertipe `citable_unit` hanya untuk input Anchor unit kanonik `quran/.../u/...`.
 
 ### Preflight WAJIB sebelum deploy migration constraint baru
 
