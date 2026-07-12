@@ -77,3 +77,12 @@ func TestCrossReferencesQuranBridgeJobRegistered(t *testing.T) {
 	assert.Equal(t, "cross-references-quran-unfreeze", unfreezeJob.Name())
 	assert.Zero(t, unfreezeJob.ProfileVersion())
 }
+
+func TestQuranPageNavigationJobRegistered(t *testing.T) {
+	t.Parallel()
+
+	job, err := ByName(quranPageNavigationJobName)
+	require.NoError(t, err)
+	assert.Equal(t, quranPageNavigationJobName, job.Name())
+	assert.Equal(t, 1, job.ProfileVersion())
+}

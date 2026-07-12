@@ -202,6 +202,7 @@ versi non-NULL sebagai target buta. Semantik, kolom, dan gerbang Go-Python lengk
 | 3 | `citable-units-kitab-rederive` | citable_units | Drill determinisme AC-1: re-run tanpa syarat atas buku ter-derive; TERBUKTI lokal 2026-07-09 — matched=16.205, minted=0, checksum registry MD5 identik | Juga jalur pemulihan setelah perubahan parser/profil yang disengaja (gelombang supersede diserap lineage) |
 | 4 | `citable-units-quran` | citable_units + quran_citable_unit_bindings | Q-2 initial/stale-only; atomik satu surah, cursor circular, aman di-resume | Importer langsung reconcile surah tersentuh; trigger `units_stale_at` + compare-and-set source adalah recovery bila hook gagal/race |
 | 5 | `citable-units-quran-rederive` | citable_units + quran_citable_unit_bindings | Drill determinisme semua surah derived; live test membuktikan re-run tidak menambah unit | Jalur pemulihan sesudah perubahan deriver non-primer; drift teks primer gagal tertutup |
+| 6 | `quran-page-navigation-v1` | quran_ayahs.page_number | Q-2 rollout: isi NULL dari peta QPC Hafs v1 beku (6.236/6.236 ayat, halaman 1–604), resumable dan tak menimpa nilai existing | Jalankan sebelum `citable-units-quran -restart`; update page menandai surah stale lalu reconcile memperbarui `page_id` tanpa re-mint |
 
 Q-2 juga memiliki drill migrasi populated khusus di CI:
 `TestQuranCitableUnitMigrationDrill`. Drill menjalankan core migration `up→down→up` sambil menjaga

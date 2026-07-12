@@ -257,8 +257,9 @@ Masuk PLAN MODE dulu; rencana wajib menyebut cara memenuhi setiap Acceptance Cri
 - [x] **SESI 18 — Anchor + Citable Unit Quran + gerbang anti-tafsir (Q-2)** — ✅ **SELESAI
   2026-07-12**: memakai registry/resolver/lineage/bridge B-1–B-3 yang sudah hidup; Citable Unit
   ayah, terjemahan beratribusi+berlisensi, footnote tertaut, dan transliterasi kini deterministik;
-  seluruh locator legacy FE resolvable; lisensi/takedown fail-closed; rujukan approved lama tetap
-  parity; generated column+indeks dan live gate yang dirujuk U-6 memastikan Quran tidak pernah
+  seluruh locator legacy FE resolvable (termasuk fallback+backfill page QPC v1 yang dipagari
+  smoke deploy); lisensi/takedown fail-closed; rujukan approved lama tetap parity; generated
+  column+indeks dan live gate yang dirujuk U-6 memastikan Quran tidak pernah
   eligible untuk retrieval interpretatif. Migrasi populated, rederive, integration, live+race,
   worker-cache bypass, dan `make pre-commit` hijau.
 

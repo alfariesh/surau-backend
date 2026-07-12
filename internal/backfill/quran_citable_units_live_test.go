@@ -64,13 +64,73 @@ INSERT INTO quran_ayahs (
     surah_id, ayah_number, ayah_key, text_qpc_hafs, text_imlaei_simple,
     search_text, page_number, juz_number, hizb_number
 ) VALUES
-	(111, 1, '111:1', 'تَبَّتْ يَدَا أَبِي لَهَبٍ', 'تبت يدا أبي لهب', 'تبت يدا ابي لهب', 603, 30, 60),
-	(112, 1, '112:1', 'قُلْ هُوَ اللَّهُ أَحَدٌ', 'قل هو الله أحد', 'قل هو الله احد', 604, 30, 60)
+	(111, 1, '111:1', 'تَبَّتْ يَدَا أَبِي لَهَبٍ', 'تبت يدا أبي لهب', 'تبت يدا ابي لهب', NULL, 30, 60),
+	(112, 1, '112:1', 'قُلْ هُوَ اللَّهُ أَحَدٌ', 'قل هو الله أحد', 'قل هو الله احد', NULL, 30, 60)
 `)
 	require.NoError(t, err)
 
+	pageJob := quranPageNavigationJob{}
+	remaining, err := pageJob.CountRemaining(ctx, pg.Pool)
+	require.NoError(t, err)
+	assert.GreaterOrEqual(t, remaining, int64(2))
+	pageCursor := int64(110) * quranPageCursorMultiplier
+	pageCursor, processed, done, err := pageJob.ProcessChunk(ctx, pg.Pool, pageCursor, 1)
+	require.NoError(t, err)
+	assert.Equal(t, int64(111)*quranPageCursorMultiplier+1, pageCursor)
+	assert.Equal(t, int64(1), processed)
+	assert.False(t, done)
+	pageCursor, processed, done, err = pageJob.ProcessChunk(ctx, pg.Pool, pageCursor, 1)
+	require.NoError(t, err)
+	assert.Equal(t, int64(112)*quranPageCursorMultiplier+1, pageCursor)
+	assert.Equal(t, int64(1), processed)
+	assert.False(t, done)
+	// Prove the default chunk size and exhausted-cursor path without scanning
+	// unrelated synthetic ayahs owned by earlier packages in the shared CI DB.
+	const exhaustedCursorStart int64 = 1<<63 - 1
+	emptyCursor, emptyProcessed, emptyDone, err := pageJob.ProcessChunk(
+		ctx, pg.Pool, exhaustedCursorStart, 0,
+	)
+	require.NoError(t, err)
+	assert.Equal(t, exhaustedCursorStart, emptyCursor)
+	assert.Zero(t, emptyProcessed)
+	assert.True(t, emptyDone, "a default-sized chunk must complete an exhausted page backfill")
+
+	canceledCtx, cancel := context.WithCancel(ctx)
+	cancel()
+	_, err = pageJob.CountRemaining(canceledCtx, pg.Pool)
+	require.ErrorIs(t, err, context.Canceled)
+
+	_, err = pg.Pool.Exec(ctx, `
+INSERT INTO quran_ayahs (
+    surah_id, ayah_number, ayah_key, text_qpc_hafs, page_number
+	) VALUES (112, 5, '112:5', 'خارج المصحف', NULL)`)
+	require.NoError(t, err)
+	invalidCursor, invalidProcessed, invalidDone, err := pageJob.ProcessChunk(ctx, pg.Pool, pageCursor, 1)
+	require.ErrorIs(t, err, errQuranPageOutsideProfile)
+	assert.Equal(t, pageCursor, invalidCursor)
+	assert.Zero(t, invalidProcessed)
+	assert.False(t, invalidDone)
+	_, err = pg.Pool.Exec(ctx, `DELETE FROM quran_ayahs WHERE ayah_key = '112:5'`)
+	require.NoError(t, err)
+
+	conflictTx, err := pg.Pool.Begin(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = conflictTx.Rollback(context.Background()) })
+	_, err = applyQuranPageChunk(ctx, conflictTx, &quranPageChunk{
+		ayahKeys:    []string{"missing:ayah"},
+		pageNumbers: []int64{1},
+	})
+	require.ErrorIs(t, err, errQuranPageWriteConflict)
+	require.NoError(t, conflictTx.Rollback(ctx))
+
+	var pageNumbers []int32
+	require.NoError(t, pg.Pool.QueryRow(ctx, `
+SELECT array_agg(page_number ORDER BY surah_id)
+FROM quran_ayahs WHERE surah_id IN (111, 112)`).Scan(&pageNumbers))
+	assert.Equal(t, []int32{603, 604}, pageNumbers)
+
 	initial := quranCitableUnitsJob{}
-	remaining, err := initial.CountRemaining(ctx, pg.Pool)
+	remaining, err = initial.CountRemaining(ctx, pg.Pool)
 	require.NoError(t, err)
 	assert.GreaterOrEqual(t, remaining, int64(2))
 

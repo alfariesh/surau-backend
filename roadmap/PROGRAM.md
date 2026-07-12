@@ -150,8 +150,10 @@ transliteration kini menjadi Citable Unit deterministik dengan ordinal tak didau
 perubahan. Reader mengirim identitas unit, atribusi, dan lisensi literal `permitted`; lisensi
 dihitung dinamis per sumber sehingga takedown langsung berlaku, sedangkan QPC lama hanya hidup
 lewat grandfather marker eksplisit. Seluruh locator FE `ayah_key`/surah/range/juz/hizb/halaman
-resolvable dan endpoint halaman ditambahkan secara aditif. Kolom generated+indeks parsial
-menjadikan corpus Quran mustahil eligible untuk retrieval interpretatif; live gate
+resolvable dan endpoint halaman ditambahkan secara aditif; rollout dev dipagari backfill
+`quran-page-navigation-v1` → `citable-units-quran` serta smoke unit-ID di workflow deploy.
+Kolom generated+indeks parsial menjadikan corpus Quran mustahil eligible untuk retrieval
+interpretatif; live gate
 `TestLiveQuranCitableUnitsNeverInterpretiveEligible` dirujuk wajib oleh U-6. Drill populated,
 rederive, takedown, parity rujukan approved lama, integration HTTP, worker-cache bypass, dan
 `make pre-commit` semuanya hijau) ∥ **K-1 (industrialisasi Citable Unit seluruh katalog + migrasi sitasi RAG —
