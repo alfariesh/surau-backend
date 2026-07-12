@@ -11,6 +11,7 @@ import (
 	"github.com/alfariesh/surau-backend/internal/repo/persistent"
 	"github.com/alfariesh/surau-backend/internal/usecase/unitregistry"
 	"github.com/alfariesh/surau-backend/pkg/postgres"
+	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 )
 
@@ -343,10 +344,7 @@ func seedMultilingualQuranFixture(t *testing.T) {
 DELETE FROM quran_source_license_audits
 WHERE source_kind = 'translation' AND source_id = $1`, fixtureQuranSourceID)
 	execFixtureSQL(t, ctx, tx, `SET LOCAL session_replication_role = 'origin'`)
-	execFixtureSQL(t, ctx, tx, `
-INSERT INTO users (id, username, email, password_hash)
-VALUES ($1, 'q2-integration-license', 'q2-integration-license@example.test', 'x')
-ON CONFLICT (id) DO NOTHING`, fixtureQuranLicenseActor)
+	permitQuranPrimaryScriptFixture(ctx, t, tx)
 	execFixtureSQL(t, ctx, tx, `
 DELETE FROM citable_units u
 USING quran_citable_unit_bindings b
@@ -406,11 +404,6 @@ UPDATE quran_translation_sources
 SET license_status = 'permitted', license_reason = 'Q-2 integration fixture',
     license_updated_by = $2::uuid
 WHERE id = $1`, fixtureQuranSourceID, fixtureQuranLicenseActor)
-	execFixtureSQL(t, ctx, tx, `
-UPDATE quran_script_sources
-SET license_status = 'permitted', license_reason = 'Q-2 integration fixture',
-    license_updated_by = $1::uuid
-WHERE id = 'qpc-hafs'`, fixtureQuranLicenseActor)
 	execFixtureSQL(
 		t, ctx, tx, `
 INSERT INTO quran_ayah_translations (
@@ -475,6 +468,24 @@ VALUES ($1, $2, 1, $3, 'QS. An-Nas:1', 'qs an nas 1', 1, 'surah_ayah',
 	report, err := registry.ReconcileQuranSurah(ctx, fixtureQuranSurahID)
 	require.NoError(t, err)
 	require.GreaterOrEqual(t, report.Derived, 3)
+}
+
+// permitQuranPrimaryScriptFixture follows the production audit path so a
+// clean integration database never depends on test ordering or a reused
+// Docker volume to make primary Quran text publicly visible.
+func permitQuranPrimaryScriptFixture(ctx context.Context, t *testing.T, tx pgx.Tx) {
+	t.Helper()
+
+	execFixtureSQL(t, ctx, tx, `
+INSERT INTO users (id, username, email, password_hash)
+VALUES ($1, 'q2-integration-license', 'q2-integration-license@example.test', 'x')
+ON CONFLICT (id) DO NOTHING`, fixtureQuranLicenseActor)
+	execFixtureSQL(t, ctx, tx, `
+UPDATE quran_script_sources
+SET license_status = 'permitted',
+    license_reason = 'Q-2 integration primary-script fixture',
+    license_updated_by = $1::uuid
+WHERE id = 'qpc-hafs'`, fixtureQuranLicenseActor)
 }
 
 type quranSurahResponse struct {
