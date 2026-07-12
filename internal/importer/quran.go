@@ -945,6 +945,12 @@ func fillAyahNavigation(assets *quranAssetSet) {
 		if ayah == nil {
 			continue
 		}
+
+		if ayah.PageNumber == nil {
+			if number, ok := quranutil.QPCHafsPageNumber(ayah.SurahID, ayah.AyahNumber); ok {
+				ayah.PageNumber = new(number)
+			}
+		}
 		if ayah.JuzNumber == nil {
 			if number, ok := quranDivisionNumber(ayah.SurahID, ayah.AyahNumber, quranCanonicalJuzStarts); ok {
 				ayah.JuzNumber = new(number)

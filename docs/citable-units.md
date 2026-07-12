@@ -199,6 +199,13 @@ urutan; rescue pass level-buku menutup pindah-scope & hapus-kembar.
    - `citable-units-quran` — initial/stale-only, atomik satu surah per checkpoint; cursor circular
      memastikan surah yang kembali stale di belakang cursor tetap diproses sebelum selesai.
    - `citable-units-quran-rederive` — drill determinisme seluruh surah yang pernah di-derive.
+   - `quran-page-navigation-v1` — isi hanya `page_number IS NULL` dari snapshot QPC Hafs v1
+     (6.236 ayat, 604 halaman, checksum dibekukan); tidak menimpa nilai existing. Job ini harus
+     mendahului reconcile Quran agar locator halaman lama dan `page_id` unit kembali lengkap.
+     Snapshot metadata faktual diambil 2026-07-12 dari Quran Foundation Content API v4
+     `verses/by_juz` (field `page_number`), cocok dengan skema resource QUL 86, lalu dipin ke
+     SHA-256 `6acff20b3a70942e7e3980f99a1fc03df53bf891165a6cd63b714e028dd75c14`.
+     Generator hanya alat maintenance; aplikasi tidak memanggil sumber eksternal saat runtime.
 2. **Hook editorial** — `editorial.PublishPageDraft` memanggil `ReconcileBookIfDerived` setelah
    commit (buku non-pilot = no-op via gerbang `units_derived_at IS NULL`; error → log + counter
    `surau_citable_reconcile_failures_total`, publish tetap sukses).
@@ -240,6 +247,7 @@ default 1h). `AuditPass` mengisi:
 /backfill -job=citable-units-kitab-rederive
 
 # derive Quran yang belum pernah diproses atau ditandai stale
+/backfill -job=quran-page-navigation-v1 -restart
 /backfill -job=citable-units-quran
 
 # drill determinisme/pemulihan seluruh surah derived

@@ -91,6 +91,23 @@ jobs:
                curl -fsS http://127.0.0.1:8080/readyz >/dev/null &&
                curl -fsS http://127.0.0.1:8080/version | grep -q "\"version\":\"$APP_VERSION\"" &&
                { [ -z "$COLLAB_CHECK" ] || curl -fsS "$COLLAB_CHECK" >/dev/null; }; then
+              # Q-2 rollout/recovery is deliberately ordered: restore frozen
+              # QPC page metadata first, then reconcile the same B-1 registry.
+              # Both jobs are resumable/idempotent; -restart also catches rows
+              # marked stale after an earlier completed run.
+              sudo -E docker compose --env-file .env.production -f docker-compose.prod.yml "${PROFILE_ARGS[@]}" \
+                exec -T app /backfill -job=quran-page-navigation-v1 -chunk-size=500 -sleep=0s -restart
+              sudo -E docker compose --env-file .env.production -f docker-compose.prod.yml "${PROFILE_ARGS[@]}" \
+                exec -T app /backfill -job=citable-units-quran -chunk-size=1 -sleep=0s -restart
+
+              # Do not call the rollout complete unless the two formerly
+              # missing FE surfaces expose current Citable Unit identities.
+              curl -fsS 'http://127.0.0.1:8080/v1/quran/pages/1/ayahs?view=reader_minimal' \
+                | grep -Eq '"primary_unit_id":"[0-9a-f-]+"'
+              curl -fsS 'http://127.0.0.1:8080/v1/anchors/resolve?page_number=1' \
+                | grep -q '"target_type":"citable_unit"'
+              curl -fsS http://127.0.0.1:8080/readyz >/dev/null
+
               # Reclaim old images ONLY after the new release is proven healthy.
               sudo docker image prune -f
               exit 0
