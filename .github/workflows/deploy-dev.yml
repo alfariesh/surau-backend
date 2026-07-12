@@ -104,8 +104,12 @@ jobs:
               # missing FE surfaces expose current Citable Unit identities.
               curl -fsS 'http://127.0.0.1:8080/v1/quran/pages/1/ayahs?view=reader_minimal' \
                 | grep -Eq '"primary_unit_id":"[0-9a-f-]+"'
-              curl -fsS 'http://127.0.0.1:8080/v1/anchors/resolve?page_number=1' \
-                | grep -q '"target_type":"citable_unit"'
+              quran_page_resolution="$(curl -fsS \
+                'http://127.0.0.1:8080/v1/anchors/resolve?page_number=1')"
+              grep -q '"target_type":"quran_ayah"' <<<"$quran_page_resolution"
+              grep -Eq '"primary_unit_id":"[0-9a-f-]+"' <<<"$quran_page_resolution"
+              grep -Eq '"primary_unit_anchor":"quran/[0-9]+:[0-9]+/u/1"' \
+                <<<"$quran_page_resolution"
               curl -fsS http://127.0.0.1:8080/readyz >/dev/null
 
               # Reclaim old images ONLY after the new release is proven healthy.
