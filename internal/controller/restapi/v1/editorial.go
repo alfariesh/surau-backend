@@ -33,6 +33,10 @@ func (r *V1) editorialError(ctx *fiber.Ctx, err error) error {
 		return errorResponse(ctx, http.StatusBadRequest, "invalid license status")
 	case errors.Is(err, entity.ErrInvalidLicenseReason), errors.Is(err, entity.ErrInvalidLicenseEvidenceURL):
 		return errorResponse(ctx, http.StatusBadRequest, "invalid request body")
+	case errors.Is(err, entity.ErrInvalidQuranSourceAttribution):
+		return errorResponse(ctx, http.StatusBadRequest, "Quran source attribution is required")
+	case errors.Is(err, entity.ErrQuranSourceNotFound):
+		return errorResponse(ctx, http.StatusNotFound, "Quran source not found")
 	case errors.Is(err, entity.ErrLicenseNotPermitted):
 		return errorResponse(ctx, http.StatusConflict, "license not permitted")
 	case errors.Is(err, entity.ErrInvalidFeedback):

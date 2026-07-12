@@ -1,6 +1,6 @@
 # Kontrak Cross-Reference (Fase 1B / B-3)
 
-Last updated: 2026-07-11
+Last updated: 2026-07-12
 
 Dokumen ini adalah kontrak normatif untuk registry **Cross-Reference**: klaim ter-atribusi yang
 menghubungkan dua **Anchor** konten. Grammar Anchor tetap bersumber dari `docs/anchors.md`.
@@ -81,7 +81,8 @@ type CrossReference = {
 
 Kosakata ini tertutup. Granularitas ditentukan oleh Anchor, bukan kind baru: `quran/73`
 berarti surah secara umum, `quran/73:4` berarti satu ayah, dan
-`quran/73:4..quran/73:10` berarti rentang.
+`quran/73:4..quran/73:10` berarti rentang. Q-2 juga menerima Anchor Citable Unit Quran seperti
+`quran/73:4/u/2`; projection kompatibilitasnya tetap menunjuk ayah 73:4.
 
 ### Atribusi metode dan confidence
 
@@ -181,6 +182,9 @@ sebelum `limit`/`offset`; halaman kosong karena offset tinggi tetap membawa hitu
 - Backlink ke Anchor Citable Unit lama tetap dapat ditemukan melalui seluruh penerus aktifnya
   yang license-eligible setelah split/merge. Penerus dengan override selain `NULL`/`permitted`
   disaring tanpa menyembunyikan sibling eligible; hasil akhir di-deduplicate.
+- Aturan lineage yang sama berlaku untuk unit Quran. Unit translation/footnote/transliteration
+  yang stale atau source-nya tidak lagi `permitted` tidak masuk hasil publik; Anchor logis ayah
+  dan parity bridge approved lama tetap dipertahankan.
 - Kedua ujung wajib lolos gerbang visibility publik yang sama dengan resolver/reader. Buku
   unpublished/deleted, heading derived tanpa unit eligible, dan Anchor unit yang tidak terlihat
   tidak memengaruhi `items`, `total`, atau `work_total`.

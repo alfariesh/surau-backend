@@ -67,7 +67,7 @@ ON CONFLICT (surah_id, ayah_number) DO NOTHING`, surahID, n, fmt.Sprintf("%d:%d"
 
 	_, err = pg.Pool.Exec(ctx, `
 INSERT INTO quran_translation_sources (id, lang, name, format, license_status, coverage_count)
-VALUES ($1, 'id', 'Coverage Trigger Test', 'json', 'permitted', 0)`, sourceID)
+VALUES ($1, 'id', 'Coverage Trigger Test', 'json', 'needs_review', 0)`, sourceID)
 	require.NoError(t, err)
 
 	coverage := func() int {

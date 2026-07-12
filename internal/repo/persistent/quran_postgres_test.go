@@ -328,7 +328,11 @@ func TestQuranNavigationColumnAllowlist(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "hizb_number", column)
 
-	_, err = quranNavigationColumn("page")
+	column, err = quranNavigationColumn("page")
+	assert.NoError(t, err)
+	assert.Equal(t, "page_number", column)
+
+	_, err = quranNavigationColumn("page_number; DROP TABLE quran_ayahs")
 	assert.ErrorIs(t, err, entity.ErrInvalidQuranRange)
 }
 

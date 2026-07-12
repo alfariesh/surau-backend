@@ -18,12 +18,18 @@ const reconcileAttempts = 3
 
 // UseCase is the single write service of the Citable Unit registry.
 type UseCase struct {
-	repo repo.CitableUnitRepo
+	repo      repo.CitableUnitRepo
+	quranRepo repo.QuranCitableUnitRepo
 }
 
 // New -.
 func New(r repo.CitableUnitRepo) *UseCase {
-	return &UseCase{repo: r}
+	uc := &UseCase{repo: r}
+	if quranRepo, ok := r.(repo.QuranCitableUnitRepo); ok {
+		uc.quranRepo = quranRepo
+	}
+
+	return uc
 }
 
 // ReconcileBook derives the book from its effective source and reconciles the

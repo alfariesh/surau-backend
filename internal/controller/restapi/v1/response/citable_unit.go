@@ -11,7 +11,7 @@ import (
 type EditorialCitableUnit struct {
 	ID                     string                     `json:"id"`
 	Corpus                 string                     `json:"corpus"`
-	BookID                 int                        `json:"book_id"`
+	BookID                 *int                       `json:"book_id,omitempty"`
 	HeadingID              *int                       `json:"heading_id,omitempty"`
 	PageID                 *int                       `json:"page_id,omitempty"`
 	Kind                   string                     `json:"kind"`

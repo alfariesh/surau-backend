@@ -254,7 +254,13 @@ Kerjakan Q-1 dari roadmap/phase-3-quran.md: naikkan editorial surah dan ayah ke 
 Masuk PLAN MODE dulu; rencana wajib menyebut cara memenuhi setiap Acceptance Criterion Q-1, termasuk test concurrent edit dan pembuktian tidak ada jalur tulis yang melewati workflow. Setelah saya setujui: kerjakan sampai tuntas — branch fitur, test, Definition of Done, centang PROGRAM.md & SESI.md, merge, verifikasi dev-api. Laporan akhir bahasa awam.
 ```
 
-- [ ] **SESI 18 — Anchor + Citable Unit Quran + gerbang anti-tafsir (Q-2)**
+- [x] **SESI 18 — Anchor + Citable Unit Quran + gerbang anti-tafsir (Q-2)** — ✅ **SELESAI
+  2026-07-12**: memakai registry/resolver/lineage/bridge B-1–B-3 yang sudah hidup; Citable Unit
+  ayah, terjemahan beratribusi+berlisensi, footnote tertaut, dan transliterasi kini deterministik;
+  seluruh locator legacy FE resolvable; lisensi/takedown fail-closed; rujukan approved lama tetap
+  parity; generated column+indeks dan live gate yang dirujuk U-6 memastikan Quran tidak pernah
+  eligible untuk retrieval interpretatif. Migrasi populated, rederive, integration, live+race,
+  worker-cache bypass, dan `make pre-commit` hijau.
 
 ```text
 Kerjakan Q-2 dari roadmap/phase-3-quran.md dengan mengaudit dan MEMAKAI hasil B-2/B-3 yang sudah hidup — jangan menduplikasi atau menulis ulang registry Anchor, resolver, maupun bridge Quran: lengkapi Citable Unit deterministik untuk ayah sebagai teks primer, rendering terjemahan per sumber+ayat beratribusi dan berlisensi, footnote tertaut, serta transliterasi; pastikan seluruh locator legacy FE yang tersisa resolvable; tegakkan di level data/indeks bahwa unit Quran tidak pernah eligible untuk retrieval interpretatif; pertahankan parity rujukan approved lama dan rujuk test anti-tafsir ini dari U-6.

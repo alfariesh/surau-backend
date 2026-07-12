@@ -486,6 +486,24 @@ type (
 		) (entity.BookLicense, error)
 	}
 
+	QuranSourceLicenseRepo interface {
+		ListQuranSourceLicenses(
+			ctx context.Context,
+			sourceKind, status string,
+			limit, offset uint64,
+		) ([]entity.QuranSourceLicense, int, error)
+		GetQuranSourceLicense(
+			ctx context.Context,
+			sourceKind, sourceID string,
+		) (entity.QuranSourceLicense, error)
+		UpdateQuranSourceLicense(
+			ctx context.Context,
+			actorID string,
+			update entity.QuranSourceLicenseUpdate,
+			expectedUpdatedAt *time.Time,
+		) (entity.QuranSourceLicense, error)
+	}
+
 	// TaskFilter -.
 	UserFilter struct {
 		Query         string
@@ -741,6 +759,16 @@ type (
 		ListActiveUnitsForHashCheck(ctx context.Context) ([]entity.CitableUnit, error)
 	}
 
+	// QuranCitableUnitRepo extends the same registry persistence service with a
+	// Quran-shaped adapter. It does not own a second registry: all writes still
+	// land in citable_units/citable_unit_lineage under the B-1 guard.
+	QuranCitableUnitRepo interface {
+		LoadQuranSource(ctx context.Context, surahID int) (entity.QuranUnitSource, error)
+		QuranSnapshot(ctx context.Context, surahID int) (entity.QuranUnitRegistrySnapshot, error)
+		ApplyQuranReconcile(ctx context.Context, plan *entity.QuranUnitReconcilePlan) error
+		ListQuranSurahsForReconcile(ctx context.Context, staleOnly bool, limit int) ([]int, error)
+	}
+
 	// AnchorRepo is the indexed, visibility-filtered read seam for the public
 	// B-2 Anchor resolver. Legacy locators intentionally remain first-class
 	// lookups: they are permanent aliases, not a deprecation path.
@@ -751,6 +779,17 @@ type (
 		ResolveHeading(ctx context.Context, bookID, headingID int) (entity.AnchorLookupResult, error)
 		ResolvePage(ctx context.Context, bookID, pageID int) (entity.AnchorLookupResult, error)
 		ResolveCanonicalUnit(ctx context.Context, canonicalAnchor string) (entity.AnchorLookupResult, error)
+	}
+
+	// QuranLocatorAnchorRepo is the additive Q-2 adapter used by the existing
+	// B-2 resolver for juz/hizb/page aliases. Results are two bounded ayah
+	// lookups; aliases never create a parallel canonical registry.
+	QuranLocatorAnchorRepo interface {
+		ResolveQuranLocator(
+			ctx context.Context,
+			kind string,
+			number int,
+		) (entity.AnchorLookupResult, entity.AnchorLookupResult, error)
 	}
 
 	// CrossReferenceRepo is the guarded persistence seam for B-3. All writes

@@ -143,9 +143,18 @@ publish lewat flag eksplisit, atomik, serta tetap wajib `permitted`; public view
 `published+permitted`. Trigger DB mencakup DML+TRUNCATE, marker transaksi hanya boleh hidup di satu
 writer, dan test sumber menolak jalur runtime lain. Revisi Q-1 sengaja mencakup baris editorial
 per-bahasa; histori/redirect tiga field routing global slug/order/ruku tetap milik Q-4, sementara
-default import tidak menyentuhnya dan hanya publish eksplisit boleh menerapkannya) ∥ Q-2
-(deklarasi Anchor ayat + unit Quran +
-test anti-tafsir) ∥ **K-1 (industrialisasi Citable Unit seluruh katalog + migrasi sitasi RAG —
+default import tidak menyentuhnya dan hanya publish eksplisit boleh menerapkannya) ∥ Q-2 ✅
+**SELESAI 2026-07-12 (SESI 18)** (registry B-1, resolver B-2, lineage, serta bridge B-3 yang sudah
+hidup dipakai langsung: ayah bertipe teks primer dan rendering translation+footnote tertaut+
+transliteration kini menjadi Citable Unit deterministik dengan ordinal tak didaur dan lineage
+perubahan. Reader mengirim identitas unit, atribusi, dan lisensi literal `permitted`; lisensi
+dihitung dinamis per sumber sehingga takedown langsung berlaku, sedangkan QPC lama hanya hidup
+lewat grandfather marker eksplisit. Seluruh locator FE `ayah_key`/surah/range/juz/hizb/halaman
+resolvable dan endpoint halaman ditambahkan secara aditif. Kolom generated+indeks parsial
+menjadikan corpus Quran mustahil eligible untuk retrieval interpretatif; live gate
+`TestLiveQuranCitableUnitsNeverInterpretiveEligible` dirujuk wajib oleh U-6. Drill populated,
+rederive, takedown, parity rujukan approved lama, integration HTTP, worker-cache bypass, dan
+`make pre-commit` semuanya hijau) ∥ **K-1 (industrialisasi Citable Unit seluruh katalog + migrasi sitasi RAG —
 critical path, effort besar)** ∥ Q-4 (SEO sitemap/slug) + Q-6 (keandalan notifikasi);
 sisa F2: A-2 (identitas mesin ber-scope), A-4 (dual-key JWT + drill), A-5 (refresh 336h);
 **U-0 (lapisan inferensi) + U-6 (eval-harness → gate) DIMULAI DI SINI** — Fase 7 mensyaratkan

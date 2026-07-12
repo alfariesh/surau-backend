@@ -533,10 +533,12 @@ func mintUnit(bookID, scopeKey int, id string, ordinal, occurrence int, d *Deriv
 		detail["footnote_link"] = d.FootnoteLink
 	}
 
+	bookIDValue := bookID
+
 	return entity.CitableUnit{
 		ID:                   id,
 		Corpus:               entity.UnitCorpusKitab,
-		BookID:               bookID,
+		BookID:               &bookIDValue,
 		HeadingID:            headingID,
 		PageID:               &pageID,
 		Kind:                 d.Kind,

@@ -27,6 +27,7 @@ const (
 
 	navigationKindJuz  = "juz"
 	navigationKindHizb = "hizb"
+	navigationKindPage = "page"
 )
 
 var allowedReviewStatuses = []string{"approved", "pending", "rejected", "ambiguous", "needs_review", "all"}
@@ -160,6 +161,34 @@ func (uc *UseCase) HizbAyahs(
 		ctx,
 		navigationKindHizb,
 		hizbNumber,
+		lang,
+		translationSource,
+		includeTranslation,
+		includeAudio,
+		includeEditorial,
+		recitationID,
+	)
+}
+
+// PageAyahs returns ayahs on one imported QPC mushaf page.
+func (uc *UseCase) PageAyahs(
+	ctx context.Context,
+	pageNumber int,
+	lang string,
+	translationSource string,
+	includeTranslation bool,
+	includeAudio bool,
+	includeEditorial bool,
+	recitationID string,
+) ([]entity.QuranAyah, error) {
+	if pageNumber < 1 {
+		return nil, entity.ErrInvalidQuranRange
+	}
+
+	return uc.navigationAyahs(
+		ctx,
+		navigationKindPage,
+		pageNumber,
 		lang,
 		translationSource,
 		includeTranslation,

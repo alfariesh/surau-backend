@@ -236,7 +236,10 @@ describe("Surau API cache policy", () => {
 
   it("allowlists only safe public GET paths", () => {
     expect(cacheDecision(request("/v1/categories?lang=id")).cacheable).toBe(true);
-    expect(cacheDecision(request("/v1/quran/surahs/1/ayahs?lang=id")).cacheable).toBe(true);
+    expect(cacheDecision(request("/v1/quran/surahs/1/ayahs?lang=id"))).toEqual({
+      cacheable: false,
+      reason: "protected_or_operational_path"
+    });
 
     expect(cacheDecision(request("/v1/books/797/toc/10/read?lang=id"))).toEqual({
       cacheable: false,
@@ -404,8 +407,8 @@ describe("Surau API cache policy", () => {
     const fetchMock = vi.fn(async () => jsonResponse([{ id: 1, name: "Al-Fatihah" }]));
     vi.stubGlobal("fetch", fetchMock);
 
-    const first = await handleRequest(request("/v1/quran/surahs?lang=id"), env, ctx as unknown as ExecutionContext);
-    const second = await handleRequest(request("/v1/quran/surahs?lang=id"), env, ctx as unknown as ExecutionContext);
+    const first = await handleRequest(request("/v1/categories?lang=id"), env, ctx as unknown as ExecutionContext);
+    const second = await handleRequest(request("/v1/categories?lang=id"), env, ctx as unknown as ExecutionContext);
 
     expect(first.headers.get("X-Surau-Cache")).toBe("MISS");
     expect(second.headers.get("X-Surau-Cache")).toBe("L1-HIT");
@@ -728,8 +731,8 @@ describe("Surau API cache policy", () => {
     const fetchMock = vi.fn(async () => jsonResponse({ payload: "this response is too large" }));
     vi.stubGlobal("fetch", fetchMock);
 
-    const first = await handleRequest(request("/v1/quran/recitations"), env, ctx as unknown as ExecutionContext);
-    const second = await handleRequest(request("/v1/quran/recitations"), env, ctx as unknown as ExecutionContext);
+    const first = await handleRequest(request("/v1/categories"), env, ctx as unknown as ExecutionContext);
+    const second = await handleRequest(request("/v1/categories"), env, ctx as unknown as ExecutionContext);
 
     expect(first.headers.get("X-Surau-Cache")).toBe("MISS");
     expect(second.headers.get("X-Surau-Cache")).toBe("MISS");
@@ -742,9 +745,9 @@ describe("Surau API cache policy", () => {
     const fetchMock = vi.fn(async () => jsonResponse({ id: 1 }));
     vi.stubGlobal("fetch", fetchMock);
 
-    await handleRequest(request("/v1/quran/surahs/1?lang=id"), env, ctx as unknown as ExecutionContext);
+    await handleRequest(request("/v1/categories?lang=id"), env, ctx as unknown as ExecutionContext);
     const cached = await handleRequest(
-      request("/v1/quran/surahs/1?lang=id", { headers: { "If-None-Match": 'W/"test-etag"' } }),
+      request("/v1/categories?lang=id", { headers: { "If-None-Match": 'W/"test-etag"' } }),
       env,
       ctx as unknown as ExecutionContext
     );
@@ -757,7 +760,7 @@ describe("Surau API cache policy", () => {
     vi.setSystemTime(new Date("2026-06-05T00:00:00Z"));
     const env = defaultEnv();
     const ctx = new TestExecutionContext();
-    const normalized = normalizedCacheURL("https://api.surau.org/v1/quran/surahs?lang=id");
+    const normalized = normalizedCacheURL("https://api.surau.org/v1/categories?lang=id");
     const key = cacheKey(normalized, "1");
     await (env.PUBLIC_API_CACHE as unknown as MemoryKV).put(
       key,
@@ -776,13 +779,13 @@ describe("Surau API cache policy", () => {
     const fetchMock = vi.fn(async () => jsonResponse([{ id: 1, stale: false }]));
     vi.stubGlobal("fetch", fetchMock);
 
-    const stale = await handleRequest(request("/v1/quran/surahs?lang=id"), env, ctx as unknown as ExecutionContext);
+    const stale = await handleRequest(request("/v1/categories?lang=id"), env, ctx as unknown as ExecutionContext);
     expect(stale.headers.get("X-Surau-Cache")).toBe("STALE");
     expect(await stale.json()).toEqual([{ id: 1, stale: true }]);
 
     await ctx.drain();
 
-    const refreshed = await handleRequest(request("/v1/quran/surahs?lang=id"), env, ctx as unknown as ExecutionContext);
+    const refreshed = await handleRequest(request("/v1/categories?lang=id"), env, ctx as unknown as ExecutionContext);
     expect(refreshed.headers.get("X-Surau-Cache")).toMatch(/^(L1-HIT|KV-HIT)$/);
     expect(await refreshed.json()).toEqual([{ id: 1, stale: false }]);
   });
@@ -791,7 +794,7 @@ describe("Surau API cache policy", () => {
     vi.setSystemTime(new Date("2026-06-05T00:00:00Z"));
     const env = defaultEnv();
     const ctx = new TestExecutionContext();
-    const normalized = normalizedCacheURL("https://api.surau.org/v1/quran/translation-sources?lang=id");
+    const normalized = normalizedCacheURL("https://api.surau.org/v1/categories?lang=id");
     const key = cacheKey(normalized, "1");
     const kv = env.PUBLIC_API_CACHE as unknown as MemoryKV;
 
@@ -814,7 +817,7 @@ describe("Surau API cache policy", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     const stale = await handleRequest(
-      request("/v1/quran/translation-sources?lang=id"),
+      request("/v1/categories?lang=id"),
       env,
       ctx as unknown as ExecutionContext
     );
@@ -837,7 +840,7 @@ describe("Surau API cache policy", () => {
     );
 
     const expired = await handleRequest(
-      request("/v1/quran/translation-sources?lang=id"),
+      request("/v1/categories?lang=id"),
       env,
       new TestExecutionContext() as unknown as ExecutionContext
     );

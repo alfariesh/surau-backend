@@ -15,7 +15,8 @@ import (
 
 // UseCase resolves one point or the two bounded endpoints of a range.
 type UseCase struct {
-	repo repo.AnchorRepo
+	repo             repo.AnchorRepo
+	quranLocatorRepo repo.QuranLocatorAnchorRepo
 }
 
 const (
@@ -27,7 +28,12 @@ var errInvalidResolutionRecord = errors.New("invalid anchor resolution record")
 
 // New constructs the read-only resolver.
 func New(r repo.AnchorRepo) *UseCase {
-	return &UseCase{repo: r}
+	uc := &UseCase{repo: r}
+	if locatorRepo, ok := r.(repo.QuranLocatorAnchorRepo); ok {
+		uc.quranLocatorRepo = locatorRepo
+	}
+
+	return uc
 }
 
 // Resolve accepts exactly one public input shape: a canonical/legacy anchor,
@@ -38,6 +44,24 @@ func (uc *UseCase) Resolve(
 	rawAnchor string,
 	bookID, pageID *int,
 ) (entity.AnchorResolution, error) {
+	return uc.ResolveInput(ctx, entity.AnchorResolveInput{
+		Anchor: rawAnchor, BookID: bookID, PageID: pageID,
+	})
+}
+
+// ResolveInput resolves the typed Q-2 locator contract while preserving the
+// original B-2 Resolve wrapper for internal callers and tests.
+//
+//nolint:gocritic // value input is the existing public usecase contract and is normalized into an owned copy
+func (uc *UseCase) ResolveInput(
+	ctx context.Context,
+	input entity.AnchorResolveInput,
+) (entity.AnchorResolution, error) {
+	if hasQuranLocator(&input) {
+		return uc.resolveQuranLocatorInput(ctx, &input)
+	}
+
+	rawAnchor, bookID, pageID := input.Anchor, input.BookID, input.PageID
 	if rawAnchor == "" {
 		return uc.resolveLegacyPage(ctx, bookID, pageID)
 	}
@@ -73,6 +97,154 @@ func (uc *UseCase) Resolve(
 	}
 
 	return entity.AnchorResolution{}, invalidAnchor("unsupported anchor form", errors.Join(canonicalErr, tocErr))
+}
+
+func hasQuranLocator(input *entity.AnchorResolveInput) bool {
+	return input.SurahID != nil || input.FromAyahNumber != nil || input.ToAyahNumber != nil ||
+		input.JuzNumber != nil || input.HizbNumber != nil || input.PageNumber != nil
+}
+
+//nolint:cyclop,funlen,gocognit,gocyclo,wsl_v5 // the mutually-exclusive public locator families are intentionally explicit
+func (uc *UseCase) resolveQuranLocatorInput(
+	ctx context.Context,
+	input *entity.AnchorResolveInput,
+) (entity.AnchorResolution, error) {
+	if input.Anchor != "" || input.BookID != nil || input.PageID != nil {
+		return entity.AnchorResolution{}, invalidAnchor("Quran locator cannot be mixed with anchor/book/page_id", nil)
+	}
+
+	aggregates := 0
+	if input.JuzNumber != nil {
+		aggregates++
+	}
+	if input.HizbNumber != nil {
+		aggregates++
+	}
+	if input.PageNumber != nil {
+		aggregates++
+	}
+	if aggregates > 0 {
+		if aggregates != 1 || input.SurahID != nil || input.FromAyahNumber != nil || input.ToAyahNumber != nil {
+			return entity.AnchorResolution{}, invalidAnchor("Quran aggregate locators cannot be mixed", nil)
+		}
+		if input.JuzNumber != nil {
+			return uc.resolveLegacyQuranAggregate(ctx, "juz", *input.JuzNumber, entity.AnchorFormLegacyQuranJuz)
+		}
+		if input.HizbNumber != nil {
+			return uc.resolveLegacyQuranAggregate(ctx, "hizb", *input.HizbNumber, entity.AnchorFormLegacyQuranHizb)
+		}
+
+		return uc.resolveLegacyQuranAggregate(ctx, "page", *input.PageNumber, entity.AnchorFormLegacyQuranPage)
+	}
+
+	if input.SurahID == nil {
+		return entity.AnchorResolution{}, invalidAnchor("Quran ayah range requires surah_id", nil)
+	}
+	if *input.SurahID < 1 || *input.SurahID > maxPostgresInteger {
+		return entity.AnchorResolution{}, invalidAnchor("invalid Quran surah_id", nil)
+	}
+	if (input.FromAyahNumber == nil) != (input.ToAyahNumber == nil) {
+		return entity.AnchorResolution{}, invalidAnchor("Quran range requires both from/to ayah numbers", nil)
+	}
+	if input.FromAyahNumber == nil {
+		lookup, err := uc.repo.ResolveQuranSurah(ctx, *input.SurahID)
+		if err != nil {
+			return entity.AnchorResolution{}, err
+		}
+		canonical := fmt.Sprintf("quran/%d", *input.SurahID)
+		prependRedirect(&lookup, entity.AnchorRedirect{
+			From: fmt.Sprintf("surah_id:%d", *input.SurahID), To: canonical,
+			Reason: entity.AnchorRedirectLegacyAlias, Depth: 1,
+		})
+		boundary, err := boundaryFromLookup(entity.AnchorBoundaryPoint, &lookup)
+		if err != nil {
+			return entity.AnchorResolution{}, err
+		}
+
+		return entity.AnchorResolution{
+			Requested: entity.AnchorRequested{
+				Form: entity.AnchorFormLegacyQuranSurah, SurahID: input.SurahID,
+			},
+			CanonicalAnchor: &canonical,
+			Boundaries:      []entity.AnchorBoundary{boundary},
+		}, nil
+	}
+
+	start, err := anchorgrammar.NewQuranAyah(*input.SurahID, *input.FromAyahNumber)
+	if err != nil {
+		return entity.AnchorResolution{}, invalidAnchor("invalid Quran range start", err)
+	}
+	end, err := anchorgrammar.NewQuranAyah(*input.SurahID, *input.ToAyahNumber)
+	if err != nil {
+		return entity.AnchorResolution{}, invalidAnchor("invalid Quran range end", err)
+	}
+	value, err := anchorgrammar.NewRange(start, end)
+	if err != nil {
+		return entity.AnchorResolution{}, invalidAnchor("invalid Quran range", err)
+	}
+	result, err := uc.resolveCanonical(ctx, value.String(), &value)
+	if err != nil {
+		return entity.AnchorResolution{}, err
+	}
+	result.Requested = entity.AnchorRequested{
+		Form:           entity.AnchorFormLegacyQuranRange,
+		SurahID:        input.SurahID,
+		FromAyahNumber: input.FromAyahNumber,
+		ToAyahNumber:   input.ToAyahNumber,
+	}
+
+	return result, nil
+}
+
+//nolint:gocyclo,cyclop,wsl_v5 // bounded three-kind projection keeps requested legacy fields explicit
+func (uc *UseCase) resolveLegacyQuranAggregate(
+	ctx context.Context,
+	kind string,
+	number int,
+	form string,
+) (entity.AnchorResolution, error) {
+	if number < 1 || number > maxPostgresInteger || uc.quranLocatorRepo == nil {
+		return entity.AnchorResolution{}, invalidAnchor("invalid Quran aggregate locator", nil)
+	}
+	start, end, err := uc.quranLocatorRepo.ResolveQuranLocator(ctx, kind, number)
+	if err != nil {
+		return entity.AnchorResolution{}, err
+	}
+	alias := fmt.Sprintf("%s:%d", kind, number)
+	if start.CanonicalAnchor != nil {
+		prependRedirect(&start, entity.AnchorRedirect{
+			From: alias, To: *start.CanonicalAnchor, Reason: entity.AnchorRedirectLegacyAlias, Depth: 1,
+		})
+	}
+	if end.CanonicalAnchor != nil {
+		prependRedirect(&end, entity.AnchorRedirect{
+			From: alias, To: *end.CanonicalAnchor, Reason: entity.AnchorRedirectLegacyAlias, Depth: 1,
+		})
+	}
+	startBoundary, err := boundaryFromLookup(entity.AnchorBoundaryStart, &start)
+	if err != nil {
+		return entity.AnchorResolution{}, err
+	}
+	endBoundary, err := boundaryFromLookup(entity.AnchorBoundaryEnd, &end)
+	if err != nil {
+		return entity.AnchorResolution{}, err
+	}
+
+	requested := entity.AnchorRequested{Form: form}
+	switch kind {
+	case "juz":
+		requested.JuzNumber = &number
+	case "hizb":
+		requested.HizbNumber = &number
+	case "page":
+		requested.PageNumber = &number
+	}
+
+	return entity.AnchorResolution{
+		Requested:       requested,
+		CanonicalAnchor: nil,
+		Boundaries:      []entity.AnchorBoundary{startBoundary, endBoundary},
+	}, nil
 }
 
 func (uc *UseCase) resolveCanonical(
@@ -254,6 +426,8 @@ func (uc *UseCase) resolvePoint(ctx context.Context, point anchorgrammar.Point) 
 		return uc.repo.ResolveQuranSurah(ctx, point.Surah())
 	case anchorgrammar.PointKindQuranAyah:
 		return uc.repo.ResolveQuran(ctx, fmt.Sprintf("%d:%d", point.Surah(), point.Ayah()))
+	case anchorgrammar.PointKindQuranUnit:
+		return uc.repo.ResolveCanonicalUnit(ctx, point.String())
 	case anchorgrammar.PointKindKitabWork:
 		return uc.repo.ResolveWork(ctx, point.BookID())
 	case anchorgrammar.PointKindKitabHeading:
@@ -301,17 +475,19 @@ func targetFromRecord(record *entity.AnchorRecord) (entity.AnchorTarget, error) 
 	}
 
 	target := entity.AnchorTarget{
-		TargetType:      record.TargetType,
-		Corpus:          record.Corpus,
-		CanonicalAnchor: record.CanonicalAnchor,
-		UnitID:          record.UnitID,
-		BookID:          record.BookID,
-		HeadingID:       record.HeadingID,
-		PageID:          record.PageID,
-		SurahID:         record.SurahID,
-		AyahKey:         record.AyahKey,
-		NavigationURL:   navigationURL,
-		UpdatedAt:       record.UpdatedAt,
+		TargetType:        record.TargetType,
+		Corpus:            record.Corpus,
+		CanonicalAnchor:   record.CanonicalAnchor,
+		UnitID:            record.UnitID,
+		PrimaryUnitID:     record.PrimaryUnitID,
+		PrimaryUnitAnchor: record.PrimaryUnitAnchor,
+		BookID:            record.BookID,
+		HeadingID:         record.HeadingID,
+		PageID:            record.PageID,
+		SurahID:           record.SurahID,
+		AyahKey:           record.AyahKey,
+		NavigationURL:     navigationURL,
+		UpdatedAt:         record.UpdatedAt,
 	}
 
 	return target, nil
@@ -351,8 +527,15 @@ func navigationURLForRecord(record *entity.AnchorRecord) (string, error) {
 
 		return fmt.Sprintf("/v1/books/%d/pages/%d", *record.BookID, *record.PageID), nil
 	case entity.AnchorTargetCitableUnit:
+		if record.Corpus == entity.UnitCorpusQuran {
+			if record.AyahKey == nil {
+				return "", invalidResolutionRecord("Quran unit target is missing ayah_key")
+			}
+
+			return "/v1/quran/ayahs/" + *record.AyahKey, nil
+		}
 		if record.BookID == nil {
-			return "", invalidResolutionRecord("unit target is missing book_id")
+			return "", invalidResolutionRecord("kitab unit target is missing book_id")
 		}
 
 		switch {

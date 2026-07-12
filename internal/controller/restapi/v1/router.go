@@ -63,6 +63,11 @@ func NewRoutes(
 		licenseAudit = implementation
 	}
 
+	var quranLicenseAudit usecase.QuranSourceLicenseAudit
+	if implementation, ok := editorial.(usecase.QuranSourceLicenseAudit); ok {
+		quranLicenseAudit = implementation
+	}
+
 	r := &V1{
 		reader:             reader,
 		bookRAG:            bookRAG,
@@ -75,6 +80,7 @@ func NewRoutes(
 		editorial:          editorial,
 		quranEditorial:     quranEditorial,
 		licenseAudit:       licenseAudit,
+		quranLicenseAudit:  quranLicenseAudit,
 		email:              email,
 		emailWebhookSecret: strings.TrimSpace(emailWebhookSecret),
 		l:                  l,
@@ -153,7 +159,7 @@ func NewRoutes(
 
 	// Search is dynamic (per-query) and must not advertise public caching;
 	// the edge worker bypasses q-params for the same reason (F1-D).
-	quranGroup := apiV1Group.Group("/quran", middleware.PublicCache(
+	quranGroup := apiV1Group.Group("/quran", middleware.PublicRevalidate(
 		middleware.ExcludePath("/v1/quran/search"),
 	))
 	{
@@ -163,6 +169,7 @@ func NewRoutes(
 		quranGroup.Get("/juz/:juz_number/ayahs", r.listQuranJuzAyahs)
 		quranGroup.Get("/hizbs", r.listQuranHizbs)
 		quranGroup.Get("/hizbs/:hizb_number/ayahs", r.listQuranHizbAyahs)
+		quranGroup.Get("/pages/:page_number/ayahs", r.listQuranPageAyahs)
 		quranGroup.Get("/surahs", r.listQuranSurahs)
 		quranGroup.Get("/surahs/:surah_id", r.getQuranSurah)
 		quranGroup.Get("/surahs/:surah_id/audio", r.getQuranSurahAudio)
@@ -290,6 +297,8 @@ func NewRoutes(
 		editorialReviewGroup.Get("/books", r.editorialListBooks)
 		editorialReviewGroup.Get("/license-audit", r.editorialLicenseAudit)
 		editorialReviewGroup.Get("/books/:book_id/license", r.editorialGetBookLicense)
+		editorialReviewGroup.Get("/quran/source-licenses", r.editorialQuranSourceLicenses)
+		editorialReviewGroup.Get("/quran/source-licenses/:source_kind/:source_id", r.editorialQuranSourceLicense)
 		editorialReviewGroup.Get("/cross-references", r.editorialListCrossReferences)
 		editorialReviewGroup.Get("/citable-units/:id", r.editorialGetCitableUnit)
 		editorialReviewGroup.Post("/cross-references", r.editorialCreateCrossReference)
@@ -356,6 +365,7 @@ func NewRoutes(
 			middleware.RequireCapability(u, policy.CapPublishProduction), middleware.RequireFreshMFA(u))
 		editorialAdminGroup.Put("/books/:book_id/publication", r.editorialUpdatePublication)
 		editorialAdminGroup.Patch("/books/:book_id/license", r.editorialUpdateBookLicense)
+		editorialAdminGroup.Patch("/quran/source-licenses/:source_kind/:source_id", r.editorialUpdateQuranSourceLicense)
 		editorialAdminGroup.Post("/books/:book_id/metadata-draft/publish", r.editorialPublishMetadataDraft)
 		editorialAdminGroup.Post("/books/:book_id/pages/:page_id/publish", r.editorialPublishPageDraft)
 		editorialAdminGroup.Post("/books/:book_id/headings/:heading_id/publish", r.editorialPublishHeadingDraft)

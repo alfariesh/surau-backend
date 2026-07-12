@@ -60,8 +60,11 @@ func recordCitableAudit(report *entity.CitableAuditReport) int64 {
 	citableAuditViolations.WithLabelValues("hash_mismatch").Set(float64(v.HashMismatch))
 	citableAuditViolations.WithLabelValues("anchor_malformed").Set(float64(v.AnchorMalformed))
 	citableAuditViolations.WithLabelValues("footnote_parent").Set(float64(v.FootnoteParent))
+	citableAuditViolations.WithLabelValues("quran_binding").Set(float64(v.QuranBinding))
+	citableAuditViolations.WithLabelValues("quran_interpretive").Set(float64(v.QuranInterpretive))
 
 	citableAuditInfo.WithLabelValues("stale_books").Set(float64(report.Info.StaleBooks))
+	citableAuditInfo.WithLabelValues("stale_quran_surahs").Set(float64(report.Info.StaleQuranSurahs))
 	citableAuditInfo.WithLabelValues("legacy_quran_book_references").Set(float64(report.Info.LegacyQuranBookReferences))
 	citableAuditInfo.WithLabelValues("legacy_knowledge_mentions").Set(float64(report.Info.LegacyKnowledgeMentions))
 	citableAuditInfo.WithLabelValues("legacy_knowledge_source_spans").Set(float64(report.Info.LegacyKnowledgeSourceSpans))
@@ -74,7 +77,7 @@ func recordCitableAudit(report *entity.CitableAuditReport) int64 {
 	}
 
 	return v.BookGone + v.SupersededNoSuccessor + v.ActiveWithSuccessor + v.LineageCycle +
-		v.HashMismatch + v.AnchorMalformed + v.FootnoteParent
+		v.HashMismatch + v.AnchorMalformed + v.FootnoteParent + v.QuranBinding + v.QuranInterpretive
 }
 
 // recordLoopRun stamps one background-loop pass; call with the pass error.

@@ -96,3 +96,58 @@ type BookLicenseUpdate struct {
 	Reason        string
 	EvidenceURL   *string
 }
+
+const (
+	QuranSourceKindScript          = "script"
+	QuranSourceKindTranslation     = "translation"
+	QuranSourceKindTransliteration = "transliteration"
+)
+
+// QuranSourceLicense is one source-level decision inherited dynamically by
+// every Quran Citable Unit bound to that source.
+type QuranSourceLicense struct {
+	SourceKind      string                    `json:"source_kind"`
+	SourceID        string                    `json:"source_id"`
+	Lang            *string                   `json:"lang,omitempty"`
+	Name            string                    `json:"name"`
+	Translator      *string                   `json:"translator,omitempty"`
+	ResponsibleName *string                   `json:"responsible_name,omitempty"`
+	ResponsibleRole *string                   `json:"responsible_role,omitempty"`
+	SourceURL       *string                   `json:"source_url,omitempty"`
+	LicenseStatus   string                    `json:"license_status"`
+	Reason          *string                   `json:"reason,omitempty"`
+	EvidenceURL     *string                   `json:"evidence_url,omitempty"`
+	UpdatedBy       *string                   `json:"updated_by,omitempty"`
+	UpdatedAt       time.Time                 `json:"updated_at"`
+	CoverageCount   int                       `json:"coverage_count"`
+	GrandfatheredAt *time.Time                `json:"grandfathered_at,omitempty"`
+	History         []QuranSourceLicenseAudit `json:"history,omitempty"`
+} // @name entity.QuranSourceLicense
+
+type QuranSourceLicenseAudit struct {
+	ID             int64     `json:"id"`
+	OldStatus      string    `json:"old_status"`
+	NewStatus      string    `json:"new_status"`
+	Reason         string    `json:"reason"`
+	EvidenceURL    *string   `json:"evidence_url,omitempty"`
+	OldAttribution RawJSON   `json:"old_attribution" swaggertype:"object"`
+	NewAttribution RawJSON   `json:"new_attribution" swaggertype:"object"`
+	ActorID        string    `json:"actor_id"`
+	CreatedAt      time.Time `json:"created_at"`
+} // @name entity.QuranSourceLicenseAudit
+
+type QuranSourceLicenseList struct {
+	Items []QuranSourceLicense `json:"items"`
+	Total int                  `json:"total"`
+} // @name entity.QuranSourceLicenseList
+
+type QuranSourceLicenseUpdate struct {
+	SourceKind      string
+	SourceID        string
+	LicenseStatus   string
+	Reason          string
+	EvidenceURL     *string
+	Translator      *string
+	ResponsibleName *string
+	ResponsibleRole *string
+}

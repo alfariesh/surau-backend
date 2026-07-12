@@ -26,6 +26,21 @@ type fakeAnchorResolver struct {
 	anchor string
 	bookID *int
 	pageID *int
+	input  *entity.AnchorResolveInput
+}
+
+//nolint:gocritic // value parameter mirrors the production usecase interface
+func (f *fakeAnchorResolver) ResolveInput(
+	_ context.Context,
+	input entity.AnchorResolveInput,
+) (entity.AnchorResolution, error) {
+	f.calls++
+	f.anchor = input.Anchor
+	f.bookID = input.BookID
+	f.pageID = input.PageID
+	f.input = &input
+
+	return f.result, f.err
 }
 
 func (f *fakeAnchorResolver) Resolve(
@@ -153,6 +168,85 @@ func TestResolveAnchorControllerPassesLegacyScopes(t *testing.T) {
 	assert.Equal(t, 12, *resolver.pageID)
 }
 
+func TestResolveAnchorControllerPassesEveryLegacyQuranLocator(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name   string
+		query  string
+		assert func(*testing.T, *entity.AnchorResolveInput)
+	}{
+		{
+			name:  "surah",
+			query: "surah_id=73",
+			assert: func(t *testing.T, input *entity.AnchorResolveInput) {
+				t.Helper()
+
+				require.NotNil(t, input.SurahID)
+				assert.Equal(t, 73, *input.SurahID)
+			},
+		},
+		{
+			name:  "surah ayah range",
+			query: "surah_id=73&from_ayah_number=1&to_ayah_number=4",
+			assert: func(t *testing.T, input *entity.AnchorResolveInput) {
+				t.Helper()
+
+				require.NotNil(t, input.SurahID)
+				require.NotNil(t, input.FromAyahNumber)
+				require.NotNil(t, input.ToAyahNumber)
+				assert.Equal(t, []int{73, 1, 4}, []int{*input.SurahID, *input.FromAyahNumber, *input.ToAyahNumber})
+			},
+		},
+		{
+			name:  "juz",
+			query: "juz_number=29",
+			assert: func(t *testing.T, input *entity.AnchorResolveInput) {
+				t.Helper()
+
+				require.NotNil(t, input.JuzNumber)
+				assert.Equal(t, 29, *input.JuzNumber)
+			},
+		},
+		{
+			name:  "hizb",
+			query: "hizb_number=57",
+			assert: func(t *testing.T, input *entity.AnchorResolveInput) {
+				t.Helper()
+
+				require.NotNil(t, input.HizbNumber)
+				assert.Equal(t, 57, *input.HizbNumber)
+			},
+		},
+		{
+			name:  "mushaf page",
+			query: "page_number=574",
+			assert: func(t *testing.T, input *entity.AnchorResolveInput) {
+				t.Helper()
+
+				require.NotNil(t, input.PageNumber)
+				assert.Equal(t, 574, *input.PageNumber)
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			resolver := &fakeAnchorResolver{result: anchorControllerFixtureResolution()}
+			resp, err := newAnchorControllerTestApp(resolver).Test(httptest.NewRequestWithContext(
+				t.Context(), http.MethodGet, "/v1/anchors/resolve?"+test.query, http.NoBody,
+			))
+			require.NoError(t, err)
+
+			defer resp.Body.Close()
+
+			assert.Equal(t, http.StatusOK, resp.StatusCode)
+			require.NotNil(t, resolver.input)
+			test.assert(t, resolver.input)
+		})
+	}
+}
+
 func TestResolveAnchorControllerRejectsMalformedQueryBeforeUseCase(t *testing.T) {
 	t.Parallel()
 
@@ -169,6 +263,8 @@ func TestResolveAnchorControllerRejectsMalformedQueryBeforeUseCase(t *testing.T)
 		{name: "duplicate anchor", path: "/v1/anchors/resolve?anchor=quran%2F73%3A4&anchor=quran%2F73%3A5"},
 		{name: "duplicate book id", path: "/v1/anchors/resolve?book_id=1&book_id=2&page_id=12"},
 		{name: "duplicate page id", path: "/v1/anchors/resolve?book_id=797&page_id=1&page_id=2"},
+		{name: "duplicate Quran page number", path: "/v1/anchors/resolve?page_number=574&page_number=575"},
+		{name: "Quran locator has leading zero", path: "/v1/anchors/resolve?juz_number=029"},
 		{name: "unknown query parameter", path: "/v1/anchors/resolve?anchor=quran%2F73%3A4&lang=id"},
 	} {
 		t.Run(test.name, func(t *testing.T) {

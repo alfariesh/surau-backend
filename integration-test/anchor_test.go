@@ -132,6 +132,39 @@ func TestAnchorResolverPublicContract(t *testing.T) {
 		}
 	})
 
+	t.Run("all legacy Quran locator families remain resolvable", func(t *testing.T) {
+		surah := getAnchorResolution(t, "surah_id=110")
+		if surah.Requested.Form != entity.AnchorFormLegacyQuranSurah {
+			t.Fatalf("legacy surah requested form = %q", surah.Requested.Form)
+		}
+		assertCanonicalAnchor(t, surah, "quran/110")
+
+		ayahRange := getAnchorResolution(t, "surah_id=110&from_ayah_number=999&to_ayah_number=999")
+		if ayahRange.Requested.Form != entity.AnchorFormLegacyQuranRange || len(ayahRange.Boundaries) != 2 {
+			t.Fatalf("legacy Quran range = %+v", ayahRange)
+		}
+		assertCanonicalAnchor(t, ayahRange, "quran/110:999..quran/110:999")
+
+		for _, locator := range []struct {
+			query string
+			form  string
+		}{
+			{query: "juz_number=30", form: entity.AnchorFormLegacyQuranJuz},
+			{query: "hizb_number=60", form: entity.AnchorFormLegacyQuranHizb},
+			{query: "page_number=999", form: entity.AnchorFormLegacyQuranPage},
+		} {
+			resolved := getAnchorResolution(t, locator.query)
+			if resolved.Requested.Form != locator.form || resolved.CanonicalAnchor != nil || len(resolved.Boundaries) != 2 {
+				t.Fatalf("legacy Quran aggregate %q = %+v", locator.query, resolved)
+			}
+			for _, boundary := range resolved.Boundaries {
+				if len(boundary.ActiveTargets) != 1 || len(boundary.RedirectChain) == 0 {
+					t.Fatalf("legacy Quran aggregate boundary %q = %+v", locator.query, boundary)
+				}
+			}
+		}
+	})
+
 	t.Run("legacy toc remains scoped and returns every active unit", func(t *testing.T) {
 		resolved := getAnchorResolution(t, fmt.Sprintf("anchor=toc-%d&book_id=%d", anchorFixtureHeadingID, anchorFixtureBookID))
 		if resolved.Requested.Form != entity.AnchorFormLegacyTOC || resolved.Requested.BookID == nil || *resolved.Requested.BookID != anchorFixtureBookID {
@@ -717,8 +750,12 @@ VALUES (110, 'النصر', 'An-Nasr', 'Pertolongan', 'madaniyah', 3, '{"integrat
 ON CONFLICT (surah_id) DO NOTHING`)
 	execFixtureSQL(t, ctx, tx, `
 INSERT INTO quran_ayahs (
-    surah_id, ayah_number, ayah_key, text_qpc_hafs, text_imlaei_simple, search_text, updated_at
-) VALUES (110, 999, $1, 'Anchor fixture ayah', 'Anchor fixture ayah', 'anchor fixture ayah', '2026-07-10T00:00:00Z')`,
+		surah_id, ayah_number, ayah_key, text_qpc_hafs, text_imlaei_simple, search_text,
+		page_number, juz_number, hizb_number, updated_at
+) VALUES (
+		110, 999, $1, 'Anchor fixture ayah', 'Anchor fixture ayah', 'anchor fixture ayah',
+		999, 30, 60, '2026-07-10T00:00:00Z'
+)`,
 		anchorFixtureAyahKey)
 }
 

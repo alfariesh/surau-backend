@@ -1,6 +1,6 @@
 # Frontend Integration Contract
 
-Last updated: 2026-07-11
+Last updated: 2026-07-12
 
 This is the main FE integration entrypoint for kitab reader and Quran reader.
 Use it together with:
@@ -93,7 +93,12 @@ links should store a canonical Anchor; existing FE keys remain valid permanently
 ```text
 ?anchor=kitab%2F797%2Fh%2F11%2Fu%2F42  canonical kitab unit
 ?anchor=quran%2F73%3A4                  canonical Quran ayah
+?anchor=quran%2F73%3A4%2Fu%2F2         canonical Quran rendering/footnote unit
 ?anchor=73%3A4                          legacy ayah_key
+?surah_id=73&from_ayah_number=1&to_ayah_number=4 legacy Quran range
+?juz_number=29                          legacy Quran juz
+?hizb_number=57                         legacy Quran hizb
+?page_number=574                        legacy mushaf page
 ?anchor=toc-11&book_id=797              legacy TOC
 ?book_id=797&page_id=12                 legacy physical page
 ```
@@ -110,6 +115,16 @@ invalid_anchor` as a bad client/deep-link shape and `404 anchor_not_found` as un
 content. The endpoint supports `ETag`/`If-None-Match`, but is intentionally absent from the edge
 worker cache allowlist. See `docs/anchors.md` for the exact grammar, TypeScript wire shape, range
 rules, lifecycle semantics, and cache contract.
+
+Untuk target ayah Q-2, simpan juga `primary_unit_id`/`primary_unit_anchor` bila tersedia. Nilai
+absen berarti surah itu belum backfill atau sedang stale menunggu reconcile, bukan izin bagi FE
+untuk membuat ID sendiri.
+Reader translation/transliteration sekarang selalu membawa `source_name`, atribusi pihak
+bertanggung jawab/penerjemah, `license_status`, dan identitas unit. Footnote terstruktur berada di
+`footnote_units[]` dengan `parent_unit_id` ke translation; field `footnotes` mentah tetap ada untuk
+kompatibilitas. Endpoint `GET /v1/quran/pages/{page_number}/ayahs` membuka locator halaman lama.
+Seluruh `/v1/quran` bypass cache Worker dan memakai revalidation origin agar takedown lisensi
+tidak tertahan salinan edge.
 
 ## User Bootstrap and Onboarding
 
@@ -228,10 +243,17 @@ Use this order for a Quran reader screen:
 4. `GET /v1/quran/recitations` if audio is enabled or the UI exposes reciter selection.
 5. `GET /v1/quran/surahs/{surah_id}/ayahs?lang={lang}&include_translation=true&include_audio={boolean}&recitation_id={optional}&view=reader_minimal` for the main reader.
 
+Jika state FE berasal dari halaman mushaf lama, langkah 5 dapat langsung memakai
+`GET /v1/quran/pages/{page_number}/ayahs?...`; tidak perlu menebak surah/range di client.
+
 Quran display rules:
 
 - Always render Arabic Quran text from `text_qpc_hafs`, with `text_imlaei_simple` as fallback.
 - Render `translation.text` only when `translation !== null`.
+- Tampilkan nama sumber/penerjemah dari objek translation/transliteration dan pertahankan
+  `unit_id`/`anchor` untuk sitasi. `footnote_units[]` sudah tertaut ke unit terjemahan lewat
+  `parent_unit_id`; jangan parse ulang nomor footnote bila bentuk ini tersedia. Jika teks legacy
+  tampil tanpa `unit_id`, jangan jadikan sitasi sampai reconcile selesai.
 - Prefer `view=reader_minimal` for ayah list reader bodies; it omits search/import/debug fields and exposes audio as one playable `audio[].url`.
 - `lang=ar` returns Arabic-only mode: translation is `null` and `availability.translation.action` is `hide_translation_tab`.
 - Missing `lang=en` translation returns `translation: null` and `available_translation_langs` tells FE whether to offer `id`.
@@ -342,20 +364,22 @@ FE handling:
   mutation caller to send the workspace ETag (or an intentional `*`).
 - `500 internal server error`: show retry UI and keep previous content if cached.
 
-## Public Cache Contract (F1-D/B-4)
+## Public Cache Contract (F1-D/B-4/Q-2)
 
-Stable Quran, category, and author GET endpoints answer with
-`Cache-Control: public, max-age=300, stale-while-revalidate=86400`, a weak body-hash `ETag`, and
-`Last-Modified`. Those numbers equal the edge Worker TTLs (`workers/api-cache/wrangler.jsonc` —
-FRESH 300 / STALE 86400); `CACHE_VERSION` remains their mass-invalidation source of truth.
+Stable category and author GET endpoints answer with `Cache-Control: public, max-age=300,
+stale-while-revalidate=86400`, a weak body-hash `ETag`, and `Last-Modified`. Those numbers equal
+the edge Worker TTLs (`workers/api-cache/wrangler.jsonc` — FRESH 300 / STALE 86400);
+`CACHE_VERSION` remains their mass-invalidation source of truth.
 
-License-sensitive public GETs under `/v1/books`, `/v1/anchors`, and `/v1/cross-references` instead
+License-sensitive public GETs under `/v1/books`, `/v1/quran`, `/v1/anchors`, dan
+`/v1/cross-references` instead
 answer `Cache-Control: public, max-age=0, must-revalidate` and are always `BYPASS` at the edge
 Worker. Browsers may retain their ETag/body, but must send a conditional request before reuse;
 `If-None-Match` can still produce a `304`. This guarantees that a license takedown is checked by
 the backend rather than hidden behind a fresh or stale edge copy.
 
-`GET /v1/quran/search` remains dynamic and answers `Cache-Control: no-store`.
+`GET /v1/quran/search` remains dynamic and answers `Cache-Control: no-store`; prefix Quran lain
+tetap revalidate, bukan edge-cache.
 
 ## Editorial Gap Queues
 

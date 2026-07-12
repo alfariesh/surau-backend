@@ -1,6 +1,6 @@
-# Citable Unit registry (Fase 1B / B-1, B-2, B-5, dan B-6)
+# Citable Unit registry (Fase 1B / B-1, B-2, B-5, B-6, dan Q-2)
 
-Last updated: 2026-07-11
+Last updated: 2026-07-12
 
 Dokumen ini menjelaskan registry B-1 dan permukaan kurasi protected B-6. Kontrak Anchor yang
 diratifikasi dan endpoint resolusi publik B-2 ada di [`docs/anchors.md`](anchors.md). Sumber
@@ -16,12 +16,15 @@ sitasi presisi (Fase 4), retrieval (Fase 7), dan halaman entitas (Fase 6) berdir
 identitas yang sama. Tabel korpus (`book_pages`, `quran_ayahs`, …) tetap sumber kebenaran teks
 tampilan; registry memegang identitas + teks ternormalisasi untuk pengindeksan.
 
-Korpus pilot B-1 = **kitab** saja. Quran/hadith/wiki menyusul di fase domainnya di atas kontrak
-yang sama.
+Korpus aktif saat ini adalah **kitab** (pilot B-1) dan **Quran** (Q-2). Quran memakai registry,
+resolver, serta lineage yang sama; tabel binding Quran hanya adapter natural-key ke sumber korpus,
+bukan registry kedua. Hadith/wiki menyusul di fase domainnya.
 
 ## Skema
 
-`migrations/20260709065724_add_citable_units.{up,down}.sql`.
+Fondasi: `migrations/20260709065724_add_citable_units.{up,down}.sql`. Adopsi Quran:
+`migrations/20260712000001_add_quran_citable_units.{up,down}.sql` beserta tiga migrasi index
+online sesudahnya.
 
 ### `citable_units`
 
@@ -29,14 +32,14 @@ yang sama.
 |---|---|
 | `id` UUID PK | UUIDv5 deterministik atas natural key; PK ⇒ keunikan natural-key lintas SEMUA lifecycle gratis |
 | `corpus` | `kitab`/`quran`/`hadith`/`wiki` (CHECK) |
-| `book_id` | scope kitab; satu-satunya FK keluar (`→books ON DELETE CASCADE`) |
+| `book_id` | scope kitab; NULL untuk unit Quran |
 | `heading_id` | soft-ref ke `book_headings` (tanpa FK); NULL = front-matter sebelum anchor pertama |
 | `page_id` | soft-ref; locator fisik **sekunder** (B-D2), bukan identitas |
-| `kind` | `paragraph`/`heading`/`quran_quote`/`footnote`/`html` |
+| `kind` | kind kitab lama ditambah `primary_text`/`translation`/`transliteration`; footnote tetap memakai `footnote` |
 | `ordinal` | dicetak-sekali per scope, **tak pernah didaur ulang**; bagian dari anchor |
 | `position` | urutan tampil kini (mutable) |
 | `parent_unit_id` | footnote → unit induk; metadata mutable (di-repoint saat induk berganti) |
-| `anchor` | grammar kanonik `kitab/{book_id}/h/{heading_id\|0}/u/{ordinal}` (UNIQUE), diratifikasi B-2 |
+| `anchor` | grammar kanonik kitab atau `quran/{surah}:{ayah}/u/{ordinal}` (UNIQUE) |
 | `marker` | marker footnote (mis. `(¬٢)`); bagian input hash untuk footnote |
 | `text` / `html` | teks tampilan + html (bila ada) |
 | `text_normalized` / `normalization_version` | hanya via `internal/searchtext` (profil ber-versi, C5/B-5) |
@@ -46,17 +49,40 @@ yang sama.
 | `provenance_detail` JSONB | `release` (source) / `edit_actor_id` (editorial) / `footnote_link` |
 | `generation_run_id` | FK immutable ke `generation_runs`; wajib hanya ketika `provenance_class=machine` (B-6) |
 | `license_status` | override per-unit; NULL = mewarisi Edition/Work sementara dari `books` (B-4) |
-| `effective_license_status` | hasil akhir override unit atau status Edition |
-| `license_source` | `unit_override` atau `edition`, sehingga asal hasil pewarisan eksplisit |
+| `effective_license_status` | hasil akhir override unit, Edition kitab, atau sumber Quran |
+| `license_source` | `unit_override`, `edition`, atau sumber script/terjemahan/transliterasi Quran |
+| `interpretive_corpus_eligible` | generated DB: `corpus <> 'quran'`; aplikasi tidak dapat mengubahnya |
 | `lifecycle` + `retired_at` | `active`/`superseded`/`tombstoned` (CHECK: active ⟺ retired_at NULL) |
 
 `citable_unit_lineage(predecessor_id, successor_id, reason)` — edge supersede; `reason` =
 `edit` (gap alignment se-scope) atau `content_move` (rescue pass antar-scope / kembar bertahan).
 
+### Adapter Quran: `quran_citable_unit_bindings`
+
+Satu ayah mempunyai Anchor logis permanen `quran/{surah}:{ayah}` dan unit anak berikut:
+
+- ordinal 1: teks primer QPC Hafs, `kind=primary_text`, Provenance Class `source`;
+- satu `translation` per `(source_id, ayah)`, lengkap dengan bahasa dan atribusi sumber;
+- setiap footnote terstruktur menjadi unit `footnote` dengan `parent_unit_id` menunjuk unit
+  terjemahannya serta `footnote_key` stabil;
+- satu `transliteration` per `(source_id, ayah)`.
+
+Ordinal yang pernah dicetak tidak digunakan ulang. Re-run atas sumber sama menghasilkan UUIDv5,
+Anchor, dan content hash yang sama. Perubahan terjemahan/footnote/transliterasi mencetak penerus
+dan mempertahankan Anchor lama lewat lineage. Perubahan teks primer setelah mint gagal tertutup
+dengan `ErrQuranPrimaryTextDrift`; koreksi mushaf tidak boleh menyamar sebagai edit biasa.
+Koreksi `page_number` hanya memperbarui `page_id` mutable pada unit yang sama—ID/ordinal tidak
+berubah, dan locator halaman serta metadata unit tetap konsisten.
+
+Lisensi dan atribusi tidak disalin ke ribuan unit. Binding menunjuk source table, lalu view
+`citable_units_with_effective_license` menghitung status efektif saat baca. Karena itu takedown
+satu sumber berlaku langsung tanpa re-mint.
+
 ### Gerbang License Status pada resolver publik
 
 Work/Edition harus lolos proyeksi publik lebih dahulu. Setelah itu, Anchor dan Cross-Reference
-hanya menganggap unit ber-override `NULL` atau `permitted` sebagai target publik. Filter berlaku
+kitab hanya menganggap unit ber-override `NULL` atau `permitted` sebagai target publik. Unit Quran
+wajib tidak memiliki override dan selalu mengikuti status source. Filter berlaku
 per-unit: sibling eligible pada heading/page atau ujung lineage yang sama tetap dikembalikan.
 Buku yang `units_derived_at`-nya sudah terisi tidak pernah kembali ke fallback source-row ketika
 semua unit locator terfilter; fallback kasar hanya menjaga kompatibilitas buku non-derived.
@@ -77,6 +103,14 @@ teks sumber. Lihat batas operasional dan prosedur takedown sementara di
 - **Trigger identitas generation**: Citable Unit machine wajib membawa run terdaftar; unit
   source/editorial tidak boleh membawa run. Provenance Class dan run tidak dapat diubah setelah
   unit dicetak. Detail kontrak registry ada di [`docs/generation-runs.md`](generation-runs.md).
+- **Gerbang anti-tafsir:** `interpretive_corpus_eligible` adalah kolom generated dan corpus unit
+  immutable. Index retrieval interpretatif hanya berisi baris dengan nilai tersebut `TRUE`, jadi
+  unit Quran tidak dapat masuk kandidat meskipun query/prompt berubah. Gerbang live yang wajib
+  dipanggil U-6 adalah
+  `internal/repo/persistent/quran_citable_unit_live_test.go::TestLiveQuranCitableUnitsNeverInterpretiveEligible`.
+- **Teks primer immutable:** setelah QPC primer non-kosong tersimpan, trigger database menolak
+  perubahan nilainya. Importer juga melakukan preflight sebelum tulisan pertama, sehingga command
+  gagal tidak dapat meninggalkan typo Quran yang telanjur publik.
 
 ## Endpoint kurasi
 
@@ -140,6 +174,7 @@ DeriveBook(src)            deriver.go  — murni: konten efektif → []DerivedUn
 PlanBook(...)              plan.go     — murni: derived + snapshot → rencana (mint/update/retire/lineage)
 UseCase.ReconcileBook      unitregistry.go — load → derive → plan → apply (retry konflik ≤3)
 CitableUnitRepo.ApplyReconcile  persistent — tx berjaga: SET LOCAL + advisory-lock + batch + assert invarian
+UseCase.ReconcileQuranSurah quran.go — ayah+rendering → plan Quran pada registry yang sama
 ```
 
 **Determinisme (AC-1):** derive murni deterministik (tanpa map-iteration/random/clock di jalur
@@ -161,11 +196,21 @@ urutan; rescue pass level-buku menutup pindah-scope & hapus-kembar.
    - `citable-units-kitab-rederive` — re-run tanpa syarat atas buku ter-derive = **drill
      determinisme** (harus nol mutasi) + jalur pemulihan setelah perubahan parser/profil.
    - Pilot set: `CitablePilotBooks = [797, 7312, 12876, 22842]`.
+   - `citable-units-quran` — initial/stale-only, atomik satu surah per checkpoint; cursor circular
+     memastikan surah yang kembali stale di belakang cursor tetap diproses sebelum selesai.
+   - `citable-units-quran-rederive` — drill determinisme seluruh surah yang pernah di-derive.
 2. **Hook editorial** — `editorial.PublishPageDraft` memanggil `ReconcileBookIfDerived` setelah
    commit (buku non-pilot = no-op via gerbang `units_derived_at IS NULL`; error → log + counter
    `surau_citable_reconcile_failures_total`, publish tetap sukses).
-3. **Importer** — TIDAK ada hook. Re-derive pasca-re-import = jalankan `citable-units-kitab-pilot`
-   lagi (predikat staleness menangkap buku yang berubah). Industrialisasi katalog = Fase 4/K-1.
+3. **Importer kitab** — tidak ada hook; jalankan job kitab lagi setelah re-import.
+4. **Importer Quran** — setelah seluruh tahap import dan bridge rujukan sukses, surah yang tersentuh
+   langsung direconcile. Trigger source tetap menandai `units_stale_at`, sehingga kegagalan hook
+   terlihat audit dan dapat dipulihkan dengan `citable-units-quran`.
+
+Load Quran memakai satu snapshot repeatable-read. Apply mengunci row surah dan hanya boleh
+menghapus `units_stale_at` yang tidak lebih baru dari snapshot; konflik otomatis replan. Selama
+surah stale, reader boleh mempertahankan field display legacy berlisensi, tetapi tidak pernah
+menempelkan ID/Anchor/footnote-unit lama seolah masih current.
 
 ## Audit terjadwal (AC-3)
 
@@ -175,10 +220,11 @@ default 1h). `AuditPass` mengisi:
 - **`surau_citable_audit_violations{check}`** (alert `sum > bool 0` → Telegram, rule
   `surau-citable-audit`): `book_gone`, `superseded_no_successor`, `active_with_successor`,
   `hash_mismatch` (recompute Go atas semua unit aktif — tripwire tulisan asing/pelanggaran GUC),
-  `anchor_malformed`, `footnote_parent`, `lineage_cycle`.
+  `anchor_malformed`, `footnote_parent`, `lineage_cycle`, `quran_binding`,
+  `quran_interpretive`.
 - **`surau_citable_audit_info{check}`** (dashboard saja, TANPA alarm): `stale_books`,
-  `legacy_dangling_*` (quran_book_references / knowledge_* menunjuk halaman `is_deleted` — milik
-  B-3).
+  `stale_quran_surahs`, `legacy_dangling_*` (quran_book_references / knowledge_* menunjuk halaman
+  `is_deleted` — milik B-3).
 - Inventori `surau_citable_units{lifecycle}`.
 
 ## Cara menjalankan (ops)
@@ -192,6 +238,12 @@ default 1h). `AuditPass` mengisi:
 
 # drill determinisme (harus nol mutasi; snapshot tabel sebelum/sesudah harus identik)
 /backfill -job=citable-units-kitab-rederive
+
+# derive Quran yang belum pernah diproses atau ditandai stale
+/backfill -job=citable-units-quran
+
+# drill determinisme/pemulihan seluruh surah derived
+/backfill -job=citable-units-quran-rederive -restart
 
 # impor buku pilot dulu bila belum ada (E4 staged importer, aman):
 #   --entrypoint /import-books app -book-ids=797,7312,12876,22842 -source-dir=/shamela

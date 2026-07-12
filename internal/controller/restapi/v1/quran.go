@@ -246,6 +246,49 @@ func (r *V1) listQuranHizbAyahs(ctx *fiber.Ctx) error {
 	return quranAyahListResponse(ctx, ayahs, view)
 }
 
+// @Summary     List Quran ayahs on a mushaf page
+// @Description Resolve the legacy FE page_number locator to the ordered ayahs on that QPC page.
+// @ID          list-quran-page-ayahs
+// @Tags        quran
+// @Produce     json
+// @Param       page_number         path     int    true  "QPC mushaf page number" minimum(1)
+// @Param       lang                query    string false "Language code" default(id)
+// @Param       translation_source  query    string false "Permitted translation source ID. Empty uses language default."
+// @Param       include_translation query    bool   false "Include selected translation" default(true)
+// @Param       include_audio       query    bool   false "Include audio" default(false)
+// @Param       recitation_id       query    string false "Recitation ID"
+// @Param       view                query    string false "Response view" Enums(full,reader_minimal)
+// @Success     200                 {object} response.QuranReaderAyahList
+// @Success     200                 {object} response.QuranAyahList
+// @Failure     400                 {object} response.Error
+// @Failure     404                 {object} response.Error
+// @Failure     500                 {object} response.Error
+// @Router      /quran/pages/{page_number}/ayahs [get]
+func (r *V1) listQuranPageAyahs(ctx *fiber.Ctx) error {
+	pageNumber, err := pathInt(ctx, "page_number")
+	if err != nil {
+		return errorResponse(ctx, http.StatusBadRequest, "invalid page_number")
+	}
+
+	reader, ok := r.quran.(interface {
+		PageAyahs(
+			context.Context, int, string, string, bool, bool, bool, string,
+		) ([]entity.QuranAyah, error)
+	})
+	if !ok {
+		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
+	}
+
+	ayahs, view, responseOK, err := r.quranNavigationAyahs(
+		ctx, pageNumber, "restapi - v1 - listQuranPageAyahs", reader.PageAyahs,
+	)
+	if err != nil || !responseOK {
+		return err
+	}
+
+	return quranAyahListResponse(ctx, ayahs, view)
+}
+
 // @Summary     Get Quran ayah
 // @Description Get one ayah by canonical ayah key. When include_audio=true and recitation_id is omitted, the backend uses the default playable recitation.
 // @ID          get-quran-ayah

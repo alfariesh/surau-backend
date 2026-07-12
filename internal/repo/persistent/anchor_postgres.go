@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/alfariesh/surau-backend/internal/entity"
 	"github.com/alfariesh/surau-backend/pkg/postgres"
@@ -86,14 +87,35 @@ func (r *AnchorRepo) ResolveQuranSurah(ctx context.Context, surahID int) (entity
 // ayah_key alias through the unique quran_ayahs.ayah_key index.
 func (r *AnchorRepo) ResolveQuran(ctx context.Context, ayahKey string) (entity.AnchorLookupResult, error) {
 	var (
-		storedKey string
-		updatedAt sql.NullTime
+		storedKey     string
+		surahID       int
+		updatedAt     sql.NullTime
+		primaryUnitID sql.NullString
+		primaryAnchor sql.NullString
 	)
 
 	err := r.Pool.QueryRow(ctx, `
-		SELECT ayah_key, updated_at
-		FROM quran_ayahs
-		WHERE ayah_key = $1`, ayahKey).Scan(&storedKey, &updatedAt)
+			SELECT a.ayah_key, a.surah_id, a.updated_at, primary_unit.id::text, primary_unit.anchor
+			FROM quran_ayahs a
+			LEFT JOIN quran_surahs s ON s.surah_id = a.surah_id
+			LEFT JOIN quran_citable_unit_bindings binding
+		  ON binding.surah_id = a.surah_id
+		 AND binding.ayah_number = a.ayah_number
+		 AND binding.role = 'primary_text'
+		LEFT JOIN citable_units primary_unit
+			  ON primary_unit.id = binding.unit_id
+			 AND primary_unit.lifecycle = 'active'
+			 AND s.units_stale_at IS NULL
+		 AND primary_unit.text = a.text_qpc_hafs
+		 AND binding.source_updated_at = a.updated_at
+		 AND EXISTS (
+		     SELECT 1 FROM citable_units_with_effective_license license
+		     WHERE license.id = primary_unit.id
+		       AND license.effective_license_status = 'permitted'
+		 )
+		WHERE a.ayah_key = $1`, ayahKey).Scan(
+		&storedKey, &surahID, &updatedAt, &primaryUnitID, &primaryAnchor,
+	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return entity.AnchorLookupResult{}, entity.ErrAnchorNotFound
 	}
@@ -108,8 +130,13 @@ func (r *AnchorRepo) ResolveQuran(ctx context.Context, ayahKey string) (entity.A
 		Corpus:          entity.UnitCorpusQuran,
 		CanonicalAnchor: &canonical,
 		AyahKey:         &storedKey,
+		SurahID:         &surahID,
 		Lifecycle:       entity.UnitLifecycleActive,
 		UpdatedAt:       updatedAt.Time,
+	}
+	if primaryUnitID.Valid && primaryAnchor.Valid {
+		record.PrimaryUnitID = new(primaryUnitID.String)
+		record.PrimaryUnitAnchor = new(primaryAnchor.String)
 	}
 
 	return entity.AnchorLookupResult{
@@ -117,6 +144,66 @@ func (r *AnchorRepo) ResolveQuran(ctx context.Context, ayahKey string) (entity.A
 		Status:          entity.UnitLifecycleActive,
 		ActiveRecords:   []entity.AnchorRecord{record},
 	}, nil
+}
+
+// ResolveQuranLocator maps the grandfathered juz/hizb/page tuple to its first
+// and last canonical ayah. It delegates the actual point resolution back to
+// ResolveQuran, preserving one B-2 resolver/read model.
+//
+//nolint:gocritic,gocyclo,cyclop,wsl_v5 // bounded switch mirrors the three legacy locator families; unnamed results match the repo interface
+func (r *AnchorRepo) ResolveQuranLocator(
+	ctx context.Context,
+	kind string,
+	number int,
+) (entity.AnchorLookupResult, entity.AnchorLookupResult, error) {
+	column := ""
+	switch kind {
+	case "juz":
+		if number < 1 || number > 30 {
+			return entity.AnchorLookupResult{}, entity.AnchorLookupResult{}, entity.ErrAnchorNotFound
+		}
+		column = "juz_number"
+	case "hizb":
+		if number < 1 || number > 60 {
+			return entity.AnchorLookupResult{}, entity.AnchorLookupResult{}, entity.ErrAnchorNotFound
+		}
+		column = "hizb_number"
+	case "page":
+		if number < 1 {
+			return entity.AnchorLookupResult{}, entity.AnchorLookupResult{}, entity.ErrAnchorNotFound
+		}
+		column = "page_number"
+	default:
+		return entity.AnchorLookupResult{}, entity.AnchorLookupResult{}, entity.ErrInvalidAnchor
+	}
+
+	query := fmt.Sprintf(`
+SELECT (
+    SELECT ayah_key FROM quran_ayahs WHERE %s = $1
+    ORDER BY surah_id, ayah_number LIMIT 1
+), (
+    SELECT ayah_key FROM quran_ayahs WHERE %s = $1
+    ORDER BY surah_id DESC, ayah_number DESC LIMIT 1
+)`, column, column)
+	var startKey, endKey sql.NullString
+	if err := r.Pool.QueryRow(ctx, query, number).Scan(&startKey, &endKey); err != nil {
+		return entity.AnchorLookupResult{}, entity.AnchorLookupResult{},
+			fmt.Errorf("AnchorRepo.ResolveQuranLocator: %w", err)
+	}
+	if !startKey.Valid || !endKey.Valid {
+		return entity.AnchorLookupResult{}, entity.AnchorLookupResult{}, entity.ErrAnchorNotFound
+	}
+
+	start, err := r.ResolveQuran(ctx, startKey.String)
+	if err != nil {
+		return entity.AnchorLookupResult{}, entity.AnchorLookupResult{}, err
+	}
+	end, err := r.ResolveQuran(ctx, endKey.String)
+	if err != nil {
+		return entity.AnchorLookupResult{}, entity.AnchorLookupResult{}, err
+	}
+
+	return start, end, nil
 }
 
 // ResolveWork resolves the logical kitab Work anchor. The publication join is
@@ -416,6 +503,10 @@ func (r *AnchorRepo) ResolveCanonicalUnit(
 	ctx context.Context,
 	canonicalAnchor string,
 ) (entity.AnchorLookupResult, error) {
+	if strings.HasPrefix(canonicalAnchor, "quran/") {
+		return r.resolveCanonicalQuranUnit(ctx, canonicalAnchor)
+	}
+
 	tx, err := r.Pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
 	if err != nil {
 		return entity.AnchorLookupResult{}, fmt.Errorf("AnchorRepo.ResolveCanonicalUnit snapshot: %w", err)
@@ -451,6 +542,169 @@ func (r *AnchorRepo) ResolveCanonicalUnit(
 	}
 
 	return result, nil
+}
+
+// resolveCanonicalQuranUnit reuses the B-1 lineage walker, then applies the
+// Quran source/license/current-text gate to its active endpoints. Logical ayah
+// Anchors remain resolvable even while a stale child unit is hidden.
+//
+//nolint:gocognit,gocyclo,cyclop,funlen,wsl_v5 // root, shared lineage walk, and set-based active hydration
+func (r *AnchorRepo) resolveCanonicalQuranUnit(
+	ctx context.Context,
+	canonicalAnchor string,
+) (entity.AnchorLookupResult, error) {
+	tx, err := r.Pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
+	if err != nil {
+		return entity.AnchorLookupResult{}, fmt.Errorf("AnchorRepo Quran unit snapshot: %w", err)
+	}
+	defer rollbackTx(ctx, tx)
+
+	var (
+		root           lineageUnit
+		pageID         sql.NullInt64
+		surahID        int
+		ayahNumber     int
+		publicEligible bool
+		currentSource  bool
+	)
+	err = tx.QueryRow(ctx, `
+SELECT u.id::text, u.anchor, u.lifecycle, u.position, u.updated_at, u.page_id,
+       b.surah_id, b.ayah_number,
+       license.effective_license_status = 'permitted' AS public_eligible,
+	       s.units_stale_at IS NULL AND CASE b.role
+           WHEN 'primary_text' THEN b.source_updated_at = a.updated_at AND u.text = a.text_qpc_hafs
+           WHEN 'translation' THEN b.source_updated_at = t.updated_at AND u.text = t.text
+           WHEN 'footnote' THEN b.source_updated_at = t.updated_at
+           WHEN 'transliteration' THEN b.source_updated_at = x.updated_at AND u.text = x.text
+           ELSE FALSE
+       END AS current_source
+FROM citable_units u
+	JOIN quran_citable_unit_bindings b ON b.unit_id = u.id
+	JOIN quran_ayahs a ON a.surah_id = b.surah_id AND a.ayah_number = b.ayah_number
+	JOIN quran_surahs s ON s.surah_id = b.surah_id
+JOIN citable_units_with_effective_license license ON license.id = u.id
+LEFT JOIN quran_ayah_translations t
+  ON t.source_id = b.translation_source_id
+ AND t.surah_id = b.surah_id AND t.ayah_number = b.ayah_number
+LEFT JOIN quran_ayah_transliterations x
+  ON x.source_id = b.transliteration_source_id
+ AND x.surah_id = b.surah_id AND x.ayah_number = b.ayah_number
+WHERE u.corpus = 'quran' AND u.anchor = $1`, canonicalAnchor).Scan(
+		&root.ID, &root.Anchor, &root.Lifecycle, &root.Position, &root.UpdatedAt,
+		&pageID, &surahID, &ayahNumber, &publicEligible, &currentSource,
+	)
+	if errors.Is(err, pgx.ErrNoRows) ||
+		(err == nil && (!publicEligible || (root.Lifecycle == entity.UnitLifecycleActive && !currentSource))) {
+		return entity.AnchorLookupResult{}, entity.ErrAnchorNotFound
+	}
+	if err != nil {
+		return entity.AnchorLookupResult{}, fmt.Errorf("AnchorRepo Quran unit root: %w", err)
+	}
+
+	root.Corpus = entity.UnitCorpusQuran
+	root.PageID = anchorNullableInt(pageID)
+	root.PublicEligible = publicEligible
+	root.HeadingOrdinal = -1
+
+	walk, err := walkLineageUnits(ctx, tx, []lineageUnit{root}, lineagePolicy{})
+	if err != nil {
+		return entity.AnchorLookupResult{}, fmt.Errorf("AnchorRepo Quran unit lineage: %w", err)
+	}
+
+	result := entity.AnchorLookupResult{
+		CanonicalAnchor: new(root.Anchor),
+		Status:          root.Lifecycle,
+		RedirectChain:   walk.Redirects,
+		CycleDetected:   walk.CycleDetected,
+	}
+	if len(walk.ActiveUnits) == 0 {
+		return result, nil
+	}
+
+	activeIDs := make([]string, 0, len(walk.ActiveUnits))
+	for i := range walk.ActiveUnits {
+		activeIDs = append(activeIDs, walk.ActiveUnits[i].ID)
+	}
+	rows, err := tx.Query(ctx, `
+SELECT u.id::text, u.anchor, u.page_id, u.updated_at, b.surah_id, b.ayah_number
+FROM citable_units u
+	JOIN quran_citable_unit_bindings b ON b.unit_id = u.id
+	JOIN quran_ayahs a ON a.surah_id = b.surah_id AND a.ayah_number = b.ayah_number
+	JOIN quran_surahs s ON s.surah_id = b.surah_id AND s.units_stale_at IS NULL
+JOIN citable_units_with_effective_license license
+  ON license.id = u.id AND license.effective_license_status = 'permitted'
+LEFT JOIN quran_ayah_translations t
+  ON t.source_id = b.translation_source_id
+ AND t.surah_id = b.surah_id AND t.ayah_number = b.ayah_number
+LEFT JOIN quran_ayah_transliterations x
+  ON x.source_id = b.transliteration_source_id
+ AND x.surah_id = b.surah_id AND x.ayah_number = b.ayah_number
+WHERE u.id = ANY($1::uuid[]) AND u.lifecycle = 'active'
+  AND b.surah_id = $2 AND b.ayah_number = $3
+  AND CASE b.role
+      WHEN 'primary_text' THEN b.source_updated_at = a.updated_at AND u.text = a.text_qpc_hafs
+      WHEN 'translation' THEN b.source_updated_at = t.updated_at AND u.text = t.text
+      WHEN 'footnote' THEN b.source_updated_at = t.updated_at
+      WHEN 'transliteration' THEN b.source_updated_at = x.updated_at AND u.text = x.text
+      ELSE FALSE
+  END`, activeIDs, surahID, ayahNumber)
+	if err != nil {
+		return entity.AnchorLookupResult{}, fmt.Errorf("AnchorRepo Quran unit active targets: %w", err)
+	}
+	defer rows.Close()
+
+	byID := make(map[string]entity.AnchorRecord, len(activeIDs))
+	for rows.Next() {
+		var (
+			unitID         string
+			anchor         string
+			unitPageID     sql.NullInt64
+			updatedAt      sql.NullTime
+			unitSurahID    int
+			unitAyahNumber int
+		)
+		if err := rows.Scan(&unitID, &anchor, &unitPageID, &updatedAt,
+			&unitSurahID, &unitAyahNumber); err != nil {
+			return entity.AnchorLookupResult{}, fmt.Errorf("AnchorRepo Quran unit active scan: %w", err)
+		}
+		byID[unitID] = quranUnitAnchorRecord(
+			unitID, anchor, unitSurahID, unitAyahNumber, anchorNullableInt(unitPageID), updatedAt,
+		)
+	}
+	if err := rows.Err(); err != nil {
+		return entity.AnchorLookupResult{}, fmt.Errorf("AnchorRepo Quran unit active rows: %w", err)
+	}
+	for i := range walk.ActiveUnits {
+		if record, exists := byID[walk.ActiveUnits[i].ID]; exists {
+			result.ActiveRecords = append(result.ActiveRecords, record)
+		}
+	}
+	if root.Lifecycle == entity.UnitLifecycleActive && len(result.ActiveRecords) == 0 {
+		return entity.AnchorLookupResult{}, entity.ErrAnchorNotFound
+	}
+
+	return result, nil
+}
+
+func quranUnitAnchorRecord(
+	unitID, canonicalAnchor string,
+	surahID, ayahNumber int,
+	pageID *int,
+	updatedAt sql.NullTime,
+) entity.AnchorRecord {
+	ayahKey := fmt.Sprintf("%d:%d", surahID, ayahNumber)
+
+	return entity.AnchorRecord{
+		TargetType:      entity.AnchorTargetCitableUnit,
+		Corpus:          entity.UnitCorpusQuran,
+		CanonicalAnchor: new(canonicalAnchor),
+		UnitID:          new(unitID),
+		PageID:          pageID,
+		SurahID:         new(surahID),
+		AyahKey:         new(ayahKey),
+		Lifecycle:       entity.UnitLifecycleActive,
+		UpdatedAt:       updatedAt.Time,
+	}
 }
 
 func (r *AnchorRepo) resolveHistoricalHeadingUnits(
@@ -947,11 +1201,16 @@ func sortedLineageUnits(activeByID map[string]lineageUnit) []lineageUnit {
 }
 
 func lineageUnitFromEntity(unit *entity.CitableUnit) lineageUnit {
+	bookID := 0
+	if unit.BookID != nil {
+		bookID = *unit.BookID
+	}
+
 	return lineageUnit{
 		ID:        unit.ID,
 		Anchor:    unit.Anchor,
 		Corpus:    unit.Corpus,
-		BookID:    unit.BookID,
+		BookID:    bookID,
 		HasBook:   unit.Corpus == entity.UnitCorpusKitab,
 		HeadingID: unit.HeadingID,
 		PageID:    unit.PageID,

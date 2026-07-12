@@ -44,7 +44,7 @@ func TestEditorialGetCitableUnitExposesMachineGeneration(t *testing.T) {
 	registry := &fakeCitableUnitRegistry{result: entity.UnitResolution{Unit: entity.CitableUnit{
 		ID:                   "550e8400-e29b-41d4-a716-446655440000",
 		Corpus:               entity.UnitCorpusKitab,
-		BookID:               797,
+		BookID:               new(797),
 		Kind:                 entity.UnitKindParagraph,
 		Ordinal:              1,
 		Position:             0,
