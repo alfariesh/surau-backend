@@ -72,7 +72,9 @@ Q-2 menambahkan identitas aditif tanpa menghapus field lama:
   bertanggung jawab/penerjemah, `source_url`, dan `license_status`;
 - translation mempertahankan `footnotes` mentah untuk kompatibilitas dan menambah
   `footnote_units[]`. Setiap footnote memuat `unit_id`, `anchor`, `parent_unit_id`,
-  `footnote_key`, marker, dan teks.
+  `footnote_key`, marker, dan teks. Deriver menerima format array lama maupun format QUL
+  footnote-tags (`f` berupa peta ID→teks); ID menjadi kunci stabil dan marker tampilan diambil
+  deterministik dari tag `<sup foot_note="ID">marker</sup>` pada payload sumber bertag.
 
 Hanya sumber dengan status literal `permitted` dan atribusi non-kosong yang dapat muncul sebagai
 translation/transliteration. `unknown`, `needs_review`, `public_domain`, dan `restricted` berlaku

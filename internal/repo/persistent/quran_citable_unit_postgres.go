@@ -70,7 +70,7 @@ ORDER BY ayah_number`, surahID)
 	rows.Close()
 
 	translationRows, err := tx.Query(ctx, `
-SELECT t.ayah_number, t.source_id, t.lang, t.text, t.footnotes, t.updated_at
+SELECT t.ayah_number, t.source_id, t.lang, t.text, t.footnotes, t.metadata, t.updated_at
 FROM quran_ayah_translations t
 WHERE t.surah_id = $1
 ORDER BY t.ayah_number, t.lang, t.source_id`, surahID)
@@ -83,7 +83,8 @@ ORDER BY t.ayah_number, t.lang, t.source_id`, surahID)
 			translation entity.QuranUnitSourceTranslation
 		)
 		if err := translationRows.Scan(&ayahNumber, &translation.SourceID, &translation.Language,
-			&translation.Text, &translation.Footnotes, &translation.UpdatedAt); err != nil {
+			&translation.Text, &translation.Footnotes, &translation.Metadata,
+			&translation.UpdatedAt); err != nil {
 			translationRows.Close()
 
 			return source, fmt.Errorf("CitableUnitRepo.LoadQuranSource scan translation: %w", err)
