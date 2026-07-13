@@ -88,7 +88,12 @@ func verifyCitableCatalog(pgURL string) bool {
 	}
 	defer pool.Close()
 
-	report, err := backfill.VerifyCitableCatalog(ctx, pool)
+	startedAt := time.Now()
+
+	report, err := backfill.VerifyCitableCatalogWithProgress(ctx, pool, func(phase string) {
+		fmt.Fprintf(os.Stderr, "citable catalog verification: phase=%s elapsed=%s\n",
+			phase, time.Since(startedAt).Round(time.Second))
+	})
 	if err != nil {
 		fatalf("verify citable catalog: %v", err)
 	}
