@@ -263,7 +263,7 @@ services:
   #     --profile observability up -d
   # Only Grafana publishes a (loopback) port — Caddy proxies /grafana to it.
   prometheus:
-    image: prom/prometheus:v3.9.1
+    image: prom/prometheus:v3.13.1
     profiles: ["observability"]
     restart: unless-stopped
     command:
