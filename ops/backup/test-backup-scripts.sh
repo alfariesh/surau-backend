@@ -134,4 +134,18 @@ prune_uploaded_local_snapshots unused-config r2:fixture/predeploy/dev
 [[ -e "$PREDEPLOY_DIR/$newest_uploaded" ]] || fail "newest local predeploy snapshot was pruned"
 
 echo "ok: R2-verified predeploy local retention"
+
+# --- 6. pre-deploy cleanup remains valid after main's locals leave scope ---
+# This regresses the production failure where an EXIT trap referred to a local
+# rclone_config under nounset after main had returned.
+cleanup_fixture="$workdir/rclone-cleanup.conf"
+touch "$cleanup_fixture"
+bash -Eeuo pipefail -c '
+  source "$1"
+  RCLONE_CONFIG_PATH="$2"
+  trap cleanup_rclone_config EXIT
+' bash "$here/surau-predeploy-snapshot" "$cleanup_fixture"
+[[ ! -e "$cleanup_fixture" ]] || fail "pre-deploy rclone config was not cleaned up"
+
+echo "ok: pre-deploy EXIT cleanup"
 echo "all backup script tests passed"
