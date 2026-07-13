@@ -60,7 +60,9 @@ jobs:
           ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
 
           ssh -i ~/.ssh/surau_deploy_key -o IdentitiesOnly=yes "$VPS_USER@$VPS_HOST" \
-            "DEPLOY_BRANCH='$DEPLOY_BRANCH' DEPLOY_PATH='$VPS_DEPLOY_PATH' DEPLOY_SHA='$DEPLOY_SHA' APP_ENV='dev' BOOK_RAG_ROLLOUT_MODE='$BOOK_RAG_ROLLOUT_MODE' bash -s" <<'REMOTE'
+            "DEPLOY_BRANCH='$DEPLOY_BRANCH' DEPLOY_PATH='$VPS_DEPLOY_PATH' \
+            DEPLOY_SHA='$DEPLOY_SHA' APP_ENV='dev' \
+            BOOK_RAG_ROLLOUT_MODE='$BOOK_RAG_ROLLOUT_MODE' bash -s" <<'REMOTE'
           set -euo pipefail
           export APP_ENV
 
