@@ -124,6 +124,42 @@ func TestK1MentionBypassIsLimitedToInitialProfileUpgrade(t *testing.T) {
 		"SET CONSTRAINTS trg_knowledge_mentions_approved_unit_guard IMMEDIATE")
 }
 
+func TestK1RegistryChecksumHashesRowsBeforeAggregation(t *testing.T) {
+	t.Parallel()
+
+	source, err := os.ReadFile("citable_unit_catalog_tx.go")
+	require.NoError(t, err)
+
+	text := string(source)
+	registryStart := strings.Index(text, "func catalogRegistryChecksum(")
+	require.NotEqual(t, -1, registryStart)
+	registryEnd := strings.Index(text[registryStart:], "// CatalogEvidenceChecksums")
+	require.NotEqual(t, -1, registryEnd)
+	registrySQL := text[registryStart : registryStart+registryEnd]
+
+	assert.Contains(t, registrySQL, "WITH unit_rows AS MATERIALIZED")
+	assert.Contains(t, registrySQL, "sha256(convert_to(jsonb_build_array(")
+	assert.Contains(t, registrySQL, "string_agg(encode(row_digest, 'hex')")
+	assert.Contains(t, registrySQL, "ORDER BY predecessor_id, successor_id, reason")
+	assert.NotContains(t, registrySQL, "jsonb_agg(",
+		"large catalogs must never materialize one PostgreSQL JSONB array")
+}
+
+func TestK1CatalogChecksumVersionMigrationContracts(t *testing.T) {
+	t.Parallel()
+
+	up, err := os.ReadFile("../../../migrations/20260713000014_add_k1_catalog_checksum_version.up.sql")
+	require.NoError(t, err)
+	down, err := os.ReadFile("../../../migrations/20260713000014_add_k1_catalog_checksum_version.down.sql")
+	require.NoError(t, err)
+
+	upSQL := string(up)
+	assert.Contains(t, upSQL, "ADD COLUMN IF NOT EXISTS checksum_version INTEGER NOT NULL DEFAULT 1")
+	assert.Contains(t, upSQL, "CHECK (checksum_version >= 1) NOT VALID")
+	assert.Contains(t, upSQL, "VALIDATE CONSTRAINT citable_unit_catalog_queue_checksum_version_check")
+	assert.Contains(t, string(down), "DROP COLUMN IF EXISTS checksum_version")
+}
+
 func TestK1EditorialReconcileBindsMentionsBeforeCommit(t *testing.T) {
 	t.Parallel()
 

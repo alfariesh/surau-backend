@@ -361,6 +361,7 @@ func verifyCatalogDeterminismEvidence(
 	type evidenceRow struct {
 		bookID                              int
 		catalogCompleted, rederiveCompleted bool
+		catalogVersion, rederiveVersion     int
 		catalogSource, catalogRegistry      []byte
 		rederiveSource, rederiveRegistry    []byte
 	}
@@ -370,9 +371,11 @@ SELECT b.id,
        COALESCE(catalog.status = 'completed', FALSE),
        catalog.source_fingerprint,
        catalog.result_checksum,
+       COALESCE(catalog.checksum_version, 0),
        COALESCE(rederive.status = 'completed', FALSE),
        rederive.source_fingerprint,
-       rederive.result_checksum
+       rederive.result_checksum,
+       COALESCE(rederive.checksum_version, 0)
 FROM book_publications publication
 JOIN books b ON b.id = publication.book_id
 LEFT JOIN citable_unit_catalog_queue catalog
@@ -396,9 +399,11 @@ ORDER BY b.id`, citableCatalogJobName, citableCatalogRederiveJobName, CitableCat
 			&item.catalogCompleted,
 			&item.catalogSource,
 			&item.catalogRegistry,
+			&item.catalogVersion,
 			&item.rederiveCompleted,
 			&item.rederiveSource,
 			&item.rederiveRegistry,
+			&item.rederiveVersion,
 		); err != nil {
 			rows.Close()
 
@@ -420,7 +425,9 @@ ORDER BY b.id`, citableCatalogJobName, citableCatalogRederiveJobName, CitableCat
 
 	for i := range evidence {
 		item := &evidence[i]
-		if !item.catalogCompleted || !item.rederiveCompleted {
+		if !item.catalogCompleted || !item.rederiveCompleted ||
+			item.catalogVersion != persistent.CitableCatalogChecksumVersion ||
+			item.rederiveVersion != persistent.CitableCatalogChecksumVersion {
 			continue
 		}
 
