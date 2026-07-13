@@ -2207,6 +2207,20 @@ func (m *MockBookRAGRepo) EXPECT() *MockBookRAGRepoMockRecorder {
 	return m.recorder
 }
 
+// CheckRAGUnitMaterialization mocks base method.
+func (m *MockBookRAGRepo) CheckRAGUnitMaterialization(ctx context.Context, bookID int) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CheckRAGUnitMaterialization", ctx, bookID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// CheckRAGUnitMaterialization indicates an expected call of CheckRAGUnitMaterialization.
+func (mr *MockBookRAGRepoMockRecorder) CheckRAGUnitMaterialization(ctx, bookID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CheckRAGUnitMaterialization", reflect.TypeOf((*MockBookRAGRepo)(nil).CheckRAGUnitMaterialization), ctx, bookID)
+}
+
 // GetRAGBookDocument mocks base method.
 func (m *MockBookRAGRepo) GetRAGBookDocument(ctx context.Context, bookID int, lang string) (entity.RAGBookDocument, error) {
 	m.ctrl.T.Helper()
@@ -2237,6 +2251,21 @@ func (mr *MockBookRAGRepoMockRecorder) GetRAGPageSources(ctx, bookID, headingIDs
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetRAGPageSources", reflect.TypeOf((*MockBookRAGRepo)(nil).GetRAGPageSources), ctx, bookID, headingIDs, focusPageIDs, lang, maxPages)
 }
 
+// GetRAGUnitSources mocks base method.
+func (m *MockBookRAGRepo) GetRAGUnitSources(ctx context.Context, bookID int, headingIDs, focusPageIDs []int, lang string, maxUnits int) ([]entity.RAGPageSource, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetRAGUnitSources", ctx, bookID, headingIDs, focusPageIDs, lang, maxUnits)
+	ret0, _ := ret[0].([]entity.RAGPageSource)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetRAGUnitSources indicates an expected call of GetRAGUnitSources.
+func (mr *MockBookRAGRepoMockRecorder) GetRAGUnitSources(ctx, bookID, headingIDs, focusPageIDs, lang, maxUnits any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetRAGUnitSources", reflect.TypeOf((*MockBookRAGRepo)(nil).GetRAGUnitSources), ctx, bookID, headingIDs, focusPageIDs, lang, maxUnits)
+}
+
 // ListRAGStructure mocks base method.
 func (m *MockBookRAGRepo) ListRAGStructure(ctx context.Context, bookID int, lang string) ([]entity.RAGStructureNode, error) {
 	m.ctrl.T.Helper()
@@ -2252,6 +2281,21 @@ func (mr *MockBookRAGRepoMockRecorder) ListRAGStructure(ctx, bookID, lang any) *
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListRAGStructure", reflect.TypeOf((*MockBookRAGRepo)(nil).ListRAGStructure), ctx, bookID, lang)
 }
 
+// ResolveRAGUnitCitation mocks base method.
+func (m *MockBookRAGRepo) ResolveRAGUnitCitation(ctx context.Context, bookID, headingID, pageID int, quote string) (entity.RAGUnitLocator, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ResolveRAGUnitCitation", ctx, bookID, headingID, pageID, quote)
+	ret0, _ := ret[0].(entity.RAGUnitLocator)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ResolveRAGUnitCitation indicates an expected call of ResolveRAGUnitCitation.
+func (mr *MockBookRAGRepoMockRecorder) ResolveRAGUnitCitation(ctx, bookID, headingID, pageID, quote any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ResolveRAGUnitCitation", reflect.TypeOf((*MockBookRAGRepo)(nil).ResolveRAGUnitCitation), ctx, bookID, headingID, pageID, quote)
+}
+
 // SearchRAGPages mocks base method.
 func (m *MockBookRAGRepo) SearchRAGPages(ctx context.Context, bookID int, query, lang string, limit int) ([]entity.RAGSearchResult, error) {
 	m.ctrl.T.Helper()
@@ -2265,6 +2309,21 @@ func (m *MockBookRAGRepo) SearchRAGPages(ctx context.Context, bookID int, query,
 func (mr *MockBookRAGRepoMockRecorder) SearchRAGPages(ctx, bookID, query, lang, limit any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SearchRAGPages", reflect.TypeOf((*MockBookRAGRepo)(nil).SearchRAGPages), ctx, bookID, query, lang, limit)
+}
+
+// SearchRAGUnits mocks base method.
+func (m *MockBookRAGRepo) SearchRAGUnits(ctx context.Context, bookID int, query string, limit int) ([]entity.RAGSearchResult, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SearchRAGUnits", ctx, bookID, query, limit)
+	ret0, _ := ret[0].([]entity.RAGSearchResult)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// SearchRAGUnits indicates an expected call of SearchRAGUnits.
+func (mr *MockBookRAGRepoMockRecorder) SearchRAGUnits(ctx, bookID, query, limit any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SearchRAGUnits", reflect.TypeOf((*MockBookRAGRepo)(nil).SearchRAGUnits), ctx, bookID, query, limit)
 }
 
 // MockQuranRepo is a mock of QuranRepo interface.
@@ -3867,6 +3926,76 @@ func (mr *MockLicenseRepoMockRecorder) UpdateBookLicense(ctx, actorID, update, e
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateBookLicense", reflect.TypeOf((*MockLicenseRepo)(nil).UpdateBookLicense), ctx, actorID, update, expectedUpdatedAt)
 }
 
+// MockQuranSourceLicenseRepo is a mock of QuranSourceLicenseRepo interface.
+type MockQuranSourceLicenseRepo struct {
+	ctrl     *gomock.Controller
+	recorder *MockQuranSourceLicenseRepoMockRecorder
+	isgomock struct{}
+}
+
+// MockQuranSourceLicenseRepoMockRecorder is the mock recorder for MockQuranSourceLicenseRepo.
+type MockQuranSourceLicenseRepoMockRecorder struct {
+	mock *MockQuranSourceLicenseRepo
+}
+
+// NewMockQuranSourceLicenseRepo creates a new mock instance.
+func NewMockQuranSourceLicenseRepo(ctrl *gomock.Controller) *MockQuranSourceLicenseRepo {
+	mock := &MockQuranSourceLicenseRepo{ctrl: ctrl}
+	mock.recorder = &MockQuranSourceLicenseRepoMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockQuranSourceLicenseRepo) EXPECT() *MockQuranSourceLicenseRepoMockRecorder {
+	return m.recorder
+}
+
+// GetQuranSourceLicense mocks base method.
+func (m *MockQuranSourceLicenseRepo) GetQuranSourceLicense(ctx context.Context, sourceKind, sourceID string) (entity.QuranSourceLicense, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetQuranSourceLicense", ctx, sourceKind, sourceID)
+	ret0, _ := ret[0].(entity.QuranSourceLicense)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetQuranSourceLicense indicates an expected call of GetQuranSourceLicense.
+func (mr *MockQuranSourceLicenseRepoMockRecorder) GetQuranSourceLicense(ctx, sourceKind, sourceID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetQuranSourceLicense", reflect.TypeOf((*MockQuranSourceLicenseRepo)(nil).GetQuranSourceLicense), ctx, sourceKind, sourceID)
+}
+
+// ListQuranSourceLicenses mocks base method.
+func (m *MockQuranSourceLicenseRepo) ListQuranSourceLicenses(ctx context.Context, sourceKind, status string, limit, offset uint64) ([]entity.QuranSourceLicense, int, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListQuranSourceLicenses", ctx, sourceKind, status, limit, offset)
+	ret0, _ := ret[0].([]entity.QuranSourceLicense)
+	ret1, _ := ret[1].(int)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
+}
+
+// ListQuranSourceLicenses indicates an expected call of ListQuranSourceLicenses.
+func (mr *MockQuranSourceLicenseRepoMockRecorder) ListQuranSourceLicenses(ctx, sourceKind, status, limit, offset any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListQuranSourceLicenses", reflect.TypeOf((*MockQuranSourceLicenseRepo)(nil).ListQuranSourceLicenses), ctx, sourceKind, status, limit, offset)
+}
+
+// UpdateQuranSourceLicense mocks base method.
+func (m *MockQuranSourceLicenseRepo) UpdateQuranSourceLicense(ctx context.Context, actorID string, update entity.QuranSourceLicenseUpdate, expectedUpdatedAt *time.Time) (entity.QuranSourceLicense, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateQuranSourceLicense", ctx, actorID, update, expectedUpdatedAt)
+	ret0, _ := ret[0].(entity.QuranSourceLicense)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// UpdateQuranSourceLicense indicates an expected call of UpdateQuranSourceLicense.
+func (mr *MockQuranSourceLicenseRepoMockRecorder) UpdateQuranSourceLicense(ctx, actorID, update, expectedUpdatedAt any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateQuranSourceLicense", reflect.TypeOf((*MockQuranSourceLicenseRepo)(nil).UpdateQuranSourceLicense), ctx, actorID, update, expectedUpdatedAt)
+}
+
 // MockCitableUnitRepo is a mock of CitableUnitRepo interface.
 type MockCitableUnitRepo struct {
 	ctrl     *gomock.Controller
@@ -3995,6 +4124,89 @@ func (mr *MockCitableUnitRepoMockRecorder) Snapshot(ctx, bookID any) *gomock.Cal
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Snapshot", reflect.TypeOf((*MockCitableUnitRepo)(nil).Snapshot), ctx, bookID)
 }
 
+// MockQuranCitableUnitRepo is a mock of QuranCitableUnitRepo interface.
+type MockQuranCitableUnitRepo struct {
+	ctrl     *gomock.Controller
+	recorder *MockQuranCitableUnitRepoMockRecorder
+	isgomock struct{}
+}
+
+// MockQuranCitableUnitRepoMockRecorder is the mock recorder for MockQuranCitableUnitRepo.
+type MockQuranCitableUnitRepoMockRecorder struct {
+	mock *MockQuranCitableUnitRepo
+}
+
+// NewMockQuranCitableUnitRepo creates a new mock instance.
+func NewMockQuranCitableUnitRepo(ctrl *gomock.Controller) *MockQuranCitableUnitRepo {
+	mock := &MockQuranCitableUnitRepo{ctrl: ctrl}
+	mock.recorder = &MockQuranCitableUnitRepoMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockQuranCitableUnitRepo) EXPECT() *MockQuranCitableUnitRepoMockRecorder {
+	return m.recorder
+}
+
+// ApplyQuranReconcile mocks base method.
+func (m *MockQuranCitableUnitRepo) ApplyQuranReconcile(ctx context.Context, plan *entity.QuranUnitReconcilePlan) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ApplyQuranReconcile", ctx, plan)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// ApplyQuranReconcile indicates an expected call of ApplyQuranReconcile.
+func (mr *MockQuranCitableUnitRepoMockRecorder) ApplyQuranReconcile(ctx, plan any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ApplyQuranReconcile", reflect.TypeOf((*MockQuranCitableUnitRepo)(nil).ApplyQuranReconcile), ctx, plan)
+}
+
+// ListQuranSurahsForReconcile mocks base method.
+func (m *MockQuranCitableUnitRepo) ListQuranSurahsForReconcile(ctx context.Context, staleOnly bool, limit int) ([]int, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListQuranSurahsForReconcile", ctx, staleOnly, limit)
+	ret0, _ := ret[0].([]int)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListQuranSurahsForReconcile indicates an expected call of ListQuranSurahsForReconcile.
+func (mr *MockQuranCitableUnitRepoMockRecorder) ListQuranSurahsForReconcile(ctx, staleOnly, limit any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListQuranSurahsForReconcile", reflect.TypeOf((*MockQuranCitableUnitRepo)(nil).ListQuranSurahsForReconcile), ctx, staleOnly, limit)
+}
+
+// LoadQuranSource mocks base method.
+func (m *MockQuranCitableUnitRepo) LoadQuranSource(ctx context.Context, surahID int) (entity.QuranUnitSource, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "LoadQuranSource", ctx, surahID)
+	ret0, _ := ret[0].(entity.QuranUnitSource)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// LoadQuranSource indicates an expected call of LoadQuranSource.
+func (mr *MockQuranCitableUnitRepoMockRecorder) LoadQuranSource(ctx, surahID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LoadQuranSource", reflect.TypeOf((*MockQuranCitableUnitRepo)(nil).LoadQuranSource), ctx, surahID)
+}
+
+// QuranSnapshot mocks base method.
+func (m *MockQuranCitableUnitRepo) QuranSnapshot(ctx context.Context, surahID int) (entity.QuranUnitRegistrySnapshot, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "QuranSnapshot", ctx, surahID)
+	ret0, _ := ret[0].(entity.QuranUnitRegistrySnapshot)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// QuranSnapshot indicates an expected call of QuranSnapshot.
+func (mr *MockQuranCitableUnitRepoMockRecorder) QuranSnapshot(ctx, surahID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "QuranSnapshot", reflect.TypeOf((*MockQuranCitableUnitRepo)(nil).QuranSnapshot), ctx, surahID)
+}
+
 // MockAnchorRepo is a mock of AnchorRepo interface.
 type MockAnchorRepo struct {
 	ctrl     *gomock.Controller
@@ -4107,6 +4319,46 @@ func (m *MockAnchorRepo) ResolveWork(ctx context.Context, bookID int) (entity.An
 func (mr *MockAnchorRepoMockRecorder) ResolveWork(ctx, bookID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ResolveWork", reflect.TypeOf((*MockAnchorRepo)(nil).ResolveWork), ctx, bookID)
+}
+
+// MockQuranLocatorAnchorRepo is a mock of QuranLocatorAnchorRepo interface.
+type MockQuranLocatorAnchorRepo struct {
+	ctrl     *gomock.Controller
+	recorder *MockQuranLocatorAnchorRepoMockRecorder
+	isgomock struct{}
+}
+
+// MockQuranLocatorAnchorRepoMockRecorder is the mock recorder for MockQuranLocatorAnchorRepo.
+type MockQuranLocatorAnchorRepoMockRecorder struct {
+	mock *MockQuranLocatorAnchorRepo
+}
+
+// NewMockQuranLocatorAnchorRepo creates a new mock instance.
+func NewMockQuranLocatorAnchorRepo(ctrl *gomock.Controller) *MockQuranLocatorAnchorRepo {
+	mock := &MockQuranLocatorAnchorRepo{ctrl: ctrl}
+	mock.recorder = &MockQuranLocatorAnchorRepoMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockQuranLocatorAnchorRepo) EXPECT() *MockQuranLocatorAnchorRepoMockRecorder {
+	return m.recorder
+}
+
+// ResolveQuranLocator mocks base method.
+func (m *MockQuranLocatorAnchorRepo) ResolveQuranLocator(ctx context.Context, kind string, number int) (entity.AnchorLookupResult, entity.AnchorLookupResult, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ResolveQuranLocator", ctx, kind, number)
+	ret0, _ := ret[0].(entity.AnchorLookupResult)
+	ret1, _ := ret[1].(entity.AnchorLookupResult)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
+}
+
+// ResolveQuranLocator indicates an expected call of ResolveQuranLocator.
+func (mr *MockQuranLocatorAnchorRepoMockRecorder) ResolveQuranLocator(ctx, kind, number any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ResolveQuranLocator", reflect.TypeOf((*MockQuranLocatorAnchorRepo)(nil).ResolveQuranLocator), ctx, kind, number)
 }
 
 // MockCrossReferenceRepo is a mock of CrossReferenceRepo interface.

@@ -385,6 +385,8 @@ type (
 		TreeBeamSize         int           `env:"RAG_TREE_BEAM_SIZE" envDefault:"3"`
 		TreeMaxTurns         int           `env:"RAG_TREE_MAX_TURNS" envDefault:"6"`
 		TreeMaxBlocksPerTurn int           `env:"RAG_TREE_MAX_BLOCKS_PER_TURN" envDefault:"6"`
+		BookCitationMode     string        `env:"RAG_BOOK_CITATION_MODE" envDefault:"unit"`
+		BookLegacyFallback   bool          `env:"RAG_BOOK_LEGACY_FALLBACK_ENABLED" envDefault:"true"`
 	}
 
 	// Metrics -.
@@ -763,6 +765,13 @@ func NewConfig() (*Config, error) {
 	}
 	if cfg.RAG.TreeMaxBlocksPerTurn < 1 {
 		return nil, configError("RAG_TREE_MAX_BLOCKS_PER_TURN must be positive")
+	}
+
+	cfg.RAG.BookCitationMode = strings.ToLower(strings.TrimSpace(cfg.RAG.BookCitationMode))
+	switch cfg.RAG.BookCitationMode {
+	case "legacy", "dual", "unit":
+	default:
+		return nil, configError("RAG_BOOK_CITATION_MODE must be legacy, dual, or unit")
 	}
 	if cfg.OneSignal.Enabled {
 		if strings.TrimSpace(cfg.OneSignal.AppID) == "" {

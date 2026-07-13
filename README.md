@@ -205,6 +205,8 @@ EMAIL_HTTP_TIMEOUT=10s \
 RAG_LLM_API_KEY='your-openai-compatible-key' \
 RAG_LLM_BASE_URL='https://ai.sumopod.com/v1' \
 RAG_LLM_MODEL='glm-5.1' \
+RAG_BOOK_CITATION_MODE='unit' \
+RAG_BOOK_LEGACY_FALLBACK_ENABLED='true' \
 go run -tags migrate ./cmd/app
 ```
 
@@ -218,7 +220,7 @@ Security scan baseline notes are documented in [docs/security-scan-baseline.md](
 
 ## Book RAG
 
-The book RAG endpoint uses a PageIndex-like vectorless retrieval flow over the existing TOC and page range tables. It only serves published books and cites page-level source blocks.
+The book RAG endpoint uses a PageIndex-like vectorless retrieval flow over the existing TOC and Citable Unit registry. It only serves public books and structurally eligible evidence; Quran quotes and unreviewed machine units cannot enter interpretive retrieval.
 
 ```sh
 curl -X POST 'http://127.0.0.1:8080/v1/books/797/rag?lang=id' \
@@ -227,6 +229,60 @@ curl -X POST 'http://127.0.0.1:8080/v1/books/797/rag?lang=id' \
 ```
 
 Set `RAG_LLM_API_KEY` for your OpenAI-compatible provider. Optional defaults are `RAG_LLM_BASE_URL=https://ai.sumopod.com/v1`, `RAG_LLM_MODEL=glm-5.1`, `RAG_LLM_TIMEOUT=45s`, `RAG_LLM_MAX_TOKENS=1400`, `RAG_LLM_TEMPERATURE=0.1`, `RAG_MAX_CONTEXT_PAGES=8`, `RAG_TREE_FULL_MAX_NODES=450`, `RAG_TREE_BLOCK_MAX_NODES=120`, `RAG_TREE_BEAM_SIZE=3`, `RAG_TREE_MAX_TURNS=6`, and `RAG_TREE_MAX_BLOCKS_PER_TURN=6`.
+
+`RAG_BOOK_CITATION_MODE` mengendalikan perpindahan sitasi K-1 tanpa big-bang:
+
+| Mode | Perilaku |
+|---|---|
+| `legacy` | Retrieval dan sitasi memakai halaman seperti sebelum K-1. Bentuk respons lama tetap sama. |
+| `dual` | Tetap satu panggilan LLM dan bukti halaman yang sama, lalu setiap quote valid dipetakan exact ke satu Citable Unit current. Respons membawa locator lama dan `unit_id`/`unit_anchor`; tidak pernah menebak saat pemetaan ambigu. |
+| `unit` | Retrieval serta validasi quote langsung memakai Citable Unit `book_page`. Translation/summary sudah dimaterialisasi tetapi belum masuk ranking K-1 agar makna jawaban tidak berubah. Ini default kode akhir. |
+
+`RAG_BOOK_LEGACY_FALLBACK_ENABLED=true` mengizinkan fallback **satu request penuh**, tidak
+mencampur bukti halaman dan unit. Fallback hanya untuk error bertipe materialisasi `incomplete`
+atau `stale`. Error database, License Status, Provenance Class, atau quote invalid tetap gagal dan
+memicu investigasi. Pertahankan fallback sepanjang satu rilis produksi pertama yang memakai
+unit-default; penghapusannya adalah perubahan terpisah setelah counter fallback/parity nol.
+
+### Rollout dev K-1
+
+Workflow `Deploy Dev` menjaga urutan `legacy → dual → unit → default`:
+
+1. Merge pertama ke server yang belum punya flag otomatis menulis `legacy`. Push berikutnya
+   memakai pilihan `preserve`, jadi deploy biasa tidak menggeser mode diam-diam.
+2. Sambil tetap `legacy`, workflow menjalankan wave kategori 3/7 dengan
+   `-catalog-priority-only`, lalu membuka queue untuk sisa katalog, menjalankan pass determinisme
+   `citable-units-kitab-catalog-rederive`, dan `/backfill -verify-citable-catalog`. Target N selalu
+   dihitung ulang dari seluruh buku published non-deleted.
+3. Jalankan workflow manual dengan `book_rag_citation_mode=dual`. Deploy hanya menyimpan bukti
+   versi + SHA penuh bila verifier lulus, golden + smoke eval lulus, trace membuktikan mode `dual`,
+   JSON/SSE membawa locator unit yang resolve, counter mapping exact bertambah, dan counter
+   mismatch/fallback tidak bertambah.
+4. Jalankan workflow manual dengan `book_rag_citation_mode=unit`. Guard menolak bila mode
+   sebelumnya bukan `dual` atau bukti parity bukan untuk SHA/version yang sama.
+5. Setelah smoke unit hijau, jalankan lagi dengan `book_rag_citation_mode=default`. Workflow
+   menghapus override env; aplikasi harus tetap `unit` dari default kode. Marker di host mencegah
+   push berikutnya mem-pin kembali ke legacy.
+
+Rollback operasional tidak perlu membalikkan migrasi atau menghapus Citable Unit. Pilih
+`book_rag_citation_mode=legacy` lewat workflow manual; locator API lama tetap dipertahankan minimal
+90 hari. Setelah penyebab selesai, ulangi gerbang dual dari awal. File bukti rollout di host bukan
+pengganti laporan penerimaan; simpan juga JSON verifier bertimestamp dan SHA deploy.
+
+Metrik rollout memakai label enum yang terbatas, tanpa ID buku/unit:
+
+- `surau_book_rag_requests_total{mode,result}`;
+- `surau_book_rag_citation_parity_total{result="matched|mismatch"}`;
+- `surau_book_rag_legacy_fallbacks_total{reason="incomplete|stale"}`;
+- `surau_citable_catalog_books{state="target|materialized|missing|stale"}` dan metrik queue K-1;
+- `surau_citable_audit_violations{check}`; setiap nilai >0 memicu alarm Telegram.
+
+Kontrak sitasi bersifat aditif. Field lama `book_id`, `heading_id`, `page_id`, `anchor`, `url`, dan
+`quote` tidak berubah; `anchor` tetap berarti locator legacy. `unit_id` dan `unit_anchor` opsional
+hadir pada mode dual/unit, baik di JSON maupun event SSE `citations`/`done`. Dengan
+`include_trace=true`, `citation_mode`, `legacy_fallback`, dan `fallback_reason` hanya untuk
+diagnostik, bukan untuk mengubah tampilan sitasi. Kontrak mobile lengkap ada di
+[`docs/mobile-backend-integration-guide.md`](docs/mobile-backend-integration-guide.md).
 
 Reader TOC summaries can be generated separately with `scripts/generate_reader_summaries.py`. Generate canonical Arabic summaries first with `--summary-lang ar` and `--max-source-chars 0`, import them, then translate those summaries to `id` or `en` with `scripts/translate_reader_assets.py --summary-only`. The summary generator defaults to `SUMMARY_LLM_BASE_URL=https://ai.sumopod.com/v1`, `SUMMARY_LLM_MODEL=glm-5.1`, and falls back to the `RAG_LLM_*` environment if `SUMMARY_LLM_*` is not set. Summaries are stored per `(book_id, heading_id, lang)` for reader display and RAG tree ranking; citations still come from original page text.
 
@@ -238,7 +294,7 @@ go run ./cmd/rag-eval \
   -cases eval/bookrag_smoke.jsonl
 ```
 
-The eval posts to `/v1/books/{book_id}/rag`, requests `include_trace=true`, and checks citation heading/page IDs, retrieval mode, tree LLM call budget, not-found behavior, and optional answer/quote substrings. Use `-output json` for CI-friendly output.
+The eval posts to `/v1/books/{book_id}/rag`, requests `include_trace=true`, and checks citation heading/page IDs, retrieval mode, tree LLM call budget, not-found behavior, optional answer/quote substrings, and K-1 unit locators when required by the case. Use `-output json` for CI-friendly output. `/backfill -verify-citable-catalog` adds a deterministic local-LLM stub over every public-retrievable book, so parity proof does not depend on provider sampling or spend tokens.
 It retries failed cases once by default (`-retries 1`) to reduce one-off LLM sampling noise while still reporting the attempt count.
 `answer_must_contain` is a warning by default because answer wording can vary; pass `-strict-answer` to make it a failure.
 Use `-verbose` when debugging slow or invisible failures; it prints per-case start/finish lines to stderr while the eval is still running.

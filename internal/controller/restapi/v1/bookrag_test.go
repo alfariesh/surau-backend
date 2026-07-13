@@ -32,13 +32,18 @@ func TestAskBookRAGBadRequest(t *testing.T) {
 func TestAskBookRAG(t *testing.T) {
 	t.Parallel()
 
+	unitID := "unit-1"
+	unitAnchor := "kitab/797/h/11/u/42"
 	app := newBookRAGTestApp(&fakeBookRAG{
 		response: entity.BookRAGResponse{
 			BookID:   797,
 			Question: "Apa definisi hadis sahih?",
 			Answer:   "Jawaban [1].",
 			Citations: []entity.BookRAGCitation{
-				{Ref: "1", BookID: 797, HeadingID: 11, PageID: 12, Quote: "نص"},
+				{
+					Ref: "1", BookID: 797, HeadingID: 11, PageID: 12,
+					UnitID: &unitID, UnitAnchor: &unitAnchor, Quote: "نص",
+				},
 			},
 		},
 	})
@@ -57,6 +62,8 @@ func TestAskBookRAG(t *testing.T) {
 	body, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)
 	assert.Contains(t, string(body), `"answer":"Jawaban [1]."`)
+	assert.Contains(t, string(body), `"unit_id":"unit-1"`)
+	assert.Contains(t, string(body), `"unit_anchor":"kitab/797/h/11/u/42"`)
 }
 
 func TestAskBookRAGUnsupportedLanguage(t *testing.T) {
@@ -80,6 +87,54 @@ func TestAskBookRAGUnsupportedLanguage(t *testing.T) {
 	assert.Contains(t, string(body), "unsupported language")
 }
 
+func TestAskBookRAGUnitMaterializationUnavailable(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		err  error
+		code string
+	}{
+		{
+			name: "incomplete",
+			err:  entity.ErrRAGUnitMaterializationIncomplete,
+			code: "rag_unit_materialization_incomplete",
+		},
+		{
+			name: "stale",
+			err:  entity.ErrRAGUnitMaterializationStale,
+			code: "rag_unit_materialization_stale",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			app := newBookRAGTestApp(&fakeBookRAG{err: test.err})
+			req := httptest.NewRequestWithContext(
+				t.Context(),
+				http.MethodPost,
+				"/v1/books/797/rag?lang=id",
+				bytes.NewBufferString(`{"question":"Apa definisi hadis sahih?"}`),
+			)
+			req.Header.Set("Content-Type", "application/json")
+
+			resp, err := app.Test(req)
+			defer func() {
+				if resp != nil {
+					_ = resp.Body.Close()
+				}
+			}()
+
+			require.NoError(t, err)
+			assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+			body, err := io.ReadAll(resp.Body)
+			require.NoError(t, err)
+			assert.Contains(t, string(body), `"code":"`+test.code+`"`)
+		})
+	}
+}
+
 func TestAskBookRAGStream(t *testing.T) {
 	t.Parallel()
 
@@ -101,6 +156,7 @@ func TestAskBookRAGStream(t *testing.T) {
 	assert.Contains(t, string(body), "event: delta")
 	assert.Contains(t, string(body), "event: citations")
 	assert.Contains(t, string(body), "event: done")
+	assert.Contains(t, string(body), `"unit_id":"unit-1"`)
 }
 
 func newBookRAGTestApp(bookRAG *fakeBookRAG) *fiber.App {
@@ -158,7 +214,13 @@ func (f *fakeBookRAG) AskBookStream(
 	if err := emit("delta", map[string]string{"text": "Jawaban"}); err != nil {
 		return err
 	}
-	if err := emit("citations", []entity.BookRAGCitation{{Ref: "1"}}); err != nil {
+
+	unitID := "unit-1"
+	unitAnchor := "kitab/797/h/11/u/42"
+
+	if err := emit("citations", []entity.BookRAGCitation{{
+		Ref: "1", UnitID: &unitID, UnitAnchor: &unitAnchor,
+	}}); err != nil {
 		return err
 	}
 

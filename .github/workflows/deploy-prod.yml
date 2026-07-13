@@ -55,6 +55,13 @@ jobs:
           git fetch --tags --force origin
           git checkout --force "refs/tags/$DEPLOY_TAG"
 
+          # A production host must never inherit the image's post-K-1 unit
+          # default before an explicit release rollout. The first K-1 release
+          # is pinned to legacy; later releases preserve the operator's flag.
+          if ! grep -q '^RAG_BOOK_CITATION_MODE=' .env.production; then
+            printf '%s\n' 'RAG_BOOK_CITATION_MODE=legacy' >> .env.production
+          fi
+
           PROFILE_ARGS=()
           SERVICES=(app)
           COLLAB_CHECK=""

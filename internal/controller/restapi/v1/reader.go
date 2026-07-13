@@ -178,7 +178,7 @@ func (r *V1) getBook(ctx *fiber.Ctx) error {
 }
 
 // @Summary     Ask kitab RAG
-// @Description Ask a question against one kitab. Sources include requested translation text only when exact requested-language translation exists; response includes requested_lang.
+// @Description Ask a question against one kitab. Citation fields unit_id and unit_anchor are additive and present in dual/unit mode; legacy anchor/url remain unchanged. Unit retrieval structurally excludes Quran quotes and unreviewed machine text.
 // @ID          ask-kitab-rag
 // @Tags        kitab
 // @Accept      json
@@ -275,6 +275,14 @@ func (r *V1) bookRAGErrorResponse(ctx *fiber.Ctx, err error) error {
 	}
 	if errors.Is(err, entity.ErrRAGEvidenceNotFound) {
 		return errorResponse(ctx, http.StatusNotFound, "rag evidence not found")
+	}
+
+	if errors.Is(err, entity.ErrRAGUnitMaterializationIncomplete) {
+		return errorResponse(ctx, http.StatusServiceUnavailable, "rag unit materialization incomplete")
+	}
+
+	if errors.Is(err, entity.ErrRAGUnitMaterializationStale) {
+		return errorResponse(ctx, http.StatusServiceUnavailable, "rag unit materialization stale")
 	}
 
 	return errorResponse(ctx, http.StatusInternalServerError, "internal server error")

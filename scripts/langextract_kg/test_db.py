@@ -214,7 +214,44 @@ class _CandidateSpyDBClient(kg_db.DBClient):
         self.calls.append(f"candidate:{mention_id}:{entity_id}:{strategy}")
 
 
+class _PageBatchDBClient(kg_db.DBClient):
+    def __init__(self, conn: _FakeConn, fail_id: str = "") -> None:
+        super().__init__(conn, "fake")
+        self.fail_id = fail_id
+        self.stored: list[str] = []
+
+    def _verify_mention_generation_identities(self, _records: list[dict[str, object]]) -> None:
+        return None
+
+    def insert_mention(self, record: dict[str, object]) -> str:
+        mention_id = str(record["id"])
+        if mention_id == self.fail_id:
+            raise RuntimeError("page write failed")
+        self.stored.append(mention_id)
+        self._commit()
+        return mention_id
+
+    def upsert_candidates_for_mention(self, _record: dict[str, object]) -> None:
+        self._commit()
+
+
 class DBHelpersTest(unittest.TestCase):
+    def test_mentions_commit_once_per_page_and_rollback_failed_page(self) -> None:
+        conn = _FakeConn(_FakeCursor([]))
+        client = _PageBatchDBClient(conn, fail_id="p2-fail")
+        records = [
+            {"id": "p1-a", "book_id": 1, "page_id": 1, "extraction_class": "concept"},
+            {"id": "p1-b", "book_id": 1, "page_id": 1, "extraction_class": "concept"},
+            {"id": "p2-fail", "book_id": 1, "page_id": 2, "extraction_class": "concept"},
+        ]
+
+        with self.assertRaisesRegex(RuntimeError, "page write failed"):
+            client.insert_mentions_with_candidates(records)
+
+        self.assertEqual(conn.commits, 1, "the completed first page commits exactly once")
+        self.assertEqual(conn.rollbacks, 1, "the failed second page rolls back as one batch")
+        self.assertFalse(client._defer_commit)
+
     def test_machine_generation_identity_is_typed_on_every_jsonl_row(self) -> None:
         generation = machine_generation_identity(
             "00000000-0000-4000-8000-000000000012",
@@ -419,6 +456,11 @@ class DBHelpersTest(unittest.TestCase):
         update_sql, update_params = cursor.executions[1]
         self.assertIn("UPDATE knowledge_mentions", update_sql)
         self.assertEqual(update_params, ("existing-source-span-id", "existing-mention-id"))
+        binding_sql, binding_params = cursor.executions[2]
+        self.assertIn("unit_binding_status", binding_sql)
+        self.assertIn("content_role = 'book_page'", binding_sql)
+        self.assertNotIn("similar", binding_sql.lower())
+        self.assertEqual(binding_params, ("existing-mention-id",))
         self.assertEqual(conn.commits, 1)
 
     def test_mention_record_flags_ambiguous_person(self) -> None:

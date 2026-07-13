@@ -198,6 +198,12 @@ services:
       RAG_TREE_BEAM_SIZE: ${RAG_TREE_BEAM_SIZE:-3}
       RAG_TREE_MAX_TURNS: ${RAG_TREE_MAX_TURNS:-6}
       RAG_TREE_MAX_BLOCKS_PER_TURN: ${RAG_TREE_MAX_BLOCKS_PER_TURN:-6}
+      # Deployments stay legacy until the explicit K-1 rollout gate moves the
+      # server env through dual to unit. The Go config default is still unit.
+      # Code/image default is the post-K-1 unit path. Deploy workflows pin a
+      # never-initialized environment to legacy before compose is evaluated.
+      RAG_BOOK_CITATION_MODE: ${RAG_BOOK_CITATION_MODE:-unit}
+      RAG_BOOK_LEGACY_FALLBACK_ENABLED: ${RAG_BOOK_LEGACY_FALLBACK_ENABLED:-true}
       HTTP_BODY_LIMIT_BYTES: ${HTTP_BODY_LIMIT_BYTES:-4194304}
       # Realtime collaborative editing bridge (see docs/collab.md). When
       # enabled, also start the collab service: compose --profile collab up.

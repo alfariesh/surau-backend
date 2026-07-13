@@ -35,7 +35,7 @@ func TestLiveGenerationRunMigrationReplayIsIdempotent(t *testing.T) {
 	}
 }
 
-//nolint:maintidx,paralleltest // serial: exercises a complete pre-B-6 upgrade inside a rolled-back transaction
+//nolint:maintidx,paralleltest,wsl_v5 // serial: exercises a complete pre-B-6 upgrade inside a rolled-back transaction
 func TestLiveGenerationRunMigrationUpgradesLegacyRows(t *testing.T) {
 	url := os.Getenv("SURAU_LIVE_PG")
 	if url == "" {
@@ -45,6 +45,16 @@ func TestLiveGenerationRunMigrationUpgradesLegacyRows(t *testing.T) {
 	pg, err := postgres.New(url)
 	require.NoError(t, err)
 	t.Cleanup(pg.Close)
+
+	var k1Installed bool
+	require.NoError(t, pg.Pool.QueryRow(context.Background(), `
+SELECT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'citable_units' AND column_name = 'content_role'
+)`).Scan(&k1Installed))
+	if k1Installed {
+		t.Skip("isolated B-6 down replay must run before newer K-1 dependent indexes/views")
+	}
 
 	down, err := os.ReadFile("../../../migrations/20260711000002_add_generation_runs.down.sql")
 	require.NoError(t, err)

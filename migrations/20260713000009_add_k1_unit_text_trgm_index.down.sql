@@ -1,0 +1,1 @@
+DROP INDEX CONCURRENTLY IF EXISTS idx_citable_units_text_trgm_interpretive;

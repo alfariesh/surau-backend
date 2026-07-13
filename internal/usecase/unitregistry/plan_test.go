@@ -40,6 +40,12 @@ func applySnapshot(snap entity.UnitRegistrySnapshot, plan entity.UnitReconcilePl
 		u.Position = up.Position
 		u.PageID = up.PageID
 		u.ParentUnitID = up.ParentUnitID
+		u.HTML = up.HTML
+		u.ReviewStatus = up.ReviewStatus
+		u.ProvenanceDetail = up.ProvenanceDetail
+		u.SourceDocumentHash = up.SourceDocumentHash
+		u.SourceCharStart = up.SourceCharStart
+		u.SourceCharEnd = up.SourceCharEnd
 		byID[up.ID] = u
 	}
 
@@ -272,8 +278,8 @@ func TestPlanBookReorderKeepsIdentity(t *testing.T) {
 		t.Fatalf("reorder must not mint/retire: %+v", plan.Report)
 	}
 
-	if plan.Report.Updated != 2 {
-		t.Fatalf("reorder updates = %d, want 2 position moves", plan.Report.Updated)
+	if plan.Report.Updated != 3 {
+		t.Fatalf("reorder updates = %d, want 3 source-document refreshes", plan.Report.Updated)
 	}
 
 	for _, m := range planA.Mints {
@@ -376,6 +382,34 @@ func TestPlanBookFootnoteParentRepoint(t *testing.T) {
 	}
 }
 
+//nolint:wsl_v5 // transition assertions follow lineage construction order
+func TestPlanBookFootnoteBecomingQuranQuoteKeepsAnchorLineageAndParent(t *testing.T) {
+	t.Parallel()
+
+	original := simpleSource("متن يحمل إشارة (١)\n__________\n(١) حاشية تفسيرية")
+
+	first, snap := derivePlan(t, original, emptySnapshot())
+	if len(first.Mints) != 2 || first.Mints[1].Kind != entity.UnitKindFootnote {
+		t.Fatalf("initial footnote = %+v", first.Mints)
+	}
+	predecessorID := first.Mints[1].ID
+
+	edited := simpleSource("متن يحمل إشارة (١)\n__________\n(١) حاشية {قل هو الله أحد} [الإخلاص:1]")
+
+	plan, _ := derivePlan(t, edited, snap)
+	if plan.Report.Minted != 1 || plan.Report.Superseded != 1 || len(plan.Edges) != 1 {
+		t.Fatalf("fail-closed footnote lineage report = %+v edges=%+v", plan.Report, plan.Edges)
+	}
+	if plan.Edges[0].PredecessorID != predecessorID || plan.Edges[0].SuccessorID != plan.Mints[0].ID {
+		t.Fatalf("old footnote Anchor does not resolve to Quran successor: %+v", plan.Edges[0])
+	}
+	if plan.Mints[0].Kind != entity.UnitKindQuranQuote || plan.Mints[0].Marker == nil ||
+		*plan.Mints[0].Marker != "(١)" || plan.Mints[0].ParentUnitID == nil ||
+		plan.Mints[0].ProvenanceDetail["footnote_link"] != entity.FootnoteLinkMarker {
+		t.Fatalf("Quran footnote successor lost marker/parent metadata: %+v", plan.Mints[0])
+	}
+}
+
 func TestPlanBookFootnoteBecomesUnlinkedRefreshesLabel(t *testing.T) {
 	t.Parallel()
 
@@ -419,5 +453,110 @@ func TestPlanBookFootnoteBecomesUnlinkedRefreshesLabel(t *testing.T) {
 
 	if up.FootnoteLink == nil || *up.FootnoteLink != entity.FootnoteLinkUnlinked {
 		t.Fatalf("footnote_link must refresh to %q, got %v", entity.FootnoteLinkUnlinked, up.FootnoteLink)
+	}
+}
+
+//nolint:wsl_v5 // identity fixture and assertions are intentionally linear
+func TestPlanBookFormattingOnlyHTMLRefreshKeepsIdentity(t *testing.T) {
+	t.Parallel()
+
+	original := simpleSource("<p><strong>نص ثابت</strong></p>")
+
+	first, snap := derivePlan(t, original, emptySnapshot())
+	if len(first.Mints) != 1 {
+		t.Fatalf("initial mints = %+v", first.Mints)
+	}
+	originalID := first.Mints[0].ID
+
+	reformatted := simpleSource(`<div class="reader"><em>نص ثابت</em></div>`)
+
+	plan, _ := derivePlan(t, reformatted, snap)
+	if plan.Report.Minted != 0 || plan.Report.Superseded != 0 || plan.Report.Tombstoned != 0 ||
+		plan.Report.Updated != 1 || plan.Report.Matched != 1 {
+		t.Fatalf("format-only report = %+v", plan.Report)
+	}
+	if plan.Updates[0].ID != originalID || plan.Updates[0].HTML == nil || !strings.Contains(*plan.Updates[0].HTML, "<em>") {
+		t.Fatalf("format-only update = %+v", plan.Updates[0])
+	}
+}
+
+//nolint:wsl_v5 // formatting-only identity assertions remain in execution order
+func TestPlanBookPublishedFormattingEditKeepsSourceUUIDAndAuditsActor(t *testing.T) {
+	t.Parallel()
+
+	original := simpleSource("نص ثابت")
+	original.Pages[0].ContentText = "نص ثابت"
+	original.Pages[0].RawContentHTML = "نص ثابت"
+	original.Pages[0].RawContentText = "نص ثابت"
+	first, snap := derivePlan(t, original, emptySnapshot())
+	requireSingle := func(t *testing.T, count int, name string) {
+		t.Helper()
+		if count != 1 {
+			t.Fatalf("%s = %d, want 1", name, count)
+		}
+	}
+	requireSingle(t, len(first.Mints), "initial mints")
+	activeID := first.Mints[0].ID
+
+	edited := original
+	edited.Pages = append([]entity.BookUnitSourcePage(nil), original.Pages...)
+	edited.Pages[0].ContentHTML = "<strong>نص ثابت</strong>"
+	edited.Pages[0].HasPublishedEdit = true
+	edited.Pages[0].EditActorID = "formatter"
+
+	plan, _ := derivePlan(t, edited, snap)
+	if plan.Report.Minted != 0 || plan.Report.Superseded != 0 || plan.Report.Tombstoned != 0 ||
+		plan.Report.Updated != 1 {
+		t.Fatalf("formatting edit report = %+v", plan.Report)
+	}
+	if plan.Updates[0].ID != activeID ||
+		plan.Updates[0].ProvenanceDetail["format_edit_actor_id"] != "formatter" {
+		t.Fatalf("formatting update = %+v", plan.Updates[0])
+	}
+}
+
+//nolint:wsl_v5 // collision matrix stays adjacent to identity assertions
+func TestPlanBookRoleLanguageNaturalKeysDoNotCollideAndPreserveV1(t *testing.T) {
+	t.Parallel()
+
+	src := simpleSource("نص واحد")
+	src.Headings = []entity.BookUnitSourceHeading{{HeadingID: 5, PageID: 1}}
+	src.Pages[0].ContentHTML = `<span id="toc-5">باب</span>` + "\nنص واحد"
+	runID := "11111111-1111-4111-8111-111111111111"
+	src.Assets = []entity.BookUnitSourceAsset{
+		{
+			HeadingID: 5, PageID: 1, ContentRole: entity.UnitContentRoleSectionTranslation, Language: "id",
+			Content: "نص واحد", ProvenanceClass: entity.ProvenanceClassMachine, GenerationRunID: &runID,
+			ReviewStatus: entity.UnitReviewStatusPending,
+		},
+		{
+			HeadingID: 5, PageID: 1, ContentRole: entity.UnitContentRoleSectionTranslation, Language: "en",
+			Content: "نص واحد", ProvenanceClass: entity.ProvenanceClassEditorial,
+			ReviewStatus: entity.UnitReviewStatusApproved,
+		},
+	}
+
+	plan, snap := derivePlan(t, src, emptySnapshot())
+	if len(plan.Mints) != 3 {
+		t.Fatalf("mints = %+v", plan.Mints)
+	}
+	ids := map[string]bool{}
+	for _, mint := range plan.Mints {
+		if ids[mint.ID] {
+			t.Fatalf("role/language collision for %+v", mint)
+		}
+		ids[mint.ID] = true
+	}
+
+	page := plan.Mints[0]
+
+	wantV1 := unitregistry.UnitID(entity.UnitCorpusKitab, src.BookID, 5, page.Kind, page.ContentHash, page.Occurrence)
+	if page.ContentRole != entity.UnitContentRoleBookPage || page.Language != "ar" || page.ID != wantV1 {
+		t.Fatalf("pilot v1 identity drift: got %+v want id %s", page, wantV1)
+	}
+
+	rerun, _ := derivePlan(t, src, snap)
+	if rerun.Report.Minted != 0 || rerun.Report.Updated != 0 || rerun.Report.Matched != 3 {
+		t.Fatalf("role/language rerun = %+v", rerun.Report)
 	}
 }

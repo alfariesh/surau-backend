@@ -12,6 +12,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -27,12 +28,15 @@ import (
 
 func main() {
 	var (
-		jobName   = flag.String("job", "", "backfill job name (see -list)")
-		chunkSize = flag.Int("chunk-size", backfill.DefaultChunkSize, "rows per chunk")
-		sleep     = flag.Duration("sleep", backfill.DefaultSleep, "throttle between chunks")
-		restart   = flag.Bool("restart", false, "restart a completed job from row zero")
-		list      = flag.Bool("list", false, "list registered jobs and exit")
-		pgURL     = flag.String("pg-url", os.Getenv("PG_URL"), "PostgreSQL connection URL")
+		jobName    = flag.String("job", "", "backfill job name (see -list)")
+		chunkSize  = flag.Int("chunk-size", backfill.DefaultChunkSize, "rows per chunk")
+		sleep      = flag.Duration("sleep", backfill.DefaultSleep, "throttle between chunks")
+		restart    = flag.Bool("restart", false, "restart a completed job from row zero")
+		list       = flag.Bool("list", false, "list registered jobs and exit")
+		verifyK1   = flag.Bool("verify-citable-catalog", false, "print K-1 catalog acceptance evidence as JSON")
+		priorityK1 = flag.Bool("catalog-priority-only", false,
+			"limit the K-1 catalog job to O-4-2 categories 3 and 7")
+		pgURL = flag.String("pg-url", os.Getenv("PG_URL"), "PostgreSQL connection URL")
 	)
 
 	flag.Parse()
@@ -45,7 +49,7 @@ func main() {
 		return
 	}
 
-	if *jobName == "" {
+	if *jobName == "" && !*verifyK1 {
 		fatalf("-job is required (or -list to see registered jobs)")
 	}
 
@@ -53,12 +57,47 @@ func main() {
 		fatalf("-pg-url is required or PG_URL must be set")
 	}
 
+	if *verifyK1 {
+		if !verifyCitableCatalog(*pgURL) {
+			os.Exit(1)
+		}
+
+		return
+	}
+
 	job, err := backfill.ByName(*jobName)
 	if err != nil {
 		fatalf("%v", err)
 	}
 
+	if *priorityK1 && *jobName != "citable-units-kitab-catalog" {
+		fatalf("-catalog-priority-only is valid only with -job=citable-units-kitab-catalog")
+	}
+
+	backfill.CitableCatalogPriorityOnly = *priorityK1
+
 	run(job, *pgURL, *chunkSize, *sleep, *restart)
+}
+
+func verifyCitableCatalog(pgURL string) bool {
+	ctx := context.Background()
+
+	pool, err := pgxpool.New(ctx, pgURL)
+	if err != nil {
+		fatalf("connect postgres: %v", err)
+	}
+	defer pool.Close()
+
+	report, err := backfill.VerifyCitableCatalog(ctx, pool)
+	if err != nil {
+		fatalf("verify citable catalog: %v", err)
+	}
+
+	if err := json.NewEncoder(os.Stdout).Encode(report); err != nil {
+		fatalf("encode citable catalog report: %v", err)
+	}
+
+	return report.Passed
 }
 
 func run(job backfill.Job, pgURL string, chunkSize int, sleep time.Duration, restart bool) {

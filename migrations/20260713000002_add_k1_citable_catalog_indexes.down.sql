@@ -1,0 +1,1 @@
+DROP INDEX CONCURRENTLY IF EXISTS uq_citable_units_scope_ordinal_v1_book_page;

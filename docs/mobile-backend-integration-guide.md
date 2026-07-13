@@ -1,6 +1,6 @@
 # Mobile Backend Integration Guide
 
-Last updated: 2026-07-10
+Last updated: 2026-07-13
 
 Dokumen ini adalah panduan utama untuk implementasi mobile app Islamic Surau dari backend ini. Fokusnya adalah kebutuhan FE mobile: urutan API call per screen, auth, data shape yang penting, strategi cache, error handling, dan behavior UI saat data terjemahan/audio belum lengkap.
 
@@ -947,12 +947,39 @@ export type BookRAGResponse = {
     printed_page?: string | null;
     part?: string | null;
     anchor: string;
+    unit_id?: string;
+    unit_anchor?: string;
     quote: string;
     url: string;
   }>;
-  trace?: unknown | null;
+  trace?: {
+    retrieval_mode?: string;
+    citation_mode?: "dual" | "unit";
+    legacy_fallback?: boolean;
+    fallback_reason?: "incomplete" | "stale";
+    selected_heading_ids?: number[];
+    focus_page_ids?: number[];
+    source_refs?: string[];
+    repaired: boolean;
+  } | null;
 };
 ```
+
+`anchor` dan `url` tetap locator reader legacy; `anchor` tidak berubah arti menjadi Anchor unit.
+Pada K-1, `unit_id` dan `unit_anchor` bersifat aditif dan opsional. Client sebaiknya menyimpan
+`unit_anchor` sebagai identitas presisi lalu memakai resolver Anchor bila perlu mengikuti edit,
+tetapi tetap memakai `url` sebagai navigasi reader dan mempertahankan locator lama selama masa
+deprecation minimal 90 hari. Objek citation yang sama dipakai JSON dan event SSE
+`citations`/`done`.
+
+Field unit hanya absen pada mode `legacy` atau ketika **seluruh request** memakai fallback legacy
+bertipe `incomplete`/`stale`. Bila mode `dual` menemukan mapping quote nol, ganda, atau melintasi
+unit setelah materialisasi dinyatakan lengkap, backend tidak mengarang locator dan menggagalkan
+request agar pelanggaran parity terdeteksi/alarm; JSON tidak mengirim kartu sitasi parsial dan SSE
+mengirim event `error`. Saat `include_trace=true`, respons non-legacy memuat `citation_mode`.
+Fallback bertipe mengisi `legacy_fallback=true` dan `fallback_reason` hanya `incomplete` atau
+`stale`; fallback tidak pernah mencampur sebagian page dan sebagian unit. Field trace hanya
+diagnostik dan tidak mengubah rendering sitasi.
 
 Jika `stream=true`, response memakai Server-Sent Events dengan headers `Content-Type: text/event-stream`. Event yang perlu ditangani:
 

@@ -58,6 +58,23 @@ func UnitID(corpus string, bookID, scopeKey int, kind string, contentHash []byte
 	return uuid.NewSHA1(nsCitableUnit, []byte(name)).String()
 }
 
+// UnitIDV2 extends the natural key with the published content slot. The v1
+// function above remains the identity source for book_page/ar forever, so K-1
+// does not remint pilot units when translations and summaries join the same
+// registry.
+func UnitIDV2(
+	corpus string,
+	bookID, scopeKey int,
+	contentRole, language, kind string,
+	contentHash []byte,
+	occurrence int,
+) string {
+	name := fmt.Sprintf("v2|%s|%d|%d|%s|%s|%s|%x|%d",
+		corpus, bookID, scopeKey, contentRole, language, kind, contentHash, occurrence)
+
+	return uuid.NewSHA1(nsCitableUnit, []byte(name)).String()
+}
+
 // AnchorFor renders the provisional canonical anchor
 // kitab/{book_id}/h/{heading_id|0}/u/{ordinal}. B-2 ratifies the cross-corpus
 // grammar; until then the anchor is an opaque unique string, unexposed publicly.
@@ -150,9 +167,14 @@ func _footnoteRefsIn(text string) []string {
 	return _footnoteRefInTextRE.FindAllString(text, -1)
 }
 
-// kindClass buckets kinds for lineage alignment: a paragraph reclassified as a
-// quran_quote should still link, but a paragraph never supersedes a footnote.
-func kindClass(kind string) string {
+// kindClass buckets kinds for lineage alignment. A Quran quote extracted from
+// a marker-bearing footnote remains in the footnote lineage class, while an
+// ordinary paragraph reclassified as a quran_quote remains body content.
+func kindClass(kind string, markerPresent bool) string {
+	if markerPresent && (kind == "footnote" || kind == "quran_quote") {
+		return "footnote"
+	}
+
 	switch kind {
 	case "footnote":
 		return "footnote"
@@ -169,13 +191,35 @@ func hashKey(hash []byte) string {
 }
 
 // matchKey groups units for rank matching within a scope.
-func matchKey(kind string, hash []byte) string {
-	return kind + "\x00" + hashKey(hash)
+func matchKey(contentRole, language, kind string, hash []byte, provenanceClass string, generationRunID *string) string {
+	generation := ""
+	if generationRunID != nil {
+		generation = *generationRunID
+	}
+
+	return contentRole + "\x00" + language + "\x00" + kind + "\x00" + hashKey(hash) +
+		"\x00" + provenanceClass + "\x00" + generation
 }
 
 // rescueKey groups retired/minted units for the book-level rescue pass.
-func rescueKey(kind string, hash []byte) string {
-	return kindClass(kind) + "\x00" + hashKey(hash)
+func rescueKey(contentRole, language, kind string, markerPresent bool, hash []byte) string {
+	return contentRole + "\x00" + language + "\x00" + kindClass(kind, markerPresent) + "\x00" + hashKey(hash)
+}
+
+func normalizedContentRole(role string) string {
+	if role == "" {
+		return "book_page"
+	}
+
+	return role
+}
+
+func normalizedLanguage(language string) string {
+	if language == "" {
+		return "ar"
+	}
+
+	return language
 }
 
 // trimNonEmpty reports whether text has visible content.

@@ -315,6 +315,7 @@ type (
 	BookRAGRepo interface {
 		GetRAGBookDocument(ctx context.Context, bookID int, lang string) (entity.RAGBookDocument, error)
 		ListRAGStructure(ctx context.Context, bookID int, lang string) ([]entity.RAGStructureNode, error)
+		CheckRAGUnitMaterialization(ctx context.Context, bookID int) error
 		GetRAGPageSources(
 			ctx context.Context,
 			bookID int,
@@ -323,7 +324,23 @@ type (
 			lang string,
 			maxPages int,
 		) ([]entity.RAGPageSource, error)
+		GetRAGUnitSources(
+			ctx context.Context,
+			bookID int,
+			headingIDs []int,
+			focusPageIDs []int,
+			lang string,
+			maxPages int,
+		) ([]entity.RAGPageSource, error)
 		SearchRAGPages(ctx context.Context, bookID int, query, lang string, limit int) ([]entity.RAGSearchResult, error)
+		SearchRAGUnits(ctx context.Context, bookID int, query string, limit int) ([]entity.RAGSearchResult, error)
+		ResolveRAGUnitCitation(
+			ctx context.Context,
+			bookID int,
+			headingID int,
+			pageID int,
+			quote string,
+		) (entity.RAGUnitLocator, error)
 	}
 
 	// QuranRepo provides public Quran browse/search and kitab reference lookups.
@@ -757,6 +774,27 @@ type (
 		ResolveUnit(ctx context.Context, unitID string) (entity.UnitResolution, error)
 		AuditCounts(ctx context.Context) (entity.CitableAuditReport, error)
 		ListActiveUnitsForHashCheck(ctx context.Context) ([]entity.CitableUnit, error)
+	}
+
+	// CitableUnitCatalogTx is the one-book transactional surface used only by
+	// K-1's catalog runner. Implementations keep all methods on one
+	// repeatable-read transaction and one per-book advisory lock.
+	CitableUnitCatalogTx interface {
+		LoadBookSource(ctx context.Context, bookID int) (entity.BookUnitSource, error)
+		Snapshot(ctx context.Context, bookID int) (entity.UnitRegistrySnapshot, error)
+		ApplyReconcile(ctx context.Context, plan *entity.UnitReconcilePlan) error
+		BindKnowledgeMentions(ctx context.Context, bookID int) error
+		SourceFingerprint(ctx context.Context, bookID int) ([32]byte, error)
+		RegistryChecksum(ctx context.Context, bookID int) ([32]byte, error)
+		CompleteQueueItem(ctx context.Context, jobName string, bookID int, source, checksum [32]byte) error
+	}
+
+	CitableUnitCatalogRepo interface {
+		WithCatalogTransaction(
+			ctx context.Context,
+			bookID int,
+			fn func(CitableUnitCatalogTx) error,
+		) error
 	}
 
 	// QuranCitableUnitRepo extends the same registry persistence service with a

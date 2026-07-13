@@ -19,6 +19,8 @@ func Jobs() []Job {
 		quranReferenceNormalizationVersionJob{},
 		citableUnitsPilotJob{},
 		citableUnitsRederiveJob{},
+		&citableUnitsCatalogJob{},
+		&citableUnitsCatalogJob{rederive: true},
 		quranPageNavigationJob{},
 		quranCitableUnitsJob{},
 		quranCitableUnitsRederiveJob{},

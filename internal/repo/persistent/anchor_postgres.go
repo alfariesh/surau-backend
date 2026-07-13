@@ -278,6 +278,7 @@ func (r *AnchorRepo) ResolveHeading(
 		 AND u.corpus = 'kitab'
 		 AND u.book_id = c.book_id
 		 AND u.heading_id = c.heading_id
+		 AND u.content_role = 'book_page'
 		 AND u.lifecycle = 'active'
 		 AND (u.license_status IS NULL OR u.license_status = 'permitted')
 		ORDER BY u.position NULLS LAST, u.anchor NULLS LAST`, bookID, headingID)
@@ -403,6 +404,7 @@ func (r *AnchorRepo) ResolvePage(ctx context.Context, bookID, pageID int) (entit
 		 AND u.corpus = 'kitab'
 		 AND u.book_id = c.book_id
 		 AND u.page_id = c.page_id
+		 AND u.content_role = 'book_page'
 		 AND u.lifecycle = 'active'
 		 AND (u.license_status IS NULL OR u.license_status = 'permitted')
 		LEFT JOIN book_headings h
@@ -720,7 +722,8 @@ func (r *AnchorRepo) resolveHistoricalHeadingUnits(
 		JOIN books b ON b.id = u.book_id AND b.is_deleted = FALSE
 		JOIN public_book_publications p ON p.book_id = b.id
 		LEFT JOIN book_headings h ON h.book_id = u.book_id AND h.heading_id = u.heading_id
-		WHERE u.corpus = 'kitab' AND u.book_id = $1 AND u.heading_id = $2
+		WHERE u.corpus = 'kitab' AND u.content_role = 'book_page'
+		  AND u.book_id = $1 AND u.heading_id = $2
 		ORDER BY u.position, u.anchor`, bookID, headingID)
 }
 
@@ -737,7 +740,8 @@ func (r *AnchorRepo) resolveHistoricalPageUnits(
 		JOIN books b ON b.id = u.book_id AND b.is_deleted = FALSE
 		JOIN public_book_publications p ON p.book_id = b.id
 		LEFT JOIN book_headings h ON h.book_id = u.book_id AND h.heading_id = u.heading_id
-		WHERE u.corpus = 'kitab' AND u.book_id = $1 AND u.page_id = $2
+		WHERE u.corpus = 'kitab' AND u.content_role = 'book_page'
+		  AND u.book_id = $1 AND u.page_id = $2
 		ORDER BY COALESCE(h.ordinal, -1), u.position, u.anchor`, bookID, pageID)
 }
 

@@ -1,0 +1,1 @@
+DROP INDEX CONCURRENTLY IF EXISTS idx_citable_unit_catalog_queue_claim;

@@ -1073,6 +1073,12 @@ definitions:
       ref:
         example: "1"
         type: string
+      unit_anchor:
+        example: kitab/797/h/11/u/42
+        type: string
+      unit_id:
+        example: 018f25dc-18a8-7c26-a3c4-20ec5f6f6b1e
+        type: string
       url:
         example: /v1/books/797/toc/11/read?lang=id
         type: string
@@ -1099,10 +1105,18 @@ definitions:
     type: object
   entity.BookRAGTrace:
     properties:
+      citation_mode:
+        example: unit
+        type: string
+      fallback_reason:
+        example: incomplete
+        type: string
       focus_page_ids:
         items:
           type: integer
         type: array
+      legacy_fallback:
+        type: boolean
       lexical_heading_ids:
         items:
           type: integer
@@ -8858,9 +8872,9 @@ paths:
     post:
       consumes:
       - application/json
-      description: Ask a question against one kitab. Sources include requested translation
-        text only when exact requested-language translation exists; response includes
-        requested_lang.
+      description: Ask a question against one kitab. Citation fields unit_id and unit_anchor
+        are additive and present in dual/unit mode; legacy anchor/url remain unchanged.
+        Unit retrieval structurally excludes Quran quotes and unreviewed machine text.
       operationId: ask-kitab-rag
       parameters:
       - description: Book ID

@@ -14,6 +14,8 @@ import (
 	"github.com/alfariesh/surau-backend/internal/entity"
 	"github.com/alfariesh/surau-backend/internal/readerlang"
 	"github.com/alfariesh/surau-backend/internal/repo"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
 const (
@@ -30,14 +32,36 @@ const (
 	defaultTreeBeamSize         = 3
 	defaultTreeMaxTurns         = 6
 	defaultTreeMaxBlocksPerTurn = 6
+
+	// CitationModeLegacy keeps the pre-K-1 page-only citation contract.
+	CitationModeLegacy = "legacy"
+	// CitationModeDual serves legacy evidence and adds exact unit locators.
+	CitationModeDual = "dual"
+	// CitationModeUnit retrieves and cites structural Citable Units directly.
+	CitationModeUnit = "unit"
 )
 
+//nolint:gochecknoglobals // process-wide Prometheus instruments use bounded enum labels only
 var (
 	citationMarkerRE       = regexp.MustCompile(`\[(\d+)\]`)
 	arabicTokenRE          = regexp.MustCompile("[\\p{Arabic}\u064b\u064c\u064d\u064e\u064f\u0650\u0651\u0652\u0653\u0654\u0655\u0670\u0640]+")
 	looseNodeIDsRE         = regexp.MustCompile(`(?i)(?:node_ids|heading_ids)\s*:\s*\[([^\]]+)\]`)
 	looseSelectionDoneRE   = regexp.MustCompile(`(?i)done\s*:\s*(true|false)`)
 	looseSelectionIDItemRE = regexp.MustCompile(`\d+`)
+
+	// Labels are intentionally bounded enums: never attach book/unit IDs.
+	bookRAGRequests = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "surau_book_rag_requests_total",
+		Help: "Book-RAG requests by citation mode and result.",
+	}, []string{"mode", "result"})
+	bookRAGFallbacks = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "surau_book_rag_legacy_fallbacks_total",
+		Help: "Whole-request Book-RAG legacy fallbacks by typed reason.",
+	}, []string{"reason"})
+	bookRAGParity = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "surau_book_rag_citation_parity_total",
+		Help: "Dual-mode citation projections by mapping result.",
+	}, []string{"result"})
 )
 
 // LLMClient is the minimal chat-completion interface needed by book RAG.
@@ -54,6 +78,8 @@ type Options struct {
 	TreeBeamSize         int
 	TreeMaxTurns         int
 	TreeMaxBlocksPerTurn int
+	CitationMode         string
+	LegacyFallback       bool
 }
 
 // UseCase provides PageIndex-like book RAG.
@@ -66,6 +92,16 @@ type UseCase struct {
 	treeBeamSize         int
 	treeMaxTurns         int
 	treeMaxBlocksPerTurn int
+	citationMode         string
+	legacyFallback       bool
+}
+
+type citationParityMismatchError struct {
+	ref string
+}
+
+func (e citationParityMismatchError) Error() string {
+	return fmt.Sprintf("dual citation %q has no unique eligible unit locator", e.ref)
 }
 
 // New creates a book RAG usecase.
@@ -95,6 +131,11 @@ func New(r repo.BookRAGRepo, llm LLMClient, opts Options) *UseCase {
 		treeMaxBlocksPerTurn = defaultTreeMaxBlocksPerTurn
 	}
 
+	citationMode := strings.ToLower(strings.TrimSpace(opts.CitationMode))
+	if citationMode == "" {
+		citationMode = CitationModeUnit
+	}
+
 	return &UseCase{
 		repo:                 r,
 		llm:                  llm,
@@ -104,6 +145,8 @@ func New(r repo.BookRAGRepo, llm LLMClient, opts Options) *UseCase {
 		treeBeamSize:         treeBeamSize,
 		treeMaxTurns:         treeMaxTurns,
 		treeMaxBlocksPerTurn: treeMaxBlocksPerTurn,
+		citationMode:         citationMode,
+		legacyFallback:       opts.LegacyFallback,
 	}
 }
 
@@ -127,6 +170,63 @@ func (uc *UseCase) AskBook(
 	}
 	maxCitations = clampMaxCitations(maxCitations)
 
+	mode := uc.citationMode
+	if mode != CitationModeLegacy && mode != CitationModeDual && mode != CitationModeUnit {
+		mode = CitationModeUnit
+	}
+
+	response, err := uc.askBookMode(ctx, bookID, question, lang, maxCitations, includeTrace, mode)
+	if err != nil && mode == CitationModeUnit && uc.legacyFallback {
+		if reason := materializationFallbackReason(err); reason != "" {
+			bookRAGFallbacks.WithLabelValues(reason).Inc()
+
+			response, err = uc.askBookMode(
+				ctx, bookID, question, lang, maxCitations, includeTrace, CitationModeLegacy,
+			)
+			if err == nil && response.Trace != nil {
+				response.Trace.CitationMode = CitationModeUnit
+				response.Trace.LegacyFallback = true
+				response.Trace.FallbackReason = reason
+			}
+		}
+	}
+
+	result := "success"
+	if err != nil {
+		result = "error"
+	}
+
+	bookRAGRequests.WithLabelValues(mode, result).Inc()
+
+	return response, err
+}
+
+//nolint:funlen,gocognit,gocyclo,cyclop // one linear mode pipeline keeps whole-request fallback and evidence selection auditable
+func (uc *UseCase) askBookMode(
+	ctx context.Context,
+	bookID int,
+	question string,
+	lang string,
+	maxCitations int,
+	includeTrace bool,
+	mode string,
+) (entity.BookRAGResponse, error) {
+	dualFallbackReason := ""
+
+	if mode == CitationModeUnit || mode == CitationModeDual {
+		if err := uc.repo.CheckRAGUnitMaterialization(ctx, bookID); err != nil {
+			fallbackReason := materializationFallbackReason(err)
+			if mode == CitationModeUnit || fallbackReason == "" || !uc.legacyFallback {
+				return entity.BookRAGResponse{}, err
+			}
+
+			// Dual mode is already legacy-backed: a typed rollout gap means serve
+			// the complete legacy request and expose the reason only in trace/metrics.
+			dualFallbackReason = fallbackReason
+			bookRAGFallbacks.WithLabelValues(dualFallbackReason).Inc()
+		}
+	}
+
 	doc, err := uc.repo.GetRAGBookDocument(ctx, bookID, lang)
 	if err != nil {
 		return entity.BookRAGResponse{}, err
@@ -140,7 +240,7 @@ func (uc *UseCase) AskBook(
 		return entity.BookRAGResponse{}, entity.ErrRAGEvidenceNotFound
 	}
 
-	searchResults, err := uc.searchRAGPages(ctx, bookID, question, lang, defaultCandidateCap)
+	searchResults, err := uc.searchRAGPagesMode(ctx, bookID, question, lang, defaultCandidateCap, mode)
 	if err != nil {
 		return entity.BookRAGResponse{}, err
 	}
@@ -153,29 +253,58 @@ func (uc *UseCase) AskBook(
 	headingIDs, lexicalHeadingIDs := mergeCandidateHeadings(structure, treeSelection.HeadingIDs, searchResults, defaultCandidateCap)
 	focusPageIDs := focusPagesForHeadings(structure, searchResults, headingIDs)
 	if len(headingIDs) == 0 {
-		return entity.BookRAGResponse{
+		response := entity.BookRAGResponse{
 			BookID:        bookID,
 			RequestedLang: lang,
 			Question:      question,
 			Answer:        notFoundAnswer(question),
 			Citations:     []entity.BookRAGCitation{},
 			Trace:         buildTrace(includeTrace, treeSelection, lexicalHeadingIDs, focusPageIDs, nil, false),
-		}, nil
+		}
+		setCitationTrace(response.Trace, mode, dualFallbackReason)
+
+		return response, nil
 	}
 
-	sources, err := uc.repo.GetRAGPageSources(ctx, bookID, headingIDs, focusPageIDs, lang, uc.maxContextPages)
+	var sources []entity.RAGPageSource
+	if mode == CitationModeUnit {
+		sources, err = uc.repo.GetRAGUnitSources(
+			ctx, bookID, headingIDs, focusPageIDs, lang, uc.maxContextPages,
+		)
+	} else {
+		sources, err = uc.repo.GetRAGPageSources(
+			ctx, bookID, headingIDs, focusPageIDs, lang, uc.maxContextPages,
+		)
+	}
 	if err != nil {
 		return entity.BookRAGResponse{}, err
 	}
+
+	if mode == CitationModeUnit {
+		sources = boundUnitContext(sources, uc.maxContextPages*sourceTextLimit)
+	}
 	if len(sources) == 0 {
-		return entity.BookRAGResponse{
+		if mode == CitationModeUnit {
+			if materializationErr := uc.repo.CheckRAGUnitMaterialization(ctx, bookID); materializationErr != nil {
+				return entity.BookRAGResponse{}, materializationErr
+			}
+		}
+
+		response := entity.BookRAGResponse{
 			BookID:        bookID,
 			RequestedLang: lang,
 			Question:      question,
 			Answer:        notFoundAnswer(question),
 			Citations:     []entity.BookRAGCitation{},
 			Trace:         buildTrace(includeTrace, treeSelection, lexicalHeadingIDs, focusPageIDs, nil, false),
-		}, nil
+		}
+		setCitationTrace(response.Trace, mode, dualFallbackReason)
+
+		return response, nil
+	}
+
+	if mode == CitationModeUnit && !unitSourcesHaveLocators(sources) {
+		return entity.BookRAGResponse{}, entity.ErrRAGUnitMaterializationIncomplete
 	}
 
 	assignSourceRefs(sources)
@@ -185,14 +314,138 @@ func (uc *UseCase) AskBook(
 		return entity.BookRAGResponse{}, err
 	}
 
-	return entity.BookRAGResponse{
+	if mode == CitationModeDual && dualFallbackReason == "" {
+		if err = uc.projectUnitCitations(ctx, bookID, citations); err != nil {
+			reason := materializationFallbackReason(err)
+			if reason == "" || !uc.legacyFallback {
+				return entity.BookRAGResponse{}, err
+			}
+
+			dualFallbackReason = reason
+			bookRAGFallbacks.WithLabelValues(reason).Inc()
+
+			for i := range citations {
+				citations[i].UnitID = nil
+				citations[i].UnitAnchor = nil
+			}
+		}
+	}
+
+	response := entity.BookRAGResponse{
 		BookID:        bookID,
 		RequestedLang: lang,
 		Question:      question,
 		Answer:        answer,
 		Citations:     citations,
 		Trace:         buildTrace(includeTrace, treeSelection, lexicalHeadingIDs, focusPageIDs, sources, repaired),
-	}, nil
+	}
+	setCitationTrace(response.Trace, mode, dualFallbackReason)
+
+	return response, nil
+}
+
+// boundUnitContext preserves the legacy total context ceiling. Unit mode may
+// expand one selected page into many paragraph rows; without a global rune
+// budget, maxContextPages would accidentally become an unbounded prompt.
+func boundUnitContext(sources []entity.RAGPageSource, maxRunes int) []entity.RAGPageSource {
+	if maxRunes <= 0 || len(sources) == 0 {
+		return []entity.RAGPageSource{}
+	}
+
+	bounded := make([]entity.RAGPageSource, 0, len(sources))
+	used := 0
+
+	for i := range sources {
+		cost := min(len([]rune(sources[i].ContentText)), sourceTextLimit)
+		if len(bounded) > 0 && used+cost > maxRunes {
+			break
+		}
+
+		bounded = append(bounded, sources[i])
+
+		used += cost
+		if used >= maxRunes {
+			break
+		}
+	}
+
+	return bounded
+}
+
+func unitSourcesHaveLocators(sources []entity.RAGPageSource) bool {
+	for i := range sources {
+		if sources[i].UnitID == nil || strings.TrimSpace(*sources[i].UnitID) == "" ||
+			sources[i].UnitAnchor == nil || strings.TrimSpace(*sources[i].UnitAnchor) == "" {
+			return false
+		}
+	}
+
+	return true
+}
+
+func setCitationTrace(trace *entity.BookRAGTrace, mode, fallbackReason string) {
+	if trace == nil {
+		return
+	}
+
+	// Keep legacy+trace JSON byte-compatible: omitempty suppresses the new
+	// field until dual/unit is explicitly selected.
+	if mode != CitationModeLegacy {
+		trace.CitationMode = mode
+	}
+
+	if fallbackReason != "" {
+		trace.LegacyFallback = true
+		trace.FallbackReason = fallbackReason
+	}
+}
+
+func materializationFallbackReason(err error) string {
+	switch {
+	case errors.Is(err, entity.ErrRAGUnitMaterializationIncomplete):
+		return "incomplete"
+	case errors.Is(err, entity.ErrRAGUnitMaterializationStale):
+		return "stale"
+	default:
+		return ""
+	}
+}
+
+func (uc *UseCase) projectUnitCitations(
+	ctx context.Context,
+	bookID int,
+	citations []entity.BookRAGCitation,
+) error {
+	locators := make([]entity.RAGUnitLocator, len(citations))
+	for i := range citations {
+		locator, err := uc.repo.ResolveRAGUnitCitation(
+			ctx,
+			bookID,
+			citations[i].HeadingID,
+			citations[i].PageID,
+			citations[i].Quote,
+		)
+		if err != nil {
+			return err
+		}
+
+		if !locator.Found {
+			bookRAGParity.WithLabelValues("mismatch").Inc()
+
+			return citationParityMismatchError{ref: citations[i].Ref}
+		}
+
+		locators[i] = locator
+	}
+
+	for i, locator := range locators {
+		citations[i].UnitID = &locator.UnitID
+		citations[i].UnitAnchor = &locator.UnitAnchor
+
+		bookRAGParity.WithLabelValues("matched").Inc()
+	}
+
+	return nil
 }
 
 func buildTrace(
@@ -656,10 +909,30 @@ func (uc *UseCase) searchRAGPages(
 	lang string,
 	limit int,
 ) ([]entity.RAGSearchResult, error) {
+	return uc.searchRAGPagesMode(ctx, bookID, question, lang, limit, uc.citationMode)
+}
+
+func (uc *UseCase) searchRAGPagesMode(
+	ctx context.Context,
+	bookID int,
+	question string,
+	lang string,
+	limit int,
+	mode string,
+) ([]entity.RAGSearchResult, error) {
 	results := make([]entity.RAGSearchResult, 0, limit)
 	seen := make(map[string]struct{}, limit)
 	for _, query := range retrievalQueries(question) {
-		queryResults, err := uc.repo.SearchRAGPages(ctx, bookID, query, lang, limit)
+		var (
+			queryResults []entity.RAGSearchResult
+			err          error
+		)
+
+		if mode == CitationModeUnit {
+			queryResults, err = uc.repo.SearchRAGUnits(ctx, bookID, query, limit)
+		} else {
+			queryResults, err = uc.repo.SearchRAGPages(ctx, bookID, query, lang, limit)
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -878,6 +1151,8 @@ func citationFromSource(source entity.RAGPageSource, quote string) entity.BookRA
 		PrintedPage:  source.PrintedPage,
 		Part:         source.Part,
 		Anchor:       source.Anchor,
+		UnitID:       source.UnitID,
+		UnitAnchor:   source.UnitAnchor,
 		Quote:        quote,
 		URL:          source.URL,
 	}
@@ -1457,6 +1732,12 @@ func parseAndValidateAnswer(
 
 		return "", nil, false
 	}
+	// Never truncate citations while returning the original answer: every
+	// marker in JSON/SSE must have a validated locator. Over-budget model output
+	// is repaired by the caller as one invalid completion.
+	if maxCitations <= 0 || len(markers) > maxCitations {
+		return "", nil, false
+	}
 
 	citationByRef := make(map[string]citationDraft, len(completion.Citations))
 	for _, citation := range completion.Citations {
@@ -1477,7 +1758,13 @@ func parseAndValidateAnswer(
 		if !ok || strings.TrimSpace(draft.Quote) == "" {
 			return "", nil, false
 		}
-		if !containsNormalized(source.ContentText, draft.Quote) {
+
+		quote := strings.TrimSpace(draft.Quote)
+		if source.UnitID != nil && !strings.Contains(source.ContentText, quote) {
+			return "", nil, false
+		}
+
+		if source.UnitID == nil && !containsNormalized(source.ContentText, quote) {
 			return "", nil, false
 		}
 
@@ -1490,12 +1777,11 @@ func parseAndValidateAnswer(
 			PrintedPage:  source.PrintedPage,
 			Part:         source.Part,
 			Anchor:       source.Anchor,
-			Quote:        strings.TrimSpace(draft.Quote),
+			UnitID:       source.UnitID,
+			UnitAnchor:   source.UnitAnchor,
+			Quote:        quote,
 			URL:          source.URL,
 		})
-		if len(citations) >= maxCitations {
-			break
-		}
 	}
 
 	return completion.Answer, citations, true
@@ -1723,6 +2009,10 @@ func publicErrorMessage(err error) string {
 		return "rag llm is not configured"
 	case errors.Is(err, entity.ErrRAGEvidenceNotFound):
 		return "rag evidence not found"
+	case errors.Is(err, entity.ErrRAGUnitMaterializationIncomplete):
+		return "rag unit materialization incomplete"
+	case errors.Is(err, entity.ErrRAGUnitMaterializationStale):
+		return "rag unit materialization stale"
 	default:
 		return "internal server error"
 	}
