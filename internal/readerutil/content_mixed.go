@@ -558,10 +558,10 @@ func (w *mixedWalker) emitFootnoteLine(line string) {
 		return
 	}
 
-	// Stray text in a footnote region is still content. Keep it as a body
-	// block instead of silently dropping a paragraph. Quran citations remain
-	// isolated even without a usable footnote marker.
-	w.blocks = append(w.blocks, sourceBlocksForMixedLine(line)...)
+	// An explicit separator can be followed by an unmarked continuation (for
+	// example a footnote-of-footnote). Keep it in footnote document order with
+	// an empty marker instead of moving it ahead of already parsed notes.
+	w.currentFootnote = &SourceFootnote{Text: line}
 }
 
 func (w *mixedWalker) openFootnotes() {
@@ -745,6 +745,12 @@ func AlignMixedSourceSpans(content *StructuredContent, sourceText string) bool {
 			}
 			cursor = markerStart + len(marker)
 		}
+		if note.Text == "" {
+			fnStarts[i], fnEnds[i] = cursor, cursor
+
+			continue
+		}
+
 		needle := []rune(note.Text)
 		start := runeIndexFrom(document, needle, cursor)
 		if start < 0 {

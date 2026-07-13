@@ -438,6 +438,53 @@ func TestStructureMixedContentKeepsBlankLineFootnoteContinuationInDocumentOrder(
 	}
 }
 
+func TestAlignMixedSourceSpansAllowsMarkerOnlyFootnote(t *testing.T) {
+	t.Parallel()
+
+	source := "متن (¬١) (¬٢) (¬٣)\n_________\n" +
+		"(¬١) الحاشية الأولى.\n(¬٢)\n(¬٣) الحاشية الثالثة."
+
+	got := readerutil.StructureMixedContent(source)
+	if len(got.Footnotes) != 3 || got.Footnotes[1].Marker != "(¬٢)" || got.Footnotes[1].Text != "" {
+		t.Fatalf("marker-only footnote was not retained: %+v", got.Footnotes)
+	}
+
+	if !readerutil.AlignMixedSourceSpans(&got, source) {
+		t.Fatal("marker-only footnote must not break exact source alignment")
+	}
+
+	if got.Footnotes[1].SourceCharStart != got.Footnotes[1].SourceCharEnd {
+		t.Fatalf("marker-only footnote span must be empty: %+v", got.Footnotes[1])
+	}
+}
+
+func TestStructureMixedContentKeepsLetteredAndUnmarkedFootnotesInDocumentOrder(t *testing.T) {
+	t.Parallel()
+
+	source := "متن (¬١)\n_________\n= تكملة من الصفحة السابقة.\n" +
+		"(¬١) حاشية المتن.\n_________\n(أ) التخريج الأول.\n(جـ) التخريج الثالث."
+
+	got := readerutil.StructureMixedContent(source)
+	if len(got.Blocks) != 1 {
+		t.Fatalf("unmarked note moved into body blocks: %+v", got.Blocks)
+	}
+
+	if len(got.Footnotes) != 4 {
+		t.Fatalf("footnotes = %d, want 4 (%+v)", len(got.Footnotes), got.Footnotes)
+	}
+
+	wantMarkers := []string{"", "(¬١)", "(أ)", "(جـ)"}
+	for i, marker := range wantMarkers {
+		if got.Footnotes[i].Marker != marker {
+			t.Fatalf("footnote[%d] marker = %q, want %q", i, got.Footnotes[i].Marker, marker)
+		}
+	}
+
+	if !readerutil.AlignMixedSourceSpans(&got, source) {
+		t.Fatal("lettered and unmarked footnotes must retain exact source order")
+	}
+}
+
 func TestStructureMixedContentMidLineTokens(t *testing.T) {
 	t.Parallel()
 
