@@ -206,6 +206,67 @@ func TestDeriveBookIgnoresStrayAnchors(t *testing.T) {
 	}
 }
 
+// A heading-only Shamela page is still a published source document. K-1's
+// full-catalog denominator requires at least one exact, citable book_page unit
+// instead of silently treating the structural title as an empty page.
+func TestDeriveBookHeadingOnlyPageGetsExactHTMLFallback(t *testing.T) {
+	t.Parallel()
+
+	src := entity.BookUnitSource{
+		BookID: 7, ReleaseKey: "1.0",
+		Pages: []entity.BookUnitSourcePage{{
+			PageID:      9,
+			ContentHTML: `<span data-type="title" id="toc-31">باب الإيمان</span>`,
+			ContentText: "باب الإيمان",
+		}},
+		Headings: []entity.BookUnitSourceHeading{{HeadingID: 31, PageID: 9}},
+	}
+
+	units, _, err := unitregistry.DeriveBook(&src)
+	if err != nil {
+		t.Fatalf("DeriveBook: %v", err)
+	}
+
+	if len(units) != 1 {
+		t.Fatalf("units = %+v, want one structural fallback", units)
+	}
+
+	unit := units[0]
+	if unit.HeadingID == nil || *unit.HeadingID != 31 || unit.PageID != 9 ||
+		unit.Kind != entity.UnitKindHTML || unit.Text != "باب الإيمان" ||
+		unit.SourceCharStart != 0 || unit.SourceCharEnd != len([]rune("باب الإيمان")) {
+		t.Fatalf("fallback = %+v", unit)
+	}
+}
+
+func TestDeriveBookStructuralFallbackParentsFootnoteWithoutLeakingIt(t *testing.T) {
+	t.Parallel()
+
+	src := entity.BookUnitSource{
+		BookID: 8, ReleaseKey: "1.0",
+		Pages: []entity.BookUnitSourcePage{{
+			PageID:      10,
+			ContentHTML: `<span id="toc-41">باب التوحيد</span><hr>(١) شرح الحاشية`,
+		}},
+		Headings: []entity.BookUnitSourceHeading{{HeadingID: 41, PageID: 10}},
+	}
+
+	units, _, err := unitregistry.DeriveBook(&src)
+	if err != nil {
+		t.Fatalf("DeriveBook: %v", err)
+	}
+
+	if len(units) != 2 || units[0].Kind != entity.UnitKindHTML ||
+		units[0].Text != "باب التوحيد" || strings.Contains(units[0].Text, "شرح الحاشية") {
+		t.Fatalf("units = %+v, want isolated structural fallback plus footnote", units)
+	}
+
+	if units[1].Kind != entity.UnitKindFootnote || units[1].ParentIdx != 0 ||
+		units[1].FootnoteLink != entity.FootnoteLinkFallback {
+		t.Fatalf("footnote = %+v, want fallback parent", units[1])
+	}
+}
+
 //nolint:wsl_v5 // metadata assertions stay beside each matching role
 func TestDeriveBookPublishedAssetsPropagateRoleProvenanceReviewAndGeneration(t *testing.T) {
 	t.Parallel()

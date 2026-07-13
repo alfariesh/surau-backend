@@ -75,8 +75,8 @@ VALUES ($1, 'published', now())`, bookID)
 UPDATE books
 SET units_derived_at = now(),
     units_stale_at = NULL,
-    units_derivation_profile_version = 2
-WHERE id = $1`, bookID)
+    units_derivation_profile_version = $2
+WHERE id = $1`, bookID, entity.KitabUnitDerivationProfileVersion)
 	require.NoError(t, err)
 
 	_, err = tx.Exec(ctx, `

@@ -236,6 +236,13 @@ kutipan Quran di teks biasa maupun HTML. Tokenisasi menghasilkan character map k
 awal; ia tidak mencari substring sesudah normalisasi. Jika struktur tidak dapat dipecah tanpa
 kehilangan isi, satu unit `html` menyimpan fallback tersanitasi.
 
+Profil derivasi kitab **v3** menutup temuan audit katalog nyata: halaman yang hanya berisi blok
+judul/Anchor tetap mendapat unit `html` exact (tanpa menggandakan judul pada halaman yang memiliki
+isi badan), dan footnote historis dengan parent yang sudah berpindah mengikuti satu successor
+aktif atau menjadi `unlinked` secara fail-closed bila lineage ambigu. Perubahan profil menandai
+semua buku lama stale sehingga runner F1-H wajib membuktikannya ulang; view retrieval baru membuka
+buku kembali hanya setelah profil v3 selesai.
+
 Coverage K-1 dibandingkan kembali terhadap dokumen kanonik. Setiap rentang memakai Unicode
 code point/rune yang sama di Go dan Python, harus berada di dokumen dengan hash yang sama, dan
 seluruh rune yang seharusnya tercakup wajib hadir tepat pada unit aktif.
@@ -340,6 +347,10 @@ Pantau: `surau_citable_catalog_books{state="missing"}` dan `{state="stale"}` →
 jumlahkan `surau_citable_catalog_queue_items` untuk state `pending`, `running`, dan `failed` → 0;
 `surau_citable_audit_violations` = 0, serta counter parity/fallback Book-RAG. Lihat tabel bukti
 lengkap di [`docs/data-change-playbook.md`](data-change-playbook.md) §Membaca bukti K-1.
+
+Pencarian unit memakai indeks full-text `simple` atas teks Arab tanpa harakat sebagai jalur umum
+yang bounded; trigram lama tetap dipakai hanya bila hasil exact belum memenuhi jendela evidence.
+Ini mempertahankan toleransi typo/substring tanpa membuat kata umum memindai ratusan ribu unit.
 
 ## Catatan deviasi (vs asumsi roadmap)
 

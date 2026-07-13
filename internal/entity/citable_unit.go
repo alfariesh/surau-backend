@@ -8,7 +8,7 @@ import (
 // Citable Unit registry vocabulary (roadmap/phase-1b-content-backbone.md C1/C2),
 // mirroring the CHECK constraints on citable_units / citable_unit_lineage.
 const (
-	KitabUnitDerivationProfileVersion = 2
+	KitabUnitDerivationProfileVersion = 3
 
 	UnitCorpusKitab  = "kitab"
 	UnitCorpusQuran  = "quran"
