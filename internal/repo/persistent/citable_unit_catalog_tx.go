@@ -2,7 +2,6 @@ package persistent
 
 import (
 	"context"
-	"crypto/sha256"
 	"errors"
 	"fmt"
 
@@ -13,6 +12,10 @@ import (
 )
 
 const knowledgeMentionBindingVersion = 1
+
+const catalogChecksumSize = 32
+
+var errCatalogChecksumSize = errors.New("catalog checksum has invalid size")
 
 type citableUnitCatalogTx struct {
 	tx                         pgx.Tx
@@ -207,10 +210,10 @@ func (t *citableUnitCatalogTx) SourceFingerprint(ctx context.Context, bookID int
 }
 
 func catalogSourceFingerprint(ctx context.Context, q pgxQuerier, bookID int) ([32]byte, error) {
-	var payload string
+	var digest []byte
 
 	err := q.QueryRow(ctx, `
-SELECT jsonb_build_object(
+SELECT sha256(convert_to(jsonb_build_object(
     'book', jsonb_build_array(b.id, COALESCE(b.major_release, 0), COALESCE(b.minor_release, 0), b.is_deleted, b.has_content),
     'publication', jsonb_build_array(p.status, p.updated_at),
     'pages', COALESCE((
@@ -250,15 +253,23 @@ SELECT jsonb_build_object(
         FROM book_production_projects
         WHERE book_id = b.id AND publication_status = 'published' AND workflow_status <> 'archived'
     ), '[]'::jsonb)
-)::text
+)::text, 'UTF8'))
 FROM books b
 JOIN book_publications p ON p.book_id = b.id
-WHERE b.id = $1 AND p.status = 'published'`, bookID).Scan(&payload)
+WHERE b.id = $1 AND p.status = 'published'`, bookID).Scan(&digest)
 	if err != nil {
 		return [32]byte{}, fmt.Errorf("catalog source fingerprint book %d: %w", bookID, err)
 	}
 
-	return sha256.Sum256([]byte(payload)), nil
+	if len(digest) != catalogChecksumSize {
+		return [32]byte{}, fmt.Errorf("catalog source fingerprint book %d returned %d bytes: %w",
+			bookID, len(digest), errCatalogChecksumSize)
+	}
+
+	var checksum [catalogChecksumSize]byte
+	copy(checksum[:], digest)
+
+	return checksum, nil
 }
 
 func (t *citableUnitCatalogTx) RegistryChecksum(ctx context.Context, bookID int) ([32]byte, error) {
@@ -266,10 +277,10 @@ func (t *citableUnitCatalogTx) RegistryChecksum(ctx context.Context, bookID int)
 }
 
 func catalogRegistryChecksum(ctx context.Context, q pgxQuerier, bookID int) ([32]byte, error) {
-	var payload string
+	var digest []byte
 
 	err := q.QueryRow(ctx, `
-SELECT jsonb_build_object(
+SELECT sha256(convert_to(jsonb_build_object(
     'units', COALESCE((
         SELECT jsonb_agg(jsonb_build_array(
             id, corpus, book_id, heading_id, page_id, kind, ordinal, position,
@@ -287,12 +298,20 @@ SELECT jsonb_build_object(
         JOIN citable_units u ON u.id = l.predecessor_id
         WHERE u.book_id = $1
     ), '[]'::jsonb)
-)::text`, bookID).Scan(&payload)
+)::text, 'UTF8'))`, bookID).Scan(&digest)
 	if err != nil {
 		return [32]byte{}, fmt.Errorf("catalog registry checksum book %d: %w", bookID, err)
 	}
 
-	return sha256.Sum256([]byte(payload)), nil
+	if len(digest) != catalogChecksumSize {
+		return [32]byte{}, fmt.Errorf("catalog registry checksum book %d returned %d bytes: %w",
+			bookID, len(digest), errCatalogChecksumSize)
+	}
+
+	var checksum [catalogChecksumSize]byte
+	copy(checksum[:], digest)
+
+	return checksum, nil
 }
 
 // CatalogEvidenceChecksums recomputes the live source and registry digests

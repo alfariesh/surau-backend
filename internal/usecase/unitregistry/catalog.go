@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"runtime"
 
 	"github.com/alfariesh/surau-backend/internal/entity"
 	"github.com/alfariesh/surau-backend/internal/repo"
@@ -38,9 +39,12 @@ func (uc *UseCase) ReconcileCatalogBook(
 		if err != nil {
 			return err
 		}
-		beforeRegistry, err := tx.RegistryChecksum(ctx, request.BookID)
-		if err != nil {
-			return err
+		var beforeRegistry [32]byte
+		if request.Rederive {
+			beforeRegistry, err = tx.RegistryChecksum(ctx, request.BookID)
+			if err != nil {
+				return err
+			}
 		}
 
 		source, err := tx.LoadBookSource(ctx, request.BookID)
@@ -78,6 +82,14 @@ func (uc *UseCase) ReconcileCatalogBook(
 			return err
 		}
 
+		// The first materialization of a large Shamela work can hold source,
+		// derived, snapshot, and write-plan projections at once. Release those
+		// shared text graphs before the final evidence hashes; otherwise a valid
+		// one-book atomic transaction can exceed the 2GB dev host even though the
+		// durable result itself fits comfortably in PostgreSQL.
+		report := plan.Report
+		releaseCatalogWorkingSet(&source, &snapshot, &derived, &plan)
+
 		afterSource, err := tx.SourceFingerprint(ctx, request.BookID)
 		if err != nil {
 			return err
@@ -89,12 +101,12 @@ func (uc *UseCase) ReconcileCatalogBook(
 		if err != nil {
 			return err
 		}
-		if request.Rederive && (plan.Report.Minted != 0 || plan.Report.Updated != 0 ||
-			plan.Report.Superseded != 0 || plan.Report.Tombstoned != 0 || beforeRegistry != afterRegistry) {
+		if request.Rederive && (report.Minted != 0 || report.Updated != 0 ||
+			report.Superseded != 0 || report.Tombstoned != 0 || beforeRegistry != afterRegistry) {
 			return fmt.Errorf(
 				"%w: book %d minted=%d updated=%d superseded=%d tombstoned=%d checksum_equal=%t",
-				errCatalogDeterminism, request.BookID, plan.Report.Minted, plan.Report.Updated,
-				plan.Report.Superseded, plan.Report.Tombstoned, beforeRegistry == afterRegistry,
+				errCatalogDeterminism, request.BookID, report.Minted, report.Updated,
+				report.Superseded, report.Tombstoned, beforeRegistry == afterRegistry,
 			)
 		}
 		if err := tx.CompleteQueueItem(ctx, request.JobName, request.BookID, afterSource, afterRegistry); err != nil {
@@ -102,7 +114,7 @@ func (uc *UseCase) ReconcileCatalogBook(
 		}
 
 		result = entity.CitableCatalogReconcileResult{
-			Report:            plan.Report,
+			Report:            report,
 			SourceFingerprint: afterSource,
 			RegistryChecksum:  afterRegistry,
 		}
@@ -114,4 +126,18 @@ func (uc *UseCase) ReconcileCatalogBook(
 	}
 
 	return result, nil
+}
+
+func releaseCatalogWorkingSet(
+	source *entity.BookUnitSource,
+	snapshot *entity.UnitRegistrySnapshot,
+	derived *[]DerivedUnit,
+	plan *entity.UnitReconcilePlan,
+) {
+	*source = entity.BookUnitSource{}
+	*snapshot = entity.UnitRegistrySnapshot{}
+	*derived = nil
+	*plan = entity.UnitReconcilePlan{}
+
+	runtime.GC()
 }
