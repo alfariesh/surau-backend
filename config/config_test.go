@@ -45,6 +45,40 @@ func unsetEnv(t *testing.T, key string) {
 	})
 }
 
+//nolint:paralleltest // environment mutation is process-global and must remain serial
+func TestNewConfig_BookRAGCitationDefaults(t *testing.T) {
+	setRequiredEnv(t)
+	unsetEnv(t, "RAG_BOOK_CITATION_MODE")
+	unsetEnv(t, "RAG_BOOK_LEGACY_FALLBACK_ENABLED")
+
+	cfg, err := NewConfig()
+
+	require.NoError(t, err)
+	assert.Equal(t, "unit", cfg.RAG.BookCitationMode)
+	assert.True(t, cfg.RAG.BookLegacyFallback)
+}
+
+func TestNewConfig_BookRAGCitationModeValidation(t *testing.T) {
+	setRequiredEnv(t)
+	t.Setenv("RAG_BOOK_CITATION_MODE", " mixed ")
+
+	_, err := NewConfig()
+
+	require.EqualError(t, err, "config error: RAG_BOOK_CITATION_MODE must be legacy, dual, or unit")
+}
+
+func TestNewConfig_BookRAGCitationModeNormalizes(t *testing.T) {
+	setRequiredEnv(t)
+	t.Setenv("RAG_BOOK_CITATION_MODE", " DUAL ")
+	t.Setenv("RAG_BOOK_LEGACY_FALLBACK_ENABLED", "false")
+
+	cfg, err := NewConfig()
+
+	require.NoError(t, err)
+	assert.Equal(t, "dual", cfg.RAG.BookCitationMode)
+	assert.False(t, cfg.RAG.BookLegacyFallback)
+}
+
 func TestNewConfig_EmailDefaults(t *testing.T) {
 	setRequiredEnv(t)
 	unsetEnv(t, "EMAIL_FROM_NAME")

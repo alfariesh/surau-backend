@@ -1,6 +1,8 @@
 package unitregistry
 
 import (
+	"bytes"
+	"reflect"
 	"sort"
 	"time"
 
@@ -158,7 +160,8 @@ func (b *planBuilder) matchScope(scopeKey int, dIdxs []int, actives []*entity.Ci
 	queues := make(map[string][]*entity.CitableUnit)
 
 	for _, u := range actives {
-		key := matchKey(u.Kind, u.ContentHash)
+		key := matchKey(normalizedContentRole(u.ContentRole), normalizedLanguage(u.Language), u.Kind,
+			u.ContentHash, u.ProvenanceClass, u.GenerationRunID)
 		queues[key] = append(queues[key], u)
 	}
 
@@ -167,7 +170,7 @@ func (b *planBuilder) matchScope(scopeKey int, dIdxs []int, actives []*entity.Ci
 
 	for _, di := range dIdxs {
 		d := &b.derived[di]
-		key := matchKey(d.Kind, d.ContentHash)
+		key := matchKey(d.ContentRole, d.Language, d.Kind, d.ContentHash, d.ProvenanceClass, d.GenerationRunID)
 
 		q := queues[key]
 		if len(q) == 0 {
@@ -182,7 +185,8 @@ func (b *planBuilder) matchScope(scopeKey int, dIdxs []int, actives []*entity.Ci
 		pairs = append(pairs, matchPair{derivedIdx: di, active: u})
 		b.unitIDByDerivedIdx[di] = u.ID
 
-		twinKey := rescueKey(u.Kind, u.ContentHash)
+		twinKey := rescueKey(normalizedContentRole(u.ContentRole), normalizedLanguage(u.Language),
+			u.Kind, u.Marker != nil, u.ContentHash)
 
 		if b.activeTwins[scopeKey] == nil {
 			b.activeTwins[scopeKey] = make(map[string][]*entity.CitableUnit)
@@ -242,13 +246,16 @@ func (b *planBuilder) assignGaps(
 	}
 
 	for _, u := range unmatchedActive {
-		k := gapKey{gap: gapOfPos(u.Position), class: kindClass(u.Kind)}
+		k := gapKey{gap: gapOfPos(u.Position), class: normalizedContentRole(u.ContentRole) + "\x00" +
+			normalizedLanguage(u.Language) + "\x00" + kindClass(u.Kind, u.Marker != nil)}
 		note(k)
 		removedByGap[k] = append(removedByGap[k], u)
 	}
 
 	for _, di := range unmatchedDerived {
-		k := gapKey{gap: gapOfDerived(di), class: kindClass(b.derived[di].Kind)}
+		d := &b.derived[di]
+		k := gapKey{gap: gapOfDerived(di), class: d.ContentRole + "\x00" + d.Language + "\x00" +
+			kindClass(d.Kind, d.Marker != "")}
 		note(k)
 		addedByGap[k] = append(addedByGap[k], di)
 	}
@@ -265,7 +272,7 @@ func (b *planBuilder) mintScope(scopeKey int, dIdxs []int) {
 
 	for _, di := range dIdxs {
 		d := &b.derived[di]
-		key := matchKey(d.Kind, d.ContentHash)
+		key := matchKey(d.ContentRole, d.Language, d.Kind, d.ContentHash, d.ProvenanceClass, d.GenerationRunID)
 		dupSoFar[key]++
 
 		if b.unitIDByDerivedIdx[di] != "" {
@@ -274,7 +281,7 @@ func (b *planBuilder) mintScope(scopeKey int, dIdxs []int) {
 
 		occurrence := dupSoFar[key]
 
-		id := UnitID(entity.UnitCorpusKitab, b.bookID, scopeKey, d.Kind, d.ContentHash, occurrence)
+		id := derivedUnitID(b.bookID, scopeKey, d, occurrence)
 		for {
 			_, existed := b.snap.ExistingIDs[id]
 
@@ -284,7 +291,7 @@ func (b *planBuilder) mintScope(scopeKey int, dIdxs []int) {
 			}
 
 			occurrence++
-			id = UnitID(entity.UnitCorpusKitab, b.bookID, scopeKey, d.Kind, d.ContentHash, occurrence)
+			id = derivedUnitID(b.bookID, scopeKey, d, occurrence)
 		}
 
 		b.plannedIDs[id] = struct{}{}
@@ -376,22 +383,34 @@ func (b *planBuilder) stageUpdates() {
 
 		if pair.active.Position == d.ScopePosition &&
 			samePage(pair.active.PageID, d.PageID) &&
-			sameParent(pair.active.ParentUnitID, wantParent) {
+			sameParent(pair.active.ParentUnitID, wantParent) &&
+			sameOptionalString(pair.active.HTML, optionalString(d.HTML)) &&
+			pair.active.ReviewStatus == d.ReviewStatus &&
+			reflect.DeepEqual(pair.active.ProvenanceDetail, derivedProvenanceDetail(d)) &&
+			bytes.Equal(pair.active.SourceDocumentHash, d.SourceDocumentHash) &&
+			sameRuneOffset(pair.active.SourceCharStart, d.SourceCharStart) &&
+			sameRuneOffset(pair.active.SourceCharEnd, d.SourceCharEnd) {
 			continue
 		}
 
 		pageID := d.PageID
 		update := entity.UnitPlanUpdate{
-			ID:           pair.active.ID,
-			Position:     d.ScopePosition,
-			PageID:       &pageID,
-			ParentUnitID: wantParent,
+			ID:                 pair.active.ID,
+			Position:           d.ScopePosition,
+			PageID:             &pageID,
+			ParentUnitID:       wantParent,
+			HTML:               optionalString(d.HTML),
+			ReviewStatus:       d.ReviewStatus,
+			ProvenanceDetail:   derivedProvenanceDetail(d),
+			SourceDocumentHash: d.SourceDocumentHash,
+			SourceCharStart:    new(d.SourceCharStart),
+			SourceCharEnd:      new(d.SourceCharEnd),
 		}
 		// A footnote's parent linkage changed (the update fires only when
 		// position/page/parent moved), so refresh its footnote_link label —
 		// otherwise a footnote that just became unlinked keeps 'marker'/
 		// 'fallback' and the audit footnote_parent check false-positives.
-		if d.Kind == entity.UnitKindFootnote {
+		if isDerivedFootnote(d) {
 			link := d.FootnoteLink
 			update.FootnoteLink = &link
 		}
@@ -410,7 +429,7 @@ func (b *planBuilder) rescuePass() {
 
 	for _, ref := range b.mintRefs {
 		d := &b.derived[ref.derivedIdx]
-		k := rescueKey(d.Kind, d.ContentHash)
+		k := rescueKey(d.ContentRole, d.Language, d.Kind, d.Marker != "", d.ContentHash)
 		rescueTargets[k] = append(rescueTargets[k], b.plan.Mints[ref.planIdx].ID)
 	}
 
@@ -427,7 +446,8 @@ func (b *planBuilder) rescuePass() {
 			continue
 		}
 
-		k := rescueKey(ref.unit.Kind, ref.unit.ContentHash)
+		k := rescueKey(normalizedContentRole(ref.unit.ContentRole), normalizedLanguage(ref.unit.Language),
+			ref.unit.Kind, ref.unit.Marker != nil, ref.unit.ContentHash)
 		if targets := rescueTargets[k]; len(targets) > 0 {
 			b.addEdge(ref.unit.ID, targets[0], entity.UnitLineageReasonContentMove)
 			rescueTargets[k] = targets[1:]
@@ -520,18 +540,7 @@ func mintUnit(bookID, scopeKey int, id string, ordinal, occurrence int, d *Deriv
 		html = &h
 	}
 
-	detail := map[string]any{}
-	if d.ProvenanceClass == entity.ProvenanceClassEditorial && d.EditActorID != "" {
-		detail["edit_actor_id"] = d.EditActorID
-	}
-
-	if d.ProvenanceClass == entity.ProvenanceClassSource && d.ReleaseKey != "" {
-		detail["release"] = d.ReleaseKey
-	}
-
-	if d.Kind == entity.UnitKindFootnote {
-		detail["footnote_link"] = d.FootnoteLink
-	}
+	detail := derivedProvenanceDetail(d)
 
 	bookIDValue := bookID
 
@@ -552,11 +561,49 @@ func mintUnit(bookID, scopeKey int, id string, ordinal, occurrence int, d *Deriv
 		NormalizationVersion: searchtext.ProfileVersion,
 		ContentHash:          d.ContentHash,
 		Occurrence:           occurrence,
-		Language:             "ar",
+		Language:             d.Language,
+		ContentRole:          d.ContentRole,
+		ReviewStatus:         d.ReviewStatus,
+		SourceDocumentHash:   d.SourceDocumentHash,
+		SourceCharStart:      new(d.SourceCharStart),
+		SourceCharEnd:        new(d.SourceCharEnd),
 		ProvenanceClass:      d.ProvenanceClass,
+		GenerationRunID:      d.GenerationRunID,
 		ProvenanceDetail:     detail,
 		Lifecycle:            entity.UnitLifecycleActive,
 	}
+}
+
+//nolint:wsl_v5 // provenance fields are deliberately assembled in contract order
+func derivedProvenanceDetail(d *DerivedUnit) map[string]any {
+	detail := map[string]any{}
+	if d.ProvenanceClass == entity.ProvenanceClassEditorial && d.EditActorID != "" {
+		detail["edit_actor_id"] = d.EditActorID
+	}
+	if d.ProvenanceClass == entity.ProvenanceClassSource && d.ReleaseKey != "" {
+		detail["release"] = d.ReleaseKey
+	}
+	if d.FormattingEditActorID != "" {
+		detail["format_edit_actor_id"] = d.FormattingEditActorID
+	}
+	if isDerivedFootnote(d) {
+		detail["footnote_link"] = d.FootnoteLink
+	}
+
+	return detail
+}
+
+func isDerivedFootnote(d *DerivedUnit) bool {
+	return d.Kind == entity.UnitKindFootnote || d.Marker != ""
+}
+
+func derivedUnitID(bookID, scopeKey int, d *DerivedUnit, occurrence int) string {
+	if d.ContentRole == entity.UnitContentRoleBookPage && d.Language == "ar" {
+		return UnitID(entity.UnitCorpusKitab, bookID, scopeKey, d.Kind, d.ContentHash, occurrence)
+	}
+
+	return UnitIDV2(entity.UnitCorpusKitab, bookID, scopeKey, d.ContentRole, d.Language,
+		d.Kind, d.ContentHash, occurrence)
 }
 
 func unitMatched(pairs []matchPair, id string) bool {
@@ -574,6 +621,24 @@ func samePage(a *int, b int) bool {
 }
 
 func sameParent(a, b *string) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+
+	return *a == *b
+}
+
+func optionalString(value string) *string {
+	if value == "" {
+		return nil
+	}
+
+	return &value
+}
+
+func sameRuneOffset(value *int, want int) bool { return value != nil && *value == want }
+
+func sameOptionalString(a, b *string) bool {
 	if a == nil || b == nil {
 		return a == nil && b == nil
 	}

@@ -4,8 +4,8 @@ Panduan WAJIB untuk setiap perubahan skema/data yang menyentuh banyak baris atau
 (book_pages 295rb+ baris, book_headings 182rb+, dst.) — supaya endpoint publik TIDAK PERNAH
 down dan pekerjaan besar bisa dihentikan/dilanjutkan tanpa kehilangan progres.
 
-Konsumen pertama: backfill `authors-name-search` (sesi F1-C/F1-H). Konsumen berikutnya yang
-sudah direncanakan: backfill pilot Citable Unit (B-1, roadmap/phase-1b-content-backbone.md).
+Konsumen pertama: backfill `authors-name-search` (sesi F1-C/F1-H). Registry Citable Unit lalu
+memakai pola yang sama untuk pilot B-1, Quran Q-2, dan materialisasi seluruh katalog kitab K-1.
 
 > **Nota supervisi:** job backfill dijalankan MANUAL sebagai CLI (bukan loop app F1-C) —
 > aspek "supervisi" yang relevan untuk job one-shot dipenuhi oleh: checkpoint resumable,
@@ -114,6 +114,35 @@ Menulis job baru = implement interface `backfill.Job` (`internal/backfill/jobs.g
 - Live test `TestLive*` (SURAU_LIVE_PG) untuk job baru = bukti pause/resume-nya, contoh:
   `internal/backfill/backfill_live_test.go`.
 
+### Varian K-1: antrean tahan-restart per buku
+
+K-1 menambahkan `citable_unit_catalog_queue` di bawah checkpoint F1-H. Checkpoint
+`backfill_jobs` tetap mengendalikan satu proses, pause, dan cursor. Antrean tambahan menyimpan
+hasil setiap buku agar proses yang mati tidak mengulang seluruh katalog.
+
+| Status item | Arti dan tindakan operator |
+|---|---|
+| `pending` | Menunggu giliran. Rerun melanjutkan dari item ini. |
+| `running` | Sedang diproses. Saat proses lama mati, runner tunggal berikutnya mengembalikannya ke `pending`. |
+| `completed` | Satu buku sudah commit atomik dan memiliki `source_fingerprint`, `result_checksum`, waktu, serta jumlah percobaan. |
+| `failed` | Buku gagal dan alasan disimpan. Periksa alasan, perbaiki sumber/bug, lalu jalankan kembali job; item gagal dicoba lagi sekali pada awal resume. |
+| `cancelled` | Buku tidak lagi published atau sudah dihapus. Bukti antreannya disimpan, tetapi buku tidak diproses. Bila dipublish lagi, delta run akan mengantrekannya kembali. |
+
+Satu buku adalah satu unit transaksi `REPEATABLE READ` dengan advisory lock per buku. Deriver
+membaca fingerprint sumber sebelum dan sesudah pekerjaan; perubahan halaman/aset di tengah jalan
+membatalkan commit. Karena itu restart tidak dapat meninggalkan separuh halaman atau separuh
+binding `knowledge_mentions`.
+
+Urutan antrean K-1 mengikuti O-4-2 dan tidak boleh diubah oleh kebetulan urutan SQL:
+
+1. kategori 3 harus bernama `التفسير` dan kategori 7 harus bernama `شروح الحديث`;
+2. jumlah pembaca aktif terbanyak, lalu aktivitas `reading_progress` terbaru;
+3. `book_id` terkecil sebagai pemutus seri deterministik.
+
+Runner menolak mulai jika nama kategori 3/7 drift. Targetnya selalu dihitung ulang dari
+`book_publications.status='published' AND books.is_deleted=false`; License Status tidak mengubah
+denominator internal ini. Buku restricted tetap dimaterialisasi, lalu proyeksi publik menolaknya.
+
 ## 5. Menjalankan di VPS (dev dulu, lalu prod)
 
 Binary `backfill` ikut di image app (Dockerfile). Jalankan dari direktori deploy:
@@ -135,8 +164,49 @@ sudo docker compose --env-file .env.production -f docker-compose.prod.yml \
 # tabel sangat besar: naikkan -sleep (mis. 500ms) atau kecilkan -chunk-size
 ```
 
+Materialisasi dan pembuktian K-1 dijalankan berurutan. `-restart` pada job katalog berarti
+"hitung ulang target dan proses delta", bukan menghapus Citable Unit yang sudah selesai:
+
+```sh
+# Gelombang 1 O-4-2: hanya kategori 3 التفسير dan 7 شروح الحديث.
+sudo docker compose --env-file .env.production -f docker-compose.prod.yml \
+  exec app /backfill -job=citable-units-kitab-catalog \
+    -catalog-priority-only -chunk-size=1 -sleep=200ms -restart
+
+# Gelombang 2: buka queue yang sama untuk sisa katalog; unit wave 1 tidak diulang.
+sudo docker compose --env-file .env.production -f docker-compose.prod.yml \
+  exec app /backfill -job=citable-units-kitab-catalog \
+    -chunk-size=1 -sleep=200ms -restart
+
+# Pass kedua seluruh katalog. Setiap buku wajib nol mutasi dan checksum identik.
+sudo docker compose --env-file .env.production -f docker-compose.prod.yml \
+  exec app /backfill -job=citable-units-kitab-catalog-rederive \
+    -chunk-size=1 -sleep=200ms -restart
+
+# Bukti machine-readable. Exit 0 hanya jika seluruh gerbang K-1 lulus.
+sudo docker compose --env-file .env.production -f docker-compose.prod.yml \
+  exec app /backfill -verify-citable-catalog
+```
+
+- **Pause/resume:** kirim SIGINT/SIGTERM atau tekan Ctrl-C, lalu jalankan perintah yang sama.
+  Buku yang sudah commit tidak diulang.
+- **Retry gagal:** baca `error` pada `citable_unit_catalog_queue`, perbaiki penyebabnya, lalu rerun.
+  Jangan mengubah status queue dengan SQL manual.
+- **Crash setelah commit buku:** item sudah `completed`; rerun mengambil item `pending` berikutnya.
+- **Delta setelah job pernah completed:** jalankan job katalog dengan `-restart`. Hanya buku baru,
+  stale, profil lama, atau fingerprint hasil yang berubah yang masuk antrean lagi.
+- **Buku ditarik dari katalog:** runner memberi status `cancelled`; itu bukan kegagalan coverage
+  karena buku tersebut juga keluar dari denominator published saat verifier berikutnya.
+
 Pantau: Grafana → Prometheus query `surau_backfill_rows_done{job="..."}` vs `rows_total`;
 `surau_backfill_pending_rows` harus turun ke 0 dan TETAP 0 (drift = jalur tulis baru bocor).
+
+Untuk K-1, pantau juga metrik tanpa label ID buku/unit:
+
+- `surau_citable_catalog_books{state="target|materialized|missing|stale"}`;
+- `surau_citable_catalog_queue_items{job,state}`;
+- `surau_citable_catalog_queue_attempts{job}`;
+- `surau_citable_catalog_completed_duration_seconds{job}`.
 
 ## 6. Verifikasi & rollback
 
@@ -147,6 +217,28 @@ Pantau: Grafana → Prometheus query `surau_backfill_rows_done{job="..."}` vs `r
 - Rollback SWITCH = deploy sebelumnya (lengan lama masih ada — itu alasan fallback aditif).
 - CONTRACT hanya setelah ≥1 siklus soak tanpa alarm; sesudah contract, rollback = restore
   (mahal) — karena itu paling akhir.
+
+### Membaca bukti K-1
+
+`/backfill -verify-citable-catalog` mencetak satu objek JSON bertimestamp oleh sistem pencatat
+operasi. Simpan output mentah bersama SHA deploy. Arti field penting:
+
+| Bukti | Syarat lulus |
+|---|---|
+| `target_books`, `materialized_books`, `missing_books`, `stale_books` | `target_books=N`, `materialized_books=N`, `missing_books=0`, `stale_books=0`; N dihitung saat run, bukan angka yang ditulis tangan. |
+| `uncovered_pages`, `target_assets`, `materialized_assets`, `uncovered_assets` | Semua halaman efektif nonkosong dan aset translation/summary published terwakili; uncovered wajib 0. |
+| `canonical_documents`, `canonical_covered_runes`, `uncovered_canonical_runes`, `unexpected_canonical_spans` | Rentang karakter memakai Unicode code point/rune yang sama dengan extractor; uncovered dan unexpected wajib 0. |
+| `determinism_verified_books` | Sama dengan N setelah pass rederive; setiap buku harus `minted=updated=superseded=tombstoned=0` dan checksum registry sama. |
+| `parity_target_books`, `parity_verified_books`, `parity_mismatches`, `unit_anchors_unresolved` | Stub LLM deterministik menguji satu sitasi per buku public-retrievable; verified=target, mismatch=0, Anchor unit unresolved=0. |
+| `mention_bindings` | Ringkasan `bound|pending|stale|ambiguous|cross_unit|missing`; mention approved tanpa Anchor yang resolve tetap dihitung sebagai pelanggaran audit. |
+| `search_samples`, `search_p95_ms`, `search_within_target` | Ada sampel dan p95 pencarian unit <400 ms. |
+| `audit` | Semua pelanggaran harus 0, termasuk projection menggantung, Anchor/lineage, Cross-Reference, approved mention, mismatch span, dan machine-unreviewed eligible. |
+| `queue_pending`, `passed` | Queue aktif 0 dan `passed=true`. CLI keluar non-zero bila salah satu gerbang gagal. |
+
+Sitasi respons RAG bersifat ephemeral, jadi tidak diaudit sebagai histori palsu. Runtime validator,
+golden eval, SSE smoke, counter parity/fallback, dan parity full-catalog pada verifier adalah
+buktinya. Audit terjadwal tetap memeriksa seluruh proyeksi persisten dan memicu alarm Telegram
+bila satu saja pelanggaran bernilai >0.
 
 ### Catatan khusus registry Citable Unit (B-1)
 
@@ -203,6 +295,8 @@ versi non-NULL sebagai target buta. Semantik, kolom, dan gerbang Go-Python lengk
 | 4 | `citable-units-quran` | citable_units + quran_citable_unit_bindings | Q-2 initial/stale-only; atomik satu surah, cursor circular, aman di-resume | Importer langsung reconcile surah tersentuh; trigger `units_stale_at` + compare-and-set source adalah recovery bila hook gagal/race |
 | 5 | `citable-units-quran-rederive` | citable_units + quran_citable_unit_bindings | Drill determinisme semua surah derived; live test membuktikan re-run tidak menambah unit | Jalur pemulihan sesudah perubahan deriver non-primer; drift teks primer gagal tertutup |
 | 6 | `quran-page-navigation-v1` | quran_ayahs.page_number | Q-2 rollout: isi NULL dari peta QPC Hafs v1 beku (6.236/6.236 ayat, halaman 1–604), resumable dan tak menimpa nilai existing | Jalankan sebelum `citable-units-quran -restart`; update page menandai surah stale lalu reconcile memperbarui `page_id` tanpa re-mint |
+| 7 | `citable-units-kitab-catalog` | `citable_units`, `citable_unit_lineage`, `knowledge_mentions`, `citable_unit_catalog_queue` | K-1: seluruh denominator kitab published; delta-aware, satu buku atomik, priority wave O-4-2, exact mention binding | License Status tidak mengurangi target internal; proyeksi publik menerapkan B-4 secara terpisah |
+| 8 | `citable-units-kitab-catalog-rederive` | registry + queue checksum | K-1 determinism pass seluruh N buku | Lulus hanya jika nol mutasi dan checksum sama dengan hasil catalog untuk setiap buku |
 
 Q-2 juga memiliki drill migrasi populated khusus di CI:
 `TestQuranCitableUnitMigrationDrill`. Drill menjalankan core migration `up→down→up` sambil menjaga

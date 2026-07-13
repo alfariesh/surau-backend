@@ -68,6 +68,59 @@ func TestEvaluateCasePassesExpectedCitation(t *testing.T) {
 	assert.Equal(t, "full_tree", result.Trace.RetrievalMode)
 }
 
+func TestValidateResponseRequiresUnitCitationLocators(t *testing.T) {
+	t.Parallel()
+
+	unitID := "unit-1"
+	unitAnchor := "kitab/797/h/11/u/42"
+	testCase := GoldenCase{BookID: 797, RequireUnitCitations: true}
+
+	errs, _ := validateResponse(testCase, ragResponse{
+		BookID: 797,
+		Answer: "Jawaban [1].",
+		Citations: []Citation{{
+			Ref: "1", BookID: 797, UnitID: &unitID, UnitAnchor: &unitAnchor,
+		}},
+	}, false)
+	assert.Empty(t, errs)
+
+	errs, _ = validateResponse(testCase, ragResponse{
+		BookID:    797,
+		Answer:    "Jawaban [1].",
+		Citations: []Citation{{Ref: "1", BookID: 797}},
+	}, false)
+	assert.Contains(t, errs, "citation[0] missing unit_id/unit_anchor")
+}
+
+func TestEvaluateCaseRequiresUnitAnchorToResolveToCitationUnit(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		if r.URL.Path == "/v1/anchors/resolve" {
+			assert.Equal(t, "kitab/797/h/11/u/42", r.URL.Query().Get("anchor"))
+			fmt.Fprint(w, `{"boundaries":[{"active_targets":[{"unit_id":"unit-1"}]}]}`)
+
+			return
+		}
+
+		fmt.Fprint(w, `{
+			"book_id":797,
+			"answer":"Jawaban [1].",
+			"citations":[{"ref":"1","book_id":797,"heading_id":11,"page_id":12,"anchor":"toc-11","quote":"x","url":"/x","unit_id":"unit-1","unit_anchor":"kitab/797/h/11/u/42"}],
+			"trace":{"retrieval_mode":"full_tree","tree_llm_calls":1,"repaired":false}
+		}`)
+	}))
+	defer server.Close()
+
+	result := EvaluateCase(context.Background(), server.Client(), server.URL, GoldenCase{
+		Name: "unit_anchor", BookID: 797, Question: "question", RequireUnitCitations: true,
+	}, false)
+
+	assert.True(t, result.Passed, result.Errors)
+}
+
 func TestEvaluateCaseFailsWrongPage(t *testing.T) {
 	t.Parallel()
 

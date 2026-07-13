@@ -62,6 +62,12 @@ func recordCitableAudit(report *entity.CitableAuditReport) int64 {
 	citableAuditViolations.WithLabelValues("footnote_parent").Set(float64(v.FootnoteParent))
 	citableAuditViolations.WithLabelValues("quran_binding").Set(float64(v.QuranBinding))
 	citableAuditViolations.WithLabelValues("quran_interpretive").Set(float64(v.QuranInterpretive))
+	citableAuditViolations.WithLabelValues("interpretive_safety").Set(float64(v.InterpretiveSafety))
+	citableAuditViolations.WithLabelValues("rag_projection_dangling").Set(float64(v.RAGProjectionDangling))
+	citableAuditViolations.WithLabelValues("approved_mention_anchor").Set(float64(v.ApprovedMentionAnchor))
+	citableAuditViolations.WithLabelValues("mention_unit_dangling").Set(float64(v.MentionUnitDangling))
+	citableAuditViolations.WithLabelValues("mention_binding_mismatch").Set(float64(v.MentionBindingMismatch))
+	citableAuditViolations.WithLabelValues("cross_reference_anchor").Set(float64(v.CrossReferenceAnchor))
 
 	citableAuditInfo.WithLabelValues("stale_books").Set(float64(report.Info.StaleBooks))
 	citableAuditInfo.WithLabelValues("stale_quran_surahs").Set(float64(report.Info.StaleQuranSurahs))
@@ -77,7 +83,9 @@ func recordCitableAudit(report *entity.CitableAuditReport) int64 {
 	}
 
 	return v.BookGone + v.SupersededNoSuccessor + v.ActiveWithSuccessor + v.LineageCycle +
-		v.HashMismatch + v.AnchorMalformed + v.FootnoteParent + v.QuranBinding + v.QuranInterpretive
+		v.HashMismatch + v.AnchorMalformed + v.FootnoteParent + v.QuranBinding + v.QuranInterpretive +
+		v.InterpretiveSafety + v.RAGProjectionDangling + v.ApprovedMentionAnchor +
+		v.MentionUnitDangling + v.MentionBindingMismatch + v.CrossReferenceAnchor
 }
 
 // recordLoopRun stamps one background-loop pass; call with the pass error.
@@ -311,6 +319,183 @@ ORDER BY job_name`)
 
 func registerBackfillMetrics(pool *pgxpool.Pool) {
 	prometheus.MustRegister(newBackfillCollector(pool))
+	prometheus.MustRegister(newCitableCatalogCollector(pool))
+}
+
+type citableCatalogSnapshot struct {
+	target       float64
+	materialized float64
+	missing      float64
+	stale        float64
+	queue        map[string]float64
+	attempts     map[string]float64
+	duration     map[string]float64
+}
+
+// citableCatalogCollector is the K-1 proof surface: one bounded set of labels
+// reports raw-published coverage and durable queue outcomes without book ids.
+type citableCatalogCollector struct {
+	pool *pgxpool.Pool
+
+	mu       sync.Mutex
+	fetched  time.Time
+	snapshot citableCatalogSnapshot
+
+	coverageDesc *prometheus.Desc
+	queueDesc    *prometheus.Desc
+	attemptsDesc *prometheus.Desc
+	durationDesc *prometheus.Desc
+}
+
+func newCitableCatalogCollector(pool *pgxpool.Pool) *citableCatalogCollector {
+	return &citableCatalogCollector{
+		pool: pool,
+		coverageDesc: prometheus.NewDesc(
+			"surau_citable_catalog_books",
+			"Raw-published kitab catalog coverage by bounded state.",
+			[]string{"state"}, nil,
+		),
+		queueDesc: prometheus.NewDesc(
+			"surau_citable_catalog_queue_items",
+			"Durable K-1 catalog queue items by job and state.",
+			[]string{"job", "state"}, nil,
+		),
+		attemptsDesc: prometheus.NewDesc(
+			"surau_citable_catalog_queue_attempts",
+			"Total durable K-1 catalog queue attempts by job.",
+			[]string{"job"}, nil,
+		),
+		durationDesc: prometheus.NewDesc(
+			"surau_citable_catalog_completed_duration_seconds",
+			"Cumulative duration of completed K-1 catalog items by job.",
+			[]string{"job"}, nil,
+		),
+	}
+}
+
+func (c *citableCatalogCollector) Describe(ch chan<- *prometheus.Desc) {
+	for _, desc := range []*prometheus.Desc{c.coverageDesc, c.queueDesc, c.attemptsDesc, c.durationDesc} {
+		ch <- desc
+	}
+}
+
+func (c *citableCatalogCollector) Collect(ch chan<- prometheus.Metric) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if time.Since(c.fetched) > backfillStatsCacheTTL {
+		if snapshot, err := c.fetch(); err == nil {
+			c.snapshot = snapshot
+			c.fetched = time.Now()
+		}
+	}
+
+	coverage := map[string]float64{
+		"target":       c.snapshot.target,
+		"materialized": c.snapshot.materialized,
+		"missing":      c.snapshot.missing,
+		"stale":        c.snapshot.stale,
+	}
+	for state, value := range coverage {
+		ch <- prometheus.MustNewConstMetric(c.coverageDesc, prometheus.GaugeValue, value, state)
+	}
+
+	for key, value := range c.snapshot.queue {
+		job, state, ok := splitMetricKey(key)
+		if ok {
+			ch <- prometheus.MustNewConstMetric(c.queueDesc, prometheus.GaugeValue, value, job, state)
+		}
+	}
+
+	for job, value := range c.snapshot.attempts {
+		ch <- prometheus.MustNewConstMetric(c.attemptsDesc, prometheus.GaugeValue, value, job)
+	}
+
+	for job, value := range c.snapshot.duration {
+		ch <- prometheus.MustNewConstMetric(c.durationDesc, prometheus.GaugeValue, value, job)
+	}
+}
+
+//nolint:funlen // coverage and queue metric projections remain one consistent snapshot
+func (c *citableCatalogCollector) fetch() (citableCatalogSnapshot, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), backfillQueryTimeout)
+	defer cancel()
+
+	snapshot := citableCatalogSnapshot{
+		queue:    map[string]float64{},
+		attempts: map[string]float64{},
+		duration: map[string]float64{},
+	}
+
+	err := c.pool.QueryRow(ctx, `
+SELECT COUNT(*)::float8,
+       COUNT(*) FILTER (
+           WHERE b.units_derived_at IS NOT NULL
+             AND b.units_stale_at IS NULL
+             AND b.units_derivation_profile_version = $1
+             AND EXISTS (
+                 SELECT 1 FROM citable_units unit
+                 WHERE unit.book_id = b.id
+                   AND unit.lifecycle = 'active'
+                   AND unit.content_role = 'book_page'
+             )
+       )::float8,
+       COUNT(*) FILTER (WHERE b.units_derived_at IS NULL)::float8,
+       COUNT(*) FILTER (
+           WHERE b.units_stale_at IS NOT NULL
+              OR b.units_derivation_profile_version IS DISTINCT FROM $1
+       )::float8
+FROM book_publications publication
+JOIN books b ON b.id = publication.book_id
+WHERE publication.status = 'published' AND b.is_deleted = FALSE`, entity.KitabUnitDerivationProfileVersion).
+		Scan(&snapshot.target, &snapshot.materialized, &snapshot.missing, &snapshot.stale)
+	if err != nil {
+		return snapshot, fmt.Errorf("citable catalog metrics: coverage: %w", err)
+	}
+
+	rows, err := c.pool.Query(ctx, `
+SELECT job_name,
+       status,
+       COUNT(*)::float8,
+       SUM(attempts)::float8,
+       COALESCE(SUM(EXTRACT(EPOCH FROM (finished_at - started_at)))
+           FILTER (WHERE status = 'completed'), 0)::float8
+FROM citable_unit_catalog_queue
+GROUP BY job_name, status
+ORDER BY job_name, status`)
+	if err != nil {
+		return snapshot, fmt.Errorf("citable catalog metrics: queue: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var job, state string
+
+		var count, attempts, duration float64
+		if err := rows.Scan(&job, &state, &count, &attempts, &duration); err != nil {
+			return snapshot, fmt.Errorf("citable catalog metrics: scan: %w", err)
+		}
+
+		snapshot.queue[job+"\x00"+state] = count
+		snapshot.attempts[job] += attempts
+		snapshot.duration[job] += duration
+	}
+
+	if err := rows.Err(); err != nil {
+		return snapshot, fmt.Errorf("citable catalog metrics: rows: %w", err)
+	}
+
+	return snapshot, nil
+}
+
+func splitMetricKey(key string) (left, right string, ok bool) {
+	for i := range key {
+		if key[i] == 0 {
+			return key[:i], key[i+1:], true
+		}
+	}
+
+	return "", "", false
 }
 
 const (

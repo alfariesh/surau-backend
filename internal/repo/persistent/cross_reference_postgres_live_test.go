@@ -408,7 +408,8 @@ SELECT quran_legacy_frozen FROM cross_reference_registry_state WHERE id = TRUE`)
 		_, err := pg.Pool.Exec(ctx, `DELETE FROM users WHERE id = $1`, actorID)
 		var pgErr *pgconn.PgError
 		require.ErrorAs(t, err, &pgErr)
-		assert.Equal(t, "23001", pgErr.Code)
+		assert.Contains(t, []string{"23001", "23503"}, pgErr.Code,
+			"append-only evidence trigger or a newer evidence FK must prevent actor deletion")
 	})
 }
 

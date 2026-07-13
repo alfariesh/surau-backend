@@ -13,7 +13,10 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-const arabicSearchMarks = "\u064b\u064c\u064d\u064e\u064f\u0650\u0651\u0652\u0653\u0654\u0655\u0670\u0640"
+const (
+	arabicSearchMarks         = "\u064b\u064c\u064d\u064e\u064f\u0650\u0651\u0652\u0653\u0654\u0655\u0670\u0640"
+	maxCitationLocatorMatches = 2
+)
 
 // BookRAGRepo provides retrieval queries for PageIndex-like book RAG.
 type BookRAGRepo struct {
@@ -23,6 +26,69 @@ type BookRAGRepo struct {
 // NewBookRAGRepo creates a book RAG repository.
 func NewBookRAGRepo(pg *postgres.Postgres) *BookRAGRepo {
 	return &BookRAGRepo{pg}
+}
+
+// CheckRAGUnitMaterialization fails before any LLM call when a published book
+// cannot safely use the unit read path. This makes legacy fallback whole-request
+// and limited to the two rollout states declared here.
+//
+//nolint:wsl_v5 // ordered fail-closed materialization gates are intentionally adjacent
+func (r *BookRAGRepo) CheckRAGUnitMaterialization(ctx context.Context, bookID int) error {
+	const sqlText = `
+SELECT b.units_derived_at IS NOT NULL,
+       b.units_stale_at IS NULL
+       AND COALESCE(b.units_derivation_profile_version = $2, false),
+       EXISTS (
+           SELECT 1
+           FROM citable_units materialized
+           WHERE materialized.book_id = b.id
+             AND materialized.corpus = 'kitab'
+             AND materialized.lifecycle = 'active'
+             AND materialized.content_role = 'book_page'
+       ),
+       EXISTS (
+           SELECT 1
+           FROM public_book_interpretive_citable_units cu
+           WHERE cu.book_id = b.id
+             AND cu.content_role = 'book_page'
+       )
+FROM books b
+JOIN public_book_publications p ON p.book_id = b.id
+WHERE b.id = $1 AND b.is_deleted = false`
+
+	var derived, current, hasMaterializedUnits, hasEligibleUnits bool
+	if err := r.Pool.QueryRow(
+		ctx,
+		sqlText,
+		bookID,
+		entity.KitabUnitDerivationProfileVersion,
+	).Scan(&derived, &current, &hasMaterializedUnits, &hasEligibleUnits); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return entity.ErrBookNotFound
+		}
+
+		return fmt.Errorf("BookRAGRepo - CheckRAGUnitMaterialization - QueryRow: %w", err)
+	}
+
+	if !derived {
+		return entity.ErrRAGUnitMaterializationIncomplete
+	}
+
+	if !current {
+		return entity.ErrRAGUnitMaterializationStale
+	}
+	if !hasMaterializedUnits {
+		return entity.ErrRAGUnitMaterializationIncomplete
+	}
+
+	if !hasEligibleUnits {
+		// This is provenance/kind denial, not a rollout gap. Never route it
+		// through legacy pages, which could reintroduce Quran quotes or pending
+		// machine text into interpretive retrieval.
+		return entity.ErrRAGEvidenceNotFound
+	}
+
+	return nil
 }
 
 // GetRAGBookDocument returns published book metadata for QA.
@@ -250,6 +316,149 @@ LIMIT $5`
 	return sources, nil
 }
 
+// GetRAGUnitSources returns one structurally eligible Citable Unit per source
+// block. Public visibility and B-4's grandfather/restricted policy are owned by
+// public_book_interpretive_citable_units, not reimplemented here.
+//
+//nolint:funlen,wsl_v5 // the auditable SQL projection and its row mapping intentionally stay adjacent
+func (r *BookRAGRepo) GetRAGUnitSources(
+	ctx context.Context,
+	bookID int,
+	headingIDs []int,
+	focusPageIDs []int,
+	lang string,
+	maxPages int,
+) ([]entity.RAGPageSource, error) {
+	if len(headingIDs) == 0 || maxPages <= 0 {
+		return []entity.RAGPageSource{}, nil
+	}
+
+	const sqlText = `
+WITH selected_ranges AS (
+    SELECT hr.start_page_id,
+           hr.end_page_id,
+           GREATEST(hr.start_page_id - 1, 1) AS context_start_page_id
+    FROM book_heading_ranges hr
+    WHERE hr.book_id = $1
+      AND hr.heading_id = ANY($2)
+),
+candidate_pages AS (
+    SELECT cu.page_id,
+           min(CASE
+               WHEN cu.page_id = ANY($3) THEN 0
+               WHEN cu.page_id < selected.start_page_id THEN 1
+               ELSE 2
+           END) AS focus_rank
+    FROM selected_ranges selected
+    JOIN public_book_interpretive_citable_units cu
+      ON cu.book_id = $1
+     AND cu.page_id BETWEEN selected.context_start_page_id AND selected.end_page_id
+    WHERE cu.content_role = 'book_page'
+      AND cu.page_id IS NOT NULL
+    GROUP BY cu.page_id
+),
+chosen_pages AS (
+    SELECT page_id, focus_rank
+    FROM candidate_pages
+    WHERE page_id IS NOT NULL
+    ORDER BY focus_rank ASC, page_id ASC
+    LIMIT $4
+)
+SELECT cu.id::text,
+       cu.anchor,
+       cu.book_id,
+       cu.heading_id,
+       COALESCE(he.content, h.content) AS heading_title,
+       hr.start_page_id,
+       hr.end_page_id,
+       cu.page_id,
+       bp.part,
+       bp.printed_page,
+       bp.number,
+       cu.text
+FROM public_book_interpretive_citable_units cu
+JOIN chosen_pages chosen ON chosen.page_id = cu.page_id
+JOIN book_headings h
+  ON h.book_id = cu.book_id
+ AND h.heading_id = cu.heading_id
+ AND h.is_deleted = false
+JOIN book_heading_ranges hr
+  ON hr.book_id = h.book_id
+ AND hr.heading_id = h.heading_id
+JOIN book_pages bp
+  ON bp.book_id = cu.book_id
+ AND bp.page_id = cu.page_id
+ AND bp.is_deleted = false
+LEFT JOIN book_heading_edits he
+  ON he.book_id = h.book_id
+ AND he.heading_id = h.heading_id
+ AND he.status = 'published'
+WHERE cu.book_id = $1
+  AND cu.content_role = 'book_page'
+  AND cu.heading_id IS NOT NULL
+ORDER BY chosen.focus_rank ASC,
+         cu.page_id ASC,
+         cu.position ASC,
+         cu.ordinal ASC`
+
+	headingIDs32, err := int32Slice("heading IDs", headingIDs)
+	if err != nil {
+		return nil, fmt.Errorf("BookRAGRepo - GetRAGUnitSources - heading IDs: %w", err)
+	}
+
+	focusPageIDs32, err := int32Slice("focus page IDs", focusPageIDs)
+	if err != nil {
+		return nil, fmt.Errorf("BookRAGRepo - GetRAGUnitSources - focus page IDs: %w", err)
+	}
+
+	rows, err := r.Pool.Query(ctx, sqlText, bookID, headingIDs32, focusPageIDs32, maxPages)
+	if err != nil {
+		return nil, fmt.Errorf("BookRAGRepo - GetRAGUnitSources - Query: %w", err)
+	}
+	defer rows.Close()
+
+	sources := make([]entity.RAGPageSource, 0, maxPages)
+
+	for rows.Next() {
+		var (
+			source                    entity.RAGPageSource
+			unitID, unitAnchor        string
+			part, printedPage, number sql.NullString
+		)
+
+		if err = rows.Scan(
+			&unitID,
+			&unitAnchor,
+			&source.BookID,
+			&source.HeadingID,
+			&source.HeadingTitle,
+			&source.StartPageID,
+			&source.EndPageID,
+			&source.PageID,
+			&part,
+			&printedPage,
+			&number,
+			&source.ContentText,
+		); err != nil {
+			return nil, fmt.Errorf("BookRAGRepo - GetRAGUnitSources - Scan: %w", err)
+		}
+
+		source.UnitID = &unitID
+		source.UnitAnchor = &unitAnchor
+		source.Part = nullableString(part)
+		source.PrintedPage = nullableString(printedPage)
+		source.Number = nullableString(number)
+		source.Anchor = fmt.Sprintf("toc-%d", source.HeadingID)
+		source.URL = fmt.Sprintf("/v1/books/%d/toc/%d/read?lang=%s", source.BookID, source.HeadingID, lang)
+		sources = append(sources, source)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("BookRAGRepo - GetRAGUnitSources - rows.Err: %w", err)
+	}
+
+	return sources, nil
+}
+
 // SearchRAGPages returns lexical fallback hits across headings, pages, and translations.
 func (r *BookRAGRepo) SearchRAGPages(
 	ctx context.Context,
@@ -337,6 +546,7 @@ LIMIT $4`
 	defer rows.Close()
 
 	results := make([]entity.RAGSearchResult, 0, limit)
+
 	for rows.Next() {
 		var result entity.RAGSearchResult
 		if err = rows.Scan(&result.HeadingID, &result.PageID, &result.Score); err != nil {
@@ -350,6 +560,128 @@ LIMIT $4`
 	}
 
 	return results, nil
+}
+
+// SearchRAGUnits returns lexical hits only from the structural interpretive
+// view; machine-unreviewed units and Quran quotes are impossible to select.
+func (r *BookRAGRepo) SearchRAGUnits(
+	ctx context.Context,
+	bookID int,
+	query string,
+	limit int,
+) ([]entity.RAGSearchResult, error) {
+	query = stripArabicSearchMarks(strings.TrimSpace(query))
+	if query == "" || limit <= 0 {
+		return []entity.RAGSearchResult{}, nil
+	}
+
+	const sqlText = `
+SELECT cu.heading_id,
+       cu.page_id,
+       max(GREATEST(
+           similarity(cu.text, $2),
+	       similarity(translate(cu.text, 'ًٌٍَُِّْٰٕٓٔـ', ''), $2)
+       )) AS score
+FROM public_book_interpretive_citable_units cu
+WHERE cu.book_id = $1
+  AND cu.content_role = 'book_page'
+  AND cu.heading_id IS NOT NULL
+  AND cu.page_id IS NOT NULL
+  AND (
+	  cu.text ILIKE '%' || $4 || '%'
+      OR cu.text % $2
+	  OR translate(cu.text, 'ًٌٍَُِّْٰٕٓٔـ', '') ILIKE '%' || $4 || '%'
+	  OR translate(cu.text, 'ًٌٍَُِّْٰٕٓٔـ', '') % $2
+  )
+GROUP BY cu.heading_id, cu.page_id
+ORDER BY score DESC, cu.page_id ASC, cu.heading_id ASC
+LIMIT $3`
+
+	rows, err := r.Pool.Query(ctx, sqlText, bookID, query, limit, escapeLike(query))
+	if err != nil {
+		return nil, fmt.Errorf("BookRAGRepo - SearchRAGUnits - Query: %w", err)
+	}
+	defer rows.Close()
+
+	results := make([]entity.RAGSearchResult, 0, limit)
+
+	for rows.Next() {
+		var result entity.RAGSearchResult
+		if err = rows.Scan(&result.HeadingID, &result.PageID, &result.Score); err != nil {
+			return nil, fmt.Errorf("BookRAGRepo - SearchRAGUnits - rows.Scan: %w", err)
+		}
+
+		results = append(results, result)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("BookRAGRepo - SearchRAGUnits - rows.Err: %w", err)
+	}
+
+	return results, nil
+}
+
+// ResolveRAGUnitCitation maps a legacy page quote only when it is contained
+// verbatim in exactly one current eligible unit. Ambiguous and cross-unit
+// quotes deliberately return Found=false rather than a guessed Anchor.
+//
+//nolint:wsl_v5 // scan, cardinality, and materialization checks form one exact resolver
+func (r *BookRAGRepo) ResolveRAGUnitCitation(
+	ctx context.Context,
+	bookID int,
+	headingID int,
+	pageID int,
+	quote string,
+) (entity.RAGUnitLocator, error) {
+	quote = strings.TrimSpace(quote)
+	if quote == "" {
+		return entity.RAGUnitLocator{}, nil
+	}
+
+	const sqlText = `
+SELECT cu.id::text, cu.anchor
+FROM public_book_interpretive_citable_units cu
+WHERE cu.book_id = $1
+  AND cu.heading_id = $2
+  AND cu.page_id = $3
+  AND cu.content_role = 'book_page'
+  AND strpos(cu.text, $4) > 0
+ORDER BY cu.position ASC, cu.ordinal ASC
+LIMIT 2`
+
+	rows, err := r.Pool.Query(ctx, sqlText, bookID, headingID, pageID, quote)
+	if err != nil {
+		return entity.RAGUnitLocator{}, fmt.Errorf("BookRAGRepo - ResolveRAGUnitCitation - Query: %w", err)
+	}
+	defer rows.Close()
+
+	locators := make([]entity.RAGUnitLocator, 0, maxCitationLocatorMatches)
+
+	for rows.Next() {
+		var locator entity.RAGUnitLocator
+		if err = rows.Scan(&locator.UnitID, &locator.UnitAnchor); err != nil {
+			return entity.RAGUnitLocator{}, fmt.Errorf("BookRAGRepo - ResolveRAGUnitCitation - Scan: %w", err)
+		}
+
+		locators = append(locators, locator)
+	}
+
+	if err = rows.Err(); err != nil {
+		return entity.RAGUnitLocator{}, fmt.Errorf("BookRAGRepo - ResolveRAGUnitCitation - rows.Err: %w", err)
+	}
+	if len(locators) != 1 {
+		if len(locators) == 0 {
+			if materializationErr := r.CheckRAGUnitMaterialization(ctx, bookID); materializationErr != nil {
+				return entity.RAGUnitLocator{}, materializationErr
+			}
+		}
+
+		return entity.RAGUnitLocator{}, nil
+	}
+
+	locators[0].Found = true
+
+	return locators[0], nil
 }
 
 func scanRAGStructureNode(row rowScanner) (entity.RAGStructureNode, error) {

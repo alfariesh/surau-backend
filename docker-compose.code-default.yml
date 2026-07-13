@@ -1,0 +1,7 @@
+services:
+  app:
+    environment:
+      # A null override removes the base Compose value entirely. This is used
+      # only by the final K-1 rollout gate so the container proves Go's
+      # RAG_BOOK_CITATION_MODE default instead of receiving an explicit unit.
+      RAG_BOOK_CITATION_MODE: null

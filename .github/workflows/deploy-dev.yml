@@ -7,6 +7,18 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      book_rag_citation_mode:
+        description: Preserve or explicitly move the dev Book-RAG citation rollout flag
+        required: true
+        type: choice
+        default: preserve
+        options:
+          - preserve
+          - legacy
+          - dual
+          - unit
+          - default
 
 concurrency:
   group: deploy-dev
@@ -16,13 +28,14 @@ jobs:
   deploy:
     name: Deploy backend to DEV VPS
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 180
     env:
       VPS_HOST: ${{ secrets.DEV_VPS_HOST }}
       VPS_USER: ${{ secrets.DEV_VPS_USER }}
       VPS_DEPLOY_PATH: ${{ secrets.DEV_VPS_DEPLOY_PATH }}
       VPS_SSH_PRIVATE_KEY: ${{ secrets.DEV_VPS_SSH_PRIVATE_KEY }}
       DEPLOY_BRANCH: main
+      BOOK_RAG_ROLLOUT_MODE: ${{ inputs.book_rag_citation_mode || 'preserve' }}
     steps:
       - name: Deploy over SSH
         shell: bash
@@ -34,8 +47,11 @@ jobs:
           : "${VPS_DEPLOY_PATH:?Set the DEV_VPS_DEPLOY_PATH repository secret}"
           : "${VPS_SSH_PRIVATE_KEY:?Set the DEV_VPS_SSH_PRIVATE_KEY repository secret}"
 
-          # Dev version is the short commit sha so /version pins the exact build.
-          APP_VERSION="dev-${GITHUB_SHA::7}"
+          if [ "$GITHUB_REF" != "refs/heads/$DEPLOY_BRANCH" ]; then
+            echo "dev deploy rejected: workflow ref must be refs/heads/$DEPLOY_BRANCH, got $GITHUB_REF" >&2
+            exit 1
+          fi
+          DEPLOY_SHA="$GITHUB_SHA"
 
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
@@ -44,14 +60,186 @@ jobs:
           ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
 
           ssh -i ~/.ssh/surau_deploy_key -o IdentitiesOnly=yes "$VPS_USER@$VPS_HOST" \
-            "DEPLOY_BRANCH='$DEPLOY_BRANCH' DEPLOY_PATH='$VPS_DEPLOY_PATH' APP_VERSION='$APP_VERSION' APP_ENV='dev' bash -s" <<'REMOTE'
+            "DEPLOY_BRANCH='$DEPLOY_BRANCH' DEPLOY_PATH='$VPS_DEPLOY_PATH' DEPLOY_SHA='$DEPLOY_SHA' APP_ENV='dev' BOOK_RAG_ROLLOUT_MODE='$BOOK_RAG_ROLLOUT_MODE' bash -s" <<'REMOTE'
           set -euo pipefail
-          export APP_VERSION APP_ENV
+          export APP_ENV
 
           cd "$DEPLOY_PATH"
           git fetch origin "$DEPLOY_BRANCH"
+          REMOTE_MAIN_SHA="$(git rev-parse FETCH_HEAD)"
+          if [ "$REMOTE_MAIN_SHA" != "$DEPLOY_SHA" ]; then
+            echo "dev deploy rejected: origin/$DEPLOY_BRANCH moved to $REMOTE_MAIN_SHA after workflow pinned $DEPLOY_SHA" >&2
+            exit 1
+          fi
           git checkout "$DEPLOY_BRANCH"
-          git reset --hard "origin/$DEPLOY_BRANCH"
+          git reset --hard "$DEPLOY_SHA"
+          ACTUAL_SHA="$(git rev-parse HEAD)"
+          if [ "$ACTUAL_SHA" != "$DEPLOY_SHA" ]; then
+            echo "dev deploy rejected: checked-out SHA $ACTUAL_SHA does not match pinned SHA $DEPLOY_SHA" >&2
+            exit 1
+          fi
+          APP_VERSION="dev-${ACTUAL_SHA:0:7}"
+          export APP_VERSION
+
+          set_env_value() {
+            key="$1"
+            value="$2"
+            if grep -q "^${key}=" .env.production; then
+              sed -i "s/^${key}=.*/${key}=${value}/" .env.production
+            else
+              printf '%s=%s\n' "$key" "$value" >> .env.production
+            fi
+          }
+
+          remove_env_value() {
+            key="$1"
+            sed -i "/^${key}=/d" .env.production
+          }
+
+          ROLLOUT_EVIDENCE=.k1-book-rag-dual-evidence
+          UNIT_DEFAULT_MARKER=.k1-book-rag-unit-default-enabled
+          CURRENT_BOOK_RAG_MODE=""
+          if grep -q '^RAG_BOOK_CITATION_MODE=' .env.production; then
+            CURRENT_BOOK_RAG_MODE="$(sed -n 's/^RAG_BOOK_CITATION_MODE=//p' .env.production | tail -1)"
+          elif [ -f "$UNIT_DEFAULT_MARKER" ]; then
+            CURRENT_BOOK_RAG_MODE=default
+          fi
+
+          # A server that has never seen K-1 starts in legacy mode. Subsequent
+          # push deploys preserve the current rollout state; workflow_dispatch
+          # is the only path that deliberately moves legacy → dual → unit →
+          # code default. The marker prevents a later push from re-pinning an
+          # already-promoted host to legacy after the explicit override is gone.
+          if [ -z "$CURRENT_BOOK_RAG_MODE" ]; then
+            set_env_value RAG_BOOK_CITATION_MODE legacy
+            CURRENT_BOOK_RAG_MODE=legacy
+          fi
+
+          case "$CURRENT_BOOK_RAG_MODE" in
+            legacy|dual|unit|default) ;;
+            *) echo "invalid persisted Book-RAG rollout mode: $CURRENT_BOOK_RAG_MODE" >&2; exit 1 ;;
+          esac
+
+          CANDIDATE_BOOK_RAG_MODE="$CURRENT_BOOK_RAG_MODE"
+          TARGET_BOOK_RAG_STATE=preserve
+          case "$BOOK_RAG_ROLLOUT_MODE" in
+            preserve) ;;
+            legacy)
+              CANDIDATE_BOOK_RAG_MODE=legacy
+              TARGET_BOOK_RAG_STATE=legacy
+              ;;
+            dual)
+              case "$CURRENT_BOOK_RAG_MODE" in
+                legacy|dual|unit|default) ;;
+                *) echo "dual rollout requires an initialized K-1 mode" >&2; exit 1 ;;
+              esac
+              CANDIDATE_BOOK_RAG_MODE=dual
+              TARGET_BOOK_RAG_STATE=dual
+              ;;
+            unit)
+              if [ "$CURRENT_BOOK_RAG_MODE" != dual ]; then
+                echo "unit rollout rejected: current mode must be dual" >&2
+                exit 1
+              fi
+              if ! grep -qx "version=$APP_VERSION" "$ROLLOUT_EVIDENCE" 2>/dev/null; then
+                echo "unit rollout rejected: no parity evidence for $APP_VERSION" >&2
+                exit 1
+              fi
+              if ! grep -qx "sha=$ACTUAL_SHA" "$ROLLOUT_EVIDENCE" 2>/dev/null; then
+                echo "unit rollout rejected: parity evidence is not bound to $ACTUAL_SHA" >&2
+                exit 1
+              fi
+              CANDIDATE_BOOK_RAG_MODE=unit
+              TARGET_BOOK_RAG_STATE=unit
+              ;;
+            default)
+              if [ "$CURRENT_BOOK_RAG_MODE" != unit ]; then
+                echo "default rollout rejected: current mode must be unit" >&2
+                exit 1
+              fi
+              if ! grep -qx "version=$APP_VERSION" "$ROLLOUT_EVIDENCE" 2>/dev/null; then
+                echo "default rollout rejected: no parity evidence for $APP_VERSION" >&2
+                exit 1
+              fi
+              if ! grep -qx "sha=$ACTUAL_SHA" "$ROLLOUT_EVIDENCE" 2>/dev/null; then
+                echo "default rollout rejected: parity evidence is not bound to $ACTUAL_SHA" >&2
+                exit 1
+              fi
+              CANDIDATE_BOOK_RAG_MODE=default
+              TARGET_BOOK_RAG_STATE=default
+              ;;
+            *) echo "invalid Book-RAG rollout mode" >&2; exit 1 ;;
+          esac
+
+          # `default` is a persisted rollout state, not an application config
+          # value. Its runtime is unit mode, but the env override must stay
+          # absent so every later push keeps proving the code default itself.
+          RUNTIME_BOOK_RAG_MODE="$CANDIDATE_BOOK_RAG_MODE"
+          if [ "$RUNTIME_BOOK_RAG_MODE" = default ]; then
+            RUNTIME_BOOK_RAG_MODE=unit
+          fi
+
+          # Save only rollout-owned state. The candidate mode is injected into
+          # compose via the process environment and is not persisted until all
+          # verification gates pass. If a candidate container fails any gate,
+          # the EXIT trap restores these files and recreates the prior mode.
+          ROLLOUT_STATE_DIR="$(mktemp -d .k1-rollout-state.XXXXXX)"
+          grep '^RAG_BOOK_CITATION_MODE=' .env.production > "$ROLLOUT_STATE_DIR/mode-lines" || true
+          if [ -f "$ROLLOUT_EVIDENCE" ]; then
+            cp "$ROLLOUT_EVIDENCE" "$ROLLOUT_STATE_DIR/evidence"
+            touch "$ROLLOUT_STATE_DIR/had-evidence"
+          fi
+          if [ -f "$UNIT_DEFAULT_MARKER" ]; then
+            touch "$ROLLOUT_STATE_DIR/had-default-marker"
+          fi
+
+          restore_rollout_state() {
+            remove_env_value RAG_BOOK_CITATION_MODE
+            if [ -s "$ROLLOUT_STATE_DIR/mode-lines" ]; then
+              cat "$ROLLOUT_STATE_DIR/mode-lines" >> .env.production
+            fi
+            if [ -f "$ROLLOUT_STATE_DIR/had-evidence" ]; then
+              cp "$ROLLOUT_STATE_DIR/evidence" "$ROLLOUT_EVIDENCE"
+            else
+              rm -f "$ROLLOUT_EVIDENCE"
+            fi
+            if [ -f "$ROLLOUT_STATE_DIR/had-default-marker" ]; then
+              touch "$UNIT_DEFAULT_MARKER"
+            else
+              rm -f "$UNIT_DEFAULT_MARKER"
+            fi
+          }
+
+          ROLLBACK_ARMED=false
+          ROLLOUT_COMMITTED=false
+          cleanup_rollout() {
+            status=$?
+            trap - EXIT
+            set +e
+            if [ "$status" -ne 0 ] && [ "$ROLLBACK_ARMED" = true ] && [ "$ROLLOUT_COMMITTED" = false ]; then
+              echo "K-1 rollout candidate failed; restoring $CURRENT_BOOK_RAG_MODE" >&2
+              restore_rollout_state
+              unset RAG_BOOK_CITATION_MODE
+              ROLLBACK_COMPOSE_ARGS=()
+              if [ "$CURRENT_BOOK_RAG_MODE" = default ]; then
+                ROLLBACK_COMPOSE_ARGS=(-f docker-compose.code-default.yml)
+              fi
+              sudo -E docker compose --env-file .env.production -f docker-compose.prod.yml \
+                "${ROLLBACK_COMPOSE_ARGS[@]}" "${PROFILE_ARGS[@]}" \
+                up -d --force-recreate "${SERVICES[@]}" || \
+                echo "K-1 rollback recreate failed; operator action required" >&2
+            fi
+            rm -f "$ROLLOUT_STATE_DIR/mode-lines" "$ROLLOUT_STATE_DIR/evidence" \
+              "$ROLLOUT_STATE_DIR/had-evidence" "$ROLLOUT_STATE_DIR/had-default-marker"
+            rmdir "$ROLLOUT_STATE_DIR" 2>/dev/null || true
+            exit "$status"
+          }
+          trap cleanup_rollout EXIT
+
+          EFFECTIVE_BOOK_RAG_MODE="$RUNTIME_BOOK_RAG_MODE"
+          DUAL_EVIDENCE_READY=false
+          DUAL_MISMATCH_TOTAL=""
+          DUAL_FALLBACK_TOTAL=""
 
           # Collaborative editing is opt-in: when .env.production enables it,
           # deploy and health-check the collab websocket service too.
@@ -83,7 +271,21 @@ jobs:
           # container in place, which the health check would then pass — masking a
           # non-deploy.
           sudo -E docker compose --env-file .env.production -f docker-compose.prod.yml "${PROFILE_ARGS[@]}" build "${SERVICES[@]}"
-          sudo -E docker compose --env-file .env.production -f docker-compose.prod.yml "${PROFILE_ARGS[@]}" up -d --force-recreate "${SERVICES[@]}"
+          CANDIDATE_COMPOSE_ARGS=()
+          if [ "$CANDIDATE_BOOK_RAG_MODE" = default ]; then
+            # Remove both sources of explicit configuration before creating
+            # the candidate. The Compose override deletes the base mapping,
+            # so /version and smoke tests exercise config.go's code default.
+            remove_env_value RAG_BOOK_CITATION_MODE
+            unset RAG_BOOK_CITATION_MODE
+            CANDIDATE_COMPOSE_ARGS=(-f docker-compose.code-default.yml)
+          else
+            export RAG_BOOK_CITATION_MODE="$RUNTIME_BOOK_RAG_MODE"
+          fi
+          ROLLBACK_ARMED=true
+          sudo -E docker compose --env-file .env.production -f docker-compose.prod.yml \
+            "${CANDIDATE_COMPOSE_ARGS[@]}" "${PROFILE_ARGS[@]}" \
+            up -d --force-recreate "${SERVICES[@]}"
           for attempt in {1..30}; do
             # Assert /version reports the version we just deployed, so a container that
             # did not roll over is caught instead of looking healthy.
@@ -100,6 +302,75 @@ jobs:
               sudo -E docker compose --env-file .env.production -f docker-compose.prod.yml "${PROFILE_ARGS[@]}" \
                 exec -T app /backfill -job=citable-units-quran -chunk-size=1 -sleep=0s -restart
 
+              # Materialize the O-4-2 priority queue and the rest of the
+              # raw-published catalog before committing any requested rollout
+              # state, then run the all-catalog determinism drill. Later deploys
+              # restart only the drift-aware catalog job; a completed
+              # determinism job exits cleanly without replaying all books.
+              sudo -E docker compose --env-file .env.production -f docker-compose.prod.yml "${PROFILE_ARGS[@]}" \
+                exec -T app /backfill -job=citable-units-kitab-catalog -catalog-priority-only \
+                  -chunk-size=1 -sleep=200ms -restart
+              sudo -E docker compose --env-file .env.production -f docker-compose.prod.yml "${PROFILE_ARGS[@]}" \
+                exec -T app /backfill -job=citable-units-kitab-catalog \
+                  -chunk-size=1 -sleep=200ms -restart
+              sudo -E docker compose --env-file .env.production -f docker-compose.prod.yml "${PROFILE_ARGS[@]}" \
+                exec -T app /backfill -job=citable-units-kitab-catalog-rederive -chunk-size=1 -sleep=200ms -restart
+              sudo -E docker compose --env-file .env.production -f docker-compose.prod.yml "${PROFILE_ARGS[@]}" \
+                exec -T app /backfill -verify-citable-catalog
+
+              # Promotion evidence is generated by the deployed immutable
+              # image. Dual/unit must keep parity mismatches and typed legacy
+              # fallbacks flat while both JSON golden cases and one SSE call
+              # produce resolvable current unit locators.
+              if [ "$EFFECTIVE_BOOK_RAG_MODE" != legacy ]; then
+                metric_value() {
+                  prefix="$1"
+                  curl -fsS http://127.0.0.1:8080/metrics \
+                    | awk -v prefix="$prefix" 'index($1, prefix) == 1 { total += $2 } END { printf "%.0f", total + 0 }'
+                }
+
+                mismatch_before="$(metric_value 'surau_book_rag_citation_parity_total{result="mismatch"')"
+                matched_before="$(metric_value 'surau_book_rag_citation_parity_total{result="matched"')"
+                fallback_before="$(metric_value 'surau_book_rag_legacy_fallbacks_total')"
+
+                sudo -E docker compose --env-file .env.production -f docker-compose.prod.yml "${PROFILE_ARGS[@]}" \
+                  exec -T app /rag-eval -base-url http://127.0.0.1:8080 \
+                    -cases /eval/bookrag_smoke.jsonl -output json -verbose
+                sudo -E docker compose --env-file .env.production -f docker-compose.prod.yml "${PROFILE_ARGS[@]}" \
+                  exec -T app /rag-eval -base-url http://127.0.0.1:8080 \
+                    -cases /eval/bookrag_golden.jsonl -output json -verbose
+
+                sse_output="$(mktemp)"
+                curl -fsS --max-time 180 -N \
+                  -H 'Content-Type: application/json' \
+                  -d '{"question":"Apa definisi الحديث الصحيح?","stream":true,"include_trace":true,"max_citations":3}' \
+                  'http://127.0.0.1:8080/v1/books/797/rag?lang=id' > "$sse_output"
+                grep -Eq '"unit_id":"[0-9a-f-]+"' "$sse_output"
+                grep -Eq '"unit_anchor":"kitab/[0-9]+/h/[0-9]+/u/[0-9]+"' "$sse_output"
+                grep -Fq "\"citation_mode\":\"$EFFECTIVE_BOOK_RAG_MODE\"" "$sse_output"
+                if grep -Fq '"legacy_fallback":true' "$sse_output"; then
+                  echo "Book-RAG rollout smoke unexpectedly used legacy fallback" >&2
+                  exit 1
+                fi
+                rm -f "$sse_output"
+
+                mismatch_after="$(metric_value 'surau_book_rag_citation_parity_total{result="mismatch"')"
+                matched_after="$(metric_value 'surau_book_rag_citation_parity_total{result="matched"')"
+                fallback_after="$(metric_value 'surau_book_rag_legacy_fallbacks_total')"
+                test "$mismatch_after" = "$mismatch_before"
+                test "$fallback_after" = "$fallback_before"
+
+                if [ "$EFFECTIVE_BOOK_RAG_MODE" = dual ]; then
+                  if [ "$matched_after" -le "$matched_before" ]; then
+                    echo "dual rollout did not execute an exact unit citation projection" >&2
+                    exit 1
+                  fi
+                  DUAL_EVIDENCE_READY=true
+                  DUAL_MISMATCH_TOTAL="$mismatch_after"
+                  DUAL_FALLBACK_TOTAL="$fallback_after"
+                fi
+              fi
+
               # Do not call the rollout complete unless the two formerly
               # missing FE surfaces expose current Citable Unit identities.
               curl -fsS 'http://127.0.0.1:8080/v1/quran/pages/1/ayahs?view=reader_minimal' \
@@ -111,6 +382,36 @@ jobs:
               grep -Eq '"primary_unit_anchor":"quran/[0-9]+:[0-9]+/u/1"' \
                 <<<"$quran_page_resolution"
               curl -fsS http://127.0.0.1:8080/readyz >/dev/null
+
+              case "$TARGET_BOOK_RAG_STATE" in
+                preserve) ;;
+                legacy)
+                  set_env_value RAG_BOOK_CITATION_MODE legacy
+                  rm -f "$ROLLOUT_EVIDENCE" "$UNIT_DEFAULT_MARKER"
+                  ;;
+                dual)
+                  set_env_value RAG_BOOK_CITATION_MODE dual
+                  rm -f "$UNIT_DEFAULT_MARKER"
+                  ;;
+                unit)
+                  set_env_value RAG_BOOK_CITATION_MODE unit
+                  rm -f "$UNIT_DEFAULT_MARKER"
+                  ;;
+                default)
+                  remove_env_value RAG_BOOK_CITATION_MODE
+                  touch "$UNIT_DEFAULT_MARKER"
+                  ;;
+                *) echo "invalid Book-RAG target state" >&2; exit 1 ;;
+              esac
+              if [ "$DUAL_EVIDENCE_READY" = true ]; then
+                printf 'version=%s\nsha=%s\nparity_mismatch=%s\nfallbacks=%s\nverified_at=%s\n' \
+                  "$APP_VERSION" "$ACTUAL_SHA" "$DUAL_MISMATCH_TOTAL" "$DUAL_FALLBACK_TOTAL" \
+                  "$(date -u +%FT%TZ)" \
+                  > "$ROLLOUT_EVIDENCE"
+              fi
+              ROLLOUT_COMMITTED=true
+              ROLLBACK_ARMED=false
+              unset RAG_BOOK_CITATION_MODE
 
               # Reclaim old images ONLY after the new release is proven healthy.
               sudo docker image prune -f

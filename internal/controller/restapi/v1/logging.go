@@ -76,7 +76,9 @@ func isExpectedReaderError(err error) bool {
 		errors.Is(err, entity.ErrTranslationNotFound) ||
 		errors.Is(err, entity.ErrInvalidFeedback) ||
 		errors.Is(err, entity.ErrInvalidQuestion) ||
-		errors.Is(err, entity.ErrRAGEvidenceNotFound)
+		errors.Is(err, entity.ErrRAGEvidenceNotFound) ||
+		errors.Is(err, entity.ErrRAGUnitMaterializationIncomplete) ||
+		errors.Is(err, entity.ErrRAGUnitMaterializationStale)
 }
 
 func isExpectedEditorialError(err error) bool {

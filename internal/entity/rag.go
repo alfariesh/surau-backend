@@ -49,8 +49,19 @@ type RAGPageSource struct {
 	Number          *string `json:"number,omitempty" example:"42"`
 	Anchor          string  `json:"anchor" example:"toc-11"`
 	URL             string  `json:"url" example:"/v1/books/797/toc/11/read?lang=id"`
+	UnitID          *string `json:"-"`
+	UnitAnchor      *string `json:"-"`
 	ContentText     string  `json:"-"`
 	TranslationText *string `json:"-"`
+}
+
+// RAGUnitLocator is the exact Citable Unit projection for one legacy citation.
+// Found is false when the quote is missing or spans more than one unit; callers
+// record that as a parity mismatch without inventing a locator.
+type RAGUnitLocator struct {
+	UnitID     string
+	UnitAnchor string
+	Found      bool
 }
 
 // BookRAGCitation is a validated source reference returned with an answer.
@@ -63,6 +74,8 @@ type BookRAGCitation struct {
 	PrintedPage  *string `json:"printed_page,omitempty" example:"12"`
 	Part         *string `json:"part,omitempty" example:"1"`
 	Anchor       string  `json:"anchor" example:"toc-11"`
+	UnitID       *string `json:"unit_id,omitempty" example:"018f25dc-18a8-7c26-a3c4-20ec5f6f6b1e"`
+	UnitAnchor   *string `json:"unit_anchor,omitempty" example:"kitab/797/h/11/u/42"`
 	Quote        string  `json:"quote" example:"الحديث الصحيح هو..."`
 	URL          string  `json:"url" example:"/v1/books/797/toc/11/read?lang=id"`
 }
@@ -75,6 +88,9 @@ type BookRAGTrace struct {
 	FocusPageIDs       []int    `json:"focus_page_ids,omitempty"`
 	SourceRefs         []string `json:"source_refs,omitempty"`
 	RetrievalMode      string   `json:"retrieval_mode,omitempty"`
+	CitationMode       string   `json:"citation_mode,omitempty" example:"unit"`
+	LegacyFallback     bool     `json:"legacy_fallback,omitempty"`
+	FallbackReason     string   `json:"fallback_reason,omitempty" example:"incomplete"`
 	TreeLLMCalls       int      `json:"tree_llm_calls,omitempty"`
 	TreeBlocks         int      `json:"tree_blocks,omitempty"`
 	TreeCandidateCount int      `json:"tree_candidate_count,omitempty"`

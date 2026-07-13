@@ -19,7 +19,7 @@ import (
 // canonical/legacy reads, public visibility, coarse fallbacks, and the full
 // edit-lineage graph including split, merge, tombstone, and cycle handling.
 //
-//nolint:paralleltest // one serial, self-cleaning graph fixture against the shared live Postgres
+//nolint:paralleltest,wsl_v5 // one serial, self-cleaning graph fixture against the shared live Postgres
 func TestLiveAnchorRepoResolution(t *testing.T) {
 	url := os.Getenv("SURAU_LIVE_PG")
 	if url == "" {
@@ -251,6 +251,47 @@ func TestLiveAnchorRepoResolution(t *testing.T) {
 
 		_, err = unitRepo.ResolveUnit(ctx, fixture.orphan.id)
 		require.ErrorIs(t, err, errUnsafeAnchorLineage)
+	})
+
+	t.Run("approved Cross-Reference to tombstone without successor fails audit", func(t *testing.T) {
+		const referenceID = "b2010000-0000-4000-8000-00000000a901"
+
+		tx, err := pg.Pool.Begin(ctx)
+		require.NoError(t, err)
+		_, err = tx.Exec(ctx, crossReferenceWriterGUC)
+		require.NoError(t, err)
+		_, err = tx.Exec(ctx, `
+INSERT INTO cross_references (
+    id, source_anchor, target_anchor, source_corpus, target_corpus,
+    source_work_id, target_work_id, kind, method, method_detail, confidence,
+    review_status, evidence_text, evidence_normalized, normalization_version,
+    origin, origin_key
+) VALUES (
+    $1::uuid, $2, $3, 'kitab', 'kitab', $4, $4, 'cites', 'resolver',
+    '{"strategy":"k1-audit-live"}'::jsonb, 1, 'approved',
+    'dangling lineage fixture', 'dangling lineage fixture', 1,
+    'k1_audit_live', $1::uuid::text
+)`, referenceID, fixture.tombstone.anchor, fixture.direct.anchor, fixture.bookID)
+		require.NoError(t, err)
+		require.NoError(t, tx.Commit(ctx))
+
+		t.Cleanup(func() {
+			cleanupTx, cleanupErr := pg.Pool.Begin(context.Background())
+			if !assert.NoError(t, cleanupErr) {
+				return
+			}
+			defer func() { _ = cleanupTx.Rollback(context.Background()) }()
+			_, cleanupErr = cleanupTx.Exec(context.Background(), crossReferenceWriterGUC)
+			assert.NoError(t, cleanupErr)
+			_, cleanupErr = cleanupTx.Exec(context.Background(),
+				`DELETE FROM cross_references WHERE id = $1`, referenceID)
+			assert.NoError(t, cleanupErr)
+			assert.NoError(t, cleanupTx.Commit(context.Background()))
+		})
+
+		audit, err := unitRepo.AuditCounts(ctx)
+		require.NoError(t, err)
+		assert.Positive(t, audit.Violations.CrossReferenceAnchor)
 	})
 
 	t.Run("unpublished Work invalidates every public lookup", func(t *testing.T) {
@@ -516,10 +557,11 @@ func seedLiveAnchorFixture(t *testing.T, pg *postgres.Postgres) liveAnchorFixtur
 				id, corpus, book_id, heading_id, page_id, kind, ordinal, position,
 				anchor, text, text_normalized, normalization_version, content_hash,
 				occurrence, language, provenance_class, provenance_detail, license_status,
-				lifecycle, retired_at
+				lifecycle, retired_at, content_role, review_status
 			) VALUES (
 				$1, 'kitab', $2, $3, $4, 'paragraph', $5, $6,
-				$7, $8, $8, 1, $9, 1, 'ar', 'source', '{}'::jsonb, $10, $11, $12
+				$7, $8, $8, 1, $9, 1, 'ar', 'source', '{}'::jsonb, $10, $11, $12,
+				'book_page', 'approved'
 			)`,
 			item.id, item.bookID, item.headingID, item.pageID, item.ordinal, item.position,
 			item.anchor, "text-"+item.id, []byte("hash-"+item.id), item.license, item.lifecycle, retiredAt)

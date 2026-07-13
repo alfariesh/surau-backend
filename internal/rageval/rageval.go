@@ -17,9 +17,10 @@ import (
 )
 
 const (
-	DefaultBaseURL   = "http://127.0.0.1:8080"
-	DefaultCasesPath = "eval/bookrag_smoke.jsonl"
-	DefaultTimeout   = 150 * time.Second
+	DefaultBaseURL              = "http://127.0.0.1:8080"
+	DefaultCasesPath            = "eval/bookrag_smoke.jsonl"
+	DefaultTimeout              = 150 * time.Second
+	anchorResolutionMaxBodySize = 1 << 20
 )
 
 // Options configures a BookRAG evaluation run.
@@ -49,6 +50,7 @@ type GoldenCase struct {
 	ExpectedPageIDs       []int    `json:"expected_page_ids,omitempty"`
 	AnswerMustContain     []string `json:"answer_must_contain,omitempty"`
 	QuoteMustContain      []string `json:"quote_must_contain,omitempty"`
+	RequireUnitCitations  bool     `json:"require_unit_citations,omitempty"`
 }
 
 // Summary is the machine-readable output for one evaluation run.
@@ -95,6 +97,8 @@ type Citation struct {
 	PrintedPage  *string `json:"printed_page,omitempty"`
 	Part         *string `json:"part,omitempty"`
 	Anchor       string  `json:"anchor"`
+	UnitID       *string `json:"unit_id,omitempty"`
+	UnitAnchor   *string `json:"unit_anchor,omitempty"`
 	Quote        string  `json:"quote"`
 	URL          string  `json:"url"`
 }
@@ -107,6 +111,9 @@ type Trace struct {
 	FocusPageIDs       []int    `json:"focus_page_ids,omitempty"`
 	SourceRefs         []string `json:"source_refs,omitempty"`
 	RetrievalMode      string   `json:"retrieval_mode,omitempty"`
+	CitationMode       string   `json:"citation_mode,omitempty"`
+	LegacyFallback     bool     `json:"legacy_fallback,omitempty"`
+	FallbackReason     string   `json:"fallback_reason,omitempty"`
 	TreeLLMCalls       int      `json:"tree_llm_calls,omitempty"`
 	TreeBlocks         int      `json:"tree_blocks,omitempty"`
 	TreeCandidateCount int      `json:"tree_candidate_count,omitempty"`
@@ -119,6 +126,18 @@ type ragResponse struct {
 	Answer    string     `json:"answer"`
 	Citations []Citation `json:"citations"`
 	Trace     *Trace     `json:"trace"`
+}
+
+type anchorResolution struct {
+	Boundaries []anchorResolutionBoundary `json:"boundaries"`
+}
+
+type anchorResolutionBoundary struct {
+	ActiveTargets []anchorResolutionTarget `json:"active_targets"`
+}
+
+type anchorResolutionTarget struct {
+	UnitID *string `json:"unit_id"`
 }
 
 // LoadCases reads JSONL golden cases. Blank lines and lines beginning with # are ignored.
@@ -309,8 +328,93 @@ func EvaluateCase(
 	errors, warnings := validateResponse(tc, payload, strictAnswer)
 	result.Errors = append(result.Errors, errors...)
 	result.Warnings = append(result.Warnings, warnings...)
+	if tc.RequireUnitCitations && len(errors) == 0 {
+		result.Errors = append(result.Errors, validateCitationAnchors(ctx, client, baseURL, payload.Citations)...)
+	}
 
 	return result
+}
+
+func validateCitationAnchors(
+	ctx context.Context,
+	client *http.Client,
+	baseURL string,
+	citations []Citation,
+) []string {
+	errs := make([]string, 0)
+
+	for i := range citations {
+		citation := &citations[i]
+		if citation.UnitID == nil || citation.UnitAnchor == nil {
+			continue
+		}
+
+		if validationErr := validateCitationAnchor(ctx, client, baseURL, i, citation); validationErr != "" {
+			errs = append(errs, validationErr)
+		}
+	}
+
+	return errs
+}
+
+func validateCitationAnchor(
+	ctx context.Context,
+	client *http.Client,
+	baseURL string,
+	index int,
+	citation *Citation,
+) string {
+	endpoint, err := url.Parse(strings.TrimSpace(baseURL))
+	if err != nil {
+		return fmt.Sprintf("citation[%d] anchor resolver URL: %v", index, err)
+	}
+
+	endpoint.Path = strings.TrimRight(endpoint.Path, "/") + "/v1/anchors/resolve"
+	query := endpoint.Query()
+	query.Set("anchor", *citation.UnitAnchor)
+	endpoint.RawQuery = query.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), http.NoBody)
+	if err != nil {
+		return fmt.Sprintf("citation[%d] anchor request: %v", index, err)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Sprintf("citation[%d] unit_anchor does not resolve: %v", index, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	var resolution anchorResolution
+
+	decodeErr := json.NewDecoder(io.LimitReader(resp.Body, anchorResolutionMaxBodySize)).Decode(&resolution)
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices || decodeErr != nil {
+		return fmt.Sprintf(
+			"citation[%d] unit_anchor resolver status=%d decode=%v",
+			index,
+			resp.StatusCode,
+			decodeErr,
+		)
+	}
+
+	if anchorResolutionContainsUnit(resolution, *citation.UnitID) {
+		return ""
+	}
+
+	return fmt.Sprintf("citation[%d] unit_anchor did not resolve to unit_id", index)
+}
+
+func anchorResolutionContainsUnit(resolution anchorResolution, unitID string) bool {
+	for i := range resolution.Boundaries {
+		for j := range resolution.Boundaries[i].ActiveTargets {
+			target := &resolution.Boundaries[i].ActiveTargets[j]
+			if target.UnitID != nil && *target.UnitID == unitID {
+				return true
+			}
+		}
+	}
+
+	return false
 }
 
 // WriteSummary writes either a table or JSON report.
@@ -437,6 +541,16 @@ func validateResponse(tc GoldenCase, resp ragResponse, strictAnswer bool) ([]str
 
 	if len(resp.Citations) == 0 {
 		errs = append(errs, "expected at least one citation")
+	}
+
+	if tc.RequireUnitCitations {
+		for i := range resp.Citations {
+			citation := &resp.Citations[i]
+			if citation.UnitID == nil || strings.TrimSpace(*citation.UnitID) == "" ||
+				citation.UnitAnchor == nil || strings.TrimSpace(*citation.UnitAnchor) == "" {
+				errs = append(errs, fmt.Sprintf("citation[%d] missing unit_id/unit_anchor", i))
+			}
+		}
 	}
 	if len(tc.ExpectedHeadingIDs) > 0 && !anyCitationHeading(resp.Citations, tc.ExpectedHeadingIDs) {
 		errs = append(errs, fmt.Sprintf("expected citation heading in %v", tc.ExpectedHeadingIDs))

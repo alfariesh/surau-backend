@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -78,6 +79,11 @@ type SourceBlock struct {
 	// from an inline heading anchor by StructureMixedContent; 0 otherwise.
 	// StructureSourceContent never sets it (frozen reader contract).
 	AnchorID int
+	// SourceCharStart/End are half-open Unicode code-point offsets into
+	// StructuredContent.Text. They deliberately are not UTF-8 byte offsets:
+	// Python extraction jobs index strings by code point as well.
+	SourceCharStart int
+	SourceCharEnd   int
 }
 
 // SourceFootnote is one extracted source footnote.
@@ -85,6 +91,17 @@ type SourceFootnote struct {
 	Marker string
 	Text   string
 	HTML   string
+	// ContainsQuran fails the whole footnote closed when an ayah cannot be
+	// split without breaking its marker/parent semantics. The unit deriver
+	// maps such a footnote to kind=quran_quote, which is structurally excluded
+	// from interpretive retrieval.
+	ContainsQuran bool
+	// QuranQuotes retains exact visible snippets identified by semantic HTML
+	// or the explicit citation grammar. It lets the deriver preserve the
+	// safety boundary when it must realign against legacy plain content_text.
+	QuranQuotes     []string
+	SourceCharStart int
+	SourceCharEnd   int
 }
 
 // SourceQuranCitation is a best-effort citation found inline in plain source text.
@@ -244,6 +261,9 @@ func structurePlainText(text string) ([]SourceBlock, []SourceFootnote) {
 		}
 
 		currentFootnote.Text = strings.TrimSpace(currentFootnote.Text)
+		for _, match := range _quranCitationRE.FindAllString(currentFootnote.Text, -1) {
+			appendFootnoteQuranQuote(currentFootnote, match)
+		}
 		currentFootnote.HTML = footnoteHTML(*currentFootnote)
 		footnotes = append(footnotes, *currentFootnote)
 		currentFootnote = nil
@@ -291,6 +311,20 @@ func structurePlainText(text string) ([]SourceBlock, []SourceFootnote) {
 	flushFootnote()
 
 	return blocks, footnotes
+}
+
+func appendFootnoteQuranQuote(footnote *SourceFootnote, quote string) {
+	quote = strings.TrimSpace(quote)
+	if quote == "" {
+		return
+	}
+
+	footnote.ContainsQuran = true
+	if slices.Contains(footnote.QuranQuotes, quote) {
+		return
+	}
+
+	footnote.QuranQuotes = append(footnote.QuranQuotes, quote)
 }
 
 func sourceBlockForLine(line string) SourceBlock {

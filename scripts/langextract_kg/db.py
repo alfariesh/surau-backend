@@ -145,6 +145,11 @@ class DBClient:
     def __init__(self, conn: Any, driver: str):
         self.conn = conn
         self.driver = driver
+        self._defer_commit = False
+
+    def _commit(self) -> None:
+        if not self._defer_commit:
+            self.conn.commit()
 
     @classmethod
     def connect(cls, postgres_url: str) -> "DBClient":
@@ -341,7 +346,7 @@ VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s, %s)
                         int(run.get("total_documents") or 0),
                     ),
                 )
-            self.conn.commit()
+            self._commit()
         except Exception:
             self.conn.rollback()
             raise
@@ -375,7 +380,7 @@ ON CONFLICT (prompt_version, policy_hash) DO UPDATE SET
                     policy_hash,
                 ),
             )
-        self.conn.commit()
+        self._commit()
 
     def insert_extraction_documents(self, documents: list[dict[str, Any]]) -> dict[str, str]:
         """Insert per-page document audit rows and return document_id -> audit id."""
@@ -422,7 +427,7 @@ RETURNING id, document_id
                 )
                 row = cur.fetchone()
                 ids[str(row[1])] = str(row[0])
-        self.conn.commit()
+        self._commit()
         return ids
 
     def insert_extraction_chunks(
@@ -491,7 +496,7 @@ RETURNING id, document_id, pass_index, chunk_index
                 )
                 row = cur.fetchone()
                 ids[(str(row[1]), int(row[2]), int(row[3]))] = str(row[0])
-        self.conn.commit()
+        self._commit()
         return ids
 
     def finish_run(
@@ -515,7 +520,7 @@ WHERE id = %s
         error_payload = json_dumps(errors) if errors else ""
         with self._cursor() as cur:
             cur.execute(sql, (status, processed_documents, stored_mentions, error_payload, run_id))
-        self.conn.commit()
+        self._commit()
 
     def insert_mention(self, record: dict[str, Any]) -> str:
         mention_id = record.get("id") or new_uuid()
@@ -598,8 +603,101 @@ WHERE id = %s
 """,
                 (source_span_id, actual_mention_id),
             )
-        self.conn.commit()
+        self._bind_mention_unit(actual_mention_id)
+        self._commit()
         return actual_mention_id
+
+    def _bind_mention_unit(self, mention_id: str) -> None:
+        """Bind one page-relative span to exactly one Citable Unit.
+
+        PostgreSQL character offsets match Python's Unicode code-point offsets.
+        Ambiguous, stale, and cross-unit spans remain explicit fail-closed states;
+        the extraction writer never guesses a unit with fuzzy matching.
+        """
+        sql = """
+WITH source AS (
+    SELECT mention.id,
+           mention.book_id,
+           mention.page_id,
+           mention.char_start,
+           mention.char_end,
+           mention.exact_quote,
+           mention.source_hash,
+           mention.source_hash ~ '^[0-9A-Fa-f]{64}$' AS hash_well_formed,
+           substring(
+               page.content_text
+               FROM mention.char_start + 1
+               FOR mention.char_end - mention.char_start
+           ) = mention.exact_quote AS quote_matches_page
+    FROM knowledge_mentions mention
+    JOIN book_pages page
+      ON page.book_id = mention.book_id AND page.page_id = mention.page_id
+    WHERE mention.id = %s
+), candidates AS (
+    SELECT unit.id AS unit_id,
+           source.char_start - unit.source_char_start AS unit_char_start,
+           source.char_end - unit.source_char_start AS unit_char_end,
+           COUNT(*) OVER () AS candidate_count,
+           ROW_NUMBER() OVER (
+               ORDER BY CASE unit.lifecycle WHEN 'active' THEN 0 ELSE 1 END,
+                        unit.source_char_end - unit.source_char_start,
+                        unit.id
+           ) AS candidate_rank
+    FROM source
+    JOIN citable_units unit
+      ON unit.book_id = source.book_id
+     AND unit.page_id = source.page_id
+     AND unit.corpus = 'kitab'
+     AND unit.content_role = 'book_page'
+     AND unit.provenance_class = 'source'
+     AND unit.lifecycle IN ('active', 'superseded')
+     AND unit.source_document_hash IS NOT NULL
+     AND encode(unit.source_document_hash, 'hex') = lower(source.source_hash)
+     AND unit.source_char_start <= source.char_start
+     AND unit.source_char_end >= source.char_end
+    WHERE source.hash_well_formed AND source.quote_matches_page
+), overlap AS (
+    SELECT COUNT(unit.id) AS overlap_count
+    FROM source
+    LEFT JOIN citable_units unit
+      ON unit.book_id = source.book_id
+     AND unit.page_id = source.page_id
+     AND unit.corpus = 'kitab'
+     AND unit.content_role = 'book_page'
+     AND unit.provenance_class = 'source'
+     AND unit.lifecycle IN ('active', 'superseded')
+     AND unit.source_document_hash IS NOT NULL
+     AND encode(unit.source_document_hash, 'hex') = lower(source.source_hash)
+     AND unit.source_char_start < source.char_end
+     AND unit.source_char_end > source.char_start
+), resolved AS (
+    SELECT source.id,
+           CASE WHEN candidate.candidate_count = 1 THEN candidate.unit_id END AS unit_id,
+           CASE WHEN candidate.candidate_count = 1 THEN candidate.unit_char_start END AS unit_char_start,
+           CASE WHEN candidate.candidate_count = 1 THEN candidate.unit_char_end END AS unit_char_end,
+           CASE
+               WHEN NOT source.hash_well_formed OR NOT source.quote_matches_page THEN 'stale'
+               WHEN candidate.candidate_count = 1 THEN 'bound'
+               WHEN candidate.candidate_count > 1 THEN 'ambiguous'
+               WHEN overlap.overlap_count > 1 THEN 'cross_unit'
+               ELSE 'missing'
+           END AS binding_status
+    FROM source
+    LEFT JOIN candidates candidate ON candidate.candidate_rank = 1
+    CROSS JOIN overlap
+)
+UPDATE knowledge_mentions mention
+SET unit_id = resolved.unit_id,
+    unit_char_start = resolved.unit_char_start,
+    unit_char_end = resolved.unit_char_end,
+    unit_binding_status = resolved.binding_status,
+    unit_binding_version = 1,
+    unit_source_hash = CASE WHEN resolved.binding_status = 'bound' THEN mention.source_hash ELSE NULL END
+FROM resolved
+WHERE mention.id = resolved.id
+"""
+        with self._cursor() as cur:
+            cur.execute(sql, (mention_id,))
 
     def insert_source_span(self, record: dict[str, Any], *, object_type: str, object_id: str) -> str:
         source_span_id = str(record.get("source_span_id") or new_uuid())
@@ -709,21 +807,35 @@ VALUES (
                     ),
                 )
                 inserted += 1
-        self.conn.commit()
+        self._commit()
         return inserted
 
     def insert_mentions_with_candidates(self, records: list[dict[str, Any]]) -> int:
         self._verify_mention_generation_identities(records)
 
         stored = 0
+        pages: dict[tuple[int, int], list[dict[str, Any]]] = {}
         for record in records:
-            mention_id = self.insert_mention(record)
-            record["id"] = mention_id
-            stored += 1
-            if record["extraction_class"] in {"relation", "claim"}:
-                self.insert_relation_or_claim(record)
-            else:
-                self.upsert_candidates_for_mention(record)
+            key = (int(record["book_id"]), int(record["page_id"]))
+            pages.setdefault(key, []).append(record)
+
+        for page_records in pages.values():
+            self._defer_commit = True
+            try:
+                for record in page_records:
+                    mention_id = self.insert_mention(record)
+                    record["id"] = mention_id
+                    stored += 1
+                    if record["extraction_class"] in {"relation", "claim"}:
+                        self.insert_relation_or_claim(record)
+                    else:
+                        self.upsert_candidates_for_mention(record)
+                self.conn.commit()
+            except Exception:
+                self.conn.rollback()
+                raise
+            finally:
+                self._defer_commit = False
         return stored
 
     def _verify_mention_generation_identities(self, records: list[dict[str, Any]]) -> None:
@@ -803,7 +915,7 @@ VALUES (%s, %s, %s, %s, %s, %s, %s, 'needs_review', %s::jsonb, %s, %s, %s, %s, %
                     True,
                 ),
             )
-        self.conn.commit()
+        self._commit()
 
     def insert_claim_candidate(self, mention: dict[str, Any], attrs: dict[str, Any]) -> None:
         claim_type = str(attrs.get("claim_type") or attrs.get("predicate") or "statement").strip()
@@ -843,7 +955,7 @@ VALUES (%s, %s, %s, %s, %s, %s, %s, 'needs_review', %s::jsonb, %s, %s, %s, %s, %
                     True,
                 ),
             )
-        self.conn.commit()
+        self._commit()
 
     def upsert_candidates_for_mention(self, mention: dict[str, Any]) -> None:
         normalized = normalized_key(str(mention.get("extraction_text") or ""))
@@ -921,7 +1033,7 @@ VALUES (%s, %s, %s, %s, %s, %s, 'pending')
             source_mention_id=str(mention["id"]),
             review_status="pending",
         )
-        self.conn.commit()
+        self._commit()
         return entity_id
 
     def upsert_entity_label(
@@ -1004,7 +1116,7 @@ ON CONFLICT (mention_id, entity_id, strategy) DO UPDATE SET
                 sql,
                 (mention_id, entity_id, score, strategy, json_dumps(reasons), review_status),
             )
-        self.conn.commit()
+        self._commit()
 
     def load_mentions_for_run(self, run_id: str) -> list[dict[str, Any]]:
         sql = """
@@ -1028,6 +1140,12 @@ SELECT 'knowledge_mention' AS kind,
        review_status,
        source_hash,
        source_span_id,
+       unit_id,
+       unit_char_start,
+       unit_char_end,
+       unit_binding_status,
+       unit_binding_version,
+       unit_source_hash,
        token_start,
        token_end,
        extraction_index,

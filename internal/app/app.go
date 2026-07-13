@@ -344,6 +344,8 @@ func initUseCases(cfg *config.Config, pg *postgres.Postgres, jwtManager *jwt.Man
 			TreeBeamSize:         cfg.RAG.TreeBeamSize,
 			TreeMaxTurns:         cfg.RAG.TreeMaxTurns,
 			TreeMaxBlocksPerTurn: cfg.RAG.TreeMaxBlocksPerTurn,
+			CitationMode:         cfg.RAG.BookCitationMode,
+			LegacyFallback:       cfg.RAG.BookLegacyFallback,
 		}),
 		quran:          quran.New(quranRepo),
 		anchor:         anchorresolver.New(anchorRepo),
@@ -546,7 +548,7 @@ func citableAuditPass(unitRegistryUC *unitregistry.UseCase, l logger.Interface) 
 		total := recordCitableAudit(&report)
 		if total > 0 {
 			l.Error(
-				"app - citable audit: %d violation(s) — book_gone=%d superseded_no_successor=%d active_with_successor=%d lineage_cycle=%d hash_mismatch=%d anchor_malformed=%d footnote_parent=%d quran_binding=%d quran_interpretive=%d",
+				"app - citable audit: %d violation(s) — book_gone=%d superseded_no_successor=%d active_with_successor=%d lineage_cycle=%d hash_mismatch=%d anchor_malformed=%d footnote_parent=%d quran_binding=%d quran_interpretive=%d interpretive_safety=%d rag_projection_dangling=%d approved_mention_anchor=%d mention_unit_dangling=%d mention_binding_mismatch=%d cross_reference_anchor=%d",
 				total,
 				report.Violations.BookGone,
 				report.Violations.SupersededNoSuccessor,
@@ -557,6 +559,12 @@ func citableAuditPass(unitRegistryUC *unitregistry.UseCase, l logger.Interface) 
 				report.Violations.FootnoteParent,
 				report.Violations.QuranBinding,
 				report.Violations.QuranInterpretive,
+				report.Violations.InterpretiveSafety,
+				report.Violations.RAGProjectionDangling,
+				report.Violations.ApprovedMentionAnchor,
+				report.Violations.MentionUnitDangling,
+				report.Violations.MentionBindingMismatch,
+				report.Violations.CrossReferenceAnchor,
 			)
 		}
 

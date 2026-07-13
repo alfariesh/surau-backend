@@ -4405,7 +4405,7 @@ const docTemplate = `{
         },
         "/books/{book_id}/rag": {
             "post": {
-                "description": "Ask a question against one kitab. Sources include requested translation text only when exact requested-language translation exists; response includes requested_lang.",
+                "description": "Ask a question against one kitab. Citation fields unit_id and unit_anchor are additive and present in dual/unit mode; legacy anchor/url remain unchanged. Unit retrieval structurally excludes Quran quotes and unreviewed machine text.",
                 "consumes": [
                     "application/json"
                 ],
@@ -14438,6 +14438,14 @@ const docTemplate = `{
                     "type": "string",
                     "example": "1"
                 },
+                "unit_anchor": {
+                    "type": "string",
+                    "example": "kitab/797/h/11/u/42"
+                },
+                "unit_id": {
+                    "type": "string",
+                    "example": "018f25dc-18a8-7c26-a3c4-20ec5f6f6b1e"
+                },
                 "url": {
                     "type": "string",
                     "example": "/v1/books/797/toc/11/read?lang=id"
@@ -14476,11 +14484,22 @@ const docTemplate = `{
         "entity.BookRAGTrace": {
             "type": "object",
             "properties": {
+                "citation_mode": {
+                    "type": "string",
+                    "example": "unit"
+                },
+                "fallback_reason": {
+                    "type": "string",
+                    "example": "incomplete"
+                },
                 "focus_page_ids": {
                     "type": "array",
                     "items": {
                         "type": "integer"
                     }
+                },
+                "legacy_fallback": {
+                    "type": "boolean"
                 },
                 "lexical_heading_ids": {
                     "type": "array",

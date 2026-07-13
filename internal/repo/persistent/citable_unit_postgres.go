@@ -39,11 +39,21 @@ func NewCitableUnitRepo(pg *postgres.Postgres) *CitableUnitRepo {
 //
 //nolint:gocyclo,cyclop,funlen // linear: book row + two result-set scan loops, each with its own error guards
 func (r *CitableUnitRepo) LoadBookSource(ctx context.Context, bookID int) (entity.BookUnitSource, error) {
+	return loadBookSource(ctx, r.Pool, bookID)
+}
+
+type citableQueryer interface {
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+
+//nolint:gocognit,gocyclo,cyclop,funlen,wsl_v5 // linear source projection shared by pool and catalog transaction
+func loadBookSource(ctx context.Context, q citableQueryer, bookID int) (entity.BookUnitSource, error) {
 	src := entity.BookUnitSource{BookID: bookID}
 
 	var major, minor int
 
-	err := r.Pool.QueryRow(ctx, `
+	err := q.QueryRow(ctx, `
 		SELECT COALESCE(major_release, 0), COALESCE(minor_release, 0), now()
 		FROM books
 		WHERE id = $1 AND is_deleted = FALSE`, bookID).Scan(&major, &minor, &src.LoadedAt)
@@ -57,9 +67,12 @@ func (r *CitableUnitRepo) LoadBookSource(ctx context.Context, bookID int) (entit
 
 	src.ReleaseKey = fmt.Sprintf("%d.%d", major, minor)
 
-	rows, err := r.Pool.Query(ctx, `
+	rows, err := q.Query(ctx, `
 		SELECT bp.page_id,
 		       COALESCE(pe.content_html, bp.content_html),
+		       COALESCE(pe.content_text, bp.content_text),
+		       bp.content_html,
+		       bp.content_text,
 		       pe.book_id IS NOT NULL,
 		       COALESCE(pe.updated_by::text, '')
 		FROM book_pages bp
@@ -74,7 +87,8 @@ func (r *CitableUnitRepo) LoadBookSource(ctx context.Context, bookID int) (entit
 
 	for rows.Next() {
 		var p entity.BookUnitSourcePage
-		if err := rows.Scan(&p.PageID, &p.ContentHTML, &p.HasPublishedEdit, &p.EditActorID); err != nil {
+		if err := rows.Scan(&p.PageID, &p.ContentHTML, &p.ContentText, &p.RawContentHTML,
+			&p.RawContentText, &p.HasPublishedEdit, &p.EditActorID); err != nil {
 			return src, fmt.Errorf("CitableUnitRepo.LoadBookSource scan page: %w", err)
 		}
 
@@ -85,7 +99,7 @@ func (r *CitableUnitRepo) LoadBookSource(ctx context.Context, bookID int) (entit
 		return src, fmt.Errorf("CitableUnitRepo.LoadBookSource pages rows: %w", err)
 	}
 
-	hrows, err := r.Pool.Query(ctx, `
+	hrows, err := q.Query(ctx, `
 		SELECT heading_id, page_id
 		FROM book_headings
 		WHERE book_id = $1 AND is_deleted = FALSE
@@ -108,6 +122,58 @@ func (r *CitableUnitRepo) LoadBookSource(ctx context.Context, bookID int) (entit
 		return src, fmt.Errorf("CitableUnitRepo.LoadBookSource headings rows: %w", err)
 	}
 
+	assetRows, err := q.Query(ctx, `
+		SELECT st.heading_id, bh.page_id, 'section_translation', st.lang, st.content,
+		       st.provenance_class, st.generation_run_id::text,
+		       CASE WHEN st.translation_status = 'reviewed' THEN 'approved' ELSE 'pending' END
+		FROM section_translations st
+		JOIN book_headings bh ON bh.book_id = st.book_id AND bh.heading_id = st.heading_id
+		WHERE st.book_id = $1 AND NOT st.is_deleted AND NOT bh.is_deleted
+		  AND (
+		      st.lang = 'ar'
+		      OR EXISTS (
+		          SELECT 1 FROM book_production_projects project
+		          WHERE project.book_id = st.book_id
+		            AND project.lang = st.lang
+		            AND project.publication_status = 'published'
+		            AND project.workflow_status <> 'archived'
+		      )
+		  )
+		UNION ALL
+		SELECT hs.heading_id, bh.page_id, 'heading_summary', hs.lang, hs.summary,
+		       hs.provenance_class, hs.generation_run_id::text,
+		       CASE WHEN hs.summary_status = 'reviewed' THEN 'approved' ELSE 'pending' END
+		FROM book_heading_summaries hs
+		JOIN book_headings bh ON bh.book_id = hs.book_id AND bh.heading_id = hs.heading_id
+		WHERE hs.book_id = $1 AND NOT hs.is_deleted AND NOT bh.is_deleted
+		  AND (
+		      hs.lang = 'ar'
+		      OR EXISTS (
+		          SELECT 1 FROM book_production_projects project
+		          WHERE project.book_id = hs.book_id
+		            AND project.lang = hs.lang
+		            AND project.publication_status = 'published'
+		            AND project.workflow_status <> 'archived'
+		      )
+		  )
+		ORDER BY 1, 3, 4`, bookID)
+	if err != nil {
+		return src, fmt.Errorf("CitableUnitRepo.LoadBookSource assets: %w", err)
+	}
+	defer assetRows.Close()
+
+	for assetRows.Next() {
+		var asset entity.BookUnitSourceAsset
+		if err := assetRows.Scan(&asset.HeadingID, &asset.PageID, &asset.ContentRole, &asset.Language,
+			&asset.Content, &asset.ProvenanceClass, &asset.GenerationRunID, &asset.ReviewStatus); err != nil {
+			return src, fmt.Errorf("CitableUnitRepo.LoadBookSource scan asset: %w", err)
+		}
+		src.Assets = append(src.Assets, asset)
+	}
+	if err := assetRows.Err(); err != nil {
+		return src, fmt.Errorf("CitableUnitRepo.LoadBookSource asset rows: %w", err)
+	}
+
 	return src, nil
 }
 
@@ -120,20 +186,27 @@ func (r *CitableUnitRepo) LoadBookSource(ctx context.Context, bookID int) (entit
 //
 //nolint:gocyclo,cyclop,funlen,wsl_v5 // linear: repeatable-read tx + active-units scan loop + ordinal/id scan loop + fingerprint, each guarded
 func (r *CitableUnitRepo) Snapshot(ctx context.Context, bookID int) (entity.UnitRegistrySnapshot, error) {
+	tx, err := r.Pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
+	if err != nil {
+		return entity.UnitRegistrySnapshot{}, fmt.Errorf("CitableUnitRepo.Snapshot begin: %w", err)
+	}
+	defer rollbackTx(ctx, tx)
+
+	return snapshotFrom(ctx, tx, bookID)
+}
+
+//nolint:gocognit,gocyclo,cyclop,funlen,wsl_v5 // shared transaction snapshot projection
+func snapshotFrom(ctx context.Context, q citableQueryer, bookID int) (entity.UnitRegistrySnapshot, error) {
 	snap := entity.UnitRegistrySnapshot{
 		MaxOrdinalByScope: map[int]int{},
 		ExistingIDs:       map[string]struct{}{},
 	}
 
-	tx, err := r.Pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
-	if err != nil {
-		return snap, fmt.Errorf("CitableUnitRepo.Snapshot begin: %w", err)
-	}
-	defer rollbackTx(ctx, tx)
-
-	rows, err := tx.Query(ctx, `
+	rows, err := q.Query(ctx, `
 		SELECT id, heading_id, page_id, kind, ordinal, position, parent_unit_id,
-		       marker, content_hash, occurrence, lifecycle
+		       marker, content_hash, occurrence, lifecycle, html, language, content_role,
+		       review_status, source_document_hash, source_char_start, source_char_end,
+		       provenance_class, provenance_detail, generation_run_id::text
 		FROM citable_units
 		WHERE book_id = $1 AND lifecycle = 'active'`, bookID)
 	if err != nil {
@@ -144,9 +217,17 @@ func (r *CitableUnitRepo) Snapshot(ctx context.Context, bookID int) (entity.Unit
 	for rows.Next() {
 		bookIDValue := bookID
 		u := entity.CitableUnit{Corpus: entity.UnitCorpusKitab, BookID: &bookIDValue}
+		var detail []byte
 		if err := rows.Scan(&u.ID, &u.HeadingID, &u.PageID, &u.Kind, &u.Ordinal, &u.Position,
-			&u.ParentUnitID, &u.Marker, &u.ContentHash, &u.Occurrence, &u.Lifecycle); err != nil {
+			&u.ParentUnitID, &u.Marker, &u.ContentHash, &u.Occurrence, &u.Lifecycle, &u.HTML,
+			&u.Language, &u.ContentRole, &u.ReviewStatus, &u.SourceDocumentHash,
+			&u.SourceCharStart, &u.SourceCharEnd, &u.ProvenanceClass, &detail, &u.GenerationRunID); err != nil {
 			return snap, fmt.Errorf("CitableUnitRepo.Snapshot scan: %w", err)
+		}
+		if len(detail) > 0 {
+			if err := json.Unmarshal(detail, &u.ProvenanceDetail); err != nil {
+				return snap, fmt.Errorf("CitableUnitRepo.Snapshot provenance %s: %w", u.ID, err)
+			}
 		}
 
 		snap.Active = append(snap.Active, u)
@@ -158,7 +239,7 @@ func (r *CitableUnitRepo) Snapshot(ctx context.Context, bookID int) (entity.Unit
 
 	rows.Close()
 
-	orows, err := tx.Query(ctx, `
+	orows, err := q.Query(ctx, `
 		SELECT COALESCE(heading_id, 0), MAX(ordinal), array_agg(id)
 		FROM citable_units
 		WHERE book_id = $1
@@ -189,7 +270,7 @@ func (r *CitableUnitRepo) Snapshot(ctx context.Context, bookID int) (entity.Unit
 
 	orows.Close()
 
-	snap.Fingerprint, err = registryFingerprint(ctx, tx, bookID)
+	snap.Fingerprint, err = registryFingerprint(ctx, q, bookID)
 	if err != nil {
 		return snap, err
 	}
@@ -217,15 +298,35 @@ func registryFingerprint(ctx context.Context, q pgxQuerier, bookID int) (entity.
 	return fp, nil
 }
 
+//nolint:wsl_v5 // one source-drift query followed by its explicit guard
+func bookSourceChangedSince(ctx context.Context, q pgxQuerier, bookID int, loadedAt time.Time) (bool, error) {
+	var changed bool
+	err := q.QueryRow(ctx, `
+		SELECT GREATEST(
+			COALESCE((SELECT MAX(updated_at) FROM book_pages WHERE book_id = $1), 'epoch'),
+			COALESCE((SELECT MAX(updated_at) FROM book_headings WHERE book_id = $1), 'epoch'),
+			COALESCE((SELECT MAX(updated_at) FROM book_page_edits WHERE book_id = $1 AND status = 'published'), 'epoch'),
+			COALESCE((SELECT MAX(updated_at) FROM section_translations WHERE book_id = $1), 'epoch'),
+			COALESCE((SELECT MAX(updated_at) FROM book_heading_summaries WHERE book_id = $1), 'epoch'),
+			COALESCE((SELECT MAX(updated_at) FROM book_production_projects WHERE book_id = $1), 'epoch')
+		) > $2
+		OR COALESCE((SELECT units_stale_at > $2 FROM books WHERE id = $1), FALSE)`, bookID, loadedAt).Scan(&changed)
+	if err != nil {
+		return false, fmt.Errorf("CitableUnitRepo source fingerprint: %w", err)
+	}
+
+	return changed, nil
+}
+
 // ApplyReconcile applies one book plan atomically: guard GUC, per-book
 // advisory lock, optimistic fingerprint check, batched mints (parents first) /
 // locator updates / retires / lineage edges, units_derived_at stamp, then
 // in-transaction invariant asserts. Any violated invariant rolls everything
 // back — the registry never drifts partially.
 //
-//nolint:gocognit,gocyclo,cyclop,funlen // linear batch pipeline: guard -> lock -> fingerprint -> queue mints/updates/retires/edges -> assert; each stage is a distinct guard
+//nolint:wsl_v5 // linear batch pipeline: guard -> lock -> fingerprint -> queue mints/updates/retires/edges -> assert; each stage is a distinct guard
 func (r *CitableUnitRepo) ApplyReconcile(ctx context.Context, plan *entity.UnitReconcilePlan) error {
-	tx, err := r.Pool.Begin(ctx)
+	tx, err := r.Pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead})
 	if err != nil {
 		return fmt.Errorf("CitableUnitRepo.ApplyReconcile begin: %w", err)
 	}
@@ -238,13 +339,54 @@ func (r *CitableUnitRepo) ApplyReconcile(ctx context.Context, plan *entity.UnitR
 	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1, $2)`, registryAdvisoryLockClass, plan.BookID); err != nil {
 		return fmt.Errorf("CitableUnitRepo.ApplyReconcile lock: %w", err)
 	}
+	if err := applyReconcileTx(ctx, tx, plan); err != nil {
+		return err
+	}
+	// Editorial/import reconciles must enforce the same exact mention binding
+	// boundary as the catalog runner. Otherwise retiring a cited unit could
+	// commit while an approved mention still points at it.
+	if err := (&citableUnitCatalogTx{tx: tx}).BindKnowledgeMentions(ctx, plan.BookID); err != nil {
+		return fmt.Errorf("CitableUnitRepo.ApplyReconcile bind mentions: %w", err)
+	}
+	// This wrapper is the editorial/import path; the catalog transaction calls
+	// applyReconcileTx directly and owns queue completion itself. Any successful
+	// out-of-band reconcile invalidates both raw and determinism evidence in the
+	// same transaction, even though it has already cleared units_stale_at.
+	if _, err := tx.Exec(ctx, `
+		UPDATE citable_unit_catalog_queue
+		SET status = 'pending',
+		    source_fingerprint = NULL,
+		    result_checksum = NULL,
+		    error = 'registry changed outside catalog runner',
+		    started_at = NULL,
+		    finished_at = NULL,
+		    updated_at = now()
+		WHERE book_id = $1 AND status = 'completed'`, plan.BookID); err != nil {
+		return fmt.Errorf("CitableUnitRepo.ApplyReconcile invalidate catalog evidence: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("CitableUnitRepo.ApplyReconcile commit: %w", err)
+	}
 
+	return nil
+}
+
+//nolint:gocognit,gocyclo,cyclop,funlen,wsl_v5 // one atomic guarded batch used by hook and catalog transaction
+func applyReconcileTx(ctx context.Context, tx pgx.Tx, plan *entity.UnitReconcilePlan) error {
 	fp, err := registryFingerprint(ctx, tx, plan.BookID)
 	if err != nil {
 		return err
 	}
 
 	if fp != plan.BasedOn {
+		return entity.ErrUnitReconcileConflict
+	}
+
+	changed, err := bookSourceChangedSince(ctx, tx, plan.BookID, plan.LoadedAt)
+	if err != nil {
+		return err
+	}
+	if changed {
 		return entity.ErrUnitReconcileConflict
 	}
 
@@ -260,51 +402,64 @@ func (r *CitableUnitRepo) ApplyReconcile(ctx context.Context, plan *entity.UnitR
 			INSERT INTO citable_units (
 				id, corpus, book_id, heading_id, page_id, kind, ordinal, position,
 				parent_unit_id, anchor, marker, text, html, text_normalized,
-					normalization_version, content_hash, occurrence, language,
-					provenance_class, provenance_detail, generation_run_id, license_status, lifecycle
-				) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,'active')`,
+					normalization_version, content_hash, occurrence, language, content_role,
+					review_status, source_document_hash, source_char_start, source_char_end,
+					provenance_class, provenance_detail, generation_run_id, license_status, lifecycle, retired_at
+				) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,
+				    CASE WHEN $28::text = 'active' THEN NULL ELSE now() END)`,
 			u.ID, u.Corpus, u.BookID, u.HeadingID, u.PageID, u.Kind, u.Ordinal, u.Position,
 			u.ParentUnitID, u.Anchor, u.Marker, u.Text, u.HTML, u.TextNormalized,
-			u.NormalizationVersion, u.ContentHash, u.Occurrence, u.Language,
-			u.ProvenanceClass, detail, u.GenerationRunID, u.LicenseStatus)
+			u.NormalizationVersion, u.ContentHash, u.Occurrence, u.Language, u.ContentRole,
+			u.ReviewStatus, u.SourceDocumentHash, u.SourceCharStart, u.SourceCharEnd,
+			u.ProvenanceClass, detail, u.GenerationRunID, u.LicenseStatus, u.Lifecycle)
 
 		mintCount++
 
 		return nil
 	}
-	// Parent FK: body units first, footnotes (the only parented kind) after.
-	for i := range plan.Mints {
-		if plan.Mints[i].ParentUnitID == nil {
-			if err := queueMint(&plan.Mints[i]); err != nil {
-				return err
+	// Parent FK: body units first, footnotes (the only parented kind) after,
+	// across both current and already-superseded historical inserts.
+	mintSets := [][]entity.CitableUnit{plan.Mints, plan.HistoricalMints}
+	for _, mints := range mintSets {
+		for i := range mints {
+			if mints[i].ParentUnitID == nil {
+				if err := queueMint(&mints[i]); err != nil {
+					return err
+				}
 			}
 		}
 	}
 
-	for i := range plan.Mints {
-		if plan.Mints[i].ParentUnitID != nil {
-			if err := queueMint(&plan.Mints[i]); err != nil {
-				return err
+	for _, mints := range mintSets {
+		for i := range mints {
+			if mints[i].ParentUnitID != nil {
+				if err := queueMint(&mints[i]); err != nil {
+					return err
+				}
 			}
 		}
 	}
 
 	for _, up := range plan.Updates {
-		// $5 (footnote_link) is NULL for non-footnotes and for footnotes whose
-		// linkage did not change; when set it refreshes provenance_detail so a
-		// now-unlinked footnote's label matches its NULL parent (audit fix).
+		detail, err := json.Marshal(up.ProvenanceDetail)
+		if err != nil {
+			return fmt.Errorf("CitableUnitRepo.ApplyReconcile marshal update provenance (unit %s): %w", up.ID, err)
+		}
 		batch.Queue(`
 			UPDATE citable_units
 			SET position = $2,
 			    page_id = $3,
 			    parent_unit_id = $4,
-			    provenance_detail = CASE
-			        WHEN $5::text IS NULL THEN provenance_detail
-			        ELSE jsonb_set(COALESCE(provenance_detail, '{}'::jsonb), '{footnote_link}', to_jsonb($5::text))
-			    END,
+			    provenance_detail = $5,
+			    html = $6,
+			    review_status = $7,
+			    source_document_hash = $8,
+			    source_char_start = $9,
+			    source_char_end = $10,
 			    updated_at = now()
 			WHERE id = $1 AND lifecycle = 'active'`,
-			up.ID, up.Position, up.PageID, up.ParentUnitID, up.FootnoteLink)
+			up.ID, up.Position, up.PageID, up.ParentUnitID, detail, up.HTML,
+			up.ReviewStatus, up.SourceDocumentHash, up.SourceCharStart, up.SourceCharEnd)
 	}
 
 	for _, ret := range plan.Retires {
@@ -321,7 +476,19 @@ func (r *CitableUnitRepo) ApplyReconcile(ctx context.Context, plan *entity.UnitR
 			VALUES ($1, $2, $3)`, e.PredecessorID, e.SuccessorID, e.Reason)
 	}
 
-	batch.Queue(`UPDATE books SET units_derived_at = $2 WHERE id = $1`, plan.BookID, plan.LoadedAt)
+	batch.Queue(`
+		UPDATE books
+		SET units_derived_at = $2,
+		    units_derivation_profile_version = CASE
+		        WHEN $4 THEN units_derivation_profile_version ELSE $3
+		    END,
+		    units_stale_at = CASE
+		        WHEN $4 THEN COALESCE(units_stale_at, $2)
+		        WHEN units_stale_at > $2 THEN units_stale_at
+		        ELSE NULL
+		    END
+		WHERE id = $1`, plan.BookID, plan.LoadedAt, entity.KitabUnitDerivationProfileVersion,
+		plan.Intermediate)
 
 	results := tx.SendBatch(ctx, batch)
 	for i := 0; i < batch.Len(); i++ {
@@ -348,10 +515,6 @@ func (r *CitableUnitRepo) ApplyReconcile(ctx context.Context, plan *entity.UnitR
 
 	if err := assertRegistryInvariants(ctx, tx, plan); err != nil {
 		return err
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("CitableUnitRepo.ApplyReconcile commit: %w", err)
 	}
 
 	return nil
@@ -429,6 +592,7 @@ const citableUnitColumns = `
 	u.id, u.corpus, u.book_id, u.heading_id, u.page_id, u.kind, u.ordinal, u.position,
 	u.parent_unit_id, u.anchor, u.marker, u.text, u.html, u.text_normalized,
 	u.normalization_version, u.content_hash, u.occurrence, u.language,
+	COALESCE(u.content_role, ''), u.review_status, u.source_document_hash, u.source_char_start, u.source_char_end,
 	u.provenance_class, u.provenance_detail, u.generation_run_id::text, u.license_status, u.lifecycle,
 	u.retired_at, u.created_at, u.updated_at, license.effective_license_status, license.license_source`
 
@@ -445,6 +609,7 @@ func scanCitableUnit(row pgx.Row) (entity.CitableUnit, error) {
 	err := row.Scan(&u.ID, &u.Corpus, &u.BookID, &u.HeadingID, &u.PageID, &u.Kind, &u.Ordinal,
 		&u.Position, &u.ParentUnitID, &u.Anchor, &u.Marker, &u.Text, &u.HTML, &u.TextNormalized,
 		&u.NormalizationVersion, &u.ContentHash, &u.Occurrence, &u.Language,
+		&u.ContentRole, &u.ReviewStatus, &u.SourceDocumentHash, &u.SourceCharStart, &u.SourceCharEnd,
 		&u.ProvenanceClass, &detail, &u.GenerationRunID, &u.LicenseStatus, &u.Lifecycle,
 		&u.RetiredAt, &u.CreatedAt, &u.UpdatedAt, &u.EffectiveLicenseStatus, &u.LicenseSource)
 	if err != nil {
@@ -632,10 +797,13 @@ func (r *CitableUnitRepo) AuditCounts(ctx context.Context) (entity.CitableAuditR
 		SELECT COUNT(*) FROM citable_units f
 		LEFT JOIN citable_units p ON p.id = f.parent_unit_id
 		WHERE f.lifecycle = 'active'
-		  AND ((f.kind = 'footnote' AND f.parent_unit_id IS NULL
+		  AND ((((f.kind = 'footnote') OR (f.kind = 'quran_quote' AND f.marker IS NOT NULL))
+		        AND f.parent_unit_id IS NULL
 		        AND COALESCE(f.provenance_detail->>'footnote_link', '') <> 'unlinked')
-		    OR (f.kind = 'footnote' AND f.parent_unit_id IS NOT NULL AND p.lifecycle <> 'active')
-		    OR (f.kind <> 'footnote' AND f.parent_unit_id IS NOT NULL))`); err != nil {
+		    OR (((f.kind = 'footnote') OR (f.kind = 'quran_quote' AND f.marker IS NOT NULL))
+		        AND f.parent_unit_id IS NOT NULL AND p.lifecycle <> 'active')
+		    OR (NOT ((f.kind = 'footnote') OR (f.kind = 'quran_quote' AND f.marker IS NOT NULL))
+		        AND f.parent_unit_id IS NOT NULL))`); err != nil {
 		return report, err
 	}
 
@@ -676,6 +844,170 @@ func (r *CitableUnitRepo) AuditCounts(ctx context.Context) (entity.CitableAuditR
 	if err := count(&report.Violations.QuranInterpretive, "quran_interpretive", `
 		SELECT COUNT(*) FROM citable_units
 		WHERE corpus = 'quran' AND interpretive_corpus_eligible`); err != nil {
+		return report, err
+	}
+
+	if err := count(&report.Violations.InterpretiveSafety, "interpretive_safety", `
+		SELECT COUNT(*) FROM citable_units
+		WHERE interpretive_retrieval_eligible
+		  AND (
+		      corpus = 'quran'
+		      OR kind = 'quran_quote'
+		      OR (
+		          provenance_class IN ('editorial', 'machine')
+		          AND review_status <> 'approved'
+		      )
+		  )`); err != nil {
+		return report, err
+	}
+
+	if err := count(&report.Violations.RAGProjectionDangling, "rag_projection_dangling", fmt.Sprintf(`
+		SELECT COUNT(*)
+		FROM public_book_publications publication
+		JOIN books b ON b.id = publication.book_id
+		JOIN book_pages page ON page.book_id = b.id AND page.is_deleted = FALSE
+		LEFT JOIN book_page_edits edit
+		  ON edit.book_id = page.book_id AND edit.page_id = page.page_id AND edit.status = 'published'
+		WHERE b.units_derived_at IS NOT NULL
+		  AND b.units_stale_at IS NULL
+		  AND b.units_derivation_profile_version = %d
+		  AND (
+		      btrim(COALESCE(edit.content_text, page.content_text)) <> ''
+		      OR btrim(regexp_replace(
+		          COALESCE(edit.content_html, page.content_html), '<[^>]+>', '', 'g'
+		      )) <> ''
+		  )
+		  AND NOT EXISTS (
+		      SELECT 1 FROM citable_units unit
+		      WHERE unit.book_id = page.book_id
+		        AND unit.page_id = page.page_id
+		        AND unit.corpus = 'kitab'
+		        AND unit.content_role = 'book_page'
+		        AND unit.lifecycle = 'active'
+		  )`, entity.KitabUnitDerivationProfileVersion)); err != nil {
+		return report, err
+	}
+
+	if err := count(&report.Violations.ApprovedMentionAnchor, "approved_mention_anchor", `
+		SELECT COUNT(*) FROM knowledge_mentions
+		WHERE review_status = 'approved'
+		  AND (unit_id IS NULL OR unit_binding_status <> 'bound')`); err != nil {
+		return report, err
+	}
+
+	if err := count(&report.Violations.MentionUnitDangling, "mention_unit_dangling", `
+		WITH RECURSIVE walk(mention_id, unit_id) AS (
+		    SELECT id, unit_id
+		    FROM knowledge_mentions
+		    WHERE unit_binding_status = 'bound' AND unit_id IS NOT NULL
+		    UNION
+		    SELECT walk.mention_id, lineage.successor_id
+		    FROM walk
+		    JOIN citable_unit_lineage lineage ON lineage.predecessor_id = walk.unit_id
+		)
+		SELECT COUNT(*)
+		FROM knowledge_mentions mention
+		WHERE mention.unit_binding_status = 'bound'
+		  AND NOT EXISTS (
+		      SELECT 1
+		      FROM walk
+		      JOIN citable_units unit ON unit.id = walk.unit_id
+		      WHERE walk.mention_id = mention.id AND unit.lifecycle = 'active'
+		  )`); err != nil {
+		return report, err
+	}
+
+	if err := count(&report.Violations.MentionBindingMismatch, "mention_binding_mismatch", `
+		SELECT COUNT(*)
+		FROM knowledge_mentions mention
+		LEFT JOIN citable_units unit ON unit.id = mention.unit_id
+		WHERE mention.unit_binding_status = 'bound'
+		  AND (
+		      unit.id IS NULL
+		      OR mention.unit_char_start IS NULL
+		      OR mention.unit_char_end IS NULL
+		      OR mention.unit_char_start < 0
+		      OR mention.unit_char_end > char_length(unit.text)
+		      OR substring(
+		          unit.text
+		          FROM mention.unit_char_start + 1
+		          FOR mention.unit_char_end - mention.unit_char_start
+		      ) <> mention.exact_quote
+		      OR unit.source_document_hash IS NULL
+		      OR lower(COALESCE(mention.unit_source_hash, '')) <> encode(unit.source_document_hash, 'hex')
+		  )`); err != nil {
+		return report, err
+	}
+
+	if err := count(&report.Violations.CrossReferenceAnchor, "cross_reference_anchor", `
+			WITH RECURSIVE kitab_points AS (
+			    SELECT reference.id, point
+		    FROM cross_references reference
+		    CROSS JOIN LATERAL unnest(string_to_array(reference.source_anchor, '..')) point
+		    WHERE reference.review_status = 'approved' AND reference.source_corpus = 'kitab'
+		    UNION ALL
+		    SELECT reference.id, point
+		    FROM cross_references reference
+		    CROSS JOIN LATERAL unnest(string_to_array(reference.target_anchor, '..')) point
+		    WHERE reference.review_status = 'approved' AND reference.target_corpus = 'kitab'
+			), unit_points AS (
+			    SELECT id, point, split_part(point, '/', 2)::integer AS expected_book_id
+			    FROM kitab_points
+			    WHERE point ~ '^kitab/[1-9][0-9]*/h/[0-9]+/u/[1-9][0-9]*$'
+			), unit_roots AS (
+			    SELECT point.id AS reference_id, point.point, point.expected_book_id,
+			           root.id AS root_id
+			    FROM unit_points point
+			    LEFT JOIN citable_units root ON root.anchor = point.point
+			), unit_walk(
+			    reference_id, point, expected_book_id, unit_id, corpus, book_id,
+			    lifecycle, license_status
+			) AS (
+			    SELECT root.reference_id, root.point, root.expected_book_id,
+			           unit.id, unit.corpus, unit.book_id, unit.lifecycle, unit.license_status
+			    FROM unit_roots root
+			    JOIN citable_units unit ON unit.id = root.root_id
+			    UNION
+			    SELECT walk.reference_id, walk.point, walk.expected_book_id,
+			           successor.id, successor.corpus, successor.book_id,
+			           successor.lifecycle, successor.license_status
+			    FROM unit_walk walk
+			    JOIN citable_unit_lineage lineage ON lineage.predecessor_id = walk.unit_id
+			    JOIN citable_units successor ON successor.id = lineage.successor_id
+			), unit_resolution AS (
+			    SELECT root.reference_id, root.point,
+			           root.root_id IS NOT NULL AS root_exists,
+			           COALESCE(bool_or(
+			               walk.corpus IS DISTINCT FROM 'kitab'
+			               OR walk.book_id IS DISTINCT FROM root.expected_book_id
+			           ), FALSE) AS crossed_boundary,
+			           COALESCE(bool_or(
+			               walk.lifecycle = 'active'
+			               AND walk.corpus = 'kitab'
+			               AND walk.book_id = root.expected_book_id
+			               AND (walk.license_status IS NULL OR walk.license_status = 'permitted')
+			               AND publication.book_id IS NOT NULL
+			           ), FALSE) AS has_active
+			    FROM unit_roots root
+			    LEFT JOIN unit_walk walk
+			      ON walk.reference_id = root.reference_id AND walk.point = root.point
+			    LEFT JOIN public_book_publications publication
+			      ON publication.book_id = root.expected_book_id
+			    GROUP BY root.reference_id, root.point, root.root_id
+			), invalid AS (
+			    SELECT DISTINCT id
+			    FROM kitab_points
+			    WHERE point !~ '^kitab/[1-9][0-9]*/h/[0-9]+/u/[1-9][0-9]*$'
+			      AND NOT cross_reference_anchor_point_visible(point)
+			    UNION
+			    SELECT reference_id
+			    FROM unit_resolution
+			    -- The lineage_cycle counter earlier in this audit independently makes
+			    -- every cycle fail, while this set-union walk stays bounded on cycles
+			    -- and repeated diamonds.
+			    WHERE NOT root_exists OR crossed_boundary OR NOT has_active
+			)
+			SELECT COUNT(*) FROM invalid`); err != nil {
 		return report, err
 	}
 
@@ -774,6 +1106,44 @@ func (r *CitableUnitRepo) ListActiveUnitsForHashCheck(ctx context.Context) ([]en
 
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("CitableUnitRepo.ListActiveUnitsForHashCheck rows: %w", err)
+	}
+
+	return units, nil
+}
+
+// ListActiveUnitsForHashCheckPage is the catalog-scale audit path. Keyset
+// pagination keeps each hourly/weekly integrity pass at bounded memory even
+// after every published kitab has been materialized.
+//
+//nolint:wsl_v5 // tight scan loop keeps the bounded audit projection readable
+func (r *CitableUnitRepo) ListActiveUnitsForHashCheckPage(
+	ctx context.Context,
+	afterID string,
+	limit int,
+) ([]entity.CitableUnit, error) {
+	rows, err := r.Pool.Query(ctx, `
+		SELECT id, kind, marker, text, text_normalized, normalization_version, content_hash
+		FROM citable_units
+		WHERE lifecycle = 'active' AND ($1 = '' OR id > $1::uuid)
+		ORDER BY id
+		LIMIT $2`, afterID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("CitableUnitRepo.ListActiveUnitsForHashCheckPage: %w", err)
+	}
+	defer rows.Close()
+
+	units := make([]entity.CitableUnit, 0, limit)
+
+	for rows.Next() {
+		var u entity.CitableUnit
+		if err := rows.Scan(&u.ID, &u.Kind, &u.Marker, &u.Text, &u.TextNormalized,
+			&u.NormalizationVersion, &u.ContentHash); err != nil {
+			return nil, fmt.Errorf("CitableUnitRepo.ListActiveUnitsForHashCheckPage scan: %w", err)
+		}
+		units = append(units, u)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("CitableUnitRepo.ListActiveUnitsForHashCheckPage rows: %w", err)
 	}
 
 	return units, nil

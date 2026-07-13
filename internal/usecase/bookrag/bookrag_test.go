@@ -2,6 +2,8 @@ package bookrag
 
 import (
 	"context"
+	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/alfariesh/surau-backend/internal/entity"
@@ -323,6 +325,22 @@ func TestParseAndValidateAnswerRejectsMissingQuote(t *testing.T) {
 	assert.False(t, ok)
 }
 
+func TestParseAndValidateAnswerRejectsMarkersBeyondCitationLimit(t *testing.T) {
+	t.Parallel()
+
+	sources := []entity.RAGPageSource{
+		{Ref: "1", ContentText: "bukti pertama"},
+		{Ref: "2", ContentText: "bukti kedua"},
+	}
+	raw := `{"answer":"Jawaban [1] dan [2].","citations":[{"ref":"1","quote":"bukti pertama"},{"ref":"2","quote":"bukti kedua"}]}`
+
+	answer, citations, ok := parseAndValidateAnswer(raw, sources, 1)
+
+	assert.False(t, ok)
+	assert.Empty(t, answer)
+	assert.Empty(t, citations, "validator must not return an answer with a dangling marker")
+}
+
 func TestSourceLikelyContainsAnswerNormalizesArabicMarks(t *testing.T) {
 	t.Parallel()
 
@@ -336,6 +354,24 @@ func TestSourceLikelyContainsAnswerNormalizesArabicMarks(t *testing.T) {
 	ok := sourceLikelyContainsAnswer("Apa makna اللَّهُ نُورُ السَّمَاوَاتِ وَالأَرْضِ?", sources)
 
 	assert.True(t, ok)
+}
+
+func TestUnitCitationRequiresVerbatimQuote(t *testing.T) {
+	t.Parallel()
+
+	unitID := "unit-1"
+	source := entity.RAGPageSource{
+		Ref: "1", UnitID: &unitID, ContentText: "الحديث  الصحيح",
+	}
+	raw := `{"answer":"Jawaban [1].","citations":[{"ref":"1","quote":"الحديث الصحيح"}]}`
+
+	_, _, ok := parseAndValidateAnswer(raw, []entity.RAGPageSource{source}, 5)
+
+	assert.False(t, ok, "unit mode must not normalize or invent a quote before binding its Anchor")
+
+	source.UnitID = nil
+	_, _, ok = parseAndValidateAnswer(raw, []entity.RAGPageSource{source}, 5)
+	assert.True(t, ok, "legacy validator remains byte-compatible during migration")
 }
 
 func TestUseCaseAskBook(t *testing.T) {
@@ -380,6 +416,287 @@ func TestUseCaseAskBook(t *testing.T) {
 	assert.Equal(t, 1, response.Trace.TreeLLMCalls)
 	assert.Equal(t, []int{11}, repo.lastHeadingIDs)
 	assert.Equal(t, []int{12}, repo.lastFocusPageIDs)
+}
+
+func TestUseCaseLegacyModeKeepsCitationJSONCompatible(t *testing.T) {
+	t.Parallel()
+
+	repository, llm := happyBookRAGFixture()
+	uc := New(repository, llm, Options{CitationMode: CitationModeLegacy})
+
+	response, err := uc.AskBook(context.Background(), 797, "Apa definisi hadis sahih?", "id", 5, true)
+
+	require.NoError(t, err)
+	require.Len(t, response.Citations, 1)
+	payload, err := json.Marshal(response.Citations[0])
+	require.NoError(t, err)
+	assert.NotContains(t, string(payload), "unit_id")
+	assert.NotContains(t, string(payload), "unit_anchor")
+	assert.Equal(t, 1, repository.pageSourceCalls)
+	assert.Zero(t, repository.unitSourceCalls)
+	assert.Empty(t, response.Trace.CitationMode)
+}
+
+func TestUseCaseDualModeAddsUnitLocatorWithoutSecondLLM(t *testing.T) {
+	t.Parallel()
+
+	repository, llm := happyBookRAGFixture()
+	repository.unitLocator = entity.RAGUnitLocator{
+		UnitID:     "unit-1",
+		UnitAnchor: "kitab/797/h/11/u/42",
+		Found:      true,
+	}
+	uc := New(repository, llm, Options{CitationMode: CitationModeDual})
+
+	response, err := uc.AskBook(context.Background(), 797, "Apa definisi hadis sahih?", "id", 5, true)
+
+	require.NoError(t, err)
+	require.Len(t, response.Citations, 1)
+	require.NotNil(t, response.Citations[0].UnitID)
+	require.NotNil(t, response.Citations[0].UnitAnchor)
+	assert.Equal(t, "unit-1", *response.Citations[0].UnitID)
+	assert.Equal(t, 1, repository.resolveCalls)
+	assert.Equal(t, 2, len(llm.messages), "dual projection must not call the LLM again")
+	assert.Equal(t, CitationModeDual, response.Trace.CitationMode)
+}
+
+func TestProjectUnitCitationsRejectsMixedProjectionWithoutPartialAssignment(t *testing.T) {
+	t.Parallel()
+
+	repository := &fakeBookRAGRepo{
+		unitLocators: []entity.RAGUnitLocator{
+			{UnitID: "unit-1", UnitAnchor: "kitab/797/h/11/u/42", Found: true},
+			{},
+		},
+	}
+	uc := New(repository, &fakeLLM{}, Options{CitationMode: CitationModeDual})
+	citations := []entity.BookRAGCitation{
+		{Ref: "1", BookID: 797, HeadingID: 11, PageID: 12, Quote: "quote one"},
+		{Ref: "2", BookID: 797, HeadingID: 11, PageID: 12, Quote: "quote two"},
+	}
+
+	err := uc.projectUnitCitations(context.Background(), 797, citations)
+
+	var mismatchErr citationParityMismatchError
+	require.ErrorAs(t, err, &mismatchErr)
+	assert.Empty(t, materializationFallbackReason(err), "quote mismatch must never enter legacy fallback")
+	assert.Nil(t, citations[0].UnitID, "projection must remain all-or-nothing")
+	assert.Nil(t, citations[1].UnitID, "projection must remain all-or-nothing")
+}
+
+func TestUseCaseDualModeFallsBackWholeResponseOnMidRequestStale(t *testing.T) {
+	t.Parallel()
+
+	repository, llm := happyBookRAGFixture()
+	repository.resolveErr = entity.ErrRAGUnitMaterializationStale
+	uc := New(repository, llm, Options{
+		CitationMode:   CitationModeDual,
+		LegacyFallback: true,
+	})
+
+	response, err := uc.AskBook(context.Background(), 797, "Apa definisi hadis sahih?", "id", 5, true)
+
+	require.NoError(t, err)
+	require.Len(t, response.Citations, 1)
+	assert.Nil(t, response.Citations[0].UnitID)
+	assert.Nil(t, response.Citations[0].UnitAnchor)
+	assert.True(t, response.Trace.LegacyFallback)
+	assert.Equal(t, "stale", response.Trace.FallbackReason)
+	assert.Equal(t, 2, len(llm.messages), "dual stale handling must not run a second answer pipeline")
+}
+
+func TestUseCaseDualModeDoesNotFallbackWhenDisabled(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		expected  error
+		configure func(*fakeBookRAGRepo)
+		llmCalls  int
+	}{
+		{
+			name:     "preflight incomplete",
+			expected: entity.ErrRAGUnitMaterializationIncomplete,
+			configure: func(repository *fakeBookRAGRepo) {
+				repository.materializationErr = entity.ErrRAGUnitMaterializationIncomplete
+			},
+		},
+		{
+			name:     "projection stale",
+			expected: entity.ErrRAGUnitMaterializationStale,
+			configure: func(repository *fakeBookRAGRepo) {
+				repository.resolveErr = entity.ErrRAGUnitMaterializationStale
+			},
+			llmCalls: 2,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			repository, llm := happyBookRAGFixture()
+			test.configure(repository)
+			uc := New(repository, llm, Options{
+				CitationMode:   CitationModeDual,
+				LegacyFallback: false,
+			})
+
+			_, err := uc.AskBook(context.Background(), 797, "Apa definisi hadis sahih?", "id", 5, true)
+
+			require.ErrorIs(t, err, test.expected)
+			assert.Len(t, llm.messages, test.llmCalls)
+		})
+	}
+}
+
+func TestUseCaseUnitModeUsesUnitEvidence(t *testing.T) {
+	t.Parallel()
+
+	repository, llm := happyBookRAGFixture()
+	unitID := "unit-1"
+	unitAnchor := "kitab/797/h/11/u/42"
+	repository.sources[0].UnitID = &unitID
+	repository.sources[0].UnitAnchor = &unitAnchor
+	uc := New(repository, llm, Options{CitationMode: CitationModeUnit})
+
+	response, err := uc.AskBook(context.Background(), 797, "Apa definisi hadis sahih?", "id", 5, true)
+
+	require.NoError(t, err)
+	require.Len(t, response.Citations, 1)
+	assert.Equal(t, 1, repository.unitSourceCalls)
+	assert.Zero(t, repository.pageSourceCalls)
+	assert.Equal(t, unitID, *response.Citations[0].UnitID)
+	assert.Equal(t, unitAnchor, *response.Citations[0].UnitAnchor)
+	assert.Equal(t, CitationModeUnit, response.Trace.CitationMode)
+}
+
+func TestUseCaseUnitModeFallsBackWholeRequestForTypedIncomplete(t *testing.T) {
+	t.Parallel()
+
+	repository, llm := happyBookRAGFixture()
+	repository.materializationErr = entity.ErrRAGUnitMaterializationIncomplete
+	uc := New(repository, llm, Options{
+		CitationMode:   CitationModeUnit,
+		LegacyFallback: true,
+	})
+
+	response, err := uc.AskBook(context.Background(), 797, "Apa definisi hadis sahih?", "id", 5, true)
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, repository.pageSourceCalls)
+	assert.Zero(t, repository.unitSourceCalls)
+	assert.Equal(t, 2, len(llm.messages), "typed preflight fallback must not start a unit LLM pass")
+	require.NotNil(t, response.Trace)
+	assert.Equal(t, CitationModeUnit, response.Trace.CitationMode)
+	assert.True(t, response.Trace.LegacyFallback)
+	assert.Equal(t, "incomplete", response.Trace.FallbackReason)
+}
+
+func TestUseCaseUnitModeFallsBackWhenUnitLocatorIsMissing(t *testing.T) {
+	t.Parallel()
+
+	repository, llm := happyBookRAGFixture()
+	repository.omitUnitLocators = true
+	llm.responses = []string{
+		`{"thinking":"unit tree","node_ids":[11]}`,
+		`{"thinking":"legacy tree","node_ids":[11]}`,
+		`{"answer":"Hadis sahih berkaitan dengan sanad yang bersambung [1].","citations":[{"ref":"1","quote":"ما اتصل سنده"}]}`,
+	}
+	uc := New(repository, llm, Options{
+		CitationMode:   CitationModeUnit,
+		LegacyFallback: true,
+	})
+
+	response, err := uc.AskBook(context.Background(), 797, "Apa definisi hadis sahih?", "id", 5, true)
+
+	require.NoError(t, err)
+	require.Len(t, response.Citations, 1)
+	assert.Nil(t, response.Citations[0].UnitID)
+	assert.True(t, response.Trace.LegacyFallback)
+	assert.Equal(t, "incomplete", response.Trace.FallbackReason)
+	assert.Equal(t, 3, len(llm.messages), "unit pass stops before answer LLM, then legacy runs one full pass")
+}
+
+func TestUseCaseUnitModeDoesNotFallbackForDatabaseError(t *testing.T) {
+	t.Parallel()
+
+	repository, llm := happyBookRAGFixture()
+	databaseErr := assert.AnError
+	repository.materializationErr = databaseErr
+	uc := New(repository, llm, Options{
+		CitationMode:   CitationModeUnit,
+		LegacyFallback: true,
+	})
+
+	_, err := uc.AskBook(context.Background(), 797, "Apa definisi hadis sahih?", "id", 5, true)
+
+	require.ErrorIs(t, err, databaseErr)
+	assert.Zero(t, repository.pageSourceCalls)
+	assert.Zero(t, repository.unitSourceCalls)
+	assert.Empty(t, llm.messages)
+}
+
+func TestUseCaseUnitModeDoesNotFallbackForEligibilityDenial(t *testing.T) {
+	t.Parallel()
+
+	repository, llm := happyBookRAGFixture()
+	repository.materializationErr = entity.ErrRAGEvidenceNotFound
+	uc := New(repository, llm, Options{
+		CitationMode:   CitationModeUnit,
+		LegacyFallback: true,
+	})
+
+	_, err := uc.AskBook(context.Background(), 797, "Apa definisi hadis sahih?", "id", 5, true)
+
+	require.ErrorIs(t, err, entity.ErrRAGEvidenceNotFound)
+	assert.Zero(t, repository.pageSourceCalls)
+	assert.Zero(t, repository.unitSourceCalls)
+	assert.Empty(t, llm.messages)
+}
+
+func TestUseCaseUnitModeFallbackCanBeDisabled(t *testing.T) {
+	t.Parallel()
+
+	repository, llm := happyBookRAGFixture()
+	repository.materializationErr = entity.ErrRAGUnitMaterializationStale
+	uc := New(repository, llm, Options{CitationMode: CitationModeUnit})
+
+	_, err := uc.AskBook(context.Background(), 797, "Apa definisi hadis sahih?", "id", 5, true)
+
+	require.ErrorIs(t, err, entity.ErrRAGUnitMaterializationStale)
+	assert.Zero(t, repository.pageSourceCalls)
+	assert.Zero(t, repository.unitSourceCalls)
+	assert.Empty(t, llm.messages)
+}
+
+func happyBookRAGFixture() (*fakeBookRAGRepo, *fakeLLM) {
+	repository := &fakeBookRAGRepo{
+		doc: entity.RAGBookDocument{BookID: 797, Title: "Book"},
+		structure: []entity.RAGStructureNode{
+			{HeadingID: 11, Title: "الصحيح", StartPageID: 12, EndPageID: 13},
+		},
+		searchResults: []entity.RAGSearchResult{{HeadingID: 11, PageID: 12}},
+		sources: []entity.RAGPageSource{
+			{
+				BookID:       797,
+				HeadingID:    11,
+				HeadingTitle: "الصحيح",
+				StartPageID:  12,
+				EndPageID:    13,
+				PageID:       12,
+				Anchor:       "toc-11",
+				URL:          "/v1/books/797/toc/11/read?lang=id",
+				ContentText:  "الحديث الصحيح هو ما اتصل سنده.",
+			},
+		},
+	}
+	llm := &fakeLLM{responses: []string{
+		`{"thinking":"title matches","node_ids":[11]}`,
+		`{"answer":"Hadis sahih berkaitan dengan sanad yang bersambung [1].","citations":[{"ref":"1","quote":"ما اتصل سنده"}]}`,
+	}}
+
+	return repository, llm
 }
 
 func TestUseCaseAskBookReturnsNotFoundWhenNoCandidateHeadings(t *testing.T) {
@@ -523,14 +840,42 @@ func TestUseCaseAskBookFallsBackToExtractiveCitationWhenRepairStillRefuses(t *te
 	assert.Contains(t, response.Answer, "[1]")
 }
 
+func TestBoundUnitContextKeepsLegacyTotalRuneBudget(t *testing.T) {
+	t.Parallel()
+
+	unitID := "unit"
+	unitAnchor := "kitab/1/h/1/u/1"
+	sources := []entity.RAGPageSource{
+		{ContentText: strings.Repeat("ا", 3000), UnitID: &unitID, UnitAnchor: &unitAnchor},
+		{ContentText: strings.Repeat("ب", 3000), UnitID: &unitID, UnitAnchor: &unitAnchor},
+		{ContentText: strings.Repeat("ت", 3000), UnitID: &unitID, UnitAnchor: &unitAnchor},
+	}
+
+	bounded := boundUnitContext(sources, 6000)
+	require.Len(t, bounded, 2)
+	assert.Empty(t, boundUnitContext(sources, 0))
+}
+
 type fakeBookRAGRepo struct {
-	doc              entity.RAGBookDocument
-	structure        []entity.RAGStructureNode
-	searchResults    []entity.RAGSearchResult
-	searchByQuery    map[string][]entity.RAGSearchResult
-	sources          []entity.RAGPageSource
-	lastHeadingIDs   []int
-	lastFocusPageIDs []int
+	doc                entity.RAGBookDocument
+	structure          []entity.RAGStructureNode
+	searchResults      []entity.RAGSearchResult
+	searchByQuery      map[string][]entity.RAGSearchResult
+	sources            []entity.RAGPageSource
+	lastHeadingIDs     []int
+	lastFocusPageIDs   []int
+	materializationErr error
+	unitLocator        entity.RAGUnitLocator
+	unitLocators       []entity.RAGUnitLocator
+	resolveErr         error
+	pageSourceCalls    int
+	unitSourceCalls    int
+	resolveCalls       int
+	omitUnitLocators   bool
+}
+
+func (r *fakeBookRAGRepo) CheckRAGUnitMaterialization(_ context.Context, _ int) error {
+	return r.materializationErr
 }
 
 func (r *fakeBookRAGRepo) GetRAGBookDocument(
@@ -557,10 +902,45 @@ func (r *fakeBookRAGRepo) GetRAGPageSources(
 	_ string,
 	_ int,
 ) ([]entity.RAGPageSource, error) {
+	r.pageSourceCalls++
 	r.lastHeadingIDs = append([]int(nil), headingIDs...)
 	r.lastFocusPageIDs = append([]int(nil), focusPageIDs...)
 
 	return r.sources, nil
+}
+
+func (r *fakeBookRAGRepo) GetRAGUnitSources(
+	_ context.Context,
+	_ int,
+	headingIDs []int,
+	focusPageIDs []int,
+	_ string,
+	_ int,
+) ([]entity.RAGPageSource, error) {
+	r.unitSourceCalls++
+
+	r.lastHeadingIDs = append([]int(nil), headingIDs...)
+	r.lastFocusPageIDs = append([]int(nil), focusPageIDs...)
+
+	result := append([]entity.RAGPageSource(nil), r.sources...)
+	for i := range result {
+		if r.omitUnitLocators {
+			continue
+		}
+
+		if result[i].UnitID == nil {
+			unitID := "unit-" + result[i].Ref
+			if result[i].Ref == "" {
+				unitID = "unit-fixture"
+			}
+
+			unitAnchor := "kitab/797/h/11/u/42"
+			result[i].UnitID = &unitID
+			result[i].UnitAnchor = &unitAnchor
+		}
+	}
+
+	return result, nil
 }
 
 func (r *fakeBookRAGRepo) SearchRAGPages(
@@ -575,6 +955,34 @@ func (r *fakeBookRAGRepo) SearchRAGPages(
 	}
 
 	return r.searchResults, nil
+}
+
+func (r *fakeBookRAGRepo) SearchRAGUnits(
+	_ context.Context,
+	_ int,
+	query string,
+	_ int,
+) ([]entity.RAGSearchResult, error) {
+	if r.searchByQuery != nil {
+		return r.searchByQuery[query], nil
+	}
+
+	return r.searchResults, nil
+}
+
+func (r *fakeBookRAGRepo) ResolveRAGUnitCitation(
+	_ context.Context,
+	_ int,
+	_ int,
+	_ int,
+	_ string,
+) (entity.RAGUnitLocator, error) {
+	r.resolveCalls++
+	if len(r.unitLocators) >= r.resolveCalls {
+		return r.unitLocators[r.resolveCalls-1], r.resolveErr
+	}
+
+	return r.unitLocator, r.resolveErr
 }
 
 type fakeLLM struct {

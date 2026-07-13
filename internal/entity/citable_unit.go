@@ -8,6 +8,8 @@ import (
 // Citable Unit registry vocabulary (roadmap/phase-1b-content-backbone.md C1/C2),
 // mirroring the CHECK constraints on citable_units / citable_unit_lineage.
 const (
+	KitabUnitDerivationProfileVersion = 2
+
 	UnitCorpusKitab  = "kitab"
 	UnitCorpusQuran  = "quran"
 	UnitCorpusHadith = "hadith"
@@ -21,6 +23,17 @@ const (
 	UnitKindPrimaryText     = "primary_text"
 	UnitKindTranslation     = "translation"
 	UnitKindTransliteration = "transliteration"
+	UnitKindSummary         = "summary"
+
+	UnitContentRoleBookPage           = "book_page"
+	UnitContentRoleSectionTranslation = "section_translation"
+	UnitContentRoleHeadingSummary     = "heading_summary"
+
+	UnitReviewStatusPending     = "pending"
+	UnitReviewStatusApproved    = "approved"
+	UnitReviewStatusRejected    = "rejected"
+	UnitReviewStatusAmbiguous   = "ambiguous"
+	UnitReviewStatusNeedsReview = "needs_review"
 
 	UnitLifecycleActive     = "active"
 	UnitLifecycleSuperseded = "superseded"
@@ -66,6 +79,11 @@ type CitableUnit struct {
 	ContentHash            []byte
 	Occurrence             int
 	Language               string
+	ContentRole            string
+	ReviewStatus           string
+	SourceDocumentHash     []byte
+	SourceCharStart        *int
+	SourceCharEnd          *int
 	ProvenanceClass        string
 	ProvenanceDetail       map[string]any
 	GenerationRunID        *string
@@ -209,8 +227,25 @@ type UnitResolution struct {
 type BookUnitSourcePage struct {
 	PageID           int
 	ContentHTML      string
+	ContentText      string
+	RawContentHTML   string
+	RawContentText   string
 	HasPublishedEdit bool
 	EditActorID      string
+}
+
+// BookUnitSourceAsset is one published production enrichment. Legacy rows are
+// loaded so coverage can report them honestly, but the deriver never invents
+// provenance or generation identity for them.
+type BookUnitSourceAsset struct {
+	HeadingID       int
+	PageID          int
+	ContentRole     string
+	Language        string
+	Content         string
+	ProvenanceClass string
+	GenerationRunID *string
+	ReviewStatus    string
 }
 
 // BookUnitSourceHeading is the heading skeleton used for scope segmentation.
@@ -226,6 +261,7 @@ type BookUnitSource struct {
 	ReleaseKey string
 	Pages      []BookUnitSourcePage
 	Headings   []BookUnitSourceHeading
+	Assets     []BookUnitSourceAsset
 	LoadedAt   time.Time
 }
 
@@ -251,15 +287,21 @@ type UnitReconcileReport struct {
 // CitableAuditViolations are registry invariant breaches; any nonzero value
 // fires the surau_citable_audit_violations alert (AC-3 "audit menggantung = 0").
 type CitableAuditViolations struct {
-	BookGone              int64 // active units on missing/is_deleted books
-	SupersededNoSuccessor int64
-	ActiveWithSuccessor   int64 // lineage edge whose predecessor is still active
-	LineageCycle          int64 // directed cycle reachable in the redirect graph
-	HashMismatch          int64 // recomputed content hash / normalized text drift
-	AnchorMalformed       int64
-	FootnoteParent        int64 // active footnote with missing/non-active parent
-	QuranBinding          int64 // Quran unit missing/invalid binding or source match
-	QuranInterpretive     int64 // must remain zero by generated-column construction
+	BookGone               int64 // active units on missing/is_deleted books
+	SupersededNoSuccessor  int64
+	ActiveWithSuccessor    int64 // lineage edge whose predecessor is still active
+	LineageCycle           int64 // directed cycle reachable in the redirect graph
+	HashMismatch           int64 // recomputed content hash / normalized text drift
+	AnchorMalformed        int64
+	FootnoteParent         int64 // active footnote with missing/non-active parent
+	QuranBinding           int64 // Quran unit missing/invalid binding or source match
+	QuranInterpretive      int64 // must remain zero by generated-column construction
+	InterpretiveSafety     int64 // machine-unreviewed/quran-quote unexpectedly eligible
+	RAGProjectionDangling  int64 // published non-empty page without a current book_page unit
+	ApprovedMentionAnchor  int64 // approved mention without an exact/resolvable unit binding
+	MentionUnitDangling    int64 // bound mention whose historical Anchor cannot reach a live unit
+	MentionBindingMismatch int64 // bound span/hash does not reproduce the exact quote
+	CrossReferenceAnchor   int64 // approved kitab Cross-Reference points at no registry Anchor
 }
 
 // CitableAuditInfo are dashboard-only observations (no alert): normal
@@ -304,11 +346,17 @@ type UnitRegistrySnapshot struct {
 // became unlinked) — otherwise the label would go stale and the audit's
 // footnote_parent check would false-positive.
 type UnitPlanUpdate struct {
-	ID           string
-	Position     int
-	PageID       *int
-	ParentUnitID *string
-	FootnoteLink *string
+	ID                 string
+	Position           int
+	PageID             *int
+	ParentUnitID       *string
+	FootnoteLink       *string
+	HTML               *string
+	ReviewStatus       string
+	ProvenanceDetail   map[string]any
+	SourceDocumentHash []byte
+	SourceCharStart    *int
+	SourceCharEnd      *int
 }
 
 // UnitPlanRetire retires one unit (lifecycle superseded or tombstoned).
@@ -320,13 +368,36 @@ type UnitPlanRetire struct {
 // UnitReconcilePlan is the full write set for one book, applied atomically by
 // the registry repo inside the guarded transaction.
 type UnitReconcilePlan struct {
-	BookID         int
-	LoadedAt       time.Time
-	BasedOn        UnitRegistryFingerprint
-	Mints          []CitableUnit
+	BookID   int
+	LoadedAt time.Time
+	BasedOn  UnitRegistryFingerprint
+	Mints    []CitableUnit
+	// HistoricalMints are inserted already retired: superseded only when the
+	// planner proves lineage to an active successor, otherwise tombstoned.
+	// K-1 uses this service-owned path to preserve raw mention offsets without
+	// replacing pilot UUIDs or inventing redirects.
+	HistoricalMints []CitableUnit
+	// Intermediate keeps the book structurally stale. It is used only by the
+	// raw-first bootstrap pass; public unit retrieval must not observe that
+	// transient snapshot before the effective pass commits.
+	Intermediate   bool
 	Updates        []UnitPlanUpdate
 	Retires        []UnitPlanRetire
 	Edges          []CitableUnitLineage
 	ExpectedActive int64
 	Report         UnitReconcileReport
+}
+
+// CitableCatalogReconcileRequest is the atomic per-book F1-H operation. Queue
+// completion is part of the same transaction as registry and mention writes.
+type CitableCatalogReconcileRequest struct {
+	BookID   int
+	JobName  string
+	Rederive bool
+}
+
+type CitableCatalogReconcileResult struct {
+	Report            UnitReconcileReport
+	SourceFingerprint [32]byte
+	RegistryChecksum  [32]byte
 }

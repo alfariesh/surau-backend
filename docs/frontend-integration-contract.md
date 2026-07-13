@@ -1,6 +1,6 @@
 # Frontend Integration Contract
 
-Last updated: 2026-07-12
+Last updated: 2026-07-13
 
 This is the main FE integration entrypoint for kitab reader and Quran reader.
 Use it together with:
@@ -232,6 +232,49 @@ Kitab display rules:
 - Show translation feedback only when `translation !== null && translation.lang === selectedLang`.
 - Use `availability.title`, `availability.translation`, `availability.summary`, and `availability.audio` for tabs, badges, empty states, and language offers.
 - Use `localization.availability` on category, author, and book cards. Do not hide catalog rows only because requested metadata is missing.
+
+## Book-RAG Citation Contract (K-1)
+
+`POST /v1/books/{book_id}/rag?lang={lang}` tetap mempertahankan seluruh locator sitasi lama.
+K-1 hanya menambah identitas Citable Unit secara opsional:
+
+```ts
+export type BookRAGCitation = {
+  ref: string;
+  book_id: number;
+  heading_id: number;
+  heading_title: string;
+  page_id: number;
+  printed_page?: string | null;
+  part?: string | null;
+  anchor: string;       // tetap anchor legacy, mis. toc-11
+  url: string;          // tetap URL reader legacy
+  quote: string;
+  unit_id?: string;
+  unit_anchor?: string; // Anchor kanonik K-1 bila mapping exact berhasil
+};
+```
+
+Aturan konsumsi:
+
+- Jangan mengartikan `anchor` sebagai `unit_anchor`; semantik field lama tidak berubah.
+- Bila `unit_anchor` hadir, simpan sebagai identitas presisi dan resolve lewat
+  `GET /v1/anchors/resolve?anchor=...` saat perlu mengikuti edit/split/merge. Tetap gunakan `url`
+  untuk navigasi reader saat ini.
+- Field unit absen hanya pada mode `legacy` atau fallback satu-request penuh bertipe
+  `incomplete|stale`; pada dua kondisi itu tetap render kartu sitasi legacy.
+- Mapping quote nol/ganda/lintas unit pada mode `dual` yang sudah lengkap adalah pelanggaran
+  parity: backend menggagalkan request (SSE mengirim event `error`) dan tidak mengirim kartu
+  parsial atau locator tebakan. Tampilkan state gagal/coba lagi dan jangan menyusun locator di FE.
+- JSON dan SSE memakai objek yang sama. Event `citations` mengirim `BookRAGCitation[]`; event
+  `done` mengirim respons final lengkap.
+- `include_trace=true` dapat menambah `citation_mode`, `legacy_fallback`, dan
+  `fallback_reason="incomplete|stale"`. Ini diagnostik saja. Fallback selalu satu request penuh,
+  jadi FE tidak perlu menyatukan dua set bukti.
+- Field lama dipertahankan minimal 90 hari. Jangan membuat UUID/Anchor unit di FE.
+
+Endpoint RAG adalah POST dinamis dan tetap bypass cache edge. Detail request/SSE ada di
+[`docs/mobile-backend-integration-guide.md`](mobile-backend-integration-guide.md) §Kitab Reader.
 
 ## Quran Reader Flow
 

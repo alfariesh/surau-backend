@@ -125,6 +125,8 @@ var goldenCodes = map[string]string{
 	"rag evidence not found":               "rag_evidence_not_found",
 	"rag is not configured":                "rag_is_not_configured",
 	"rag llm is not configured":            "rag_llm_is_not_configured",
+	"rag unit materialization incomplete":  "rag_unit_materialization_incomplete",
+	"rag unit materialization stale":       "rag_unit_materialization_stale",
 	"saved item not found":                 "saved_item_not_found",
 	"session not found":                    "session_not_found",
 	"task not found":                       "task_not_found",
