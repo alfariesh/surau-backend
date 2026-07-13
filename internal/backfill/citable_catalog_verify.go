@@ -17,17 +17,19 @@ import (
 	"github.com/alfariesh/surau-backend/internal/repo/persistent"
 	"github.com/alfariesh/surau-backend/internal/usecase/unitregistry"
 	"github.com/alfariesh/surau-backend/pkg/postgres"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 const (
-	verificationSearchBookLimit       = 10
-	verificationSearchResultLimit     = 20
-	searchP95TargetMilliseconds       = 400
-	microsecondsPerMillisecond        = 1000
-	verificationSearchPercentile      = 95
-	verificationSearchPercentileScale = 100
-	bitmapWordBits                    = 64
+	verificationSearchBookLimit        = 10
+	verificationSearchResultLimit      = 20
+	searchP95TargetMilliseconds        = 400
+	microsecondsPerMillisecond         = 1000
+	verificationSearchPercentile       = 95
+	verificationSearchPercentileScale  = 100
+	bitmapWordBits                     = 64
+	canonicalVerificationPageBatchSize = 128
 )
 
 // CitableCatalogVerification is the machine-readable K-1 acceptance evidence.
@@ -557,78 +559,158 @@ ORDER BY b.id`, CitableCatalogBookIDs)
 				fmt.Errorf("verify canonical coverage load book %d: %w", bookID, loadErr)
 		}
 
-		derived, _, deriveErr := unitregistry.DeriveBook(&source)
-		if deriveErr != nil {
+		for start := 0; start < len(source.Pages); start += canonicalVerificationPageBatchSize {
+			end := min(start+canonicalVerificationPageBatchSize, len(source.Pages))
+			batch := source
+			batch.Pages = source.Pages[start:end]
+			batch.Assets = nil
+
+			batchDocuments, batchCovered, batchUncovered, batchUnexpected, batchErr := verifyCanonicalSourceBatch(ctx, pool, bookID, &batch, true)
+			if batchErr != nil {
+				return documents, coveredRunes, uncoveredRunes, unexpectedSpans, batchErr
+			}
+
+			documents += batchDocuments
+			coveredRunes += batchCovered
+			uncoveredRunes += batchUncovered
+			unexpectedSpans += batchUnexpected
+		}
+
+		pageIDs := make([]int, 0, len(source.Pages))
+		for i := range source.Pages {
+			pageIDs = append(pageIDs, source.Pages[i].PageID)
+		}
+
+		var strayPageUnits int64
+		if err := pool.QueryRow(ctx, `
+SELECT COUNT(*)
+FROM citable_units
+WHERE book_id = $1 AND corpus = 'kitab' AND lifecycle = 'active'
+  AND content_role = 'book_page'
+  AND (page_id IS NULL OR NOT (page_id = ANY($2)))`, bookID, pageIDs).Scan(&strayPageUnits); err != nil {
 			return documents, coveredRunes, uncoveredRunes, unexpectedSpans,
-				fmt.Errorf("verify canonical coverage derive book %d: %w", bookID, deriveErr)
+				fmt.Errorf("verify canonical coverage stray pages book %d: %w", bookID, err)
 		}
 
-		expectedCounts := make(map[string]int, len(derived))
-		requiredCoverage := canonicalRequiredCoverage(bookID, &source)
-		for i := range derived {
-			span := canonicalSpanForDerived(bookID, &derived[i])
-			expectedCounts[span.span]++
+		unexpectedSpans += strayPageUnits
+
+		batch := source
+		batch.Pages = nil
+
+		batchDocuments, batchCovered, batchUncovered, batchUnexpected, batchErr := verifyCanonicalSourceBatch(ctx, pool, bookID, &batch, false)
+		if batchErr != nil {
+			return documents, coveredRunes, uncoveredRunes, unexpectedSpans, batchErr
 		}
 
-		documents += int64(len(requiredCoverage))
+		documents += batchDocuments
+		coveredRunes += batchCovered
+		uncoveredRunes += batchUncovered
+		unexpectedSpans += batchUnexpected
+	}
 
-		actualRows, queryErr := pool.Query(ctx, `
+	return documents, coveredRunes, uncoveredRunes, unexpectedSpans, nil
+}
+
+// verifyCanonicalSourceBatch preserves the exact source-to-registry proof while
+// bounding the expensive parser/deriver state. In particular, a large Shamela
+// book no longer keeps every DerivedUnit and every span key live at once.
+//
+//nolint:cyclop,funlen,gocognit,gocyclo // exact row validation keeps every fail-closed check in one bounded scan
+func verifyCanonicalSourceBatch(
+	ctx context.Context,
+	pool *pgxpool.Pool,
+	bookID int,
+	source *entity.BookUnitSource,
+	pages bool,
+) (documents, coveredRunes, uncoveredRunes, unexpectedSpans int64, err error) {
+	derived, _, err := unitregistry.DeriveBook(source)
+	if err != nil {
+		return 0, 0, 0, 0, fmt.Errorf("verify canonical coverage derive book %d: %w", bookID, err)
+	}
+
+	expectedCounts := make(map[string]int, len(derived))
+
+	requiredCoverage := canonicalRequiredCoverage(bookID, source)
+	for i := range derived {
+		span := canonicalSpanForDerived(bookID, &derived[i])
+		expectedCounts[span.span]++
+	}
+
+	documents = int64(len(requiredCoverage))
+
+	var actualRows pgx.Rows
+
+	if pages {
+		pageIDs := make([]int, 0, len(source.Pages))
+		for i := range source.Pages {
+			pageIDs = append(pageIDs, source.Pages[i].PageID)
+		}
+
+		actualRows, err = pool.Query(ctx, `
 SELECT COALESCE(heading_id, 0), page_id, kind, text, language, content_role,
        source_document_hash, source_char_start, source_char_end
 FROM citable_units
 WHERE book_id = $1 AND corpus = 'kitab' AND lifecycle = 'active'
+  AND content_role = 'book_page' AND page_id = ANY($2)
+ORDER BY id`, bookID, pageIDs)
+	} else {
+		actualRows, err = pool.Query(ctx, `
+SELECT COALESCE(heading_id, 0), page_id, kind, text, language, content_role,
+       source_document_hash, source_char_start, source_char_end
+FROM citable_units
+WHERE book_id = $1 AND corpus = 'kitab' AND lifecycle = 'active'
+  AND content_role <> 'book_page'
 ORDER BY id`, bookID)
-		if queryErr != nil {
-			return documents, coveredRunes, uncoveredRunes, unexpectedSpans,
-				fmt.Errorf("verify canonical coverage units book %d: %w", bookID, queryErr)
-		}
+	}
 
-		for actualRows.Next() {
-			var (
-				headingID, pageID          int
-				kind, text, language, role string
-				documentHash               []byte
-				startPointer, endPointer   *int
-			)
-			if scanErr := actualRows.Scan(&headingID, &pageID, &kind, &text, &language, &role,
-				&documentHash, &startPointer, &endPointer); scanErr != nil {
-				actualRows.Close()
+	if err != nil {
+		return documents, coveredRunes, uncoveredRunes, unexpectedSpans,
+			fmt.Errorf("verify canonical coverage units book %d: %w", bookID, err)
+	}
 
-				return documents, coveredRunes, uncoveredRunes, unexpectedSpans,
-					fmt.Errorf("verify canonical coverage units scan book %d: %w", bookID, scanErr)
-			}
-
-			if startPointer == nil || endPointer == nil || documentHash == nil {
-				unexpectedSpans++
-
-				continue
-			}
-
-			span := canonicalSpanKey(bookID, headingID, pageID, kind, text, language, role,
-				documentHash, *startPointer, *endPointer)
-			if expectedCounts[span.span] == 0 {
-				unexpectedSpans++
-
-				continue
-			}
-
-			expectedCounts[span.span]--
-			markCanonicalRunes(requiredCoverage, span)
-		}
-
-		if rowsErr := actualRows.Err(); rowsErr != nil {
+	for actualRows.Next() {
+		var (
+			headingID, pageID          int
+			kind, text, language, role string
+			documentHash               []byte
+			startPointer, endPointer   *int
+		)
+		if scanErr := actualRows.Scan(&headingID, &pageID, &kind, &text, &language, &role,
+			&documentHash, &startPointer, &endPointer); scanErr != nil {
 			actualRows.Close()
 
 			return documents, coveredRunes, uncoveredRunes, unexpectedSpans,
-				fmt.Errorf("verify canonical coverage units rows book %d: %w", bookID, rowsErr)
+				fmt.Errorf("verify canonical coverage units scan book %d: %w", bookID, scanErr)
 		}
 
+		if startPointer == nil || endPointer == nil || documentHash == nil {
+			unexpectedSpans++
+
+			continue
+		}
+
+		span := canonicalSpanKey(bookID, headingID, pageID, kind, text, language, role,
+			documentHash, *startPointer, *endPointer)
+		if expectedCounts[span.span] == 0 {
+			unexpectedSpans++
+
+			continue
+		}
+
+		expectedCounts[span.span]--
+		markCanonicalRunes(requiredCoverage, span)
+	}
+
+	if rowsErr := actualRows.Err(); rowsErr != nil {
 		actualRows.Close()
 
-		covered, uncovered := countUncoveredCanonicalRunes(requiredCoverage)
-		coveredRunes += covered
-		uncoveredRunes += uncovered
+		return documents, coveredRunes, uncoveredRunes, unexpectedSpans,
+			fmt.Errorf("verify canonical coverage units rows book %d: %w", bookID, rowsErr)
 	}
+
+	actualRows.Close()
+
+	coveredRunes, uncoveredRunes = countUncoveredCanonicalRunes(requiredCoverage)
 
 	return documents, coveredRunes, uncoveredRunes, unexpectedSpans, nil
 }
