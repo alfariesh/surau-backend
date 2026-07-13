@@ -248,8 +248,8 @@ func (w *mixedWalker) emitNodes(nodes []*html.Node, forceHTML bool) {
 	for _, rawLine := range lines {
 		line := strings.TrimSpace(_spaceRE.ReplaceAllString(rawLine, " "))
 		if line == "" {
-			if w.inFootnotes {
-				w.flushFootnote()
+			if w.inFootnotes && w.currentFootnote != nil && w.currentFootnote.Text != "" {
+				w.currentFootnote.Text += "\n"
 			}
 
 			continue
