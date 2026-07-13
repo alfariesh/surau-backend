@@ -21,8 +21,12 @@ var (
 )
 
 var (
-	_footnoteRefRE   = regexp.MustCompile(`\((?:¬)?[0-9٠-٩۰-۹]+\)`)
-	_footnoteStartRE = regexp.MustCompile(`^\((?:¬)?[0-9٠-٩۰-۹]+\)\s*(.*)$`)
+	_footnoteRefRE = regexp.MustCompile(
+		`\((?:¬?\p{Nd}+|\p{L}\p{M}*\x{0640}?)\)`,
+	)
+	_footnoteStartRE = regexp.MustCompile(
+		`^\((?:¬?\p{Nd}+|\p{L}\p{M}*\x{0640}?)\)\s*(.*)$`,
+	)
 	_quranCitationRE = regexp.MustCompile(`\{([^{}]{3,})\}\s*\[([^\[\]]{2,})\]`)
 )
 
