@@ -88,3 +88,34 @@ func TestK1DevRolloutKeepsLongCatalogCommandsObservable(t *testing.T) {
 	assert.Contains(t, text, `vacuumdb -U "$POSTGRES_USER"`)
 	assert.Contains(t, text, `--table=citable_unit_catalog_queue' </dev/null`)
 }
+
+func TestK1DevRolloutRecoversOnlyKnownInterruptedFTSMigrationAfterSnapshot(t *testing.T) {
+	t.Parallel()
+
+	workflow, err := os.ReadFile("../../.github/workflows/deploy-dev.yml")
+	require.NoError(t, err)
+
+	text := string(workflow)
+	snapshot := strings.Index(text, `"$DEPLOY_PATH/ops/backup/surau-predeploy-snapshot"`)
+	recoveryGuard := strings.Index(text, `if [ "$schema_state" = "20260713000016:true" ]; then`)
+	indexRecovery := strings.Index(text, "run_with_heartbeat k1-fts-index-recovery")
+	build := strings.Index(text, `build "${SERVICES[@]}"`)
+
+	require.NotEqual(t, -1, snapshot)
+	require.NotEqual(t, -1, recoveryGuard)
+	require.NotEqual(t, -1, indexRecovery)
+	require.NotEqual(t, -1, build)
+	assert.Less(t, snapshot, recoveryGuard, "no migration repair may precede the protected snapshot")
+	assert.Less(t, recoveryGuard, indexRecovery)
+	assert.Less(t, indexRecovery, build, "the candidate must not replace the app before the index is ready")
+	assert.Contains(t, text, "DROP INDEX CONCURRENTLY IF EXISTS idx_citable_units_text_fts_interpretive")
+	assert.Contains(t, text, "SET version=20260713000015, dirty=FALSE")
+	assert.Contains(t, text, "WHERE version=20260713000016 AND dirty")
+	assert.Contains(t, text, `rewound_state" != "20260713000015:false"`)
+	assert.Contains(t, text, "PGOPTIONS=-c maintenance_work_mem=64MB")
+	assert.Contains(t, text, "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_citable_units_text_fts_interpretive")
+	assert.Contains(t, text, `index_valid" != "t"`)
+	assert.Contains(t, text, `completed_state" != "20260713000016:false"`)
+	assert.Contains(t, text, "sudo docker compose --env-file .env.production -f docker-compose.prod.yml stop app")
+	assert.Contains(t, text, "sudo docker compose --env-file .env.production -f docker-compose.prod.yml start app")
+}

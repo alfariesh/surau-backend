@@ -172,6 +172,14 @@ berhasil bila reader halaman 1 mengembalikan `primary_unit_id`, dan target `qura
 resolver B-2 membawa `primary_unit_id` serta `primary_unit_anchor` aktif. Sesuai kontrak Anchor,
 target baru bertipe `citable_unit` hanya untuk input Anchor unit kanonik `quran/.../u/...`.
 
+Khusus migrasi indeks FTS K-1 `20260713000016`, deploy dev memiliki recovery yang dibatasi pada
+state exact `version=20260713000016, dirty=true`. Recovery hanya berjalan setelah snapshot
+terenkripsi berhasil: app dihentikan agar tidak berlomba, shell indeks concurrent yang tidak
+valid dibuang, versi diputar satu langkah, indeks dibangun ulang dengan memory bounded dan
+heartbeat, lalu app lama dihidupkan sebelum candidate berikutnya menggantikannya. State dirty
+lain tetap fail-closed dan wajib ditangani menurut §6; jangan memperluas guard menjadi force
+generik.
+
 ### Preflight WAJIB sebelum deploy migration constraint baru
 
 Migration yang membuat UNIQUE index (mis. `chronological_order` di `20260628000001`) memvalidasi baris existing saat dibuat; kalau ada duplikat, migration abort → boot gagal → schema DIRTY. Jalankan preflight ini di prod dulu (semua harus 0 baris):
