@@ -45,3 +45,19 @@ func TestK1DevRolloutKeepsDefaultStateOutOfApplicationConfig(t *testing.T) {
 	assert.Contains(t, text, `matched_after`)
 	assert.Contains(t, text, `sha=%s`)
 }
+
+func TestK1DevRolloutKeepsLongCatalogCommandsObservable(t *testing.T) {
+	t.Parallel()
+
+	workflow, err := os.ReadFile("../../.github/workflows/deploy-dev.yml")
+	require.NoError(t, err)
+
+	text := string(workflow)
+	assert.Contains(t, text, "run_with_heartbeat()")
+	assert.Contains(t, text, "deploy heartbeat: $label still running")
+	assert.Contains(t, text, "run_with_heartbeat k1-priority-catalog")
+	assert.Contains(t, text, "run_with_heartbeat k1-full-catalog")
+	assert.Contains(t, text, "run_with_heartbeat k1-determinism-rederive")
+	assert.Contains(t, text, "-o ServerAliveCountMax=120")
+	assert.Contains(t, text, "for keyscan_attempt in {1..12}")
+}
