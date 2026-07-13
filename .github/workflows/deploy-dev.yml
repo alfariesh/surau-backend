@@ -70,8 +70,9 @@ jobs:
 
           ssh -i ~/.ssh/surau_deploy_key \
             -o IdentitiesOnly=yes \
+            -o ConnectTimeout=30 \
             -o ServerAliveInterval=30 \
-            -o ServerAliveCountMax=120 \
+            -o ServerAliveCountMax=20 \
             -o TCPKeepAlive=yes \
             "$VPS_USER@$VPS_HOST" \
             "DEPLOY_BRANCH='$DEPLOY_BRANCH' DEPLOY_PATH='$VPS_DEPLOY_PATH' \
@@ -81,6 +82,46 @@ jobs:
           export APP_ENV
 
           cd "$DEPLOY_PATH"
+
+          # A canceled SSH workflow can leave `docker exec /backfill` running
+          # inside the existing app container: Docker owns that exec process
+          # after the client disconnects. A canceled snapshot can likewise
+          # leave pg_dump behind. Stop only those two one-shot commands as the
+          # first remote action, before prune/git/snapshot contend for the same
+          # constrained host. Every catalog write is one-book atomic and its
+          # queue is resumable; app/database server processes remain untouched.
+          stop_stale_container_processes() {
+            service_name="$1"
+            process_name="$2"
+            container_id="$(sudo docker compose --env-file .env.production \
+              -f docker-compose.prod.yml ps -q "$service_name" 2>/dev/null || true)"
+            if [ -z "$container_id" ]; then
+              return
+            fi
+
+            mapfile -t stale_pids < <(sudo docker top "$container_id" -eo pid,comm 2>/dev/null \
+              | awk -v name="$process_name" 'NR > 1 && $2 == name { print $1 }')
+            if [ "${#stale_pids[@]}" -eq 0 ]; then
+              return
+            fi
+
+            echo "Stopping ${#stale_pids[@]} stale $process_name process(es) before snapshot..."
+            sudo kill -TERM "${stale_pids[@]}" 2>/dev/null || true
+
+            for attempt in {1..30}; do
+              mapfile -t stale_pids < <(sudo docker top "$container_id" -eo pid,comm 2>/dev/null \
+                | awk -v name="$process_name" 'NR > 1 && $2 == name { print $1 }')
+              if [ "${#stale_pids[@]}" -eq 0 ]; then
+                return
+              fi
+              sleep 1
+            done
+
+            echo "Stale $process_name ignored SIGTERM; forcing bounded cleanup" >&2
+            sudo kill -KILL "${stale_pids[@]}" 2>/dev/null || true
+          }
+          stop_stale_container_processes app backfill
+          stop_stale_container_processes db pg_dump
 
           # A failed deploy keeps the running image but can leave stopped
           # containers, dangling images, and build cache. Reclaim only unused
@@ -290,46 +331,6 @@ jobs:
             SERVICES+=(collab)
             COLLAB_CHECK="http://127.0.0.1:8090/healthz"
           fi
-
-          # A canceled SSH workflow can leave `docker exec /backfill` running
-          # inside the existing app container: Docker owns that exec process
-          # after the client disconnects. A canceled snapshot can likewise
-          # leave pg_dump behind. Stop only those two one-shot commands before
-          # taking a new snapshot, so orphans cannot starve PostgreSQL/the API.
-          # Every catalog write is one-book atomic and its queue is resumable;
-          # the app and database server processes remain untouched.
-          stop_stale_container_processes() {
-            service_name="$1"
-            process_name="$2"
-            container_id="$(sudo docker compose --env-file .env.production \
-              -f docker-compose.prod.yml ps -q "$service_name" 2>/dev/null || true)"
-            if [ -z "$container_id" ]; then
-              return
-            fi
-
-            mapfile -t stale_pids < <(sudo docker top "$container_id" -eo pid,comm 2>/dev/null \
-              | awk -v name="$process_name" 'NR > 1 && $2 == name { print $1 }')
-            if [ "${#stale_pids[@]}" -eq 0 ]; then
-              return
-            fi
-
-            echo "Stopping ${#stale_pids[@]} stale $process_name process(es) before snapshot..."
-            sudo kill -TERM "${stale_pids[@]}" 2>/dev/null || true
-
-            for attempt in {1..30}; do
-              mapfile -t stale_pids < <(sudo docker top "$container_id" -eo pid,comm 2>/dev/null \
-                | awk -v name="$process_name" 'NR > 1 && $2 == name { print $1 }')
-              if [ "${#stale_pids[@]}" -eq 0 ]; then
-                return
-              fi
-              sleep 1
-            done
-
-            echo "Stale $process_name ignored SIGTERM; forcing bounded cleanup" >&2
-            sudo kill -KILL "${stale_pids[@]}" 2>/dev/null || true
-          }
-          stop_stale_container_processes app backfill
-          stop_stale_container_processes db pg_dump
 
           # Snapshot the DB before the new image auto-migrates on boot, so a bad
           # migration can be rolled back. Encrypted + uploaded to R2 with 7-day
