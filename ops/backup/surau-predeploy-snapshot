@@ -20,6 +20,7 @@ COMPOSE_ENV_FILE="${COMPOSE_ENV_FILE:-.env.production}"
 COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.prod.yml}"
 PREDEPLOY_DIR="${PREDEPLOY_DIR:-/var/backups/surau/predeploy}"
 PREDEPLOY_RETENTION_DAYS="${PREDEPLOY_RETENTION_DAYS:-7}"
+PREDEPLOY_LOCAL_KEEP="${PREDEPLOY_LOCAL_KEEP:-2}"
 ENV_LABEL="${ENV_LABEL:-unknown}"
 R2_ACCOUNT_ID="${R2_ACCOUNT_ID:-}"
 R2_BUCKET="${R2_BUCKET:-surau-backend-backups}"
@@ -63,6 +64,50 @@ write_rclone_config() {
   echo "$config"
 }
 
+# Keep fast local rollback without letting repeated deploy attempts fill a
+# small VPS. A local archive is removed only after the same basename is proven
+# to exist in R2; unuploaded artifacts are never deleted by this count cap.
+prune_uploaded_local_snapshots() {
+  local rclone_config="$1"
+  local remote="$2"
+
+  if [[ ! "$PREDEPLOY_LOCAL_KEEP" =~ ^[1-9][0-9]*$ ]]; then
+    echo "PREDEPLOY_LOCAL_KEEP must be a positive integer" >&2
+    return 2
+  fi
+
+  local remote_listing
+  remote_listing="$(mktemp "${TMPDIR:-/tmp}/surau-predeploy-remote.XXXXXX")"
+  if ! rclone --config "$rclone_config" lsf "$remote/" --files-only >"$remote_listing"; then
+    echo "could not verify R2 pre-deploy listing; preserving every local snapshot" >&2
+    rm -f "$remote_listing"
+    return 0
+  fi
+
+  local retained=0
+  local removed=0
+  local archive base
+  while IFS= read -r archive; do
+    if (( retained < PREDEPLOY_LOCAL_KEEP )); then
+      ((retained += 1))
+      continue
+    fi
+
+    base="$(basename "$archive")"
+    if grep -Fx "$base" "$remote_listing" >/dev/null; then
+      rm -f -- "$archive"
+      ((removed += 1))
+    fi
+  done < <(
+    # Snapshot names begin with a fixed-width UTC timestamp, so reverse
+    # lexical order is also newest-first without GNU find extensions.
+    find "$PREDEPLOY_DIR" -maxdepth 1 -type f -name 'surau-predeploy-*.dump.zst.age' -print | sort -r
+  )
+  rm -f "$remote_listing"
+
+  echo "pre-deploy local retention: kept newest ${PREDEPLOY_LOCAL_KEEP}, removed ${removed} R2-verified duplicate(s)"
+}
+
 main() {
   require AGE_RECIPIENT
 
@@ -84,6 +129,13 @@ main() {
   umask 077
   mkdir -p "$PREDEPLOY_DIR"
 
+  local rclone_config
+  rclone_config="$(write_rclone_config)"
+  trap 'rm -f "$rclone_config"' EXIT
+
+  local remote="r2:${R2_BUCKET}/predeploy/${ENV_LABEL}"
+  prune_uploaded_local_snapshots "$rclone_config" "$remote"
+
   local stamp git_sha base archive tmp_archive
   stamp="$(date -u +%Y%m%dT%H%M%SZ)"
   git_sha="$(git -c safe.directory="$DEPLOY_PATH" -C "$DEPLOY_PATH" rev-parse --short HEAD 2>/dev/null || echo unknown)"
@@ -101,14 +153,10 @@ main() {
 
   find "$PREDEPLOY_DIR" -type f -name 'surau-predeploy-*.dump.zst.age' -mtime +"$PREDEPLOY_RETENTION_DAYS" -delete
 
-  local rclone_config
-  rclone_config="$(write_rclone_config)"
-  trap 'rm -f "$rclone_config"' RETURN
-
-  local remote="r2:${R2_BUCKET}/predeploy/${ENV_LABEL}"
   if rclone --config "$rclone_config" copyto "$archive" "${remote}/${base}" \
     && rclone --config "$rclone_config" lsf "${remote}/" --files-only | grep -Fx "$base" >/dev/null; then
     echo "pre-deploy snapshot uploaded: ${remote}/${base}"
+    prune_uploaded_local_snapshots "$rclone_config" "$remote"
     rclone --config "$rclone_config" delete "${remote}/" --min-age "${PREDEPLOY_RETENTION_DAYS}d" || true
   else
     echo "R2 upload of pre-deploy snapshot FAILED — continuing deploy with local snapshot only" >&2
@@ -116,4 +164,6 @@ main() {
   fi
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi
