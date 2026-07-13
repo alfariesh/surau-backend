@@ -104,10 +104,6 @@ func (*catalogAtomicTx) SourceFingerprint(context.Context, int) ([32]byte, error
 
 func (t *catalogAtomicTx) RegistryChecksum(context.Context, int) ([32]byte, error) {
 	t.checksumCalls++
-	if t.checksumCalls == 1 {
-		return [32]byte{1}, nil
-	}
-
 	return [32]byte{2}, nil
 }
 
@@ -187,5 +183,8 @@ func TestReconcileCatalogBookCommitsRawEffectiveMentionAndQueueTogether(t *testi
 	}
 	if result.RegistryChecksum != [32]byte{2} || result.Report.Derived == 0 {
 		t.Fatalf("result = %+v", result)
+	}
+	if r.committed.checksumCalls != 1 {
+		t.Fatalf("initial materialization registry checksum calls = %d, want 1", r.committed.checksumCalls)
 	}
 }

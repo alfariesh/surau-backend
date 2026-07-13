@@ -58,6 +58,8 @@ func TestK1DevRolloutKeepsLongCatalogCommandsObservable(t *testing.T) {
 	assert.Contains(t, text, "run_with_heartbeat k1-priority-catalog")
 	assert.Contains(t, text, "run_with_heartbeat k1-full-catalog")
 	assert.Contains(t, text, "run_with_heartbeat k1-determinism-rederive")
+	assert.Contains(t, text, "run_with_heartbeat k1-catalog-verification")
+	assert.Contains(t, text, "exec -T -e GOMEMLIMIT=640MiB -e GOGC=50 app")
 	assert.Contains(t, text, "-o ServerAliveCountMax=120")
 	assert.Contains(t, text, "for keyscan_attempt in {1..12}")
 }

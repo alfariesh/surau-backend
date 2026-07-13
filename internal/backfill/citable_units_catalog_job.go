@@ -156,6 +156,8 @@ func (j *citableUnitsCatalogJob) ProcessChunk(
 		Builder: squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar),
 	}))
 
+	fmt.Fprintf(os.Stdout, "%s: claimed book=%d queue_sequence=%d\n", j.Name(), bookID, sequence)
+
 	result, err := svc.ReconcileCatalogBook(ctx, entity.CitableCatalogReconcileRequest{
 		BookID:   bookID,
 		JobName:  j.Name(),
