@@ -1,6 +1,7 @@
 package backfill
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -26,6 +27,8 @@ const (
 )
 
 var errCatalogPriorityCategoryDrift = errors.New("O-4-2 priority category drifted")
+
+var errCatalogChecksumEvidenceCAS = errors.New("catalog checksum evidence changed concurrently")
 
 // O-4-2 fixes the first wave to tafsir and hadith-commentary works. The name
 // guard prevents a future taxonomy migration from silently changing what the
@@ -179,6 +182,10 @@ func (j *citableUnitsCatalogJob) ProcessChunk(
 
 //nolint:funlen // three explicit SQL phases: withdraw, one-shot recovery, deterministic enqueue
 func (j citableUnitsCatalogJob) syncQueue(ctx context.Context, pool *pgxpool.Pool, recoverFailed bool) error {
+	if err := upgradeCatalogChecksumEvidence(ctx, pool, j.Name()); err != nil {
+		return err
+	}
+
 	// A queued book can be withdrawn before it is claimed. Preserve the row as
 	// canceled evidence; never process or count it as current work.
 	if _, err := pool.Exec(ctx, `
@@ -292,6 +299,142 @@ ON CONFLICT (job_name, book_id) DO UPDATE SET
 	}
 
 	return nil
+}
+
+// upgradeCatalogChecksumEvidence migrates only algorithm metadata. Before a
+// v1 digest is replaced, both its source fingerprint and its legacy registry
+// checksum must still match the live book. Drifted evidence is reset to
+// pending so the normal atomic reconcile proves it again instead of being
+// silently blessed by the upgrade.
+type catalogLegacyEvidence struct {
+	bookID   int
+	source   []byte
+	registry []byte
+}
+
+func upgradeCatalogChecksumEvidence(ctx context.Context, pool *pgxpool.Pool, jobName string) error {
+	legacy, err := loadCatalogLegacyEvidence(ctx, pool, jobName)
+	if err != nil {
+		return err
+	}
+
+	if len(legacy) == 0 {
+		return nil
+	}
+
+	repo := persistent.NewCitableUnitRepo(&postgres.Postgres{
+		Pool:    pool,
+		Builder: squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar),
+	})
+	upgraded := 0
+	reset := 0
+
+	for i := range legacy {
+		wasReset, err := upgradeCatalogChecksumEvidenceItem(ctx, pool, repo, jobName, legacy[i])
+		if err != nil {
+			return err
+		}
+
+		if wasReset {
+			reset++
+
+			continue
+		}
+
+		upgraded++
+	}
+
+	fmt.Fprintf(os.Stdout, "%s: checksum evidence upgraded=%d reset=%d version=%d\n",
+		jobName, upgraded, reset, persistent.CitableCatalogChecksumVersion)
+
+	return nil
+}
+
+//nolint:wsl_v5 // row scan, append, and terminal error checks form one read lifecycle
+func loadCatalogLegacyEvidence(
+	ctx context.Context,
+	pool *pgxpool.Pool,
+	jobName string,
+) ([]catalogLegacyEvidence, error) {
+	rows, err := pool.Query(ctx, `
+SELECT book_id, source_fingerprint, result_checksum
+FROM citable_unit_catalog_queue
+WHERE job_name = $1
+  AND status = 'completed'
+  AND checksum_version < $2
+ORDER BY book_id`, jobName, persistent.CitableCatalogChecksumVersion)
+	if err != nil {
+		return nil, fmt.Errorf("%s: select legacy checksum evidence: %w", jobName, err)
+	}
+	defer rows.Close()
+
+	legacy := make([]catalogLegacyEvidence, 0)
+	for rows.Next() {
+		var item catalogLegacyEvidence
+		if err := rows.Scan(&item.bookID, &item.source, &item.registry); err != nil {
+			return nil, fmt.Errorf("%s: scan legacy checksum evidence: %w", jobName, err)
+		}
+		legacy = append(legacy, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("%s: read legacy checksum evidence: %w", jobName, err)
+	}
+
+	return legacy, nil
+}
+
+//nolint:wsl_v5 // checksum gates intentionally remain adjacent to their CAS updates
+func upgradeCatalogChecksumEvidenceItem(
+	ctx context.Context,
+	pool *pgxpool.Pool,
+	repo *persistent.CitableUnitRepo,
+	jobName string,
+	item catalogLegacyEvidence,
+) (bool, error) {
+	liveSource, liveRegistry, err := repo.CatalogEvidenceChecksums(ctx, item.bookID)
+	if err != nil {
+		return false, fmt.Errorf("%s: compute v2 checksum book %d: %w", jobName, item.bookID, err)
+	}
+	legacyRegistry, err := repo.CatalogLegacyRegistryChecksum(ctx, item.bookID)
+	if err != nil {
+		return false, fmt.Errorf("%s: verify v1 checksum book %d: %w", jobName, item.bookID, err)
+	}
+
+	if !bytes.Equal(item.source, liveSource[:]) || !bytes.Equal(item.registry, legacyRegistry[:]) {
+		tag, err := pool.Exec(ctx, `
+UPDATE citable_unit_catalog_queue
+SET status = 'pending', source_fingerprint = NULL, result_checksum = NULL,
+    checksum_version = $3, error = 'checksum evidence drifted during v2 upgrade',
+    started_at = NULL, finished_at = NULL, updated_at = now()
+WHERE job_name = $1 AND book_id = $2
+  AND status = 'completed' AND checksum_version < $3`,
+			jobName, item.bookID, persistent.CitableCatalogChecksumVersion)
+		if err != nil {
+			return false, fmt.Errorf("%s: reset drifted checksum evidence book %d: %w", jobName, item.bookID, err)
+		}
+		if tag.RowsAffected() != 1 {
+			return false, fmt.Errorf("%w: %s reset book %d affected %d rows",
+				errCatalogChecksumEvidenceCAS, jobName, item.bookID, tag.RowsAffected())
+		}
+
+		return true, nil
+	}
+
+	tag, err := pool.Exec(ctx, `
+UPDATE citable_unit_catalog_queue
+SET result_checksum = $3, checksum_version = $4, updated_at = now()
+WHERE job_name = $1 AND book_id = $2
+  AND status = 'completed' AND checksum_version < $4`,
+		jobName, item.bookID, liveRegistry[:], persistent.CitableCatalogChecksumVersion)
+	if err != nil {
+		return false, fmt.Errorf("%s: upgrade checksum evidence book %d: %w", jobName, item.bookID, err)
+	}
+	if tag.RowsAffected() != 1 {
+		return false, fmt.Errorf("%w: %s upgrade book %d affected %d rows",
+			errCatalogChecksumEvidenceCAS, jobName, item.bookID, tag.RowsAffected())
+	}
+
+	return false, nil
 }
 
 func claimCatalogBook(

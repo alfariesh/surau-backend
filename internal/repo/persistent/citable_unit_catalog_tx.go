@@ -15,6 +15,11 @@ const knowledgeMentionBindingVersion = 1
 
 const catalogChecksumSize = 32
 
+// CitableCatalogChecksumVersion identifies the row-wise registry digest. The
+// durable queue stores it so legacy evidence can be verified before an online
+// algorithm-only upgrade.
+const CitableCatalogChecksumVersion = 2
+
 var errCatalogChecksumSize = errors.New("catalog checksum has invalid size")
 
 type citableUnitCatalogTx struct {
@@ -280,25 +285,42 @@ func catalogRegistryChecksum(ctx context.Context, q pgxQuerier, bookID int) ([32
 	var digest []byte
 
 	err := q.QueryRow(ctx, `
-SELECT sha256(convert_to(jsonb_build_object(
-    'units', COALESCE((
-        SELECT jsonb_agg(jsonb_build_array(
+WITH unit_rows AS MATERIALIZED (
+    SELECT id, sha256(convert_to(jsonb_build_array(
             id, corpus, book_id, heading_id, page_id, kind, ordinal, position,
             parent_unit_id, anchor, marker, text, html, text_normalized,
             normalization_version, encode(content_hash, 'hex'), occurrence, language,
             provenance_class, provenance_detail, generation_run_id, license_status, lifecycle,
             content_role, review_status, encode(source_document_hash, 'hex'),
             source_char_start, source_char_end
-        ) ORDER BY id)
-        FROM citable_units WHERE book_id = $1
-    ), '[]'::jsonb),
-    'lineage', COALESCE((
-        SELECT jsonb_agg(jsonb_build_array(l.predecessor_id, l.successor_id, l.reason) ORDER BY l.predecessor_id, l.successor_id)
-        FROM citable_unit_lineage l
-        JOIN citable_units u ON u.id = l.predecessor_id
-        WHERE u.book_id = $1
-    ), '[]'::jsonb)
-)::text, 'UTF8'))`, bookID).Scan(&digest)
+        )::text, 'UTF8')) AS row_digest
+    FROM citable_units
+    WHERE book_id = $1
+),
+lineage_rows AS MATERIALIZED (
+    SELECT l.predecessor_id, l.successor_id, l.reason,
+           sha256(convert_to(jsonb_build_array(
+               l.predecessor_id, l.successor_id, l.reason
+           )::text, 'UTF8')) AS row_digest
+    FROM citable_unit_lineage l
+    JOIN citable_units u ON u.id = l.predecessor_id
+    WHERE u.book_id = $1
+),
+unit_digest AS (
+    SELECT sha256(convert_to(COALESCE(
+        string_agg(encode(row_digest, 'hex'), '' ORDER BY id), ''
+    ), 'UTF8')) AS value
+    FROM unit_rows
+),
+lineage_digest AS (
+    SELECT sha256(convert_to(COALESCE(
+        string_agg(encode(row_digest, 'hex'), ''
+            ORDER BY predecessor_id, successor_id, reason), ''
+    ), 'UTF8')) AS value
+    FROM lineage_rows
+)
+SELECT sha256(unit_digest.value || lineage_digest.value)
+FROM unit_digest CROSS JOIN lineage_digest`, bookID).Scan(&digest)
 	if err != nil {
 		return [32]byte{}, fmt.Errorf("catalog registry checksum book %d: %w", bookID, err)
 	}
@@ -332,6 +354,53 @@ func (r *CitableUnitRepo) CatalogEvidenceChecksums(
 	return source, registry, err
 }
 
+// CatalogLegacyRegistryChecksum recomputes v1 only while upgrading durable
+// evidence written before the row-wise checksum existed. New queue writes
+// never use this JSONB aggregate.
+func (r *CitableUnitRepo) CatalogLegacyRegistryChecksum(ctx context.Context, bookID int) ([32]byte, error) {
+	return catalogRegistryChecksumLegacyV1(ctx, r.Pool, bookID)
+}
+
+func catalogRegistryChecksumLegacyV1(ctx context.Context, q pgxQuerier, bookID int) ([32]byte, error) {
+	var digest []byte
+
+	err := q.QueryRow(ctx, `
+SELECT sha256(convert_to(jsonb_build_object(
+    'units', COALESCE((
+        SELECT jsonb_agg(jsonb_build_array(
+            id, corpus, book_id, heading_id, page_id, kind, ordinal, position,
+            parent_unit_id, anchor, marker, text, html, text_normalized,
+            normalization_version, encode(content_hash, 'hex'), occurrence, language,
+            provenance_class, provenance_detail, generation_run_id, license_status, lifecycle,
+            content_role, review_status, encode(source_document_hash, 'hex'),
+            source_char_start, source_char_end
+        ) ORDER BY id)
+        FROM citable_units WHERE book_id = $1
+    ), '[]'::jsonb),
+    'lineage', COALESCE((
+        SELECT jsonb_agg(jsonb_build_array(
+            l.predecessor_id, l.successor_id, l.reason
+        ) ORDER BY l.predecessor_id, l.successor_id)
+        FROM citable_unit_lineage l
+        JOIN citable_units u ON u.id = l.predecessor_id
+        WHERE u.book_id = $1
+    ), '[]'::jsonb)
+)::text, 'UTF8'))`, bookID).Scan(&digest)
+	if err != nil {
+		return [32]byte{}, fmt.Errorf("legacy catalog registry checksum book %d: %w", bookID, err)
+	}
+
+	if len(digest) != catalogChecksumSize {
+		return [32]byte{}, fmt.Errorf("legacy catalog registry checksum book %d returned %d bytes: %w",
+			bookID, len(digest), errCatalogChecksumSize)
+	}
+
+	var checksum [catalogChecksumSize]byte
+	copy(checksum[:], digest)
+
+	return checksum, nil
+}
+
 //nolint:wsl_v5 // queue CAS result is checked immediately after persistence
 func (t *citableUnitCatalogTx) CompleteQueueItem(
 	ctx context.Context,
@@ -344,11 +413,12 @@ UPDATE citable_unit_catalog_queue
 SET status = 'completed',
     source_fingerprint = $3,
     result_checksum = $4,
+    checksum_version = $5,
     error = NULL,
     finished_at = now(),
     updated_at = now()
 WHERE job_name = $1 AND book_id = $2 AND status = 'running'`,
-		jobName, bookID, source[:], checksum[:])
+		jobName, bookID, source[:], checksum[:], CitableCatalogChecksumVersion)
 	if err != nil {
 		return fmt.Errorf("complete catalog queue book %d: %w", bookID, err)
 	}

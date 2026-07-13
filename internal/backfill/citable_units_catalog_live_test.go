@@ -109,6 +109,50 @@ WHERE publication.status = 'published' AND b.id = ANY($1)`,
 	assert.Zero(t, verification.ParityMismatches)
 	assert.Zero(t, verification.UnitAnchorsUnresolved)
 
+	// A checksum algorithm upgrade must preserve already-proven materialization
+	// only after the old source and registry evidence still match live data.
+	unitRepo := persistent.NewCitableUnitRepo(&postgres.Postgres{
+		Pool:    pool,
+		Builder: squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar),
+	})
+	legacyChecksum, err := unitRepo.CatalogLegacyRegistryChecksum(ctx, liveCatalogFixtureBooks[0])
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, `
+UPDATE citable_unit_catalog_queue
+SET result_checksum = $3, checksum_version = 1
+WHERE job_name = $1 AND book_id = $2`,
+		citableCatalogJobName, liveCatalogFixtureBooks[0], legacyChecksum[:])
+	require.NoError(t, err)
+	beforeChecksumUpgrade := liveCatalogRegistryDump(t, pool)
+	require.NoError(t, runner.Run(ctx, job, true))
+	assert.Equal(t, beforeChecksumUpgrade, liveCatalogRegistryDump(t, pool),
+		"algorithm-only evidence upgrade must not reconcile or remint units")
+	var upgradedChecksumVersion int
+	require.NoError(t, pool.QueryRow(ctx, `
+SELECT checksum_version
+FROM citable_unit_catalog_queue
+WHERE job_name = $1 AND book_id = $2`,
+		citableCatalogJobName, liveCatalogFixtureBooks[0]).Scan(&upgradedChecksumVersion))
+	assert.Equal(t, persistent.CitableCatalogChecksumVersion, upgradedChecksumVersion)
+
+	_, err = pool.Exec(ctx, `
+UPDATE citable_unit_catalog_queue
+SET result_checksum = decode(repeat('00', 32), 'hex'), checksum_version = 1
+WHERE job_name = $1 AND book_id = $2`, citableCatalogJobName, liveCatalogFixtureBooks[0])
+	require.NoError(t, err)
+	beforeDriftedUpgrade := liveCatalogRegistryDump(t, pool)
+	require.NoError(t, runner.Run(ctx, job, true))
+	assert.Equal(t, beforeDriftedUpgrade, liveCatalogRegistryDump(t, pool),
+		"drifted v1 evidence must be re-proven without changing deterministic units")
+	var reprovedStatus string
+	require.NoError(t, pool.QueryRow(ctx, `
+SELECT status
+FROM citable_unit_catalog_queue
+WHERE job_name = $1 AND book_id = $2 AND checksum_version = $3`,
+		citableCatalogJobName, liveCatalogFixtureBooks[0],
+		persistent.CitableCatalogChecksumVersion).Scan(&reprovedStatus))
+	assert.Equal(t, "completed", reprovedStatus)
+
 	// Release metadata is part of source provenance even when page text does
 	// not change. The books trigger must make the delta visible and the runner
 	// must refresh provenance without reminting textual identities.
