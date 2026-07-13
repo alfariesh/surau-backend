@@ -59,7 +59,12 @@ jobs:
           chmod 600 ~/.ssh/surau_deploy_key
           ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
 
-          ssh -i ~/.ssh/surau_deploy_key -o IdentitiesOnly=yes "$VPS_USER@$VPS_HOST" \
+          ssh -i ~/.ssh/surau_deploy_key \
+            -o IdentitiesOnly=yes \
+            -o ServerAliveInterval=30 \
+            -o ServerAliveCountMax=20 \
+            -o TCPKeepAlive=yes \
+            "$VPS_USER@$VPS_HOST" \
             "DEPLOY_BRANCH='$DEPLOY_BRANCH' DEPLOY_PATH='$VPS_DEPLOY_PATH' \
             DEPLOY_SHA='$DEPLOY_SHA' APP_ENV='dev' \
             BOOK_RAG_ROLLOUT_MODE='$BOOK_RAG_ROLLOUT_MODE' bash -s" <<'REMOTE'
