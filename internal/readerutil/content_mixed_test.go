@@ -413,6 +413,31 @@ func TestStructureMixedContentTaggedPage(t *testing.T) {
 	}
 }
 
+func TestStructureMixedContentKeepsBlankLineFootnoteContinuationInDocumentOrder(t *testing.T) {
+	t.Parallel()
+
+	source := "متن أول (¬١) (¬٢)\nمتن ثان\n_________\n" +
+		"(¬١) أول الحاشية.\n\nتكملة الحاشية بعد سطر فارغ.\n" +
+		"(¬٢) الحاشية الثانية."
+
+	got := readerutil.StructureMixedContent(source)
+	if len(got.Blocks) != 2 {
+		t.Fatalf("blocks = %d, want 2 (%+v)", len(got.Blocks), got.Blocks)
+	}
+
+	if len(got.Footnotes) != 2 {
+		t.Fatalf("footnotes = %d, want 2 (%+v)", len(got.Footnotes), got.Footnotes)
+	}
+
+	if got.Footnotes[0].Text != "أول الحاشية.\n\nتكملة الحاشية بعد سطر فارغ." {
+		t.Fatalf("first footnote lost continuation: %+v", got.Footnotes[0])
+	}
+
+	if !readerutil.AlignMixedSourceSpans(&got, source) {
+		t.Fatal("blank-line footnote continuation must retain exact source document order")
+	}
+}
+
 func TestStructureMixedContentMidLineTokens(t *testing.T) {
 	t.Parallel()
 
