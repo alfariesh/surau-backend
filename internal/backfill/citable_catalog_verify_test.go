@@ -22,13 +22,12 @@ func TestCanonicalCoverageDetectsTailDroppedByDeriverAndRegistry(t *testing.T) {
 	}
 	required := canonicalRequiredCoverage(1, &source)
 	documentHash := sha256.Sum256([]byte(sourceText))
-	actual := map[string]map[int]bool{}
-	markCanonicalRunes(actual, canonicalSpanKey(
+	markCanonicalRunes(required, canonicalSpanKey(
 		1, 0, 1, entity.UnitKindParagraph, "kept", "ar", entity.UnitContentRoleBookPage,
 		documentHash[:], 0, 4,
 	))
 
-	covered, uncovered := countUncoveredCanonicalRunes(required, actual)
+	covered, uncovered := countUncoveredCanonicalRunes(required)
 
 	assert.Equal(t, int64(8), covered)
 	assert.Equal(t, int64(4), uncovered, "the independently sourced LOST tail must fail coverage")
@@ -51,11 +50,33 @@ func TestCanonicalCoverageAcceptsCompleteArabicPage(t *testing.T) {
 
 	required := canonicalRequiredCoverage(1, &source)
 
-	actual := map[string]map[int]bool{}
 	for i := range derived {
-		markCanonicalRunes(actual, canonicalSpanForDerived(1, &derived[i]))
+		markCanonicalRunes(required, canonicalSpanForDerived(1, &derived[i]))
 	}
 
-	_, uncovered := countUncoveredCanonicalRunes(required, actual)
+	_, uncovered := countUncoveredCanonicalRunes(required)
+	assert.Zero(t, uncovered)
+}
+
+func TestCanonicalCoverageBitmapHandlesWordBoundariesAndClipping(t *testing.T) {
+	t.Parallel()
+
+	const sourceText = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdefghij"
+
+	source := entity.BookUnitSource{
+		BookID: 1,
+		Pages: []entity.BookUnitSourcePage{{
+			PageID: 1, ContentText: sourceText,
+		}},
+	}
+	required := canonicalRequiredCoverage(1, &source)
+	documentHash := sha256.Sum256([]byte(sourceText))
+	markCanonicalRunes(required, canonicalSpanKey(
+		1, 0, 1, entity.UnitKindParagraph, sourceText, "ar", entity.UnitContentRoleBookPage,
+		documentHash[:], -10, len([]rune(sourceText))+10,
+	))
+
+	covered, uncovered := countUncoveredCanonicalRunes(required)
+	assert.Equal(t, int64(len([]rune(sourceText))), covered)
 	assert.Zero(t, uncovered)
 }

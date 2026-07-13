@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"math/bits"
 	"sort"
 	"strings"
 	"time"
@@ -26,6 +27,7 @@ const (
 	microsecondsPerMillisecond        = 1000
 	verificationSearchPercentile      = 95
 	verificationSearchPercentileScale = 100
+	bitmapWordBits                    = 64
 )
 
 // CitableCatalogVerification is the machine-readable K-1 acceptance evidence.
@@ -64,14 +66,34 @@ type CitableCatalogVerification struct {
 // VerifyCitableCatalog recomputes every K-1 gate directly from PostgreSQL. It
 // returns a report even when acceptance fails; only query/integrity execution
 // errors are returned as Go errors.
-//
-//nolint:cyclop,funlen,gocognit,gocyclo // The acceptance report intentionally assembles all independent K-1 gates in one transaction-free read pass.
 func VerifyCitableCatalog(ctx context.Context, pool *pgxpool.Pool) (CitableCatalogVerification, error) {
+	return verifyCitableCatalog(ctx, pool, nil)
+}
+
+// VerifyCitableCatalogWithProgress is the operational CLI variant. Progress
+// is deliberately low-cardinality: it reveals which bounded acceptance phase
+// is running without logging a book ID or any corpus content.
+func VerifyCitableCatalogWithProgress(
+	ctx context.Context,
+	pool *pgxpool.Pool,
+	progress func(string),
+) (CitableCatalogVerification, error) {
+	return verifyCitableCatalog(ctx, pool, progress)
+}
+
+//nolint:cyclop,funlen,gocognit,gocyclo // The acceptance report intentionally assembles all independent K-1 gates in one transaction-free read pass.
+func verifyCitableCatalog(
+	ctx context.Context,
+	pool *pgxpool.Pool,
+	progress func(string),
+) (CitableCatalogVerification, error) {
 	report := CitableCatalogVerification{
 		VerifiedAt:      time.Now().UTC(),
 		ProfileVersion:  entity.KitabUnitDerivationProfileVersion,
 		MentionBindings: map[string]int64{},
 	}
+
+	verificationProgress(progress, "coverage")
 
 	err := pool.QueryRow(ctx, `
 SELECT COUNT(*)::bigint,
@@ -199,12 +221,14 @@ FROM assets`, CitableCatalogBookIDs).Scan(&report.TargetAssets, &report.Material
 	}
 	unitRepo := persistent.NewCitableUnitRepo(pg)
 
+	verificationProgress(progress, "canonical_rune_coverage")
 	report.CanonicalDocuments, report.CanonicalCoveredRunes,
 		report.UncoveredCanonicalRunes, report.UnexpectedCanonicalSpans, err = verifyCanonicalUnitCoverage(ctx, pool, unitRepo)
 	if err != nil {
 		return report, err
 	}
 
+	verificationProgress(progress, "determinism_evidence")
 	report.DeterminismVerifiedBooks, err = verifyCatalogDeterminismEvidence(ctx, pool, unitRepo)
 	if err != nil {
 		return report, err
@@ -302,6 +326,7 @@ ORDER BY unit_binding_status`, CitableCatalogBookIDs)
 
 	registry := unitregistry.New(unitRepo)
 
+	verificationProgress(progress, "integrity_audit")
 	audit, err := registry.AuditPass(ctx)
 	if err != nil {
 		return report, fmt.Errorf("verify citable catalog audit: %w", err)
@@ -309,6 +334,7 @@ ORDER BY unit_binding_status`, CitableCatalogBookIDs)
 
 	report.Audit = audit.Violations
 
+	verificationProgress(progress, "retrieval_performance")
 	bookIDs, err := verificationSearchBookIDs(ctx, pool)
 	if err != nil {
 		return report, err
@@ -326,6 +352,7 @@ ORDER BY unit_binding_status`, CitableCatalogBookIDs)
 	report.SearchWithinTarget = report.SearchSamples > 0 &&
 		report.SearchP95Milliseconds < searchP95TargetMilliseconds
 
+	verificationProgress(progress, "book_rag_parity")
 	report.ParityTargetBooks, report.ParityVerifiedBooks, report.ParityMismatches,
 		report.UnitAnchorsUnresolved, err = verifyFullCatalogBookRAGParity(
 		ctx,
@@ -349,7 +376,15 @@ ORDER BY unit_binding_status`, CitableCatalogBookIDs)
 		report.SearchWithinTarget &&
 		citableAuditViolationTotal(report.Audit) == 0
 
+	verificationProgress(progress, "complete")
+
 	return report, nil
+}
+
+func verificationProgress(progress func(string), phase string) {
+	if progress != nil {
+		progress(phase)
+	}
 }
 
 //nolint:gocyclo,cyclop,funlen // every evidence field is an independent fail-closed gate
@@ -457,6 +492,20 @@ type canonicalSpan struct {
 	end      int
 }
 
+// canonicalDocumentCoverage keeps one bit per source rune instead of one map
+// entry per rune. The catalog contains multi-million-rune books; a
+// map[int]bool needs tens of bytes per rune and made the acceptance verifier
+// compete with the public API for memory/CPU. Two dense bitmaps preserve the
+// exact same independent source-vs-registry proof at roughly 1/4 byte per
+// rune.
+type canonicalDocumentCoverage struct {
+	runeCount int
+	required  []uint64
+	actual    []uint64
+}
+
+type canonicalCoverage map[string]*canonicalDocumentCoverage
+
 // verifyCanonicalUnitCoverage re-derives the current source and compares the
 // exact rune-span multiset to active registry rows. This proves more than
 // "one unit exists per page": a missing paragraph, lost HTML fallback,
@@ -516,8 +565,6 @@ ORDER BY b.id`, CitableCatalogBookIDs)
 
 		expectedCounts := make(map[string]int, len(derived))
 		requiredCoverage := canonicalRequiredCoverage(bookID, &source)
-		actualCoverage := make(map[string]map[int]bool)
-
 		for i := range derived {
 			span := canonicalSpanForDerived(bookID, &derived[i])
 			expectedCounts[span.span]++
@@ -566,7 +613,7 @@ ORDER BY id`, bookID)
 			}
 
 			expectedCounts[span.span]--
-			markCanonicalRunes(actualCoverage, span)
+			markCanonicalRunes(requiredCoverage, span)
 		}
 
 		if rowsErr := actualRows.Err(); rowsErr != nil {
@@ -578,7 +625,7 @@ ORDER BY id`, bookID)
 
 		actualRows.Close()
 
-		covered, uncovered := countUncoveredCanonicalRunes(requiredCoverage, actualCoverage)
+		covered, uncovered := countUncoveredCanonicalRunes(requiredCoverage)
 		coveredRunes += covered
 		uncoveredRunes += uncovered
 	}
@@ -626,8 +673,8 @@ func canonicalDocumentKey(bookID, headingID, pageID int, role, language string, 
 // covered unless it is an explicit structural token (TOC label, footnote
 // marker, or Shamela underscore separator). Thus a parser and registry that
 // both drop an Arabic tail still fail this verifier.
-func canonicalRequiredCoverage(bookID int, source *entity.BookUnitSource) map[string]map[int]bool {
-	required := make(map[string]map[int]bool)
+func canonicalRequiredCoverage(bookID int, source *entity.BookUnitSource) canonicalCoverage {
+	required := make(canonicalCoverage)
 
 	for i := range source.Pages {
 		page := &source.Pages[i]
@@ -672,25 +719,27 @@ func canonicalRequiredCoverage(bookID int, source *entity.BookUnitSource) map[st
 
 //nolint:cyclop,gocognit,gocyclo // Marker removal mirrors the parser's exact rune offsets and must remain explicit for auditability.
 func markRequiredDocumentRunes(
-	required map[string]map[int]bool,
+	required canonicalCoverage,
 	document string,
 	structured *readerutil.StructuredContent,
 ) {
 	runes := []rune(structured.Text)
 
-	coverage := make(map[int]bool, len(runes))
+	coverage := &canonicalDocumentCoverage{
+		runeCount: len(runes),
+		required:  make([]uint64, bitmapWordCount(len(runes))),
+		actual:    make([]uint64, bitmapWordCount(len(runes))),
+	}
 	for offset, value := range runes {
 		if !unicode.IsSpace(value) && value != '_' {
-			coverage[offset] = true
+			setBitmapBit(coverage.required, offset)
 		}
 	}
 
 	for i := range structured.Blocks {
 		block := &structured.Blocks[i]
 		if block.AnchorID > 0 {
-			for offset := block.SourceCharStart; offset < block.SourceCharEnd; offset++ {
-				delete(coverage, offset)
-			}
+			clearBitmapRange(coverage.required, block.SourceCharStart, block.SourceCharEnd, len(runes))
 		}
 	}
 
@@ -707,44 +756,90 @@ func markRequiredDocumentRunes(
 				continue
 			}
 
-			for offset := start; offset < start+len(marker); offset++ {
-				delete(coverage, offset)
-			}
+			clearBitmapRange(coverage.required, start, start+len(marker), len(runes))
 
 			break
 		}
 	}
 
-	if len(coverage) > 0 {
+	if bitmapCount(coverage.required) > 0 {
 		required[document] = coverage
 	}
 }
 
-func countUncoveredCanonicalRunes(
-	required, actual map[string]map[int]bool,
-) (covered, uncovered int64) {
-	for document, expected := range required {
-		actualDocument := actual[document]
-
-		for offset := range expected {
-			covered++
-
-			if !actualDocument[offset] {
-				uncovered++
-			}
+func countUncoveredCanonicalRunes(required canonicalCoverage) (covered, uncovered int64) {
+	for _, document := range required {
+		for index := range document.required {
+			requiredCount := int64(bits.OnesCount64(document.required[index]))
+			actualCount := int64(bits.OnesCount64(document.required[index] & document.actual[index]))
+			covered += requiredCount
+			uncovered += requiredCount - actualCount
 		}
 	}
 
 	return covered, uncovered
 }
 
-func markCanonicalRunes(target map[string]map[int]bool, span canonicalSpan) {
-	if target[span.document] == nil {
-		target[span.document] = make(map[int]bool, span.end-span.start)
+func markCanonicalRunes(target canonicalCoverage, span canonicalSpan) {
+	document := target[span.document]
+	if document == nil {
+		return
 	}
 
-	for offset := span.start; offset < span.end; offset++ {
-		target[span.document][offset] = true
+	setBitmapRange(document.actual, span.start, span.end, document.runeCount)
+}
+
+func bitmapWordCount(runeCount int) int {
+	return (runeCount + bitmapWordBits - 1) / bitmapWordBits
+}
+
+func setBitmapBit(bitmap []uint64, offset int) {
+	bitmap[offset/bitmapWordBits] |= uint64(1) << (offset % bitmapWordBits)
+}
+
+func bitmapCount(bitmap []uint64) int64 {
+	var total int64
+	for _, word := range bitmap {
+		total += int64(bits.OnesCount64(word))
+	}
+
+	return total
+}
+
+func setBitmapRange(bitmap []uint64, start, end, limit int) {
+	mutateBitmapRange(bitmap, start, end, limit, true)
+}
+
+func clearBitmapRange(bitmap []uint64, start, end, limit int) {
+	mutateBitmapRange(bitmap, start, end, limit, false)
+}
+
+func mutateBitmapRange(bitmap []uint64, start, end, limit int, set bool) {
+	start = max(start, 0)
+
+	end = min(end, limit)
+	if start >= end {
+		return
+	}
+
+	firstWord := start / bitmapWordBits
+
+	lastWord := (end - 1) / bitmapWordBits
+	for word := firstWord; word <= lastWord; word++ {
+		wordStart := word * bitmapWordBits
+		from := max(start-wordStart, 0)
+		to := min(end-wordStart, bitmapWordBits)
+
+		mask := ^uint64(0) << from
+		if to < bitmapWordBits {
+			mask &= (uint64(1) << to) - 1
+		}
+
+		if set {
+			bitmap[word] |= mask
+		} else {
+			bitmap[word] &^= mask
+		}
 	}
 }
 
