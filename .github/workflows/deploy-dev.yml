@@ -362,6 +362,86 @@ jobs:
                 --table=citable_units --table=citable_unit_lineage \
                 --table=citable_unit_catalog_queue' </dev/null
 
+          # The first profile-v3 deploy can be interrupted while PostgreSQL is
+          # building the large K-1 FTS index concurrently. App bootstrap marks
+          # the migration dirty before executing it, while the deploy health
+          # window is intentionally short. Recover only this exact known state:
+          # preserve the predeploy backup, stop the crash-looping app to remove
+          # races, discard any invalid concurrent-index shell, rewind one
+          # migration, build the same index with bounded memory and a heartbeat,
+          # then let the existing image complete the idempotent migration.
+          schema_state="$(sudo docker compose --env-file .env.production \
+            -f docker-compose.prod.yml exec -T db sh -c \
+            'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc \
+              "SELECT version::text || chr(58) || dirty::text FROM schema_migrations"' </dev/null)"
+          if [ "$schema_state" = "20260713000016:true" ]; then
+            echo "Recovering interrupted K-1 FTS migration after protected snapshot..."
+            sudo docker compose --env-file .env.production -f docker-compose.prod.yml stop app
+            sudo docker compose --env-file .env.production -f docker-compose.prod.yml \
+              exec -T db sh -c \
+              'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
+                -c "DROP INDEX CONCURRENTLY IF EXISTS idx_citable_units_text_fts_interpretive"' </dev/null
+            sudo docker compose --env-file .env.production -f docker-compose.prod.yml \
+              exec -T db sh -c \
+              'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c \
+                "UPDATE schema_migrations SET version=20260713000015, dirty=FALSE \
+                 WHERE version=20260713000016 AND dirty"' </dev/null
+            rewound_state="$(sudo docker compose --env-file .env.production \
+              -f docker-compose.prod.yml exec -T db sh -c \
+              'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc \
+                "SELECT version::text || chr(58) || dirty::text FROM schema_migrations"' </dev/null)"
+            if [ "$rewound_state" != "20260713000015:false" ]; then
+              echo "K-1 FTS migration rewind produced unexpected state: $rewound_state" >&2
+              exit 1
+            fi
+            run_with_heartbeat k1-fts-index-recovery \
+              sudo docker compose --env-file .env.production -f docker-compose.prod.yml \
+              exec -T -e 'PGOPTIONS=-c maintenance_work_mem=64MB' db sh -c \
+              'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c \
+                "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_citable_units_text_fts_interpretive \
+                 ON citable_units USING gin ( \
+                   to_tsvector('\''simple'\''::regconfig, translate(text, '\''ًٌٍَُِّْٰٕٓٔـ'\'', '\'''\'')) \
+                 ) \
+                 WHERE lifecycle = '\''active'\'' \
+                   AND corpus = '\''kitab'\'' \
+                   AND interpretive_retrieval_eligible \
+                   AND content_role = '\''book_page'\'' \
+                   AND heading_id IS NOT NULL \
+                   AND page_id IS NOT NULL"' </dev/null
+            index_valid="$(sudo docker compose --env-file .env.production \
+              -f docker-compose.prod.yml exec -T db sh -c \
+              'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc \
+                "SELECT index.indisvalid \
+                 FROM pg_index index \
+                 JOIN pg_class relation ON relation.oid=index.indexrelid \
+                 WHERE relation.relname='\''idx_citable_units_text_fts_interpretive'\''"' </dev/null)"
+            if [ "$index_valid" != "t" ]; then
+              echo "K-1 FTS migration recovery did not produce a valid index" >&2
+              exit 1
+            fi
+            sudo docker compose --env-file .env.production -f docker-compose.prod.yml start app
+            for recovery_attempt in {1..60}; do
+              if curl -fsS http://127.0.0.1:8080/healthz >/dev/null; then
+                break
+              fi
+              if [ "$recovery_attempt" -eq 60 ]; then
+                echo "K-1 FTS migration recovery did not restore the existing app" >&2
+                sudo docker compose --env-file .env.production -f docker-compose.prod.yml \
+                  logs --tail=120 app
+                exit 1
+              fi
+              sleep 2
+            done
+            completed_state="$(sudo docker compose --env-file .env.production \
+              -f docker-compose.prod.yml exec -T db sh -c \
+              'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc \
+                "SELECT version::text || chr(58) || dirty::text FROM schema_migrations"' </dev/null)"
+            if [ "$completed_state" != "20260713000016:false" ]; then
+              echo "K-1 FTS migration recovery finished in unexpected state: $completed_state" >&2
+              exit 1
+            fi
+          fi
+
           # Bound build-cache growth so a full disk can't fail the build.
           sudo docker builder prune -f --filter 'until=72h' >/dev/null 2>&1 || true
 
