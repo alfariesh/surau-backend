@@ -51,7 +51,7 @@ func (r *CitableUnitRepo) WithCatalogTransaction(
 	}
 
 	// Only the first K-1 materialization may classify legacy approved mentions
-	// as stale/ambiguous without aborting. Once profile v2 has committed, every
+	// as stale/ambiguous without aborting. Once a catalog profile has committed, every
 	// delta reconcile is steady-state and the deferred database guard is enforced
 	// before the queue item can be completed.
 	var legacyMentionBindingBypass bool

@@ -240,6 +240,11 @@ golden eval, SSE smoke, counter parity/fallback, dan parity full-catalog pada ve
 buktinya. Audit terjadwal tetap memeriksa seluruh proyeksi persisten dan memicu alarm Telegram
 bila satu saja pelanggaran bernilai >0.
 
+Jika `uncovered_pages` menemukan halaman heading-only, jangan mengecualikannya dari denominator.
+Naikkan profil derivasi dan materialisasikan blok struktural tersebut sebagai fallback `html`
+exact. Jika p95 memburuk pada kata Arab umum, periksa pemakaian indeks full-text unit terlebih
+dahulu; trigram adalah fallback typo/substring, bukan jalur utama sapuan seluruh katalog.
+
 ### Catatan khusus registry Citable Unit (B-1)
 
 Tabel `citable_units` / `citable_unit_lineage` dijaga trigger `citable_registry_guard()`:

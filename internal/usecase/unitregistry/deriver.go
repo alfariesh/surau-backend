@@ -19,6 +19,8 @@ var (
 	errSourceAlignment = errors.New("structured units cannot align to persisted content_text")
 )
 
+const kitabSourceLanguage = "ar"
+
 // DerivedUnit is one identity-free unit produced by the kitab deriver; the
 // planner assigns or mints identity (id/ordinal/anchor/occurrence) afterwards.
 type DerivedUnit struct {
@@ -52,7 +54,7 @@ type DerivedUnit struct {
 type DeriveStats struct {
 	Pages                    int
 	Scopes                   int
-	StrayAnchors             int // toc anchors with no matching heading row (ignored)
+	StrayAnchors             int // toc anchors with no matching heading row
 	HTMLUnits                int
 	Footnotes                int
 	UnlinkedNotes            int
@@ -160,23 +162,58 @@ func DeriveBook(src *entity.BookUnitSource) ([]DerivedUnit, DeriveStats, error) 
 		}
 
 		pageBodyStart := len(units)
+		hasBodyBlock := false
+		for i := range structured.Blocks {
+			block := &structured.Blocks[i]
+			if block.AnchorID == 0 && trimNonEmpty(block.Text) {
+				hasBodyBlock = true
+
+				break
+			}
+		}
 
 		for _, block := range structured.Blocks {
 			if block.AnchorID > 0 {
 				idx, known := headingIdx[block.AnchorID]
 				if !known {
 					stats.StrayAnchors++
+				} else {
+					setScope(block.AnchorID)
 
-					continue
+					if idx >= hPtr {
+						hPtr = idx + 1
+					}
 				}
 
-				setScope(block.AnchorID)
-
-				if idx >= hPtr {
-					hPtr = idx + 1
+				// Normally book_headings.content is the source of truth for a
+				// title line. A page containing only structural title blocks is
+				// still a non-empty published document, though, so retain each
+				// exact title block as an HTML fallback. This closes the catalog
+				// coverage gap without duplicating titles on ordinary body pages.
+				if !hasBodyBlock && trimNonEmpty(block.Text) {
+					stats.HTMLUnits++
+					provClass, actor := pageUnitProvenance(&page, rawUnitCounts,
+						pageUnitSourceKey(entity.UnitKindHTML, "", block.Text))
+					units = append(units, DerivedUnit{
+						HeadingID:             scope,
+						PageID:                page.PageID,
+						Kind:                  entity.UnitKindHTML,
+						Text:                  block.Text,
+						HTML:                  block.HTML,
+						ParentIdx:             -1,
+						ContentRole:           entity.UnitContentRoleBookPage,
+						Language:              kitabSourceLanguage,
+						ReviewStatus:          entity.UnitReviewStatusApproved,
+						SourceDocumentHash:    documentHash[:],
+						SourceCharStart:       block.SourceCharStart,
+						SourceCharEnd:         block.SourceCharEnd,
+						ProvenanceClass:       provClass,
+						EditActorID:           actor,
+						FormattingEditActorID: formatActor,
+						ReleaseKey:            src.ReleaseKey,
+						ContentHash:           ContentHash(entity.UnitKindHTML, "", block.Text),
+					})
 				}
-				// The title line itself is not a unit: book_headings.content
-				// is the source of truth for heading titles.
 
 				continue
 			}
@@ -199,7 +236,7 @@ func DeriveBook(src *entity.BookUnitSource) ([]DerivedUnit, DeriveStats, error) 
 				HTML:                  block.HTML,
 				ParentIdx:             -1,
 				ContentRole:           entity.UnitContentRoleBookPage,
-				Language:              "ar",
+				Language:              kitabSourceLanguage,
 				ReviewStatus:          entity.UnitReviewStatusApproved,
 				SourceDocumentHash:    documentHash[:],
 				SourceCharStart:       block.SourceCharStart,
@@ -267,7 +304,7 @@ func DeriveBook(src *entity.BookUnitSource) ([]DerivedUnit, DeriveStats, error) 
 				ParentIdx:             parentIdx,
 				FootnoteLink:          link,
 				ContentRole:           entity.UnitContentRoleBookPage,
-				Language:              "ar",
+				Language:              kitabSourceLanguage,
 				ReviewStatus:          entity.UnitReviewStatusApproved,
 				SourceDocumentHash:    documentHash[:],
 				SourceCharStart:       fn.SourceCharStart,
@@ -445,10 +482,22 @@ func rawPageUnitCounts(page *entity.BookUnitSourcePage) map[string]int {
 		return counts
 	}
 
+	hasBodyBlock := false
+	for i := range structured.Blocks {
+		block := &structured.Blocks[i]
+		if block.AnchorID == 0 && trimNonEmpty(block.Text) {
+			hasBodyBlock = true
+
+			break
+		}
+	}
+
 	for i := range structured.Blocks {
 		block := &structured.Blocks[i]
 		if block.AnchorID == 0 && trimNonEmpty(block.Text) {
 			counts[pageUnitSourceKey(block.Type, "", block.Text)]++
+		} else if !hasBodyBlock && block.AnchorID > 0 && trimNonEmpty(block.Text) {
+			counts[pageUnitSourceKey(entity.UnitKindHTML, "", block.Text)]++
 		}
 	}
 

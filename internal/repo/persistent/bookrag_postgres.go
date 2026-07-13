@@ -575,6 +575,87 @@ func (r *BookRAGRepo) SearchRAGUnits(
 		return []entity.RAGSearchResult{}, nil
 	}
 
+	exact, err := r.searchRAGUnitsExact(ctx, bookID, query, limit)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(exact) >= limit {
+		return exact, nil
+	}
+
+	// Full-text search is the bounded common path. Preserve the previous
+	// trigram behavior only as a second-stage typo/substring fallback when the
+	// exact token index cannot fill the requested evidence window.
+	fuzzy, err := r.searchRAGUnitsFuzzy(ctx, bookID, query, limit)
+	if err != nil {
+		return nil, err
+	}
+
+	type resultKey struct{ headingID, pageID int }
+
+	seen := make(map[resultKey]struct{}, len(exact)+len(fuzzy))
+	merged := make([]entity.RAGSearchResult, 0, min(limit, len(exact)+len(fuzzy)))
+	appendUnique := func(results []entity.RAGSearchResult) {
+		for i := range results {
+			key := resultKey{headingID: results[i].HeadingID, pageID: results[i].PageID}
+			if _, exists := seen[key]; exists {
+				continue
+			}
+
+			seen[key] = struct{}{}
+
+			merged = append(merged, results[i])
+			if len(merged) == limit {
+				return
+			}
+		}
+	}
+	appendUnique(exact)
+
+	if len(merged) < limit {
+		appendUnique(fuzzy)
+	}
+
+	return merged, nil
+}
+
+func (r *BookRAGRepo) searchRAGUnitsExact(
+	ctx context.Context,
+	bookID int,
+	query string,
+	limit int,
+) ([]entity.RAGSearchResult, error) {
+	const sqlText = `
+WITH search_query AS (
+    SELECT plainto_tsquery('simple'::regconfig, $2) AS value
+)
+SELECT cu.heading_id,
+       cu.page_id,
+       max(ts_rank_cd(
+           to_tsvector('simple'::regconfig, translate(cu.text, 'ًٌٍَُِّْٰٕٓٔـ', '')),
+           search_query.value
+       ))::float8 AS score
+FROM public_book_interpretive_citable_units cu
+CROSS JOIN search_query
+WHERE cu.book_id = $1
+  AND cu.content_role = 'book_page'
+  AND cu.heading_id IS NOT NULL
+  AND cu.page_id IS NOT NULL
+  AND to_tsvector('simple'::regconfig, translate(cu.text, 'ًٌٍَُِّْٰٕٓٔـ', '')) @@ search_query.value
+GROUP BY cu.heading_id, cu.page_id
+ORDER BY score DESC, cu.page_id ASC, cu.heading_id ASC
+LIMIT $3`
+
+	return r.queryRAGUnitSearch(ctx, sqlText, bookID, query, limit, "exact")
+}
+
+func (r *BookRAGRepo) searchRAGUnitsFuzzy(
+	ctx context.Context,
+	bookID int,
+	query string,
+	limit int,
+) ([]entity.RAGSearchResult, error) {
 	const sqlText = `
 SELECT cu.heading_id,
        cu.page_id,
@@ -597,9 +678,24 @@ GROUP BY cu.heading_id, cu.page_id
 ORDER BY score DESC, cu.page_id ASC, cu.heading_id ASC
 LIMIT $3`
 
-	rows, err := r.Pool.Query(ctx, sqlText, bookID, query, limit, escapeLike(query))
+	return r.queryRAGUnitSearch(ctx, sqlText, bookID, query, limit, "fuzzy", escapeLike(query))
+}
+
+func (r *BookRAGRepo) queryRAGUnitSearch(
+	ctx context.Context,
+	sqlText string,
+	bookID int,
+	query string,
+	limit int,
+	phase string,
+	extra ...any,
+) ([]entity.RAGSearchResult, error) {
+	args := []any{bookID, query, limit}
+	args = append(args, extra...)
+
+	rows, err := r.Pool.Query(ctx, sqlText, args...)
 	if err != nil {
-		return nil, fmt.Errorf("BookRAGRepo - SearchRAGUnits - Query: %w", err)
+		return nil, fmt.Errorf("BookRAGRepo - SearchRAGUnits - %s query: %w", phase, err)
 	}
 	defer rows.Close()
 
@@ -608,14 +704,14 @@ LIMIT $3`
 	for rows.Next() {
 		var result entity.RAGSearchResult
 		if err = rows.Scan(&result.HeadingID, &result.PageID, &result.Score); err != nil {
-			return nil, fmt.Errorf("BookRAGRepo - SearchRAGUnits - rows.Scan: %w", err)
+			return nil, fmt.Errorf("BookRAGRepo - SearchRAGUnits - %s scan: %w", phase, err)
 		}
 
 		results = append(results, result)
 	}
 
 	if err = rows.Err(); err != nil {
-		return nil, fmt.Errorf("BookRAGRepo - SearchRAGUnits - rows.Err: %w", err)
+		return nil, fmt.Errorf("BookRAGRepo - SearchRAGUnits - %s rows: %w", phase, err)
 	}
 
 	return results, nil

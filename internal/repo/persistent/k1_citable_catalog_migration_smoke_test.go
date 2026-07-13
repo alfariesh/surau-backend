@@ -160,6 +160,24 @@ func TestK1CatalogChecksumVersionMigrationContracts(t *testing.T) {
 	assert.Contains(t, string(down), "DROP COLUMN IF EXISTS checksum_version")
 }
 
+func TestK1CatalogProfileThreeMigrationContracts(t *testing.T) {
+	t.Parallel()
+
+	up, err := os.ReadFile("../../../migrations/20260713000015_harden_k1_catalog_profile.up.sql")
+	require.NoError(t, err)
+	down, err := os.ReadFile("../../../migrations/20260713000015_harden_k1_catalog_profile.down.sql")
+	require.NoError(t, err)
+
+	upSQL := string(up)
+	assert.Contains(t, upSQL, "units_derivation_profile_version IS DISTINCT FROM 3")
+	assert.Contains(t, upSQL, "book.units_derivation_profile_version = 3")
+	assert.Contains(t, upSQL, "PERFORM set_config('surau.registry_writer', 'unit-service', true)")
+	assert.Contains(t, upSQL, "HAVING COUNT(DISTINCT walk.unit_id) = 1")
+	assert.Contains(t, upSQL, "'\"unlinked\"'::jsonb")
+	assert.Contains(t, string(down), "book.units_derivation_profile_version = 2")
+	assert.Contains(t, string(down), "units_stale_at = COALESCE")
+}
+
 func TestK1EditorialReconcileBindsMentionsBeforeCommit(t *testing.T) {
 	t.Parallel()
 
@@ -192,6 +210,7 @@ func TestK1CitableCatalogOnlineIndexesAreOnePerMigration(t *testing.T) {
 		"20260713000008_swap_k1_citable_catalog_indexes.up.sql",
 		"20260713000009_add_k1_unit_text_trgm_index.up.sql",
 		"20260713000010_add_k1_unit_text_unmarked_trgm_index.up.sql",
+		"20260713000016_add_k1_unit_fts_index.up.sql",
 	}
 
 	for _, name := range files {

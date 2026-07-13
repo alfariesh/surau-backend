@@ -32,6 +32,10 @@ func TestBookRAGUnitQueriesUseStructuralPublicView(t *testing.T) {
 		"unit retrieval must cap pages before expanding every eligible unit on those pages")
 	assert.Contains(t, querySource, "JOIN chosen_pages chosen ON chosen.page_id = cu.page_id",
 		"all eligible units must be expanded only after the page cap")
+	assert.Contains(t, querySource, "to_tsvector('simple'::regconfig",
+		"common Arabic terms must use the bounded full-text index before any trigram fallback")
+	assert.Contains(t, querySource, "plainto_tsquery('simple'::regconfig",
+		"the unit search query must use the same immutable full-text configuration as its index")
 	assert.NotContains(t, querySource, "cu.effective_license_status = 'permitted'",
 		"B-4 grandfather visibility belongs to public_book_publications/view, not a stricter RAG override")
 	assert.Contains(t, querySource, "FROM citable_units materialized",

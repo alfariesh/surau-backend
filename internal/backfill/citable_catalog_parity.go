@@ -202,7 +202,7 @@ LEFT JOIN public_book_publications public_publication ON public_publication.book
 LEFT JOIN LATERAL (
     SELECT unit.heading_id,
            unit.page_id,
-           unit.text AS quote,
+           excerpt.quote,
            unit.id::text AS unit_id,
            unit.anchor
     FROM public_book_interpretive_citable_units unit
@@ -214,15 +214,18 @@ LEFT JOIN LATERAL (
       ON heading_range.book_id = heading.book_id AND heading_range.heading_id = heading.heading_id
     LEFT JOIN book_page_edits edit
       ON edit.book_id = page.book_id AND edit.page_id = page.page_id AND edit.status = 'published'
+    CROSS JOIN LATERAL (
+        SELECT left(unit.text, 512) AS quote
+    ) excerpt
     WHERE public_publication.book_id IS NOT NULL
       AND unit.book_id = book.id
       AND unit.content_role = 'book_page'
       AND unit.heading_id IS NOT NULL
       AND unit.page_id IS NOT NULL
-      AND char_length(btrim(unit.text)) BETWEEN 4 AND 4000
-      AND strpos(COALESCE(edit.content_text, page.content_text), unit.text) > 0
-      AND strpos(COALESCE(edit.content_text, page.content_text), unit.text)
-            + char_length(unit.text) - 1 <= 4000
+      AND char_length(btrim(excerpt.quote)) >= 4
+      AND strpos(COALESCE(edit.content_text, page.content_text), excerpt.quote) > 0
+      AND strpos(COALESCE(edit.content_text, page.content_text), excerpt.quote)
+            + char_length(excerpt.quote) - 1 <= 4000
       AND (
           SELECT COUNT(*)
           FROM public_book_interpretive_citable_units peer
@@ -230,7 +233,7 @@ LEFT JOIN LATERAL (
             AND peer.heading_id = unit.heading_id
             AND peer.page_id = unit.page_id
             AND peer.content_role = 'book_page'
-            AND strpos(peer.text, unit.text) > 0
+            AND strpos(peer.text, excerpt.quote) > 0
       ) = 1
     ORDER BY char_length(unit.text) DESC, unit.position, unit.ordinal
     LIMIT 1
