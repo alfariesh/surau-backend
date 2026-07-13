@@ -118,10 +118,11 @@ sudo /usr/local/sbin/surau-pitr-check
 
 ## Pre-deploy snapshots (E6)
 
-Both deploy workflows call `sudo /usr/local/sbin/surau-predeploy-snapshot`
-before the app migrates: encrypted custom-format dump to
-`/var/backups/surau/predeploy/` + upload to `r2://…/predeploy/<env>/`, both
-pruned after 7 days. Dump failure **aborts the deploy**; R2-upload failure
+Deploy workflows call `surau-predeploy-snapshot` before the app migrates:
+encrypted custom-format dump to `/var/backups/surau/predeploy/` + upload to
+`r2://…/predeploy/<env>/`. R2 keeps 7 days; the host keeps the newest two for
+fast rollback and removes older local copies only after the same filename is
+verified in R2. Dump failure **aborts the deploy**; R2-upload failure
 alarms Telegram but lets the deploy continue (the local artifact still covers
 rollback). Restore one with the same recipe as any encrypted dump (see
 docs/deploy-vps.md §Pemulihan schema DIRTY).

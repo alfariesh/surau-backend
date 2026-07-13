@@ -103,4 +103,35 @@ printf '%s\n' "$predeploy_name" | grep -qE "$pattern" \
   && fail "predeploy artifact name collides with daily-backup selection pattern"
 
 echo "ok: predeploy artifact naming"
+
+# --- 5. local pre-deploy retention deletes only R2-verified duplicates ---
+# Sourced by absolute runtime path from this directory.
+# shellcheck disable=SC1091
+source "$here/surau-predeploy-snapshot"
+PREDEPLOY_DIR="$workdir/predeploy"
+# Consumed by the sourced retention function.
+# shellcheck disable=SC2034
+PREDEPLOY_LOCAL_KEEP=2
+mkdir -p "$PREDEPLOY_DIR"
+
+old_uploaded='surau-predeploy-20260707T100000Z-aaaaaaa.dump.zst.age'
+old_local_only='surau-predeploy-20260707T110000Z-bbbbbbb.dump.zst.age'
+new_uploaded='surau-predeploy-20260707T120000Z-ccccccc.dump.zst.age'
+newest_uploaded='surau-predeploy-20260707T130000Z-ddddddd.dump.zst.age'
+touch -t 202607071000 "$PREDEPLOY_DIR/$old_uploaded"
+touch -t 202607071100 "$PREDEPLOY_DIR/$old_local_only"
+touch -t 202607071200 "$PREDEPLOY_DIR/$new_uploaded"
+touch -t 202607071300 "$PREDEPLOY_DIR/$newest_uploaded"
+
+rclone() {
+  printf '%s\n' "$old_uploaded" "$new_uploaded" "$newest_uploaded"
+}
+
+prune_uploaded_local_snapshots unused-config r2:fixture/predeploy/dev
+[[ ! -e "$PREDEPLOY_DIR/$old_uploaded" ]] || fail "R2-verified old predeploy snapshot was not pruned"
+[[ -e "$PREDEPLOY_DIR/$old_local_only" ]] || fail "unuploaded local predeploy snapshot was pruned"
+[[ -e "$PREDEPLOY_DIR/$new_uploaded" ]] || fail "new local predeploy snapshot was pruned"
+[[ -e "$PREDEPLOY_DIR/$newest_uploaded" ]] || fail "newest local predeploy snapshot was pruned"
+
+echo "ok: R2-verified predeploy local retention"
 echo "all backup script tests passed"

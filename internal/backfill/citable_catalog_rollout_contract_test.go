@@ -62,4 +62,8 @@ func TestK1DevRolloutKeepsLongCatalogCommandsObservable(t *testing.T) {
 	assert.Contains(t, text, "exec -T -e GOMEMLIMIT=640MiB -e GOGC=50 app")
 	assert.Contains(t, text, "-o ServerAliveCountMax=120")
 	assert.Contains(t, text, "for keyscan_attempt in {1..12}")
+	assert.Contains(t, text, "docker builder prune -af --filter 'until=1h'")
+	assert.Contains(t, text, `"$DEPLOY_PATH/ops/backup/surau-predeploy-snapshot"`)
+	assert.Contains(t, text, "less than 2GiB free after safe cleanup and snapshot")
+	assert.Contains(t, text, "vacuumdb -U")
 }

@@ -164,7 +164,7 @@ sudo docker compose --env-file .env.production -f docker-compose.prod.yml \
 
 ## Keamanan migration (auto-migrate saat boot)
 
-Aplikasi auto-migrate saat boot (build `-tags migrate`). Pipeline deploy sudah: (1) snapshot pra-deploy via `surau-predeploy-snapshot` — pg_dump terenkripsi (age) ke `/var/backups/surau/predeploy/` DAN diunggah ke R2 `predeploy/<env>/` dengan retensi 7 hari (dump gagal = deploy batal; upload R2 gagal = deploy lanjut + alarm Telegram), dan (2) `docker image prune` HANYA setelah `/readyz` hijau (biar image lama masih ada untuk rollback bila deploy gagal). `migrate.go` menolak auto-migrate bila schema DIRTY dan mencetak langkah pemulihan.
+Aplikasi auto-migrate saat boot (build `-tags migrate`). Pipeline deploy sudah: (1) snapshot pra-deploy via `surau-predeploy-snapshot` — pg_dump terenkripsi (age) ke `/var/backups/surau/predeploy/` DAN diunggah ke R2 `predeploy/<env>/`; R2 menyimpan 7 hari, host menyimpan dua terbaru dan hanya memangkas duplikat yang sudah diverifikasi ada di R2 (dump gagal = deploy batal; upload R2 gagal = deploy lanjut + alarm Telegram), dan (2) `docker image prune` HANYA setelah `/readyz` hijau (biar image lama masih ada untuk rollback bila deploy gagal). `migrate.go` menolak auto-migrate bila schema DIRTY dan mencetak langkah pemulihan.
 
 Deploy dev juga menjalankan recovery Q-2 yang idempotent setelah aplikasi baru sehat:
 `quran-page-navigation-v1 -restart` lalu `citable-units-quran -restart`. Workflow baru dianggap
