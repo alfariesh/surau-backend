@@ -317,7 +317,9 @@ jobs:
           # it does not rewrite/truncate the table or block public reads.
           sudo docker compose --env-file .env.production -f docker-compose.prod.yml \
             exec -T db sh -c \
-              'vacuumdb -U "$POSTGRES_USER" -d "$POSTGRES_DB" --analyze --table=citable_units --table=citable_unit_lineage --table=citable_unit_catalog_queue'
+              'vacuumdb -U "$POSTGRES_USER" -d "$POSTGRES_DB" --analyze \
+                --table=citable_units --table=citable_unit_lineage \
+                --table=citable_unit_catalog_queue' </dev/null
 
           # Bound build-cache growth so a full disk can't fail the build.
           sudo docker builder prune -f --filter 'until=72h' >/dev/null 2>&1 || true
