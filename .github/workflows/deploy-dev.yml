@@ -291,6 +291,42 @@ jobs:
             COLLAB_CHECK="http://127.0.0.1:8090/healthz"
           fi
 
+          # A canceled SSH workflow can leave `docker exec /backfill` running
+          # inside the existing app container: Docker owns that exec process
+          # after the client disconnects. Stop only the ops CLI before taking
+          # a snapshot, so an orphan verifier cannot starve PostgreSQL/the API.
+          # Every catalog write is one-book atomic and its queue is resumable;
+          # the application process in the same container remains untouched.
+          stop_stale_backfill_processes() {
+            app_container_id="$(sudo docker compose --env-file .env.production \
+              -f docker-compose.prod.yml ps -q app 2>/dev/null || true)"
+            if [ -z "$app_container_id" ]; then
+              return
+            fi
+
+            mapfile -t stale_pids < <(sudo docker top "$app_container_id" -eo pid,comm 2>/dev/null \
+              | awk 'NR > 1 && $2 == "backfill" { print $1 }')
+            if [ "${#stale_pids[@]}" -eq 0 ]; then
+              return
+            fi
+
+            echo "Stopping ${#stale_pids[@]} stale backfill process(es) before snapshot..."
+            sudo kill -TERM "${stale_pids[@]}" 2>/dev/null || true
+
+            for attempt in {1..30}; do
+              mapfile -t stale_pids < <(sudo docker top "$app_container_id" -eo pid,comm 2>/dev/null \
+                | awk 'NR > 1 && $2 == "backfill" { print $1 }')
+              if [ "${#stale_pids[@]}" -eq 0 ]; then
+                return
+              fi
+              sleep 1
+            done
+
+            echo "Stale backfill ignored SIGTERM; forcing bounded cleanup" >&2
+            sudo kill -KILL "${stale_pids[@]}" 2>/dev/null || true
+          }
+          stop_stale_backfill_processes
+
           # Snapshot the DB before the new image auto-migrates on boot, so a bad
           # migration can be rolled back. Encrypted + uploaded to R2 with 7-day
           # retention (E6); dump failure aborts the deploy ("no backup, no deploy"),
