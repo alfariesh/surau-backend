@@ -65,5 +65,6 @@ func TestK1DevRolloutKeepsLongCatalogCommandsObservable(t *testing.T) {
 	assert.Contains(t, text, "docker builder prune -af --filter 'until=1h'")
 	assert.Contains(t, text, `"$DEPLOY_PATH/ops/backup/surau-predeploy-snapshot"`)
 	assert.Contains(t, text, "less than 2GiB free after safe cleanup and snapshot")
-	assert.Contains(t, text, "vacuumdb -U")
+	assert.Contains(t, text, `vacuumdb -U "$POSTGRES_USER"`)
+	assert.Contains(t, text, `--table=citable_unit_catalog_queue' </dev/null`)
 }
