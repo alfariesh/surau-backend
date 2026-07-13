@@ -57,12 +57,21 @@ jobs:
           chmod 700 ~/.ssh
           printf '%s\n' "$VPS_SSH_PRIVATE_KEY" > ~/.ssh/surau_deploy_key
           chmod 600 ~/.ssh/surau_deploy_key
-          ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
+          for keyscan_attempt in {1..12}; do
+            if ssh-keyscan -T 10 -H "$VPS_HOST" >> ~/.ssh/known_hosts; then
+              break
+            fi
+            if [ "$keyscan_attempt" -eq 12 ]; then
+              echo "dev deploy rejected: SSH host key remained unavailable after 12 attempts" >&2
+              exit 1
+            fi
+            sleep 5
+          done
 
           ssh -i ~/.ssh/surau_deploy_key \
             -o IdentitiesOnly=yes \
             -o ServerAliveInterval=30 \
-            -o ServerAliveCountMax=20 \
+            -o ServerAliveCountMax=120 \
             -o TCPKeepAlive=yes \
             "$VPS_USER@$VPS_HOST" \
             "DEPLOY_BRANCH='$DEPLOY_BRANCH' DEPLOY_PATH='$VPS_DEPLOY_PATH' \
@@ -101,6 +110,20 @@ jobs:
           remove_env_value() {
             key="$1"
             sed -i "/^${key}=/d" .env.production
+          }
+
+          run_with_heartbeat() {
+            label="$1"
+            shift
+            started_at="$(date +%s)"
+            "$@" &
+            command_pid=$!
+            while kill -0 "$command_pid" 2>/dev/null; do
+              elapsed_seconds=$(( $(date +%s) - started_at ))
+              echo "deploy heartbeat: $label still running (${elapsed_seconds}s)"
+              sleep 30
+            done
+            wait "$command_pid"
           }
 
           ROLLOUT_EVIDENCE=.k1-book-rag-dual-evidence
@@ -314,13 +337,16 @@ jobs:
               # state, then run the all-catalog determinism drill. Later deploys
               # restart only the drift-aware catalog job; a completed
               # determinism job exits cleanly without replaying all books.
-              sudo -E docker compose --env-file .env.production -f docker-compose.prod.yml "${PROFILE_ARGS[@]}" \
+              run_with_heartbeat k1-priority-catalog \
+                sudo -E docker compose --env-file .env.production -f docker-compose.prod.yml "${PROFILE_ARGS[@]}" \
                 exec -T app /backfill -job=citable-units-kitab-catalog -catalog-priority-only \
                   -chunk-size=1 -sleep=200ms -restart
-              sudo -E docker compose --env-file .env.production -f docker-compose.prod.yml "${PROFILE_ARGS[@]}" \
+              run_with_heartbeat k1-full-catalog \
+                sudo -E docker compose --env-file .env.production -f docker-compose.prod.yml "${PROFILE_ARGS[@]}" \
                 exec -T app /backfill -job=citable-units-kitab-catalog \
                   -chunk-size=1 -sleep=200ms -restart
-              sudo -E docker compose --env-file .env.production -f docker-compose.prod.yml "${PROFILE_ARGS[@]}" \
+              run_with_heartbeat k1-determinism-rederive \
+                sudo -E docker compose --env-file .env.production -f docker-compose.prod.yml "${PROFILE_ARGS[@]}" \
                 exec -T app /backfill -job=citable-units-kitab-catalog-rederive -chunk-size=1 -sleep=200ms -restart
               sudo -E docker compose --env-file .env.production -f docker-compose.prod.yml "${PROFILE_ARGS[@]}" \
                 exec -T app /backfill -verify-citable-catalog
