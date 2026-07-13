@@ -28,6 +28,13 @@ R2_ENDPOINT="${R2_ENDPOINT:-}"
 R2_ACCESS_KEY_ID="${R2_ACCESS_KEY_ID:-}"
 R2_SECRET_ACCESS_KEY="${R2_SECRET_ACCESS_KEY:-}"
 AGE_RECIPIENT="${AGE_RECIPIENT:-}"
+RCLONE_CONFIG_PATH=""
+
+cleanup_rclone_config() {
+  if [[ -n "${RCLONE_CONFIG_PATH:-}" ]]; then
+    rm -f -- "$RCLONE_CONFIG_PATH"
+  fi
+}
 
 if [[ -z "$R2_ENDPOINT" && -n "$R2_ACCOUNT_ID" ]]; then
   R2_ENDPOINT="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
@@ -131,7 +138,11 @@ main() {
 
   local rclone_config
   rclone_config="$(write_rclone_config)"
-  trap 'rm -f "$rclone_config"' EXIT
+  # EXIT runs after main returns, when its local variables are already out of
+  # scope. Keep the path in script scope so nounset cannot turn successful
+  # backup cleanup into a failed deploy.
+  RCLONE_CONFIG_PATH="$rclone_config"
+  trap cleanup_rclone_config EXIT
 
   local remote="r2:${R2_BUCKET}/predeploy/${ENV_LABEL}"
   prune_uploaded_local_snapshots "$rclone_config" "$remote"
