@@ -735,11 +735,7 @@ WITH search_query AS (
 candidates AS MATERIALIZED (
     SELECT unit.id,
            unit.heading_id,
-           unit.page_id,
-           CASE
-               WHEN strpos(translate(unit.text, 'ًٌٍَُِّْٰٕٓٔـ', ''), $2) > 0 THEN 2::float8
-               ELSE 1::float8
-           END AS score
+           unit.page_id
     FROM citable_units unit
     CROSS JOIN search_query
     WHERE unit.book_id = $1
@@ -758,21 +754,32 @@ candidates AS MATERIALIZED (
 matches AS MATERIALIZED (
     SELECT candidate.id,
            candidate.heading_id,
-           candidate.page_id,
-           candidate.score
+           candidate.page_id
     FROM candidates candidate
 ),
-ranked_matches AS MATERIALIZED (
-    SELECT eligible.id::text AS unit_id,
+scored_matches AS MATERIALIZED (
+    SELECT eligible.id,
            eligible.heading_id,
            eligible.page_id,
-           matches.score,
-           row_number() OVER (
-               PARTITION BY eligible.heading_id, eligible.page_id
-               ORDER BY matches.score DESC, eligible.position, eligible.ordinal, eligible.id
-           ) AS page_rank
+           eligible.position,
+           eligible.ordinal,
+           CASE
+               WHEN strpos(translate(eligible.text, 'ًٌٍَُِّْٰٕٓٔـ', ''), $2) > 0 THEN 2::float8
+               ELSE 1::float8
+           END AS score
     FROM matches
     JOIN public_book_interpretive_citable_units eligible ON eligible.id = matches.id
+),
+ranked_matches AS MATERIALIZED (
+    SELECT scored.id::text AS unit_id,
+           scored.heading_id,
+           scored.page_id,
+           scored.score,
+           row_number() OVER (
+               PARTITION BY scored.heading_id, scored.page_id
+               ORDER BY scored.score DESC, scored.position, scored.ordinal, scored.id
+           ) AS page_rank
+    FROM scored_matches scored
 )
 SELECT unit_id,
        heading_id,
