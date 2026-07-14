@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestCatalogParitySamplesUseBoundedBookUniqueExactQuotes(t *testing.T) {
+func TestCatalogParitySamplesUseBoundedPageUniqueExactQuotes(t *testing.T) {
 	t.Parallel()
 
 	source, err := os.ReadFile("citable_catalog_parity.go")
@@ -21,8 +21,8 @@ func TestCatalogParitySamplesUseBoundedBookUniqueExactQuotes(t *testing.T) {
 	assert.Contains(t, text, "substring(unit.text FROM starts.start_pos FOR 256)")
 	assert.Contains(t, text, "char_length(candidate.quote) <= 256")
 	assert.Contains(t, text, "strpos(peer.text, candidate.quote) > 0")
-	assert.NotContains(t, text, "peer.heading_id = unit.heading_id")
-	assert.NotContains(t, text, "peer.page_id = unit.page_id")
+	assert.Contains(t, text, "peer.heading_id = unit.heading_id")
+	assert.Contains(t, text, "peer.page_id = unit.page_id")
 	assert.NotContains(t, text, "(unit.text, 0)")
 	assert.Contains(t, text, "ORDER BY candidate.priority")
 	assert.Equal(t, 1, catalogParityMaxContextPages)

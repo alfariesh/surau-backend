@@ -32,11 +32,12 @@ type catalogParityLLM struct {
 	calls     int
 }
 
-// A catalog proof quote is selected to occur in exactly one eligible unit in
-// the book. One retrieved page is therefore sufficient to exercise the real
-// retrieval, quote validator, dual projection, and Anchor resolver. Keeping
-// the context at one also prevents the acceptance gate from issuing hundreds
-// of progressively weaker token searches merely to fill unused context slots.
+// A catalog proof quote is selected to occur in exactly one eligible unit at
+// its legacy book/heading/page locator. One retrieved page is therefore
+// sufficient to exercise the real retrieval, quote validator, dual
+// projection, and Anchor resolver. Keeping the context at one also prevents
+// the acceptance gate from issuing hundreds of progressively weaker token
+// searches merely to fill unused context slots.
 const catalogParityMaxContextPages = 1
 
 var (
@@ -235,6 +236,8 @@ LEFT JOIN LATERAL (
               SELECT COUNT(*)
               FROM public_book_interpretive_citable_units peer
               WHERE peer.book_id = unit.book_id
+                AND peer.heading_id = unit.heading_id
+                AND peer.page_id = unit.page_id
                 AND peer.content_role = 'book_page'
                 AND strpos(peer.text, candidate.quote) > 0
           ) = 1
