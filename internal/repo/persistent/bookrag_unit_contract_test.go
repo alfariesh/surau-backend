@@ -18,6 +18,14 @@ func TestBookRAGUnitQueriesUseStructuralPublicView(t *testing.T) {
 	require.NoError(t, err)
 
 	querySource := string(source)
+	exactQueryStart := strings.Index(querySource, "func (r *BookRAGRepo) searchRAGUnitsExact(")
+	exactQueryEnd := strings.Index(querySource, "func (r *BookRAGRepo) searchRAGUnitsFuzzy(")
+
+	require.NotEqual(t, -1, exactQueryStart)
+	require.Greater(t, exactQueryEnd, exactQueryStart)
+
+	exactQuery := querySource[exactQueryStart:exactQueryEnd]
+
 	assert.GreaterOrEqual(t, strings.Count(
 		querySource,
 		"FROM public_book_interpretive_citable_units cu",
@@ -40,7 +48,7 @@ func TestBookRAGUnitQueriesUseStructuralPublicView(t *testing.T) {
 		"the indexed unit match set must be isolated before publication joins and ranking")
 	assert.Contains(t, querySource, "THEN 2::float8",
 		"verbatim unit matches must outrank broader full-text matches on the same page")
-	assert.Contains(t, querySource, "eligible.id::text AS unit_id",
+	assert.Contains(t, querySource, "scored.id::text AS unit_id",
 		"unit search must retain the exact lexical unit identity for source ordering")
 	assert.Contains(t, querySource, "candidates AS MATERIALIZED (",
 		"common terms must be bounded before per-row ranking")
@@ -50,6 +58,8 @@ func TestBookRAGUnitQueriesUseStructuralPublicView(t *testing.T) {
 		"the FTS candidate window must be bounded before phrase ranking to preserve the retrieval p95")
 	assert.NotContains(t, querySource, "ORDER BY (strpos(",
 		"verbatim ranking must not force a full-book substring sort before the candidate limit")
+	assert.Less(t, strings.Index(exactQuery, "LIMIT $4"), strings.Index(exactQuery, "THEN 2::float8"),
+		"phrase scoring must execute only after the materialized FTS candidate limit")
 	assert.Contains(t, querySource, "AND unit.interpretive_retrieval_eligible",
 		"the base-table FTS fast path must reproduce the generated structural trust boundary")
 	assert.Contains(t, querySource, "JOIN public_book_interpretive_citable_units eligible ON eligible.id = matches.id",
