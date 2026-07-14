@@ -97,6 +97,40 @@ func TestLiveBookRAGRetrievalEligibility(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, sources, 3)
 
+	rankedSources, err := repository.GetRAGPageSources(
+		ctx,
+		bookRAGProvenanceBookID,
+		[]int{
+			bookRAGProvenanceUnreviewedHeadingID,
+			bookRAGProvenanceReviewedHeadingID,
+			bookRAGProvenanceSourceHeadingID,
+		},
+		[]int{3, 1, 2},
+		"en",
+		2,
+	)
+	require.NoError(t, err)
+	require.Len(t, rankedSources, 2)
+	assert.Equal(t, 3, rankedSources[0].PageID, "the strongest lexical page must be the first source block")
+	assert.Equal(t, 1, rankedSources[1].PageID, "focus-page rank must win over numeric page order")
+
+	unitSources, err := repository.GetRAGUnitSources(
+		ctx,
+		bookRAGProvenanceBookID,
+		[]int{
+			bookRAGProvenanceUnreviewedHeadingID,
+			bookRAGProvenanceReviewedHeadingID,
+			bookRAGProvenanceSourceHeadingID,
+		},
+		[]int{3, 1, 2},
+		"en",
+		2,
+	)
+	require.NoError(t, err)
+	require.Len(t, unitSources, 2)
+	assert.Equal(t, 3, unitSources[0].PageID, "unit evidence must preserve lexical focus order")
+	assert.Equal(t, 1, unitSources[1].PageID, "unit evidence must not fall back to numeric page order")
+
 	unreviewedSource := requireRAGPageSource(t, sources, bookRAGProvenanceUnreviewedHeadingID)
 	assert.Nil(t, unreviewedSource.TranslationText)
 	reviewedSource := requireRAGPageSource(t, sources, bookRAGProvenanceReviewedHeadingID)
@@ -212,6 +246,31 @@ VALUES ($1, $2, 1, 1), ($1, $3, 2, 2), ($1, $4, 3, 3)`,
 				bookRAGProvenanceSourceHeadingID,
 			},
 		},
+		{query: `SET LOCAL surau.registry_writer = 'unit-service'`},
+		{
+			query: `
+INSERT INTO citable_units (
+    id, corpus, book_id, heading_id, page_id, kind, ordinal, position, anchor,
+    text, text_normalized, normalization_version, content_hash, occurrence,
+    language, provenance_class, content_role, review_status
+)
+VALUES
+    ('b4040100-0000-4000-8000-000000000011', 'kitab', $1, $2, 1, 'paragraph', 1, 0,
+     'kitab/-9904401/h/9904411/u/1', 'source page alpha', 'source page alpha', 1,
+     decode(repeat('11', 32), 'hex'), 1, 'ar', 'source', 'book_page', 'approved'),
+    ('b4040100-0000-4000-8000-000000000012', 'kitab', $1, $3, 2, 'paragraph', 1, 0,
+     'kitab/-9904401/h/9904412/u/1', 'source page beta', 'source page beta', 1,
+     decode(repeat('12', 32), 'hex'), 1, 'ar', 'source', 'book_page', 'approved'),
+    ('b4040100-0000-4000-8000-000000000013', 'kitab', $1, $4, 3, 'paragraph', 1, 0,
+     'kitab/-9904401/h/9904413/u/1', 'source page gamma', 'source page gamma', 1,
+     decode(repeat('13', 32), 'hex'), 1, 'ar', 'source', 'book_page', 'approved')`,
+			args: []any{
+				bookRAGProvenanceBookID,
+				bookRAGProvenanceUnreviewedHeadingID,
+				bookRAGProvenanceReviewedHeadingID,
+				bookRAGProvenanceSourceHeadingID,
+			},
+		},
 		{
 			query: `
 INSERT INTO book_production_projects (
@@ -274,6 +333,15 @@ VALUES
 				"source-authored summary " + bookRAGSourceNeedle,
 				bookRAGProvenanceRunID,
 			},
+		},
+		{
+			query: `
+UPDATE books
+SET units_derived_at = now(),
+    units_stale_at = NULL,
+    units_derivation_profile_version = $2
+WHERE id = $1`,
+			args: []any{bookRAGProvenanceBookID, entity.KitabUnitDerivationProfileVersion},
 		},
 	}
 

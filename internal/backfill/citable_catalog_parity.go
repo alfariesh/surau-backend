@@ -50,13 +50,13 @@ const catalogParityMaxContextPages = 1
 
 const (
 	catalogParityCandidatesPerBook = 64
-	catalogParityLegacyHits        = 12
+	catalogParityLegacyHits        = 10
 	catalogParityQuoteRunes        = 256
 	catalogParityPageSourceRunes   = 4000
 	catalogParityUnitSourceRunes   = 4000
 	catalogParityMinimumQuoteRunes = 4
 	catalogParityWindowDivisor     = 2
-	catalogParityQuotesPerWindow   = 2
+	catalogParityQuotesPerWindow   = 8
 )
 
 type catalogParityVerification struct {

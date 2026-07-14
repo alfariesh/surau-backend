@@ -248,6 +248,7 @@ ranked AS (
                WHEN bp.page_id < s.start_page_id THEN 1
                ELSE 2
            END AS focus_rank,
+           COALESCE(array_position($3::integer[], bp.page_id), 2147483647) AS focus_position,
            row_number() OVER (
                PARTITION BY bp.book_id, bp.page_id
                ORDER BY CASE WHEN bp.page_id = ANY($3) THEN 0 ELSE 1 END,
@@ -275,7 +276,7 @@ SELECT book_id,
        translation_text
 FROM ranked
 WHERE rn = 1
-ORDER BY focus_rank ASC, page_id ASC
+ORDER BY focus_rank ASC, focus_position ASC, page_id ASC
 LIMIT $5`
 
 	headingIDs32, err := int32Slice("heading IDs", headingIDs)
@@ -349,7 +350,9 @@ candidate_pages AS (
                WHEN cu.page_id = ANY($3) THEN 0
                WHEN cu.page_id < selected.start_page_id THEN 1
                ELSE 2
-           END) AS focus_rank
+           END) AS focus_rank,
+           min(array_position($3::integer[], cu.page_id))
+               FILTER (WHERE cu.page_id = ANY($3)) AS focus_position
     FROM selected_ranges selected
     JOIN public_book_interpretive_citable_units cu
       ON cu.book_id = $1
@@ -359,10 +362,10 @@ candidate_pages AS (
     GROUP BY cu.page_id
 ),
 chosen_pages AS (
-    SELECT page_id, focus_rank
+    SELECT page_id, focus_rank, focus_position
     FROM candidate_pages
     WHERE page_id IS NOT NULL
-    ORDER BY focus_rank ASC, page_id ASC
+    ORDER BY focus_rank ASC, focus_position ASC NULLS LAST, page_id ASC
     LIMIT $4
 )
 SELECT cu.id::text,
@@ -398,6 +401,7 @@ WHERE cu.book_id = $1
   AND cu.content_role = 'book_page'
   AND cu.heading_id IS NOT NULL
 ORDER BY chosen.focus_rank ASC,
+         chosen.focus_position ASC NULLS LAST,
          cu.page_id ASC,
          cu.position ASC,
          cu.ordinal ASC`
