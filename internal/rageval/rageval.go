@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"reflect"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -21,19 +22,31 @@ const (
 	DefaultCasesPath            = "eval/bookrag_smoke.jsonl"
 	DefaultTimeout              = 150 * time.Second
 	anchorResolutionMaxBodySize = 1 << 20
+	sseScannerInitialBufferSize = 64 * 1024
+	sseScannerMaxLineSize       = 4 * 1024 * 1024
+	sseRequiredEventCount       = 4
+	sseErrorBodyClipSize        = 300
+)
+
+var (
+	errSSEStreamEvent        = errors.New("stream error event")
+	errSSEMissingEvent       = errors.New("missing required SSE event")
+	errSSECitationsDivergent = errors.New("citations event differs from done response")
 )
 
 // Options configures a BookRAG evaluation run.
 type Options struct {
-	BaseURL        string
-	CasesPath      string
-	Output         string
-	Timeout        time.Duration
-	FailFast       bool
-	Limit          int
-	Retries        int
-	StrictAnswer   bool
-	ProgressWriter io.Writer
+	BaseURL              string
+	CasesPath            string
+	Output               string
+	Timeout              time.Duration
+	FailFast             bool
+	Limit                int
+	Retries              int
+	StrictAnswer         bool
+	ExpectedCitationMode string
+	ForbidLegacyFallback bool
+	ProgressWriter       io.Writer
 }
 
 // GoldenCase is one JSONL evaluation case.
@@ -42,9 +55,12 @@ type GoldenCase struct {
 	BookID                int      `json:"book_id"`
 	Lang                  string   `json:"lang,omitempty"`
 	Question              string   `json:"question"`
+	Stream                bool     `json:"stream,omitempty"`
 	MaxCitations          int      `json:"max_citations,omitempty"`
 	ExpectNotFound        bool     `json:"expect_not_found,omitempty"`
 	ExpectedRetrievalMode string   `json:"expected_retrieval_mode,omitempty"`
+	ExpectedCitationMode  string   `json:"expected_citation_mode,omitempty"`
+	ForbidLegacyFallback  bool     `json:"forbid_legacy_fallback,omitempty"`
 	MaxTreeLLMCalls       int      `json:"max_tree_llm_calls,omitempty"`
 	ExpectedHeadingIDs    []int    `json:"expected_heading_ids,omitempty"`
 	ExpectedPageIDs       []int    `json:"expected_page_ids,omitempty"`
@@ -197,6 +213,14 @@ func Run(ctx context.Context, opts Options) (Summary, error) {
 	client := &http.Client{Timeout: opts.Timeout}
 	results := make([]CaseResult, 0, len(cases))
 	for _, tc := range cases {
+		if opts.ExpectedCitationMode != "" {
+			tc.ExpectedCitationMode = opts.ExpectedCitationMode
+		}
+
+		if opts.ForbidLegacyFallback {
+			tc.ForbidLegacyFallback = true
+		}
+
 		var result CaseResult
 		for attempt := 1; attempt <= opts.Retries+1; attempt++ {
 			writeProgress(opts.ProgressWriter, "start", tc, attempt, CaseResult{})
@@ -316,7 +340,13 @@ func EvaluateCase(
 	}
 
 	var payload ragResponse
-	if err = json.Unmarshal(body, &payload); err != nil {
+	if tc.Stream {
+		payload, err = decodeSSERAGResponse(body)
+	} else {
+		err = json.Unmarshal(body, &payload)
+	}
+
+	if err != nil {
 		result.HTTPBody = clip(string(body), 500)
 		result.Error = fmt.Sprintf("decode response: %v", err)
 		return result
@@ -483,7 +513,7 @@ func buildRequest(ctx context.Context, baseURL string, tc GoldenCase) (*http.Req
 	}
 	body := map[string]any{
 		"question":      tc.Question,
-		"stream":        false,
+		"stream":        tc.Stream,
 		"include_trace": true,
 		"max_citations": maxCitations,
 	}
@@ -499,6 +529,106 @@ func buildRequest(ctx context.Context, baseURL string, tc GoldenCase) (*http.Req
 	req.Header.Set("Content-Type", "application/json")
 
 	return req, nil
+}
+
+type sseRAGState struct {
+	seen            map[string]bool
+	event           string
+	dataLines       []string
+	response        ragResponse
+	streamCitations []Citation
+}
+
+func newSSERAGState() *sseRAGState {
+	return &sseRAGState{
+		seen:      make(map[string]bool, sseRequiredEventCount),
+		dataLines: make([]string, 0, 1),
+	}
+}
+
+func (state *sseRAGState) flush() error {
+	if state.event == "" && len(state.dataLines) == 0 {
+		return nil
+	}
+
+	payload := strings.Join(state.dataLines, "\n")
+	state.seen[state.event] = true
+
+	var err error
+
+	switch state.event {
+	case "citations":
+		err = json.Unmarshal([]byte(payload), &state.streamCitations)
+	case "done":
+		err = json.Unmarshal([]byte(payload), &state.response)
+	case "error":
+		return fmt.Errorf("%w: %s", errSSEStreamEvent, clip(payload, sseErrorBodyClipSize))
+	}
+
+	if err != nil {
+		return fmt.Errorf("decode %s event: %w", state.event, err)
+	}
+
+	state.event = ""
+	state.dataLines = state.dataLines[:0]
+
+	return nil
+}
+
+func (state *sseRAGState) validate() error {
+	for _, required := range []string{"meta", "delta", "citations", "done"} {
+		if !state.seen[required] {
+			return fmt.Errorf("%w: %s", errSSEMissingEvent, required)
+		}
+	}
+
+	if !reflect.DeepEqual(state.streamCitations, state.response.Citations) {
+		return errSSECitationsDivergent
+	}
+
+	return nil
+}
+
+func decodeSSERAGResponse(body []byte) (ragResponse, error) {
+	scanner := bufio.NewScanner(bytes.NewReader(body))
+	scanner.Buffer(make([]byte, 0, sseScannerInitialBufferSize), sseScannerMaxLineSize)
+
+	state := newSSERAGState()
+
+	for scanner.Scan() {
+		line := strings.TrimSuffix(scanner.Text(), "\r")
+		if line == "" {
+			if err := state.flush(); err != nil {
+				return ragResponse{}, err
+			}
+
+			continue
+		}
+
+		if value, ok := strings.CutPrefix(line, "event:"); ok {
+			state.event = strings.TrimSpace(value)
+
+			continue
+		}
+
+		if value, ok := strings.CutPrefix(line, "data:"); ok {
+			state.dataLines = append(state.dataLines, strings.TrimSpace(value))
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return ragResponse{}, fmt.Errorf("scan SSE: %w", err)
+	}
+
+	if err := state.flush(); err != nil {
+		return ragResponse{}, err
+	}
+
+	if err := state.validate(); err != nil {
+		return ragResponse{}, err
+	}
+
+	return state.response, nil
 }
 
 func endpointURL(baseURL string, tc GoldenCase) (string, error) {
@@ -579,6 +709,18 @@ func validateResponse(tc GoldenCase, resp ragResponse, strictAnswer bool) ([]str
 		} else if resp.Trace.RetrievalMode != tc.ExpectedRetrievalMode {
 			errs = append(errs, fmt.Sprintf("retrieval_mode=%q, want %q", resp.Trace.RetrievalMode, tc.ExpectedRetrievalMode))
 		}
+	}
+
+	if tc.ExpectedCitationMode != "" {
+		if resp.Trace == nil {
+			errs = append(errs, "missing trace")
+		} else if resp.Trace.CitationMode != tc.ExpectedCitationMode {
+			errs = append(errs, fmt.Sprintf("citation_mode=%q, want %q", resp.Trace.CitationMode, tc.ExpectedCitationMode))
+		}
+	}
+
+	if tc.ForbidLegacyFallback && resp.Trace != nil && resp.Trace.LegacyFallback {
+		errs = append(errs, "legacy fallback is forbidden")
 	}
 	if tc.MaxTreeLLMCalls > 0 {
 		if resp.Trace == nil {

@@ -2,6 +2,7 @@ package rageval
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -66,6 +67,91 @@ func TestEvaluateCasePassesExpectedCitation(t *testing.T) {
 	assert.Equal(t, 200, result.StatusCode)
 	require.NotNil(t, result.Trace)
 	assert.Equal(t, "full_tree", result.Trace.RetrievalMode)
+}
+
+func TestEvaluateCasePassesSSEContract(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var requestBody map[string]any
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&requestBody))
+		assert.Equal(t, true, requestBody["stream"])
+
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, "event: meta\ndata: {\"book_id\":797}\n\n")
+		fmt.Fprint(w, "event: delta\ndata: {\"text\":\"Jawaban\"}\n\n")
+		fmt.Fprint(w, "event: citations\ndata: [{\"ref\":\"1\",\"book_id\":797,\"heading_id\":11,\"page_id\":12,\"anchor\":\"toc-11\",\"quote\":\"x\",\"url\":\"/x\"}]\n\n")
+		fmt.Fprint(w, `event: done
+data: {"book_id":797,"answer":"Jawaban [1].","citations":[{"ref":"1","book_id":797,"heading_id":11,"page_id":12,"anchor":"toc-11","quote":"x","url":"/x"}],"trace":{"retrieval_mode":"full_tree","citation_mode":"dual","tree_llm_calls":1,"repaired":false}}
+
+`)
+	}))
+	defer server.Close()
+
+	result := EvaluateCase(context.Background(), server.Client(), server.URL, GoldenCase{
+		Name: "stream", BookID: 797, Question: "question", Stream: true,
+		ExpectedPageIDs: []int{12}, ExpectedRetrievalMode: "full_tree", ExpectedCitationMode: "dual",
+		ForbidLegacyFallback: true, MaxTreeLLMCalls: 1,
+	}, false)
+
+	assert.True(t, result.Passed, result.Error, result.Errors)
+	require.NotNil(t, result.Trace)
+	assert.Equal(t, "dual", result.Trace.CitationMode)
+}
+
+func TestEvaluateCaseRejectsLegacyFallback(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprint(w, `{"book_id":797,"answer":"Jawaban [1].","citations":[{"ref":"1","book_id":797,"heading_id":11,"page_id":12,"anchor":"toc-11","quote":"x","url":"/x"}],"trace":{"retrieval_mode":"full_tree","citation_mode":"unit","legacy_fallback":true}}`)
+	}))
+	defer server.Close()
+
+	result := EvaluateCase(context.Background(), server.Client(), server.URL, GoldenCase{
+		Name: "fallback", BookID: 797, Question: "question", ExpectedCitationMode: "unit",
+		ForbidLegacyFallback: true,
+	}, false)
+
+	assert.False(t, result.Passed)
+	assert.Contains(t, result.Errors, "legacy fallback is forbidden")
+}
+
+func TestEvaluateCaseRejectsIncompleteSSEContract(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, "event: meta\ndata: {}\n\n")
+		fmt.Fprint(w, "event: done\ndata: {\"book_id\":797}\n\n")
+	}))
+	defer server.Close()
+
+	result := EvaluateCase(context.Background(), server.Client(), server.URL, GoldenCase{
+		Name: "stream", BookID: 797, Question: "question", Stream: true,
+	}, false)
+
+	assert.False(t, result.Passed)
+	assert.Contains(t, result.Error, "missing required SSE event: delta")
+}
+
+func TestDecodeSSERAGResponseRejectsDivergentCitations(t *testing.T) {
+	t.Parallel()
+
+	_, err := decodeSSERAGResponse([]byte(`event: meta
+data: {}
+
+event: delta
+data: {"text":"Jawaban"}
+
+event: citations
+data: [{"ref":"1","unit_id":"unit-1"}]
+
+event: done
+data: {"citations":[{"ref":"1","unit_id":"unit-2"}]}
+
+`))
+
+	require.ErrorIs(t, err, errSSECitationsDivergent)
 }
 
 func TestValidateResponseRequiresUnitCitationLocators(t *testing.T) {

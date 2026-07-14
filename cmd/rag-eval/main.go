@@ -33,6 +33,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	flags.IntVar(&opts.Limit, "limit", 0, "limit number of cases")
 	flags.IntVar(&opts.Retries, "retries", 1, "retry failed cases")
 	flags.BoolVar(&opts.StrictAnswer, "strict-answer", false, "treat answer_must_contain misses as failures")
+	flags.StringVar(&opts.ExpectedCitationMode, "expected-citation-mode", "", "require this citation_mode in every response trace")
+	flags.BoolVar(&opts.ForbidLegacyFallback, "forbid-legacy-fallback", false, "fail when any response trace reports legacy fallback")
 	verbose := flags.Bool("verbose", false, "print per-case progress to stderr")
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
