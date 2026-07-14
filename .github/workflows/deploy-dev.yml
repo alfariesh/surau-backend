@@ -658,31 +658,13 @@ jobs:
 
                 if ! sudo docker exec "$RAG_EVAL_API_CONTAINER" \
                   /rag-eval -base-url http://127.0.0.1:8080 \
-                    -cases /eval/bookrag_rollout_golden.jsonl -output json -verbose; then
+                    -cases /eval/bookrag_rollout_golden.jsonl -output json -verbose \
+                    -expected-citation-mode "$EFFECTIVE_BOOK_RAG_MODE" \
+                    -forbid-legacy-fallback; then
                   sudo docker logs --tail=120 "$RAG_EVAL_API_CONTAINER" || true
                   echo "isolated Book-RAG JSON rollout eval failed" >&2
                   exit 1
                 fi
-
-                sse_output="$(mktemp)"
-                sse_payload='{
-                  "question":"وله رسالة جيدة ونافعة ومفيدة ينبغي لطالب العلم أن يقرأها ويتأملها جيداً لما فيها من العلم النافع.",
-                  "stream":true,
-                  "include_trace":true,
-                  "max_citations":1
-                }'
-                curl -fsS --max-time 180 -N \
-                  -H 'Content-Type: application/json' \
-                  -d "$sse_payload" \
-                  "$RAG_EVAL_API_URL/v1/books/1/rag?lang=id" > "$sse_output"
-                grep -Eq '"unit_id":"[0-9a-f-]+"' "$sse_output"
-                grep -Eq '"unit_anchor":"kitab/[0-9]+/h/[0-9]+/u/[0-9]+"' "$sse_output"
-                grep -Fq "\"citation_mode\":\"$EFFECTIVE_BOOK_RAG_MODE\"" "$sse_output"
-                if grep -Fq '"legacy_fallback":true' "$sse_output"; then
-                  echo "Book-RAG rollout smoke unexpectedly used legacy fallback" >&2
-                  exit 1
-                fi
-                rm -f "$sse_output"
 
                 mismatch_after="$(metric_value 'surau_book_rag_citation_parity_total{result="mismatch"')"
                 matched_after="$(metric_value 'surau_book_rag_citation_parity_total{result="matched"')"
