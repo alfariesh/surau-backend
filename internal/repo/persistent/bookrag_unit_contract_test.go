@@ -60,6 +60,8 @@ func TestBookRAGUnitQueriesUseStructuralPublicView(t *testing.T) {
 		"verbatim ranking must not force a full-book substring sort before the candidate limit")
 	assert.Less(t, strings.Index(exactQuery, "LIMIT $4"), strings.Index(exactQuery, "THEN 2::float8"),
 		"phrase scoring must execute only after the materialized FTS candidate limit")
+	assert.Contains(t, exactQuery, "WHEN $5::boolean THEN CASE",
+		"single-token common-term searches must bypass normalized phrase scoring")
 	assert.Contains(t, querySource, "AND unit.interpretive_retrieval_eligible",
 		"the base-table FTS fast path must reproduce the generated structural trust boundary")
 	assert.Contains(t, querySource, "JOIN public_book_interpretive_citable_units eligible ON eligible.id = matches.id",
@@ -89,4 +91,13 @@ func TestBookRAGStructuralViewExcludesMarkerLinkedQuranFootnotes(t *testing.T) {
 		"every Quran quote is structurally ineligible, including marker-linked footnotes")
 	assert.Contains(t, schema, "interpretive_retrieval_eligible",
 		"Book-RAG public view must inherit the generated eligibility boundary")
+}
+
+func TestShouldRankRAGUnitExactPhraseOnlyForMultipleTokens(t *testing.T) {
+	t.Parallel()
+
+	assert.False(t, shouldRankRAGUnitExactPhrase("الله"))
+	assert.False(t, shouldRankRAGUnitExactPhrase("  قال  "))
+	assert.True(t, shouldRankRAGUnitExactPhrase("محمود بن إسماعيل"))
+	assert.True(t, shouldRankRAGUnitExactPhrase("نص\nمتعدد"))
 }

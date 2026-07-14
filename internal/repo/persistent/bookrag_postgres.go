@@ -764,7 +764,10 @@ scored_matches AS MATERIALIZED (
            eligible.position,
            eligible.ordinal,
            CASE
-               WHEN strpos(translate(eligible.text, 'ًٌٍَُِّْٰٕٓٔـ', ''), $2) > 0 THEN 2::float8
+               WHEN $5::boolean THEN CASE
+                   WHEN strpos(translate(eligible.text, 'ًٌٍَُِّْٰٕٓٔـ', ''), $2) > 0 THEN 2::float8
+                   ELSE 1::float8
+               END
                ELSE 1::float8
            END AS score
     FROM matches
@@ -790,7 +793,24 @@ WHERE page_rank = 1
 ORDER BY score DESC, page_id ASC, heading_id ASC
 LIMIT $3`
 
-	return r.queryRAGUnitSearch(ctx, sqlText, bookID, query, limit, "exact", ragUnitExactCandidateLimit)
+	return r.queryRAGUnitSearch(
+		ctx,
+		sqlText,
+		bookID,
+		query,
+		limit,
+		"exact",
+		ragUnitExactCandidateLimit,
+		shouldRankRAGUnitExactPhrase(query),
+	)
+}
+
+// shouldRankRAGUnitExactPhrase limits normalized substring scoring to actual
+// phrases. A one-token FTS hit already proves that token is present; rescoring
+// up to 1024 long Arabic units cannot improve its ordering and only inflates
+// the common-term retrieval p95.
+func shouldRankRAGUnitExactPhrase(query string) bool {
+	return len(strings.Fields(query)) > 1
 }
 
 func (r *BookRAGRepo) searchRAGUnitsFuzzy(
