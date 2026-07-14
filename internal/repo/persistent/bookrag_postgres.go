@@ -362,7 +362,7 @@ candidate_pages AS (
     GROUP BY cu.page_id
 ),
 chosen_pages AS (
-    SELECT page_id, focus_rank
+    SELECT page_id, focus_rank, focus_position
     FROM candidate_pages
     WHERE page_id IS NOT NULL
     ORDER BY focus_rank ASC, focus_position ASC NULLS LAST, page_id ASC
@@ -401,6 +401,7 @@ WHERE cu.book_id = $1
   AND cu.content_role = 'book_page'
   AND cu.heading_id IS NOT NULL
 ORDER BY chosen.focus_rank ASC,
+         chosen.focus_position ASC NULLS LAST,
          cu.page_id ASC,
          cu.position ASC,
          cu.ordinal ASC`
