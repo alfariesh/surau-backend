@@ -25,6 +25,14 @@ type catalogParitySample struct {
 	anchor    string
 }
 
+type catalogParityCandidate struct {
+	bookID    int
+	headingID int
+	pageID    int
+	unitText  string
+	pageText  string
+}
+
 type catalogParityLLM struct {
 	headingID int
 	pageID    int
@@ -39,6 +47,13 @@ type catalogParityLLM struct {
 // the acceptance gate from issuing hundreds of progressively weaker token
 // searches merely to fill unused context slots.
 const catalogParityMaxContextPages = 1
+
+const (
+	catalogParityCandidatesPerBook = 64
+	catalogParityQuoteRunes        = 256
+	catalogParityPageSourceRunes   = 4000
+	catalogParityMinimumQuoteRunes = 4
+)
 
 var (
 	errCatalogParityStreamUnsupported = errors.New("catalog parity stub does not stream")
@@ -121,7 +136,7 @@ func verifyFullCatalogBookRAGParity(
 	ragRepo *persistent.BookRAGRepo,
 	anchorRepo *persistent.AnchorRepo,
 ) (target, verified, mismatches, unresolved int64, err error) {
-	samples, target, err := loadCatalogParitySamples(ctx, pool)
+	samples, target, err := loadCatalogParitySamples(ctx, pool, ragRepo)
 	if err != nil {
 		return target, 0, 0, 0, err
 	}
@@ -193,24 +208,30 @@ func verifyFullCatalogBookRAGParity(
 func loadCatalogParitySamples(
 	ctx context.Context,
 	pool *pgxpool.Pool,
+	ragRepo *persistent.BookRAGRepo,
 ) ([]catalogParitySample, int64, error) {
 	rows, err := pool.Query(ctx, `
-SELECT book.id,
-       public_publication.book_id IS NOT NULL AS is_public,
-       sample.heading_id,
-       sample.page_id,
-       sample.quote,
-       sample.unit_id,
-       sample.anchor
-FROM book_publications publication
-JOIN books book ON book.id = publication.book_id AND book.is_deleted = FALSE
-LEFT JOIN public_book_publications public_publication ON public_publication.book_id = book.id
+WITH target AS (
+    SELECT book.id,
+           public_publication.book_id IS NOT NULL AS is_public
+    FROM book_publications publication
+    JOIN books book ON book.id = publication.book_id AND book.is_deleted = FALSE
+    LEFT JOIN public_book_publications public_publication ON public_publication.book_id = book.id
+    WHERE publication.status = 'published'
+      AND ($1::integer[] IS NULL OR book.id = ANY($1))
+)
+SELECT target.id,
+       target.is_public,
+       candidate.heading_id,
+       candidate.page_id,
+       candidate.unit_text,
+       candidate.page_text
+FROM target
 LEFT JOIN LATERAL (
     SELECT unit.heading_id,
            unit.page_id,
-           excerpt.quote,
-           unit.id::text AS unit_id,
-           unit.anchor
+           unit.text AS unit_text,
+           COALESCE(edit.content_text, page.content_text) AS page_text
     FROM public_book_interpretive_citable_units unit
     JOIN book_pages page
       ON page.book_id = unit.book_id AND page.page_id = unit.page_id AND page.is_deleted = FALSE
@@ -220,83 +241,128 @@ LEFT JOIN LATERAL (
       ON heading_range.book_id = heading.book_id AND heading_range.heading_id = heading.heading_id
     LEFT JOIN book_page_edits edit
       ON edit.book_id = page.book_id AND edit.page_id = page.page_id AND edit.status = 'published'
-    CROSS JOIN LATERAL (
-        SELECT candidate.quote
-        FROM (
-            SELECT substring(unit.text FROM starts.start_pos FOR 256) AS quote,
-                   starts.start_pos AS priority
-            FROM generate_series(1, 3841, 256) AS starts(start_pos)
-        ) candidate
-        WHERE char_length(btrim(candidate.quote)) >= 4
-          AND char_length(candidate.quote) <= 256
-          AND strpos(COALESCE(edit.content_text, page.content_text), candidate.quote) > 0
-          AND strpos(COALESCE(edit.content_text, page.content_text), candidate.quote)
-                + char_length(candidate.quote) - 1 <= 4000
-          AND (
-              SELECT COUNT(*)
-              FROM public_book_interpretive_citable_units peer
-              WHERE peer.book_id = unit.book_id
-                AND peer.heading_id = unit.heading_id
-                AND peer.page_id = unit.page_id
-                AND peer.content_role = 'book_page'
-                AND strpos(peer.text, candidate.quote) > 0
-          ) = 1
-        ORDER BY candidate.priority
-        LIMIT 1
-    ) excerpt
-    WHERE public_publication.book_id IS NOT NULL
-      AND unit.book_id = book.id
+    WHERE target.is_public
+      AND unit.book_id = target.id
       AND unit.content_role = 'book_page'
       AND unit.heading_id IS NOT NULL
       AND unit.page_id IS NOT NULL
-    ORDER BY char_length(unit.text) DESC, unit.position, unit.ordinal
-    LIMIT 1
-) sample ON TRUE
-WHERE publication.status = 'published'
-  AND ($1::integer[] IS NULL OR book.id = ANY($1))
-ORDER BY book.id`, CitableCatalogBookIDs)
+    ORDER BY unit.page_id, unit.position, unit.ordinal
+    LIMIT $2
+) candidate ON TRUE
+ORDER BY target.id, candidate.page_id, candidate.heading_id`,
+		CitableCatalogBookIDs, catalogParityCandidatesPerBook)
 	if err != nil {
 		return nil, 0, fmt.Errorf("verify Book-RAG parity samples: %w", err)
 	}
 	defer rows.Close()
 
-	var target int64
-
-	samples := make([]catalogParitySample, 0)
+	targets := make([]catalogParitySample, 0)
+	candidates := make(map[int][]catalogParityCandidate)
+	seenTargets := make(map[int]struct{})
 
 	for rows.Next() {
 		var (
-			sample                catalogParitySample
-			headingID, pageID     *int
-			quote, unitID, anchor *string
+			sample             catalogParitySample
+			headingID, pageID  *int
+			unitText, pageText *string
 		)
-		if err := rows.Scan(&sample.bookID, &sample.public, &headingID, &pageID, &quote, &unitID, &anchor); err != nil {
-			return nil, target, fmt.Errorf("verify Book-RAG parity samples scan: %w", err)
+		if err := rows.Scan(&sample.bookID, &sample.public, &headingID, &pageID, &unitText, &pageText); err != nil {
+			return nil, int64(len(targets)), fmt.Errorf("verify Book-RAG parity samples scan: %w", err)
 		}
 
-		target++
+		if _, exists := seenTargets[sample.bookID]; !exists {
+			seenTargets[sample.bookID] = struct{}{}
+			targets = append(targets, sample)
+		}
 
-		if !sample.public {
-			samples = append(samples, sample)
-
+		if !sample.public || headingID == nil || pageID == nil || unitText == nil || pageText == nil {
 			continue
 		}
 
-		if headingID == nil || pageID == nil || quote == nil || unitID == nil || anchor == nil {
-			continue
-		}
-
-		sample.headingID = *headingID
-		sample.pageID = *pageID
-		sample.quote = *quote
-		sample.unitID = *unitID
-		sample.anchor = *anchor
-		samples = append(samples, sample)
+		candidates[sample.bookID] = append(candidates[sample.bookID], catalogParityCandidate{
+			bookID:    sample.bookID,
+			headingID: *headingID,
+			pageID:    *pageID,
+			unitText:  *unitText,
+			pageText:  *pageText,
+		})
 	}
 
 	if err := rows.Err(); err != nil {
-		return nil, target, fmt.Errorf("verify Book-RAG parity samples rows: %w", err)
+		return nil, int64(len(targets)), fmt.Errorf("verify Book-RAG parity samples rows: %w", err)
 	}
 
-	return samples, target, nil
+	rows.Close()
+
+	samples := make([]catalogParitySample, 0, len(targets))
+	for i := range targets {
+		targetItem := targets[i]
+		if !targetItem.public {
+			samples = append(samples, targetItem)
+
+			continue
+		}
+
+		for _, candidate := range candidates[targetItem.bookID] {
+			quote, locator, resolveErr := catalogParityCandidateQuote(ctx, ragRepo, candidate)
+			if resolveErr != nil {
+				return nil, int64(len(targets)), resolveErr
+			}
+
+			if !locator.Found {
+				continue
+			}
+
+			targetItem.headingID = candidate.headingID
+			targetItem.pageID = candidate.pageID
+			targetItem.quote = quote
+			targetItem.unitID = locator.UnitID
+			targetItem.anchor = locator.UnitAnchor
+			samples = append(samples, targetItem)
+
+			break
+		}
+	}
+
+	return samples, int64(len(targets)), nil
+}
+
+func catalogParityCandidateQuote(
+	ctx context.Context,
+	ragRepo *persistent.BookRAGRepo,
+	candidate catalogParityCandidate,
+) (string, entity.RAGUnitLocator, error) {
+	pageRunes := []rune(candidate.pageText)
+	if len(pageRunes) > catalogParityPageSourceRunes {
+		pageRunes = pageRunes[:catalogParityPageSourceRunes]
+	}
+
+	pagePrefix := string(pageRunes)
+
+	unitRunes := []rune(candidate.unitText)
+	for start := 0; start < len(unitRunes) && start < catalogParityPageSourceRunes; start += catalogParityQuoteRunes {
+		end := min(start+catalogParityQuoteRunes, len(unitRunes))
+		quote := strings.TrimSpace(string(unitRunes[start:end]))
+		quoteRunes := len([]rune(quote))
+
+		if quoteRunes < catalogParityMinimumQuoteRunes || quoteRunes > catalogParityQuoteRunes ||
+			!strings.Contains(pagePrefix, quote) {
+			continue
+		}
+
+		locator, err := ragRepo.ResolveRAGUnitCitation(
+			ctx, candidate.bookID, candidate.headingID, candidate.pageID, quote,
+		)
+		if err != nil {
+			return "", entity.RAGUnitLocator{}, fmt.Errorf(
+				"verify Book-RAG parity locator book %d page %d: %w", candidate.bookID, candidate.pageID, err,
+			)
+		}
+
+		if locator.Found {
+			return quote, locator, nil
+		}
+	}
+
+	return "", entity.RAGUnitLocator{}, nil
 }

@@ -467,11 +467,21 @@ func (r *BookRAGRepo) SearchRAGPages(
 	lang string,
 	limit int,
 ) ([]entity.RAGSearchResult, error) {
-	query = strings.TrimSpace(query)
-	if query == "" || limit <= 0 {
+	rawQuery := strings.TrimSpace(query)
+	if rawQuery == "" || limit <= 0 {
 		return []entity.RAGSearchResult{}, nil
 	}
-	query = stripArabicSearchMarks(query)
+
+	exact, err := r.searchRAGPagesExact(ctx, bookID, rawQuery, limit)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(exact) > 0 {
+		return exact, nil
+	}
+
+	query = stripArabicSearchMarks(rawQuery)
 
 	sqlText := `
 SELECT h.heading_id,
@@ -562,6 +572,84 @@ LIMIT $4`
 	return results, nil
 }
 
+// searchRAGPagesExact keeps dual rollout probes and verbatim user questions on
+// the indexed page path. Heading/translation-only questions still fall
+// through to the established fuzzy query, preserving its broader behavior.
+//
+//nolint:funlen // Keeping the exact SQL and its row decoder adjacent makes the fallback boundary auditable.
+func (r *BookRAGRepo) searchRAGPagesExact(
+	ctx context.Context,
+	bookID int,
+	query string,
+	limit int,
+) ([]entity.RAGSearchResult, error) {
+	const sqlText = `
+WITH exact_pages AS MATERIALIZED (
+    SELECT page.book_id,
+           page.page_id
+    FROM book_pages page
+    JOIN public_book_publications publication ON publication.book_id = page.book_id
+    WHERE page.book_id = $1
+      AND page.is_deleted = FALSE
+      AND NOT EXISTS (
+          SELECT 1
+          FROM book_page_edits edit
+          WHERE edit.book_id = page.book_id
+            AND edit.page_id = page.page_id
+            AND edit.status = 'published'
+      )
+      AND page.content_text ILIKE '%' || $3 || '%'
+    UNION ALL
+    SELECT page.book_id,
+           page.page_id
+    FROM book_page_edits edit
+    JOIN book_pages page
+      ON page.book_id = edit.book_id
+     AND page.page_id = edit.page_id
+     AND page.is_deleted = FALSE
+    JOIN public_book_publications publication ON publication.book_id = page.book_id
+    WHERE edit.book_id = $1
+      AND edit.status = 'published'
+      AND edit.content_text ILIKE '%' || $3 || '%'
+)
+SELECT heading.heading_id,
+       exact.page_id,
+       1::float8 AS score
+FROM exact_pages exact
+JOIN book_headings heading
+  ON heading.book_id = exact.book_id
+ AND heading.is_deleted = FALSE
+JOIN book_heading_ranges heading_range
+  ON heading_range.book_id = heading.book_id
+ AND heading_range.heading_id = heading.heading_id
+ AND exact.page_id BETWEEN GREATEST(heading_range.start_page_id - 1, 1) AND heading_range.end_page_id
+ORDER BY heading.depth DESC, exact.page_id ASC, heading.heading_id ASC
+LIMIT $2`
+
+	rows, err := r.Pool.Query(ctx, sqlText, bookID, limit, escapeLike(query))
+	if err != nil {
+		return nil, fmt.Errorf("BookRAGRepo - SearchRAGPages - exact query: %w", err)
+	}
+	defer rows.Close()
+
+	results := make([]entity.RAGSearchResult, 0, limit)
+
+	for rows.Next() {
+		var result entity.RAGSearchResult
+		if err = rows.Scan(&result.HeadingID, &result.PageID, &result.Score); err != nil {
+			return nil, fmt.Errorf("BookRAGRepo - SearchRAGPages - exact scan: %w", err)
+		}
+
+		results = append(results, result)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("BookRAGRepo - SearchRAGPages - exact rows: %w", err)
+	}
+
+	return results, nil
+}
+
 // SearchRAGUnits returns lexical hits only from the structural interpretive
 // view; machine-unreviewed units and Quran quotes are impossible to select.
 func (r *BookRAGRepo) SearchRAGUnits(
@@ -631,22 +719,34 @@ func (r *BookRAGRepo) searchRAGUnitsExact(
 	const sqlText = `
 WITH search_query AS (
     SELECT plainto_tsquery('simple'::regconfig, $2) AS value
+),
+matches AS MATERIALIZED (
+    SELECT unit.id,
+           unit.heading_id,
+           unit.page_id,
+           ts_rank_cd(
+               to_tsvector('simple'::regconfig, translate(unit.text, 'ًٌٍَُِّْٰٕٓٔـ', '')),
+               search_query.value
+           )::float8 AS score
+    FROM citable_units unit
+    CROSS JOIN search_query
+    WHERE unit.book_id = $1
+      AND unit.lifecycle = 'active'
+      AND unit.corpus = 'kitab'
+      AND unit.interpretive_retrieval_eligible
+      AND unit.content_role = 'book_page'
+      AND unit.heading_id IS NOT NULL
+      AND unit.page_id IS NOT NULL
+      AND (unit.license_status IS NULL OR unit.license_status = 'permitted')
+      AND to_tsvector('simple'::regconfig, translate(unit.text, 'ًٌٍَُِّْٰٕٓٔـ', '')) @@ search_query.value
 )
-SELECT cu.heading_id,
-       cu.page_id,
-       max(ts_rank_cd(
-           to_tsvector('simple'::regconfig, translate(cu.text, 'ًٌٍَُِّْٰٕٓٔـ', '')),
-           search_query.value
-       ))::float8 AS score
-FROM public_book_interpretive_citable_units cu
-CROSS JOIN search_query
-WHERE cu.book_id = $1
-  AND cu.content_role = 'book_page'
-  AND cu.heading_id IS NOT NULL
-  AND cu.page_id IS NOT NULL
-  AND to_tsvector('simple'::regconfig, translate(cu.text, 'ًٌٍَُِّْٰٕٓٔـ', '')) @@ search_query.value
-GROUP BY cu.heading_id, cu.page_id
-ORDER BY score DESC, cu.page_id ASC, cu.heading_id ASC
+SELECT eligible.heading_id,
+       eligible.page_id,
+       max(matches.score) AS score
+FROM matches
+JOIN public_book_interpretive_citable_units eligible ON eligible.id = matches.id
+GROUP BY eligible.heading_id, eligible.page_id
+ORDER BY score DESC, eligible.page_id ASC, eligible.heading_id ASC
 LIMIT $3`
 
 	return r.queryRAGUnitSearch(ctx, sqlText, bookID, query, limit, "exact")
