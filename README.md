@@ -257,7 +257,11 @@ Workflow `Deploy Dev` menjaga urutan `legacy → dual → unit → default`:
 3. Jalankan workflow manual dengan `book_rag_citation_mode=dual`. Deploy hanya menyimpan bukti
    versi + SHA penuh bila verifier lulus, golden + smoke eval lulus, trace membuktikan mode `dual`,
    JSON/SSE membawa locator unit yang resolve, counter mapping exact bertambah, dan counter
-   mismatch/fallback tidak bertambah.
+   mismatch/fallback tidak bertambah. Eval HTTP memakai proses API sementara dengan
+   `RAG_LLM_DRIVER=deterministic-rollout` dan `BACKGROUND_LOOPS_ENABLED=false`: proses ini memakai
+   image serta database yang sama, tetapi tidak menjalankan worker dan tidak mengganti provider
+   LLM pada API publik. Konfigurasi tersebut ditolak bila `APP_ENV` bukan `dev` atau background
+   loop aktif.
 4. Jalankan workflow manual dengan `book_rag_citation_mode=unit`. Guard menolak bila mode
    sebelumnya bukan `dual` atau bukti parity bukan untuk SHA/version yang sama.
 5. Setelah smoke unit hijau, jalankan lagi dengan `book_rag_citation_mode=default`. Workflow
@@ -299,6 +303,9 @@ It retries failed cases once by default (`-retries 1`) to reduce one-off LLM sam
 `answer_must_contain` is a warning by default because answer wording can vary; pass `-strict-answer` to make it a failure.
 Use `-verbose` when debugging slow or invisible failures; it prints per-case start/finish lines to stderr while the eval is still running.
 Use `eval/bookrag_golden.jsonl` for the fuller, costlier suite that includes medium-book and not-found cases.
+`eval/bookrag_rollout_golden.jsonl` is reserved for the deterministic dev rollout gate and tracks exact
+source sentences from books that exist in the current dev catalog; run it only through the isolated
+workflow process described above.
 
 ## Import Raw Books
 

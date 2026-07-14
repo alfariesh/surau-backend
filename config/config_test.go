@@ -50,12 +50,68 @@ func TestNewConfig_BookRAGCitationDefaults(t *testing.T) {
 	setRequiredEnv(t)
 	unsetEnv(t, "RAG_BOOK_CITATION_MODE")
 	unsetEnv(t, "RAG_BOOK_LEGACY_FALLBACK_ENABLED")
+	unsetEnv(t, "RAG_LLM_DRIVER")
+	unsetEnv(t, "BACKGROUND_LOOPS_ENABLED")
 
 	cfg, err := NewConfig()
 
 	require.NoError(t, err)
 	assert.Equal(t, "unit", cfg.RAG.BookCitationMode)
 	assert.True(t, cfg.RAG.BookLegacyFallback)
+	assert.Equal(t, RAGLLMDriverOpenAI, cfg.RAG.LLMDriver)
+	assert.True(t, cfg.App.BackgroundLoopsEnabled)
+}
+
+func TestNewConfig_DeterministicRolloutLLMRequiresIsolatedDevProcess(t *testing.T) {
+	setRequiredEnv(t)
+	t.Setenv("APP_ENV", "dev")
+	t.Setenv("BACKGROUND_LOOPS_ENABLED", "false")
+	t.Setenv("RAG_LLM_DRIVER", " DETERMINISTIC-ROLLOUT ")
+
+	cfg, err := NewConfig()
+
+	require.NoError(t, err)
+	assert.Equal(t, RAGLLMDriverRollout, cfg.RAG.LLMDriver)
+	assert.False(t, cfg.App.BackgroundLoopsEnabled)
+}
+
+func TestNewConfig_DeterministicRolloutLLMRejectsProduction(t *testing.T) {
+	setRequiredEnv(t)
+	t.Setenv("APP_ENV", "prod")
+	t.Setenv("BACKGROUND_LOOPS_ENABLED", "false")
+	t.Setenv("RAG_LLM_DRIVER", RAGLLMDriverRollout)
+
+	_, err := NewConfig()
+
+	require.EqualError(
+		t,
+		err,
+		"config error: RAG_LLM_DRIVER deterministic-rollout requires APP_ENV=dev and BACKGROUND_LOOPS_ENABLED=false",
+	)
+}
+
+func TestNewConfig_DeterministicRolloutLLMRejectsBackgroundWorkers(t *testing.T) {
+	setRequiredEnv(t)
+	t.Setenv("APP_ENV", "dev")
+	t.Setenv("BACKGROUND_LOOPS_ENABLED", "true")
+	t.Setenv("RAG_LLM_DRIVER", RAGLLMDriverRollout)
+
+	_, err := NewConfig()
+
+	require.EqualError(
+		t,
+		err,
+		"config error: RAG_LLM_DRIVER deterministic-rollout requires APP_ENV=dev and BACKGROUND_LOOPS_ENABLED=false",
+	)
+}
+
+func TestNewConfig_RejectsUnknownRAGLLMDriver(t *testing.T) {
+	setRequiredEnv(t)
+	t.Setenv("RAG_LLM_DRIVER", "unknown")
+
+	_, err := NewConfig()
+
+	require.EqualError(t, err, "config error: RAG_LLM_DRIVER must be openai-compatible or deterministic-rollout")
 }
 
 func TestNewConfig_BookRAGCitationModeValidation(t *testing.T) {
