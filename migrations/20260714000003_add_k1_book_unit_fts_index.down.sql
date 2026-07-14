@@ -1,0 +1,1 @@
+DROP INDEX CONCURRENTLY IF EXISTS idx_citable_units_book_text_fts_interpretive;

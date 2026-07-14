@@ -624,7 +624,7 @@ JOIN book_heading_ranges heading_range
   ON heading_range.book_id = heading.book_id
  AND heading_range.heading_id = heading.heading_id
  AND exact.page_id BETWEEN GREATEST(heading_range.start_page_id - 1, 1) AND heading_range.end_page_id
-ORDER BY heading.depth DESC, exact.page_id ASC, heading.heading_id ASC
+ORDER BY heading.depth DESC, heading.ordinal DESC, exact.page_id ASC, heading.heading_id ASC
 LIMIT $2`
 
 	// The book and quote values materially change selectivity. Bypass the
@@ -725,7 +725,8 @@ func (r *BookRAGRepo) searchRAGUnitsExact(
 ) ([]entity.RAGSearchResult, error) {
 	const sqlText = `
 WITH search_query AS (
-    SELECT plainto_tsquery('simple'::regconfig, $2) AS value
+    SELECT plainto_tsquery('simple'::regconfig, 'book' || ($1::integer)::text) &&
+           plainto_tsquery('simple'::regconfig, $2) AS value
 ),
 candidates AS MATERIALIZED (
     SELECT unit.id,
@@ -741,7 +742,8 @@ candidates AS MATERIALIZED (
       AND unit.heading_id IS NOT NULL
       AND unit.page_id IS NOT NULL
       AND (unit.license_status IS NULL OR unit.license_status = 'permitted')
-      AND to_tsvector('simple'::regconfig, translate(unit.text, 'ًٌٍَُِّْٰٕٓٔـ', '')) @@ search_query.value
+      AND to_tsvector('simple'::regconfig,
+          'book' || unit.book_id::text || ' ' || translate(unit.text, 'ًٌٍَُِّْٰٕٓٔـ', '')) @@ search_query.value
     ORDER BY unit.page_id, unit.position, unit.ordinal, unit.id
     LIMIT $4
 ),

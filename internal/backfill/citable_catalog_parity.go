@@ -52,6 +52,7 @@ const (
 	catalogParityCandidatesPerBook = 64
 	catalogParityLegacyHits        = 12
 	catalogParityQuoteRunes        = 256
+	catalogParityPageSourceRunes   = 4000
 	catalogParityUnitSourceRunes   = 4000
 	catalogParityMinimumQuoteRunes = 4
 	catalogParityWindowDivisor     = 2
@@ -375,7 +376,7 @@ func catalogParityCandidateQuote(
 			quoteRunes := len([]rune(quote))
 
 			if quoteRunes < catalogParityMinimumQuoteRunes || quoteRunes > catalogParityQuoteRunes ||
-				!strings.Contains(candidate.pageText, quote) {
+				!catalogParityQuoteVisibleInLegacySource(candidate, quote) {
 				if end == len(unitRunes) {
 					break
 				}
@@ -422,6 +423,17 @@ func catalogParityCandidateQuote(
 	}
 
 	return "", entity.RAGUnitLocator{}, nil
+}
+
+func catalogParityQuoteVisibleInLegacySource(candidate catalogParityCandidate, quote string) bool {
+	pageRunes := []rune(candidate.pageText)
+	if len(pageRunes) > catalogParityPageSourceRunes {
+		pageRunes = pageRunes[:catalogParityPageSourceRunes]
+	}
+
+	pagePrefix := string(pageRunes)
+
+	return strings.Contains(pagePrefix, quote)
 }
 
 func catalogParityLegacyFirstHitMatches(

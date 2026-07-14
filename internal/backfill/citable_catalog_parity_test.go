@@ -3,6 +3,7 @@ package backfill
 import (
 	"context"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/alfariesh/surau-backend/internal/entity"
@@ -21,15 +22,47 @@ func TestCatalogParitySamplesUseBoundedCandidatesAndExactResolver(t *testing.T) 
 	assert.Contains(t, text, "catalogParityCandidatesPerBook = 64")
 	assert.Contains(t, text, "catalogParityLegacyHits        = 12")
 	assert.Contains(t, text, "catalogParityQuoteRunes        = 256")
+	assert.Contains(t, text, "catalogParityPageSourceRunes   = 4000")
 	assert.Contains(t, text, "catalogParityUnitSourceRunes   = 4000")
 	assert.Contains(t, text, "catalogParityWindowDivisor     = 2")
 	assert.Contains(t, text, "catalogParityQuotesPerWindow   = 2")
 	assert.Contains(t, text, "ragRepo.ResolveRAGUnitCitation(")
 	assert.Contains(t, text, "ragRepo.SearchRAGPages(")
-	assert.NotContains(t, text, "pagePrefix")
+	assert.Contains(t, text, "pagePrefix")
 	assert.NotContains(t, text, "generate_series(")
 	assert.NotContains(t, text, "SELECT COUNT(*)\n              FROM public_book_interpretive_citable_units peer")
 	assert.Equal(t, 1, catalogParityMaxContextPages)
+}
+
+func TestCatalogParityQuoteMustBeVisibleInsideLegacyPrompt(t *testing.T) {
+	t.Parallel()
+
+	candidate := catalogParityCandidate{
+		pageText: strings.Repeat("ا", catalogParityPageSourceRunes) + "بukti di luar prompt",
+	}
+
+	assert.True(t, catalogParityQuoteVisibleInLegacySource(candidate, strings.Repeat("ا", 32)))
+	assert.False(t, catalogParityQuoteVisibleInLegacySource(candidate, "بukti di luar prompt"))
+}
+
+func TestCatalogParitySearchUsesPerBookFTSAndSourceHeadingOrder(t *testing.T) {
+	t.Parallel()
+
+	repoSource, err := os.ReadFile("../repo/persistent/bookrag_postgres.go")
+	require.NoError(t, err)
+	assert.Contains(t, string(repoSource),
+		"ORDER BY heading.depth DESC, heading.ordinal DESC, exact.page_id ASC, heading.heading_id ASC")
+
+	migration, err := os.ReadFile("../../migrations/20260714000003_add_k1_book_unit_fts_index.up.sql")
+	require.NoError(t, err)
+
+	migrationSQL := string(migration)
+	assert.Contains(t, migrationSQL, "'book' || book_id::text || ' '")
+	assert.Equal(t, 1, strings.Count(migrationSQL, "CREATE INDEX CONCURRENTLY"))
+	assert.Equal(t, 1, strings.Count(strings.TrimSpace(migrationSQL), ";"),
+		"the concurrent-index migration must remain one SQL statement")
+	assert.Contains(t, string(repoSource), "'book' || unit.book_id::text || ' '")
+	assert.Contains(t, string(repoSource), "'book' || ($1::integer)::text")
 }
 
 func TestCatalogParityLegacyFirstHitMustMatchUnitLocator(t *testing.T) {
