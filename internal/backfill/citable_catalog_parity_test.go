@@ -62,7 +62,7 @@ func TestCatalogParitySearchUsesPerBookFTSAndSourceHeadingOrder(t *testing.T) {
 	assert.Equal(t, 1, strings.Count(strings.TrimSpace(migrationSQL), ";"),
 		"the concurrent-index migration must remain one SQL statement")
 	assert.Contains(t, string(repoSource), "'book' || unit.book_id::text || ' '")
-	assert.Contains(t, string(repoSource), "'book' || $1::text")
+	assert.Contains(t, string(repoSource), "'book' || ($1::integer)::text")
 }
 
 func TestCatalogParityLegacyFirstHitMustMatchUnitLocator(t *testing.T) {

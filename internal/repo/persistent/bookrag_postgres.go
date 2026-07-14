@@ -725,7 +725,7 @@ func (r *BookRAGRepo) searchRAGUnitsExact(
 ) ([]entity.RAGSearchResult, error) {
 	const sqlText = `
 WITH search_query AS (
-    SELECT plainto_tsquery('simple'::regconfig, 'book' || $1::text) &&
+    SELECT plainto_tsquery('simple'::regconfig, 'book' || ($1::integer)::text) &&
            plainto_tsquery('simple'::regconfig, $2) AS value
 ),
 candidates AS MATERIALIZED (
