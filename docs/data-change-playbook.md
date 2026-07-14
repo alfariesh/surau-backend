@@ -234,6 +234,7 @@ operasi. Simpan output mentah bersama SHA deploy. Arti field penting:
 | `canonical_documents`, `canonical_covered_runes`, `uncovered_canonical_runes`, `unexpected_canonical_spans` | Rentang karakter memakai Unicode code point/rune yang sama dengan extractor; uncovered dan unexpected wajib 0. |
 | `determinism_verified_books` | Sama dengan N setelah pass rederive; setiap buku harus `minted=updated=superseded=tombstoned=0` dan checksum registry sama. |
 | `parity_target_books`, `parity_verified_books`, `parity_mismatches`, `unit_anchors_unresolved` | Stub LLM deterministik menguji satu sitasi per buku public-retrievable; verified=target, mismatch=0, Anchor unit unresolved=0. |
+| `parity_samples_missing`, `parity_denial_mismatches`, `parity_request_mismatches`, `parity_locator_mismatches` | Diagnosis parity harus semuanya 0: sampel legacy+unit tersedia, penolakan lisensi tepat, request menghasilkan satu sitasi, dan locator legacy/unit sama. |
 | `mention_bindings` | Ringkasan `bound|pending|stale|ambiguous|cross_unit|missing`; mention approved tanpa Anchor yang resolve tetap dihitung sebagai pelanggaran audit. |
 | `search_samples`, `search_p95_ms`, `search_within_target` | Ada sampel dan p95 pencarian unit <400 ms. |
 | `audit` | Semua pelanggaran harus 0, termasuk projection menggantung, Anchor/lineage, Cross-Reference, approved mention, mismatch span, dan machine-unreviewed eligible. |

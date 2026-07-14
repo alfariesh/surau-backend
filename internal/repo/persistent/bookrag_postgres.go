@@ -627,7 +627,13 @@ JOIN book_heading_ranges heading_range
 ORDER BY heading.depth DESC, exact.page_id ASC, heading.heading_id ASC
 LIMIT $2`
 
-	rows, err := r.Pool.Query(ctx, sqlText, bookID, limit, escapeLike(query))
+	// The book and quote values materially change selectivity. Bypass the
+	// server-side generic-plan switch so a repeated full-catalog proof cannot
+	// degrade from the per-book index plan into a corpus-wide scan after the
+	// fifth execution.
+	rows, err := r.Pool.Query(
+		ctx, sqlText, pgx.QueryExecModeExec, bookID, limit, escapeLike(query),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("BookRAGRepo - SearchRAGPages - exact query: %w", err)
 	}
@@ -801,7 +807,16 @@ func (r *BookRAGRepo) queryRAGUnitSearch(
 	args := []any{bookID, query, limit}
 	args = append(args, extra...)
 
-	rows, err := r.Pool.Query(ctx, sqlText, args...)
+	queryArgs := make([]any, 0, len(args)+1)
+	queryArgs = append(queryArgs, pgx.QueryExecModeExec)
+	queryArgs = append(queryArgs, args...)
+
+	// Search selectivity varies sharply by book and Arabic term. PostgreSQL's
+	// prepared-statement heuristic otherwise replaces the first custom plans
+	// with one generic plan, which can scan the global FTS/trigram index for a
+	// common word before applying book_id. Exec mode keeps every plan bound to
+	// the actual book while retaining the extended protocol and typed values.
+	rows, err := r.Pool.Query(ctx, sqlText, queryArgs...)
 	if err != nil {
 		return nil, fmt.Errorf("BookRAGRepo - SearchRAGUnits - %s query: %w", phase, err)
 	}
@@ -853,7 +868,9 @@ WHERE cu.book_id = $1
 ORDER BY cu.position ASC, cu.ordinal ASC
 LIMIT 2`
 
-	rows, err := r.Pool.Query(ctx, sqlText, bookID, headingID, pageID, quote)
+	rows, err := r.Pool.Query(
+		ctx, sqlText, pgx.QueryExecModeExec, bookID, headingID, pageID, quote,
+	)
 	if err != nil {
 		return entity.RAGUnitLocator{}, fmt.Errorf("BookRAGRepo - ResolveRAGUnitCitation - Query: %w", err)
 	}
