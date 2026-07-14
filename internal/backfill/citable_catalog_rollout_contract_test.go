@@ -127,3 +127,33 @@ func TestK1DevRolloutRecoversOnlyKnownInterruptedFTSMigrationAfterSnapshot(t *te
 	assert.Contains(t, text, "sudo docker compose --env-file .env.production -f docker-compose.prod.yml stop app")
 	assert.Contains(t, text, "sudo docker compose --env-file .env.production -f docker-compose.prod.yml start app")
 }
+
+func TestK1DevRolloutPrebuildsBookScopedFTSBeforeCandidateBoot(t *testing.T) {
+	t.Parallel()
+
+	workflow, err := os.ReadFile("../../.github/workflows/deploy-dev.yml")
+	require.NoError(t, err)
+
+	text := string(workflow)
+	earlyRecovery := strings.Index(text, `if [ "$schema_state" = "20260714000003:true" ]; then`)
+	snapshot := strings.Index(text, `"$DEPLOY_PATH/ops/backup/surau-predeploy-snapshot"`)
+	prebuildGuard := strings.Index(text, `if [ "$schema_state" = "20260714000002:false" ]; then`)
+	prebuild := strings.Index(text, "run_with_heartbeat k1-book-fts-index-expand")
+	build := strings.Index(text, `build "${SERVICES[@]}"`)
+
+	require.NotEqual(t, -1, earlyRecovery)
+	require.NotEqual(t, -1, snapshot)
+	require.NotEqual(t, -1, prebuildGuard)
+	require.NotEqual(t, -1, prebuild)
+	require.NotEqual(t, -1, build)
+	assert.Less(t, earlyRecovery, snapshot, "the exact dirty index-only state must restore service before the long snapshot")
+	assert.Less(t, snapshot, prebuildGuard, "normal expansion still requires the protected snapshot")
+	assert.Less(t, prebuildGuard, prebuild)
+	assert.Less(t, prebuild, build, "the candidate must not boot until the posting list is valid")
+	assert.Contains(t, text, "DROP INDEX CONCURRENTLY IF EXISTS idx_citable_units_book_text_fts_interpretive")
+	assert.Contains(t, text, "SET version=20260714000002, dirty=FALSE")
+	assert.Contains(t, text, "WHERE version=20260714000003 AND dirty")
+	assert.Contains(t, text, `rewound_book_fts_state" != "20260714000002:false"`)
+	assert.Contains(t, text, "< migrations/20260714000003_add_k1_book_unit_fts_index.up.sql")
+	assert.Contains(t, text, `book_fts_index_valid" != "t"`)
+}

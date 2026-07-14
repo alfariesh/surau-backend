@@ -332,6 +332,53 @@ jobs:
             COLLAB_CHECK="http://127.0.0.1:8090/healthz"
           fi
 
+          # The book-scoped FTS expand migration is index-only. If a previous
+          # candidate was killed by the intentionally short health window while
+          # PostgreSQL was still building it, the app is crash-looping on the
+          # exact dirty version below. Recover service before the next (long)
+          # snapshot: discard only the invalid index shell and rewind only this
+          # known index-only migration. The failed attempt already completed its
+          # protected snapshot before setting the dirty bit; no content rows are
+          # changed by this repair.
+          schema_state="$(sudo docker compose --env-file .env.production \
+            -f docker-compose.prod.yml exec -T db sh -c \
+            'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc \
+              "SELECT version::text || chr(58) || dirty::text FROM schema_migrations"' </dev/null)"
+          if [ "$schema_state" = "20260714000003:true" ]; then
+            echo "Recovering interrupted book-scoped K-1 FTS migration..."
+            sudo docker compose --env-file .env.production -f docker-compose.prod.yml stop app
+            sudo docker compose --env-file .env.production -f docker-compose.prod.yml \
+              exec -T db sh -c \
+              'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
+                -c "DROP INDEX CONCURRENTLY IF EXISTS idx_citable_units_book_text_fts_interpretive"' </dev/null
+            sudo docker compose --env-file .env.production -f docker-compose.prod.yml \
+              exec -T db sh -c \
+              'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c \
+                "UPDATE schema_migrations SET version=20260714000002, dirty=FALSE \
+                 WHERE version=20260714000003 AND dirty"' </dev/null
+            rewound_book_fts_state="$(sudo docker compose --env-file .env.production \
+              -f docker-compose.prod.yml exec -T db sh -c \
+              'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc \
+                "SELECT version::text || chr(58) || dirty::text FROM schema_migrations"' </dev/null)"
+            if [ "$rewound_book_fts_state" != "20260714000002:false" ]; then
+              echo "Book-scoped K-1 FTS rewind produced unexpected state: $rewound_book_fts_state" >&2
+              exit 1
+            fi
+            sudo docker compose --env-file .env.production -f docker-compose.prod.yml start app
+            for recovery_attempt in {1..60}; do
+              if curl -fsS http://127.0.0.1:8080/healthz >/dev/null; then
+                break
+              fi
+              if [ "$recovery_attempt" -eq 60 ]; then
+                echo "Book-scoped K-1 FTS rewind did not restore the existing app" >&2
+                sudo docker compose --env-file .env.production -f docker-compose.prod.yml \
+                  logs --tail=120 app
+                exit 1
+              fi
+              sleep 2
+            done
+          fi
+
           # Snapshot the DB before the new image auto-migrates on boot, so a bad
           # migration can be rolled back. Encrypted + uploaded to R2 with 7-day
           # retention (E6); dump failure aborts the deploy ("no backup, no deploy"),
@@ -438,6 +485,46 @@ jobs:
                 "SELECT version::text || chr(58) || dirty::text FROM schema_migrations"' </dev/null)"
             if [ "$completed_state" != "20260713000016:false" ]; then
               echo "K-1 FTS migration recovery finished in unexpected state: $completed_state" >&2
+              exit 1
+            fi
+          fi
+
+          # Build the new book-scoped posting list while the existing app keeps
+          # serving traffic. The migration itself then sees the valid index and
+          # only records its version during candidate boot, well inside the
+          # health window. This keeps the expand step online and observable.
+          schema_state="$(sudo docker compose --env-file .env.production \
+            -f docker-compose.prod.yml exec -T db sh -c \
+            'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc \
+              "SELECT version::text || chr(58) || dirty::text FROM schema_migrations"' </dev/null)"
+          if [ "$schema_state" = "20260714000002:false" ]; then
+            book_fts_index_valid="$(sudo docker compose --env-file .env.production \
+              -f docker-compose.prod.yml exec -T db sh -c \
+              'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc \
+                "SELECT COALESCE(bool_and(index.indisvalid), FALSE) \
+                 FROM pg_class relation \
+                 LEFT JOIN pg_index index ON index.indexrelid=relation.oid \
+                 WHERE relation.relname='\''idx_citable_units_book_text_fts_interpretive'\''"' </dev/null)"
+            if [ "$book_fts_index_valid" != "t" ]; then
+              sudo docker compose --env-file .env.production -f docker-compose.prod.yml \
+                exec -T db sh -c \
+                'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
+                  -c "DROP INDEX CONCURRENTLY IF EXISTS idx_citable_units_book_text_fts_interpretive"' </dev/null
+              run_with_heartbeat k1-book-fts-index-expand \
+                sudo docker compose --env-file .env.production -f docker-compose.prod.yml \
+                exec -T -e 'PGOPTIONS=-c maintenance_work_mem=64MB' db sh -c \
+                'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' \
+                < migrations/20260714000003_add_k1_book_unit_fts_index.up.sql
+            fi
+            book_fts_index_valid="$(sudo docker compose --env-file .env.production \
+              -f docker-compose.prod.yml exec -T db sh -c \
+              'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc \
+                "SELECT index.indisvalid \
+                 FROM pg_index index \
+                 JOIN pg_class relation ON relation.oid=index.indexrelid \
+                 WHERE relation.relname='\''idx_citable_units_book_text_fts_interpretive'\''"' </dev/null)"
+            if [ "$book_fts_index_valid" != "t" ]; then
+              echo "Book-scoped K-1 FTS expand did not produce a valid index" >&2
               exit 1
             fi
           fi
