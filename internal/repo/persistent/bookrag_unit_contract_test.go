@@ -38,6 +38,8 @@ func TestBookRAGUnitQueriesUseStructuralPublicView(t *testing.T) {
 		"the unit search query must use the same immutable full-text configuration as its index")
 	assert.Contains(t, querySource, "matches AS MATERIALIZED (",
 		"the indexed unit match set must be isolated before publication joins and ranking")
+	assert.Contains(t, querySource, "1::float8 AS score",
+		"exact boolean matches must not recompute an expensive vector rank for every candidate")
 	assert.Contains(t, querySource, "candidates AS MATERIALIZED (",
 		"common terms must be bounded before per-row ranking")
 	assert.Contains(t, querySource, "ragUnitExactCandidateLimit = 1024",

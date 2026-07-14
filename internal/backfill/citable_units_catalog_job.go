@@ -67,6 +67,23 @@ func (j citableUnitsCatalogJob) Name() string {
 
 func (citableUnitsCatalogJob) ProfileVersion() int { return entity.KitabUnitDerivationProfileVersion }
 
+// Prepare synchronizes and re-proves durable evidence before Runner records
+// rows_total. ProcessChunk keeps synchronizing after every atomic book commit
+// so edits arriving during a run are still drained as a delta wave.
+func (j *citableUnitsCatalogJob) Prepare(ctx context.Context, pool *pgxpool.Pool) error {
+	if err := verifyCatalogPriorityCategories(ctx, pool); err != nil {
+		return fmt.Errorf("%s: %w", j.Name(), err)
+	}
+
+	if err := j.syncQueue(ctx, pool, true); err != nil {
+		return err
+	}
+
+	j.recovered = true
+
+	return nil
+}
+
 func (j citableUnitsCatalogJob) CountRemaining(ctx context.Context, pool *pgxpool.Pool) (int64, error) {
 	if j.rederive {
 		var remaining int64
@@ -84,6 +101,7 @@ WHERE publication.status = 'published'
   AND (
       rederive.book_id IS NULL
       OR rederive.status <> 'completed'
+      OR rederive.source_fingerprint IS DISTINCT FROM catalog.source_fingerprint
       OR rederive.result_checksum IS DISTINCT FROM catalog.result_checksum
   )`, j.Name(), citableCatalogJobName, CitableCatalogBookIDs).Scan(&remaining); err != nil {
 			return 0, fmt.Errorf("%s: count queue: %w", j.Name(), err)
@@ -186,6 +204,14 @@ func (j citableUnitsCatalogJob) syncQueue(ctx context.Context, pool *pgxpool.Poo
 		return err
 	}
 
+	if recoverFailed && !j.rederive {
+		if err := reproveCurrentCatalogEvidence(
+			ctx, pool, CitableCatalogPriorityOnly, CitableCatalogBookIDs,
+		); err != nil {
+			return err
+		}
+	}
+
 	// A queued book can be withdrawn before it is claimed. Preserve the row as
 	// canceled evidence; never process or count it as current work.
 	if _, err := pool.Exec(ctx, `
@@ -264,7 +290,10 @@ WITH reader_stats AS (
 		              queued.book_id IS NULL
 		              OR (
 		                  queued.status = 'completed'
-		                  AND queued.result_checksum IS DISTINCT FROM catalog_result.result_checksum
+		                  AND (
+		                      queued.source_fingerprint IS DISTINCT FROM catalog_result.source_fingerprint
+		                      OR queued.result_checksum IS DISTINCT FROM catalog_result.result_checksum
+		                  )
 		              )
 		              OR queued.status = 'cancelled'
 		          ))
@@ -297,6 +326,105 @@ ON CONFLICT (job_name, book_id) DO UPDATE SET
 	if err != nil {
 		return fmt.Errorf("%s: sync queue: %w", j.Name(), err)
 	}
+
+	return nil
+}
+
+// reproveCurrentCatalogEvidence detects source or registry drift even when an
+// invalidation hook was missed or old evidence was restored accidentally.
+// Only the primary pass is inspected; its CAS reset makes the rederive pass
+// follow through the source+registry comparison in syncQueue.
+//
+//nolint:gocyclo,cyclop,funlen // load, compare, and CAS-reset form one fail-closed evidence lifecycle
+func reproveCurrentCatalogEvidence(
+	ctx context.Context,
+	pool *pgxpool.Pool,
+	priorityOnly bool,
+	bookIDs []int,
+) error {
+	rows, err := pool.Query(ctx, `
+SELECT queued.book_id, queued.source_fingerprint, queued.result_checksum
+FROM citable_unit_catalog_queue queued
+JOIN books book ON book.id = queued.book_id
+JOIN book_publications publication ON publication.book_id = book.id
+WHERE queued.job_name = $1
+  AND queued.status = 'completed'
+  AND queued.checksum_version = $2
+  AND publication.status = 'published'
+  AND book.is_deleted = FALSE
+  AND (NOT $3::boolean OR book.category_id IN (3, 7))
+  AND ($4::integer[] IS NULL OR book.id = ANY($4))
+ORDER BY queued.book_id`, citableCatalogJobName, persistent.CitableCatalogChecksumVersion,
+		priorityOnly, bookIDs)
+	if err != nil {
+		return fmt.Errorf("%s: load current checksum evidence: %w", citableCatalogJobName, err)
+	}
+
+	evidence := make([]catalogLegacyEvidence, 0)
+
+	for rows.Next() {
+		var item catalogLegacyEvidence
+		if err := rows.Scan(&item.bookID, &item.source, &item.registry); err != nil {
+			rows.Close()
+
+			return fmt.Errorf("%s: scan current checksum evidence: %w", citableCatalogJobName, err)
+		}
+
+		evidence = append(evidence, item)
+	}
+
+	if err := rows.Err(); err != nil {
+		rows.Close()
+
+		return fmt.Errorf("%s: read current checksum evidence: %w", citableCatalogJobName, err)
+	}
+
+	rows.Close()
+
+	repo := persistent.NewCitableUnitRepo(&postgres.Postgres{
+		Pool:    pool,
+		Builder: squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar),
+	})
+	reset := 0
+
+	for i := range evidence {
+		item := &evidence[i]
+
+		liveSource, liveRegistry, err := repo.CatalogEvidenceChecksums(ctx, item.bookID)
+		if err != nil {
+			return fmt.Errorf("%s: reprove book %d: %w", citableCatalogJobName, item.bookID, err)
+		}
+
+		if bytes.Equal(item.source, liveSource[:]) && bytes.Equal(item.registry, liveRegistry[:]) {
+			continue
+		}
+
+		tag, err := pool.Exec(ctx, `
+UPDATE citable_unit_catalog_queue
+SET status = 'pending', source_fingerprint = NULL, result_checksum = NULL,
+    error = 'live checksum evidence drifted during resume',
+    started_at = NULL, finished_at = NULL, updated_at = now()
+WHERE job_name = $1 AND book_id = $2
+  AND status = 'completed' AND checksum_version = $3
+  AND source_fingerprint IS NOT DISTINCT FROM $4
+  AND result_checksum IS NOT DISTINCT FROM $5`,
+			citableCatalogJobName, item.bookID, persistent.CitableCatalogChecksumVersion,
+			item.source, item.registry)
+		if err != nil {
+			return fmt.Errorf("%s: reset drifted evidence book %d: %w",
+				citableCatalogJobName, item.bookID, err)
+		}
+
+		if tag.RowsAffected() != 1 {
+			return fmt.Errorf("%w: %s current reset book %d affected %d rows",
+				errCatalogChecksumEvidenceCAS, citableCatalogJobName, item.bookID, tag.RowsAffected())
+		}
+
+		reset++
+	}
+
+	fmt.Fprintf(os.Stdout, "%s: live checksum evidence checked=%d reset=%d version=%d\n",
+		citableCatalogJobName, len(evidence), reset, persistent.CitableCatalogChecksumVersion)
 
 	return nil
 }

@@ -59,6 +59,14 @@ type Job interface {
 	ProcessChunk(ctx context.Context, pool *pgxpool.Pool, cursor int64, limit int) (int64, int64, bool, error)
 }
 
+// jobPreparer lets a durable queue reconcile its persisted work items before
+// the runner snapshots rows_total. This keeps drift discovered during resume
+// visible in progress metrics instead of producing an impossible 8/0 run.
+// Preparation runs under the same per-job advisory lock as the backfill.
+type jobPreparer interface {
+	Prepare(ctx context.Context, pool *pgxpool.Pool) error
+}
+
 // State is the persisted checkpoint snapshot handed to AfterChunk.
 type State struct {
 	JobName    string
@@ -293,6 +301,12 @@ WHERE job_name = $1`, job.Name()).
 	if !found || restart {
 		state.LastCursor = 0
 		state.RowsDone = 0
+	}
+
+	if preparer, ok := job.(jobPreparer); ok {
+		if err := preparer.Prepare(ctx, r.Pool); err != nil {
+			return State{}, fmt.Errorf("backfill %s: prepare queue: %w", job.Name(), err)
+		}
 	}
 
 	remaining, err := job.CountRemaining(ctx, r.Pool)
