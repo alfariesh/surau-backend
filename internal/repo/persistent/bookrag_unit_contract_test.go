@@ -46,8 +46,10 @@ func TestBookRAGUnitQueriesUseStructuralPublicView(t *testing.T) {
 		"common terms must be bounded before per-row ranking")
 	assert.Contains(t, querySource, "ragUnitExactCandidateLimit = 1024",
 		"the exact candidate ceiling must remain explicit and reviewable")
-	assert.Contains(t, querySource, "unit.page_id, unit.position, unit.ordinal, unit.id\n    LIMIT $4",
-		"the bounded exact window must remain deterministic after phrase prioritization")
+	assert.Contains(t, querySource, "ORDER BY unit.page_id, unit.position, unit.ordinal, unit.id\n    LIMIT $4",
+		"the FTS candidate window must be bounded before phrase ranking to preserve the retrieval p95")
+	assert.NotContains(t, querySource, "ORDER BY (strpos(",
+		"verbatim ranking must not force a full-book substring sort before the candidate limit")
 	assert.Contains(t, querySource, "AND unit.interpretive_retrieval_eligible",
 		"the base-table FTS fast path must reproduce the generated structural trust boundary")
 	assert.Contains(t, querySource, "JOIN public_book_interpretive_citable_units eligible ON eligible.id = matches.id",
