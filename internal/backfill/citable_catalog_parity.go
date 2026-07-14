@@ -40,6 +40,12 @@ type catalogParityLLM struct {
 	calls     int
 }
 
+type catalogParityRepo interface {
+	ResolveRAGUnitCitation(context.Context, int, int, int, string) (entity.RAGUnitLocator, error)
+	SearchRAGPages(context.Context, int, string, string, int) ([]entity.RAGSearchResult, error)
+	GetRAGPageSources(context.Context, int, []int, []int, string, int) ([]entity.RAGPageSource, error)
+}
+
 // A catalog proof quote is selected to occur in exactly one eligible unit at
 // its legacy book/heading/page locator. One retrieved page is therefore
 // sufficient to exercise the real retrieval, quote validator, dual
@@ -68,6 +74,7 @@ type catalogParityVerification struct {
 	denialMismatches  int64
 	requestMismatches int64
 	locatorMismatches int64
+	diagnostics       []string
 }
 
 var (
@@ -153,12 +160,15 @@ func verifyFullCatalogBookRAGParity(
 ) (catalogParityVerification, error) {
 	result := catalogParityVerification{}
 
-	samples, target, err := loadCatalogParitySamples(ctx, pool, ragRepo)
+	missingDiagnostics := make([]string, 0)
+
+	samples, target, err := loadCatalogParitySamples(ctx, pool, ragRepo, &missingDiagnostics)
 	if err != nil {
 		return result, err
 	}
 
 	result.target = target
+	result.diagnostics = append(result.diagnostics, missingDiagnostics...)
 	result.samplesMissing = target - int64(len(samples))
 	result.mismatches += result.samplesMissing
 
@@ -193,6 +203,7 @@ func verifyFullCatalogBookRAGParity(
 		if askErr != nil || len(response.Citations) != 1 {
 			result.mismatches++
 			result.requestMismatches++
+			result.diagnostics = append(result.diagnostics, catalogParityRequestDiagnostic(&sample, &response, askErr, llm.calls))
 
 			continue
 		}
@@ -207,6 +218,7 @@ func verifyFullCatalogBookRAGParity(
 			citation.UnitAnchor == nil || *citation.UnitAnchor != sample.anchor {
 			result.mismatches++
 			result.locatorMismatches++
+			result.diagnostics = append(result.diagnostics, catalogParityLocatorDiagnostic(&sample, &citation))
 
 			continue
 		}
@@ -216,6 +228,7 @@ func verifyFullCatalogBookRAGParity(
 			len(resolution.ActiveRecords) != 1 || resolution.ActiveRecords[0].UnitID == nil ||
 			*resolution.ActiveRecords[0].UnitID != sample.unitID {
 			result.unresolved++
+			result.diagnostics = append(result.diagnostics, fmt.Sprintf("book=%d class=anchor", sample.bookID))
 
 			continue
 		}
@@ -231,6 +244,7 @@ func loadCatalogParitySamples(
 	ctx context.Context,
 	pool *pgxpool.Pool,
 	ragRepo *persistent.BookRAGRepo,
+	missingDiagnostics *[]string,
 ) ([]catalogParitySample, int64, error) {
 	rows, err := pool.Query(ctx, `
 WITH target AS (
@@ -332,8 +346,9 @@ ORDER BY target.id,
 			continue
 		}
 
+		before := len(samples)
 		for _, candidate := range candidates[targetItem.bookID] {
-			quote, locator, resolveErr := catalogParityCandidateQuote(ctx, ragRepo, candidate)
+			quote, resolvedCandidate, locator, resolveErr := catalogParityCandidateQuote(ctx, ragRepo, candidate)
 			if resolveErr != nil {
 				return nil, int64(len(targets)), resolveErr
 			}
@@ -342,14 +357,18 @@ ORDER BY target.id,
 				continue
 			}
 
-			targetItem.headingID = candidate.headingID
-			targetItem.pageID = candidate.pageID
+			targetItem.headingID = resolvedCandidate.headingID
+			targetItem.pageID = resolvedCandidate.pageID
 			targetItem.quote = quote
 			targetItem.unitID = locator.UnitID
 			targetItem.anchor = locator.UnitAnchor
 			samples = append(samples, targetItem)
 
 			break
+		}
+
+		if len(samples) == before {
+			*missingDiagnostics = append(*missingDiagnostics, fmt.Sprintf("book=%d class=sample_missing", targetItem.bookID))
 		}
 	}
 
@@ -358,9 +377,9 @@ ORDER BY target.id,
 
 func catalogParityCandidateQuote(
 	ctx context.Context,
-	ragRepo *persistent.BookRAGRepo,
+	ragRepo catalogParityRepo,
 	candidate catalogParityCandidate,
-) (string, entity.RAGUnitLocator, error) {
+) (string, catalogParityCandidate, entity.RAGUnitLocator, error) {
 	unitRunes := []rune(candidate.unitText)
 	if len(unitRunes) > catalogParityUnitSourceRunes {
 		unitRunes = unitRunes[:catalogParityUnitSourceRunes]
@@ -388,7 +407,7 @@ func catalogParityCandidateQuote(
 				ctx, candidate.bookID, candidate.headingID, candidate.pageID, quote,
 			)
 			if err != nil {
-				return "", entity.RAGUnitLocator{}, fmt.Errorf(
+				return "", catalogParityCandidate{}, entity.RAGUnitLocator{}, fmt.Errorf(
 					"verify Book-RAG parity locator book %d page %d: %w",
 					candidate.bookID, candidate.pageID, err,
 				)
@@ -401,14 +420,25 @@ func catalogParityCandidateQuote(
 					ctx, candidate.bookID, quote, "id", catalogParityLegacyHits,
 				)
 				if searchErr != nil {
-					return "", entity.RAGUnitLocator{}, fmt.Errorf(
+					return "", catalogParityCandidate{}, entity.RAGUnitLocator{}, fmt.Errorf(
 						"verify Book-RAG parity legacy search book %d page %d: %w",
 						candidate.bookID, candidate.pageID, searchErr,
 					)
 				}
 
 				if catalogParityLegacyFirstHitMatches(legacyHits, candidate) {
-					return quote, locator, nil
+					return quote, candidate, locator, nil
+				}
+
+				resolvedCandidate, resolvedLocator, resolved, resolveTopErr := catalogParityResolveLegacyTopHit(
+					ctx, ragRepo, candidate.bookID, legacyHits, quote,
+				)
+				if resolveTopErr != nil {
+					return "", catalogParityCandidate{}, entity.RAGUnitLocator{}, resolveTopErr
+				}
+
+				if resolved {
+					return quote, resolvedCandidate, resolvedLocator, nil
 				}
 			}
 
@@ -422,7 +452,85 @@ func catalogParityCandidateQuote(
 		}
 	}
 
-	return "", entity.RAGUnitLocator{}, nil
+	return "", catalogParityCandidate{}, entity.RAGUnitLocator{}, nil
+}
+
+func catalogParityResolveLegacyTopHit(
+	ctx context.Context,
+	ragRepo catalogParityRepo,
+	bookID int,
+	hits []entity.RAGSearchResult,
+	quote string,
+) (catalogParityCandidate, entity.RAGUnitLocator, bool, error) {
+	if len(hits) == 0 {
+		return catalogParityCandidate{}, entity.RAGUnitLocator{}, false, nil
+	}
+
+	hit := hits[0]
+
+	sources, err := ragRepo.GetRAGPageSources(ctx, bookID, []int{hit.HeadingID}, []int{hit.PageID}, "id", 1)
+	if err != nil {
+		return catalogParityCandidate{}, entity.RAGUnitLocator{}, false,
+			fmt.Errorf("verify Book-RAG parity legacy source book %d page %d: %w", bookID, hit.PageID, err)
+	}
+
+	if len(sources) != 1 || sources[0].HeadingID != hit.HeadingID || sources[0].PageID != hit.PageID {
+		return catalogParityCandidate{}, entity.RAGUnitLocator{}, false, nil
+	}
+
+	resolved := catalogParityCandidate{
+		bookID:    bookID,
+		headingID: hit.HeadingID,
+		pageID:    hit.PageID,
+		pageText:  sources[0].ContentText,
+	}
+	if !catalogParityQuoteVisibleInLegacySource(resolved, quote) {
+		return catalogParityCandidate{}, entity.RAGUnitLocator{}, false, nil
+	}
+
+	locator, err := ragRepo.ResolveRAGUnitCitation(ctx, bookID, hit.HeadingID, hit.PageID, quote)
+	if err != nil {
+		return catalogParityCandidate{}, entity.RAGUnitLocator{}, false,
+			fmt.Errorf("verify Book-RAG parity top-hit locator book %d page %d: %w", bookID, hit.PageID, err)
+	}
+
+	if !locator.Found {
+		return catalogParityCandidate{}, entity.RAGUnitLocator{}, false, nil
+	}
+
+	return resolved, locator, true, nil
+}
+
+func catalogParityRequestDiagnostic(
+	sample *catalogParitySample,
+	response *entity.BookRAGResponse,
+	err error,
+	llmCalls int,
+) string {
+	errText := ""
+	if err != nil {
+		errText = err.Error()
+	}
+
+	return fmt.Sprintf("book=%d class=request citations=%d llm_calls=%d error=%q",
+		sample.bookID, len(response.Citations), llmCalls, errText)
+}
+
+func catalogParityLocatorDiagnostic(sample *catalogParitySample, citation *entity.BookRAGCitation) string {
+	unitID, unitAnchor := "", ""
+	if citation.UnitID != nil {
+		unitID = *citation.UnitID
+	}
+
+	if citation.UnitAnchor != nil {
+		unitAnchor = *citation.UnitAnchor
+	}
+
+	return fmt.Sprintf(
+		"book=%d class=locator expected_heading=%d expected_page=%d expected_unit=%s actual_heading=%d actual_page=%d actual_unit=%s actual_anchor=%s",
+		sample.bookID, sample.headingID, sample.pageID, sample.unitID,
+		citation.HeadingID, citation.PageID, unitID, unitAnchor,
+	)
 }
 
 func catalogParityQuoteVisibleInLegacySource(candidate catalogParityCandidate, quote string) bool {

@@ -57,6 +57,7 @@ type CitableCatalogVerification struct {
 	ParityDenialMismatches     int64                         `json:"parity_denial_mismatches"`
 	ParityRequestMismatches    int64                         `json:"parity_request_mismatches"`
 	ParityLocatorMismatches    int64                         `json:"parity_locator_mismatches"`
+	ParityDiagnostics          []string                      `json:"parity_diagnostics,omitempty"`
 	UnitAnchorsUnresolved      int64                         `json:"unit_anchors_unresolved"`
 	DeterminismVerifiedBooks   int64                         `json:"determinism_verified_books"`
 	QueuePending               int64                         `json:"queue_pending"`
@@ -377,6 +378,7 @@ ORDER BY unit_binding_status`, CitableCatalogBookIDs)
 	report.ParityDenialMismatches = parity.denialMismatches
 	report.ParityRequestMismatches = parity.requestMismatches
 	report.ParityLocatorMismatches = parity.locatorMismatches
+	report.ParityDiagnostics = parity.diagnostics
 	report.UnitAnchorsUnresolved = parity.unresolved
 
 	report.Passed = report.TargetBooks > 0 &&
