@@ -661,9 +661,15 @@ jobs:
                     -cases /eval/bookrag_rollout_golden.jsonl -output json -verbose
 
                 sse_output="$(mktemp)"
+                sse_payload='{
+                  "question":"وله رسالة جيدة ونافعة ومفيدة ينبغي لطالب العلم أن يقرأها ويتأملها جيداً لما فيها من العلم النافع.",
+                  "stream":true,
+                  "include_trace":true,
+                  "max_citations":1
+                }'
                 curl -fsS --max-time 180 -N \
                   -H 'Content-Type: application/json' \
-                  -d '{"question":"وله رسالة جيدة ونافعة ومفيدة ينبغي لطالب العلم أن يقرأها ويتأملها جيداً لما فيها من العلم النافع.","stream":true,"include_trace":true,"max_citations":1}' \
+                  -d "$sse_payload" \
                   "$RAG_EVAL_API_URL/v1/books/1/rag?lang=id" > "$sse_output"
                 grep -Eq '"unit_id":"[0-9a-f-]+"' "$sse_output"
                 grep -Eq '"unit_anchor":"kitab/[0-9]+/h/[0-9]+/u/[0-9]+"' "$sse_output"
