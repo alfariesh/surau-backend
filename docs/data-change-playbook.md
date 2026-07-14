@@ -183,6 +183,10 @@ sudo docker compose --env-file .env.production -f docker-compose.prod.yml \
   exec app /backfill -job=citable-units-kitab-catalog-rederive \
     -chunk-size=1 -sleep=200ms -restart
 
+# Segarkan statistik planner setelah LOAD besar, tanpa memblokir endpoint baca.
+sudo docker compose --env-file .env.production -f docker-compose.prod.yml \
+  exec db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "ANALYZE citable_units"'
+
 # Bukti machine-readable. Exit 0 hanya jika seluruh gerbang K-1 lulus.
 sudo docker compose --env-file .env.production -f docker-compose.prod.yml \
   exec app /backfill -verify-citable-catalog

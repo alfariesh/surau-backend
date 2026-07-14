@@ -178,6 +178,29 @@ func TestK1CatalogProfileThreeMigrationContracts(t *testing.T) {
 	assert.Contains(t, string(down), "units_stale_at = COALESCE")
 }
 
+func TestK1CitableUnitParentInvariantMigrationContracts(t *testing.T) {
+	t.Parallel()
+
+	expand, err := os.ReadFile("../../../migrations/20260714000001_enforce_citable_unit_parent_invariant.up.sql")
+	require.NoError(t, err)
+	validate, err := os.ReadFile("../../../migrations/20260714000002_validate_citable_unit_parent_invariant.up.sql")
+	require.NoError(t, err)
+	down, err := os.ReadFile("../../../migrations/20260714000001_enforce_citable_unit_parent_invariant.down.sql")
+	require.NoError(t, err)
+
+	expandSQL := string(expand)
+	assert.Contains(t, expandSQL, "PERFORM set_config('surau.registry_writer', 'unit-service', true)")
+	assert.Contains(t, expandSQL, "HAVING COUNT(DISTINCT walk.unit_id) = 1")
+	assert.Contains(t, expandSQL, "ADD CONSTRAINT citable_units_parent_shape_check")
+	assert.Contains(t, expandSQL, "NOT VALID")
+	assert.Contains(t, expandSQL, "CREATE CONSTRAINT TRIGGER trg_citable_unit_parent_invariant")
+	assert.Contains(t, expandSQL, "DEFERRABLE INITIALLY DEFERRED")
+	assert.Contains(t, expandSQL, "parent.lifecycle = 'active'")
+	assert.Contains(t, string(validate), "VALIDATE CONSTRAINT citable_units_parent_shape_check")
+	assert.Contains(t, string(down), "DROP TRIGGER IF EXISTS trg_citable_unit_parent_invariant")
+	assert.Contains(t, string(down), "DROP CONSTRAINT IF EXISTS citable_units_parent_shape_check")
+}
+
 func TestK1EditorialReconcileBindsMentionsBeforeCommit(t *testing.T) {
 	t.Parallel()
 

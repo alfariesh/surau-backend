@@ -36,6 +36,8 @@ func TestBookRAGUnitQueriesUseStructuralPublicView(t *testing.T) {
 		"common Arabic terms must use the bounded full-text index before any trigram fallback")
 	assert.Contains(t, querySource, "plainto_tsquery('simple'::regconfig",
 		"the unit search query must use the same immutable full-text configuration as its index")
+	assert.Contains(t, querySource, "if len(exact) > 0 {",
+		"trigram fallback must run only when indexed full-text retrieval found no evidence")
 	assert.NotContains(t, querySource, "cu.effective_license_status = 'permitted'",
 		"B-4 grandfather visibility belongs to public_book_publications/view, not a stricter RAG override")
 	assert.Contains(t, querySource, "FROM citable_units materialized",

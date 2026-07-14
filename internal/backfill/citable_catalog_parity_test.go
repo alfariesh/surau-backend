@@ -11,18 +11,21 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestCatalogParitySamplesUseBoundedExactQuoteInsteadOfWholeUnit(t *testing.T) {
+func TestCatalogParitySamplesTryWholeUnitThenBoundedExactQuotes(t *testing.T) {
 	t.Parallel()
 
 	source, err := os.ReadFile("citable_catalog_parity.go")
 	require.NoError(t, err)
 
 	text := string(source)
-	assert.Contains(t, text, "left(unit.text, 512) AS quote")
-	assert.Contains(t, text, "strpos(peer.text, excerpt.quote) > 0")
+	assert.Contains(t, text, "(unit.text, 0)")
+	assert.Contains(t, text, "substring(unit.text FROM 1 FOR 512)")
+	assert.Contains(t, text, "substring(unit.text FROM 3585 FOR 416)")
+	assert.Contains(t, text, "strpos(peer.text, candidate.quote) > 0")
 	assert.NotContains(t, text, "char_length(btrim(unit.text)) BETWEEN 4 AND 4000",
 		"a valid citation is a bounded exact excerpt, not necessarily the whole long unit")
-	assert.Equal(t, 1, strings.Count(text, "left(unit.text, 512) AS quote"))
+	assert.Equal(t, 1, strings.Count(text, "(unit.text, 0)"))
+	assert.Contains(t, text, "ORDER BY candidate.priority")
 }
 
 func TestCatalogParityStubSelectsRefForExpectedPage(t *testing.T) {

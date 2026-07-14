@@ -215,26 +215,41 @@ LEFT JOIN LATERAL (
     LEFT JOIN book_page_edits edit
       ON edit.book_id = page.book_id AND edit.page_id = page.page_id AND edit.status = 'published'
     CROSS JOIN LATERAL (
-        SELECT left(unit.text, 512) AS quote
+        SELECT candidate.quote
+        FROM (
+            VALUES
+                (unit.text, 0),
+                (substring(unit.text FROM 1 FOR 512), 1),
+                (substring(unit.text FROM 513 FOR 512), 2),
+                (substring(unit.text FROM 1025 FOR 512), 3),
+                (substring(unit.text FROM 1537 FOR 512), 4),
+                (substring(unit.text FROM 2049 FOR 512), 5),
+                (substring(unit.text FROM 2561 FOR 512), 6),
+                (substring(unit.text FROM 3073 FOR 512), 7),
+                (substring(unit.text FROM 3585 FOR 416), 8)
+        ) candidate(quote, priority)
+        WHERE char_length(btrim(candidate.quote)) >= 4
+          AND char_length(candidate.quote) <= 4000
+          AND strpos(COALESCE(edit.content_text, page.content_text), candidate.quote) > 0
+          AND strpos(COALESCE(edit.content_text, page.content_text), candidate.quote)
+                + char_length(candidate.quote) - 1 <= 4000
+          AND (
+              SELECT COUNT(*)
+              FROM public_book_interpretive_citable_units peer
+              WHERE peer.book_id = unit.book_id
+                AND peer.heading_id = unit.heading_id
+                AND peer.page_id = unit.page_id
+                AND peer.content_role = 'book_page'
+                AND strpos(peer.text, candidate.quote) > 0
+          ) = 1
+        ORDER BY candidate.priority
+        LIMIT 1
     ) excerpt
     WHERE public_publication.book_id IS NOT NULL
       AND unit.book_id = book.id
       AND unit.content_role = 'book_page'
       AND unit.heading_id IS NOT NULL
       AND unit.page_id IS NOT NULL
-      AND char_length(btrim(excerpt.quote)) >= 4
-      AND strpos(COALESCE(edit.content_text, page.content_text), excerpt.quote) > 0
-      AND strpos(COALESCE(edit.content_text, page.content_text), excerpt.quote)
-            + char_length(excerpt.quote) - 1 <= 4000
-      AND (
-          SELECT COUNT(*)
-          FROM public_book_interpretive_citable_units peer
-          WHERE peer.book_id = unit.book_id
-            AND peer.heading_id = unit.heading_id
-            AND peer.page_id = unit.page_id
-            AND peer.content_role = 'book_page'
-            AND strpos(peer.text, excerpt.quote) > 0
-      ) = 1
     ORDER BY char_length(unit.text) DESC, unit.position, unit.ordinal
     LIMIT 1
 ) sample ON TRUE

@@ -180,6 +180,34 @@ INSERT INTO citable_units (
 )`, bookID, restrictedUnitID)
 	require.NoError(t, err)
 
+	_, err = tx.Exec(ctx, `SAVEPOINT invalid_parent_shape`)
+	require.NoError(t, err)
+	_, err = tx.Exec(ctx, `
+INSERT INTO citable_units (
+    id, corpus, book_id, page_id, kind, ordinal, position, parent_unit_id,
+    anchor, text, text_normalized, normalization_version, content_hash,
+    occurrence, language, provenance_class, content_role, review_status
+) VALUES (
+    'c1010000-0000-4000-8000-000000000019', 'kitab', $1, 1, 'paragraph', 19, 19, $2,
+    'kitab/-91301/h/0/u/19', 'invalid parent shape', 'invalid parent shape', 1,
+    decode(repeat('47', 32), 'hex'), 1, 'ar', 'source', 'book_page', 'approved'
+)`, bookID, sourceUnitID)
+	require.Error(t, err, "a non-footnote can never carry parent_unit_id")
+	_, rollbackErr := tx.Exec(ctx, `ROLLBACK TO SAVEPOINT invalid_parent_shape`)
+	require.NoError(t, rollbackErr)
+
+	_, err = tx.Exec(ctx, `SAVEPOINT inactive_footnote_parent`)
+	require.NoError(t, err)
+	_, err = tx.Exec(ctx, `
+UPDATE citable_units
+SET lifecycle = 'superseded', retired_at = now()
+WHERE id = $1`, sourceUnitID)
+	require.NoError(t, err, "the deferred guard permits a reconcile to re-point children before commit")
+	_, err = tx.Exec(ctx, `SET CONSTRAINTS trg_citable_unit_parent_invariant IMMEDIATE`)
+	require.Error(t, err, "an active footnote cannot commit with a non-active parent")
+	_, rollbackErr = tx.Exec(ctx, `ROLLBACK TO SAVEPOINT inactive_footnote_parent`)
+	require.NoError(t, rollbackErr)
+
 	rows, err := tx.Query(ctx, `
 SELECT id::text, interpretive_retrieval_eligible
 FROM citable_units
@@ -286,7 +314,7 @@ INSERT INTO knowledge_mentions (
     'concept', 'fixture', 'fixture', 0, 7, 'aligned', 'fixture', 1, 'bound'
 )`, extractionRunID, bookID)
 	require.Error(t, err, "bound mention without a unit/range/hash must fail")
-	_, rollbackErr := tx.Exec(ctx, `ROLLBACK TO SAVEPOINT invalid_mention_binding`)
+	_, rollbackErr = tx.Exec(ctx, `ROLLBACK TO SAVEPOINT invalid_mention_binding`)
 	require.NoError(t, rollbackErr)
 
 	_, err = tx.Exec(ctx, `SAVEPOINT approved_mention_without_unit`)

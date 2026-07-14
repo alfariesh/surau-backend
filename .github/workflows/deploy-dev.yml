@@ -501,6 +501,14 @@ jobs:
                 sudo -E docker compose --env-file .env.production -f docker-compose.prod.yml "${PROFILE_ARGS[@]}" \
                 exec -T -e GOMEMLIMIT=640MiB -e GOGC=50 app \
                   /backfill -job=citable-units-kitab-catalog-rederive -chunk-size=1 -sleep=200ms -restart
+              # The catalog can replace a large share of active rows. Refresh
+              # planner statistics after LOAD so the p95 proof measures the
+              # intended FTS plan rather than stale pre-backfill estimates.
+              run_with_heartbeat k1-catalog-analyze \
+                sudo docker compose --env-file .env.production -f docker-compose.prod.yml \
+                  exec -T db sh -c \
+                    'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
+                      -c "ANALYZE citable_units"' </dev/null
               run_with_heartbeat k1-catalog-verification \
                 sudo -E docker compose --env-file .env.production -f docker-compose.prod.yml "${PROFILE_ARGS[@]}" \
                 exec -T -e GOMEMLIMIT=640MiB -e GOGC=50 app /backfill -verify-citable-catalog

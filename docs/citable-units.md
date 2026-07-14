@@ -27,7 +27,9 @@ Fondasi: `migrations/20260709065724_add_citable_units.{up,down}.sql`. Adopsi Qur
 online sesudahnya. Perluasan katalog kitab K-1 dimulai oleh
 `migrations/20260713000001_add_k1_citable_catalog.{up,down}.sql`; index K-1 dibuat/diganti oleh
 migrasi `20260713000002` sampai `20260713000013`, dengan setiap `CREATE/DROP INDEX CONCURRENTLY`
-berdiri sendiri agar deploy tidak mengunci tulisan setabel.
+berdiri sendiri agar deploy tidak mengunci tulisan setabel. Migrasi `20260714000001` dan
+`20260714000002` memperbaiki lalu memvalidasi invariant parent footnote dengan pola
+`NOT VALID` → `VALIDATE`.
 
 ### `citable_units`
 
@@ -42,7 +44,7 @@ berdiri sendiri agar deploy tidak mengunci tulisan setabel.
 | `content_role` + `language` | slot publikasi kitab: `book_page/ar`, `section_translation/{lang}`, atau `heading_summary/{lang}`; keduanya immutable dan bagian natural key K-1 |
 | `ordinal` | dicetak-sekali per scope, **tak pernah didaur ulang**; bagian dari anchor |
 | `position` | urutan tampil kini (mutable) |
-| `parent_unit_id` | footnote → unit induk; metadata mutable (di-repoint saat induk berganti) |
+| `parent_unit_id` | footnote → unit induk aktif; metadata mutable (di-repoint saat induk berganti). Bentuk row dijaga CHECK dan lifecycle parent dijaga constraint trigger tertunda di akhir transaksi |
 | `anchor` | grammar kanonik kitab atau `quran/{surah}:{ayah}/u/{ordinal}` (UNIQUE) |
 | `marker` | marker footnote (mis. `(¬٢)`); bagian input hash untuk footnote |
 | `text` / `html` | teks tampilan + html (bila ada) |
@@ -243,6 +245,11 @@ aktif atau menjadi `unlinked` secara fail-closed bila lineage ambigu. Perubahan 
 semua buku lama stale sehingga runner F1-H wajib membuktikannya ulang; view retrieval baru membuka
 buku kembali hanya setelah profil v3 selesai.
 
+Invariant parent tidak bergantung pada audit mingguan: footnote tanpa parent wajib berlabel
+`footnote_link=unlinked`, unit non-footnote tidak boleh membawa parent, dan transaksi tidak dapat
+commit bila unit aktif masih menunjuk parent non-aktif. Status `unlinked` adalah representasi
+fail-closed untuk lineage ambigu, bukan tebakan relasi.
+
 Coverage K-1 dibandingkan kembali terhadap dokumen kanonik. Setiap rentang memakai Unicode
 code point/rune yang sama di Go dan Python, harus berada di dokumen dengan hash yang sama, dan
 seluruh rune yang seharusnya tercakup wajib hadir tepat pada unit aktif.
@@ -349,7 +356,7 @@ jumlahkan `surau_citable_catalog_queue_items` untuk state `pending`, `running`, 
 lengkap di [`docs/data-change-playbook.md`](data-change-playbook.md) §Membaca bukti K-1.
 
 Pencarian unit memakai indeks full-text `simple` atas teks Arab tanpa harakat sebagai jalur umum
-yang bounded; trigram lama tetap dipakai hanya bila hasil exact belum memenuhi jendela evidence.
+yang bounded; trigram lama tetap dipakai hanya bila full-text menghasilkan nol bukti exact.
 Ini mempertahankan toleransi typo/substring tanpa membuat kata umum memindai ratusan ribu unit.
 
 ## Catatan deviasi (vs asumsi roadmap)
