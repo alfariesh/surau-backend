@@ -2,11 +2,13 @@ package v1
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/alfariesh/surau-backend/internal/controller/restapi/v1/request"
 	"github.com/alfariesh/surau-backend/internal/controller/restapi/v1/response"
@@ -14,7 +16,10 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-const maxEmbeddedQuranReferences = 200
+const (
+	maxEmbeddedQuranReferences = 200
+	bookRAGStreamMaxDuration   = 5 * time.Minute
+)
 
 // @Summary     List kitab categories
 // @Description List non-deleted kitab categories. Supported lang values are ar, id, and en; empty defaults to id. Catalog metadata falls back to Arabic and exposes localization metadata when the requested translation is missing.
@@ -233,19 +238,26 @@ func (r *V1) askBookRAG(ctx *fiber.Ctx) error {
 }
 
 func (r *V1) streamBookRAG(ctx *fiber.Ctx, bookID int, lang string, body request.BookRAG) error {
-	userCtx := ctx.UserContext()
+	// Fiber executes the body writer after the handler and tracing middleware
+	// return. The request context is canceled at that boundary, so preserve its
+	// values while giving the stream an explicit bounded lifetime.
+	streamBaseCtx := context.WithoutCancel(ctx.UserContext())
+	reqLog := r.reqLog(ctx)
 	ctx.Set("Content-Type", "text/event-stream")
 	ctx.Set("Cache-Control", "no-cache")
 	ctx.Set("Connection", "keep-alive")
 	ctx.Set("X-Accel-Buffering", "no")
 
 	ctx.Context().SetBodyStreamWriter(func(w *bufio.Writer) {
+		streamCtx, cancel := context.WithTimeout(streamBaseCtx, bookRAGStreamMaxDuration)
+		defer cancel()
+
 		emit := func(event string, payload any) error {
 			return writeSSEEvent(w, event, payload)
 		}
 
 		if err := r.bookRAG.AskBookStream(
-			userCtx,
+			streamCtx,
 			bookID,
 			body.Question,
 			lang,
@@ -253,7 +265,11 @@ func (r *V1) streamBookRAG(ctx *fiber.Ctx, bookID int, lang string, body request
 			body.IncludeTrace,
 			emit,
 		); err != nil {
-			r.logReaderError(ctx, err, "restapi - v1 - streamBookRAG")
+			if isExpectedReaderError(err) {
+				reqLog.Warn("restapi - v1 - streamBookRAG: %s", err)
+			} else {
+				reqLog.Error(err, "restapi - v1 - streamBookRAG")
+			}
 		}
 	})
 

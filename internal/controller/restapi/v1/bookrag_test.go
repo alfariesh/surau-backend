@@ -3,6 +3,7 @@ package v1
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -15,6 +16,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+var errBookRAGStreamTestUnexpected = errors.New("database unavailable")
 
 func TestAskBookRAGBadRequest(t *testing.T) {
 	t.Parallel()
@@ -159,6 +162,85 @@ func TestAskBookRAGStream(t *testing.T) {
 	assert.Contains(t, string(body), `"unit_id":"unit-1"`)
 }
 
+func TestAskBookRAGStreamSurvivesHandlerContextCancellation(t *testing.T) {
+	t.Parallel()
+
+	probe := make(chan streamContextObservation, 1)
+	bookRAG := &fakeBookRAG{stream: true, streamContextProbe: probe}
+	app := fiber.New()
+	controller := &V1{
+		bookRAG: bookRAG,
+		l:       logger.New("error"),
+		v:       validator.New(validator.WithRequiredStructEnabled()),
+	}
+
+	app.Use(func(ctx *fiber.Ctx) error {
+		requestCtx, cancel := context.WithCancel(context.WithValue(
+			ctx.UserContext(), streamContextKey{}, "preserved",
+		))
+		ctx.SetUserContext(requestCtx)
+		err := ctx.Next()
+
+		cancel()
+
+		return err
+	})
+	app.Post("/v1/books/:book_id/rag", controller.askBookRAG)
+
+	req := httptest.NewRequestWithContext(
+		t.Context(),
+		http.MethodPost,
+		"/v1/books/797/rag",
+		bytes.NewBufferString(`{"question":"Apa definisi hadis sahih?","stream":true}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := app.Test(req, -1)
+	require.NoError(t, err)
+
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	assert.Contains(t, string(body), "event: done")
+
+	observation := <-probe
+	assert.NoError(t, observation.Err)
+	assert.Equal(t, "preserved", observation.Value)
+}
+
+func TestAskBookRAGStreamLogsFailuresAfterHandlerReturns(t *testing.T) {
+	t.Parallel()
+
+	var logOutput bytes.Buffer
+
+	app := fiber.New()
+	controller := &V1{
+		bookRAG: &fakeBookRAG{err: errBookRAGStreamTestUnexpected},
+		l:       logger.NewWithWriter("error", &logOutput),
+		v:       validator.New(validator.WithRequiredStructEnabled()),
+	}
+	app.Post("/v1/books/:book_id/rag", controller.askBookRAG)
+
+	req := httptest.NewRequestWithContext(
+		t.Context(),
+		http.MethodPost,
+		"/v1/books/797/rag",
+		bytes.NewBufferString(`{"question":"Apa definisi hadis sahih?","stream":true}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := app.Test(req, -1)
+	require.NoError(t, err)
+
+	defer resp.Body.Close()
+
+	_, err = io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	assert.Contains(t, logOutput.String(), "streamBookRAG")
+	assert.Contains(t, logOutput.String(), errBookRAGStreamTestUnexpected.Error())
+}
+
 func newBookRAGTestApp(bookRAG *fakeBookRAG) *fiber.App {
 	app := fiber.New()
 	controller := &V1{
@@ -172,9 +254,17 @@ func newBookRAGTestApp(bookRAG *fakeBookRAG) *fiber.App {
 }
 
 type fakeBookRAG struct {
-	response entity.BookRAGResponse
-	stream   bool
-	err      error
+	response           entity.BookRAGResponse
+	stream             bool
+	err                error
+	streamContextProbe chan<- streamContextObservation
+}
+
+type streamContextKey struct{}
+
+type streamContextObservation struct {
+	Err   error
+	Value any
 }
 
 func (f *fakeBookRAG) AskBook(
@@ -200,7 +290,7 @@ func (f *fakeBookRAG) AskBook(
 }
 
 func (f *fakeBookRAG) AskBookStream(
-	_ context.Context,
+	ctx context.Context,
 	_ int,
 	_ string,
 	_ string,
@@ -208,6 +298,21 @@ func (f *fakeBookRAG) AskBookStream(
 	_ bool,
 	emit func(event string, payload any) error,
 ) error {
+	if f.streamContextProbe != nil {
+		f.streamContextProbe <- streamContextObservation{
+			Err:   ctx.Err(),
+			Value: ctx.Value(streamContextKey{}),
+		}
+	}
+
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	if f.err != nil {
+		return f.err
+	}
+
 	if !f.stream {
 		return nil
 	}
