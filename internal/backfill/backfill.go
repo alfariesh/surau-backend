@@ -303,6 +303,22 @@ WHERE job_name = $1`, job.Name()).
 		state.RowsDone = 0
 	}
 
+	// Durable sub-queues reference backfill_jobs. Seed a new checkpoint before
+	// Prepare synchronizes those rows, then overwrite rows_total below after
+	// the preparer has exposed every pending/drifted item.
+	if !found {
+		_, err = r.Pool.Exec(ctx, `
+INSERT INTO backfill_jobs (
+    job_name, status, last_cursor, rows_total, rows_done, profile_version,
+    error, started_at, updated_at, finished_at
+)
+VALUES ($1, $2, 0, 0, 0, $3, NULL, now(), now(), NULL)`,
+			job.Name(), StatusRunning, job.ProfileVersion())
+		if err != nil {
+			return State{}, fmt.Errorf("backfill %s: seed checkpoint: %w", job.Name(), err)
+		}
+	}
+
 	if preparer, ok := job.(jobPreparer); ok {
 		if err := preparer.Prepare(ctx, r.Pool); err != nil {
 			return State{}, fmt.Errorf("backfill %s: prepare queue: %w", job.Name(), err)
