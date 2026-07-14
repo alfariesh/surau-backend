@@ -392,6 +392,8 @@ func applyReconcileTx(ctx context.Context, tx pgx.Tx, plan *entity.UnitReconcile
 
 	batch := &pgx.Batch{}
 	mintCount := 0
+	stmtLabels := make([]string, 0, len(plan.Mints)+len(plan.HistoricalMints)+
+		len(plan.Updates)+len(plan.Retires)+len(plan.Edges)+1)
 	queueMint := func(u *entity.CitableUnit) error {
 		detail, err := json.Marshal(u.ProvenanceDetail)
 		if err != nil {
@@ -412,6 +414,8 @@ func applyReconcileTx(ctx context.Context, tx pgx.Tx, plan *entity.UnitReconcile
 			u.NormalizationVersion, u.ContentHash, u.Occurrence, u.Language, u.ContentRole,
 			u.ReviewStatus, u.SourceDocumentHash, u.SourceCharStart, u.SourceCharEnd,
 			u.ProvenanceClass, detail, u.GenerationRunID, u.LicenseStatus, u.Lifecycle)
+		stmtLabels = append(stmtLabels, fmt.Sprintf("mint unit=%s kind=%s marker=%t parent=%t footnote_link=%v lifecycle=%s",
+			u.ID, u.Kind, u.Marker != nil, u.ParentUnitID != nil, u.ProvenanceDetail["footnote_link"], u.Lifecycle))
 
 		mintCount++
 
@@ -460,6 +464,7 @@ func applyReconcileTx(ctx context.Context, tx pgx.Tx, plan *entity.UnitReconcile
 			WHERE id = $1 AND lifecycle = 'active'`,
 			up.ID, up.Position, up.PageID, up.ParentUnitID, detail, up.HTML,
 			up.ReviewStatus, up.SourceDocumentHash, up.SourceCharStart, up.SourceCharEnd)
+		stmtLabels = append(stmtLabels, "update unit="+up.ID)
 	}
 
 	for _, ret := range plan.Retires {
@@ -468,12 +473,14 @@ func applyReconcileTx(ctx context.Context, tx pgx.Tx, plan *entity.UnitReconcile
 			SET lifecycle = $2, retired_at = now(), updated_at = now()
 			WHERE id = $1 AND lifecycle = 'active'`,
 			ret.ID, ret.Lifecycle)
+		stmtLabels = append(stmtLabels, "retire unit="+ret.ID+" lifecycle="+ret.Lifecycle)
 	}
 
 	for _, e := range plan.Edges {
 		batch.Queue(`
 			INSERT INTO citable_unit_lineage (predecessor_id, successor_id, reason)
 			VALUES ($1, $2, $3)`, e.PredecessorID, e.SuccessorID, e.Reason)
+		stmtLabels = append(stmtLabels, "lineage predecessor="+e.PredecessorID+" successor="+e.SuccessorID)
 	}
 
 	batch.Queue(`
@@ -489,6 +496,7 @@ func applyReconcileTx(ctx context.Context, tx pgx.Tx, plan *entity.UnitReconcile
 		    END
 		WHERE id = $1`, plan.BookID, plan.LoadedAt, entity.KitabUnitDerivationProfileVersion,
 		plan.Intermediate)
+	stmtLabels = append(stmtLabels, fmt.Sprintf("book checkpoint book=%d", plan.BookID))
 
 	results := tx.SendBatch(ctx, batch)
 	for i := 0; i < batch.Len(); i++ {
@@ -496,7 +504,12 @@ func applyReconcileTx(ctx context.Context, tx pgx.Tx, plan *entity.UnitReconcile
 		if err != nil {
 			_ = results.Close()
 
-			return fmt.Errorf("CitableUnitRepo.ApplyReconcile batch stmt %d: %w", i, err)
+			label := "unknown"
+			if i < len(stmtLabels) {
+				label = stmtLabels[i]
+			}
+
+			return fmt.Errorf("CitableUnitRepo.ApplyReconcile batch stmt %d (%s): %w", i, label, err)
 		}
 		// Updates and retires must each hit exactly one live row; a miss means
 		// the snapshot lied despite the fingerprint — abort loudly.
