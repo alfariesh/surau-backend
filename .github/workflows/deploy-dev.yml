@@ -656,9 +656,13 @@ jobs:
                 matched_before="$(metric_value 'surau_book_rag_citation_parity_total{result="matched"')"
                 fallback_before="$(metric_value 'surau_book_rag_legacy_fallbacks_total')"
 
-                sudo docker exec "$RAG_EVAL_API_CONTAINER" \
+                if ! sudo docker exec "$RAG_EVAL_API_CONTAINER" \
                   /rag-eval -base-url http://127.0.0.1:8080 \
-                    -cases /eval/bookrag_rollout_golden.jsonl -output json -verbose
+                    -cases /eval/bookrag_rollout_golden.jsonl -output json -verbose; then
+                  sudo docker logs --tail=120 "$RAG_EVAL_API_CONTAINER" || true
+                  echo "isolated Book-RAG JSON rollout eval failed" >&2
+                  exit 1
+                fi
 
                 sse_output="$(mktemp)"
                 sse_payload='{
