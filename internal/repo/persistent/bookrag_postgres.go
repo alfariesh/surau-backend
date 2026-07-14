@@ -752,8 +752,7 @@ candidates AS MATERIALIZED (
       AND (unit.license_status IS NULL OR unit.license_status = 'permitted')
       AND to_tsvector('simple'::regconfig,
           'book' || unit.book_id::text || ' ' || translate(unit.text, 'ًٌٍَُِّْٰٕٓٔـ', '')) @@ search_query.value
-    ORDER BY (strpos(translate(unit.text, 'ًٌٍَُِّْٰٕٓٔـ', ''), $2) > 0) DESC,
-             unit.page_id, unit.position, unit.ordinal, unit.id
+    ORDER BY unit.page_id, unit.position, unit.ordinal, unit.id
     LIMIT $4
 ),
 matches AS MATERIALIZED (
