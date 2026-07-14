@@ -1,0 +1,5 @@
+# Deterministic dev rollout cases. These books are part of the current published
+# catalog snapshot; each question is an exact source sentence so legacy, dual,
+# and unit retrieval can be compared without model sampling.
+{"name":"catalog_book_1_exact_page_1","book_id":1,"lang":"id","question":"وله رسالة جيدة ونافعة ومفيدة ينبغي لطالب العلم أن يقرأها ويتأملها جيداً لما فيها من العلم النافع.","max_citations":1,"expected_retrieval_mode":"full_tree","max_tree_llm_calls":1,"expected_page_ids":[1],"quote_must_contain":["وله رسالة جيدة ونافعة ومفيدة"],"require_unit_citations":true}
+{"name":"catalog_book_3_exact_page_1","book_id":3,"lang":"id","question":"ولد ليلة النحر سنة تسع وخمسمائة.","max_citations":1,"expected_retrieval_mode":"full_tree","max_tree_llm_calls":1,"expected_page_ids":[1],"quote_must_contain":["ولد ليلة النحر سنة تسع وخمسمائة"],"require_unit_citations":true}

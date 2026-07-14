@@ -15,6 +15,8 @@ import (
 const (
 	EmailDeliveryModeCloudflare = "cloudflare"
 	EmailDeliveryModeLog        = "log"
+	RAGLLMDriverOpenAI          = "openai-compatible"
+	RAGLLMDriverRollout         = "deterministic-rollout"
 
 	minCollabServiceTokenBytes = 32
 )
@@ -130,8 +132,9 @@ type (
 
 	// App -.
 	app struct {
-		Name    string `env:"APP_NAME,required"`
-		Version string `env:"APP_VERSION,required"`
+		Name                   string `env:"APP_NAME,required"`
+		Version                string `env:"APP_VERSION,required"`
+		BackgroundLoopsEnabled bool   `env:"BACKGROUND_LOOPS_ENABLED" envDefault:"true"`
 		// Env is the deployment environment (dev/prod), surfaced by GET /version so a
 		// deploy can be verified and clients can tell which backend they hit.
 		Env string `env:"APP_ENV" envDefault:"dev"`
@@ -373,6 +376,7 @@ type (
 
 	// RAG -.
 	rag struct {
+		LLMDriver            string        `env:"RAG_LLM_DRIVER" envDefault:"openai-compatible"`
 		LLMBaseURL           string        `env:"RAG_LLM_BASE_URL" envDefault:"https://ai.sumopod.com/v1"`
 		LLMAPIKey            string        `env:"RAG_LLM_API_KEY"`
 		LLMModel             string        `env:"RAG_LLM_MODEL" envDefault:"glm-5.1"`
@@ -744,6 +748,19 @@ func NewConfig() (*Config, error) {
 	}
 	if cfg.RAG.LLMTimeout <= 0 {
 		return nil, configError("RAG_LLM_TIMEOUT must be positive")
+	}
+
+	cfg.RAG.LLMDriver = strings.ToLower(strings.TrimSpace(cfg.RAG.LLMDriver))
+	switch cfg.RAG.LLMDriver {
+	case RAGLLMDriverOpenAI:
+	case RAGLLMDriverRollout:
+		if !strings.EqualFold(strings.TrimSpace(cfg.App.Env), "dev") || cfg.App.BackgroundLoopsEnabled {
+			return nil, configError(
+				"RAG_LLM_DRIVER deterministic-rollout requires APP_ENV=dev and BACKGROUND_LOOPS_ENABLED=false",
+			)
+		}
+	default:
+		return nil, configError("RAG_LLM_DRIVER must be openai-compatible or deterministic-rollout")
 	}
 	if cfg.RAG.LLMMaxTokens < 1 {
 		return nil, configError("RAG_LLM_MAX_TOKENS must be positive")

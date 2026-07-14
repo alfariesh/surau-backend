@@ -89,14 +89,20 @@ func initUseCases(cfg *config.Config, pg *postgres.Postgres, jwtManager *jwt.Man
 	anchorRepo := persistent.NewAnchorRepo(pg)
 	crossReferenceRepo := persistent.NewCrossReferenceRepo(pg)
 	emailRepo := persistent.NewEmailRepo(pg)
-	llmClient := webapi.NewOpenAICompatibleClient(webapi.OpenAICompatibleOptions{
-		BaseURL:     cfg.RAG.LLMBaseURL,
-		APIKey:      cfg.RAG.LLMAPIKey,
-		Model:       cfg.RAG.LLMModel,
-		Timeout:     cfg.RAG.LLMTimeout,
-		MaxTokens:   cfg.RAG.LLMMaxTokens,
-		Temperature: cfg.RAG.LLMTemperature,
-	})
+
+	var llmClient bookrag.LLMClient
+	if cfg.RAG.LLMDriver == config.RAGLLMDriverRollout {
+		llmClient = webapi.NewDeterministicRolloutLLMClient()
+	} else {
+		llmClient = webapi.NewOpenAICompatibleClient(webapi.OpenAICompatibleOptions{
+			BaseURL:     cfg.RAG.LLMBaseURL,
+			APIKey:      cfg.RAG.LLMAPIKey,
+			Model:       cfg.RAG.LLMModel,
+			Timeout:     cfg.RAG.LLMTimeout,
+			MaxTokens:   cfg.RAG.LLMMaxTokens,
+			Temperature: cfg.RAG.LLMTemperature,
+		})
+	}
 	var emailSender repo.EmailSender
 	if cfg.Email.DeliveryMode == config.EmailDeliveryModeLog {
 		emailSender = webapi.NewLogEmailSender()
@@ -409,8 +415,10 @@ func (s *servers) startServers(
 	loopCtx, cancel := context.WithCancel(context.Background())
 	s.loopStop = cancel
 
-	for _, spec := range buildLoopSpecs(cfg, emailUC, userUC, notificationUC, unitRegistryUC, l) {
-		s.startLoop(loopCtx, spec, l)
+	if cfg.App.BackgroundLoopsEnabled {
+		for _, spec := range buildLoopSpecs(cfg, emailUC, userUC, notificationUC, unitRegistryUC, l) {
+			s.startLoop(loopCtx, spec, l)
+		}
 	}
 
 	s.http.Start()

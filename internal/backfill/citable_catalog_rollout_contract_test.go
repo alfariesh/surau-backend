@@ -16,6 +16,8 @@ func TestK1DevRolloutKeepsDefaultStateOutOfApplicationConfig(t *testing.T) {
 	require.NoError(t, err)
 	override, err := os.ReadFile("../../docker-compose.code-default.yml")
 	require.NoError(t, err)
+	rolloutGolden, err := os.ReadFile("../../eval/bookrag_rollout_golden.jsonl")
+	require.NoError(t, err)
 
 	text := string(workflow)
 	normalizeDefault := strings.Index(text, `if [ "$RUNTIME_BOOK_RAG_MODE" = default ]; then`)
@@ -44,6 +46,14 @@ func TestK1DevRolloutKeepsDefaultStateOutOfApplicationConfig(t *testing.T) {
 	assert.Contains(t, text, `"legacy_fallback":true`)
 	assert.Contains(t, text, `matched_after`)
 	assert.Contains(t, text, `sha=%s`)
+	assert.Contains(t, text, "RAG_EVAL_API_CONTAINER=surau-k1-rag-eval-api")
+	assert.Contains(t, text, "BACKGROUND_LOOPS_ENABLED=false")
+	assert.Contains(t, text, "RAG_LLM_DRIVER=deterministic-rollout")
+	assert.Contains(t, text, "/eval/bookrag_rollout_golden.jsonl")
+	assert.NotContains(t, text, "-cases /eval/bookrag_smoke.jsonl")
+	assert.NotContains(t, text, "-cases /eval/bookrag_golden.jsonl")
+	assert.Contains(t, string(rolloutGolden), `"book_id":1`)
+	assert.Contains(t, string(rolloutGolden), `"book_id":3`)
 }
 
 func TestK1DevRolloutKeepsLongCatalogCommandsObservable(t *testing.T) {
