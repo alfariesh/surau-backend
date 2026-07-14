@@ -50,24 +50,29 @@ const catalogParityMaxContextPages = 1
 
 const (
 	catalogParityCandidatesPerBook = 64
-	catalogParityLegacyHits        = 12
+	catalogParityLegacyHits        = 10
 	catalogParityQuoteRunes        = 256
 	catalogParityPageSourceRunes   = 4000
 	catalogParityUnitSourceRunes   = 4000
 	catalogParityMinimumQuoteRunes = 4
 	catalogParityWindowDivisor     = 2
-	catalogParityQuotesPerWindow   = 2
+	catalogParityQuotesPerWindow   = 8
 )
 
 type catalogParityVerification struct {
-	target            int64
-	verified          int64
-	mismatches        int64
-	unresolved        int64
-	samplesMissing    int64
-	denialMismatches  int64
-	requestMismatches int64
-	locatorMismatches int64
+	target                int64
+	verified              int64
+	mismatches            int64
+	unresolved            int64
+	samplesMissing        int64
+	denialMismatches      int64
+	requestMismatches     int64
+	locatorMismatches     int64
+	missingSampleBooks    []int
+	denialMismatchBooks   []int
+	requestMismatchBooks  []int
+	locatorMismatchBooks  []int
+	unresolvedAnchorBooks []int
 }
 
 var (
@@ -153,13 +158,14 @@ func verifyFullCatalogBookRAGParity(
 ) (catalogParityVerification, error) {
 	result := catalogParityVerification{}
 
-	samples, target, err := loadCatalogParitySamples(ctx, pool, ragRepo)
+	samples, missingSampleBooks, target, err := loadCatalogParitySamples(ctx, pool, ragRepo)
 	if err != nil {
 		return result, err
 	}
 
 	result.target = target
-	result.samplesMissing = target - int64(len(samples))
+	result.missingSampleBooks = missingSampleBooks
+	result.samplesMissing = int64(len(missingSampleBooks))
 	result.mismatches += result.samplesMissing
 
 	for _, sample := range samples {
@@ -174,6 +180,7 @@ func verifyFullCatalogBookRAGParity(
 			if !errors.Is(denialErr, entity.ErrBookNotFound) || len(response.Citations) != 0 || llm.calls != 0 {
 				result.mismatches++
 				result.denialMismatches++
+				result.denialMismatchBooks = append(result.denialMismatchBooks, sample.bookID)
 
 				continue
 			}
@@ -193,6 +200,7 @@ func verifyFullCatalogBookRAGParity(
 		if askErr != nil || len(response.Citations) != 1 {
 			result.mismatches++
 			result.requestMismatches++
+			result.requestMismatchBooks = append(result.requestMismatchBooks, sample.bookID)
 
 			continue
 		}
@@ -207,6 +215,7 @@ func verifyFullCatalogBookRAGParity(
 			citation.UnitAnchor == nil || *citation.UnitAnchor != sample.anchor {
 			result.mismatches++
 			result.locatorMismatches++
+			result.locatorMismatchBooks = append(result.locatorMismatchBooks, sample.bookID)
 
 			continue
 		}
@@ -216,6 +225,7 @@ func verifyFullCatalogBookRAGParity(
 			len(resolution.ActiveRecords) != 1 || resolution.ActiveRecords[0].UnitID == nil ||
 			*resolution.ActiveRecords[0].UnitID != sample.unitID {
 			result.unresolved++
+			result.unresolvedAnchorBooks = append(result.unresolvedAnchorBooks, sample.bookID)
 
 			continue
 		}
@@ -231,7 +241,7 @@ func loadCatalogParitySamples(
 	ctx context.Context,
 	pool *pgxpool.Pool,
 	ragRepo *persistent.BookRAGRepo,
-) ([]catalogParitySample, int64, error) {
+) ([]catalogParitySample, []int, int64, error) {
 	rows, err := pool.Query(ctx, `
 WITH target AS (
     SELECT book.id,
@@ -281,7 +291,7 @@ ORDER BY target.id,
          candidate.unit_ordinal`,
 		CitableCatalogBookIDs, catalogParityCandidatesPerBook)
 	if err != nil {
-		return nil, 0, fmt.Errorf("verify Book-RAG parity samples: %w", err)
+		return nil, nil, 0, fmt.Errorf("verify Book-RAG parity samples: %w", err)
 	}
 	defer rows.Close()
 
@@ -296,7 +306,7 @@ ORDER BY target.id,
 			unitText, pageText *string
 		)
 		if err := rows.Scan(&sample.bookID, &sample.public, &headingID, &pageID, &unitText, &pageText); err != nil {
-			return nil, int64(len(targets)), fmt.Errorf("verify Book-RAG parity samples scan: %w", err)
+			return nil, nil, int64(len(targets)), fmt.Errorf("verify Book-RAG parity samples scan: %w", err)
 		}
 
 		if _, exists := seenTargets[sample.bookID]; !exists {
@@ -318,12 +328,13 @@ ORDER BY target.id,
 	}
 
 	if err := rows.Err(); err != nil {
-		return nil, int64(len(targets)), fmt.Errorf("verify Book-RAG parity samples rows: %w", err)
+		return nil, nil, int64(len(targets)), fmt.Errorf("verify Book-RAG parity samples rows: %w", err)
 	}
 
 	rows.Close()
 
 	samples := make([]catalogParitySample, 0, len(targets))
+	missingSampleBooks := make([]int, 0)
 	for i := range targets {
 		targetItem := targets[i]
 		if !targetItem.public {
@@ -335,7 +346,7 @@ ORDER BY target.id,
 		for _, candidate := range candidates[targetItem.bookID] {
 			quote, locator, resolveErr := catalogParityCandidateQuote(ctx, ragRepo, candidate)
 			if resolveErr != nil {
-				return nil, int64(len(targets)), resolveErr
+				return nil, nil, int64(len(targets)), resolveErr
 			}
 
 			if !locator.Found {
@@ -351,9 +362,13 @@ ORDER BY target.id,
 
 			break
 		}
+
+		if len(samples) == 0 || samples[len(samples)-1].bookID != targetItem.bookID {
+			missingSampleBooks = append(missingSampleBooks, targetItem.bookID)
+		}
 	}
 
-	return samples, int64(len(targets)), nil
+	return samples, missingSampleBooks, int64(len(targets)), nil
 }
 
 func catalogParityCandidateQuote(

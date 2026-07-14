@@ -57,6 +57,11 @@ type CitableCatalogVerification struct {
 	ParityDenialMismatches     int64                         `json:"parity_denial_mismatches"`
 	ParityRequestMismatches    int64                         `json:"parity_request_mismatches"`
 	ParityLocatorMismatches    int64                         `json:"parity_locator_mismatches"`
+	ParityMissingSampleBooks   []int                         `json:"parity_missing_sample_books,omitempty"`
+	ParityDenialMismatchBooks  []int                         `json:"parity_denial_mismatch_books,omitempty"`
+	ParityRequestMismatchBooks []int                         `json:"parity_request_mismatch_books,omitempty"`
+	ParityLocatorMismatchBooks []int                         `json:"parity_locator_mismatch_books,omitempty"`
+	ParityUnresolvedBooks      []int                         `json:"parity_unresolved_anchor_books,omitempty"`
 	UnitAnchorsUnresolved      int64                         `json:"unit_anchors_unresolved"`
 	DeterminismVerifiedBooks   int64                         `json:"determinism_verified_books"`
 	QueuePending               int64                         `json:"queue_pending"`
@@ -377,6 +382,11 @@ ORDER BY unit_binding_status`, CitableCatalogBookIDs)
 	report.ParityDenialMismatches = parity.denialMismatches
 	report.ParityRequestMismatches = parity.requestMismatches
 	report.ParityLocatorMismatches = parity.locatorMismatches
+	report.ParityMissingSampleBooks = parity.missingSampleBooks
+	report.ParityDenialMismatchBooks = parity.denialMismatchBooks
+	report.ParityRequestMismatchBooks = parity.requestMismatchBooks
+	report.ParityLocatorMismatchBooks = parity.locatorMismatchBooks
+	report.ParityUnresolvedBooks = parity.unresolvedAnchorBooks
 	report.UnitAnchorsUnresolved = parity.unresolved
 
 	report.Passed = report.TargetBooks > 0 &&

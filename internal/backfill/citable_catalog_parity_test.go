@@ -20,12 +20,12 @@ func TestCatalogParitySamplesUseBoundedCandidatesAndExactResolver(t *testing.T) 
 	text := string(source)
 	assert.Contains(t, text, "LIMIT $2")
 	assert.Contains(t, text, "catalogParityCandidatesPerBook = 64")
-	assert.Contains(t, text, "catalogParityLegacyHits        = 12")
+	assert.Contains(t, text, "catalogParityLegacyHits        = 10")
 	assert.Contains(t, text, "catalogParityQuoteRunes        = 256")
 	assert.Contains(t, text, "catalogParityPageSourceRunes   = 4000")
 	assert.Contains(t, text, "catalogParityUnitSourceRunes   = 4000")
 	assert.Contains(t, text, "catalogParityWindowDivisor     = 2")
-	assert.Contains(t, text, "catalogParityQuotesPerWindow   = 2")
+	assert.Contains(t, text, "catalogParityQuotesPerWindow   = 8")
 	assert.Contains(t, text, "ragRepo.ResolveRAGUnitCitation(")
 	assert.Contains(t, text, "ragRepo.SearchRAGPages(")
 	assert.Contains(t, text, "pagePrefix")
@@ -63,6 +63,13 @@ func TestCatalogParitySearchUsesPerBookFTSAndSourceHeadingOrder(t *testing.T) {
 		"the concurrent-index migration must remain one SQL statement")
 	assert.Contains(t, string(repoSource), "'book' || unit.book_id::text || ' '")
 	assert.Contains(t, string(repoSource), "'book' || ($1::integer)::text")
+	assert.GreaterOrEqual(t, strings.Count(string(repoSource),
+		"array_position($3::integer[]"), 2,
+		"legacy and unit source selection must preserve ranked focus-page order")
+	assert.Contains(t, string(repoSource),
+		"ORDER BY focus_rank ASC, focus_position ASC, page_id ASC")
+	assert.Contains(t, string(repoSource),
+		"ORDER BY focus_rank ASC, focus_position ASC NULLS LAST, page_id ASC")
 }
 
 func TestCatalogParityLegacyFirstHitMustMatchUnitLocator(t *testing.T) {

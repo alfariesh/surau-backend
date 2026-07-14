@@ -97,6 +97,23 @@ func TestLiveBookRAGRetrievalEligibility(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, sources, 3)
 
+	rankedSources, err := repository.GetRAGPageSources(
+		ctx,
+		bookRAGProvenanceBookID,
+		[]int{
+			bookRAGProvenanceUnreviewedHeadingID,
+			bookRAGProvenanceReviewedHeadingID,
+			bookRAGProvenanceSourceHeadingID,
+		},
+		[]int{3, 1, 2},
+		"en",
+		2,
+	)
+	require.NoError(t, err)
+	require.Len(t, rankedSources, 2)
+	assert.Equal(t, 3, rankedSources[0].PageID, "the strongest lexical page must be the first source block")
+	assert.Equal(t, 1, rankedSources[1].PageID, "focus-page rank must win over numeric page order")
+
 	unreviewedSource := requireRAGPageSource(t, sources, bookRAGProvenanceUnreviewedHeadingID)
 	assert.Nil(t, unreviewedSource.TranslationText)
 	reviewedSource := requireRAGPageSource(t, sources, bookRAGProvenanceReviewedHeadingID)
