@@ -14,8 +14,9 @@ import (
 )
 
 const (
-	arabicSearchMarks         = "\u064b\u064c\u064d\u064e\u064f\u0650\u0651\u0652\u0653\u0654\u0655\u0670\u0640"
-	maxCitationLocatorMatches = 2
+	arabicSearchMarks          = "\u064b\u064c\u064d\u064e\u064f\u0650\u0651\u0652\u0653\u0654\u0655\u0670\u0640"
+	maxCitationLocatorMatches  = 2
+	ragUnitExactCandidateLimit = 1024
 )
 
 // BookRAGRepo provides retrieval queries for PageIndex-like book RAG.
@@ -720,14 +721,11 @@ func (r *BookRAGRepo) searchRAGUnitsExact(
 WITH search_query AS (
     SELECT plainto_tsquery('simple'::regconfig, $2) AS value
 ),
-matches AS MATERIALIZED (
+candidates AS MATERIALIZED (
     SELECT unit.id,
            unit.heading_id,
            unit.page_id,
-           ts_rank_cd(
-               to_tsvector('simple'::regconfig, translate(unit.text, 'ًٌٍَُِّْٰٕٓٔـ', '')),
-               search_query.value
-           )::float8 AS score
+           unit.text
     FROM citable_units unit
     CROSS JOIN search_query
     WHERE unit.book_id = $1
@@ -739,6 +737,19 @@ matches AS MATERIALIZED (
       AND unit.page_id IS NOT NULL
       AND (unit.license_status IS NULL OR unit.license_status = 'permitted')
       AND to_tsvector('simple'::regconfig, translate(unit.text, 'ًٌٍَُِّْٰٕٓٔـ', '')) @@ search_query.value
+    ORDER BY unit.page_id, unit.position, unit.ordinal, unit.id
+    LIMIT $4
+),
+matches AS MATERIALIZED (
+    SELECT candidate.id,
+           candidate.heading_id,
+           candidate.page_id,
+           ts_rank_cd(
+               to_tsvector('simple'::regconfig, translate(candidate.text, 'ًٌٍَُِّْٰٕٓٔـ', '')),
+               search_query.value
+           )::float8 AS score
+    FROM candidates candidate
+    CROSS JOIN search_query
 )
 SELECT eligible.heading_id,
        eligible.page_id,
@@ -749,7 +760,7 @@ GROUP BY eligible.heading_id, eligible.page_id
 ORDER BY score DESC, eligible.page_id ASC, eligible.heading_id ASC
 LIMIT $3`
 
-	return r.queryRAGUnitSearch(ctx, sqlText, bookID, query, limit, "exact")
+	return r.queryRAGUnitSearch(ctx, sqlText, bookID, query, limit, "exact", ragUnitExactCandidateLimit)
 }
 
 func (r *BookRAGRepo) searchRAGUnitsFuzzy(
