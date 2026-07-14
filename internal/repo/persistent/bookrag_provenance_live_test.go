@@ -246,15 +246,6 @@ VALUES ($1, $2, 1, 1), ($1, $3, 2, 2), ($1, $4, 3, 3)`,
 				bookRAGProvenanceSourceHeadingID,
 			},
 		},
-		{
-			query: `
-UPDATE books
-SET units_derived_at = now(),
-    units_stale_at = NULL,
-    units_derivation_profile_version = $2
-WHERE id = $1`,
-			args: []any{bookRAGProvenanceBookID, entity.KitabUnitDerivationProfileVersion},
-		},
 		{query: `SET LOCAL surau.registry_writer = 'unit-service'`},
 		{
 			query: `
@@ -342,6 +333,15 @@ VALUES
 				"source-authored summary " + bookRAGSourceNeedle,
 				bookRAGProvenanceRunID,
 			},
+		},
+		{
+			query: `
+UPDATE books
+SET units_derived_at = now(),
+    units_stale_at = NULL,
+    units_derivation_profile_version = $2
+WHERE id = $1`,
+			args: []any{bookRAGProvenanceBookID, entity.KitabUnitDerivationProfileVersion},
 		},
 	}
 
