@@ -32,7 +32,12 @@ type catalogParityLLM struct {
 	calls     int
 }
 
-const catalogParityMaxContextPages = 8
+// A catalog proof quote is selected to occur in exactly one eligible unit in
+// the book. One retrieved page is therefore sufficient to exercise the real
+// retrieval, quote validator, dual projection, and Anchor resolver. Keeping
+// the context at one also prevents the acceptance gate from issuing hundreds
+// of progressively weaker token searches merely to fill unused context slots.
+const catalogParityMaxContextPages = 1
 
 var (
 	errCatalogParityStreamUnsupported = errors.New("catalog parity stub does not stream")
@@ -217,19 +222,12 @@ LEFT JOIN LATERAL (
     CROSS JOIN LATERAL (
         SELECT candidate.quote
         FROM (
-            VALUES
-                (unit.text, 0),
-                (substring(unit.text FROM 1 FOR 512), 1),
-                (substring(unit.text FROM 513 FOR 512), 2),
-                (substring(unit.text FROM 1025 FOR 512), 3),
-                (substring(unit.text FROM 1537 FOR 512), 4),
-                (substring(unit.text FROM 2049 FOR 512), 5),
-                (substring(unit.text FROM 2561 FOR 512), 6),
-                (substring(unit.text FROM 3073 FOR 512), 7),
-                (substring(unit.text FROM 3585 FOR 416), 8)
-        ) candidate(quote, priority)
+            SELECT substring(unit.text FROM starts.start_pos FOR 256) AS quote,
+                   starts.start_pos AS priority
+            FROM generate_series(1, 3841, 256) AS starts(start_pos)
+        ) candidate
         WHERE char_length(btrim(candidate.quote)) >= 4
-          AND char_length(candidate.quote) <= 4000
+          AND char_length(candidate.quote) <= 256
           AND strpos(COALESCE(edit.content_text, page.content_text), candidate.quote) > 0
           AND strpos(COALESCE(edit.content_text, page.content_text), candidate.quote)
                 + char_length(candidate.quote) - 1 <= 4000
@@ -237,8 +235,6 @@ LEFT JOIN LATERAL (
               SELECT COUNT(*)
               FROM public_book_interpretive_citable_units peer
               WHERE peer.book_id = unit.book_id
-                AND peer.heading_id = unit.heading_id
-                AND peer.page_id = unit.page_id
                 AND peer.content_role = 'book_page'
                 AND strpos(peer.text, candidate.quote) > 0
           ) = 1
