@@ -154,7 +154,6 @@ func TestK1DevRolloutPrebuildsBookScopedFTSBeforeCandidateBoot(t *testing.T) {
 	assert.Contains(t, text, "SET version=20260714000002, dirty=FALSE")
 	assert.Contains(t, text, "WHERE version=20260714000003 AND dirty")
 	assert.Contains(t, text, `rewound_book_fts_state" != "20260714000002:false"`)
-	assert.Contains(t, text, "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_citable_units_book_text_fts_interpretive")
-	assert.Contains(t, text, `'\''book'\'' || book_id::text || '\'' '\''`)
+	assert.Contains(t, text, "< migrations/20260714000003_add_k1_book_unit_fts_index.up.sql")
 	assert.Contains(t, text, `book_fts_index_valid" != "t"`)
 }

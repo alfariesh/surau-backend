@@ -513,21 +513,8 @@ jobs:
               run_with_heartbeat k1-book-fts-index-expand \
                 sudo docker compose --env-file .env.production -f docker-compose.prod.yml \
                 exec -T -e 'PGOPTIONS=-c maintenance_work_mem=64MB' db sh -c \
-                'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c \
-                  "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_citable_units_book_text_fts_interpretive \
-                   ON citable_units USING gin ( \
-                     to_tsvector( \
-                       '\''simple'\''::regconfig, \
-                       '\''book'\'' || book_id::text || '\'' '\'' || \
-                         translate(text, '\''ًٌٍَُِّْٰٕٓٔـ'\'', '\'''\'') \
-                     ) \
-                   ) \
-                   WHERE lifecycle = '\''active'\'' \
-                     AND corpus = '\''kitab'\'' \
-                     AND interpretive_retrieval_eligible \
-                     AND content_role = '\''book_page'\'' \
-                     AND heading_id IS NOT NULL \
-                     AND page_id IS NOT NULL"' </dev/null
+                'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' \
+                < migrations/20260714000003_add_k1_book_unit_fts_index.up.sql
             fi
             book_fts_index_valid="$(sudo docker compose --env-file .env.production \
               -f docker-compose.prod.yml exec -T db sh -c \
