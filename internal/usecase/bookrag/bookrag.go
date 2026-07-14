@@ -966,6 +966,10 @@ func retrievalQueries(question string) []string {
 		}
 		queries = append(queries, query)
 	}
+	// An exact phrase is the strongest evidence and must keep the first
+	// retrieval slot. Expansions and individual Arabic tokens remain fallbacks
+	// when the full question has no indexed match.
+	add(question)
 
 	expansions := map[string][]string{
 		"sahih":  {"الصحيح", "حديث صحيح"},
@@ -998,8 +1002,6 @@ func retrievalQueries(question string) []string {
 			add(token)
 		}
 	}
-	add(question)
-
 	return queries
 }
 

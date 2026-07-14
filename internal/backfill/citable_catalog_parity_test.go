@@ -11,6 +11,46 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+type catalogParityRepoStub struct {
+	locators map[int]entity.RAGUnitLocator
+	hits     []entity.RAGSearchResult
+	sources  []entity.RAGPageSource
+	err      error
+}
+
+func (r catalogParityRepoStub) ResolveRAGUnitCitation(
+	_ context.Context,
+	_, _, pageID int,
+	_ string,
+) (entity.RAGUnitLocator, error) {
+	if r.err != nil {
+		return entity.RAGUnitLocator{}, r.err
+	}
+
+	return r.locators[pageID], nil
+}
+
+func (r catalogParityRepoStub) SearchRAGPages(
+	context.Context,
+	int,
+	string,
+	string,
+	int,
+) ([]entity.RAGSearchResult, error) {
+	return r.hits, r.err
+}
+
+func (r catalogParityRepoStub) GetRAGPageSources(
+	context.Context,
+	int,
+	[]int,
+	[]int,
+	string,
+	int,
+) ([]entity.RAGPageSource, error) {
+	return r.sources, r.err
+}
+
 func TestCatalogParitySamplesUseBoundedCandidatesAndExactResolver(t *testing.T) {
 	t.Parallel()
 
@@ -84,6 +124,48 @@ func TestCatalogParityLegacyFirstHitMustMatchUnitLocator(t *testing.T) {
 	assert.False(t, catalogParityLegacyFirstHitMatches(nil, candidate))
 }
 
+func TestCatalogParitySampleFollowsResolvableLegacyTopHit(t *testing.T) {
+	t.Parallel()
+
+	quote := "نص فريد للاختبار"
+	repo := catalogParityRepoStub{
+		locators: map[int]entity.RAGUnitLocator{
+			1: {Found: true, UnitID: "unit-1", UnitAnchor: "kitab/7/h/11/u/1"},
+			2: {Found: true, UnitID: "unit-2", UnitAnchor: "kitab/7/h/12/u/1"},
+		},
+		hits: []entity.RAGSearchResult{{HeadingID: 11, PageID: 1}},
+		sources: []entity.RAGPageSource{{
+			BookID: 7, HeadingID: 11, PageID: 1, ContentText: quote,
+		}},
+	}
+
+	actualQuote, candidate, locator, err := catalogParityCandidateQuote(
+		context.Background(),
+		repo,
+		catalogParityCandidate{
+			bookID: 7, headingID: 12, pageID: 2, unitText: quote, pageText: quote,
+		},
+	)
+	require.NoError(t, err)
+	assert.Equal(t, quote, actualQuote)
+	assert.Equal(t, 11, candidate.headingID)
+	assert.Equal(t, 1, candidate.pageID)
+	assert.Equal(t, "unit-1", locator.UnitID)
+}
+
+func TestCatalogParityTopHitPropagatesRepositoryError(t *testing.T) {
+	t.Parallel()
+
+	candidate, locator, resolved, err := catalogParityResolveLegacyTopHit(
+		context.Background(), catalogParityRepoStub{err: assert.AnError}, 7,
+		[]entity.RAGSearchResult{{HeadingID: 11, PageID: 1}}, "نص",
+	)
+	require.ErrorIs(t, err, assert.AnError)
+	assert.Empty(t, candidate)
+	assert.Empty(t, locator)
+	assert.False(t, resolved)
+}
+
 func TestCatalogParityStubSelectsRefForExpectedPage(t *testing.T) {
 	t.Parallel()
 
@@ -123,4 +205,36 @@ Arabic source:
 
 	require.NoError(t, err)
 	assert.JSONEq(t, `{"answer":"Bukti tidak ditemukan dalam source block.","citations":[]}`, response)
+}
+
+func TestCatalogParityDiagnosticsDoNotExposeQuoteContent(t *testing.T) {
+	t.Parallel()
+
+	errDiagnostic := catalogParityRequestDiagnostic(
+		&catalogParitySample{bookID: 7},
+		&entity.BookRAGResponse{Citations: []entity.BookRAGCitation{{}}},
+		context.DeadlineExceeded,
+		2,
+	)
+	assert.Equal(t, `book=7 class=request citations=1 llm_calls=2 error="context deadline exceeded"`, errDiagnostic)
+
+	unitID := "unit-actual"
+	unitAnchor := "kitab/7/h/9/u/1"
+	locatorDiagnostic := catalogParityLocatorDiagnostic(
+		&catalogParitySample{bookID: 7, headingID: 8, pageID: 3, unitID: "unit-expected"},
+		&entity.BookRAGCitation{
+			HeadingID:  9,
+			PageID:     4,
+			UnitID:     &unitID,
+			UnitAnchor: &unitAnchor,
+			Quote:      "must not be logged",
+		},
+	)
+	assert.Equal(
+		t,
+		"book=7 class=locator expected_heading=8 expected_page=3 expected_unit=unit-expected "+
+			"actual_heading=9 actual_page=4 actual_unit=unit-actual actual_anchor=kitab/7/h/9/u/1",
+		locatorDiagnostic,
+	)
+	assert.NotContains(t, locatorDiagnostic, "must not be logged")
 }

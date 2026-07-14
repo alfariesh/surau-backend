@@ -59,6 +59,7 @@ func TestRetrievalQueriesExpandsCommonTerms(t *testing.T) {
 
 	queries := retrievalQueries("Apa definisi hadis sahih dan اللَّهُ نُورُ?")
 
+	assert.Equal(t, "Apa definisi hadis sahih dan اللَّهُ نُورُ?", queries[0])
 	assert.Contains(t, queries, "الصحيح")
 	assert.Contains(t, queries, "حديث صحيح")
 	assert.Contains(t, queries, "اللَّهُ نُورُ")
