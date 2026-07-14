@@ -38,14 +38,16 @@ func TestBookRAGUnitQueriesUseStructuralPublicView(t *testing.T) {
 		"the unit search query must use the same immutable full-text configuration as its index")
 	assert.Contains(t, querySource, "matches AS MATERIALIZED (",
 		"the indexed unit match set must be isolated before publication joins and ranking")
-	assert.Contains(t, querySource, "1::float8 AS score",
-		"exact boolean matches must not recompute an expensive vector rank for every candidate")
+	assert.Contains(t, querySource, "THEN 2::float8",
+		"verbatim unit matches must outrank broader full-text matches on the same page")
+	assert.Contains(t, querySource, "eligible.id::text AS unit_id",
+		"unit search must retain the exact lexical unit identity for source ordering")
 	assert.Contains(t, querySource, "candidates AS MATERIALIZED (",
 		"common terms must be bounded before per-row ranking")
 	assert.Contains(t, querySource, "ragUnitExactCandidateLimit = 1024",
 		"the exact candidate ceiling must remain explicit and reviewable")
-	assert.Contains(t, querySource, "ORDER BY unit.page_id, unit.position, unit.ordinal, unit.id\n    LIMIT $4",
-		"the bounded exact window must be deterministic")
+	assert.Contains(t, querySource, "unit.page_id, unit.position, unit.ordinal, unit.id\n    LIMIT $4",
+		"the bounded exact window must remain deterministic after phrase prioritization")
 	assert.Contains(t, querySource, "AND unit.interpretive_retrieval_eligible",
 		"the base-table FTS fast path must reproduce the generated structural trust boundary")
 	assert.Contains(t, querySource, "JOIN public_book_interpretive_citable_units eligible ON eligible.id = matches.id",

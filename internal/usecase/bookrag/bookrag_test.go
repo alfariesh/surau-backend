@@ -572,6 +572,47 @@ func TestUseCaseUnitModeUsesUnitEvidence(t *testing.T) {
 	assert.Equal(t, CitationModeUnit, response.Trace.CitationMode)
 }
 
+func TestUseCaseUnitModePromotesExactLexicalUnitWithinPage(t *testing.T) {
+	t.Parallel()
+
+	repository, llm := happyBookRAGFixture()
+	openingID := "unit-opening"
+	targetID := "unit-target"
+	openingAnchor := "kitab/797/h/11/u/1"
+	targetAnchor := "kitab/797/h/11/u/2"
+	repository.searchResults = []entity.RAGSearchResult{{
+		HeadingID: 11,
+		PageID:    12,
+		UnitID:    targetID,
+	}}
+	repository.sources = []entity.RAGPageSource{
+		{
+			BookID: 797, HeadingID: 11, PageID: 12, ContentText: "بسم الله الرحمن الرحيم",
+			UnitID: &openingID, UnitAnchor: &openingAnchor,
+		},
+		{
+			BookID: 797, HeadingID: 11, PageID: 12, ContentText: "الحديث الصحيح هو ما اتصل سنده.",
+			UnitID: &targetID, UnitAnchor: &targetAnchor,
+		},
+	}
+	uc := New(repository, llm, Options{CitationMode: CitationModeUnit})
+
+	response, err := uc.AskBook(context.Background(), 797, "الحديث الصحيح هو ما اتصل سنده.", "id", 1, true)
+
+	require.NoError(t, err)
+	require.Len(t, response.Citations, 1)
+	require.NotNil(t, response.Citations[0].UnitID)
+	assert.Equal(t, targetID, *response.Citations[0].UnitID)
+	require.Len(t, llm.messages, 2)
+	answerPrompt := llm.messages[1][1].Content
+	assert.Less(
+		t,
+		strings.Index(answerPrompt, "الحديث الصحيح هو ما اتصل سنده."),
+		strings.Index(answerPrompt, "بسم الله الرحمن الرحيم"),
+		"the exact lexical unit must be the first answer source",
+	)
+}
+
 func TestUseCaseUnitModeFallsBackWholeRequestForTypedIncomplete(t *testing.T) {
 	t.Parallel()
 
