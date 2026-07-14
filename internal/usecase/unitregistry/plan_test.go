@@ -456,6 +456,65 @@ func TestPlanBookFootnoteBecomesUnlinkedRefreshesLabel(t *testing.T) {
 	}
 }
 
+func TestPlanBookNormalizesOrphanParentShapesFailClosed(t *testing.T) {
+	t.Parallel()
+
+	derived := []unitregistry.DerivedUnit{
+		{
+			PageID: 1, Kind: entity.UnitKindFootnote, Text: "orphan footnote", ParentIdx: -1,
+			FootnoteLink: entity.FootnoteLinkMarker, ContentRole: entity.UnitContentRoleBookPage,
+			Language: "ar", ReviewStatus: entity.UnitReviewStatusApproved,
+			ProvenanceClass: entity.ProvenanceClassSource, ContentHash: []byte("footnote"),
+		},
+		{
+			PageID: 1, Kind: entity.UnitKindQuranQuote, Text: "orphan Quran footnote", Marker: "(١)",
+			ParentIdx: 99, FootnoteLink: entity.FootnoteLinkFallback,
+			ContentRole: entity.UnitContentRoleBookPage, Language: "ar",
+			ReviewStatus:    entity.UnitReviewStatusApproved,
+			ProvenanceClass: entity.ProvenanceClassSource, ContentHash: []byte("quran-footnote"),
+		},
+	}
+
+	plan := unitregistry.PlanBook(23, planTime, derived, &entity.UnitRegistrySnapshot{
+		MaxOrdinalByScope: map[int]int{}, ExistingIDs: map[string]struct{}{},
+	})
+	if len(plan.Mints) != 2 {
+		t.Fatalf("mints = %d, want 2", len(plan.Mints))
+	}
+
+	for i := range plan.Mints {
+		if plan.Mints[i].ParentUnitID != nil {
+			t.Fatalf("mint[%d] parent = %v, want nil", i, plan.Mints[i].ParentUnitID)
+		}
+
+		if got := plan.Mints[i].ProvenanceDetail["footnote_link"]; got != entity.FootnoteLinkUnlinked {
+			t.Fatalf("mint[%d] footnote_link = %v, want %q", i, got, entity.FootnoteLinkUnlinked)
+		}
+	}
+}
+
+func TestPlanBookNormalizesInvalidBodyParent(t *testing.T) {
+	t.Parallel()
+
+	derived := []unitregistry.DerivedUnit{{
+		PageID: 1, Kind: entity.UnitKindParagraph, Text: "body", ParentIdx: 0,
+		ContentRole: entity.UnitContentRoleBookPage, Language: "ar",
+		ReviewStatus:    entity.UnitReviewStatusApproved,
+		ProvenanceClass: entity.ProvenanceClassSource, ContentHash: []byte("body"),
+	}}
+
+	plan := unitregistry.PlanBook(23, planTime, derived, &entity.UnitRegistrySnapshot{
+		MaxOrdinalByScope: map[int]int{}, ExistingIDs: map[string]struct{}{},
+	})
+	if len(plan.Mints) != 1 || plan.Mints[0].ParentUnitID != nil {
+		t.Fatalf("body mint parent shape = %+v", plan.Mints)
+	}
+
+	if _, exists := plan.Mints[0].ProvenanceDetail["footnote_link"]; exists {
+		t.Fatalf("body mint must not carry footnote_link: %+v", plan.Mints[0].ProvenanceDetail)
+	}
+}
+
 //nolint:wsl_v5 // identity fixture and assertions are intentionally linear
 func TestPlanBookFormattingOnlyHTMLRefreshKeepsIdentity(t *testing.T) {
 	t.Parallel()

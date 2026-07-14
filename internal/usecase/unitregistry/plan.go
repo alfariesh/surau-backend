@@ -55,6 +55,8 @@ type planBuilder struct {
 // and snapshot it always returns the same plan, and for an unchanged source it
 // returns a plan with zero mints/retires/updates (AC-1).
 func PlanBook(bookID int, loadedAt time.Time, derived []DerivedUnit, snap *entity.UnitRegistrySnapshot) entity.UnitReconcilePlan {
+	derived = normalizeDerivedParentShapes(derived)
+
 	plan := entity.UnitReconcilePlan{
 		BookID:   bookID,
 		LoadedAt: loadedAt,
@@ -89,6 +91,59 @@ func PlanBook(bookID int, loadedAt time.Time, derived []DerivedUnit, snap *entit
 	b.fillReport()
 
 	return plan
+}
+
+// normalizeDerivedParentShapes makes the database parent invariant a planner
+// invariant as well. Parser fallbacks may classify a marker-bearing block as a
+// footnote-shaped unit without finding a safe owning body. Such a unit remains
+// citable, but it must be explicitly unlinked instead of carrying stale
+// marker/fallback metadata that would make an active orphan look linked.
+//
+// The input is copied so PlanBook remains pure from its caller's perspective.
+func normalizeDerivedParentShapes(derived []DerivedUnit) []DerivedUnit {
+	normalized := append([]DerivedUnit(nil), derived...)
+
+	for i := range normalized {
+		d := &normalized[i]
+		if !derivedRequiresParent(d) {
+			d.ParentIdx = -1
+			d.FootnoteLink = ""
+
+			continue
+		}
+
+		if !derivedParentValid(normalized, i) {
+			d.ParentIdx = -1
+			d.FootnoteLink = entity.FootnoteLinkUnlinked
+
+			continue
+		}
+
+		if d.FootnoteLink != entity.FootnoteLinkMarker && d.FootnoteLink != entity.FootnoteLinkFallback {
+			d.FootnoteLink = entity.FootnoteLinkFallback
+		}
+	}
+
+	return normalized
+}
+
+func derivedParentValid(derived []DerivedUnit, childIdx int) bool {
+	child := &derived[childIdx]
+	if child.ParentIdx < 0 || child.ParentIdx >= len(derived) || child.ParentIdx == childIdx {
+		return false
+	}
+
+	parent := &derived[child.ParentIdx]
+
+	return !derivedRequiresParent(parent) &&
+		parent.PageID == child.PageID &&
+		parent.ContentRole == child.ContentRole &&
+		parent.Language == child.Language
+}
+
+func derivedRequiresParent(d *DerivedUnit) bool {
+	return d.Kind == entity.UnitKindFootnote ||
+		(d.Kind == entity.UnitKindQuranQuote && d.Marker != "")
 }
 
 // groupScopes buckets derived and active units by scope, preserving derived
@@ -594,7 +649,7 @@ func derivedProvenanceDetail(d *DerivedUnit) map[string]any {
 }
 
 func isDerivedFootnote(d *DerivedUnit) bool {
-	return d.Kind == entity.UnitKindFootnote || d.Marker != ""
+	return derivedRequiresParent(d)
 }
 
 func derivedUnitID(bookID, scopeKey int, d *DerivedUnit, occurrence int) string {
