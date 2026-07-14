@@ -10,21 +10,20 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestCatalogParitySamplesUseBoundedPageUniqueExactQuotes(t *testing.T) {
+func TestCatalogParitySamplesUseBoundedCandidatesAndExactResolver(t *testing.T) {
 	t.Parallel()
 
 	source, err := os.ReadFile("citable_catalog_parity.go")
 	require.NoError(t, err)
 
 	text := string(source)
-	assert.Contains(t, text, "generate_series(1, 3841, 256)")
-	assert.Contains(t, text, "substring(unit.text FROM starts.start_pos FOR 256)")
-	assert.Contains(t, text, "char_length(candidate.quote) <= 256")
-	assert.Contains(t, text, "strpos(peer.text, candidate.quote) > 0")
-	assert.Contains(t, text, "peer.heading_id = unit.heading_id")
-	assert.Contains(t, text, "peer.page_id = unit.page_id")
-	assert.NotContains(t, text, "(unit.text, 0)")
-	assert.Contains(t, text, "ORDER BY candidate.priority")
+	assert.Contains(t, text, "LIMIT $2")
+	assert.Contains(t, text, "catalogParityCandidatesPerBook = 64")
+	assert.Contains(t, text, "catalogParityQuoteRunes        = 256")
+	assert.Contains(t, text, "catalogParityPageSourceRunes   = 4000")
+	assert.Contains(t, text, "ragRepo.ResolveRAGUnitCitation(")
+	assert.NotContains(t, text, "generate_series(")
+	assert.NotContains(t, text, "SELECT COUNT(*)\n              FROM public_book_interpretive_citable_units peer")
 	assert.Equal(t, 1, catalogParityMaxContextPages)
 }
 

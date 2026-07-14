@@ -36,8 +36,16 @@ func TestBookRAGUnitQueriesUseStructuralPublicView(t *testing.T) {
 		"common Arabic terms must use the bounded full-text index before any trigram fallback")
 	assert.Contains(t, querySource, "plainto_tsquery('simple'::regconfig",
 		"the unit search query must use the same immutable full-text configuration as its index")
+	assert.Contains(t, querySource, "matches AS MATERIALIZED (",
+		"the indexed unit match set must be isolated before publication joins and ranking")
+	assert.Contains(t, querySource, "AND unit.interpretive_retrieval_eligible",
+		"the base-table FTS fast path must reproduce the generated structural trust boundary")
+	assert.Contains(t, querySource, "JOIN public_book_interpretive_citable_units eligible ON eligible.id = matches.id",
+		"the indexed candidates must be authorized again by the structural retrieval view")
 	assert.Contains(t, querySource, "if len(exact) > 0 {",
 		"trigram fallback must run only when indexed full-text retrieval found no evidence")
+	assert.Contains(t, querySource, "WITH exact_pages AS MATERIALIZED (",
+		"legacy dual-write probes must use indexed verbatim pages before the broad fuzzy query")
 	assert.NotContains(t, querySource, "cu.effective_license_status = 'permitted'",
 		"B-4 grandfather visibility belongs to public_book_publications/view, not a stricter RAG override")
 	assert.Contains(t, querySource, "FROM citable_units materialized",
