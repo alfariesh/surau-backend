@@ -50,12 +50,24 @@ const catalogParityMaxContextPages = 1
 
 const (
 	catalogParityCandidatesPerBook = 64
+	catalogParityLegacyHits        = 12
 	catalogParityQuoteRunes        = 256
-	catalogParityPageSourceRunes   = 4000
+	catalogParityUnitSourceRunes   = 4000
 	catalogParityMinimumQuoteRunes = 4
 	catalogParityWindowDivisor     = 2
 	catalogParityQuotesPerWindow   = 2
 )
+
+type catalogParityVerification struct {
+	target            int64
+	verified          int64
+	mismatches        int64
+	unresolved        int64
+	samplesMissing    int64
+	denialMismatches  int64
+	requestMismatches int64
+	locatorMismatches int64
+}
 
 var (
 	errCatalogParityStreamUnsupported = errors.New("catalog parity stub does not stream")
@@ -137,13 +149,17 @@ func verifyFullCatalogBookRAGParity(
 	pool *pgxpool.Pool,
 	ragRepo *persistent.BookRAGRepo,
 	anchorRepo *persistent.AnchorRepo,
-) (target, verified, mismatches, unresolved int64, err error) {
+) (catalogParityVerification, error) {
+	result := catalogParityVerification{}
+
 	samples, target, err := loadCatalogParitySamples(ctx, pool, ragRepo)
 	if err != nil {
-		return target, 0, 0, 0, err
+		return result, err
 	}
 
-	mismatches += target - int64(len(samples))
+	result.target = target
+	result.samplesMissing = target - int64(len(samples))
+	result.mismatches += result.samplesMissing
 
 	for _, sample := range samples {
 		llm := &catalogParityLLM{headingID: sample.headingID, pageID: sample.pageID, quote: sample.quote}
@@ -155,12 +171,13 @@ func verifyFullCatalogBookRAGParity(
 
 			response, denialErr := uc.AskBook(ctx, sample.bookID, "denied catalog probe", "id", 1, true)
 			if !errors.Is(denialErr, entity.ErrBookNotFound) || len(response.Citations) != 0 || llm.calls != 0 {
-				mismatches++
+				result.mismatches++
+				result.denialMismatches++
 
 				continue
 			}
 
-			verified++
+			result.verified++
 
 			continue
 		}
@@ -173,7 +190,8 @@ func verifyFullCatalogBookRAGParity(
 
 		response, askErr := uc.AskBook(ctx, sample.bookID, sample.quote, "id", 1, true)
 		if askErr != nil || len(response.Citations) != 1 {
-			mismatches++
+			result.mismatches++
+			result.requestMismatches++
 
 			continue
 		}
@@ -186,7 +204,8 @@ func verifyFullCatalogBookRAGParity(
 			citation.Anchor != fmt.Sprintf("toc-%d", sample.headingID) || citation.URL != expectedURL ||
 			citation.UnitID == nil || *citation.UnitID != sample.unitID ||
 			citation.UnitAnchor == nil || *citation.UnitAnchor != sample.anchor {
-			mismatches++
+			result.mismatches++
+			result.locatorMismatches++
 
 			continue
 		}
@@ -195,15 +214,15 @@ func verifyFullCatalogBookRAGParity(
 		if resolveErr != nil || resolution.CycleDetected || resolution.Status != entity.UnitLifecycleActive ||
 			len(resolution.ActiveRecords) != 1 || resolution.ActiveRecords[0].UnitID == nil ||
 			*resolution.ActiveRecords[0].UnitID != sample.unitID {
-			unresolved++
+			result.unresolved++
 
 			continue
 		}
 
-		verified++
+		result.verified++
 	}
 
-	return target, verified, mismatches, unresolved, nil
+	return result, nil
 }
 
 //nolint:cyclop,funlen,gocyclo // Row decoding deliberately distinguishes denied books from incomplete public samples.
@@ -233,7 +252,10 @@ LEFT JOIN LATERAL (
     SELECT unit.heading_id,
            unit.page_id,
            unit.text AS unit_text,
-           COALESCE(edit.content_text, page.content_text) AS page_text
+           COALESCE(edit.content_text, page.content_text) AS page_text,
+           heading.depth AS heading_depth,
+           unit.position AS unit_position,
+           unit.ordinal AS unit_ordinal
     FROM public_book_interpretive_citable_units unit
     JOIN book_pages page
       ON page.book_id = unit.book_id AND page.page_id = unit.page_id AND page.is_deleted = FALSE
@@ -248,10 +270,14 @@ LEFT JOIN LATERAL (
       AND unit.content_role = 'book_page'
       AND unit.heading_id IS NOT NULL
       AND unit.page_id IS NOT NULL
-    ORDER BY unit.page_id, unit.position, unit.ordinal
+    ORDER BY unit.page_id, heading.depth DESC, unit.position, unit.ordinal
     LIMIT $2
 ) candidate ON TRUE
-ORDER BY target.id, candidate.page_id, candidate.heading_id`,
+ORDER BY target.id,
+         candidate.page_id,
+         candidate.heading_depth DESC,
+         candidate.unit_position,
+         candidate.unit_ordinal`,
 		CitableCatalogBookIDs, catalogParityCandidatesPerBook)
 	if err != nil {
 		return nil, 0, fmt.Errorf("verify Book-RAG parity samples: %w", err)
@@ -334,16 +360,9 @@ func catalogParityCandidateQuote(
 	ragRepo *persistent.BookRAGRepo,
 	candidate catalogParityCandidate,
 ) (string, entity.RAGUnitLocator, error) {
-	pageRunes := []rune(candidate.pageText)
-	if len(pageRunes) > catalogParityPageSourceRunes {
-		pageRunes = pageRunes[:catalogParityPageSourceRunes]
-	}
-
-	pagePrefix := string(pageRunes)
-
 	unitRunes := []rune(candidate.unitText)
-	if len(unitRunes) > catalogParityPageSourceRunes {
-		unitRunes = unitRunes[:catalogParityPageSourceRunes]
+	if len(unitRunes) > catalogParityUnitSourceRunes {
+		unitRunes = unitRunes[:catalogParityUnitSourceRunes]
 	}
 
 	for window := min(catalogParityQuoteRunes, len(unitRunes)); window >= catalogParityMinimumQuoteRunes; window /= 2 {
@@ -356,7 +375,7 @@ func catalogParityCandidateQuote(
 			quoteRunes := len([]rune(quote))
 
 			if quoteRunes < catalogParityMinimumQuoteRunes || quoteRunes > catalogParityQuoteRunes ||
-				!strings.Contains(pagePrefix, quote) {
+				!strings.Contains(candidate.pageText, quote) {
 				if end == len(unitRunes) {
 					break
 				}
@@ -377,7 +396,19 @@ func catalogParityCandidateQuote(
 			accepted++
 
 			if locator.Found {
-				return quote, locator, nil
+				legacyHits, searchErr := ragRepo.SearchRAGPages(
+					ctx, candidate.bookID, quote, "id", catalogParityLegacyHits,
+				)
+				if searchErr != nil {
+					return "", entity.RAGUnitLocator{}, fmt.Errorf(
+						"verify Book-RAG parity legacy search book %d page %d: %w",
+						candidate.bookID, candidate.pageID, searchErr,
+					)
+				}
+
+				if catalogParityLegacyFirstHitMatches(legacyHits, candidate) {
+					return quote, locator, nil
+				}
 			}
 
 			if end == len(unitRunes) {
@@ -391,4 +422,13 @@ func catalogParityCandidateQuote(
 	}
 
 	return "", entity.RAGUnitLocator{}, nil
+}
+
+func catalogParityLegacyFirstHitMatches(
+	hits []entity.RAGSearchResult,
+	candidate catalogParityCandidate,
+) bool {
+	return len(hits) > 0 &&
+		hits[0].HeadingID == candidate.headingID &&
+		hits[0].PageID == candidate.pageID
 }

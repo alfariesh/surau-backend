@@ -50,6 +50,8 @@ func TestBookRAGUnitQueriesUseStructuralPublicView(t *testing.T) {
 		"the base-table FTS fast path must reproduce the generated structural trust boundary")
 	assert.Contains(t, querySource, "JOIN public_book_interpretive_citable_units eligible ON eligible.id = matches.id",
 		"the indexed candidates must be authorized again by the structural retrieval view")
+	assert.GreaterOrEqual(t, strings.Count(querySource, "pgx.QueryExecModeExec"), 3,
+		"book/term-selective RAG queries must not degrade to a corpus-wide generic plan")
 	assert.Contains(t, querySource, "if len(exact) > 0 {",
 		"trigram fallback must run only when indexed full-text retrieval found no evidence")
 	assert.Contains(t, querySource, "WITH exact_pages AS MATERIALIZED (",

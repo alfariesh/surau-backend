@@ -19,14 +19,29 @@ func TestCatalogParitySamplesUseBoundedCandidatesAndExactResolver(t *testing.T) 
 	text := string(source)
 	assert.Contains(t, text, "LIMIT $2")
 	assert.Contains(t, text, "catalogParityCandidatesPerBook = 64")
+	assert.Contains(t, text, "catalogParityLegacyHits        = 12")
 	assert.Contains(t, text, "catalogParityQuoteRunes        = 256")
-	assert.Contains(t, text, "catalogParityPageSourceRunes   = 4000")
+	assert.Contains(t, text, "catalogParityUnitSourceRunes   = 4000")
 	assert.Contains(t, text, "catalogParityWindowDivisor     = 2")
 	assert.Contains(t, text, "catalogParityQuotesPerWindow   = 2")
 	assert.Contains(t, text, "ragRepo.ResolveRAGUnitCitation(")
+	assert.Contains(t, text, "ragRepo.SearchRAGPages(")
+	assert.NotContains(t, text, "pagePrefix")
 	assert.NotContains(t, text, "generate_series(")
 	assert.NotContains(t, text, "SELECT COUNT(*)\n              FROM public_book_interpretive_citable_units peer")
 	assert.Equal(t, 1, catalogParityMaxContextPages)
+}
+
+func TestCatalogParityLegacyFirstHitMustMatchUnitLocator(t *testing.T) {
+	t.Parallel()
+
+	candidate := catalogParityCandidate{headingID: 11, pageID: 12}
+	assert.True(t, catalogParityLegacyFirstHitMatches([]entity.RAGSearchResult{{HeadingID: 11, PageID: 12}}, candidate))
+	assert.False(t, catalogParityLegacyFirstHitMatches([]entity.RAGSearchResult{
+		{HeadingID: 11, PageID: 9},
+		{HeadingID: 11, PageID: 12},
+	}, candidate))
+	assert.False(t, catalogParityLegacyFirstHitMatches(nil, candidate))
 }
 
 func TestCatalogParityStubSelectsRefForExpectedPage(t *testing.T) {
