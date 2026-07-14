@@ -53,6 +53,8 @@ const (
 	catalogParityQuoteRunes        = 256
 	catalogParityPageSourceRunes   = 4000
 	catalogParityMinimumQuoteRunes = 4
+	catalogParityWindowDivisor     = 2
+	catalogParityQuotesPerWindow   = 2
 )
 
 var (
@@ -340,27 +342,51 @@ func catalogParityCandidateQuote(
 	pagePrefix := string(pageRunes)
 
 	unitRunes := []rune(candidate.unitText)
-	for start := 0; start < len(unitRunes) && start < catalogParityPageSourceRunes; start += catalogParityQuoteRunes {
-		end := min(start+catalogParityQuoteRunes, len(unitRunes))
-		quote := strings.TrimSpace(string(unitRunes[start:end]))
-		quoteRunes := len([]rune(quote))
+	if len(unitRunes) > catalogParityPageSourceRunes {
+		unitRunes = unitRunes[:catalogParityPageSourceRunes]
+	}
 
-		if quoteRunes < catalogParityMinimumQuoteRunes || quoteRunes > catalogParityQuoteRunes ||
-			!strings.Contains(pagePrefix, quote) {
-			continue
-		}
+	for window := min(catalogParityQuoteRunes, len(unitRunes)); window >= catalogParityMinimumQuoteRunes; window /= 2 {
+		accepted := 0
 
-		locator, err := ragRepo.ResolveRAGUnitCitation(
-			ctx, candidate.bookID, candidate.headingID, candidate.pageID, quote,
-		)
-		if err != nil {
-			return "", entity.RAGUnitLocator{}, fmt.Errorf(
-				"verify Book-RAG parity locator book %d page %d: %w", candidate.bookID, candidate.pageID, err,
+		step := max(1, window/catalogParityWindowDivisor)
+		for start := 0; start < len(unitRunes) && accepted < catalogParityQuotesPerWindow; start += step {
+			end := min(start+window, len(unitRunes))
+			quote := strings.TrimSpace(string(unitRunes[start:end]))
+			quoteRunes := len([]rune(quote))
+
+			if quoteRunes < catalogParityMinimumQuoteRunes || quoteRunes > catalogParityQuoteRunes ||
+				!strings.Contains(pagePrefix, quote) {
+				if end == len(unitRunes) {
+					break
+				}
+
+				continue
+			}
+
+			locator, err := ragRepo.ResolveRAGUnitCitation(
+				ctx, candidate.bookID, candidate.headingID, candidate.pageID, quote,
 			)
+			if err != nil {
+				return "", entity.RAGUnitLocator{}, fmt.Errorf(
+					"verify Book-RAG parity locator book %d page %d: %w",
+					candidate.bookID, candidate.pageID, err,
+				)
+			}
+
+			accepted++
+
+			if locator.Found {
+				return quote, locator, nil
+			}
+
+			if end == len(unitRunes) {
+				break
+			}
 		}
 
-		if locator.Found {
-			return quote, locator, nil
+		if window == catalogParityMinimumQuoteRunes {
+			break
 		}
 	}
 

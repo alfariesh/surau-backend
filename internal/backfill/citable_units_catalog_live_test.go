@@ -252,17 +252,19 @@ WHERE book_id = $1 AND job_name = ANY($2)`, liveCatalogFixtureBooks[0],
 	assert.False(t, staleEvidence.Passed)
 	assert.Equal(t, staleEvidence.TargetBooks-1, staleEvidence.DeterminismVerifiedBooks,
 		"two equal queue checksums are not proof when they differ from the live registry")
-	_, err = pool.Exec(ctx, `
-UPDATE citable_unit_catalog_queue
-SET status = 'pending',
-    source_fingerprint = NULL,
-    result_checksum = NULL,
-    finished_at = NULL,
-    updated_at = now()
-WHERE book_id = $1 AND job_name = ANY($2)`, liveCatalogFixtureBooks[0],
-		[]string{citableCatalogJobName, citableCatalogRederiveJobName})
-	require.NoError(t, err)
+	// Resume must discover and meter the drift before processing, even though
+	// the forged queue rows are mutually equal and marked completed.
 	require.NoError(t, runner.Run(ctx, job, true))
+	reprovedCatalog := readLiveCitableState(t, pool, citableCatalogJobName)
+	assert.Equal(t, int64(1), reprovedCatalog.RowsTotal)
+	assert.Equal(t, reprovedCatalog.RowsTotal, reprovedCatalog.RowsDone)
+	require.NoError(t, drill.Run(ctx, rederive, true))
+	reprovedDeterminism := readLiveCitableState(t, pool, citableCatalogRederiveJobName)
+	assert.Equal(t, int64(1), reprovedDeterminism.RowsTotal)
+	assert.Equal(t, reprovedDeterminism.RowsTotal, reprovedDeterminism.RowsDone)
+	reprovedEvidence, err := VerifyCitableCatalog(ctx, pool)
+	require.NoError(t, err)
+	assert.True(t, reprovedEvidence.Passed, "resume must restore live determinism evidence: %+v", reprovedEvidence)
 
 	var formattedID, formattedAnchor, formattedProvenance, formatActor string
 	require.NoError(t, pool.QueryRow(ctx, `

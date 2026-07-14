@@ -724,8 +724,7 @@ WITH search_query AS (
 candidates AS MATERIALIZED (
     SELECT unit.id,
            unit.heading_id,
-           unit.page_id,
-           unit.text
+           unit.page_id
     FROM citable_units unit
     CROSS JOIN search_query
     WHERE unit.book_id = $1
@@ -744,12 +743,8 @@ matches AS MATERIALIZED (
     SELECT candidate.id,
            candidate.heading_id,
            candidate.page_id,
-           ts_rank_cd(
-               to_tsvector('simple'::regconfig, translate(candidate.text, 'ًٌٍَُِّْٰٕٓٔـ', '')),
-               search_query.value
-           )::float8 AS score
+           1::float8 AS score
     FROM candidates candidate
-    CROSS JOIN search_query
 )
 SELECT eligible.heading_id,
        eligible.page_id,
