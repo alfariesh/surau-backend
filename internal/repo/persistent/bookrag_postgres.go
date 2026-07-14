@@ -580,13 +580,15 @@ func (r *BookRAGRepo) SearchRAGUnits(
 		return nil, err
 	}
 
-	if len(exact) >= limit {
+	if len(exact) > 0 {
 		return exact, nil
 	}
 
 	// Full-text search is the bounded common path. Preserve the previous
 	// trigram behavior only as a second-stage typo/substring fallback when the
-	// exact token index cannot fill the requested evidence window.
+	// exact token index found no evidence at all. Filling a partially populated
+	// exact window with trigram hits makes common multi-token citations scan the
+	// whole book even though the strongest evidence is already known.
 	fuzzy, err := r.searchRAGUnitsFuzzy(ctx, bookID, query, limit)
 	if err != nil {
 		return nil, err
