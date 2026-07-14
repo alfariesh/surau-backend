@@ -38,6 +38,12 @@ func TestBookRAGUnitQueriesUseStructuralPublicView(t *testing.T) {
 		"the unit search query must use the same immutable full-text configuration as its index")
 	assert.Contains(t, querySource, "matches AS MATERIALIZED (",
 		"the indexed unit match set must be isolated before publication joins and ranking")
+	assert.Contains(t, querySource, "candidates AS MATERIALIZED (",
+		"common terms must be bounded before per-row ranking")
+	assert.Contains(t, querySource, "ragUnitExactCandidateLimit = 1024",
+		"the exact candidate ceiling must remain explicit and reviewable")
+	assert.Contains(t, querySource, "ORDER BY unit.page_id, unit.position, unit.ordinal, unit.id\n    LIMIT $4",
+		"the bounded exact window must be deterministic")
 	assert.Contains(t, querySource, "AND unit.interpretive_retrieval_eligible",
 		"the base-table FTS fast path must reproduce the generated structural trust boundary")
 	assert.Contains(t, querySource, "JOIN public_book_interpretive_citable_units eligible ON eligible.id = matches.id",
