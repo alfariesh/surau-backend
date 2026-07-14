@@ -735,7 +735,11 @@ WITH search_query AS (
 candidates AS MATERIALIZED (
     SELECT unit.id,
            unit.heading_id,
-           unit.page_id
+           unit.page_id,
+           CASE
+               WHEN strpos(translate(unit.text, 'ًٌٍَُِّْٰٕٓٔـ', ''), $2) > 0 THEN 2::float8
+               ELSE 1::float8
+           END AS score
     FROM citable_units unit
     CROSS JOIN search_query
     WHERE unit.book_id = $1
@@ -748,23 +752,36 @@ candidates AS MATERIALIZED (
       AND (unit.license_status IS NULL OR unit.license_status = 'permitted')
       AND to_tsvector('simple'::regconfig,
           'book' || unit.book_id::text || ' ' || translate(unit.text, 'ًٌٍَُِّْٰٕٓٔـ', '')) @@ search_query.value
-    ORDER BY unit.page_id, unit.position, unit.ordinal, unit.id
+    ORDER BY (strpos(translate(unit.text, 'ًٌٍَُِّْٰٕٓٔـ', ''), $2) > 0) DESC,
+             unit.page_id, unit.position, unit.ordinal, unit.id
     LIMIT $4
 ),
 matches AS MATERIALIZED (
     SELECT candidate.id,
            candidate.heading_id,
            candidate.page_id,
-           1::float8 AS score
+           candidate.score
     FROM candidates candidate
+),
+ranked_matches AS MATERIALIZED (
+    SELECT eligible.id::text AS unit_id,
+           eligible.heading_id,
+           eligible.page_id,
+           matches.score,
+           row_number() OVER (
+               PARTITION BY eligible.heading_id, eligible.page_id
+               ORDER BY matches.score DESC, eligible.position, eligible.ordinal, eligible.id
+           ) AS page_rank
+    FROM matches
+    JOIN public_book_interpretive_citable_units eligible ON eligible.id = matches.id
 )
-SELECT eligible.heading_id,
-       eligible.page_id,
-       max(matches.score) AS score
-FROM matches
-JOIN public_book_interpretive_citable_units eligible ON eligible.id = matches.id
-GROUP BY eligible.heading_id, eligible.page_id
-ORDER BY score DESC, eligible.page_id ASC, eligible.heading_id ASC
+SELECT unit_id,
+       heading_id,
+       page_id,
+       score
+FROM ranked_matches
+WHERE page_rank = 1
+ORDER BY score DESC, page_id ASC, heading_id ASC
 LIMIT $3`
 
 	return r.queryRAGUnitSearch(ctx, sqlText, bookID, query, limit, "exact", ragUnitExactCandidateLimit)
@@ -777,25 +794,43 @@ func (r *BookRAGRepo) searchRAGUnitsFuzzy(
 	limit int,
 ) ([]entity.RAGSearchResult, error) {
 	const sqlText = `
-SELECT cu.heading_id,
-       cu.page_id,
-       max(GREATEST(
+WITH candidates AS MATERIALIZED (
+    SELECT cu.id::text AS unit_id,
+           cu.heading_id,
+           cu.page_id,
+           cu.position,
+           cu.ordinal,
+           GREATEST(
            similarity(cu.text, $2),
-	       similarity(translate(cu.text, 'ًٌٍَُِّْٰٕٓٔـ', ''), $2)
-       )) AS score
-FROM public_book_interpretive_citable_units cu
-WHERE cu.book_id = $1
-  AND cu.content_role = 'book_page'
-  AND cu.heading_id IS NOT NULL
-  AND cu.page_id IS NOT NULL
-  AND (
-	  cu.text ILIKE '%' || $4 || '%'
-      OR cu.text % $2
-	  OR translate(cu.text, 'ًٌٍَُِّْٰٕٓٔـ', '') ILIKE '%' || $4 || '%'
-	  OR translate(cu.text, 'ًٌٍَُِّْٰٕٓٔـ', '') % $2
-  )
-GROUP BY cu.heading_id, cu.page_id
-ORDER BY score DESC, cu.page_id ASC, cu.heading_id ASC
+           similarity(translate(cu.text, 'ًٌٍَُِّْٰٕٓٔـ', ''), $2)
+           ) AS score
+    FROM public_book_interpretive_citable_units cu
+    WHERE cu.book_id = $1
+      AND cu.content_role = 'book_page'
+      AND cu.heading_id IS NOT NULL
+      AND cu.page_id IS NOT NULL
+      AND (
+          cu.text ILIKE '%' || $4 || '%'
+          OR cu.text % $2
+          OR translate(cu.text, 'ًٌٍَُِّْٰٕٓٔـ', '') ILIKE '%' || $4 || '%'
+          OR translate(cu.text, 'ًٌٍَُِّْٰٕٓٔـ', '') % $2
+      )
+),
+ranked_matches AS (
+    SELECT candidates.*,
+           row_number() OVER (
+               PARTITION BY heading_id, page_id
+               ORDER BY score DESC, position, ordinal, unit_id
+           ) AS page_rank
+    FROM candidates
+)
+SELECT unit_id,
+       heading_id,
+       page_id,
+       score
+FROM ranked_matches
+WHERE page_rank = 1
+ORDER BY score DESC, page_id ASC, heading_id ASC
 LIMIT $3`
 
 	return r.queryRAGUnitSearch(ctx, sqlText, bookID, query, limit, "fuzzy", escapeLike(query))
@@ -832,7 +867,7 @@ func (r *BookRAGRepo) queryRAGUnitSearch(
 
 	for rows.Next() {
 		var result entity.RAGSearchResult
-		if err = rows.Scan(&result.HeadingID, &result.PageID, &result.Score); err != nil {
+		if err = rows.Scan(&result.UnitID, &result.HeadingID, &result.PageID, &result.Score); err != nil {
 			return nil, fmt.Errorf("BookRAGRepo - SearchRAGUnits - %s scan: %w", phase, err)
 		}
 

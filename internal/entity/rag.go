@@ -33,6 +33,7 @@ type RAGSearchResult struct {
 	HeadingID int     `json:"heading_id" example:"11"`
 	PageID    int     `json:"page_id" example:"12"`
 	Score     float64 `json:"score" example:"0.76"`
+	UnitID    string  `json:"-"`
 }
 
 // RAGPageSource is one page-level source block supplied to the answer model.

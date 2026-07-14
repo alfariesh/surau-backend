@@ -281,6 +281,7 @@ func (uc *UseCase) askBookMode(
 	}
 
 	if mode == CitationModeUnit {
+		sources = prioritizeUnitSources(sources, searchResults)
 		sources = boundUnitContext(sources, uc.maxContextPages*sourceTextLimit)
 	}
 	if len(sources) == 0 {
@@ -342,6 +343,55 @@ func (uc *UseCase) askBookMode(
 	setCitationTrace(response.Trace, mode, dualFallbackReason)
 
 	return response, nil
+}
+
+// prioritizeUnitSources preserves the page/heading selection while promoting
+// the exact lexical unit hits within those pages. SearchRAGUnits is the only
+// trusted producer of these IDs, so the ordering cannot make an ineligible
+// unit retrievable: GetRAGUnitSources still projects exclusively through the
+// structural public eligibility view.
+func prioritizeUnitSources(
+	sources []entity.RAGPageSource,
+	searchResults []entity.RAGSearchResult,
+) []entity.RAGPageSource {
+	unitRanks := make(map[string]int, len(searchResults))
+	for i := range searchResults {
+		if searchResults[i].UnitID == "" {
+			continue
+		}
+
+		if _, exists := unitRanks[searchResults[i].UnitID]; !exists {
+			unitRanks[searchResults[i].UnitID] = i
+		}
+	}
+
+	if len(unitRanks) == 0 {
+		return sources
+	}
+
+	prioritized := append([]entity.RAGPageSource(nil), sources...)
+	sort.SliceStable(prioritized, func(i, j int) bool {
+		leftRank, leftMatched := sourceUnitRank(&prioritized[i], unitRanks)
+		rightRank, rightMatched := sourceUnitRank(&prioritized[j], unitRanks)
+
+		if leftMatched != rightMatched {
+			return leftMatched
+		}
+
+		return leftMatched && leftRank < rightRank
+	})
+
+	return prioritized
+}
+
+func sourceUnitRank(source *entity.RAGPageSource, ranks map[string]int) (int, bool) {
+	if source.UnitID == nil {
+		return 0, false
+	}
+
+	rank, ok := ranks[*source.UnitID]
+
+	return rank, ok
 }
 
 // boundUnitContext preserves the legacy total context ceiling. Unit mode may
