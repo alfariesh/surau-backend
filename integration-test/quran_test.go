@@ -339,6 +339,7 @@ func seedMultilingualQuranFixture(t *testing.T) {
 	defer tx.Rollback(ctx)
 
 	execFixtureSQL(t, ctx, tx, `SET LOCAL surau.registry_writer = 'unit-service'`)
+	execFixtureSQL(t, ctx, tx, `SET LOCAL surau.quran_editorial_writer = 'quran-editorial-service'`)
 	execFixtureSQL(t, ctx, tx, `SET LOCAL session_replication_role = 'replica'`)
 	execFixtureSQL(t, ctx, tx, `
 DELETE FROM quran_source_license_audits
@@ -357,12 +358,23 @@ WHERE b.unit_id = u.id AND b.surah_id = $1`, fixtureQuranSurahID)
 	execFixtureSQL(t, ctx, tx, `DELETE FROM quran_translation_sources WHERE id = $1`, fixtureQuranSourceID)
 	execFixtureSQL(t, ctx, tx, `DELETE FROM quran_surah_infos WHERE surah_id = $1`, fixtureQuranSurahID)
 	execFixtureSQL(t, ctx, tx, `DELETE FROM quran_ayahs WHERE surah_id = $1`, fixtureQuranSurahID)
-	execFixtureSQL(t, ctx, tx, `DELETE FROM quran_surahs WHERE surah_id = $1`, fixtureQuranSurahID)
 
 	execFixtureSQL(
 		t, ctx, tx, `
-INSERT INTO quran_surahs (surah_id, name_arabic, name_latin, name_translation, revelation_type, ayah_count, metadata)
-VALUES ($1, 'الناس', 'An-Nas Fixture', 'Manusia Fixture', 'makkiyah', 1, '{}'::jsonb)`,
+INSERT INTO quran_surahs (
+    surah_id, name_arabic, name_latin, name_translation, revelation_type,
+    ayah_count, slug, metadata
+)
+VALUES ($1, 'الناس', 'An-Nas Fixture', 'Manusia Fixture', 'makkiyah',
+        1, 'an-nas-fixture', '{}'::jsonb)
+ON CONFLICT (surah_id) DO UPDATE SET
+    name_arabic = EXCLUDED.name_arabic,
+    name_latin = EXCLUDED.name_latin,
+    name_translation = EXCLUDED.name_translation,
+    revelation_type = EXCLUDED.revelation_type,
+    ayah_count = EXCLUDED.ayah_count,
+    slug = EXCLUDED.slug,
+    metadata = EXCLUDED.metadata`,
 		fixtureQuranSurahID,
 	)
 	execFixtureSQL(

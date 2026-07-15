@@ -35,27 +35,9 @@ func TestLiveSurahEditorialImportWorkflow(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
 
-	var (
-		surahID        int
-		insertedParent bool
-	)
+	var surahID int
 
 	err = pool.QueryRow(ctx, `
-SELECT surah.surah_id
-FROM quran_surahs surah
-WHERE NOT EXISTS (
-    SELECT 1 FROM quran_surah_editorial editorial
-    WHERE editorial.surah_id = surah.surah_id
-)
-  AND NOT EXISTS (
-    SELECT 1 FROM quran_editorial_revisions revision
-    WHERE revision.resource_type = 'surah'
-      AND revision.surah_id = surah.surah_id
-)
-ORDER BY surah.surah_id DESC
-LIMIT 1`).Scan(&surahID)
-	if errors.Is(err, pgx.ErrNoRows) {
-		err = pool.QueryRow(ctx, `
 SELECT candidate.surah_id
 FROM generate_series(1, 114) AS candidate(surah_id)
 WHERE NOT EXISTS (
@@ -63,34 +45,16 @@ WHERE NOT EXISTS (
 )
 ORDER BY candidate.surah_id DESC
 LIMIT 1`).Scan(&surahID)
-		if errors.Is(err, pgx.ErrNoRows) {
-			t.Skip("no isolated surah scope is available for the importer live fixture")
-		}
-
-		require.NoError(t, err)
-
-		_, err = pool.Exec(ctx, `
-INSERT INTO quran_surahs (surah_id, ayah_count, metadata)
-		VALUES ($1, 0, '{"q1_surah_importer_fixture":true}'::jsonb)`, surahID)
-		require.NoError(t, err)
-
-		insertedParent = true
-	} else {
-		require.NoError(t, err)
+	if errors.Is(err, pgx.ErrNoRows) {
+		t.Skip("no isolated surah scope is available for the importer live fixture")
 	}
 
-	var (
-		originalSlug                                  sql.NullString
-		originalChronologicalOrder, originalRukuCount sql.NullInt64
-		originalUpdatedAt                             time.Time
-	)
+	require.NoError(t, err)
 
-	require.NoError(t, pool.QueryRow(ctx, `
-SELECT slug, chronological_order, ruku_count, updated_at
-FROM quran_surahs
-WHERE surah_id = $1`, surahID).Scan(
-		&originalSlug, &originalChronologicalOrder, &originalRukuCount, &originalUpdatedAt,
-	))
+	_, err = pool.Exec(ctx, `
+INSERT INTO quran_surahs (surah_id, ayah_count, metadata)
+		VALUES ($1, 0, '{"q1_surah_importer_fixture":true}'::jsonb)`, surahID)
+	require.NoError(t, err)
 
 	t.Cleanup(func() {
 		cleanupCtx := context.Background()
@@ -107,34 +71,16 @@ DELETE FROM quran_surah_editorial WHERE surah_id = $1`, surahID); txErr != nil {
 				return txErr
 			}
 
-			_, txErr := tx.Exec(
-				cleanupCtx, `
-UPDATE quran_surahs
-SET slug = $2,
-    chronological_order = $3,
-    ruku_count = $4,
-    updated_at = $5
-WHERE surah_id = $1`,
-				surahID,
-				nullableStringValue(originalSlug),
-				nullableInt64Value(originalChronologicalOrder),
-				nullableInt64Value(originalRukuCount),
-				originalUpdatedAt,
-			)
-
-			return txErr
+			return nil
 		})
 		if cleanupErr != nil {
 			t.Logf("cleanup Q-1 surah importer fixture: %v", cleanupErr)
 		}
 
-		if insertedParent {
-			if _, parentCleanupErr := pool.Exec(cleanupCtx, `
-DELETE FROM quran_surahs
-WHERE surah_id = $1
-  AND metadata ->> 'q1_surah_importer_fixture' = 'true'`, surahID); parentCleanupErr != nil {
-				t.Logf("cleanup Q-1 surah importer parent: %v", parentCleanupErr)
-			}
+		if parentCleanupErr := cleanupInsertedQuranImporterSurah(
+			cleanupCtx, pool, surahID, "q1_surah_importer_fixture",
+		); parentCleanupErr != nil {
+			t.Logf("cleanup Q-1 surah importer parent: %v", parentCleanupErr)
 		}
 	})
 

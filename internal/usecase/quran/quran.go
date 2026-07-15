@@ -2,8 +2,11 @@ package quran
 
 import (
 	"context"
+	"fmt"
+	"regexp"
 	"slices"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/alfariesh/surau-backend/internal/contentlang"
@@ -31,6 +34,8 @@ const (
 )
 
 var allowedReviewStatuses = []string{"approved", "pending", "rejected", "ambiguous", "needs_review", "all"}
+
+var quranSlugPattern = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
 
 // UseCase provides public Quran read operations.
 type UseCase struct {
@@ -376,6 +381,131 @@ func (uc *UseCase) MissingAssets(
 	}
 
 	return uc.repo.ListMissingQuranAssets(ctx, filter)
+}
+
+// Sitemap returns every currently indexable Indonesian and English Quran page.
+func (uc *UseCase) Sitemap(ctx context.Context) ([]entity.QuranSitemapItem, error) {
+	items, err := uc.repo.ListQuranSitemap(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return decorateSitemapItems(items), nil
+}
+
+// Feed returns a filtered, lastmod-descending view over the same sitemap truth set.
+func (uc *UseCase) Feed(
+	ctx context.Context,
+	since string,
+	lang string,
+	pageType string,
+	limit int,
+	offset int,
+) ([]entity.QuranSitemapItem, int, error) {
+	filter, err := quranFeedFilter(since, lang, pageType, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	items, total, err := uc.repo.ListQuranFeed(ctx, filter)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return decorateSitemapItems(items), total, nil
+}
+
+// ResolveSlug resolves a current or permanent historical surah alias.
+func (uc *UseCase) ResolveSlug(ctx context.Context, slug string) (entity.QuranSlugResolution, error) {
+	slug = strings.TrimSpace(slug)
+	if !quranSlugPattern.MatchString(slug) {
+		return entity.QuranSlugResolution{}, entity.ErrInvalidQuranSlug
+	}
+
+	return uc.repo.ResolveQuranSurahSlug(ctx, slug)
+}
+
+// EditorialCoverage returns operator-facing editorial readiness by language.
+func (uc *UseCase) EditorialCoverage(ctx context.Context) ([]entity.QuranEditorialCoverage, error) {
+	return uc.repo.ListQuranEditorialCoverage(ctx)
+}
+
+func quranFeedFilter(
+	since string,
+	lang string,
+	pageType string,
+	limit int,
+	offset int,
+) (repo.QuranFeedFilter, error) {
+	var parsedSince *time.Time
+
+	since = strings.TrimSpace(since)
+	if since != "" {
+		value, err := time.Parse(time.RFC3339, since)
+		if err != nil {
+			return repo.QuranFeedFilter{}, entity.ErrInvalidSyncSince
+		}
+
+		parsedSince = &value
+	}
+
+	lang = strings.TrimSpace(lang)
+	if lang != "" {
+		normalized, err := contentlang.Normalize(lang)
+		if err != nil || (normalized != contentlang.Default && normalized != contentlang.English) {
+			return repo.QuranFeedFilter{}, entity.ErrUnsupportedLanguage
+		}
+
+		lang = normalized
+	}
+
+	pageType = strings.ToLower(strings.TrimSpace(pageType))
+	if pageType != "" && pageType != "surah" && pageType != "ayah" {
+		return repo.QuranFeedFilter{}, entity.ErrInvalidQuranPageType
+	}
+
+	return repo.QuranFeedFilter{
+		Since:    parsedSince,
+		Lang:     lang,
+		PageType: pageType,
+		Limit:    clampLimit(limit),
+		Offset:   clampOffset(offset),
+	}, nil
+}
+
+func decorateSitemapItems(items []entity.QuranSitemapItem) []entity.QuranSitemapItem {
+	for index := range items {
+		item := &items[index]
+		item.Path = quranPagePath(item.Lang, item.Slug, item.AyahNumber)
+
+		item.Hreflangs = make([]entity.QuranSitemapHreflang, 0, len(item.AvailableLangs))
+		for _, lang := range item.AvailableLangs {
+			if lang != contentlang.Default && lang != contentlang.English {
+				continue
+			}
+
+			item.Hreflangs = append(item.Hreflangs, entity.QuranSitemapHreflang{
+				Lang: lang,
+				Path: quranPagePath(lang, item.Slug, item.AyahNumber),
+			})
+		}
+	}
+
+	return items
+}
+
+func quranPagePath(lang, slug string, ayahNumber *int) string {
+	prefix := ""
+	if lang == contentlang.English {
+		prefix = "/en"
+	}
+
+	path := fmt.Sprintf("%s/surah/%s", prefix, slug)
+	if ayahNumber != nil {
+		path += fmt.Sprintf("/%d", *ayahNumber)
+	}
+
+	return path
 }
 
 func clampLimit(limit int) uint64 {

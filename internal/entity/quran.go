@@ -2,6 +2,52 @@ package entity
 
 import "time"
 
+// QuranSitemapHreflang is one language-specific canonical page alternative.
+type QuranSitemapHreflang struct {
+	Lang string `json:"lang" example:"id"`
+	Path string `json:"path" example:"/surah/al-fatihah"`
+} // @name entity.QuranSitemapHreflang
+
+// QuranSitemapItem is one indexable localized surah or ayah page. The
+// AvailableLangs field is repository-only input used to build reciprocal
+// hreflang links and is deliberately absent from the API.
+type QuranSitemapItem struct {
+	PageType       string                 `json:"page_type" example:"ayah"`
+	SurahID        int                    `json:"surah_id" example:"1"`
+	AyahNumber     *int                   `json:"ayah_number,omitempty" example:"1"`
+	AyahKey        *string                `json:"ayah_key,omitempty" example:"1:1"`
+	Slug           string                 `json:"slug" example:"al-fatihah"`
+	Lang           string                 `json:"lang" example:"id"`
+	Path           string                 `json:"path" example:"/surah/al-fatihah/1"`
+	Lastmod        time.Time              `json:"lastmod" example:"2026-07-15T12:00:00Z"`
+	Hreflangs      []QuranSitemapHreflang `json:"hreflangs"`
+	AvailableLangs []string               `json:"-" swaggerignore:"true"`
+} // @name entity.QuranSitemapItem
+
+// QuranSlugResolution maps a current or historical slug to its current surah
+// alias. Canonical Quran identity remains surah_id/ayah_key.
+type QuranSlugResolution struct {
+	SurahID       int    `json:"surah_id" example:"1"`
+	RequestedSlug string `json:"requested_slug" example:"al-fatihah-old"`
+	CanonicalSlug string `json:"canonical_slug" example:"al-fatihah"`
+	IsAlias       bool   `json:"is_alias" example:"true"`
+} // @name entity.QuranSlugResolution
+
+// QuranEditorialCoverage summarizes one language and page type. The five
+// state counts are mutually exclusive and sum to TotalTargets.
+type QuranEditorialCoverage struct {
+	Lang                    string  `json:"lang" example:"id"`
+	PageType                string  `json:"page_type" example:"ayah"`
+	TotalTargets            int     `json:"total_targets" example:"6236"`
+	Indexable               int     `json:"indexable" example:"6000"`
+	PublishedBlockedLicense int     `json:"published_blocked_license" example:"10"`
+	WorkflowIncomplete      int     `json:"workflow_incomplete" example:"100"`
+	MissingEditorial        int     `json:"missing_editorial" example:"126"`
+	MissingSlug             int     `json:"missing_slug" example:"0"`
+	SitemapItems            int     `json:"sitemap_items" example:"6000"`
+	CoveragePercent         float64 `json:"coverage_percent" example:"96.22"`
+} // @name entity.QuranEditorialCoverage
+
 // QuranSurah describes one Quran surah plus imported QUL metadata.
 type QuranSurah struct {
 	SurahID            int                  `json:"surah_id" example:"73"`

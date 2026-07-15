@@ -163,6 +163,9 @@ func NewRoutes(
 		middleware.ExcludePath("/v1/quran/search"),
 	))
 	{
+		quranGroup.Get("/sitemap", r.listQuranSitemap)
+		quranGroup.Get("/feed", r.listQuranFeed)
+		quranGroup.Get("/slugs/:slug", r.resolveQuranSurahSlug)
 		quranGroup.Get("/recitations", r.listQuranRecitations)
 		quranGroup.Get("/translation-sources", r.listQuranTranslationSources)
 		quranGroup.Get("/juz", r.listQuranJuz)
@@ -306,6 +309,7 @@ func NewRoutes(
 		editorialReviewGroup.Patch("/cross-references/:id/review", r.editorialReviewCrossReference)
 		editorialReviewGroup.Get("/reader/missing-assets", r.editorialMissingReaderAssets)
 		editorialReviewGroup.Get("/quran/missing-assets", r.editorialMissingQuranAssets)
+		editorialReviewGroup.Get("/quran/coverage", r.editorialQuranCoverage)
 		editorialReviewGroup.Get("/quran/surahs/:surah_id", r.editorialQuranSurahWorkspace)
 		editorialReviewGroup.Put("/quran/surahs/:surah_id/draft", r.editorialSaveQuranSurahDraft)
 		editorialReviewGroup.Get("/quran/surahs/:surah_id/draft-revisions", r.editorialListQuranSurahRevisions)

@@ -3,6 +3,7 @@ package quran
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/alfariesh/surau-backend/internal/contentlang"
 	"github.com/alfariesh/surau-backend/internal/entity"
@@ -153,6 +154,83 @@ func TestUseCase_AyahRejectsInvalidKey(t *testing.T) {
 	require.ErrorIs(t, err, entity.ErrInvalidAyahKey)
 }
 
+func TestUseCase_SitemapDecoratesLocalizedPathsAndHreflangs(t *testing.T) {
+	t.Parallel()
+
+	ayahNumber := 1
+	lastmod := time.Date(2026, 7, 15, 9, 10, 11, 0, time.UTC)
+	repository := &quranRepoStub{sitemapItems: []entity.QuranSitemapItem{
+		{
+			PageType:       "surah",
+			SurahID:        1,
+			Slug:           "al-fatihah",
+			Lang:           "id",
+			Lastmod:        lastmod,
+			AvailableLangs: []string{"en", "id"},
+		},
+		{
+			PageType:       "ayah",
+			SurahID:        1,
+			AyahNumber:     &ayahNumber,
+			Slug:           "al-fatihah",
+			Lang:           "en",
+			Lastmod:        lastmod,
+			AvailableLangs: []string{"en"},
+		},
+	}}
+
+	items, err := New(repository).Sitemap(context.Background())
+	require.NoError(t, err)
+	require.Len(t, items, 2)
+	assert.Equal(t, "/surah/al-fatihah", items[0].Path)
+	assert.Equal(t, []entity.QuranSitemapHreflang{
+		{Lang: "en", Path: "/en/surah/al-fatihah"},
+		{Lang: "id", Path: "/surah/al-fatihah"},
+	}, items[0].Hreflangs)
+	assert.Equal(t, "/en/surah/al-fatihah/1", items[1].Path)
+	assert.Equal(t, []entity.QuranSitemapHreflang{{Lang: "en", Path: "/en/surah/al-fatihah/1"}}, items[1].Hreflangs)
+	assert.Equal(t, lastmod, items[1].Lastmod)
+}
+
+func TestUseCase_FeedValidatesAndClampsFilters(t *testing.T) {
+	t.Parallel()
+
+	repository := &quranRepoStub{feedTotal: 12}
+	uc := New(repository)
+
+	_, total, err := uc.Feed(context.Background(), "2026-07-15T08:00:00Z", "en", "ayah", 999, 99999)
+	require.NoError(t, err)
+	assert.Equal(t, 12, total)
+	require.NotNil(t, repository.feedFilter.Since)
+	assert.Equal(t, "en", repository.feedFilter.Lang)
+	assert.Equal(t, "ayah", repository.feedFilter.PageType)
+	assert.Equal(t, uint64(200), repository.feedFilter.Limit)
+	assert.Equal(t, uint64(10000), repository.feedFilter.Offset)
+
+	_, _, err = uc.Feed(context.Background(), "not-a-time", "", "", 0, 0)
+	require.ErrorIs(t, err, entity.ErrInvalidSyncSince)
+	_, _, err = uc.Feed(context.Background(), "", "ar", "", 0, 0)
+	require.ErrorIs(t, err, entity.ErrUnsupportedLanguage)
+	_, _, err = uc.Feed(context.Background(), "", "", "juz", 0, 0)
+	require.ErrorIs(t, err, entity.ErrInvalidQuranPageType)
+}
+
+func TestUseCase_ResolveSlugValidatesContract(t *testing.T) {
+	t.Parallel()
+
+	repository := &quranRepoStub{slugResolution: entity.QuranSlugResolution{
+		SurahID: 1, RequestedSlug: "old-fatihah", CanonicalSlug: "al-fatihah", IsAlias: true,
+	}}
+	uc := New(repository)
+
+	resolution, err := uc.ResolveSlug(context.Background(), "old-fatihah")
+	require.NoError(t, err)
+	assert.True(t, resolution.IsAlias)
+
+	_, err = uc.ResolveSlug(context.Background(), "Al Fatihah")
+	require.ErrorIs(t, err, entity.ErrInvalidQuranSlug)
+}
+
 type quranRepoStub struct {
 	listSurahsLang                    string
 	listSurahsIncludeInfo             bool
@@ -176,6 +254,12 @@ type quranRepoStub struct {
 	navigationAyahsIncludeAudio       bool
 	navigationAyahsRecitationID       string
 	missingAssetsFilter               repo.MissingQuranAssetFilter
+	sitemapItems                      []entity.QuranSitemapItem
+	feedFilter                        repo.QuranFeedFilter
+	feedItems                         []entity.QuranSitemapItem
+	feedTotal                         int
+	slugResolution                    entity.QuranSlugResolution
+	coverage                          []entity.QuranEditorialCoverage
 }
 
 func (r *quranRepoStub) ListSurahs(_ context.Context, lang string, includeInfo bool) ([]entity.QuranSurah, error) {
@@ -280,6 +364,24 @@ func (r *quranRepoStub) ListBookQuranReferences(context.Context, repo.QuranBookR
 func (r *quranRepoStub) ListMissingQuranAssets(_ context.Context, filter repo.MissingQuranAssetFilter) (entity.EditorialMissingQuranAssets, error) {
 	r.missingAssetsFilter = filter
 	return entity.EditorialMissingQuranAssets{}, nil
+}
+
+func (r *quranRepoStub) ListQuranSitemap(context.Context) ([]entity.QuranSitemapItem, error) {
+	return r.sitemapItems, nil
+}
+
+func (r *quranRepoStub) ListQuranFeed(_ context.Context, filter repo.QuranFeedFilter) ([]entity.QuranSitemapItem, int, error) {
+	r.feedFilter = filter
+
+	return r.feedItems, r.feedTotal, nil
+}
+
+func (r *quranRepoStub) ResolveQuranSurahSlug(context.Context, string) (entity.QuranSlugResolution, error) {
+	return r.slugResolution, nil
+}
+
+func (r *quranRepoStub) ListQuranEditorialCoverage(context.Context) ([]entity.QuranEditorialCoverage, error) {
+	return r.coverage, nil
 }
 
 var _ repo.QuranRepo = (*quranRepoStub)(nil)

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/alfariesh/surau-backend/internal/entity"
 	"github.com/alfariesh/surau-backend/internal/usecase"
@@ -35,6 +36,9 @@ func TestQuranRoutes(t *testing.T) {
 		{name: "surah audio manifest", path: "/v1/quran/surahs/73/audio", wantStatus: http.StatusOK, wantBody: `"missing_ayah_keys":["73:2"]`},
 		{name: "surah audio invalid recitation", path: "/v1/quran/surahs/73/audio?recitation_id=bad-id", wantStatus: http.StatusNotFound, wantBody: `"quran recitation not found"`},
 		{name: "translation sources", path: "/v1/quran/translation-sources?lang=id", wantStatus: http.StatusOK, wantBody: `"coverage"`},
+		{name: "sitemap", path: "/v1/quran/sitemap", wantStatus: http.StatusOK, wantBody: `"path":"/surah/al-muzzammil"`},
+		{name: "feed", path: "/v1/quran/feed?lang=id&page_type=surah", wantStatus: http.StatusOK, wantBody: `"lastmod"`},
+		{name: "current slug", path: "/v1/quran/slugs/al-muzzammil", wantStatus: http.StatusOK, wantBody: `"is_alias":false`},
 		{name: "juz navigation", path: "/v1/quran/juz?lang=id", wantStatus: http.StatusOK, wantBody: `"kind":"juz"`},
 		{name: "juz ayahs", path: "/v1/quran/juz/29/ayahs?include_translation=false&include_audio=true&recitation_id=rec-1", wantStatus: http.StatusOK, wantBody: `"recitation_id":"rec-1"`},
 		{name: "juz invalid include audio", path: "/v1/quran/juz/29/ayahs?include_audio=wat", wantStatus: http.StatusBadRequest, wantBody: `"invalid include_audio"`},
@@ -225,6 +229,9 @@ func newQuranTestApp(quran usecase.Quran) *fiber.App {
 	app.Get("/v1/quran/surahs", controller.listQuranSurahs)
 	app.Get("/v1/quran/recitations", controller.listQuranRecitations)
 	app.Get("/v1/quran/translation-sources", controller.listQuranTranslationSources)
+	app.Get("/v1/quran/sitemap", controller.listQuranSitemap)
+	app.Get("/v1/quran/feed", controller.listQuranFeed)
+	app.Get("/v1/quran/slugs/:slug", controller.resolveQuranSurahSlug)
 	app.Get("/v1/quran/juz", controller.listQuranJuz)
 	app.Get("/v1/quran/juz/:juz_number/ayahs", controller.listQuranJuzAyahs)
 	app.Get("/v1/quran/hizbs", controller.listQuranHizbs)
@@ -236,6 +243,7 @@ func newQuranTestApp(quran usecase.Quran) *fiber.App {
 	app.Get("/v1/quran/surahs/:surah_id/ayahs", controller.listQuranSurahAyahs)
 	app.Get("/v1/quran/search", controller.searchQuran)
 	app.Get("/v1/books/:book_id/quran-references", controller.listBookQuranReferences)
+	app.Get("/v1/editorial/quran/coverage", controller.editorialQuranCoverage)
 
 	return app
 }
@@ -500,6 +508,82 @@ func (f *fakeQuran) MissingAssets(
 	int,
 ) (entity.EditorialMissingQuranAssets, error) {
 	return entity.EditorialMissingQuranAssets{}, nil
+}
+
+func (f *fakeQuran) Sitemap(context.Context) ([]entity.QuranSitemapItem, error) {
+	lastmod := time.Date(2026, 7, 15, 9, 10, 11, 0, time.UTC)
+
+	return []entity.QuranSitemapItem{{
+		PageType: "surah",
+		SurahID:  73,
+		Slug:     "al-muzzammil",
+		Lang:     "id",
+		Path:     "/surah/al-muzzammil",
+		Lastmod:  lastmod,
+		Hreflangs: []entity.QuranSitemapHreflang{
+			{Lang: "id", Path: "/surah/al-muzzammil"},
+			{Lang: "en", Path: "/en/surah/al-muzzammil"},
+		},
+	}}, nil
+}
+
+func (f *fakeQuran) Feed(context.Context, string, string, string, int, int) ([]entity.QuranSitemapItem, int, error) {
+	items, err := f.Sitemap(context.Background())
+
+	return items, len(items), err
+}
+
+func (f *fakeQuran) ResolveSlug(_ context.Context, slug string) (entity.QuranSlugResolution, error) {
+	return entity.QuranSlugResolution{
+		SurahID:       73,
+		RequestedSlug: slug,
+		CanonicalSlug: "al-muzzammil",
+		IsAlias:       slug != "al-muzzammil",
+	}, nil
+}
+
+func (f *fakeQuran) EditorialCoverage(context.Context) ([]entity.QuranEditorialCoverage, error) {
+	return []entity.QuranEditorialCoverage{{
+		Lang: "id", PageType: "surah", TotalTargets: 114, Indexable: 1,
+		MissingEditorial: 113, SitemapItems: 1, CoveragePercent: 0.88,
+	}}, nil
+}
+
+func TestQuranHistoricalSlugRedirectsPermanently(t *testing.T) {
+	t.Parallel()
+
+	app := newQuranTestApp(&fakeQuran{})
+	resp, err := app.Test(httptest.NewRequestWithContext(
+		t.Context(), http.MethodGet, "/v1/quran/slugs/old-muzzammil", http.NoBody,
+	), -1)
+	require.NoError(t, err)
+
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusPermanentRedirect, resp.StatusCode)
+	assert.Equal(t, "/v1/quran/slugs/al-muzzammil", resp.Header.Get("Location"))
+	assert.Equal(t, "public, max-age=31536000, immutable", resp.Header.Get("Cache-Control"))
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	assert.Contains(t, string(body), `"is_alias":true`)
+}
+
+func TestQuranEditorialCoverageResponse(t *testing.T) {
+	t.Parallel()
+
+	app := newQuranTestApp(&fakeQuran{})
+	resp, err := app.Test(httptest.NewRequestWithContext(
+		t.Context(), http.MethodGet, "/v1/editorial/quran/coverage", http.NoBody,
+	))
+	require.NoError(t, err)
+
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	assert.Contains(t, string(body), `"total":1`)
+	assert.Contains(t, string(body), `"missing_editorial":113`)
 }
 
 func fakeSurahInfo() *entity.QuranSurahInfo {

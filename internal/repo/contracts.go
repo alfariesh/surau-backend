@@ -385,6 +385,10 @@ type (
 		SearchAyahs(ctx context.Context, filter QuranSearchFilter) ([]entity.QuranSearchResult, int, error)
 		ListBookQuranReferences(ctx context.Context, filter QuranBookReferenceFilter) ([]entity.BookQuranReference, int, error)
 		ListMissingQuranAssets(ctx context.Context, filter MissingQuranAssetFilter) (entity.EditorialMissingQuranAssets, error)
+		ListQuranSitemap(ctx context.Context) ([]entity.QuranSitemapItem, error)
+		ListQuranFeed(ctx context.Context, filter QuranFeedFilter) ([]entity.QuranSitemapItem, int, error)
+		ResolveQuranSurahSlug(ctx context.Context, slug string) (entity.QuranSlugResolution, error)
+		ListQuranEditorialCoverage(ctx context.Context) ([]entity.QuranEditorialCoverage, error)
 	}
 
 	// PersonalRepo -.
@@ -747,6 +751,16 @@ type (
 		TranslationSource string
 		Limit             uint64
 		Offset            uint64
+	}
+
+	// QuranFeedFilter selects current indexable sitemap records for incremental
+	// consumers. Since is inclusive to prevent missed equal-timestamp records.
+	QuranFeedFilter struct {
+		Since    *time.Time
+		Lang     string
+		PageType string
+		Limit    uint64
+		Offset   uint64
 	}
 
 	// QuranBookReferenceFilter -.

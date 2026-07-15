@@ -16,6 +16,109 @@ const (
 	quranAyahViewReaderMinimal = "reader_minimal"
 )
 
+// @Summary     List all indexable Quran pages
+// @Description Return every Indonesian and English surah/ayah page whose editorial and primary source are public-eligible. The response is deliberately unpaginated and bounded below the 50,000-URL sitemap limit.
+// @ID          list-quran-sitemap
+// @Tags        quran
+// @Produce     json
+// @Success     200 {object} response.QuranSitemapList
+// @Failure     500 {object} response.Error
+// @Router      /quran/sitemap [get]
+func (r *V1) listQuranSitemap(ctx *fiber.Ctx) error {
+	items, err := r.quran.Sitemap(ctx.UserContext())
+	if err != nil {
+		r.logQuranError(ctx, err, "restapi - v1 - listQuranSitemap")
+
+		return r.quranErrorResponse(ctx, err)
+	}
+
+	return ctx.Status(http.StatusOK).JSON(response.QuranSitemapList{Items: items, Total: len(items)})
+}
+
+// @Summary     List recently updated indexable Quran pages
+// @Description Return a paginated, lastmod-descending feed over the exact sitemap truth set. Since is inclusive so equal-timestamp records are not missed.
+// @ID          list-quran-feed
+// @Tags        quran
+// @Produce     json
+// @Param       since     query string false "Inclusive RFC3339 lastmod lower bound"
+// @Param       lang      query string false "Language: id or en" Enums(id,en)
+// @Param       page_type query string false "Page type" Enums(surah,ayah)
+// @Param       limit     query int    false "Page size (max 200)" default(50)
+// @Param       offset    query int    false "Offset (max 10000)" default(0)
+// @Success     200 {object} response.QuranSitemapList
+// @Failure     400 {object} response.Error
+// @Failure     500 {object} response.Error
+// @Router      /quran/feed [get]
+func (r *V1) listQuranFeed(ctx *fiber.Ctx) error {
+	items, total, err := r.quran.Feed(
+		ctx.UserContext(),
+		ctx.Query("since"),
+		ctx.Query("lang"),
+		ctx.Query("page_type"),
+		queryInt(ctx, "limit", defaultListLimit),
+		queryInt(ctx, "offset", 0),
+	)
+	if err != nil {
+		r.logQuranError(ctx, err, "restapi - v1 - listQuranFeed")
+
+		return r.quranErrorResponse(ctx, err)
+	}
+
+	return ctx.Status(http.StatusOK).JSON(response.QuranSitemapList{Items: items, Total: total})
+}
+
+// @Summary     Resolve a Quran surah slug
+// @Description Resolve a current slug or permanently redirect a historical slug to the latest registered alias. Slugs are aliases; Quran Anchor identity remains numeric.
+// @ID          resolve-quran-surah-slug
+// @Tags        quran
+// @Produce     json
+// @Param       slug path string true "Current or historical surah slug"
+// @Success     200 {object} entity.QuranSlugResolution
+// @Success     308 {object} entity.QuranSlugResolution
+// @Failure     400 {object} response.Error
+// @Failure     404 {object} response.Error
+// @Failure     500 {object} response.Error
+// @Router      /quran/slugs/{slug} [get]
+func (r *V1) resolveQuranSurahSlug(ctx *fiber.Ctx) error {
+	resolution, err := r.quran.ResolveSlug(ctx.UserContext(), ctx.Params("slug"))
+	if err != nil {
+		r.logQuranError(ctx, err, "restapi - v1 - resolveQuranSurahSlug")
+
+		return r.quranErrorResponse(ctx, err)
+	}
+
+	if resolution.IsAlias {
+		ctx.Location("/v1/quran/slugs/" + resolution.CanonicalSlug)
+		ctx.Set(fiber.HeaderCacheControl, "public, max-age=31536000, immutable")
+
+		return ctx.Status(http.StatusPermanentRedirect).JSON(resolution)
+	}
+
+	return ctx.Status(http.StatusOK).JSON(resolution)
+}
+
+// @Summary     Report Quran editorial coverage
+// @Description Report mutually-exclusive public readiness counts for ar/id/en and surah/ayah. Requires review-editorial capability.
+// @ID          get-quran-editorial-coverage
+// @Tags        editorial-quran
+// @Produce     json
+// @Security    BearerAuth
+// @Success     200 {object} response.QuranEditorialCoverageList
+// @Failure     401 {object} response.Error
+// @Failure     403 {object} response.Error
+// @Failure     500 {object} response.Error
+// @Router      /editorial/quran/coverage [get]
+func (r *V1) editorialQuranCoverage(ctx *fiber.Ctx) error {
+	items, err := r.quran.EditorialCoverage(ctx.UserContext())
+	if err != nil {
+		r.logQuranError(ctx, err, "restapi - v1 - editorialQuranCoverage")
+
+		return r.quranErrorResponse(ctx, err)
+	}
+
+	return ctx.Status(http.StatusOK).JSON(response.QuranEditorialCoverageList{Items: items, Total: len(items)})
+}
+
 // @Summary     List Quran surahs
 // @Description List Quran surahs in mushaf order. Surah info is omitted by default; pass include_info=true for language-specific info HTML.
 // @ID          list-quran-surahs
@@ -577,6 +680,18 @@ func (r *V1) quranErrorResponse(ctx *fiber.Ctx, err error) error {
 	if errors.Is(err, entity.ErrInvalidAyahKey) || errors.Is(err, entity.ErrInvalidQuranRange) {
 		return errorResponse(ctx, http.StatusBadRequest, err.Error())
 	}
+
+	if errors.Is(err, entity.ErrInvalidSyncSince) {
+		return errorResponse(ctx, http.StatusBadRequest, "invalid since")
+	}
+
+	if errors.Is(err, entity.ErrInvalidQuranSlug) {
+		return errorResponse(ctx, http.StatusBadRequest, "invalid quran slug")
+	}
+
+	if errors.Is(err, entity.ErrInvalidQuranPageType) {
+		return errorResponse(ctx, http.StatusBadRequest, "invalid quran page type")
+	}
 	if errors.Is(err, entity.ErrInvalidAssetType) {
 		return errorResponse(ctx, http.StatusBadRequest, "invalid asset type")
 	}
@@ -594,6 +709,10 @@ func (r *V1) quranErrorResponse(ctx *fiber.Ctx, err error) error {
 	}
 	if errors.Is(err, entity.ErrQuranTranslationSourceNotFound) {
 		return errorResponse(ctx, http.StatusNotFound, "quran translation source not found")
+	}
+
+	if errors.Is(err, entity.ErrQuranSlugNotFound) {
+		return errorResponse(ctx, http.StatusNotFound, "quran slug not found")
 	}
 	if errors.Is(err, entity.ErrBookNotFound) {
 		return errorResponse(ctx, http.StatusNotFound, "book not found")

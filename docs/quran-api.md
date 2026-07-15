@@ -102,10 +102,15 @@ Surah-level editorial enrichment powers the public `/surah/{slug}` SEO pages.
 
 Surah-level fields (language-independent, on every surah object):
 
-- `slug` — canonical, stable URL slug (e.g. `al-mulk`). Language-independent. Backfilled from `name_latin`; treat as stable (changing it breaks live URLs).
+- `slug` — the current canonical URL alias (e.g. `al-mulk`). It is
+  language-independent and lowercase ASCII kebab-case. A controlled rename is
+  safe: the backend permanently registers every old value and resolves it to
+  the current alias through `GET /v1/quran/slugs/{slug}`.
 - `chronological_order` — order of revelation (`1`–`114`), nullable.
 - `ruku_count` — number of ruku, nullable.
-- `content_updated_at` — `GREATEST(surah, editorial)` for the requested lang. Use it as the sitemap `lastmod` so editorial edits move freshness; falls back to surah `updated_at` when no editorial.
+- `content_updated_at` — `GREATEST(surah, editorial)` for the requested lang.
+  Sitemap producers should consume `/v1/quran/sitemap` instead of rebuilding
+  eligibility or freshness from reader payloads.
 
 `editorial` (per-language object, present **only when published and permitted**):
 
@@ -136,6 +141,83 @@ and `faq` content. Full ayah lists keep the light editorial metadata; the
 `reader_minimal` view omits editorial. `tafsir_range` is a pointer for the UI,
 not a reproduced tafsir body. The protected workflow does not change any of
 these public response shapes.
+
+### Quran Sitemap, Feed, and Permanent Slugs
+
+The backend exposes the complete public SEO truth set as JSON. The separate web
+repository is responsible for rendering `www.surau.org/sitemap.xml`; do not
+invent URLs or repeat the publication/license checks in the frontend.
+
+```http
+GET /v1/quran/sitemap
+GET /v1/quran/feed?since=2026-07-15T00:00:00Z&lang=id&page_type=ayah&limit=50&offset=0
+GET /v1/quran/slugs/{slug}
+```
+
+`/v1/quran/sitemap` is intentionally unpaginated and uses the standard
+`{items,total}` envelope. It contains every and only id/en surah or ayah page
+whose exact-language editorial row is `published`, whose License Status is
+literal `permitted`, whose primary Quran script source is public, and whose
+current surah slug is registered. A representative item is:
+
+```json
+{
+  "page_type": "ayah",
+  "surah_id": 1,
+  "ayah_number": 1,
+  "ayah_key": "1:1",
+  "slug": "al-fatihah",
+  "lang": "id",
+  "path": "/surah/al-fatihah/1",
+  "lastmod": "2026-07-15T12:00:00Z",
+  "hreflangs": [
+    {"lang": "en", "path": "/en/surah/al-fatihah/1"},
+    {"lang": "id", "path": "/surah/al-fatihah/1"}
+  ]
+}
+```
+
+Indonesian paths use `/surah/{slug}` and `/surah/{slug}/{ayah}`; English paths
+add the `/en` prefix. `hreflangs` always includes the item's own language and
+includes its id/en counterpart only when that exact counterpart is also
+public-eligible. There is no fallback and no `x-default`.
+
+`lastmod` is read live from PostgreSQL. Surah pages use the later of
+`quran_surahs.updated_at` and the public editorial `updated_at`; ayah pages use
+the later of `quran_ayahs.updated_at` and the public editorial `updated_at`.
+Drafts and non-permitted rows cannot advance it. The API also emits ETag and a
+response-level `Last-Modified` header using the newest returned `lastmod`.
+
+`/v1/quran/feed` reads the same truth set, ordered by `lastmod DESC` with stable
+tie-breakers. `since` is inclusive RFC3339; `lang` accepts `id|en`;
+`page_type` accepts `surah|ayah`; `limit` defaults to 50 and is clamped to 200;
+`offset` is clamped to 10,000. Its `total` is the number matching the filters,
+not only the current page.
+
+Slug values must match `^[a-z0-9]+(-[a-z0-9]+)*$` and are globally immutable
+once registered: they cannot be deleted, moved to another surah, or reused.
+The current slug returns `200` with `{surah_id,requested_slug,canonical_slug,
+is_alias:false}`. Any historical slug returns `308 Permanent Redirect`, with
+`Location: /v1/quran/slugs/{current-slug}` and the same resolution metadata
+using `is_alias:true`. Multiple renames always redirect directly to the newest
+slug, never through a chain. An unknown valid slug returns `404`; an invalid
+shape returns `400`. Quran Anchor identity remains `surah_id`/`ayah_key`, not
+the mutable display alias.
+
+Operators with `CapReviewEditorial` can inspect readiness through:
+
+```http
+GET /v1/editorial/quran/coverage
+Authorization: Bearer <operator-token>
+```
+
+The `{items,total}` response has exactly six rows: `ar|id|en` crossed with
+`surah|ayah`. Each row includes `total_targets`, `indexable`,
+`published_blocked_license`, `workflow_incomplete`, `missing_editorial`,
+`missing_slug`, `sitemap_items`, and `coverage_percent`. Readiness buckets are
+mutually exclusive and sum to `total_targets`; for id/en, `sitemap_items`
+matches the corresponding public sitemap count. Arabic is reported for
+editorial operations but is not emitted to the sitemap.
 
 ### Multilingual Availability
 
@@ -1371,8 +1453,9 @@ resource; no-op saves do not create a revision or advance the ETag.
 For surahs, this Q-1 history covers the per-language editorial row. The global
 `slug`, `chronological_order`, and `ruku_count` fields remain publish-only: the
 default importer never changes them, and `--publish` applies them atomically.
-Permanent slug history and redirects are deliberately owned by Q-4, so these
-three routing fields are not replayed by a Q-1 draft restore.
+Q-4 permanently registers every published slug change, so historical aliases
+remain resolvable; these global routing fields are not replayed by a Q-1 draft
+restore.
 
 ### 12. Protected Quran Source License Audit
 

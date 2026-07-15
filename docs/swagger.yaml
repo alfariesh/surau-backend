@@ -2545,6 +2545,39 @@ definitions:
       unit_id:
         type: string
     type: object
+  entity.QuranEditorialCoverage:
+    properties:
+      coverage_percent:
+        example: 96.22
+        type: number
+      indexable:
+        example: 6000
+        type: integer
+      lang:
+        example: id
+        type: string
+      missing_editorial:
+        example: 126
+        type: integer
+      missing_slug:
+        example: 0
+        type: integer
+      page_type:
+        example: ayah
+        type: string
+      published_blocked_license:
+        example: 10
+        type: integer
+      sitemap_items:
+        example: 6000
+        type: integer
+      total_targets:
+        example: 6236
+        type: integer
+      workflow_incomplete:
+        example: 100
+        type: integer
+    type: object
   entity.QuranEditorialRevision:
     properties:
       actor_id:
@@ -2775,6 +2808,61 @@ definitions:
       score:
         example: 0.82
         type: number
+    type: object
+  entity.QuranSitemapHreflang:
+    properties:
+      lang:
+        example: id
+        type: string
+      path:
+        example: /surah/al-fatihah
+        type: string
+    type: object
+  entity.QuranSitemapItem:
+    properties:
+      ayah_key:
+        example: "1:1"
+        type: string
+      ayah_number:
+        example: 1
+        type: integer
+      hreflangs:
+        items:
+          $ref: '#/definitions/entity.QuranSitemapHreflang'
+        type: array
+      lang:
+        example: id
+        type: string
+      lastmod:
+        example: "2026-07-15T12:00:00Z"
+        type: string
+      page_type:
+        example: ayah
+        type: string
+      path:
+        example: /surah/al-fatihah/1
+        type: string
+      slug:
+        example: al-fatihah
+        type: string
+      surah_id:
+        example: 1
+        type: integer
+    type: object
+  entity.QuranSlugResolution:
+    properties:
+      canonical_slug:
+        example: al-fatihah
+        type: string
+      is_alias:
+        example: true
+        type: boolean
+      requested_slug:
+        example: al-fatihah-old
+        type: string
+      surah_id:
+        example: 1
+        type: integer
     type: object
   entity.QuranSourceLicense:
     properties:
@@ -4871,6 +4959,16 @@ definitions:
         example: 7
         type: integer
     type: object
+  v1.QuranEditorialCoverageList:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/entity.QuranEditorialCoverage'
+        type: array
+      total:
+        example: 6
+        type: integer
+    type: object
   v1.QuranEditorialRevisionList:
     properties:
       items:
@@ -5047,6 +5145,16 @@ definitions:
         type: array
       total:
         example: 42
+        type: integer
+    type: object
+  v1.QuranSitemapList:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/entity.QuranSitemapItem'
+        type: array
+      total:
+        example: 12700
         type: integer
     type: object
   v1.QuranSurahAudioManifest:
@@ -11913,6 +12021,35 @@ paths:
       summary: Publish Quran ayah editorial draft
       tags:
       - editorial
+  /editorial/quran/coverage:
+    get:
+      description: Report mutually-exclusive public readiness counts for ar/id/en
+        and surah/ayah. Requires review-editorial capability.
+      operationId: get-quran-editorial-coverage
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.QuranEditorialCoverageList'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Report Quran editorial coverage
+      tags:
+      - editorial-quran
   /editorial/quran/missing-assets:
     get:
       description: Editorial queue of missing Quran surah info, ayah translations,
@@ -13568,6 +13705,58 @@ paths:
       summary: Get Quran ayah
       tags:
       - quran
+  /quran/feed:
+    get:
+      description: Return a paginated, lastmod-descending feed over the exact sitemap
+        truth set. Since is inclusive so equal-timestamp records are not missed.
+      operationId: list-quran-feed
+      parameters:
+      - description: Inclusive RFC3339 lastmod lower bound
+        in: query
+        name: since
+        type: string
+      - description: 'Language: id or en'
+        enum:
+        - id
+        - en
+        in: query
+        name: lang
+        type: string
+      - description: Page type
+        enum:
+        - surah
+        - ayah
+        in: query
+        name: page_type
+        type: string
+      - default: 50
+        description: Page size (max 200)
+        in: query
+        name: limit
+        type: integer
+      - default: 0
+        description: Offset (max 10000)
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.QuranSitemapList'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      summary: List recently updated indexable Quran pages
+      tags:
+      - quran
   /quran/hizbs:
     get:
       description: List imported Quran hizb segments with lightweight start/end boundaries.
@@ -13885,6 +14074,64 @@ paths:
           schema:
             $ref: '#/definitions/v1.Error'
       summary: Search Quran
+      tags:
+      - quran
+  /quran/sitemap:
+    get:
+      description: Return every Indonesian and English surah/ayah page whose editorial
+        and primary source are public-eligible. The response is deliberately unpaginated
+        and bounded below the 50,000-URL sitemap limit.
+      operationId: list-quran-sitemap
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.QuranSitemapList'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      summary: List all indexable Quran pages
+      tags:
+      - quran
+  /quran/slugs/{slug}:
+    get:
+      description: Resolve a current slug or permanently redirect a historical slug
+        to the latest registered alias. Slugs are aliases; Quran Anchor identity remains
+        numeric.
+      operationId: resolve-quran-surah-slug
+      parameters:
+      - description: Current or historical surah slug
+        in: path
+        name: slug
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.QuranSlugResolution'
+        "308":
+          description: Permanent Redirect
+          schema:
+            $ref: '#/definitions/entity.QuranSlugResolution'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      summary: Resolve a Quran surah slug
       tags:
       - quran
   /quran/surahs:

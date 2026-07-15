@@ -105,12 +105,16 @@ WHERE id = 'qpc-hafs'`, status, reason, evidence, updatedBy, updatedAt); txErr !
 	}
 
 	const (
-		surahID     = 113
 		permittedNo = 905 // full editorial, license permitted
 		sourceID    = "f1e-editorial-readpath-source"
 		// Unique token so SearchAyahs can only ever match the seeded row.
 		searchNeedle = "f1ereadpathfixture905"
 	)
+	surahID, insertedParent, err := claimQuranSurahLiveFixture(
+		ctx, pg, 113, "q4-read-path-fixture", "Q-4 read path fixture", 5,
+		"q4_read_path_fixture",
+	)
+	require.NoError(t, err)
 
 	permittedKey := fmt.Sprintf("%d:%d", surahID, permittedNo)
 	reviewNumbers := []int{901, 902, 903} // editorial rows stuck in needs_review
@@ -146,14 +150,20 @@ WHERE id = 'qpc-hafs'`, status, reason, evidence, updatedBy, updatedAt); txErr !
 				t.Logf("cleanup ayah %d: %v", n, err)
 			}
 		}
-	}
-	cleanup()
-	t.Cleanup(cleanup)
 
-	// FK targets: the surah row (real corpus wins on conflict) and the ayahs.
-	_, err = pg.Pool.Exec(ctx,
-		`INSERT INTO quran_surahs (surah_id, ayah_count) VALUES ($1, 5) ON CONFLICT (surah_id) DO NOTHING`, surahID)
-	require.NoError(t, err)
+		if insertedParent {
+			if err := cleanupInsertedQuranSurah(
+				ctx, pg, surahID, "q4_read_path_fixture",
+			); err != nil {
+				t.Logf("cleanup surah parent: %v", err)
+			}
+		}
+	}
+	claimedInsertedParent := insertedParent
+	insertedParent = false
+	cleanup()
+	insertedParent = claimedInsertedParent
+	t.Cleanup(cleanup)
 
 	for _, n := range seededNumbers {
 		_, err = pg.Pool.Exec(ctx, `
