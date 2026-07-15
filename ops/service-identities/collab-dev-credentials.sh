@@ -292,6 +292,11 @@ cutover_role() {
 
   assert_dev_evidence
   set_env_value ALLOW_LEGACY_DB_CREDENTIALS false
+  # EXIT is the failure cleanup path while this function's locals are alive.
+  # On success, clean explicitly and remove the trap before returning so Bash
+  # cannot expand out-of-scope local paths at process exit.
+  cleanup
+  trap - EXIT
   echo "collab DEV DB role cut over without container restart; ACL and principal audit passed"
 }
 
