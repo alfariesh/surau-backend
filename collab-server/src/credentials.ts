@@ -16,7 +16,17 @@ export async function initialSecret(
   label: string,
 ): Promise<string> {
   if (filePath) {
-    return readSecret(filePath, label);
+    try {
+      return await readSecret(filePath, label);
+    } catch (err) {
+      // During the single-release A-2 overlap, the old direct credential is
+      // the rollback path if the root-owned file has not been materialized
+      // yet. Once the file exists it still wins, and later reload failures
+      // retain the last validated credential.
+      if (!direct) {
+        throw err;
+      }
+    }
   }
   if (direct) {
     return direct.trim();

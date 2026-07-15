@@ -1,11 +1,25 @@
 import { describe, expect, it, vi } from "vitest";
 import type pg from "pg";
 
-import { ReloadingServiceToken } from "../src/credentials.js";
+import { initialSecret, ReloadingServiceToken } from "../src/credentials.js";
 import { createLogger } from "../src/logger.js";
 import { ReloadingPool, type CollabPool } from "../src/persistence.js";
 
 describe("overlap credential reload", () => {
+  it("uses the direct A credential only while the B file is unavailable", async () => {
+    await expect(initialSecret(
+      "postgres://role-a/db",
+      "/missing/a2-collab-pg-url",
+      "COLLAB_PG_URL",
+    )).resolves.toBe("postgres://role-a/db");
+
+    await expect(initialSecret(
+      undefined,
+      "/missing/a2-collab-pg-url",
+      "COLLAB_PG_URL",
+    )).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
   it("activates a verified T2 and retains T2 when a later candidate fails", async () => {
     let fileToken = "token-t1-32-bytes-minimum-aaaaaaaa";
     const fetchImpl = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {

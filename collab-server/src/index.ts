@@ -30,7 +30,11 @@ import { createDatabaseExtension, createReloadingPool, pingDatabase } from "./pe
 
 const config = loadConfig();
 const logger = createLogger(config.COLLAB_LOG_LEVEL);
-const pool = await createReloadingPool(config.COLLAB_PG_URL, config.COLLAB_PG_URL_FILE, logger);
+const pool = await createReloadingPool(
+  config.ALLOW_LEGACY_DB_CREDENTIALS ? config.COLLAB_PG_URL : undefined,
+  config.COLLAB_PG_URL_FILE,
+  logger,
+);
 const initialServiceToken = await initialSecret(
   config.COLLAB_SERVICE_TOKEN,
   config.COLLAB_SERVICE_TOKEN_FILE,

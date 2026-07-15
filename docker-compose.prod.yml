@@ -244,8 +244,12 @@ services:
       COLLAB_PORT: "8090"
       # FILE values win and can be replaced atomically during A/B rotation.
       # Direct values remain only as the explicit one-release overlap fallback.
-      COLLAB_PG_URL: ${COLLAB_PG_URL:-}
+      # Keep PG_URL as the one-release A credential so a rollback image that
+      # predates *_FILE support can still start. The deploy gate writes and
+      # proves a surau_collab_store B credential before disabling legacy use.
+      COLLAB_PG_URL: ${COLLAB_PG_URL:-${PG_URL:?set PG_URL}}
       COLLAB_PG_URL_FILE: ${COLLAB_PG_URL_FILE:-/run/secrets/surau-collab/pg-url}
+      ALLOW_LEGACY_DB_CREDENTIALS: ${ALLOW_LEGACY_DB_CREDENTIALS:-false}
       COLLAB_GO_API_URL: http://app:8080
       # No :? here — compose interpolates even profile-disabled services; the
       # Go app refuses to boot when COLLAB_ENABLED=true with a short token.
@@ -260,6 +264,11 @@ services:
         source: ${COLLAB_SECRETS_DIR:-/var/lib/surau/secrets/collab}
         target: /run/secrets/surau-collab
         read_only: true
+    # Numeric supplementary group reads root-owned 0640 files while the Node
+    # process remains the image's non-root `node` user. DEV deploy materializes
+    # the real GID; the nobody default fails closed for manual misconfiguration.
+    group_add:
+      - "${COLLAB_SECRETS_GID:-65534}"
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8090/healthz').then((r) => process.exit(r.status === 200 ? 0 : 1)).catch(() => process.exit(1))"]
       interval: 15s
