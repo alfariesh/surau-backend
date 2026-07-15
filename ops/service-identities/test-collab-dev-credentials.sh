@@ -49,7 +49,11 @@ fi
 grep -qx 'ALLOW_LEGACY_DB_CREDENTIALS=true' "$env_file"
 
 permissions() {
-  stat -f '%Lp' "$1" 2>/dev/null || stat -c '%a' "$1"
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    stat -f '%Lp' "$1"
+  else
+    stat -c '%a' "$1"
+  fi
 }
 [[ "$(permissions "$secrets_dir")" == "750" ]]
 [[ "$(permissions "$secrets_dir/pg-url")" == "640" ]]
