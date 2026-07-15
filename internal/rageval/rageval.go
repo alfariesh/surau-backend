@@ -32,6 +32,7 @@ var (
 	errSSEStreamEvent        = errors.New("stream error event")
 	errSSEMissingEvent       = errors.New("missing required SSE event")
 	errSSECitationsDivergent = errors.New("citations event differs from done response")
+	errServiceTokenBaseURL   = errors.New("service token base URL must be absolute")
 )
 
 // Options configures a BookRAG evaluation run.
@@ -47,6 +48,9 @@ type Options struct {
 	ExpectedCitationMode string
 	ForbidLegacyFallback bool
 	ProgressWriter       io.Writer
+	// ServiceToken identifies the runner on Surau requests. It never changes
+	// rate limits or public response semantics.
+	ServiceToken string
 }
 
 // GoldenCase is one JSONL evaluation case.
@@ -211,6 +215,14 @@ func Run(ctx context.Context, opts Options) (Summary, error) {
 
 	startedAt := time.Now()
 	client := &http.Client{Timeout: opts.Timeout}
+	if token := strings.TrimSpace(opts.ServiceToken); token != "" {
+		origin, parseErr := url.Parse(opts.BaseURL)
+		if parseErr != nil || origin.Scheme == "" || origin.Host == "" {
+			return Summary{}, fmt.Errorf("%w: %q", errServiceTokenBaseURL, opts.BaseURL)
+		}
+
+		client.Transport = serviceTokenTransport{token: token, origin: origin, next: http.DefaultTransport}
+	}
 	results := make([]CaseResult, 0, len(cases))
 	for _, tc := range cases {
 		if opts.ExpectedCitationMode != "" {
@@ -258,6 +270,45 @@ func Run(ctx context.Context, opts Options) (Summary, error) {
 	}
 
 	return summary, nil
+}
+
+type serviceTokenTransport struct {
+	token  string
+	origin *url.URL
+	next   http.RoundTripper
+}
+
+func (transport serviceTokenTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	cloned := request.Clone(request.Context())
+	cloned.Header = request.Header.Clone()
+	cloned.Header.Del("X-Internal-Token")
+
+	if sameHTTPOrigin(request.URL, transport.origin) {
+		cloned.Header.Set("X-Internal-Token", transport.token)
+	}
+
+	return transport.next.RoundTrip(cloned)
+}
+
+func sameHTTPOrigin(left, right *url.URL) bool {
+	if left == nil || right == nil || !strings.EqualFold(left.Scheme, right.Scheme) ||
+		!strings.EqualFold(left.Hostname(), right.Hostname()) {
+		return false
+	}
+
+	return effectiveHTTPPort(left) == effectiveHTTPPort(right)
+}
+
+func effectiveHTTPPort(value *url.URL) string {
+	if port := value.Port(); port != "" {
+		return port
+	}
+
+	if strings.EqualFold(value.Scheme, "https") {
+		return "443"
+	}
+
+	return "80"
 }
 
 func writeProgress(w io.Writer, event string, tc GoldenCase, attempt int, result CaseResult) {

@@ -5,15 +5,15 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"os"
 
+	"github.com/alfariesh/surau-backend/internal/dbcredential"
 	"github.com/alfariesh/surau-backend/internal/importer"
 )
 
 func main() {
 	var opts importer.AssetOptions
 
-	flag.StringVar(&opts.PostgresURL, "pg-url", os.Getenv("PG_URL"), "PostgreSQL URL")
+	flag.StringVar(&opts.PostgresURL, "pg-url", dbcredential.ImporterURL(), "PostgreSQL URL (defaults to IMPORTER_PG_URL)")
 	flag.StringVar(&opts.Path, "file", "", "translation/audio JSONL file")
 	flag.Parse()
 

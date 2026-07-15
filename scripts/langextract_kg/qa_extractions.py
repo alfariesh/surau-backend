@@ -100,7 +100,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--file", default="", help="Knowledge extraction JSONL file")
     parser.add_argument("--run-id", default="", help="Validate rows already stored for this extraction run")
-    parser.add_argument("--pg-url", default="", help="PostgreSQL URL; defaults to PG_URL")
+    parser.add_argument("--pg-url", default="", help="PostgreSQL URL; defaults to LANGEXTRACT_PG_URL")
     parser.add_argument("--env-file", default=str(kg_db.DEFAULT_ENV_FILE), help="Local dotenv file")
     parser.add_argument("--strict", action="store_true", help="Treat warnings as failures")
     parser.add_argument("--report", default="", help="Write JSON report")

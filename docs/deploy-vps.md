@@ -166,6 +166,14 @@ sudo docker compose --env-file .env.production -f docker-compose.prod.yml \
 
 Aplikasi auto-migrate saat boot (build `-tags migrate`). Pipeline deploy sudah: (1) snapshot pra-deploy via `surau-predeploy-snapshot` — pg_dump terenkripsi (age) ke `/var/backups/surau/predeploy/` DAN diunggah ke R2 `predeploy/<env>/`; R2 menyimpan 7 hari, host menyimpan dua terbaru dan hanya memangkas duplikat yang sudah diverifikasi ada di R2 (dump gagal = deploy batal; upload R2 gagal = deploy lanjut + alarm Telegram), dan (2) `docker image prune` HANYA setelah `/readyz` hijau (biar image lama masih ada untuk rollback bila deploy gagal). `migrate.go` menolak auto-migrate bila schema DIRTY dan mencetak langkah pemulihan.
 
+Migration A-2 yang membuat group role PostgreSQL memiliki preflight tambahan
+sebelum `migrate.Up()`: login migration harus mempunyai `CREATEROLE` (atau
+superuser) dan menjadi owner semua tabel/view `public`. Gagal preflight berhenti
+sebelum schema disentuh, jadi tidak membuat versi A-2 DIRTY. Password login
+extraction/importer/collab tidak dibuat oleh migration; ikuti runbook
+[`service-identity-rotation.md`](service-identity-rotation.md) melalui
+`\password` interaktif dan expiry maksimum 90 hari.
+
 Deploy dev juga menjalankan recovery Q-2 yang idempotent setelah aplikasi baru sehat:
 `quran-page-navigation-v1 -restart` lalu `citable-units-quran -restart`. Workflow baru dianggap
 berhasil bila reader halaman 1 mengembalikan `primary_unit_id`, dan target `quran_ayah` pada

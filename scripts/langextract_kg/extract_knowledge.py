@@ -189,7 +189,7 @@ def main() -> int:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--pg-url", default="", help="PostgreSQL URL; defaults to PG_URL")
+    parser.add_argument("--pg-url", default="", help="PostgreSQL URL; defaults to LANGEXTRACT_PG_URL")
     parser.add_argument("--book-id", required=True, type=int, help="Source book ID")
     parser.add_argument("--page-id", action="append", type=int, help="Source page ID; repeat for many")
     parser.add_argument("--limit", type=int, default=0, help="Limit selected pages; 0 means no limit")

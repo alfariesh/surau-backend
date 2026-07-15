@@ -242,15 +242,24 @@ services:
     restart: unless-stopped
     environment:
       COLLAB_PORT: "8090"
-      COLLAB_PG_URL: ${PG_URL:?set PG_URL}
+      # FILE values win and can be replaced atomically during A/B rotation.
+      # Direct values remain only as the explicit one-release overlap fallback.
+      COLLAB_PG_URL: ${COLLAB_PG_URL:-}
+      COLLAB_PG_URL_FILE: ${COLLAB_PG_URL_FILE:-/run/secrets/surau-collab/pg-url}
       COLLAB_GO_API_URL: http://app:8080
       # No :? here — compose interpolates even profile-disabled services; the
       # Go app refuses to boot when COLLAB_ENABLED=true with a short token.
       COLLAB_SERVICE_TOKEN: ${COLLAB_SERVICE_TOKEN:-}
+      COLLAB_SERVICE_TOKEN_FILE: ${COLLAB_SERVICE_TOKEN_FILE:-/run/secrets/surau-collab/service-token}
       COLLAB_DEBOUNCE_MS: ${COLLAB_DEBOUNCE_MS:-3000}
       COLLAB_DEBOUNCE_MAX_MS: ${COLLAB_DEBOUNCE_MAX_MS:-10000}
       COLLAB_TOKEN_GRACE_MS: ${COLLAB_TOKEN_GRACE_MS:-30000}
       COLLAB_LOG_LEVEL: ${LOG_LEVEL:-info}
+    volumes:
+      - type: bind
+        source: ${COLLAB_SECRETS_DIR:-/var/lib/surau/secrets/collab}
+        target: /run/secrets/surau-collab
+        read_only: true
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8090/healthz').then((r) => process.exit(r.status === 200 ? 0 : 1)).catch(() => process.exit(1))"]
       interval: 15s

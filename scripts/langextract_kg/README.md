@@ -7,13 +7,19 @@ DB-backed extraction pipeline for Surau reader pages.
 Create `.env.local` at the repo root:
 
 ```env
-PG_URL=postgres://user:password@localhost:5432/db?sslmode=disable
+LANGEXTRACT_PG_URL=postgres://surau_extraction_YYYYMM_b:password@localhost:5432/db?sslmode=disable
 LANGEXTRACT_LLM_BASE_URL=https://ai.sumopod.com/v1
 LANGEXTRACT_LLM_MODEL=glm-5.1
 LANGEXTRACT_LLM_API_KEY=<your-api-key>
 ```
 
 `LANGEXTRACT_LLM_API_KEY` falls back to `RAG_LLM_API_KEY`.
+`LANGEXTRACT_PG_URL` must be a login that belongs only to the
+`surau_extraction_writer` group. The pipeline has no review-status column
+grants, creates machine rows as `pending`, and only updates conflicts that are
+still pending. Owner `PG_URL` fallback exists only during one A/B cutover when
+`ALLOW_LEGACY_DB_CREDENTIALS=true`; remove both from the job afterward. See
+[`docs/service-identity-rotation.md`](../../docs/service-identity-rotation.md).
 
 Install local Python dependencies:
 

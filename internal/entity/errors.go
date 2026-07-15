@@ -123,6 +123,14 @@ var (
 	ErrGenerationRunNotFound            = errors.New("generation run not found")
 	ErrInvalidGenerationRun             = errors.New("invalid generation run")
 	ErrGenerationRunConflict            = errors.New("generation run descriptor conflicts with registered run")
+	ErrServicePrincipalNotFound         = errors.New("service identity not found")
+	ErrInvalidServicePrincipal          = errors.New("invalid service identity")
+	ErrInvalidServiceScope              = errors.New("invalid service scope")
+	ErrServicePrincipalRevoked          = errors.New("service identity revoked")
+	ErrServiceTokenNotFound             = errors.New("service token not found")
+	ErrInvalidServiceToken              = errors.New("invalid service token")
+	ErrInsufficientServiceScope         = errors.New("insufficient service scope")
+	ErrServiceIdentityUnavailable       = errors.New("service identity unavailable")
 )
 
 // AuthRateLimitedError carries the retry-after hint computed by the rate

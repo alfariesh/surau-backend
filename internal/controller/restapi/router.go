@@ -57,6 +57,7 @@ func NewRouter(
 	p usecase.Personal,
 	e usecase.Editorial,
 	email usecase.EmailAdmin,
+	serviceIdentity usecase.ServiceIdentity,
 	jwtManager *jwt.Manager,
 	l logger.Interface,
 ) {
@@ -85,7 +86,7 @@ func NewRouter(
 		app.Use(cors.New(cors.Config{
 			AllowOrigins: strings.Join(cfg.CORS.AllowedOrigins, ","),
 			AllowMethods: "GET,POST,PUT,PATCH,DELETE,OPTIONS",
-			AllowHeaders: "Authorization,Content-Type,If-Match,X-Request-ID",
+			AllowHeaders: "Authorization,Content-Type,If-Match,X-Request-ID,X-Internal-Token",
 			// AllowCredentials stays false: auth uses bearer tokens, not
 			// cookies, and fiber panics on wildcard origins with credentials.
 			ExposeHeaders: "ETag,Retry-After,X-Request-ID",
@@ -155,17 +156,18 @@ func NewRouter(
 			e,
 			email,
 			cfg.Email.CloudflareWebhookSecret,
+			serviceIdentity,
 			jwtManager,
 			l,
 		)
 	}
 
 	// Internal service-to-service bridge for the collab websocket server.
-	// Guarded by a static service token and meant for the private network
-	// only — the reverse proxy must not forward /internal (nginx returns 404).
+	// Every route performs a live registry lookup and durable principal audit;
+	// the reverse proxy still must not forward /internal (nginx returns 404).
 	if cfg.Collab.Enabled {
-		internalGroup := app.Group("/internal", middleware.ServiceToken(cfg.Collab.ServiceToken))
-		v1.NewInternalRoutes(internalGroup, e, l)
+		internalGroup := app.Group("/internal")
+		v1.NewInternalRoutes(internalGroup, e, serviceIdentity, l)
 	}
 
 	// Catch-all (F1-D): unmatched routes answer with the standard error

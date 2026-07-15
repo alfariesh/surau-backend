@@ -5,10 +5,10 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"os"
 	"strconv"
 	"strings"
 
+	"github.com/alfariesh/surau-backend/internal/dbcredential"
 	"github.com/alfariesh/surau-backend/internal/importer"
 )
 
@@ -17,7 +17,7 @@ func main() {
 	var bookIDs string
 
 	flag.StringVar(&opts.SourceDir, "source-dir", "/Users/macmini/Downloads/database", "raw database root directory")
-	flag.StringVar(&opts.PostgresURL, "pg-url", os.Getenv("PG_URL"), "PostgreSQL URL")
+	flag.StringVar(&opts.PostgresURL, "pg-url", dbcredential.ImporterURL(), "PostgreSQL URL (defaults to IMPORTER_PG_URL)")
 	flag.StringVar(&opts.ReleaseKey, "release-key", "", "source release key; defaults to current UTC timestamp")
 	flag.StringVar(&bookIDs, "book-ids", "", "comma-separated book IDs for sample import")
 	flag.IntVar(&opts.Limit, "limit", 0, "limit imported content books for sample import")

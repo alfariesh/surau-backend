@@ -164,7 +164,9 @@ def parse_args() -> argparse.Namespace:
 def collect_items(args: argparse.Namespace) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
     if args.kind in {"all", "categories"}:
-        for category in request_json("GET", f"{args.base_url.rstrip('/')}/v1/categories"):
+        for category in request_json(
+            "GET", f"{args.base_url.rstrip('/')}/v1/categories", surau_base_url=args.base_url
+        ):
             items.append({"type": "category", "data": category})
 
     if args.kind in {"all", "authors"}:
@@ -174,7 +176,9 @@ def collect_items(args: argparse.Namespace) -> list[dict[str, Any]]:
     if args.kind in {"all", "books"}:
         if args.book_id:
             for book_id in args.book_id:
-                book = request_json("GET", f"{args.base_url.rstrip('/')}/v1/books/{book_id}")
+                book = request_json(
+                    "GET", f"{args.base_url.rstrip('/')}/v1/books/{book_id}", surau_base_url=args.base_url
+                )
                 items.append({"type": "book", "data": book})
         else:
             for book in fetch_paginated(args.base_url, "/v1/books", "books", args.page_size):
@@ -188,7 +192,9 @@ def fetch_paginated(base_url: str, path: str, key: str, page_size: int) -> list[
     results: list[dict[str, Any]] = []
     while True:
         query = f"limit={page_size}&offset={offset}"
-        payload = request_json("GET", f"{base_url.rstrip('/')}{path}?{query}")
+        payload = request_json(
+            "GET", f"{base_url.rstrip('/')}{path}?{query}", surau_base_url=base_url
+        )
         rows = payload.get(key) or []
         total = int(payload.get("total") or 0)
         results.extend(rows)

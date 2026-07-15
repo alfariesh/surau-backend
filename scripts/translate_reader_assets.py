@@ -29,6 +29,7 @@ from generation_identity import (
     READER_TRANSLATION_PROMPT_VERSION,
     new_generation_identity,
 )
+from surau_http import surau_headers
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -592,7 +593,7 @@ def load_env_file(path: Path) -> None:
 
 def fetch_toc_heading_ids(base_url: str, book_id: int, lang: str) -> list[int]:
     url = f"{base_url.rstrip('/')}/v1/books/{book_id}/toc?{urllib.parse.urlencode({'lang': lang})}"
-    toc = request_json("GET", url)
+    toc = request_json("GET", url, surau_base_url=base_url)
 
     heading_ids: list[int] = []
 
@@ -608,12 +609,12 @@ def fetch_toc_heading_ids(base_url: str, book_id: int, lang: str) -> list[int]:
 def fetch_toc_section(base_url: str, book_id: int, heading_id: int, lang: str) -> dict[str, Any]:
     path = f"/v1/books/{book_id}/toc/{heading_id}/read"
     url = f"{base_url.rstrip('/')}{path}?{urllib.parse.urlencode({'lang': lang})}"
-    return request_json("GET", url)
+    return request_json("GET", url, surau_base_url=base_url)
 
 
 def fetch_book_metadata(base_url: str, book_id: int) -> dict[str, Any]:
     url = f"{base_url.rstrip('/')}/v1/books/{book_id}?{urllib.parse.urlencode({'lang': 'ar'})}"
-    payload = request_json("GET", url)
+    payload = request_json("GET", url, surau_base_url=base_url)
     if not isinstance(payload, dict):
         raise RuntimeError(f"GET {url} returned non-object book metadata")
     return payload
@@ -943,11 +944,14 @@ def request_json(
     payload: dict[str, Any] | None = None,
     timeout_seconds: int = 60,
     retries: int = 0,
+    surau_base_url: str | None = None,
 ) -> Any:
     body = None
     request_headers = {"Accept": "application/json"}
     if headers:
         request_headers.update(headers)
+    if surau_base_url is not None:
+        request_headers = surau_headers(surau_base_url, url, request_headers)
     if payload is not None:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         request_headers["Content-Type"] = "application/json"

@@ -21,20 +21,33 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 
 import { AuthError, canWrite, decodeTokenExp, introspect, type Identity } from "./auth.js";
 import { loadConfig } from "./config.js";
+import { initialSecret, ReloadingServiceToken } from "./credentials.js";
 import { htmlToYDoc, yDocToHtml, verifyRoundTrip, Y_FRAGMENT_FIELD } from "./convert.js";
 import { parseDocName } from "./docname.js";
 import { GoApi } from "./goapi.js";
 import { createLogger } from "./logger.js";
-import { createDatabaseExtension, createPool, pingDatabase } from "./persistence.js";
+import { createDatabaseExtension, createReloadingPool, pingDatabase } from "./persistence.js";
 
 const config = loadConfig();
 const logger = createLogger(config.COLLAB_LOG_LEVEL);
-const pool = createPool(config.COLLAB_PG_URL);
-const goApi = new GoApi({
+const pool = await createReloadingPool(config.COLLAB_PG_URL, config.COLLAB_PG_URL_FILE, logger);
+const initialServiceToken = await initialSecret(
+  config.COLLAB_SERVICE_TOKEN,
+  config.COLLAB_SERVICE_TOKEN_FILE,
+  "COLLAB_SERVICE_TOKEN",
+);
+const tokenProvider = new ReloadingServiceToken({
+  initialToken: initialServiceToken,
+  filePath: config.COLLAB_SERVICE_TOKEN_FILE,
   baseUrl: config.COLLAB_GO_API_URL,
-  serviceToken: config.COLLAB_SERVICE_TOKEN,
   logger,
 });
+const goApi = new GoApi({
+  baseUrl: config.COLLAB_GO_API_URL,
+  tokenProvider,
+  logger,
+});
+assertCollabIdentity(await goApi.whoami());
 
 interface ConnectionContext {
   user: Identity;
@@ -220,13 +233,25 @@ const server = new Server({
 async function respondHealth(_request: IncomingMessage, response: ServerResponse): Promise<void> {
   try {
     await pingDatabase(pool);
+    const identity = assertCollabIdentity(await goApi.whoami());
     response.writeHead(200, { "Content-Type": "application/json" });
-    response.end(JSON.stringify({ status: "ok" }));
+    response.end(JSON.stringify({ status: "ok", principal: identity.principal_name }));
   } catch (err) {
     logger.error({ err: String(err) }, "healthcheck failed");
     response.writeHead(503, { "Content-Type": "application/json" });
     response.end(JSON.stringify({ status: "degraded" }));
   }
+}
+
+function assertCollabIdentity(identity: Awaited<ReturnType<GoApi["whoami"]>>) {
+  if (
+    identity.principal_name !== "collab-server" ||
+    !identity.scopes.includes("collab:draft:write")
+  ) {
+    throw new Error("service principal must be collab-server with collab:draft:write");
+  }
+
+  return identity;
 }
 
 async function shutdown(signal: string): Promise<void> {

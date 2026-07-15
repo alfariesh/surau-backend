@@ -298,6 +298,11 @@ go run ./cmd/rag-eval \
   -cases eval/bookrag_smoke.jsonl
 ```
 
+Set `RAG_EVAL_SERVICE_TOKEN_FILE` (or the environment fallback without
+`_FILE`) to identify deployed eval runs as principal `rag-eval`. The same
+public endpoints remain available without the header; a supplied token must
+carry `rag-eval:read` and is included in the service audit.
+
 The eval posts to `/v1/books/{book_id}/rag`, requests `include_trace=true`, and checks citation heading/page IDs, retrieval mode, tree LLM call budget, not-found behavior, optional answer/quote substrings, and K-1 unit locators when required by the case. A case with `"stream":true` parses the SSE protocol and requires matching `meta`, `delta`, `citations`, and `done` events; the citation event must equal the final response before Anchor validation runs. Rollout gates pass `-expected-citation-mode` and `-forbid-legacy-fallback`, so JSON and SSE must both prove the intended mode without hiding an incomplete unit catalog behind fallback. Use `-output json` for CI-friendly output. `/backfill -verify-citable-catalog` adds a deterministic local-LLM stub over every public-retrievable book, so parity proof does not depend on provider sampling or spend tokens.
 It retries failed cases once by default (`-retries 1`) to reduce one-off LLM sampling noise while still reporting the attempt count.
 `answer_must_contain` is a warning by default because answer wording can vary; pass `-strict-answer` to make it a failure.
@@ -312,14 +317,14 @@ workflow process described above.
 Sample import for one book:
 
 ```sh
-PG_URL='postgres://user:myAwEsOm3pa55@w0rd@localhost:5432/db' \
+IMPORTER_PG_URL='postgres://surau_importer_YYYYMM_b:password@localhost:5432/db' \
 go run ./cmd/import-books --book-ids=797 --release-key=sample-797
 ```
 
 Full import:
 
 ```sh
-PG_URL='postgres://user:myAwEsOm3pa55@w0rd@localhost:5432/db' \
+IMPORTER_PG_URL='postgres://surau_importer_YYYYMM_b:password@localhost:5432/db' \
 go run ./cmd/import-books --release-key=full-YYYYMMDD
 ```
 
@@ -383,7 +388,7 @@ blocked because readers would see that change immediately.
 Run:
 
 ```sh
-PG_URL='postgres://user:myAwEsOm3pa55@w0rd@localhost:5432/db' \
+IMPORTER_PG_URL='postgres://surau_importer_YYYYMM_b:password@localhost:5432/db' \
 go run ./cmd/import-reader-assets --file=examples/reader-assets.sample.jsonl
 ```
 
@@ -392,7 +397,7 @@ go run ./cmd/import-reader-assets --file=examples/reader-assets.sample.jsonl
 Quran data is a standalone domain sourced from local QUL exports. The app does not call QUL at runtime. Download the QUL files first, then import them:
 
 ```sh
-PG_URL='postgres://user:myAwEsOm3pa55@w0rd@localhost:5432/db' \
+IMPORTER_PG_URL='postgres://surau_importer_YYYYMM_b:password@localhost:5432/db' \
 go run ./cmd/import-quran-assets \
   --surah-names-json=/path/to/surahs.json \
   --surah-info-json=/path/to/surah-info-id.json \
@@ -415,7 +420,7 @@ Use `--dry-run` to parse and count rows without writing. JSON files may be passe
 After audio files are uploaded to Cloudflare R2, sync the manifest back into Postgres:
 
 ```sh
-PG_URL='postgres://user:myAwEsOm3pa55@w0rd@localhost:5432/db' \
+IMPORTER_PG_URL='postgres://surau_importer_YYYYMM_b:password@localhost:5432/db' \
 go run ./cmd/sync-quran-audio-r2 \
   --manifest-jsonl=tmp/quran-audio-r2-manifest.jsonl \
   --recitation-metadata-json=config/quran_recitation_metadata.json \
@@ -429,7 +434,7 @@ Use `--dry-run` to validate manifest and recitation counts without writing. The 
 Surah-level editorial enrichment (keutamaan, asbabun nuzul, pokok kandungan, SEO meta) for the public `/surah/{slug}` pages is self-authored and loaded from JSON — independent of the QUL import above:
 
 ```sh
-PG_URL='postgres://user:myAwEsOm3pa55@w0rd@localhost:5432/db' \
+IMPORTER_PG_URL='postgres://surau_importer_YYYYMM_b:password@localhost:5432/db' \
 go run ./cmd/import-quran-surah-editorial \
   --editorial-json=/path/to/al-mulk.id.json \
   --editorial-json=/path/to/al-fatihah.id.json
@@ -467,7 +472,7 @@ The safe default writes or updates a **draft only**. It never changes public
 content. Add `--publish` only for an intentional publish run:
 
 ```sh
-PG_URL='postgres://user:myAwEsOm3pa55@w0rd@localhost:5432/db' \
+IMPORTER_PG_URL='postgres://surau_importer_YYYYMM_b:password@localhost:5432/db' \
 go run ./cmd/import-quran-surah-editorial \
   --editorial-json=/path/to/al-mulk.id.json \
   --publish
@@ -492,7 +497,7 @@ Per-ayah editorial enrichment (intisari, keutamaan, FAQ, tafsir range pointer,
 and SEO meta) uses the same workflow:
 
 ```sh
-PG_URL='postgres://user:myAwEsOm3pa55@w0rd@localhost:5432/db' \
+IMPORTER_PG_URL='postgres://surau_importer_YYYYMM_b:password@localhost:5432/db' \
 go run ./cmd/import-quran-ayah-editorial \
   --ayah-editorial-json=/path/to/ayah-editorial.id.json
 ```
@@ -525,7 +530,7 @@ python3 scripts/translate_reader_assets.py \
   --target-lang id \
   --out tmp/book-1-id.jsonl
 
-PG_URL='postgres://user:myAwEsOm3pa55@w0rd@localhost:5432/db' \
+IMPORTER_PG_URL='postgres://surau_importer_YYYYMM_b:password@localhost:5432/db' \
 go run ./cmd/import-reader-assets --file=tmp/book-1-id.jsonl
 ```
 
@@ -537,6 +542,14 @@ translation profile from book/category metadata, while `--profile fiqh`,
 Generated JSONL metadata stores the profile and `style_version`.
 
 See [`scripts/README.md`](scripts/README.md) for script-specific usage and the recommended translation batching strategy.
+Surau-owned catalog/reader GETs made by the translation and summary scripts use
+`SURAU_ENRICHMENT_SERVICE_TOKEN_FILE` (or the direct env fallback) as principal
+`http-enrichment`. The helper refuses to attach that header to a different
+origin, so it never reaches DeepSeek, Sumopod, or another LLM provider.
+
+Machine token/API details and the no-downtime A/B procedure are documented in
+[`docs/service-identities.md`](docs/service-identities.md) and
+[`docs/service-identity-rotation.md`](docs/service-identity-rotation.md).
 
 Catalog endpoints support an optional `lang` query parameter:
 

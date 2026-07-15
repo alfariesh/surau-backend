@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import sys
 import unittest
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -236,6 +237,34 @@ class _PageBatchDBClient(kg_db.DBClient):
 
 
 class DBHelpersTest(unittest.TestCase):
+    def test_pipeline_database_url_requires_dedicated_or_explicit_overlap(self) -> None:
+        with mock.patch.dict(
+            kg_db.os.environ,
+            {"PG_URL": "postgres://owner/db"},
+            clear=True,
+        ):
+            self.assertEqual(kg_db.postgres_url_from_env(), "")
+
+        with mock.patch.dict(
+            kg_db.os.environ,
+            {
+                "PG_URL": "postgres://owner/db",
+                "ALLOW_LEGACY_DB_CREDENTIALS": "true",
+            },
+            clear=True,
+        ):
+            self.assertEqual(kg_db.postgres_url_from_env(), "postgres://owner/db")
+
+        with mock.patch.dict(
+            kg_db.os.environ,
+            {
+                "LANGEXTRACT_PG_URL": "postgres://extraction/db",
+                "PG_URL": "postgres://owner/db",
+            },
+            clear=True,
+        ):
+            self.assertEqual(kg_db.postgres_url_from_env(), "postgres://extraction/db")
+
     def test_mentions_commit_once_per_page_and_rollback_failed_page(self) -> None:
         conn = _FakeConn(_FakeCursor([]))
         client = _PageBatchDBClient(conn, fail_id="p2-fail")
@@ -451,6 +480,8 @@ class DBHelpersTest(unittest.TestCase):
         self.assertEqual(client.source_span_calls[0][0]["source_span_id"], "new-source-span-id")
         insert_sql, insert_params = cursor.executions[0]
         self.assertIn("INSERT INTO knowledge_mentions", insert_sql)
+        self.assertNotIn("review_status", insert_sql.split("ON CONFLICT", 1)[0])
+        self.assertIn("WHERE knowledge_mentions.review_status = 'pending'", insert_sql)
         self.assertEqual(insert_params[14], 1)
         self.assertIsNone(insert_params[19])
         update_sql, update_params = cursor.executions[1]
@@ -462,6 +493,25 @@ class DBHelpersTest(unittest.TestCase):
         self.assertNotIn("similar", binding_sql.lower())
         self.assertEqual(binding_params, ("existing-mention-id",))
         self.assertEqual(conn.commits, 1)
+
+    def test_relation_and_claim_inserts_rely_on_pending_database_defaults(self) -> None:
+        cursor = _FakeCursor([])
+        client = kg_db.DBClient(_FakeConn(cursor), "fake")
+        mention = {
+            "id": "mention-id",
+            "run_id": "run-id",
+            "exact_quote": "النص",
+            "source_span_id": "span-id",
+        }
+
+        client.insert_relation_candidate(mention, {"predicate": "mentions", "object": "شيء"})
+        relation_sql = cursor.executions[-1][0]
+        self.assertNotIn("review_status", relation_sql)
+
+        client.insert_claim_candidate(mention, {"claim_type": "statement"})
+        claim_sql = cursor.executions[-1][0]
+        insert_columns = claim_sql.split("VALUES", 1)[0]
+        self.assertNotIn("status", insert_columns)
 
     def test_mention_record_flags_ambiguous_person(self) -> None:
         page = kg_db.PageSource(

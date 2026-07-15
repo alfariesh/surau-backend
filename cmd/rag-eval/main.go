@@ -8,10 +8,13 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"strings"
 	"time"
 
 	"github.com/alfariesh/surau-backend/internal/rageval"
 )
+
+const invalidConfigurationExitCode = 2
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
@@ -22,6 +25,15 @@ func main() {
 
 func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	var opts rageval.Options
+
+	serviceToken, err := serviceTokenFromEnvironment()
+	if err != nil {
+		fmt.Fprintf(stderr, "rag-eval: %v\n", err)
+
+		return invalidConfigurationExitCode
+	}
+
+	opts.ServiceToken = serviceToken
 
 	flags := flag.NewFlagSet("rag-eval", flag.ContinueOnError)
 	flags.SetOutput(stderr)
@@ -63,6 +75,19 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	}
 
 	return 0
+}
+
+func serviceTokenFromEnvironment() (string, error) {
+	if path := os.Getenv("RAG_EVAL_SERVICE_TOKEN_FILE"); path != "" {
+		contents, err := os.ReadFile(path) // #nosec G304,G703 -- operator-selected secret file is the intended input.
+		if err != nil {
+			return "", fmt.Errorf("read RAG_EVAL_SERVICE_TOKEN_FILE: %w", err)
+		}
+
+		return strings.TrimSpace(string(contents)), nil
+	}
+
+	return strings.TrimSpace(os.Getenv("RAG_EVAL_SERVICE_TOKEN")), nil
 }
 
 func envOrDefault(key, fallback string) string {

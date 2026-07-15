@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -375,4 +376,69 @@ func TestRunRetriesFailedCase(t *testing.T) {
 	assert.Equal(t, 2, calls)
 	assert.Equal(t, 2, summary.Results[0].Attempt)
 	assert.Equal(t, 1, summary.Passed)
+}
+
+func TestRunSendsServiceIdentityToRAGAndAnchorResolver(t *testing.T) {
+	t.Parallel()
+
+	casesFile := t.TempDir() + "/cases.jsonl"
+	err := os.WriteFile(casesFile, []byte(`{"name":"scoped","book_id":797,"question":"q","require_unit_citations":true}`+"\n"), 0o600)
+	require.NoError(t, err)
+
+	seen := make(map[string]string)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		seen[request.URL.Path] = request.Header.Get("X-Internal-Token")
+		w.Header().Set("Content-Type", "application/json")
+
+		if request.URL.Path == "/v1/anchors/resolve" {
+			fmt.Fprint(w, `{"boundaries":[{"active_targets":[{"unit_id":"unit-1"}]}]}`)
+
+			return
+		}
+
+		fmt.Fprint(w, `{
+			"book_id":797,"answer":"Jawaban [1].",
+			"citations":[{"ref":"1","book_id":797,"heading_id":11,"page_id":12,"anchor":"toc-11","quote":"x","url":"/x","unit_id":"unit-1","unit_anchor":"kitab/797/h/11/u/42"}],
+			"trace":{"retrieval_mode":"full_tree","citation_mode":"unit","tree_llm_calls":1,"repaired":false}
+		}`)
+	}))
+	defer server.Close()
+
+	summary, err := Run(context.Background(), Options{ // #nosec G101 -- fake token verifies header propagation
+		BaseURL: server.URL, CasesPath: casesFile, Timeout: time.Second,
+		ServiceToken: "surau-eval-test-token",
+	})
+	require.NoError(t, err)
+	require.Equal(t, 1, summary.Passed)
+	assert.Equal(t, "surau-eval-test-token", seen["/v1/books/797/rag"])
+	assert.Equal(t, "surau-eval-test-token", seen["/v1/anchors/resolve"])
+}
+
+func TestServiceIdentityTransportDoesNotLeakAcrossOrigin(t *testing.T) {
+	t.Parallel()
+
+	externalHeader := make(chan string, 1)
+
+	external := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		externalHeader <- request.Header.Get("X-Internal-Token")
+
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer external.Close()
+
+	origin, err := url.Parse("https://dev-api.surau.org")
+	require.NoError(t, err)
+
+	client := &http.Client{Transport: serviceTokenTransport{
+		token: "must-not-leak", origin: origin, next: http.DefaultTransport,
+	}}
+	request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, external.URL, http.NoBody)
+	require.NoError(t, err)
+	response, err := client.Do(request)
+	require.NoError(t, err)
+
+	defer response.Body.Close()
+
+	assert.Empty(t, <-externalHeader)
 }

@@ -5,8 +5,8 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"os"
 
+	"github.com/alfariesh/surau-backend/internal/dbcredential"
 	"github.com/alfariesh/surau-backend/internal/importer"
 )
 
@@ -25,7 +25,7 @@ func main() {
 	var opts importer.QuranSurahEditorialOptions
 	var paths repeatedStringFlag
 
-	flag.StringVar(&opts.PostgresURL, "pg-url", os.Getenv("PG_URL"), "PostgreSQL URL")
+	flag.StringVar(&opts.PostgresURL, "pg-url", dbcredential.ImporterURL(), "PostgreSQL URL (defaults to IMPORTER_PG_URL)")
 	flag.Var(&paths, "editorial-json", "surah editorial JSON file; repeat for multiple files")
 	flag.BoolVar(&opts.DryRun, "dry-run", false, "parse files and print counts without writing")
 	flag.BoolVar(&opts.Publish, "publish", false, "explicitly publish all imported drafts (requires permitted licenses)")
