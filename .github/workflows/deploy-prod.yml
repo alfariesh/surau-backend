@@ -69,6 +69,12 @@ jobs:
             PROFILE_ARGS=(--profile collab)
             SERVICES+=(collab)
             COLLAB_CHECK="http://127.0.0.1:8090/healthz"
+            # Materialize the existing production owner DSN and collab token as
+            # root-owned files before Compose recreates the collab container.
+            # Production intentionally stops at prepare: the DEV-specific DB
+            # role cutover remains an explicit, separately reviewed operation.
+            ENV_FILE=.env.production COMPOSE_FILE=docker-compose.prod.yml \
+              ops/service-identities/collab-dev-credentials.sh prepare
           fi
 
           # Snapshot the DB before the new image auto-migrates on boot, so a bad
