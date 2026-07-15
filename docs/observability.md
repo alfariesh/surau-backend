@@ -6,9 +6,23 @@
 2. Login: user `admin`, password = nilai `GRAFANA_ADMIN_PASSWORD` di `.env.production` VPS tsb.
 3. Dashboard: menu ☰ → Dashboards → folder **Surau** → **Surau Health**.
    Panel: rate/error/p95 per endpoint (RED), antrean email, umur sukses terakhir tiap loop
-   background, disk/RAM/CPU host, umur backup & PITR-check.
+   background, jumlah reminder accepted/failed, alasan kegagalan reminder, disk/RAM/CPU host,
+   serta umur backup & PITR-check.
 4. Melihat trace: menu ☰ → Explore → pilih datasource **Tempo** → paste `trace_id` dari log,
    atau query `{}` untuk trace terbaru.
+
+### Melihat reminder kemarin (Q-6)
+
+1. Di kanan atas dashboard **Surau Health**, klik pemilih waktu lalu pilih **Yesterday**.
+2. Panel **Streak reminders — accepted vs failed** menampilkan jumlah logical reminder yang
+   diterima atau ditolak OneSignal pada rentang itu. `accepted` berarti OneSignal menerima
+   permintaan; angka ini bukan konfirmasi bahwa notifikasi pasti tampil di perangkat pengguna.
+3. Panel **Streak reminder failures — reasons** memecah percobaan gagal berdasarkan alasan aman,
+   misalnya rate-limit, timeout, atau tidak ada subscriber.
+
+Dashboard memakai timezone browser operator dan Prometheus menyimpan tujuh hari. OneSignal tetap
+dinonaktifkan di dev secara default; karena itu panel akan nol/kosong sampai ada fixture drill atau
+delivery dev yang sengaja diaktifkan tanpa menyasar pengguna nyata.
 
 ## Korelasi log ↔ trace (AC F1-B)
 
@@ -35,7 +49,7 @@
   tabel/index top-20 datang dari collector app (`surau_db_relation_*`). Panel slow-statements
   butuh db berjalan dgn preload `pg_stat_statements` (docs/deploy-vps.md §Tuning Postgres).
 - Provisioning Grafana dari `ops/observability/grafana/provisioning/` (datasource, dashboard,
-  contact point Telegram, 7 alert rule) — semua file di git, tiba di VPS via checkout deploy.
+  contact point Telegram, 9 alert rules) — semua file di git, tiba di VPS via checkout deploy.
 
 ## Alert (semua → Telegram, prefix env)
 
@@ -44,6 +58,7 @@
 | 5xx surge | rate 5xx >0.2 rps selama 2m | API error beruntun (DB down / rilis buruk) |
 | p95 latency breach | p95 >500ms selama 10m | API melambat |
 | email stuck / dead letter | antrean tertua >30m ATAU failed >0 | pipeline email macet/gagal permanen — remediasi: kirim ulang via `POST /v1/admin/emails/messages/{id}/resend` (F1-C, lihat docs/admin-email-api.md §Resend) |
+| OneSignal mass delivery failure | ≥5 attempt gagal DAN rasio gagal ≥50% dalam rolling 5m, bertahan 1m | gangguan massal push; periksa kredensial, rate-limit, status provider, dan log loop reminder |
 | backup heartbeat stale | sukses terakhir >26 jam | dead-man backup (lapis dashboard; watchdog S1 tetap ada) |
 | disk space low | sisa <15% | disk hampir penuh |
 | app down | scrape gagal 3m | app mati/boot-loop (termasuk schema DIRTY) |
@@ -52,6 +67,20 @@
 Ambang ditulis DI DALAM ekspresi PromQL di
 [rules.yml](../ops/observability/grafana/provisioning/alerting/rules.yml) (pola `> bool X`) —
 mengubah ambang = edit satu angka + `docker compose --profile observability restart grafana`.
+
+Untuk alarm OneSignal, scrape Prometheus 15 detik + evaluasi rule 1 menit + `for: 1m` + Telegram
+`group_wait: 30s` memberi batas desain terburuk sekitar 2 menit 45 detik setelah ambang terpenuhi,
+sehingga masih di bawah Acceptance Criterion Q-6 yaitu lima menit. Reminder yang dilewati karena
+quiet-hours/timezone bukan attempt provider dan tidak masuk rasio kegagalan ini.
+
+Metrik audit Q-6 yang tersedia di Prometheus adalah
+`surau_notification_delivery_attempts_total` (hasil provider + alasan),
+`surau_notification_deliveries_total` (logical delivery terminal), dan
+`surau_notification_reminder_skips_total` (reminder yang tidak dicoba). Rule alarm memakai gauge
+rolling `surau_notification_delivery_attempts_5m`, yang dihitung langsung dari attempt persisten;
+ini membuat batch kegagalan pertama tetap terlihat walau belum ada sampel counter sebelumnya.
+Query rule/dashboard memakai deduplikasi replica karena setiap instance API membaca total database
+global yang sama.
 
 ## Rollout / update stack di VPS
 
@@ -81,3 +110,7 @@ Konfig berubah di git → `git pull` terjadi otomatis saat deploy berikutnya →
 4. backup heartbeat: tulis timestamp `now-27h` ke
    `/var/lib/node_exporter/textfile/surau_backup_last_success_timestamp.prom` → pulihkan.
 5. disk: naikkan ambang rule ke `< bool 99` sementara → revert.
+6. OneSignal Q-6: dengan `ONESIGNAL_ENABLED=false`, gunakan fixture drill dev untuk menulis 5
+   attempt gagal dengan rasio ≥50% ke counter persisten; ukur sampai rule FIRING dan pesan Telegram
+   diterima (wajib ≤5 menit), lalu bersihkan fixture/counter dev dan pastikan rule RESOLVED. Jangan
+   memakai API key produksi atau menyasar user nyata.

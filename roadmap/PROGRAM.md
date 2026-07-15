@@ -190,7 +190,19 @@ persentase, dan parity item sitemap. Integration test database kosong membuktika
 dua arah 100%, tidak ada draft/non-permitted bocor, publish terlihat ≤5 menit, hreflang sesuai
 ketersediaan, RBAC 401/403/200, dan redirect slug lama; live invariant mencatat p95 680 µs
 (<200 ms), lastmod persis, serta `missing_slug=0`. Drill migrasi Q-4, worker-cache, Swagger/docs,
-dan `make pre-commit` hijau) ∥ Q-6 (keandalan notifikasi);
+dan `make pre-commit` hijau) ∥ Q-6 ✅ **SELESAI 2026-07-15 (SESI 21)** (seluruh push OneSignal
+`streak_reminder`, milestone/completion khatam, dan `new_login` kini membuat delivery durable
+sebelum request provider, lalu mencatat setiap attempt accepted/failed beserta alasan tersanitasi.
+UUID idempoten dipakai ulang saat retry/crash; reminder mempunyai unique key user+jenis+tanggal
+lokal di atas cooldown stabil 20 jam user+jenis, dengan lease atomik lintas instance. Kandidat dan
+retry reminder memakai timezone PostgreSQL/DST, fail-closed untuk timezone hilang/rusak, serta
+batas `[19:00,21:00)` di dalam quiet-hours operator default `[21:00,07:00)`. Loop F1-C yang sama
+sekarang dapat dibangunkan event async, pulih dari panic/error, menghormati backoff 30 detik–15
+menit/`Retry-After`, dan hanya menggerakkan last-success setelah sweep sehat. Counter delivery,
+attempt, skip, gauge rolling 5 menit, dashboard accepted-vs-failed+alasan, dan alert Telegram
+`5 gagal + rasio ≥50%` memiliki budget konfigurasi 2m45s (<5 menit). Unit/integration, race,
+restart pool+collector, crash-window UUID sama, batas lokal+DST, migrasi up→down→up, transaksi
+attempt+counter, live PostgreSQL serial, dan `make pre-commit` hijau);
 sisa F2: A-2 (identitas mesin ber-scope), A-4 (dual-key JWT + drill), A-5 (refresh 336h);
 **U-0 (lapisan inferensi) + U-6 (eval-harness → gate) DIMULAI DI SINI** — Fase 7 mensyaratkan
 keduanya "sejak hari pertama", dan enrichment kitab langsung ikut menumpang U-0.

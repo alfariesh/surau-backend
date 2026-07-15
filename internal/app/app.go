@@ -156,13 +156,17 @@ func initUseCases(cfg *config.Config, pg *postgres.Postgres, jwtManager *jwt.Man
 	if cfg.OneSignal.Enabled {
 		notificationUC = notification.New(
 			userRepo,
-			userRepo,
 			personalRepo,
 			webapi.NewOneSignalClient(webapi.OneSignalOptions{
 				AppID:      cfg.OneSignal.AppID,
 				RESTAPIKey: cfg.OneSignal.RESTAPIKey,
 				Timeout:    cfg.OneSignal.HTTPTimeout,
 			}),
+			notification.Options{
+				QuietStart:  cfg.OneSignal.QuietHoursStartLocal,
+				QuietEnd:    cfg.OneSignal.QuietHoursEndLocal,
+				PushTimeout: cfg.OneSignal.HTTPTimeout,
+			},
 			l,
 		)
 		khatamNotifier = notificationUC
@@ -450,6 +454,7 @@ func buildLoopSpecs(
 			name:         "notification_reminder",
 			interval:     cfg.OneSignal.ReminderInterval,
 			initialDelay: backgroundInitialDelay,
+			wake:         notificationUC.RetryWakeups(),
 			run:          notificationReminderPass(notificationUC, l),
 		})
 	}
@@ -582,13 +587,21 @@ func citableAuditPass(unitRegistryUC *unitregistry.UseCase, l logger.Interface) 
 
 func notificationReminderPass(notificationUC *notification.UseCase, l logger.Interface) func(context.Context) error {
 	return func(ctx context.Context) error {
-		sent, err := notificationUC.DispatchReminders(ctx)
+		report, err := notificationUC.DispatchReminders(ctx)
 		if err != nil {
 			return fmt.Errorf("reminder dispatch: %w", err)
 		}
 
-		if sent > 0 {
-			l.Info("app - reminder dispatch: sent %d streak reminder(s)", sent)
+		if report.Accepted > 0 || report.Failed > 0 || report.Expired > 0 ||
+			report.RecoveredEvents > 0 || report.RecoveredReminders > 0 {
+			l.Info(
+				"app - reminder dispatch: accepted=%d failed=%d expired=%d recovered_events=%d recovered_reminders=%d",
+				report.Accepted,
+				report.Failed,
+				report.Expired,
+				report.RecoveredEvents,
+				report.RecoveredReminders,
+			)
 		}
 
 		return nil
@@ -707,6 +720,7 @@ func run(cfg *config.Config, stop <-chan struct{}) {
 
 	if cfg.Metrics.Enabled {
 		registerEmailQueueMetrics(pg.Pool)
+		registerNotificationMetrics(pg.Pool)
 		registerBackfillMetrics(pg.Pool)
 		registerDBSizeMetrics(pg.Pool)
 	}

@@ -28,6 +28,11 @@ func testLogger() logger.Interface { return noopLogger{} }
 
 var errTransient = errors.New("transient failure")
 
+type retryHintError struct{ delay time.Duration }
+
+func (e retryHintError) Error() string             { return "retry later" }
+func (e retryHintError) RetryAfter() time.Duration { return e.delay }
+
 func TestRunSupervisedLoopRecoversFromPanic(t *testing.T) {
 	t.Parallel()
 
@@ -105,6 +110,105 @@ func TestRunSupervisedLoopBackoffOnConsecutiveFailures(t *testing.T) {
 	require.Eventually(t, func() bool { return calls.Load() >= failUntil+2 }, 5*time.Second, time.Millisecond)
 }
 
+func TestRunSupervisedLoopHonorsRetryAfterHint(t *testing.T) {
+	t.Parallel()
+
+	var calls atomic.Int64
+
+	first := make(chan time.Time, 1)
+	second := make(chan time.Time, 1)
+	ctx := t.Context()
+
+	spec := loopSpec{
+		name:        "test_retry_after_loop",
+		interval:    time.Millisecond,
+		backoffBase: time.Millisecond,
+		backoffMax:  2 * time.Millisecond,
+		run: func(context.Context) error {
+			n := calls.Add(1)
+			if n == 1 {
+				first <- time.Now()
+
+				return retryHintError{delay: 40 * time.Millisecond}
+			}
+
+			if n == 2 {
+				second <- time.Now()
+			}
+
+			return nil
+		},
+	}
+
+	go runSupervisedLoop(ctx, spec, testLogger())
+
+	var started time.Time
+	select {
+	case started = <-first:
+	case <-time.After(2 * time.Second):
+		t.Fatal("retry-after loop did not start")
+	}
+
+	var resumed time.Time
+	select {
+	case resumed = <-second:
+	case <-time.After(2 * time.Second):
+		t.Fatal("retry-after loop did not resume")
+	}
+
+	assert.GreaterOrEqual(t, resumed.Sub(started), 30*time.Millisecond)
+}
+
+func TestRunSupervisedLoopLastSuccessMovesOnlyAfterRecovery(t *testing.T) {
+	t.Parallel()
+
+	const loopName = "test_last_success_recovery"
+
+	var calls atomic.Int64
+
+	failed := make(chan struct{}, 1)
+	releaseSuccess := make(chan struct{})
+	ctx := t.Context()
+
+	spec := loopSpec{
+		name:        loopName,
+		interval:    time.Millisecond,
+		backoffBase: 10 * time.Millisecond,
+		backoffMax:  10 * time.Millisecond,
+		run: func(context.Context) error {
+			if calls.Add(1) == 1 {
+				failed <- struct{}{}
+
+				return errTransient
+			}
+
+			<-releaseSuccess
+
+			return nil
+		},
+	}
+
+	go runSupervisedLoop(ctx, spec, testLogger())
+
+	select {
+	case <-failed:
+	case <-time.After(2 * time.Second):
+		t.Fatal("failing pass did not run")
+	}
+
+	require.Eventually(t, func() bool {
+		return testutil.ToFloat64(loopRuns.WithLabelValues(loopName, "error")) >= 1
+	}, 2*time.Second, time.Millisecond)
+	assert.Zero(t, testutil.ToFloat64(loopLastSuccess.WithLabelValues(loopName)),
+		"failed pass must not stamp last success")
+
+	close(releaseSuccess)
+
+	require.Eventually(t, func() bool {
+		return testutil.ToFloat64(loopLastSuccess.WithLabelValues(loopName)) > 0
+	}, 2*time.Second, time.Millisecond)
+}
+
 func TestRunSupervisedLoopHonorsInitialDelay(t *testing.T) {
 	t.Parallel()
 
@@ -131,6 +235,56 @@ func TestRunSupervisedLoopHonorsInitialDelay(t *testing.T) {
 	require.Eventually(t, func() bool { return firstCall.Load() > 0 }, 5*time.Second, time.Millisecond)
 	assert.GreaterOrEqual(t, time.Duration(firstCall.Load()), initialDelay/2,
 		"first pass ran before the initial delay")
+}
+
+func TestRunSupervisedLoopWakeInterruptsHealthyPollingSleep(t *testing.T) {
+	t.Parallel()
+
+	var calls atomic.Int64
+
+	wake := make(chan struct{}, 1)
+	firstPass := make(chan struct{})
+	secondPass := make(chan struct{})
+	ctx := t.Context()
+
+	spec := loopSpec{
+		name:         "test_wake_loop",
+		interval:     time.Hour,
+		initialDelay: time.Millisecond,
+		wake:         wake,
+		run: func(context.Context) error {
+			switch calls.Add(1) {
+			case 1:
+				close(firstPass)
+			case 2:
+				close(secondPass)
+			}
+
+			return nil
+		},
+	}
+
+	go runSupervisedLoop(ctx, spec, testLogger())
+
+	select {
+	case <-firstPass:
+	case <-time.After(2 * time.Second):
+		t.Fatal("initial supervised pass did not run")
+	}
+
+	// The ordinary interval is one hour. A newly persisted event retry must wake the same
+	// supervisor immediately instead of waiting for the next polling tick.
+	time.Sleep(10 * time.Millisecond)
+
+	wake <- struct{}{}
+
+	select {
+	case <-secondPass:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("wake signal did not interrupt the healthy polling sleep")
+	}
+
+	assert.Equal(t, int64(2), calls.Load())
 }
 
 func TestRunSupervisedLoopStopsWhilePassInFlight(t *testing.T) {
@@ -247,7 +401,7 @@ func TestLoopBackoffDelayGrowsAndCaps(t *testing.T) {
 		got := loopBackoffDelay(failures, base, maxDelay)
 
 		lower := time.Duration(float64(want) * (1 - loopJitterFraction))
-		upper := time.Duration(float64(want) * (1 + loopJitterFraction))
+		upper := min(time.Duration(float64(want)*(1+loopJitterFraction)), maxDelay)
 
 		assert.GreaterOrEqual(t, got, lower, "failures=%d", failures)
 		assert.LessOrEqual(t, got, upper, "failures=%d", failures)

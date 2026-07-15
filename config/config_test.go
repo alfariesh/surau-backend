@@ -29,6 +29,40 @@ func setRequiredEnv(t *testing.T) {
 	t.Setenv("EMAIL_CHANGE_FRONTEND_URL", "https://frontend.example.com/change-email")
 }
 
+//nolint:paralleltest // t.Setenv mutates process-global environment variables
+func TestNewConfig_OneSignalQuietHours(t *testing.T) {
+	t.Run("defaults", func(t *testing.T) {
+		setRequiredEnv(t)
+
+		cfg, err := NewConfig()
+
+		require.NoError(t, err)
+		assert.Equal(t, "21:00", cfg.OneSignal.QuietHoursStartLocal)
+		assert.Equal(t, "07:00", cfg.OneSignal.QuietHoursEndLocal)
+	})
+
+	t.Run("invalid format", func(t *testing.T) {
+		setRequiredEnv(t)
+		t.Setenv("ONESIGNAL_QUIET_HOURS_START_LOCAL", "9:00")
+
+		_, err := NewConfig()
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "ONESIGNAL_QUIET_HOURS_START_LOCAL")
+	})
+
+	t.Run("equal boundaries", func(t *testing.T) {
+		setRequiredEnv(t)
+		t.Setenv("ONESIGNAL_QUIET_HOURS_START_LOCAL", "07:00")
+		t.Setenv("ONESIGNAL_QUIET_HOURS_END_LOCAL", "07:00")
+
+		_, err := NewConfig()
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "start and end must differ")
+	})
+}
+
 func unsetEnv(t *testing.T, key string) {
 	t.Helper()
 

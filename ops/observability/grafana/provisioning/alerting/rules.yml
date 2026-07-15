@@ -1,4 +1,5 @@
-# 5 alert dasar F1-B + app-down (menutup skenario schema-DIRTY boot-loop).
+# Alert operasional Surau, termasuk app-down (menutup skenario schema-DIRTY
+# boot-loop) dan mass-failure push Q-6.
 # NB: JANGAN pakai `or` antar vektor ber-label identik (sisi kanan dibuang);
 # gabungkan dengan aritmetika seperti pada rule email.
 # Konvensi: ambang ada DI DALAM PromQL ("> bool X") sehingga rule membaca
@@ -123,6 +124,71 @@ groups:
             model:
               refId: A
               expr: (surau_email_failed + (surau_email_oldest_due_seconds > bool 1800)) > bool 0
+              instant: true
+              range: false
+              datasource:
+                type: prometheus
+                uid: prometheus
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              datasource:
+                type: __expr__
+                uid: __expr__
+              conditions:
+                - evaluator:
+                    type: gt
+                    params:
+                      - 0
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - A
+                  reducer:
+                    type: last
+        noDataState: OK
+        execErrState: Error
+      - uid: surau-notification-mass-failure
+        title: OneSignal mass delivery failure
+        condition: C
+        for: 1m
+        labels:
+          env: $OBS_ENV_LABEL
+          source: q6
+        annotations:
+          summary: Sedikitnya 5 percobaan push gagal dan rasio kegagalan mencapai 50% dalam 5 menit
+            — periksa kredensial, rate-limit, status OneSignal, dan log notification_reminder.
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: >-
+                (
+                  (
+                    sum(max without(instance, job) (
+                      surau_notification_delivery_attempts_5m{result="failed"}
+                    )) >= bool 5
+                  )
+                  *
+                  (
+                    sum(max without(instance, job) (
+                      surau_notification_delivery_attempts_5m{result="failed"}
+                    ))
+                    /
+                    clamp_min(sum(max without(instance, job) (
+                      surau_notification_delivery_attempts_5m
+                    )), 1)
+                    >= bool 0.5
+                  )
+                ) > bool 0
               instant: true
               range: false
               datasource:

@@ -552,6 +552,140 @@
     "overrides": []
    },
    "options": {}
+  },
+  {
+   "id": 16,
+   "title": "Streak reminders — accepted vs failed",
+   "description": "Jumlah logical delivery pada rentang dashboard. accepted berarti OneSignal menerima request, bukan konfirmasi notifikasi tampil di perangkat.",
+   "type": "stat",
+   "gridPos": {
+    "x": 0,
+    "y": 47,
+    "w": 12,
+    "h": 7
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "sum(max without(instance, job) (increase(surau_notification_deliveries_total{notification_type=\"streak_reminder\",status=\"accepted\"}[$__range]))) or vector(0)",
+     "instant": true,
+     "range": false,
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "legendFormat": "accepted"
+    },
+    {
+     "refId": "B",
+     "expr": "sum(max without(instance, job) (increase(surau_notification_deliveries_total{notification_type=\"streak_reminder\",status=\"failed\"}[$__range]))) or vector(0)",
+     "instant": true,
+     "range": false,
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "legendFormat": "failed"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "decimals": 0
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "accepted"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "green"
+        }
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "failed"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "red"
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "options": {
+    "reduceOptions": {
+     "values": false,
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": ""
+    },
+    "orientation": "horizontal",
+    "textMode": "auto",
+    "colorMode": "value",
+    "graphMode": "none",
+    "justifyMode": "auto"
+   }
+  },
+  {
+   "id": 17,
+   "title": "Streak reminder failures — reasons",
+   "description": "Percobaan OneSignal yang gagal pada rentang dashboard, dikelompokkan menurut alasan yang aman untuk metrik.",
+   "type": "bargauge",
+   "gridPos": {
+    "x": 12,
+    "y": 47,
+    "w": 12,
+    "h": 7
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "sum by (reason_code) (max without(instance, job) (increase(surau_notification_delivery_attempts_total{notification_type=\"streak_reminder\",result=\"failed\"}[$__range])))",
+     "instant": true,
+     "range": false,
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "legendFormat": "{{reason_code}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "decimals": 0,
+     "min": 0
+    },
+    "overrides": []
+   },
+   "options": {
+    "orientation": "horizontal",
+    "displayMode": "gradient",
+    "showUnfilled": true
+   }
   }
  ],
  "tags": [
