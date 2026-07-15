@@ -177,8 +177,20 @@ p95 286,793 ms; [dual 29379761923](https://github.com/alfariesh/surau-backend/ac
 p95 284,204 ms + eval JSON/SSE 3/3 tanpa fallback; [unit 29381405017](https://github.com/alfariesh/surau-backend/actions/runs/29381405017)
 p95 279,243 ms + eval 3/3; [default 29383004001](https://github.com/alfariesh/surau-backend/actions/runs/29383004001)
 p95 288,415 ms + mode efektif `unit` 3/3 tanpa override/fallback. Seluruh CI, migrasi
-bolak-balik, unit/integration/live/race/RAG eval, dan `make pre-commit` hijau) ∥ Q-4 (SEO
-sitemap/slug) + Q-6 (keandalan notifikasi);
+bolak-balik, unit/integration/live/race/RAG eval, dan `make pre-commit` hijau) ∥ Q-4 ✅
+**SELESAI 2026-07-15 (SESI 20)** (endpoint JSON sitemap lengkap dan feed terfilter kini
+menghasilkan halaman surah/ayah id+en hanya dari editorial `published+permitted` serta sumber
+Quran yang lolos gerbang publik. `lastmod` membaca waktu efektif base+editorial langsung dari
+database, `hreflang` hanya muncul bila pasangan bahasa benar-benar tersedia, dan revalidasi
+ETag/Last-Modified tetap aktif tanpa snapshot atau cron. Registry slug append-only menyimpan
+setiap alias, menolak penghapusan/pemindahan/pemakaian ulang, meresolusikan A→B→C langsung ke
+canonical lewat 308 tanpa rantai, serta menolak down migration setelah sejarah nyata terbentuk.
+Laporan operator mencakup enam kombinasi ar/id/en × surah/ayah dengan kategori tunggal,
+persentase, dan parity item sitemap. Integration test database kosong membuktikan kesetaraan
+dua arah 100%, tidak ada draft/non-permitted bocor, publish terlihat ≤5 menit, hreflang sesuai
+ketersediaan, RBAC 401/403/200, dan redirect slug lama; live invariant mencatat p95 680 µs
+(<200 ms), lastmod persis, serta `missing_slug=0`. Drill migrasi Q-4, worker-cache, Swagger/docs,
+dan `make pre-commit` hijau) ∥ Q-6 (keandalan notifikasi);
 sisa F2: A-2 (identitas mesin ber-scope), A-4 (dual-key JWT + drill), A-5 (refresh 336h);
 **U-0 (lapisan inferensi) + U-6 (eval-harness → gate) DIMULAI DI SINI** — Fase 7 mensyaratkan
 keduanya "sejak hari pertama", dan enrichment kitab langsung ikut menumpang U-0.

@@ -279,7 +279,14 @@ ultracode. Kerjakan K-1 dari roadmap/phase-4-kitab-editorial.md sesuai keputusan
 Masuk PLAN MODE dulu; rencana wajib menyebut cara memenuhi setiap Acceptance Criterion K-1, termasuk determinisme 100%, audit sitasi menggantung = 0, anchor tetap resolve setelah edit, rollout tanpa big-bang, dan bukti 100% katalog published termaterialisasi. Setelah saya setujui: kerjakan sampai tuntas — branch fitur, test, Definition of Done, centang PROGRAM.md & SESI.md, merge, verifikasi dev-api. Laporan akhir bahasa awam.
 ```
 
-- [ ] **SESI 20 — Sitemap/feed + slug permanen Quran (Q-4)**
+- [x] **SESI 20 — Sitemap/feed + slug permanen Quran (Q-4)** — ✅ **SELESAI 2026-07-15**:
+  sitemap lengkap dan feed incremental untuk surah/ayah id+en kini hanya memakai
+  `published+permitted`, dengan `lastmod` efektif langsung dari database dan hreflang sesuai
+  ketersediaan nyata; registry slug append-only memberi redirect 308 langsung A→C serta menolak
+  reuse/penghapusan; laporan operator merinci cakupan ar/id/en × surah/ayah. Integration test
+  database kosong membuktikan kesetaraan sitemap 100%, lastmod ≤5 menit, lisensi, RBAC, dan
+  redirect lama; live invariant membuktikan lastmod persis, `missing_slug=0`, dan p95 680 µs.
+  Migrasi up/down/up terlindungi, worker-cache, Swagger/docs, dan `make pre-commit` hijau.
 
 ```text
 Kerjakan Q-4 dari roadmap/phase-3-quran.md: sediakan data sitemap/feed untuk halaman surah dan ayah dengan lastmod dari updated_at efektif, hreflang id/en sesuai ketersediaan, dan hanya konten published+permitted; formalkan registry slug sehingga perubahan slug menyisakan redirect permanen dan slug lama tetap resolvable; tambah laporan cakupan editorial per bahasa untuk operator.
