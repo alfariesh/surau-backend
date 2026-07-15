@@ -185,6 +185,585 @@ func TestReaderRESTSmoke(t *testing.T) {
 	}
 }
 
+func TestQuranSitemapSlugAndCoverageContract(t *testing.T) {
+	adminToken := adminJWT(t)
+	readerToken := readerJWT(t)
+	seedQuranSitemapFixture(t)
+
+	sitemapResp := doJSON(t, http.MethodGet, baseURL()+"/v1/quran/sitemap", nil, "")
+
+	var sitemap quranSitemapResponse
+	decodeAndClose(t, sitemapResp, &sitemap)
+
+	if sitemapResp.StatusCode != http.StatusOK {
+		t.Fatalf("Quran sitemap expected 200, got %d", sitemapResp.StatusCode)
+	}
+
+	expected := expectedQuranSitemapKeys(t)
+
+	actual := make(map[string]quranSitemapItem, len(sitemap.Items))
+	for _, item := range sitemap.Items {
+		key := quranSitemapKey(item.PageType, item.SurahID, item.AyahNumber, item.Lang)
+		if _, duplicate := actual[key]; duplicate {
+			t.Fatalf("Quran sitemap duplicate item %s", key)
+		}
+
+		actual[key] = item
+	}
+
+	if sitemap.Total != len(actual) {
+		t.Fatalf("Quran sitemap total=%d unique items=%d", sitemap.Total, len(actual))
+	}
+
+	for key := range expected {
+		if _, ok := actual[key]; !ok {
+			t.Fatalf("Quran sitemap missing eligible page %s", key)
+		}
+	}
+
+	for key := range actual {
+		if _, ok := expected[key]; !ok {
+			t.Fatalf("Quran sitemap leaked ineligible page %s", key)
+		}
+	}
+
+	surahID := quranSitemapFixtureSurahID
+	surahIDKey := quranSitemapKey("surah", surahID, nil, "id")
+	surahENKey := quranSitemapKey("surah", surahID, nil, "en")
+	ayahNumber := 1
+	ayahIDKey := quranSitemapKey("ayah", surahID, &ayahNumber, "id")
+
+	surahIDItem := actual[surahIDKey]
+	surahENItem := actual[surahENKey]
+	ayahIDItem := actual[ayahIDKey]
+
+	assertQuranHreflangs(t, &surahIDItem, map[string]string{
+		"id": "/surah/q4-fixture-surah",
+		"en": "/en/surah/q4-fixture-surah",
+	})
+	assertQuranHreflangs(t, &surahENItem, map[string]string{
+		"id": "/surah/q4-fixture-surah",
+		"en": "/en/surah/q4-fixture-surah",
+	})
+	assertQuranHreflangs(t, &ayahIDItem, map[string]string{
+		"id": "/surah/q4-fixture-surah/1",
+	})
+
+	wantLastmod := time.Date(2026, 7, 15, 3, 10, 11, 0, time.UTC)
+	if !actual[ayahIDKey].Lastmod.Equal(wantLastmod) {
+		t.Fatalf("ayah sitemap lastmod=%s want=%s", actual[ayahIDKey].Lastmod, wantLastmod)
+	}
+
+	publishedAt := touchQuranPublishedAyahEditorial(t)
+
+	refreshedResp := doJSON(t, http.MethodGet, baseURL()+"/v1/quran/sitemap", nil, "")
+	defer refreshedResp.Body.Close()
+
+	var refreshed quranSitemapResponse
+	decodeAndClose(t, refreshedResp, &refreshed)
+
+	var refreshedLastmod time.Time
+
+	for _, item := range refreshed.Items {
+		if quranSitemapKey(item.PageType, item.SurahID, item.AyahNumber, item.Lang) == ayahIDKey {
+			refreshedLastmod = item.Lastmod
+
+			break
+		}
+	}
+
+	if !refreshedLastmod.Equal(publishedAt) {
+		t.Fatalf("published editorial lastmod=%s database=%s", refreshedLastmod, publishedAt)
+	}
+
+	if delta := time.Since(refreshedLastmod); delta < 0 || delta > 5*time.Minute {
+		t.Fatalf("published editorial lastmod visibility delta=%s exceeds five minutes", delta)
+	}
+
+	feedResp := doJSON(t, http.MethodGet, baseURL()+"/v1/quran/feed?lang=id&page_type=ayah&since=2026-07-15T03:00:00Z&limit=1", nil, "")
+
+	var feed quranSitemapResponse
+	decodeAndClose(t, feedResp, &feed)
+
+	if feedResp.StatusCode != http.StatusOK || feed.Total != 1 || len(feed.Items) != 1 {
+		t.Fatalf("Quran feed status=%d total=%d items=%d", feedResp.StatusCode, feed.Total, len(feed.Items))
+	}
+
+	if feed.Items[0].PageType != "ayah" || feed.Items[0].Lang != "id" {
+		t.Fatalf("Quran feed returned wrong filter item %+v", feed.Items[0])
+	}
+
+	unauthorized := doJSON(t, http.MethodGet, baseURL()+"/v1/editorial/quran/coverage", nil, "")
+	unauthorized.Body.Close()
+
+	if unauthorized.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("coverage without auth expected 401, got %d", unauthorized.StatusCode)
+	}
+
+	forbidden := doJSON(t, http.MethodGet, baseURL()+"/v1/editorial/quran/coverage", nil, readerToken)
+	forbidden.Body.Close()
+
+	if forbidden.StatusCode != http.StatusForbidden {
+		t.Fatalf("coverage reader expected 403, got %d", forbidden.StatusCode)
+	}
+
+	coverageResp := doJSON(t, http.MethodGet, baseURL()+"/v1/editorial/quran/coverage", nil, adminToken)
+
+	var coverage quranCoverageResponse
+	decodeAndClose(t, coverageResp, &coverage)
+
+	if coverageResp.StatusCode != http.StatusOK || coverage.Total != 6 {
+		t.Fatalf("coverage status=%d total=%d", coverageResp.StatusCode, coverage.Total)
+	}
+
+	assertQuranCoverageSums(t, coverage.Items)
+
+	renameQuranFixtureSlug(t, "q4-fixture-renamed")
+	renameQuranFixtureSlug(t, "q4-fixture-final")
+	assertQuranSlugRegistryGuards(t)
+
+	for _, oldSlug := range []string{"q4-fixture-surah", "q4-fixture-renamed"} {
+		redirect := doJSONNoRedirect(t, baseURL()+"/v1/quran/slugs/"+oldSlug)
+		statusCode := redirect.StatusCode
+		location := redirect.Header.Get("Location")
+		redirect.Body.Close()
+
+		if statusCode != http.StatusPermanentRedirect {
+			t.Fatalf("old slug %s expected 308, got %d", oldSlug, statusCode)
+		}
+
+		if location != "/v1/quran/slugs/q4-fixture-final" {
+			t.Fatalf("old slug %s Location=%q", oldSlug, location)
+		}
+	}
+
+	current := doJSON(t, http.MethodGet, baseURL()+"/v1/quran/slugs/q4-fixture-final", nil, "")
+
+	var resolution struct {
+		CanonicalSlug string `json:"canonical_slug"`
+		IsAlias       bool   `json:"is_alias"`
+	}
+	decodeAndClose(t, current, &resolution)
+
+	if current.StatusCode != http.StatusOK || resolution.CanonicalSlug != "q4-fixture-final" || resolution.IsAlias {
+		t.Fatalf("current slug resolution status=%d body=%+v", current.StatusCode, resolution)
+	}
+
+	missing := doJSON(t, http.MethodGet, baseURL()+"/v1/quran/slugs/not-registered", nil, "")
+	missing.Body.Close()
+
+	if missing.StatusCode != http.StatusNotFound {
+		t.Fatalf("unknown slug expected 404, got %d", missing.StatusCode)
+	}
+
+	invalid := doJSON(t, http.MethodGet, baseURL()+"/v1/quran/slugs/Bad_Slug", nil, "")
+	invalid.Body.Close()
+
+	if invalid.StatusCode != http.StatusBadRequest {
+		t.Fatalf("invalid slug expected 400, got %d", invalid.StatusCode)
+	}
+}
+
+const quranSitemapFixtureSurahID = 114
+
+type quranSitemapResponse struct {
+	Items []quranSitemapItem `json:"items"`
+	Total int                `json:"total"`
+}
+
+type quranSitemapItem struct {
+	PageType   string    `json:"page_type"`
+	SurahID    int       `json:"surah_id"`
+	AyahNumber *int      `json:"ayah_number"`
+	Lang       string    `json:"lang"`
+	Path       string    `json:"path"`
+	Lastmod    time.Time `json:"lastmod"`
+	Hreflangs  []struct {
+		Lang string `json:"lang"`
+		Path string `json:"path"`
+	} `json:"hreflangs"`
+}
+
+type quranCoverageResponse struct {
+	Items []quranCoverageItem `json:"items"`
+	Total int                 `json:"total"`
+}
+
+type quranCoverageItem struct {
+	Lang                    string `json:"lang"`
+	PageType                string `json:"page_type"`
+	TotalTargets            int    `json:"total_targets"`
+	Indexable               int    `json:"indexable"`
+	PublishedBlockedLicense int    `json:"published_blocked_license"`
+	WorkflowIncomplete      int    `json:"workflow_incomplete"`
+	MissingEditorial        int    `json:"missing_editorial"`
+	MissingSlug             int    `json:"missing_slug"`
+	SitemapItems            int    `json:"sitemap_items"`
+}
+
+func seedQuranSitemapFixture(t *testing.T) {
+	t.Helper()
+
+	pool := integrationDB(t)
+	defer pool.Close()
+
+	ctx, cancel := context.WithTimeout(t.Context(), requestTimeout)
+	defer cancel()
+
+	var actorID string
+	if err := pool.QueryRow(ctx, `SELECT id FROM users WHERE role = 'admin' ORDER BY created_at DESC LIMIT 1`).Scan(&actorID); err != nil {
+		t.Fatalf("find Q-4 fixture actor: %v", err)
+	}
+
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatalf("begin Q-4 fixture: %v", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	if _, err = tx.Exec(ctx, `SET LOCAL surau.quran_editorial_writer = 'quran-editorial-service'`); err != nil {
+		t.Fatalf("enable Q-4 fixture writer: %v", err)
+	}
+
+	if _, err = tx.Exec(ctx, `
+UPDATE quran_script_sources
+SET license_status = 'permitted',
+    license_reason = 'Q-4 integration fixture',
+    license_updated_by = $1
+WHERE id = 'qpc-hafs'`, actorID); err != nil {
+		t.Fatalf("permit Q-4 script fixture: %v", err)
+	}
+
+	if _, err = tx.Exec(ctx, `
+INSERT INTO quran_surahs (
+    surah_id, name_arabic, name_latin, ayah_count, slug, updated_at
+) VALUES ($1, 'سورة الاختبار', 'Q4 Fixture', 2, 'q4-fixture-surah', '2026-07-15T02:00:00Z')
+ON CONFLICT (surah_id) DO UPDATE SET
+    name_arabic = EXCLUDED.name_arabic,
+    name_latin = EXCLUDED.name_latin,
+    ayah_count = EXCLUDED.ayah_count,
+    slug = EXCLUDED.slug,
+	updated_at = EXCLUDED.updated_at`, quranSitemapFixtureSurahID); err != nil {
+		t.Fatalf("insert Q-4 surah fixture: %v", err)
+	}
+
+	if _, err = tx.Exec(ctx, `
+INSERT INTO quran_ayahs (
+    surah_id, ayah_number, ayah_key, text_qpc_hafs, updated_at
+) VALUES
+    ($1::INTEGER, 1, ($1::INTEGER)::TEXT || ':1', 'نص الاختبار الأول', '2026-07-15T02:30:00Z'),
+    ($1::INTEGER, 2, ($1::INTEGER)::TEXT || ':2', 'نص الاختبار الثاني', '2026-07-15T02:40:00Z')
+ON CONFLICT (surah_id, ayah_number) DO UPDATE SET
+    updated_at = EXCLUDED.updated_at`, quranSitemapFixtureSurahID); err != nil {
+		t.Fatalf("insert Q-4 ayah fixtures: %v", err)
+	}
+
+	if _, err = tx.Exec(ctx, `
+INSERT INTO quran_surah_editorial (
+    surah_id, lang, meta_title, license_status, status, published_at, created_at, updated_at
+) VALUES
+    ($1, 'id', 'Surah Fixture ID', 'permitted', 'published', '2026-07-15T03:00:00Z', '2026-07-15T03:00:00Z', '2026-07-15T03:00:00Z'),
+    ($1, 'en', 'Fixture Surah EN', 'permitted', 'published', '2026-07-15T03:05:00Z', '2026-07-15T03:05:00Z', '2026-07-15T03:05:00Z')
+ON CONFLICT (surah_id, lang, status) DO UPDATE SET
+    meta_title = EXCLUDED.meta_title,
+    license_status = EXCLUDED.license_status,
+    published_at = EXCLUDED.published_at,
+		updated_at = EXCLUDED.updated_at`, quranSitemapFixtureSurahID); err != nil {
+		t.Fatalf("insert Q-4 surah editorial fixtures: %v", err)
+	}
+
+	if _, err = tx.Exec(ctx, `
+INSERT INTO quran_ayah_editorial (
+    surah_id, ayah_number, ayah_key, lang, meta_title, license_status,
+    status, published_at, created_at, updated_at
+) VALUES
+    ($1::INTEGER, 1, ($1::INTEGER)::TEXT || ':1', 'id', 'Ayah Fixture ID', 'permitted',
+     'published', '2026-07-15T03:10:11Z', '2026-07-15T03:10:11Z', '2026-07-15T03:10:11Z'),
+	    ($1::INTEGER, 1, ($1::INTEGER)::TEXT || ':1', 'id', 'Newer Draft Must Stay Private', 'permitted',
+	     'draft', NULL, '2026-07-15T03:20:00Z', '2026-07-15T03:20:00Z'),
+	    ($1::INTEGER, 2, ($1::INTEGER)::TEXT || ':2', 'id', 'Draft Ayah Fixture', 'permitted',
+     'draft', NULL, '2026-07-15T03:15:00Z', '2026-07-15T03:15:00Z')
+ON CONFLICT (surah_id, ayah_number, lang, status) DO UPDATE SET
+    meta_title = EXCLUDED.meta_title,
+    license_status = EXCLUDED.license_status,
+    published_at = EXCLUDED.published_at,
+    updated_at = EXCLUDED.updated_at`, quranSitemapFixtureSurahID); err != nil {
+		t.Fatalf("insert Q-4 ayah editorial fixtures: %v", err)
+	}
+	// New publication correctly rejects non-permitted copy. Seed one legacy
+	// published row with replication triggers disabled so the public gate and
+	// operator blocked-license bucket are still exercised against existing data.
+	if _, err = tx.Exec(ctx, `SET LOCAL session_replication_role = 'replica'`); err != nil {
+		t.Fatalf("disable Q-4 fixture triggers: %v", err)
+	}
+
+	if _, err = tx.Exec(ctx, `
+INSERT INTO quran_ayah_editorial (
+    surah_id, ayah_number, ayah_key, lang, meta_title, license_status,
+    status, published_at, created_at, updated_at
+) VALUES (
+    $1, 1, ($1::INTEGER)::TEXT || ':1', 'en', 'Legacy Ayah Fixture EN', 'restricted',
+    'published', '2026-07-15T03:12:00Z', '2026-07-15T03:12:00Z', '2026-07-15T03:12:00Z'
+)
+ON CONFLICT (surah_id, ayah_number, lang, status) DO UPDATE SET
+    meta_title = EXCLUDED.meta_title,
+    license_status = EXCLUDED.license_status,
+    published_at = EXCLUDED.published_at,
+	updated_at = EXCLUDED.updated_at`, quranSitemapFixtureSurahID); err != nil {
+		t.Fatalf("insert Q-4 legacy blocked-license fixture: %v", err)
+	}
+
+	if _, err = tx.Exec(ctx, `SET LOCAL session_replication_role = 'origin'`); err != nil {
+		t.Fatalf("restore Q-4 fixture triggers: %v", err)
+	}
+
+	if err = tx.Commit(ctx); err != nil {
+		t.Fatalf("commit Q-4 fixture: %v", err)
+	}
+}
+
+func expectedQuranSitemapKeys(t *testing.T) map[string]struct{} {
+	t.Helper()
+
+	pool := integrationDB(t)
+	defer pool.Close()
+
+	ctx, cancel := context.WithTimeout(t.Context(), requestTimeout)
+	defer cancel()
+
+	rows, err := pool.Query(ctx, `
+SELECT page_type, surah_id, ayah_number, lang
+FROM (
+    SELECT 'surah'::TEXT AS page_type, editorial.surah_id,
+           NULL::INTEGER AS ayah_number, editorial.lang
+    FROM quran_surah_editorial editorial
+    JOIN quran_surahs surah ON surah.surah_id = editorial.surah_id
+    JOIN quran_surah_slug_registry registry
+      ON registry.slug = surah.slug AND registry.surah_id = surah.surah_id
+    WHERE editorial.status = 'published'
+      AND editorial.license_status = 'permitted'
+      AND editorial.lang IN ('id', 'en')
+      AND EXISTS (SELECT 1 FROM public_quran_script_sources WHERE id = 'qpc-hafs')
+    UNION ALL
+    SELECT 'ayah', editorial.surah_id, editorial.ayah_number, editorial.lang
+    FROM quran_ayah_editorial editorial
+    JOIN quran_surahs surah ON surah.surah_id = editorial.surah_id
+    JOIN quran_surah_slug_registry registry
+      ON registry.slug = surah.slug AND registry.surah_id = surah.surah_id
+    WHERE editorial.status = 'published'
+      AND editorial.license_status = 'permitted'
+      AND editorial.lang IN ('id', 'en')
+      AND EXISTS (SELECT 1 FROM public_quran_script_sources WHERE id = 'qpc-hafs')
+) expected`)
+	if err != nil {
+		t.Fatalf("query expected Q-4 sitemap: %v", err)
+	}
+	defer rows.Close()
+
+	result := make(map[string]struct{})
+
+	for rows.Next() {
+		var (
+			pageType   string
+			lang       string
+			surahID    int
+			ayahNumber *int
+		)
+
+		if err = rows.Scan(&pageType, &surahID, &ayahNumber, &lang); err != nil {
+			t.Fatalf("scan expected Q-4 sitemap: %v", err)
+		}
+
+		result[quranSitemapKey(pageType, surahID, ayahNumber, lang)] = struct{}{}
+	}
+
+	if err = rows.Err(); err != nil {
+		t.Fatalf("expected Q-4 sitemap rows: %v", err)
+	}
+
+	return result
+}
+
+func quranSitemapKey(pageType string, surahID int, ayahNumber *int, lang string) string {
+	ayah := 0
+	if ayahNumber != nil {
+		ayah = *ayahNumber
+	}
+
+	return fmt.Sprintf("%s:%d:%d:%s", pageType, surahID, ayah, lang)
+}
+
+func assertQuranHreflangs(t *testing.T, item *quranSitemapItem, want map[string]string) {
+	t.Helper()
+
+	got := make(map[string]string, len(item.Hreflangs))
+	for _, alternate := range item.Hreflangs {
+		got[alternate.Lang] = alternate.Path
+	}
+
+	if len(got) != len(want) {
+		t.Fatalf("hreflang %s/%s=%v want=%v", item.PageType, item.Lang, got, want)
+	}
+
+	for lang, path := range want {
+		if got[lang] != path {
+			t.Fatalf("hreflang %s/%s %s=%q want=%q", item.PageType, item.Lang, lang, got[lang], path)
+		}
+	}
+}
+
+func assertQuranCoverageSums(t *testing.T, items []quranCoverageItem) {
+	t.Helper()
+
+	if len(items) != 6 {
+		t.Fatalf("coverage items=%d want=6", len(items))
+	}
+
+	for _, item := range items {
+		sum := item.Indexable + item.PublishedBlockedLicense + item.WorkflowIncomplete + item.MissingEditorial + item.MissingSlug
+		if sum != item.TotalTargets {
+			t.Fatalf("coverage %s/%s categories=%d total=%d", item.Lang, item.PageType, sum, item.TotalTargets)
+		}
+
+		if item.Lang == "ar" && item.SitemapItems != 0 {
+			t.Fatalf("Arabic coverage unexpectedly emits sitemap items: %+v", item)
+		}
+
+		if item.Lang != "ar" && item.SitemapItems != item.Indexable {
+			t.Fatalf("coverage sitemap parity failed: %+v", item)
+		}
+	}
+}
+
+func renameQuranFixtureSlug(t *testing.T, slug string) {
+	t.Helper()
+
+	pool := integrationDB(t)
+	defer pool.Close()
+
+	ctx, cancel := context.WithTimeout(t.Context(), requestTimeout)
+	defer cancel()
+
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatalf("begin Q-4 slug rename: %v", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	if _, err = tx.Exec(ctx, `SET LOCAL surau.quran_editorial_writer = 'quran-editorial-service'`); err != nil {
+		t.Fatalf("enable Q-4 slug writer: %v", err)
+	}
+
+	if _, err = tx.Exec(ctx, `
+UPDATE quran_surahs
+SET slug = $2,
+    updated_at = GREATEST(clock_timestamp(), updated_at + INTERVAL '1 microsecond')
+WHERE surah_id = $1`, quranSitemapFixtureSurahID, slug); err != nil {
+		t.Fatalf("rename Q-4 fixture slug to %s: %v", slug, err)
+	}
+
+	if err = tx.Commit(ctx); err != nil {
+		t.Fatalf("commit Q-4 slug rename: %v", err)
+	}
+}
+
+func touchQuranPublishedAyahEditorial(t *testing.T) time.Time {
+	t.Helper()
+
+	pool := integrationDB(t)
+	defer pool.Close()
+
+	ctx, cancel := context.WithTimeout(t.Context(), requestTimeout)
+	defer cancel()
+
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatalf("begin Q-4 lastmod update: %v", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	if _, err = tx.Exec(ctx, `SET LOCAL surau.quran_editorial_writer = 'quran-editorial-service'`); err != nil {
+		t.Fatalf("enable Q-4 lastmod writer: %v", err)
+	}
+
+	var updatedAt time.Time
+	if err = tx.QueryRow(ctx, `
+UPDATE quran_ayah_editorial
+SET meta_title = meta_title || ' published',
+    updated_at = GREATEST(clock_timestamp(), updated_at + INTERVAL '1 microsecond')
+WHERE surah_id = $1 AND ayah_number = 1 AND lang = 'id' AND status = 'published'
+RETURNING updated_at`, quranSitemapFixtureSurahID).Scan(&updatedAt); err != nil {
+		t.Fatalf("update Q-4 published lastmod: %v", err)
+	}
+
+	if err = tx.Commit(ctx); err != nil {
+		t.Fatalf("commit Q-4 lastmod update: %v", err)
+	}
+
+	return updatedAt
+}
+
+func assertQuranSlugRegistryGuards(t *testing.T) {
+	t.Helper()
+
+	pool := integrationDB(t)
+	defer pool.Close()
+
+	ctx, cancel := context.WithTimeout(t.Context(), requestTimeout)
+	defer cancel()
+
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatalf("begin Q-4 historical slug reuse check: %v", err)
+	}
+
+	if _, err = tx.Exec(ctx, `SET LOCAL surau.quran_editorial_writer = 'quran-editorial-service'`); err != nil {
+		t.Fatalf("enable Q-4 historical slug reuse writer: %v", err)
+	}
+
+	_, reuseErr := tx.Exec(ctx, `UPDATE quran_surahs SET slug = 'q4-fixture-surah' WHERE surah_id = $1`, quranSitemapFixtureSurahID)
+	_ = tx.Rollback(ctx)
+
+	if reuseErr == nil {
+		t.Fatal("historical Quran slug reuse unexpectedly succeeded")
+	}
+
+	if _, err = pool.Exec(ctx, `UPDATE quran_surah_slug_registry SET surah_id = 113 WHERE slug = 'q4-fixture-surah'`); err == nil {
+		t.Fatal("Quran slug registry UPDATE unexpectedly succeeded")
+	}
+
+	if _, err = pool.Exec(ctx, `DELETE FROM quran_surah_slug_registry WHERE slug = 'q4-fixture-surah'`); err == nil {
+		t.Fatal("Quran slug registry DELETE unexpectedly succeeded")
+	}
+
+	if _, err = pool.Exec(ctx, `TRUNCATE quran_surah_slug_registry`); err == nil {
+		t.Fatal("Quran slug registry TRUNCATE unexpectedly succeeded")
+	}
+}
+
+func doJSONNoRedirect(t *testing.T, target string) *http.Response {
+	t.Helper()
+
+	ctx, cancel := context.WithTimeout(t.Context(), requestTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, http.NoBody)
+	if err != nil {
+		t.Fatalf("new no-redirect request: %v", err)
+	}
+
+	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("GET %s without redirect: %v", target, err)
+	}
+
+	return resp
+}
+
 func TestReaderMultilingualKitabContract(t *testing.T) {
 	seedMultilingualKitabFixture(t)
 
@@ -485,6 +1064,7 @@ func adminJWT(t *testing.T) string {
 	registerBody := fmt.Sprintf(`{"username":"admin_%d","email":%q,"password":"testpass123"}`, nano, email)
 	resp := doJSON(t, http.MethodPost, baseURL()+"/v1/auth/register", bytes.NewBufferString(registerBody), "")
 	resp.Body.Close()
+
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("admin register expected 201, got %d", resp.StatusCode)
 	}
@@ -507,6 +1087,43 @@ func adminJWT(t *testing.T) string {
 	}
 	if tokenResp.Token == "" {
 		t.Fatal("expected admin token")
+	}
+
+	return tokenResp.Token
+}
+
+func readerJWT(t *testing.T) string {
+	t.Helper()
+
+	nano := time.Now().UnixNano()
+	email := fmt.Sprintf("q4_reader_%d@test.local", nano)
+	registerBody := fmt.Sprintf(`{"username":"q4_reader_%d","email":%q,"password":"testpass123"}`, nano, email)
+	resp := doJSON(t, http.MethodPost, baseURL()+"/v1/auth/register", bytes.NewBufferString(registerBody), "")
+	resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("Q-4 reader register expected 201, got %d", resp.StatusCode)
+	}
+
+	verifyRegisteredEmail(t, email)
+	loginBody := fmt.Sprintf(`{"email":%q,"password":"testpass123"}`, email)
+
+	resp = doJSON(t, http.MethodPost, baseURL()+"/v1/auth/login", bytes.NewBufferString(loginBody), "")
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("Q-4 reader login expected 200, got %d", resp.StatusCode)
+	}
+
+	var tokenResp struct {
+		Token string `json:"token"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
+		t.Fatalf("decode Q-4 reader token: %v", err)
+	}
+
+	if tokenResp.Token == "" {
+		t.Fatal("expected Q-4 reader token")
 	}
 
 	return tokenResp.Token

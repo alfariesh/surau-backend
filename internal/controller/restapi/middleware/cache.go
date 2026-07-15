@@ -125,7 +125,7 @@ func walkUpdatedAt(value any, latest *time.Time) {
 	switch typed := value.(type) {
 	case map[string]any:
 		for key, nested := range typed {
-			if key == "updated_at" {
+			if key == "updated_at" || key == "lastmod" {
 				if parsed, ok := parseJSONTime(nested); ok && parsed.After(*latest) {
 					*latest = parsed
 				}

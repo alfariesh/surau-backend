@@ -240,6 +240,12 @@ describe("Surau API cache policy", () => {
       cacheable: false,
       reason: "protected_or_operational_path"
     });
+    for (const path of ["/v1/quran/sitemap", "/v1/quran/feed?lang=id", "/v1/quran/slugs/al-fatihah"]) {
+      expect(cacheDecision(request(path))).toEqual({
+        cacheable: false,
+        reason: "protected_or_operational_path"
+      });
+    }
 
     expect(cacheDecision(request("/v1/books/797/toc/10/read?lang=id"))).toEqual({
       cacheable: false,

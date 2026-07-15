@@ -259,6 +259,10 @@ type (
 		Search(ctx context.Context, query, lang string, limit, offset int) ([]entity.QuranSearchResult, int, error)
 		BookReferences(ctx context.Context, bookID int, headingID *int, lang, status string, limit, offset int) ([]entity.BookQuranReference, int, error)
 		MissingAssets(ctx context.Context, targetLang, assetType string, surahID *int, limit, offset int) (entity.EditorialMissingQuranAssets, error)
+		Sitemap(ctx context.Context) ([]entity.QuranSitemapItem, error)
+		Feed(ctx context.Context, since, lang, pageType string, limit, offset int) ([]entity.QuranSitemapItem, int, error)
+		ResolveSlug(ctx context.Context, slug string) (entity.QuranSlugResolution, error)
+		EditorialCoverage(ctx context.Context) ([]entity.QuranEditorialCoverage, error)
 	}
 
 	// Personal -.

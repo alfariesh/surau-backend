@@ -319,3 +319,15 @@ type QuranReaderAyahList struct {
 	Items []QuranReaderAyah `json:"items"`
 	Total int               `json:"total" example:"7"`
 } // @name v1.QuranReaderAyahList
+
+// QuranSitemapList is the complete or filtered SEO page list.
+type QuranSitemapList struct {
+	Items []entity.QuranSitemapItem `json:"items"`
+	Total int                       `json:"total" example:"12700"`
+} // @name v1.QuranSitemapList
+
+// QuranEditorialCoverageList is the operator-facing language coverage report.
+type QuranEditorialCoverageList struct {
+	Items []entity.QuranEditorialCoverage `json:"items"`
+	Total int                             `json:"total" example:"6"`
+} // @name v1.QuranEditorialCoverageList

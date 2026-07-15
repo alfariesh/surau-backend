@@ -482,7 +482,44 @@ published + permitted slot.
 
 Surah revision snapshots cover the per-language editorial row. Global routing
 fields (`slug`, `chronological_order`, `ruku_count`) change only during an
-explicit importer publish; Q-4 owns their permanent redirect/history contract.
+explicit importer publish. Every slug value is permanently registered; old
+values remain aliases and are never reused.
+
+## Quran sitemap, feed, and slug routing
+
+Use `GET /v1/quran/sitemap` as the only source for generating public Quran
+sitemap XML. It returns all id/en surah and ayah pages that the backend has
+already verified as `published` + `permitted`, including relative `path`, exact
+`lastmod`, and availability-aware `hreflangs`. Do not reconstruct eligibility
+from reader endpoints and do not emit an alternate language that is absent
+from `hreflangs`.
+
+Path mapping is fixed:
+
+```text
+id surah  /surah/{slug}
+id ayah   /surah/{slug}/{ayah_number}
+en surah  /en/surah/{slug}
+en ayah   /en/surah/{slug}/{ayah_number}
+```
+
+Use `GET /v1/quran/feed` for incremental revalidation. It has the same item
+shape and truth set, ordered newest first, with inclusive RFC3339 `since`,
+optional `lang=id|en`, optional `page_type=surah|ayah`, `limit` (default 50,
+maximum 200), and `offset` (maximum 10,000).
+
+Before rendering a slug-routed surah page, resolve the slug through
+`GET /v1/quran/slugs/{slug}`. A current slug returns `200`; an old slug returns
+`308` whose `Location` points directly to the newest API slug. The web app must
+translate that result into its own permanent page redirect while preserving
+the language and optional ayah suffix. Canonical Quran identity remains the
+numeric `surah_id`/`ayah_key`, so never store a slug as an Anchor.
+
+The operator dashboard can read `GET /v1/editorial/quran/coverage` with a
+review-editorial session. It returns six mutually-exclusive readiness rows for
+`ar|id|en × surah|ayah`; use `published_blocked_license`,
+`workflow_incomplete`, `missing_editorial`, and `missing_slug` as actionable
+queues. `sitemap_items` is the public parity count for id/en and zero for ar.
 
 ## Editorial Book Production
 

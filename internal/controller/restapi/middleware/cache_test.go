@@ -103,6 +103,27 @@ func TestPublicRevalidatePreventsStaleReuse(t *testing.T) {
 	assert.Equal(t, "public, max-age=0, must-revalidate", notModifiedResp.Header.Get("Cache-Control"))
 }
 
+func TestPublicRevalidateUsesLatestSitemapLastmod(t *testing.T) {
+	t.Parallel()
+
+	app := fiber.New()
+	app.Use(middleware.PublicRevalidate())
+	app.Get("/quran/sitemap", func(ctx *fiber.Ctx) error {
+		return ctx.JSON(fiber.Map{"items": []fiber.Map{
+			{"lastmod": "2026-07-15T08:00:00Z"},
+			{"lastmod": "2026-07-15T09:10:11.123456Z"},
+		}})
+	})
+
+	resp, err := app.Test(httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/quran/sitemap", nil))
+	require.NoError(t, err)
+
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Equal(t, "Wed, 15 Jul 2026 09:10:11 GMT", resp.Header.Get("Last-Modified"))
+}
+
 // TestPublicCacheExcludePath: dynamic endpoints inside a cached group (e.g.
 // /v1/quran/search) answer no-store while sibling routes stay cached (F1-D).
 func TestPublicCacheExcludePath(t *testing.T) {

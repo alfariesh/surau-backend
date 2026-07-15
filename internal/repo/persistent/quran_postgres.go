@@ -1258,6 +1258,271 @@ ORDER BY asset_type ASC, target_lang ASC`
 	return result, nil
 }
 
+// ListQuranSitemap returns the complete current public SEO page set in one
+// set-based query. Both public editorial and primary-script license gates are
+// applied in SQL so ineligible rows never reach an API serializer.
+func (r *QuranRepo) ListQuranSitemap(ctx context.Context) ([]entity.QuranSitemapItem, error) {
+	const quranSitemapInitialCapacity = 12700
+
+	const query = quranSitemapCTE + `
+SELECT page_type, surah_id, ayah_number, ayah_key, slug, lang, lastmod, available_langs
+FROM eligible
+ORDER BY CASE page_type WHEN 'surah' THEN 0 ELSE 1 END,
+         surah_id, ayah_number NULLS FIRST, lang`
+
+	rows, err := r.Pool.Query(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("QuranRepo - ListQuranSitemap - Query: %w", err)
+	}
+	defer rows.Close()
+
+	items := make([]entity.QuranSitemapItem, 0, quranSitemapInitialCapacity)
+
+	for rows.Next() {
+		item, err := scanQuranSitemapItem(rows)
+		if err != nil {
+			return nil, fmt.Errorf("QuranRepo - ListQuranSitemap - Scan: %w", err)
+		}
+
+		items = append(items, item)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("QuranRepo - ListQuranSitemap - rows.Err: %w", err)
+	}
+
+	return items, nil
+}
+
+// ListQuranFeed returns a filtered incremental view over the sitemap truth set.
+func (r *QuranRepo) ListQuranFeed(
+	ctx context.Context,
+	filter repo.QuranFeedFilter,
+) ([]entity.QuranSitemapItem, int, error) {
+	const query = quranSitemapCTE + `
+SELECT page_type, surah_id, ayah_number, ayah_key, slug, lang, lastmod,
+       available_langs, COUNT(*) OVER()::INTEGER AS total
+FROM eligible
+WHERE ($1::TIMESTAMPTZ IS NULL OR lastmod >= $1)
+  AND ($2::TEXT = '' OR lang = $2)
+  AND ($3::TEXT = '' OR page_type = $3)
+ORDER BY lastmod DESC,
+         CASE page_type WHEN 'surah' THEN 0 ELSE 1 END,
+         surah_id, ayah_number NULLS FIRST, lang
+LIMIT $4 OFFSET $5`
+
+	rows, err := r.Pool.Query(
+		ctx,
+		query,
+		filter.Since,
+		filter.Lang,
+		filter.PageType,
+		filter.Limit,
+		filter.Offset,
+	)
+	if err != nil {
+		return nil, 0, fmt.Errorf("QuranRepo - ListQuranFeed - Query: %w", err)
+	}
+	defer rows.Close()
+
+	items := make([]entity.QuranSitemapItem, 0, filter.Limit)
+
+	total := 0
+
+	for rows.Next() {
+		item, err := scanQuranSitemapItemWithTotal(rows, &total)
+		if err != nil {
+			return nil, 0, fmt.Errorf("QuranRepo - ListQuranFeed - Scan: %w", err)
+		}
+
+		items = append(items, item)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("QuranRepo - ListQuranFeed - rows.Err: %w", err)
+	}
+
+	if len(items) == 0 {
+		const countQuery = quranSitemapCTE + `
+SELECT COUNT(*)::INTEGER
+FROM eligible
+WHERE ($1::TIMESTAMPTZ IS NULL OR lastmod >= $1)
+  AND ($2::TEXT = '' OR lang = $2)
+  AND ($3::TEXT = '' OR page_type = $3)`
+		if err = r.Pool.QueryRow(
+			ctx,
+			countQuery,
+			filter.Since,
+			filter.Lang,
+			filter.PageType,
+		).Scan(&total); err != nil {
+			return nil, 0, fmt.Errorf("QuranRepo - ListQuranFeed - Count: %w", err)
+		}
+	}
+
+	return items, total, nil
+}
+
+// ResolveQuranSurahSlug maps an immutable alias to the current slug.
+func (r *QuranRepo) ResolveQuranSurahSlug(
+	ctx context.Context,
+	slug string,
+) (entity.QuranSlugResolution, error) {
+	const query = `
+SELECT registry.surah_id, registry.slug, surah.slug
+FROM quran_surah_slug_registry registry
+JOIN quran_surahs surah ON surah.surah_id = registry.surah_id
+WHERE registry.slug = $1`
+
+	var result entity.QuranSlugResolution
+
+	err := r.Pool.QueryRow(ctx, query, slug).Scan(
+		&result.SurahID,
+		&result.RequestedSlug,
+		&result.CanonicalSlug,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return entity.QuranSlugResolution{}, entity.ErrQuranSlugNotFound
+	}
+
+	if err != nil {
+		return entity.QuranSlugResolution{}, fmt.Errorf("QuranRepo - ResolveQuranSurahSlug - QueryRow: %w", err)
+	}
+
+	result.IsAlias = result.RequestedSlug != result.CanonicalSlug
+
+	return result, nil
+}
+
+const quranSitemapCTE = `
+WITH public_pages AS (
+    SELECT 'surah'::TEXT AS page_type,
+           surah.surah_id,
+           NULL::INTEGER AS ayah_number,
+           NULL::TEXT AS ayah_key,
+           surah.slug,
+           editorial.lang,
+           GREATEST(surah.updated_at, editorial.updated_at) AS lastmod
+    FROM quran_surahs surah
+    JOIN quran_surah_slug_registry registry
+      ON registry.slug = surah.slug
+     AND registry.surah_id = surah.surah_id
+    JOIN quran_surah_editorial_public editorial
+      ON editorial.surah_id = surah.surah_id
+     AND editorial.lang IN ('id', 'en')
+    WHERE EXISTS (SELECT 1 FROM public_quran_script_sources WHERE id = 'qpc-hafs')
+
+    UNION ALL
+
+    SELECT 'ayah'::TEXT AS page_type,
+           ayah.surah_id,
+           ayah.ayah_number,
+           ayah.ayah_key,
+           surah.slug,
+           editorial.lang,
+           GREATEST(ayah.updated_at, editorial.updated_at) AS lastmod
+    FROM quran_ayahs ayah
+    JOIN quran_surahs surah ON surah.surah_id = ayah.surah_id
+    JOIN quran_surah_slug_registry registry
+      ON registry.slug = surah.slug
+     AND registry.surah_id = surah.surah_id
+    JOIN quran_ayah_editorial_public editorial
+      ON editorial.surah_id = ayah.surah_id
+     AND editorial.ayah_number = ayah.ayah_number
+     AND editorial.lang IN ('id', 'en')
+    WHERE EXISTS (SELECT 1 FROM public_quran_script_sources WHERE id = 'qpc-hafs')
+),
+availability AS (
+    SELECT page_type,
+           surah_id,
+           COALESCE(ayah_number, 0) AS page_ordinal,
+           array_agg(lang ORDER BY lang) AS available_langs
+    FROM public_pages
+    GROUP BY page_type, surah_id, COALESCE(ayah_number, 0)
+),
+eligible AS (
+    SELECT page.page_type,
+           page.surah_id,
+           page.ayah_number,
+           page.ayah_key,
+           page.slug,
+           page.lang,
+           page.lastmod,
+           availability.available_langs
+    FROM public_pages page
+    JOIN availability
+      ON availability.page_type = page.page_type
+     AND availability.surah_id = page.surah_id
+     AND availability.page_ordinal = COALESCE(page.ayah_number, 0)
+)`
+
+func scanQuranSitemapItem(row pgx.Row) (entity.QuranSitemapItem, error) {
+	var (
+		item       entity.QuranSitemapItem
+		ayahNumber sql.NullInt64
+		ayahKey    sql.NullString
+	)
+
+	err := row.Scan(
+		&item.PageType,
+		&item.SurahID,
+		&ayahNumber,
+		&ayahKey,
+		&item.Slug,
+		&item.Lang,
+		&item.Lastmod,
+		&item.AvailableLangs,
+	)
+	if err != nil {
+		return entity.QuranSitemapItem{}, err
+	}
+
+	if ayahNumber.Valid {
+		value := int(ayahNumber.Int64)
+		item.AyahNumber = &value
+	}
+
+	if ayahKey.Valid {
+		item.AyahKey = &ayahKey.String
+	}
+
+	return item, nil
+}
+
+func scanQuranSitemapItemWithTotal(row pgx.Row, total *int) (entity.QuranSitemapItem, error) {
+	var (
+		item       entity.QuranSitemapItem
+		ayahNumber sql.NullInt64
+		ayahKey    sql.NullString
+	)
+
+	err := row.Scan(
+		&item.PageType,
+		&item.SurahID,
+		&ayahNumber,
+		&ayahKey,
+		&item.Slug,
+		&item.Lang,
+		&item.Lastmod,
+		&item.AvailableLangs,
+		total,
+	)
+	if err != nil {
+		return entity.QuranSitemapItem{}, err
+	}
+
+	if ayahNumber.Valid {
+		value := int(ayahNumber.Int64)
+		item.AyahNumber = &value
+	}
+
+	if ayahKey.Valid {
+		item.AyahKey = &ayahKey.String
+	}
+
+	return item, nil
+}
+
 const missingQuranAssetsCTE = `
 WITH target_langs AS (
     SELECT unnest($1::TEXT[]) AS lang

@@ -8920,6 +8920,50 @@ const docTemplate = `{
                 ]
             }
         },
+        "/editorial/quran/coverage": {
+            "get": {
+                "description": "Report mutually-exclusive public readiness counts for ar/id/en and surah/ayah. Requires review-editorial capability.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "editorial-quran"
+                ],
+                "summary": "Report Quran editorial coverage",
+                "operationId": "get-quran-editorial-coverage",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.QuranEditorialCoverageList"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
         "/editorial/quran/missing-assets": {
             "get": {
                 "description": "Editorial queue of missing Quran surah info, ayah translations, translation sources, and app-owned public audio URLs. Source audio_url may still be playable.",
@@ -11372,6 +11416,81 @@ const docTemplate = `{
                 }
             }
         },
+        "/quran/feed": {
+            "get": {
+                "description": "Return a paginated, lastmod-descending feed over the exact sitemap truth set. Since is inclusive so equal-timestamp records are not missed.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "quran"
+                ],
+                "summary": "List recently updated indexable Quran pages",
+                "operationId": "list-quran-feed",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Inclusive RFC3339 lastmod lower bound",
+                        "name": "since",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "id",
+                            "en"
+                        ],
+                        "type": "string",
+                        "description": "Language: id or en",
+                        "name": "lang",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "surah",
+                            "ayah"
+                        ],
+                        "type": "string",
+                        "description": "Page type",
+                        "name": "page_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 50,
+                        "description": "Page size (max 200)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Offset (max 10000)",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.QuranSitemapList"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
         "/quran/hizbs": {
             "get": {
                 "description": "List imported Quran hizb segments with lightweight start/end boundaries.",
@@ -11811,6 +11930,87 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/quran/sitemap": {
+            "get": {
+                "description": "Return every Indonesian and English surah/ayah page whose editorial and primary source are public-eligible. The response is deliberately unpaginated and bounded below the 50,000-URL sitemap limit.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "quran"
+                ],
+                "summary": "List all indexable Quran pages",
+                "operationId": "list-quran-sitemap",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.QuranSitemapList"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/quran/slugs/{slug}": {
+            "get": {
+                "description": "Resolve a current slug or permanently redirect a historical slug to the latest registered alias. Slugs are aliases; Quran Anchor identity remains numeric.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "quran"
+                ],
+                "summary": "Resolve a Quran surah slug",
+                "operationId": "resolve-quran-surah-slug",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Current or historical surah slug",
+                        "name": "slug",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.QuranSlugResolution"
+                        }
+                    },
+                    "308": {
+                        "description": "Permanent Redirect",
+                        "schema": {
+                            "$ref": "#/definitions/entity.QuranSlugResolution"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
                         "schema": {
                             "$ref": "#/definitions/v1.Error"
                         }
@@ -16558,6 +16758,51 @@ const docTemplate = `{
                 }
             }
         },
+        "entity.QuranEditorialCoverage": {
+            "type": "object",
+            "properties": {
+                "coverage_percent": {
+                    "type": "number",
+                    "example": 96.22
+                },
+                "indexable": {
+                    "type": "integer",
+                    "example": 6000
+                },
+                "lang": {
+                    "type": "string",
+                    "example": "id"
+                },
+                "missing_editorial": {
+                    "type": "integer",
+                    "example": 126
+                },
+                "missing_slug": {
+                    "type": "integer",
+                    "example": 0
+                },
+                "page_type": {
+                    "type": "string",
+                    "example": "ayah"
+                },
+                "published_blocked_license": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "sitemap_items": {
+                    "type": "integer",
+                    "example": 6000
+                },
+                "total_targets": {
+                    "type": "integer",
+                    "example": 6236
+                },
+                "workflow_incomplete": {
+                    "type": "integer",
+                    "example": 100
+                }
+            }
+        },
         "entity.QuranEditorialRevision": {
             "type": "object",
             "properties": {
@@ -16869,6 +17114,83 @@ const docTemplate = `{
                 "score": {
                     "type": "number",
                     "example": 0.82
+                }
+            }
+        },
+        "entity.QuranSitemapHreflang": {
+            "type": "object",
+            "properties": {
+                "lang": {
+                    "type": "string",
+                    "example": "id"
+                },
+                "path": {
+                    "type": "string",
+                    "example": "/surah/al-fatihah"
+                }
+            }
+        },
+        "entity.QuranSitemapItem": {
+            "type": "object",
+            "properties": {
+                "ayah_key": {
+                    "type": "string",
+                    "example": "1:1"
+                },
+                "ayah_number": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "hreflangs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.QuranSitemapHreflang"
+                    }
+                },
+                "lang": {
+                    "type": "string",
+                    "example": "id"
+                },
+                "lastmod": {
+                    "type": "string",
+                    "example": "2026-07-15T12:00:00Z"
+                },
+                "page_type": {
+                    "type": "string",
+                    "example": "ayah"
+                },
+                "path": {
+                    "type": "string",
+                    "example": "/surah/al-fatihah/1"
+                },
+                "slug": {
+                    "type": "string",
+                    "example": "al-fatihah"
+                },
+                "surah_id": {
+                    "type": "integer",
+                    "example": 1
+                }
+            }
+        },
+        "entity.QuranSlugResolution": {
+            "type": "object",
+            "properties": {
+                "canonical_slug": {
+                    "type": "string",
+                    "example": "al-fatihah"
+                },
+                "is_alias": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "requested_slug": {
+                    "type": "string",
+                    "example": "al-fatihah-old"
+                },
+                "surah_id": {
+                    "type": "integer",
+                    "example": 1
                 }
             }
         },
@@ -19849,6 +20171,21 @@ const docTemplate = `{
                 }
             }
         },
+        "v1.QuranEditorialCoverageList": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.QuranEditorialCoverage"
+                    }
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 6
+                }
+            }
+        },
         "v1.QuranEditorialRevisionList": {
             "type": "object",
             "properties": {
@@ -20109,6 +20446,21 @@ const docTemplate = `{
                 "total": {
                     "type": "integer",
                     "example": 42
+                }
+            }
+        },
+        "v1.QuranSitemapList": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.QuranSitemapItem"
+                    }
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 12700
                 }
             }
         },

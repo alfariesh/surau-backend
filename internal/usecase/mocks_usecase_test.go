@@ -1625,6 +1625,37 @@ func (mr *MockQuranMockRecorder) BookReferences(ctx, bookID, headingID, lang, st
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "BookReferences", reflect.TypeOf((*MockQuran)(nil).BookReferences), ctx, bookID, headingID, lang, status, limit, offset)
 }
 
+// EditorialCoverage mocks base method.
+func (m *MockQuran) EditorialCoverage(ctx context.Context) ([]entity.QuranEditorialCoverage, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "EditorialCoverage", ctx)
+	ret0, _ := ret[0].([]entity.QuranEditorialCoverage)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// EditorialCoverage indicates an expected call of EditorialCoverage.
+func (mr *MockQuranMockRecorder) EditorialCoverage(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "EditorialCoverage", reflect.TypeOf((*MockQuran)(nil).EditorialCoverage), ctx)
+}
+
+// Feed mocks base method.
+func (m *MockQuran) Feed(ctx context.Context, since, lang, pageType string, limit, offset int) ([]entity.QuranSitemapItem, int, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Feed", ctx, since, lang, pageType, limit, offset)
+	ret0, _ := ret[0].([]entity.QuranSitemapItem)
+	ret1, _ := ret[1].(int)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
+}
+
+// Feed indicates an expected call of Feed.
+func (mr *MockQuranMockRecorder) Feed(ctx, since, lang, pageType, limit, offset any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Feed", reflect.TypeOf((*MockQuran)(nil).Feed), ctx, since, lang, pageType, limit, offset)
+}
+
 // HizbAyahs mocks base method.
 func (m *MockQuran) HizbAyahs(ctx context.Context, hizbNumber int, lang, translationSource string, includeTranslation, includeAudio, includeEditorial bool, recitationID string) ([]entity.QuranAyah, error) {
 	m.ctrl.T.Helper()
@@ -1715,6 +1746,21 @@ func (mr *MockQuranMockRecorder) Recitations(ctx any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Recitations", reflect.TypeOf((*MockQuran)(nil).Recitations), ctx)
 }
 
+// ResolveSlug mocks base method.
+func (m *MockQuran) ResolveSlug(ctx context.Context, slug string) (entity.QuranSlugResolution, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ResolveSlug", ctx, slug)
+	ret0, _ := ret[0].(entity.QuranSlugResolution)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ResolveSlug indicates an expected call of ResolveSlug.
+func (mr *MockQuranMockRecorder) ResolveSlug(ctx, slug any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ResolveSlug", reflect.TypeOf((*MockQuran)(nil).ResolveSlug), ctx, slug)
+}
+
 // Search mocks base method.
 func (m *MockQuran) Search(ctx context.Context, query, lang string, limit, offset int) ([]entity.QuranSearchResult, int, error) {
 	m.ctrl.T.Helper()
@@ -1729,6 +1775,21 @@ func (m *MockQuran) Search(ctx context.Context, query, lang string, limit, offse
 func (mr *MockQuranMockRecorder) Search(ctx, query, lang, limit, offset any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Search", reflect.TypeOf((*MockQuran)(nil).Search), ctx, query, lang, limit, offset)
+}
+
+// Sitemap mocks base method.
+func (m *MockQuran) Sitemap(ctx context.Context) ([]entity.QuranSitemapItem, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Sitemap", ctx)
+	ret0, _ := ret[0].([]entity.QuranSitemapItem)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Sitemap indicates an expected call of Sitemap.
+func (mr *MockQuranMockRecorder) Sitemap(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Sitemap", reflect.TypeOf((*MockQuran)(nil).Sitemap), ctx)
 }
 
 // Surah mocks base method.
@@ -3209,6 +3270,75 @@ func (m *MockLicenseAudit) UpdateBookLicense(ctx context.Context, actorID string
 func (mr *MockLicenseAuditMockRecorder) UpdateBookLicense(ctx, actorID, bookID, status, reason, evidenceURL, expectedUpdatedAt any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateBookLicense", reflect.TypeOf((*MockLicenseAudit)(nil).UpdateBookLicense), ctx, actorID, bookID, status, reason, evidenceURL, expectedUpdatedAt)
+}
+
+// MockQuranSourceLicenseAudit is a mock of QuranSourceLicenseAudit interface.
+type MockQuranSourceLicenseAudit struct {
+	ctrl     *gomock.Controller
+	recorder *MockQuranSourceLicenseAuditMockRecorder
+	isgomock struct{}
+}
+
+// MockQuranSourceLicenseAuditMockRecorder is the mock recorder for MockQuranSourceLicenseAudit.
+type MockQuranSourceLicenseAuditMockRecorder struct {
+	mock *MockQuranSourceLicenseAudit
+}
+
+// NewMockQuranSourceLicenseAudit creates a new mock instance.
+func NewMockQuranSourceLicenseAudit(ctrl *gomock.Controller) *MockQuranSourceLicenseAudit {
+	mock := &MockQuranSourceLicenseAudit{ctrl: ctrl}
+	mock.recorder = &MockQuranSourceLicenseAuditMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockQuranSourceLicenseAudit) EXPECT() *MockQuranSourceLicenseAuditMockRecorder {
+	return m.recorder
+}
+
+// QuranSourceLicense mocks base method.
+func (m *MockQuranSourceLicenseAudit) QuranSourceLicense(ctx context.Context, sourceKind, sourceID string) (entity.QuranSourceLicense, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "QuranSourceLicense", ctx, sourceKind, sourceID)
+	ret0, _ := ret[0].(entity.QuranSourceLicense)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// QuranSourceLicense indicates an expected call of QuranSourceLicense.
+func (mr *MockQuranSourceLicenseAuditMockRecorder) QuranSourceLicense(ctx, sourceKind, sourceID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "QuranSourceLicense", reflect.TypeOf((*MockQuranSourceLicenseAudit)(nil).QuranSourceLicense), ctx, sourceKind, sourceID)
+}
+
+// QuranSourceLicenses mocks base method.
+func (m *MockQuranSourceLicenseAudit) QuranSourceLicenses(ctx context.Context, sourceKind, status string, limit, offset int) (entity.QuranSourceLicenseList, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "QuranSourceLicenses", ctx, sourceKind, status, limit, offset)
+	ret0, _ := ret[0].(entity.QuranSourceLicenseList)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// QuranSourceLicenses indicates an expected call of QuranSourceLicenses.
+func (mr *MockQuranSourceLicenseAuditMockRecorder) QuranSourceLicenses(ctx, sourceKind, status, limit, offset any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "QuranSourceLicenses", reflect.TypeOf((*MockQuranSourceLicenseAudit)(nil).QuranSourceLicenses), ctx, sourceKind, status, limit, offset)
+}
+
+// UpdateQuranSourceLicense mocks base method.
+func (m *MockQuranSourceLicenseAudit) UpdateQuranSourceLicense(ctx context.Context, actorID, sourceKind, sourceID, status, reason string, evidenceURL, translator, responsibleName, responsibleRole *string, expectedUpdatedAt *time.Time) (entity.QuranSourceLicense, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateQuranSourceLicense", ctx, actorID, sourceKind, sourceID, status, reason, evidenceURL, translator, responsibleName, responsibleRole, expectedUpdatedAt)
+	ret0, _ := ret[0].(entity.QuranSourceLicense)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// UpdateQuranSourceLicense indicates an expected call of UpdateQuranSourceLicense.
+func (mr *MockQuranSourceLicenseAuditMockRecorder) UpdateQuranSourceLicense(ctx, actorID, sourceKind, sourceID, status, reason, evidenceURL, translator, responsibleName, responsibleRole, expectedUpdatedAt any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateQuranSourceLicense", reflect.TypeOf((*MockQuranSourceLicenseAudit)(nil).UpdateQuranSourceLicense), ctx, actorID, sourceKind, sourceID, status, reason, evidenceURL, translator, responsibleName, responsibleRole, expectedUpdatedAt)
 }
 
 // MockAnchorResolver is a mock of AnchorResolver interface.

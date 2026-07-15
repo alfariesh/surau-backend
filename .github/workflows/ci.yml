@@ -286,7 +286,7 @@ jobs:
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
-          # Dedicated name is part of the Q-1/Q-2 populated migration drills'
+          # Dedicated name is part of the Q-1/Q-2/Q-4 populated migration drills'
           # destructive-test safety gate. No dev/live database may match it.
           POSTGRES_DB: surau_q1_migration_drill
         ports:
@@ -321,6 +321,14 @@ jobs:
           set -euo pipefail
           migrate -path migrations -database "$PG_URL" goto 20260711000006
           go test -count=1 -run '^TestQuranCitableUnitMigrationDrill$' ./internal/repo/persistent/
+      - name: Q-4 slug registry migration drill
+        env:
+          SURAU_Q4_MIGRATION_DRILL_PG: "${{ env.PG_URL }}"
+          SURAU_Q4_MIGRATION_DRILL_ACK: destroy-surau-q4-migration-drill
+        run: |
+          set -euo pipefail
+          migrate -path migrations -database "$PG_URL" goto 20260714000003
+          go test -count=1 -run '^TestQuranSlugRegistryMigrationDrill$' ./internal/repo/persistent/
       - name: Up all (first pass) and assert version
         run: |
           set -euo pipefail
