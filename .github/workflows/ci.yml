@@ -97,6 +97,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: 1.26.5
       - name: Install age
         run: sudo apt-get update -qq && sudo apt-get install -y -qq age zstd
       - name: Shellcheck operational scripts
@@ -107,11 +110,20 @@ jobs:
             ops/backup/surau-pitr-backup ops/backup/surau-pitr-check \
             ops/backup/surau-pg-pitr-restore ops/backup/surau-predeploy-snapshot \
             ops/service-identities/collab-dev-credentials.sh \
-            ops/service-identities/test-collab-dev-credentials.sh
+            ops/service-identities/test-collab-dev-credentials.sh \
+            ops/auth/bootstrap-jwt-keyset.sh ops/auth/test-bootstrap-jwt-keyset.sh \
+            ops/auth/assert-jwt-deploy-safe.sh ops/auth/test-assert-jwt-deploy-safe.sh \
+            ops/auth/rotate-jwt-keyset.sh ops/auth/test-rotate-jwt-keyset.sh
       - name: Backup script tests (encryption round-trip + latest selection)
         run: bash ops/backup/test-backup-scripts.sh
       - name: A-2 collab credential rollout tests
         run: bash ops/service-identities/test-collab-dev-credentials.sh
+      - name: A-4 JWT keyset bootstrap tests
+        run: bash ops/auth/test-bootstrap-jwt-keyset.sh
+      - name: A-4 deploy overlap guard tests
+        run: bash ops/auth/test-assert-jwt-deploy-safe.sh
+      - name: A-4 JWT rotation state-machine tests
+        run: bash ops/auth/test-rotate-jwt-keyset.sh
 
   unit-tests:
     name: runner / tests / unit
@@ -401,6 +413,28 @@ jobs:
         run: npm test
       - name: Build
         run: npm run build
+
+  api-cache-worker:
+    name: runner / api-cache-worker
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: workers/api-cache
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: workers/api-cache/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Unit tests
+        run: npm test
+      - name: Build Worker deployment bundle
+        run: npx wrangler deploy --dry-run
 
   # F1-E / F1-D8: one retry max, and using it is an ALARM (Telegram + warning),
   # not a crutch — the readiness-wait in integration-test/reader_test.go plus

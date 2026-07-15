@@ -1,0 +1,473 @@
+name: JWT Key Rotation
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Rotate DEV first; PROD is rejected unless explicitly selected
+        required: true
+        type: choice
+        options:
+          - dev
+          - prod
+      action:
+        description: Rotation phase
+        required: true
+        type: choice
+        options:
+          - capture-legacy
+          - start
+          - status
+          - rollback
+          - retire
+      expected_version:
+        description: Exact deployed /version value (for example dev-abcdef0 or 0.5.0)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  # Deploy and rotation use the same per-environment lock. A deployment cannot
+  # replace the A-4-capable binary while an overlap or retirement step runs.
+  group: surau-${{ inputs.environment }}-operations
+  cancel-in-progress: false
+
+jobs:
+  rotate:
+    name: JWT ${{ inputs.action }} / ${{ inputs.environment }}
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: ${{ inputs.environment }}
+    env:
+      EXPECTED_VERSION_INPUT: ${{ inputs.expected_version }}
+    steps:
+      - name: Validate request before checkout
+        shell: bash
+        env:
+          ROTATION_ENV: ${{ inputs.environment }}
+          ROTATION_ACTION: ${{ inputs.action }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$EXPECTED_VERSION_INPUT" =~ ^[A-Za-z0-9._-]{1,64}$ ]]; then
+            echo "expected_version contains unsupported characters" >&2
+            exit 1
+          fi
+          [[ "$ROTATION_ENV" =~ ^(dev|prod)$ ]]
+          [[ "$ROTATION_ACTION" =~ ^(capture-legacy|start|status|rollback|retire)$ ]]
+
+      - uses: actions/checkout@v6
+        with:
+          # DEV uses reviewed main. PROD uses the immutable deployed release,
+          # so a later main cannot silently change a live rotation procedure.
+          ref: ${{ inputs.environment == 'prod' && format('refs/tags/api-v{0}', inputs.expected_version) || 'refs/heads/main' }}
+
+      - name: Pin immutable rotation code
+        shell: bash
+        run: |
+          set -euo pipefail
+          rotation_code_sha="$(git rev-parse HEAD)"
+          [[ "$rotation_code_sha" =~ ^[0-9a-f]{40}$ ]]
+          printf 'ROTATION_CODE_SHA=%s\n' "$rotation_code_sha" >> "$GITHUB_ENV"
+
+      # Install reviewed dependencies before any VPS or Cloudflare credential
+      # is materialized on the runner.
+      - uses: actions/setup-node@v4
+        if: inputs.environment == 'prod' && (inputs.action == 'start' || inputs.action == 'rollback' || inputs.action == 'retire')
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: workers/api-cache/package-lock.json
+
+      - name: Install Worker deployment dependencies
+        if: inputs.environment == 'prod' && (inputs.action == 'start' || inputs.action == 'rollback' || inputs.action == 'retire')
+        working-directory: workers/api-cache
+        run: npm ci
+
+      - name: Require a completed DEV drill before PROD starts
+        if: inputs.environment == 'prod' && inputs.action == 'start'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          found=false
+          while IFS=$'\t' read -r artifact_id run_id; do
+            [[ "$artifact_id" =~ ^[0-9]+$ && "$run_id" =~ ^[0-9]+$ ]] || continue
+            conclusion="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id" --jq .conclusion)"
+            [[ "$conclusion" == success ]] || continue
+            gate_dir="$RUNNER_TEMP/dev-drill-gate-$artifact_id"
+            mkdir -p "$gate_dir"
+            gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id/zip" > "$gate_dir/evidence.zip"
+            unzip -qq "$gate_dir/evidence.zip" -d "$gate_dir/content"
+            evidence_file="$(find "$gate_dir/content" -type f -name 'jwt-rotation-dev-retire.txt' -print -quit)"
+            if [[ -n "$evidence_file" ]] &&
+               grep -Fxq "rotation_code_sha=$ROTATION_CODE_SHA" "$evidence_file" &&
+               grep -Fq '"state": "retired"' "$evidence_file" &&
+               grep -Eq 'event=retired .*runtime_finalized=true' "$evidence_file"; then
+              found=true
+              break
+            fi
+          done < <(gh api --paginate \
+            "repos/$GITHUB_REPOSITORY/actions/artifacts?per_page=100" \
+            --jq '.artifacts[] | select(.expired == false) | select(.name | startswith("jwt-rotation-dev-retire-")) | [.id, .workflow_run.id] | @tsv')
+          if [[ "$found" != true ]]; then
+            echo "PROD rotation rejected: no successful retired DEV drill exists for this release SHA" >&2
+            exit 1
+          fi
+
+      - name: Configure pinned SSH trust
+        shell: bash
+        env:
+          VPS_HOST: ${{ secrets[inputs.environment == 'prod' && 'PROD_VPS_HOST' || 'DEV_VPS_HOST'] }}
+          VPS_USER: ${{ secrets[inputs.environment == 'prod' && 'PROD_VPS_USER' || 'DEV_VPS_USER'] }}
+          VPS_DEPLOY_PATH: ${{ secrets[inputs.environment == 'prod' && 'PROD_VPS_DEPLOY_PATH' || 'DEV_VPS_DEPLOY_PATH'] }}
+          VPS_SSH_PRIVATE_KEY: ${{ secrets[inputs.environment == 'prod' && 'PROD_VPS_SSH_PRIVATE_KEY' || 'DEV_VPS_SSH_PRIVATE_KEY'] }}
+          VPS_SSH_KNOWN_HOSTS: ${{ secrets[inputs.environment == 'prod' && 'PROD_VPS_SSH_KNOWN_HOSTS' || 'DEV_VPS_SSH_KNOWN_HOSTS'] }}
+        run: |
+          set -euo pipefail
+          umask 077
+          : "${VPS_HOST:?missing environment VPS host secret}"
+          : "${VPS_USER:?missing environment VPS user secret}"
+          : "${VPS_DEPLOY_PATH:?missing environment deploy-path secret}"
+          : "${VPS_SSH_PRIVATE_KEY:?missing environment SSH key secret}"
+          : "${VPS_SSH_KNOWN_HOSTS:?missing pinned SSH known-hosts secret}"
+          [[ "$VPS_HOST" =~ ^[A-Za-z0-9.-]+$ ]]
+          [[ "$VPS_USER" =~ ^[A-Za-z0-9_-]+$ ]]
+          if [[ ! "$VPS_DEPLOY_PATH" =~ ^/[A-Za-z0-9_./-]+$ ]]; then
+            echo "VPS_DEPLOY_PATH contains unsupported characters" >&2
+            exit 1
+          fi
+
+          mkdir -p ~/.ssh
+          chmod 0700 ~/.ssh
+          printf '%s\n' "$VPS_SSH_PRIVATE_KEY" > ~/.ssh/surau_deploy_key
+          chmod 0600 ~/.ssh/surau_deploy_key
+          printf '%s\n' "$VPS_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 0600 ~/.ssh/known_hosts
+          cat > ~/.ssh/config <<EOF
+          Host surau-rotation
+            HostName $VPS_HOST
+            User $VPS_USER
+            IdentityFile ~/.ssh/surau_deploy_key
+            IdentitiesOnly yes
+            StrictHostKeyChecking yes
+            UserKnownHostsFile ~/.ssh/known_hosts
+          EOF
+          chmod 0600 ~/.ssh/config
+          printf '%s' "$VPS_DEPLOY_PATH" > "$RUNNER_TEMP/deploy-path"
+
+          # Retry transport failures, but never learn or replace a host key.
+          for attempt in {1..6}; do
+            if ssh -o BatchMode=yes -o ConnectTimeout=10 surau-rotation true; then
+              break
+            fi
+            if [[ "$attempt" == 6 ]]; then
+              echo "Pinned SSH connection failed; host-key mismatch or VPS unavailable" >&2
+              exit 1
+            fi
+            sleep 5
+          done
+
+      - name: Copy reviewed rotation runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          remote_script="/tmp/surau-jwt-rotation-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          printf '%s' "$remote_script" > "$RUNNER_TEMP/remote-script-path"
+          scp ops/auth/rotate-jwt-keyset.sh "surau-rotation:$remote_script"
+          # The generated path is a validated runner-side scalar.
+          # shellcheck disable=SC2029
+          ssh surau-rotation "chmod 0700 '$remote_script'"
+
+      - name: Resolve validated remote JWT directory
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          deploy_path="$(<"$RUNNER_TEMP/deploy-path")"
+          # DEPLOY_PATH was validated before SSH configuration. Expansion here
+          # is intentional; the JWT path itself is returned as data, not code.
+          # shellcheck disable=SC2029
+          jwt_directory="$(ssh surau-rotation \
+            "cd '$deploy_path' && sed -n 's/^JWT_SECRETS_DIR=//p' .env.production | tail -1")"
+          jwt_directory="${jwt_directory:-/var/lib/surau/secrets/jwt}"
+          if [[ ! "$jwt_directory" =~ ^/[A-Za-z0-9_./-]+$ ||
+                "$jwt_directory" == / || "$jwt_directory" == *'/../'* ||
+                "$jwt_directory" == */.. ]]; then
+            echo "JWT_SECRETS_DIR contains unsupported characters or traversal" >&2
+            exit 1
+          fi
+          printf '%s' "$jwt_directory" > "$RUNNER_TEMP/jwt-directory"
+
+      - name: Run backend phase
+        shell: bash
+        env:
+          ROTATION_ACTION: ${{ inputs.action }}
+          ROTATION_ENV: ${{ inputs.environment }}
+        run: |
+          set -euo pipefail
+          remote_script="$(<"$RUNNER_TEMP/remote-script-path")"
+          deploy_path="$(<"$RUNNER_TEMP/deploy-path")"
+          remote_mode="$ROTATION_ACTION"
+          if [[ "$ROTATION_ACTION" == start ]]; then
+            remote_mode=prepare
+          elif [[ "$ROTATION_ACTION" == retire ]]; then
+            remote_mode=retire-prepare
+          fi
+          # All client expansions are validated, quoted scalars; git rev-parse
+          # is deliberately evaluated remotely.
+          # shellcheck disable=SC2029
+          ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=20 surau-rotation \
+            "cd '$deploy_path' && test \"\$(git rev-parse HEAD)\" = '$ROTATION_CODE_SHA' && \
+             APP_ENV='$ROTATION_ENV' \
+             EXPECTED_VERSION='$EXPECTED_VERSION_INPUT' \
+             ENV_FILE=.env.production COMPOSE_FILE=docker-compose.prod.yml \
+             '$remote_script' '$remote_mode'"
+
+      - name: Copy protected Worker keyset
+        if: inputs.environment == 'prod' && (inputs.action == 'start' || inputs.action == 'rollback' || inputs.action == 'retire')
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          worker_keyset="$RUNNER_TEMP/worker-keyset.json"
+          jwt_directory="$(<"$RUNNER_TEMP/jwt-directory")"
+          if [[ ! "$jwt_directory" =~ ^/[A-Za-z0-9_./-]+$ ||
+                "$jwt_directory" == / || "$jwt_directory" == *'/../'* ||
+                "$jwt_directory" == */.. ]]; then
+            echo "stored JWT directory failed validation" >&2
+            exit 1
+          fi
+          # The locally expanded path passed strict validation above.
+          # shellcheck disable=SC2029
+          ssh surau-rotation \
+            "sudo cat -- '$jwt_directory/worker-keyset.json'" > "$worker_keyset"
+          chmod 0600 "$worker_keyset"
+          jq -e '.version == 1 and (.keys | length) >= 1 and (.keys | length) <= 2' \
+            "$worker_keyset" >/dev/null
+
+      - name: Remove VPS credentials before Worker deployment
+        if: inputs.environment == 'prod' && (inputs.action == 'start' || inputs.action == 'rollback' || inputs.action == 'retire')
+        shell: bash
+        run: |
+          set -euo pipefail
+          shred -u ~/.ssh/surau_deploy_key
+          rm -f ~/.ssh/config ~/.ssh/known_hosts
+
+      - name: Deploy dual-key Worker before signer activation
+        if: inputs.environment == 'prod' && inputs.action == 'start'
+        working-directory: workers/api-cache
+        shell: bash
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          umask 077
+          : "${CLOUDFLARE_ACCOUNT_ID:?Set the least-privilege Cloudflare account ID secret}"
+          : "${CLOUDFLARE_API_TOKEN:?Set the least-privilege Cloudflare API token secret}"
+          wrapper="$RUNNER_TEMP/worker-secrets.json"
+          trap 'shred -u "$wrapper" "$RUNNER_TEMP/worker-keyset.json" 2>/dev/null || true' EXIT
+          jq -c . "$RUNNER_TEMP/worker-keyset.json" \
+            | jq -Rs '{JWT_KEYSET: sub("\\n$"; "")}' > "$wrapper"
+          chmod 0600 "$wrapper"
+          npx wrangler deploy --keep-vars --secrets-file "$wrapper"
+
+      - name: Update Worker verifier set
+        if: inputs.environment == 'prod' && (inputs.action == 'rollback' || inputs.action == 'retire')
+        working-directory: workers/api-cache
+        shell: bash
+        env:
+          ROTATION_ACTION: ${{ inputs.action }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          umask 077
+          : "${CLOUDFLARE_ACCOUNT_ID:?Set the least-privilege Cloudflare account ID secret}"
+          : "${CLOUDFLARE_API_TOKEN:?Set the least-privilege Cloudflare API token secret}"
+          trap 'shred -u "$RUNNER_TEMP/worker-keyset.json" 2>/dev/null || true' EXIT
+          npx wrangler secret put JWT_KEYSET < "$RUNNER_TEMP/worker-keyset.json"
+          if [[ "$ROTATION_ACTION" == retire ]]; then
+            if npx wrangler secret list | jq -e '.[] | select(.name == "JWT_SECRET")' >/dev/null; then
+              printf 'y\n' | npx wrangler secret delete JWT_SECRET
+            fi
+          fi
+
+      - name: Restore pinned SSH trust after Worker deployment
+        if: inputs.environment == 'prod' && (inputs.action == 'start' || inputs.action == 'rollback' || inputs.action == 'retire')
+        shell: bash
+        env:
+          VPS_HOST: ${{ secrets.PROD_VPS_HOST }}
+          VPS_USER: ${{ secrets.PROD_VPS_USER }}
+          VPS_SSH_PRIVATE_KEY: ${{ secrets.PROD_VPS_SSH_PRIVATE_KEY }}
+          VPS_SSH_KNOWN_HOSTS: ${{ secrets.PROD_VPS_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          umask 077
+          : "${VPS_HOST:?missing PROD VPS host secret}"
+          : "${VPS_USER:?missing PROD VPS user secret}"
+          : "${VPS_SSH_PRIVATE_KEY:?missing PROD SSH key secret}"
+          : "${VPS_SSH_KNOWN_HOSTS:?missing pinned PROD SSH known-hosts secret}"
+          [[ "$VPS_HOST" =~ ^[A-Za-z0-9.-]+$ ]]
+          [[ "$VPS_USER" =~ ^[A-Za-z0-9_-]+$ ]]
+          mkdir -p ~/.ssh
+          printf '%s\n' "$VPS_SSH_PRIVATE_KEY" > ~/.ssh/surau_deploy_key
+          printf '%s\n' "$VPS_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          cat > ~/.ssh/config <<EOF
+          Host surau-rotation
+            HostName $VPS_HOST
+            User $VPS_USER
+            IdentityFile ~/.ssh/surau_deploy_key
+            IdentitiesOnly yes
+            StrictHostKeyChecking yes
+            UserKnownHostsFile ~/.ssh/known_hosts
+          EOF
+          chmod 0600 ~/.ssh/surau_deploy_key ~/.ssh/known_hosts ~/.ssh/config
+          ssh -o BatchMode=yes -o ConnectTimeout=10 surau-rotation true
+
+      - name: Activate signer after every verifier is ready
+        if: inputs.action == 'start'
+        shell: bash
+        env:
+          ROTATION_ENV: ${{ inputs.environment }}
+        run: |
+          set -euo pipefail
+          remote_script="$(<"$RUNNER_TEMP/remote-script-path")"
+          deploy_path="$(<"$RUNNER_TEMP/deploy-path")"
+          # Validated values intentionally expand client-side.
+          # shellcheck disable=SC2029
+          ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=20 surau-rotation \
+            "cd '$deploy_path' && APP_ENV='$ROTATION_ENV' \
+             EXPECTED_VERSION='$EXPECTED_VERSION_INPUT' \
+             ENV_FILE=.env.production COMPOSE_FILE=docker-compose.prod.yml \
+             '$remote_script' activate-drill"
+
+      - name: Finalize backend retirement after the Worker
+        if: inputs.action == 'retire'
+        shell: bash
+        env:
+          ROTATION_ENV: ${{ inputs.environment }}
+        run: |
+          set -euo pipefail
+          remote_script="$(<"$RUNNER_TEMP/remote-script-path")"
+          deploy_path="$(<"$RUNNER_TEMP/deploy-path")"
+          # Validated values intentionally expand client-side.
+          # shellcheck disable=SC2029
+          ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=20 surau-rotation \
+            "cd '$deploy_path' && APP_ENV='$ROTATION_ENV' \
+             EXPECTED_VERSION='$EXPECTED_VERSION_INPUT' \
+             ENV_FILE=.env.production COMPOSE_FILE=docker-compose.prod.yml \
+             '$remote_script' retire-finalize"
+
+      - name: Capture sanitized status and evidence
+        shell: bash
+        env:
+          ROTATION_ENV: ${{ inputs.environment }}
+          ROTATION_ACTION: ${{ inputs.action }}
+        run: |
+          set -euo pipefail
+          remote_script="$(<"$RUNNER_TEMP/remote-script-path")"
+          deploy_path="$(<"$RUNNER_TEMP/deploy-path")"
+          evidence="$RUNNER_TEMP/jwt-rotation-${ROTATION_ENV}-${ROTATION_ACTION}.txt"
+          # Validated values intentionally expand client-side.
+          # shellcheck disable=SC2029
+          ssh surau-rotation \
+            "cd '$deploy_path' && APP_ENV='$ROTATION_ENV' \
+             EXPECTED_VERSION='$EXPECTED_VERSION_INPUT' \
+             ENV_FILE=.env.production COMPOSE_FILE=docker-compose.prod.yml \
+             '$remote_script' status" | tee "$evidence"
+          printf 'rotation_code_sha=%s\n' "$ROTATION_CODE_SHA" >> "$evidence"
+          {
+            echo '### JWT rotation evidence'
+            echo '```text'
+            cat "$evidence"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Remove completed drill canary credentials
+        if: success() && inputs.action == 'retire'
+        shell: bash
+        env:
+          ROTATION_ENV: ${{ inputs.environment }}
+        run: |
+          set -euo pipefail
+          remote_script="$(<"$RUNNER_TEMP/remote-script-path")"
+          deploy_path="$(<"$RUNNER_TEMP/deploy-path")"
+          # Validated values intentionally expand client-side.
+          # shellcheck disable=SC2029
+          ssh surau-rotation \
+            "cd '$deploy_path' && APP_ENV='$ROTATION_ENV' \
+             EXPECTED_VERSION='$EXPECTED_VERSION_INPUT' \
+             ENV_FILE=.env.production COMPOSE_FILE=docker-compose.prod.yml \
+             '$remote_script' cleanup"
+
+      - name: Remove remote runner and all transient secret copies
+        if: always()
+        shell: bash
+        env:
+          VPS_HOST: ${{ secrets[inputs.environment == 'prod' && 'PROD_VPS_HOST' || 'DEV_VPS_HOST'] }}
+          VPS_USER: ${{ secrets[inputs.environment == 'prod' && 'PROD_VPS_USER' || 'DEV_VPS_USER'] }}
+          VPS_SSH_PRIVATE_KEY: ${{ secrets[inputs.environment == 'prod' && 'PROD_VPS_SSH_PRIVATE_KEY' || 'DEV_VPS_SSH_PRIVATE_KEY'] }}
+          VPS_SSH_KNOWN_HOSTS: ${{ secrets[inputs.environment == 'prod' && 'PROD_VPS_SSH_KNOWN_HOSTS' || 'DEV_VPS_SSH_KNOWN_HOSTS'] }}
+        run: |
+          set +e
+          umask 077
+          for file in "$RUNNER_TEMP/worker-keyset.json" "$RUNNER_TEMP/worker-secrets.json"; do
+            if [[ -f "$file" ]]; then
+              shred -u "$file"
+            fi
+          done
+          if [[ ! -f ~/.ssh/surau_deploy_key && -n "$VPS_HOST" && -n "$VPS_USER" &&
+                -n "$VPS_SSH_PRIVATE_KEY" && -n "$VPS_SSH_KNOWN_HOSTS" &&
+                "$VPS_HOST" =~ ^[A-Za-z0-9.-]+$ && "$VPS_USER" =~ ^[A-Za-z0-9_-]+$ ]]; then
+            mkdir -p ~/.ssh
+            printf '%s\n' "$VPS_SSH_PRIVATE_KEY" > ~/.ssh/surau_deploy_key
+            printf '%s\n' "$VPS_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+            cat > ~/.ssh/config <<EOF
+          Host surau-rotation
+            HostName $VPS_HOST
+            User $VPS_USER
+            IdentityFile ~/.ssh/surau_deploy_key
+            IdentitiesOnly yes
+            StrictHostKeyChecking yes
+            UserKnownHostsFile ~/.ssh/known_hosts
+          EOF
+            chmod 0600 ~/.ssh/surau_deploy_key ~/.ssh/known_hosts ~/.ssh/config
+          fi
+          if [[ -f ~/.ssh/surau_deploy_key && -f "$RUNNER_TEMP/remote-script-path" ]]; then
+            remote_script="$(<"$RUNNER_TEMP/remote-script-path")"
+            jwt_directory=""
+            if [[ -f "$RUNNER_TEMP/jwt-directory" ]]; then
+              jwt_directory="$(<"$RUNNER_TEMP/jwt-directory")"
+            fi
+            if [[ "$jwt_directory" =~ ^/[A-Za-z0-9_./-]+$ &&
+                  "$jwt_directory" != / && "$jwt_directory" != *'/../'* &&
+                  "$jwt_directory" != */.. ]]; then
+              # Both paths are generated from validated values on the runner.
+              # shellcheck disable=SC2029
+              ssh surau-rotation \
+                "rm -f '$remote_script'; sudo rm -f -- '$jwt_directory/worker-keyset.json'" \
+                >/dev/null 2>&1
+            else
+              # Discovery may fail before any Worker export exists. The runner
+              # path remains safe to remove independently.
+              # shellcheck disable=SC2029
+              ssh surau-rotation "rm -f '$remote_script'" >/dev/null 2>&1
+            fi
+          fi
+          shred -u ~/.ssh/surau_deploy_key 2>/dev/null || rm -f ~/.ssh/surau_deploy_key
+          rm -f ~/.ssh/config ~/.ssh/known_hosts "$RUNNER_TEMP/jwt-directory"
+
+      - name: Upload sanitized drill evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jwt-rotation-${{ inputs.environment }}-${{ inputs.action }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/jwt-rotation-${{ inputs.environment }}-${{ inputs.action }}.txt
+          if-no-files-found: ignore
+          retention-days: 90

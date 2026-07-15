@@ -21,7 +21,7 @@ on:
           - default
 
 concurrency:
-  group: deploy-dev
+  group: surau-dev-operations
   cancel-in-progress: false
 
 jobs:
@@ -29,11 +29,13 @@ jobs:
     name: Deploy backend to DEV VPS
     runs-on: ubuntu-latest
     timeout-minutes: 180
+    environment: dev
     env:
       VPS_HOST: ${{ secrets.DEV_VPS_HOST }}
       VPS_USER: ${{ secrets.DEV_VPS_USER }}
       VPS_DEPLOY_PATH: ${{ secrets.DEV_VPS_DEPLOY_PATH }}
       VPS_SSH_PRIVATE_KEY: ${{ secrets.DEV_VPS_SSH_PRIVATE_KEY }}
+      VPS_SSH_KNOWN_HOSTS: ${{ secrets.DEV_VPS_SSH_KNOWN_HOSTS }}
       DEPLOY_BRANCH: main
       BOOK_RAG_ROLLOUT_MODE: ${{ inputs.book_rag_citation_mode || 'preserve' }}
     steps:
@@ -46,6 +48,8 @@ jobs:
           : "${VPS_USER:?Set the DEV_VPS_USER repository secret}"
           : "${VPS_DEPLOY_PATH:?Set the DEV_VPS_DEPLOY_PATH repository secret}"
           : "${VPS_SSH_PRIVATE_KEY:?Set the DEV_VPS_SSH_PRIVATE_KEY repository secret}"
+          : "${VPS_SSH_KNOWN_HOSTS:?Set the pinned DEV_VPS_SSH_KNOWN_HOSTS secret}"
+          umask 077
 
           if [ "$GITHUB_REF" != "refs/heads/$DEPLOY_BRANCH" ]; then
             echo "dev deploy rejected: workflow ref must be refs/heads/$DEPLOY_BRANCH, got $GITHUB_REF" >&2
@@ -57,19 +61,13 @@ jobs:
           chmod 700 ~/.ssh
           printf '%s\n' "$VPS_SSH_PRIVATE_KEY" > ~/.ssh/surau_deploy_key
           chmod 600 ~/.ssh/surau_deploy_key
-          for keyscan_attempt in {1..12}; do
-            if ssh-keyscan -T 10 -H "$VPS_HOST" >> ~/.ssh/known_hosts; then
-              break
-            fi
-            if [ "$keyscan_attempt" -eq 12 ]; then
-              echo "dev deploy rejected: SSH host key remained unavailable after 12 attempts" >&2
-              exit 1
-            fi
-            sleep 5
-          done
+          printf '%s\n' "$VPS_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
 
           ssh -i ~/.ssh/surau_deploy_key \
             -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile=~/.ssh/known_hosts \
             -o ConnectTimeout=30 \
             -o ServerAliveInterval=30 \
             -o ServerAliveCountMax=20 \
@@ -82,6 +80,19 @@ jobs:
           export APP_ENV
 
           cd "$DEPLOY_PATH"
+
+          # Once A-4 is installed, reject a deploy that would mutate the
+          # worktree or retag APP_IMAGE while a JWT rotation is in progress.
+          # The conditional keeps the first A-4 upgrade compatible with the
+          # preceding release, which does not contain this guard yet.
+          if [ -x ops/auth/assert-jwt-deploy-safe.sh ]; then
+            A4_PREDEPLOY_MODE="$(ENV_FILE=.env.production APP_ENV=dev \
+              ops/auth/assert-jwt-deploy-safe.sh)"
+            case "$A4_PREDEPLOY_MODE" in
+              safe|capture-legacy) ;;
+              *) echo "A-4 pre-deploy guard returned an invalid mode" >&2; exit 1 ;;
+            esac
+          fi
 
           # A canceled SSH workflow can leave `docker exec /backfill` running
           # inside the existing app container: Docker owns that exec process
@@ -297,13 +308,15 @@ jobs:
           }
 
           ROLLBACK_ARMED=false
+          A4_SIGNER_ACTIVATED=false
           ROLLOUT_COMMITTED=false
           cleanup_rollout() {
             status=$?
             trap - EXIT
             set +e
             cleanup_rag_eval_api
-            if [ "$status" -ne 0 ] && [ "$ROLLBACK_ARMED" = true ] && [ "$ROLLOUT_COMMITTED" = false ]; then
+            if [ "$status" -ne 0 ] && [ "$ROLLBACK_ARMED" = true ] && \
+               [ "$ROLLOUT_COMMITTED" = false ] && [ "$A4_SIGNER_ACTIVATED" = false ]; then
               echo "K-1 rollout candidate failed; restoring $CURRENT_BOOK_RAG_MODE" >&2
               restore_rollout_state
               unset RAG_BOOK_CITATION_MODE
@@ -550,6 +563,25 @@ jobs:
           # container in place, which the health check would then pass — masking a
           # non-deploy.
           sudo -E docker compose --env-file .env.production -f docker-compose.prod.yml "${PROFILE_ARGS[@]}" build "${SERVICES[@]}"
+          # A-4 one-time bridge: materialize the exact current signer as a
+          # root-owned keyset and pin JWT-derived MFA/unsubscribe seeds before
+          # the first keyset-backed app process starts. Capture a fresh no-kid
+          # canary immediately before cutover so its full lifetime is available
+          # as overlap evidence. Retries validate the existing bridge.
+          ENV_FILE=.env.production APP_ENV=dev ops/auth/bootstrap-jwt-keyset.sh
+          A4_BRIDGE_MODE="$(ENV_FILE=.env.production APP_ENV=dev \
+            ops/auth/assert-jwt-deploy-safe.sh)"
+          if [ "$A4_BRIDGE_MODE" = capture-legacy ]; then
+            LEGACY_APP_VERSION="$(curl -fsS http://127.0.0.1:8080/version \
+              | sed -n 's/.*"version":"\([A-Za-z0-9._-]*\)".*/\1/p')"
+            if [[ ! "$LEGACY_APP_VERSION" =~ ^[A-Za-z0-9._-]{1,64}$ ]]; then
+              echo "A-4 bridge could not identify the living legacy app version" >&2
+              exit 1
+            fi
+            ENV_FILE=.env.production COMPOSE_FILE=docker-compose.prod.yml \
+              APP_ENV=dev EXPECTED_VERSION="$LEGACY_APP_VERSION" \
+              ops/auth/rotate-jwt-keyset.sh capture-legacy
+          fi
           CANDIDATE_COMPOSE_ARGS=()
           if [ "$CANDIDATE_BOOK_RAG_MODE" = default ]; then
             # Remove both sources of explicit configuration before creating
@@ -572,6 +604,38 @@ jobs:
                curl -fsS http://127.0.0.1:8080/readyz >/dev/null &&
                curl -fsS http://127.0.0.1:8080/version | grep -q "\"version\":\"$APP_VERSION\"" &&
                { [ -z "$COLLAB_CHECK" ] || curl -fsS "$COLLAB_CHECK" >/dev/null; }; then
+              if [ "$A4_BRIDGE_MODE" = capture-legacy ]; then
+                # DEV has no separate Worker route. Once the direct-origin A-4
+                # app is healthy, execute the complete overlap + rollback drill
+                # immediately, before the captured no-kid token can age out.
+                set +e
+                ENV_FILE=.env.production COMPOSE_FILE=docker-compose.prod.yml \
+                  APP_ENV=dev EXPECTED_VERSION="$APP_VERSION" \
+                  ops/auth/rotate-jwt-keyset.sh prepare
+                jwt_prepare_status=$?
+                if [ "$jwt_prepare_status" -eq 0 ]; then
+                  ENV_FILE=.env.production COMPOSE_FILE=docker-compose.prod.yml \
+                    APP_ENV=dev EXPECTED_VERSION="$APP_VERSION" \
+                    ops/auth/rotate-jwt-keyset.sh activate-drill
+                  jwt_activate_status=$?
+                else
+                  jwt_activate_status=1
+                fi
+                set -e
+                if [ "$jwt_prepare_status" -ne 0 ] || [ "$jwt_activate_status" -ne 0 ]; then
+                  # Keep the healthy A-4 verifier process and crash-safe keyset
+                  # state intact for an idempotent workflow retry. Recreating the
+                  # container here would invalidate the continuity evidence.
+                  ROLLBACK_ARMED=false
+                  echo "A-4 DEV activation drill failed safely; operator retry required" >&2
+                  exit 1
+                fi
+                # From this point the drill has minted new-kid tokens. Never
+                # recreate the container from the generic rollout EXIT trap;
+                # leave the healthy A-4 process and continuity baseline intact.
+                A4_SIGNER_ACTIVATED=true
+                ROLLBACK_ARMED=false
+              fi
               if [ -n "$COLLAB_CHECK" ]; then
                 ENV_FILE=.env.production COMPOSE_FILE=docker-compose.prod.yml \
                   ops/service-identities/collab-dev-credentials.sh cutover

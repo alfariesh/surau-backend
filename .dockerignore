@@ -11,8 +11,7 @@ web-reader
 collab-server
 
 .dockerignore
-.env
-.env.example
+.env*
 .golangci.yml
 .gitignore
 
