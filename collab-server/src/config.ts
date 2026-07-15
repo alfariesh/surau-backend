@@ -9,6 +9,9 @@ const schema = z.object({
   COLLAB_PORT: z.coerce.number().int().positive().default(8090),
   COLLAB_PG_URL: optionalSecret,
   COLLAB_PG_URL_FILE: optionalSecret,
+  ALLOW_LEGACY_DB_CREDENTIALS: z.enum(["true", "false"])
+    .default("false")
+    .transform((value) => value === "true"),
   COLLAB_GO_API_URL: z.string().url(),
   COLLAB_SERVICE_TOKEN: z.preprocess(
     (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),

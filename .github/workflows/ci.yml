@@ -99,15 +99,19 @@ jobs:
       - uses: actions/checkout@v6
       - name: Install age
         run: sudo apt-get update -qq && sudo apt-get install -y -qq age zstd
-      - name: Shellcheck backup scripts
+      - name: Shellcheck operational scripts
         run: |
           shellcheck ops/backup/surau-pg-backup ops/backup/surau-pg-restore-check \
             ops/backup/surau-backup-watchdog ops/backup/surau-notify \
             ops/backup/surau-alert ops/backup/install.sh ops/backup/test-backup-scripts.sh \
             ops/backup/surau-pitr-backup ops/backup/surau-pitr-check \
-            ops/backup/surau-pg-pitr-restore ops/backup/surau-predeploy-snapshot
+            ops/backup/surau-pg-pitr-restore ops/backup/surau-predeploy-snapshot \
+            ops/service-identities/collab-dev-credentials.sh \
+            ops/service-identities/test-collab-dev-credentials.sh
       - name: Backup script tests (encryption round-trip + latest selection)
         run: bash ops/backup/test-backup-scripts.sh
+      - name: A-2 collab credential rollout tests
+        run: bash ops/service-identities/test-collab-dev-credentials.sh
 
   unit-tests:
     name: runner / tests / unit

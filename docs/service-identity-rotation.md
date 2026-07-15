@@ -6,8 +6,10 @@ Tidak ada operasi “unrevoke”; bila pencabutan salah, terbitkan credential ba
 
 ## Aturan aman
 
-- Secret tidak masuk Git, migration, argv, shell history, atau log. Gunakan
-  direktori root-owned mode `0700` dan file mode `0600`.
+- Secret tidak masuk Git, migration, argv, shell history, atau log. File
+  operator sementara memakai mode `0600`. Bind secret collab memakai direktori
+  root-owned `0750` dan file `0640 root:<group-khusus>`; hanya supplementary GID
+  container non-root yang boleh membaca. Jangan memakai group operator umum.
 - Token maksimum 90 hari; standar operasional 30 hari. Role login PostgreSQL
   memakai `VALID UNTIL` maksimum 90 hari dan hanya satu group role.
 - Jangan revoke A sebelum B terbukti lewat smoke dan audit. Rollback sebelum
@@ -125,6 +127,23 @@ jadikan role A `NOLOGIN`, tunggu pool A drain, lalu cabut/drop A.
 4. Verifikasi proxy internet mengembalikan 404 untuk `/internal/*`; jaringan
    privat dengan token valid tetap bekerja dan setiap panggilan memiliki row
    audit.
+
+### Gate otomatis khusus DEV
+
+Workflow `Deploy Dev` menangani bootstrap pertama tanpa mencetak secret. Saat
+collab aktif, kredensial lama dimaterialisasi sekali ke file root-owned sebagai
+A agar image lama masih dapat dipakai untuk rollback. Group host khusus diberi
+ke container sebagai supplementary GID sehingga Node tetap non-root. Setelah
+app baru selesai migrasi, workflow membuat login
+`surau_collab_dev_202607_b` dengan expiry 89 hari dan membership tunggal
+`surau_collab_store`, menguji login serta penolakan DELETE dan akses `users`,
+lalu mengganti `COLLAB_PG_URL_FILE` secara atomik.
+
+Gate gagal bila container app/collab restart saat pertukaran, koneksi aktif
+tidak memakai role sempit, ACL/expiry/membership melebar, atau audit
+`/internal/collab/whoami` tidak mencatat principal `collab-server`. Setelah
+lolos, `ALLOW_LEGACY_DB_CREDENTIALS` dikembalikan ke `false`. Otomasi ini hanya
+untuk DEV; produksi tetap mengikuti prosedur A/B interaktif di atas.
 
 ## Rollback dan insiden
 
