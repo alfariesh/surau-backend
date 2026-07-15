@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -114,6 +116,142 @@ func TestTokenTTLAndScopeBoundaries(t *testing.T) {
 	assert.Empty(t, auth.PrincipalName, "a guessed UUID must never attribute a fake token")
 }
 
+func TestServicePrincipalCRUDValidationAndAuditRetention(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 7, 15, 8, 0, 0, 0, time.UTC)
+	store := newMemoryIdentityRepo()
+	uc := New(store, Options{Now: func() time.Time { return now }})
+
+	_, err := uc.CreateServicePrincipal(t.Context(), "", "Bad Name", "", []string{entity.ServiceScopeRAGEvalRead})
+	require.ErrorIs(t, err, entity.ErrInvalidServicePrincipal)
+	_, err = uc.CreateServicePrincipal(t.Context(), "", "ok-name", strings.Repeat("x", maxDescription+1), []string{entity.ServiceScopeRAGEvalRead})
+	require.ErrorIs(t, err, entity.ErrInvalidServicePrincipal)
+	_, err = uc.CreateServicePrincipal(t.Context(), "", "ok-name", "", nil)
+	require.ErrorIs(t, err, entity.ErrInvalidServiceScope)
+	_, err = uc.CreateServicePrincipal(t.Context(), "", "ok-name", "", []string{"unknown:scope"})
+	require.ErrorIs(t, err, entity.ErrInvalidServiceScope)
+
+	principal, err := uc.CreateServicePrincipal(t.Context(), "actor-id", " HTTP-Enrichment ", " catalog jobs ", []string{
+		entity.ServiceScopeEnrichmentRead,
+		entity.ServiceScopeEnrichmentRead,
+		entity.ServiceScopeRAGEvalRead,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "http-enrichment", principal.PrincipalName)
+	assert.Equal(t, "catalog jobs", principal.Description)
+	assert.Equal(t, []string{entity.ServiceScopeEnrichmentRead, entity.ServiceScopeRAGEvalRead}, principal.Scopes)
+
+	items, total, err := uc.ListServicePrincipals(t.Context(), 999, -10)
+	require.NoError(t, err)
+	assert.Len(t, items, 1)
+	assert.Equal(t, 1, total)
+	assert.Equal(t, repo.ServicePrincipalFilter{Limit: maxListLimit, Offset: 0}, store.lastFilter)
+
+	_, err = uc.GetServicePrincipal(t.Context(), "not-a-uuid")
+	require.ErrorIs(t, err, entity.ErrServicePrincipalNotFound)
+	got, err := uc.GetServicePrincipal(t.Context(), principal.ID)
+	require.NoError(t, err)
+	assert.Equal(t, principal.ID, got.ID)
+
+	_, err = uc.UpdateServicePrincipal(t.Context(), "actor-id", "not-a-uuid", "", principal.Scopes, nil, true)
+	require.ErrorIs(t, err, entity.ErrServicePrincipalNotFound)
+	_, err = uc.UpdateServicePrincipal(t.Context(), "actor-id", principal.ID, "", nil, nil, true)
+	require.ErrorIs(t, err, entity.ErrInvalidServiceScope)
+	updated, err := uc.UpdateServicePrincipal(t.Context(), "actor-id", principal.ID, "rotated jobs", []string{entity.ServiceScopeEnrichmentRead}, nil, true)
+	require.NoError(t, err)
+	assert.Equal(t, "rotated jobs", updated.Description)
+
+	auditID, err := uc.CreateServiceRequestAudit(t.Context(), entity.ServiceRequestAudit{
+		Method: "GET", RouteTemplate: "/internal/test", AuthOutcome: entity.ServiceAuthOutcomeStarted,
+	})
+	require.NoError(t, err)
+
+	audit := store.audits[auditID]
+	assert.Equal(t, entity.ServicePrincipalUnattributed, audit.PrincipalName)
+	assert.Equal(t, now, audit.StartedAt)
+
+	_, err = uc.CreateServiceRequestAudit(t.Context(), audit)
+	require.ErrorIs(t, err, entity.ErrServiceIdentityUnavailable)
+	require.NoError(t, uc.FinishServiceRequestAudit(t.Context(), auditID, 204))
+	assert.Equal(t, entity.ServiceAuthOutcomeAllowed, store.audits[auditID].AuthOutcome)
+	require.ErrorIs(t, uc.FinishServiceRequestAudit(t.Context(), "missing", 500), entity.ErrServiceIdentityUnavailable)
+
+	oldID, err := uc.CreateServiceRequestAudit(t.Context(), entity.ServiceRequestAudit{
+		ID: "old", PrincipalName: "old-service", Method: "GET", RouteTemplate: "/internal/old",
+		AuthOutcome: entity.ServiceAuthOutcomeAllowed, StartedAt: now.Add(-DefaultAuditRetention - time.Second),
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "old", oldID)
+	cleanup, err := uc.CleanupServiceRequestAudits(t.Context())
+	require.NoError(t, err)
+	assert.EqualValues(t, 1, cleanup.RequestLogs)
+	assert.NotContains(t, store.audits, oldID)
+}
+
+func TestCredentialFailureAndLegacyPaths(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 7, 15, 8, 0, 0, 0, time.UTC)
+	store := newMemoryIdentityRepo()
+	uc := New(store, Options{
+		Now: func() time.Time { return now }, Random: bytes.NewReader(bytes.Repeat([]byte{3}, tokenSecretBytes)),
+	})
+	principal, err := uc.CreateServicePrincipal(t.Context(), "", "rag-eval", "", []string{entity.ServiceScopeRAGEvalRead})
+	require.NoError(t, err)
+
+	_, err = uc.IssueServiceToken(t.Context(), "", "bad-id", nil, nil, true)
+	require.ErrorIs(t, err, entity.ErrServicePrincipalNotFound)
+
+	noRandom := New(store, Options{Now: func() time.Time { return now }, Random: bytes.NewReader(nil)})
+	_, err = noRandom.IssueServiceToken(t.Context(), "", principal.ID, nil, nil, true)
+	require.Error(t, err)
+
+	issued, err := uc.IssueServiceToken(t.Context(), "", principal.ID, nil, nil, true)
+	require.NoError(t, err)
+	_, err = uc.RevokeServiceToken(t.Context(), "", "bad-id", issued.Token.ID, nil, true)
+	require.ErrorIs(t, err, entity.ErrServicePrincipalNotFound)
+	_, err = uc.RevokeServiceToken(t.Context(), "", principal.ID, "bad-id", nil, true)
+	require.ErrorIs(t, err, entity.ErrServiceTokenNotFound)
+	_, err = uc.RevokeServicePrincipal(t.Context(), "", "bad-id", nil, true)
+	require.ErrorIs(t, err, entity.ErrServicePrincipalNotFound)
+
+	for _, raw := range []string{"", "surau_st_bad", "surau_st_" + issued.Token.ID + ".bad!"} {
+		_, authErr := uc.AuthenticateServiceToken(t.Context(), raw, entity.ServiceScopeRAGEvalRead)
+		require.ErrorIs(t, authErr, entity.ErrInvalidServiceToken)
+	}
+
+	wrongSecret := base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{9}, tokenSecretBytes))
+	auth, err := uc.AuthenticateServiceToken(
+		t.Context(), "surau_st_"+issued.Token.ID+"."+wrongSecret, entity.ServiceScopeRAGEvalRead,
+	)
+	require.ErrorIs(t, err, entity.ErrInvalidServiceToken)
+	assert.Equal(t, entity.ServiceAuthOutcomeInvalid, auth.Outcome)
+	assert.Empty(t, auth.PrincipalName)
+
+	now = issued.Token.ExpiresAt
+	auth, err = uc.AuthenticateServiceToken(t.Context(), issued.Token.Token, entity.ServiceScopeRAGEvalRead)
+	require.ErrorIs(t, err, entity.ErrInvalidServiceToken)
+	assert.Equal(t, entity.ServiceAuthOutcomeExpired, auth.Outcome)
+
+	disabled := New(newMemoryIdentityRepo(), Options{Now: func() time.Time { return now }})
+	_, err = disabled.BootstrapLegacyCollab(t.Context(), strings.Repeat("a", tokenSecretBytes))
+	require.ErrorIs(t, err, entity.ErrInvalidServiceToken)
+
+	legacyStore := newMemoryIdentityRepo()
+	legacy := New(legacyStore, Options{Now: func() time.Time { return now }, AllowLegacy: true})
+	_, err = legacy.BootstrapLegacyCollab(t.Context(), "short")
+	require.ErrorIs(t, err, entity.ErrInvalidServiceToken)
+
+	legacyRaw := strings.Repeat("legacy-token-", 3)
+	legacyPrincipal, err := legacy.BootstrapLegacyCollab(t.Context(), legacyRaw)
+	require.NoError(t, err)
+	assert.Equal(t, "collab-server", legacyPrincipal.PrincipalName)
+	legacyAuth, err := legacy.AuthenticateServiceToken(t.Context(), legacyRaw, entity.ServiceScopeCollabDraftWrite)
+	require.NoError(t, err)
+	assert.Equal(t, "collab-server", legacyAuth.PrincipalName)
+}
+
 func mustJSON(t *testing.T, value any) string {
 	t.Helper()
 
@@ -124,9 +262,10 @@ func mustJSON(t *testing.T, value any) string {
 }
 
 type memoryIdentityRepo struct {
-	principal entity.ServicePrincipal
-	tokens    map[string]entity.ServiceTokenRecord
-	audits    map[string]entity.ServiceRequestAudit
+	principal  entity.ServicePrincipal
+	tokens     map[string]entity.ServiceTokenRecord
+	audits     map[string]entity.ServiceRequestAudit
+	lastFilter repo.ServicePrincipalFilter
 }
 
 func newMemoryIdentityRepo() *memoryIdentityRepo {
@@ -143,8 +282,10 @@ func (r *memoryIdentityRepo) CreateServicePrincipal(
 }
 
 func (r *memoryIdentityRepo) ListServicePrincipals(
-	_ context.Context, _ repo.ServicePrincipalFilter,
+	_ context.Context, filter repo.ServicePrincipalFilter,
 ) ([]entity.ServicePrincipal, int, error) {
+	r.lastFilter = filter
+
 	return []entity.ServicePrincipal{r.principal}, 1, nil
 }
 
