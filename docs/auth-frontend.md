@@ -218,9 +218,9 @@ Peran valid: `user`, `editor`, `curator`, `scholar_reviewer`, `admin` (`admin` =
 | `curate-entities` (kurasi entitas — belum ada rute) | | | ✓ | ✓ | ✓ |
 | `approve-neutral-claim` (belum ada rute) | | | ✓ | ✓ | ✓ |
 | `approve-sensitive-claim` (belum ada rute) | | | | ✓ | ✓ |
-| `manage-service-tokens` (belum ada rute) | | | | | ✓ |
+| `manage-service-tokens` | | | | | ✓ |
 
-Rute ber-kapabilitas yang ditolak membalas `403 { "error": "forbidden", "code": "forbidden", ... }`. Empat kapabilitas terakhir sudah dibekukan di kebijakan tetapi belum menggerbangi rute apa pun (menyusul di fase wiki/token layanan). MFA wajib untuk `admin` + `scholar_reviewer` (lihat Flow MFA).
+Rute ber-kapabilitas yang ditolak membalas `403 { "error": "forbidden", "code": "forbidden", ... }`. Tiga kapabilitas kurasi/klaim sebelum `manage-service-tokens` sudah dibekukan di kebijakan tetapi belum menggerbangi rute apa pun (menyusul di fase wiki). MFA wajib untuk `admin` + `scholar_reviewer` (lihat Flow MFA).
 
 ## Flow MFA (TOTP) — A-3
 
