@@ -107,27 +107,28 @@ func validateAuthCleanup(cleanup authCleanup) error {
 type (
 	// Config -.
 	Config struct {
-		App           app
-		HTTP          http
-		CORS          cors
-		Security      security
-		Log           log
-		PG            pg
-		JWT           jwt
-		Email         email
-		AuthRateLimit authRateLimit
-		AuthLockout   authLockout
-		AuthCleanup   authCleanup
-		AuthEmail     authEmail
-		AuthAlert     authAlert
-		CitableAudit  citableAudit
-		MFA           mfa
-		RAG           rag
-		Collab        collab
-		Metrics       metrics
-		Otel          otel
-		Swagger       swagger
-		OneSignal     oneSignal
+		App             app
+		HTTP            http
+		CORS            cors
+		Security        security
+		Log             log
+		PG              pg
+		JWT             jwt
+		Email           email
+		AuthRateLimit   authRateLimit
+		AuthLockout     authLockout
+		AuthCleanup     authCleanup
+		AuthEmail       authEmail
+		AuthAlert       authAlert
+		CitableAudit    citableAudit
+		MFA             mfa
+		RAG             rag
+		Collab          collab
+		ServiceIdentity serviceIdentity
+		Metrics         metrics
+		Otel            otel
+		Swagger         swagger
+		OneSignal       oneSignal
 	}
 
 	// App -.
@@ -168,8 +169,18 @@ type (
 	// enabled, the app exposes /internal/collab endpoints (service-token
 	// guarded) that the collab-server uses to seed and persist page drafts.
 	collab struct {
-		Enabled      bool   `env:"COLLAB_ENABLED" envDefault:"false"`
+		Enabled bool `env:"COLLAB_ENABLED" envDefault:"false"`
+		// ServiceToken is the one-release T1 compatibility bridge. The app
+		// hashes it into the registry once and never extends it on restart.
 		ServiceToken string `env:"COLLAB_SERVICE_TOKEN"`
+	}
+
+	// ServiceIdentity controls the durable request-audit retention and its
+	// bounded cleanup pass. Ninety days is the A-2 security contract.
+	serviceIdentity struct {
+		AuditRetention  time.Duration `env:"SERVICE_IDENTITY_AUDIT_RETENTION" envDefault:"2160h"`
+		CleanupEnabled  bool          `env:"SERVICE_IDENTITY_CLEANUP_ENABLED" envDefault:"true"`
+		CleanupInterval time.Duration `env:"SERVICE_IDENTITY_CLEANUP_INTERVAL" envDefault:"24h"`
 	}
 
 	// Log -.
@@ -447,9 +458,18 @@ func NewConfig() (*Config, error) {
 		return nil, configError("SECURITY_HSTS_SECONDS must not be negative")
 	}
 
-	if cfg.Collab.Enabled && len(cfg.Collab.ServiceToken) < minCollabServiceTokenBytes {
-		return nil, configError("COLLAB_SERVICE_TOKEN must be at least 32 bytes when COLLAB_ENABLED is true")
+	if cfg.Collab.ServiceToken != "" && len(cfg.Collab.ServiceToken) < minCollabServiceTokenBytes {
+		return nil, configError("COLLAB_SERVICE_TOKEN must be at least 32 bytes when set")
 	}
+
+	if cfg.ServiceIdentity.AuditRetention != 90*24*time.Hour {
+		return nil, configError("SERVICE_IDENTITY_AUDIT_RETENTION must be exactly 2160h (90 days)")
+	}
+
+	if cfg.ServiceIdentity.CleanupEnabled && cfg.ServiceIdentity.CleanupInterval <= 0 {
+		return nil, configError("SERVICE_IDENTITY_CLEANUP_INTERVAL must be positive")
+	}
+
 	if len(cfg.JWT.Secret) < 32 {
 		return nil, configError("JWT_SECRET must be at least 32 bytes")
 	}

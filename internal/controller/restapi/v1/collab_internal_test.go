@@ -1,15 +1,18 @@
 package v1
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/alfariesh/surau-backend/internal/controller/restapi/middleware"
 	"github.com/alfariesh/surau-backend/internal/entity"
+	"github.com/alfariesh/surau-backend/internal/usecase"
 	"github.com/alfariesh/surau-backend/pkg/logger"
 	"github.com/gofiber/fiber/v2"
 	"github.com/stretchr/testify/assert"
@@ -29,9 +32,43 @@ const testServiceToken = "test-service-token-32-bytes-minimum!"
 func newCollabInternalTestApp(editorial *fakeSourceEditorial, token string) *fiber.App {
 	app := fiber.New()
 	group := app.Group("/internal", middleware.ServiceToken(token))
-	NewInternalRoutes(group, editorial, logger.New("error"))
+	NewInternalRoutes(group, editorial, collabTestServiceIdentity{}, logger.New("error"))
 
 	return app
+}
+
+type collabTestServiceIdentity struct {
+	usecase.ServiceIdentity
+}
+
+func (collabTestServiceIdentity) AuthenticateServiceToken(
+	_ context.Context,
+	rawToken, requiredScope string,
+) (entity.ServiceAuthentication, error) {
+	if rawToken != testServiceToken {
+		return entity.ServiceAuthentication{Outcome: entity.ServiceAuthOutcomeInvalid}, entity.ErrInvalidServiceToken
+	}
+
+	return entity.ServiceAuthentication{ // #nosec G101 -- non-secret authentication fixture metadata
+		PrincipalID:   "550e8400-e29b-41d4-a716-446655440010",
+		PrincipalName: "collab-server",
+		TokenID:       "550e8400-e29b-41d4-a716-446655440011",
+		Scopes:        []string{requiredScope},
+		ExpiresAt:     time.Now().Add(time.Hour),
+		Outcome:       entity.ServiceAuthOutcomeAllowed,
+	}, nil
+}
+
+//nolint:gocritic // test double discards the audit value immediately
+func (collabTestServiceIdentity) CreateServiceRequestAudit(
+	_ context.Context,
+	_ entity.ServiceRequestAudit,
+) (string, error) {
+	return "550e8400-e29b-41d4-a716-446655440012", nil
+}
+
+func (collabTestServiceIdentity) FinishServiceRequestAudit(_ context.Context, _ string, _ int) error {
+	return nil
 }
 
 func TestCollabInternalRequiresServiceToken(t *testing.T) {
@@ -204,4 +241,35 @@ func TestCollabInternalPutPageDraftValidatesActor(t *testing.T) {
 
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 	assert.Zero(t, editorial.savePageDraftCalls)
+}
+
+func TestInternalRouteManifestMatchesFiberRoutes(t *testing.T) {
+	t.Parallel()
+
+	app := fiber.New()
+	NewInternalRoutes(
+		app.Group("/internal"),
+		&fakeSourceEditorial{},
+		collabTestServiceIdentity{},
+		logger.New("error"),
+	)
+
+	actual := make([]string, 0, len(InternalRouteManifest))
+
+	for _, route := range app.GetRoutes(true) {
+		if !strings.HasPrefix(route.Path, "/internal/") || route.Method == fiber.MethodHead {
+			continue
+		}
+
+		actual = append(actual, route.Method+" "+route.Path)
+	}
+
+	want := make([]string, 0, len(InternalRouteManifest))
+	for _, route := range InternalRouteManifest {
+		want = append(want, route.Method+" /internal"+route.Path)
+	}
+
+	sort.Strings(actual)
+	sort.Strings(want)
+	assert.Equal(t, want, actual, "every /internal route must exist in the scoped audit manifest")
 }

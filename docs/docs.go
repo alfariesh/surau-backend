@@ -2208,6 +2208,401 @@ const docTemplate = `{
                 ]
             }
         },
+        "/admin/service-identities": {
+            "get": {
+                "description": "List named machine principals and safe token metadata. Requires manage-service-tokens.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin",
+                    "service-identities"
+                ],
+                "summary": "List service identities",
+                "operationId": "admin-list-service-identities",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "default": 50,
+                        "description": "Limit (max 100)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Offset (max 10000)",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/response.ServiceIdentityList"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            },
+            "post": {
+                "description": "Register an immutable principal name and scopes. Requires fresh MFA.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin",
+                    "service-identities"
+                ],
+                "summary": "Create service identity",
+                "operationId": "admin-create-service-identity",
+                "parameters": [
+                    {
+                        "description": "Principal",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/request.CreateServiceIdentity"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/entity.ServicePrincipal"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/admin/service-identities/{id}": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin",
+                    "service-identities"
+                ],
+                "summary": "Get service identity",
+                "operationId": "admin-get-service-identity",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Principal UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.ServicePrincipal"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            },
+            "patch": {
+                "description": "Replace description/scopes. Principal name is immutable. Requires fresh MFA and If-Match.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin",
+                    "service-identities"
+                ],
+                "summary": "Update service identity scopes",
+                "operationId": "admin-update-service-identity",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Principal UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Current ETag or *",
+                        "name": "If-Match",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "Mutable fields",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/request.UpdateServiceIdentity"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.ServicePrincipal"
+                        }
+                    },
+                    "412": {
+                        "description": "Precondition Failed",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "428": {
+                        "description": "Precondition Required",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/admin/service-identities/{id}/revoke": {
+            "post": {
+                "description": "Permanently revoke the principal and all current/future credentials. Requires fresh MFA and If-Match.",
+                "tags": [
+                    "admin",
+                    "service-identities"
+                ],
+                "summary": "Revoke service identity",
+                "operationId": "admin-revoke-service-identity",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Principal UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Current ETag or *",
+                        "name": "If-Match",
+                        "in": "header",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.ServicePrincipal"
+                        }
+                    },
+                    "412": {
+                        "description": "Precondition Failed",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "428": {
+                        "description": "Precondition Required",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/admin/service-identities/{id}/tokens": {
+            "post": {
+                "description": "Return a new raw token exactly once. Default 30 days; maximum 90 days. Requires fresh MFA and If-Match.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin",
+                    "service-identities"
+                ],
+                "summary": "Issue service token",
+                "operationId": "admin-issue-service-token",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Principal UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Current ETag or *",
+                        "name": "If-Match",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "Optional expiry",
+                        "name": "request",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/request.IssueServiceToken"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/entity.ServiceTokenIssueResult"
+                        }
+                    },
+                    "412": {
+                        "description": "Precondition Failed",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "428": {
+                        "description": "Precondition Required",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/admin/service-identities/{id}/tokens/{token_id}/revoke": {
+            "post": {
+                "description": "Revoke one credential without affecting overlapping siblings. Requires fresh MFA and If-Match.",
+                "tags": [
+                    "admin",
+                    "service-identities"
+                ],
+                "summary": "Revoke one service token",
+                "operationId": "admin-revoke-service-token",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Principal UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Token UUID",
+                        "name": "token_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Current ETag or *",
+                        "name": "If-Match",
+                        "in": "header",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.ServicePrincipal"
+                        }
+                    },
+                    "412": {
+                        "description": "Precondition Failed",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "428": {
+                        "description": "Precondition Required",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
         "/admin/users": {
             "get": {
                 "description": "Admin-only paginated user management list. Supports q, role, and email_verified filters.",
@@ -16235,6 +16630,38 @@ const docTemplate = `{
                 }
             }
         },
+        "entity.IssuedServiceToken": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "expires_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440001"
+                },
+                "principal_id": {
+                    "type": "string"
+                },
+                "revoked_at": {
+                    "type": "string"
+                },
+                "token": {
+                    "type": "string",
+                    "example": "surau_st_550e8400-e29b-41d4-a716-446655440001.secret"
+                },
+                "token_kind": {
+                    "type": "string",
+                    "example": "structured"
+                }
+            }
+        },
         "entity.LanguageCoverage": {
             "type": "object",
             "properties": {
@@ -18142,6 +18569,89 @@ const docTemplate = `{
                 }
             }
         },
+        "entity.ServicePrincipal": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string",
+                    "example": "Realtime draft bridge"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "principal_name": {
+                    "type": "string",
+                    "example": "collab-server"
+                },
+                "revoked_at": {
+                    "type": "string"
+                },
+                "scopes": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "collab:draft:write"
+                    ]
+                },
+                "tokens": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.ServiceToken"
+                    }
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "entity.ServiceToken": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "expires_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440001"
+                },
+                "principal_id": {
+                    "type": "string"
+                },
+                "revoked_at": {
+                    "type": "string"
+                },
+                "token_kind": {
+                    "type": "string",
+                    "example": "structured"
+                }
+            }
+        },
+        "entity.ServiceTokenIssueResult": {
+            "type": "object",
+            "properties": {
+                "credential": {
+                    "$ref": "#/definitions/entity.IssuedServiceToken"
+                },
+                "principal": {
+                    "$ref": "#/definitions/entity.ServicePrincipal"
+                }
+            }
+        },
         "entity.SourceBlock": {
             "type": "object",
             "properties": {
@@ -18551,6 +19061,77 @@ const docTemplate = `{
                 "user_id": {
                     "type": "string",
                     "example": "550e8400-e29b-41d4-a716-446655440000"
+                }
+            }
+        },
+        "request.CreateServiceIdentity": {
+            "type": "object",
+            "required": [
+                "principal_name",
+                "scopes"
+            ],
+            "properties": {
+                "description": {
+                    "type": "string",
+                    "maxLength": 500,
+                    "example": "Realtime draft bridge"
+                },
+                "principal_name": {
+                    "type": "string",
+                    "maxLength": 63,
+                    "minLength": 3,
+                    "example": "collab-server"
+                },
+                "scopes": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "collab:draft:write"
+                    ]
+                }
+            }
+        },
+        "request.IssueServiceToken": {
+            "type": "object",
+            "properties": {
+                "expires_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "request.UpdateServiceIdentity": {
+            "type": "object",
+            "required": [
+                "scopes"
+            ],
+            "properties": {
+                "description": {
+                    "type": "string",
+                    "maxLength": 500
+                },
+                "scopes": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "response.ServiceIdentityList": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.ServicePrincipal"
+                    }
+                },
+                "total": {
+                    "type": "integer"
                 }
             }
         },

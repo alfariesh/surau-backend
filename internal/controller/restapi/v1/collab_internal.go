@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/alfariesh/surau-backend/internal/controller/restapi/middleware"
 	"github.com/alfariesh/surau-backend/internal/controller/restapi/v1/request"
 	"github.com/alfariesh/surau-backend/internal/controller/restapi/v1/response"
 	"github.com/alfariesh/surau-backend/internal/entity"
@@ -26,16 +27,53 @@ type CollabInternal struct {
 	v         *validator.Validate
 }
 
-// NewInternalRoutes mounts the internal collab endpoints on the given group.
-func NewInternalRoutes(group fiber.Router, editorial usecase.Editorial, l logger.Interface) {
+// InternalRouteManifest is the audited route registry. Tests compare it with
+// Fiber's live /internal route table so a future endpoint cannot bypass named
+// service authentication by accident.
+var InternalRouteManifest = []struct { //nolint:gochecknoglobals // immutable security contract
+	Method string
+	Path   string
+	Scope  string
+}{
+	{Method: fiber.MethodGet, Path: "/collab/whoami", Scope: entity.ServiceScopeCollabDraftWrite},
+	{Method: fiber.MethodGet, Path: "/collab/books/:book_id/pages/:page_id/draft", Scope: entity.ServiceScopeCollabDraftWrite},
+	{Method: fiber.MethodPut, Path: "/collab/books/:book_id/pages/:page_id/draft", Scope: entity.ServiceScopeCollabDraftWrite},
+}
+
+// NewInternalRoutes mounts every internal endpoint through the scoped audit
+// helper. There is intentionally no unguarded registration escape hatch.
+func NewInternalRoutes(
+	group fiber.Router,
+	editorial usecase.Editorial,
+	identities usecase.ServiceIdentity,
+	l logger.Interface,
+) {
 	c := &CollabInternal{
 		editorial: editorial,
 		l:         l,
 		v:         validator.New(validator.WithRequiredStructEnabled()),
 	}
 
-	group.Get("/collab/books/:book_id/pages/:page_id/draft", c.getPageDraft)
-	group.Put("/collab/books/:book_id/pages/:page_id/draft", c.putPageDraft)
+	register := func(method, path, scope string, handler fiber.Handler) {
+		group.Add(method, path, middleware.RequireServicePrincipal(identities, scope, l), handler)
+	}
+	register(fiber.MethodGet, InternalRouteManifest[0].Path, InternalRouteManifest[0].Scope, c.whoami)
+	register(fiber.MethodGet, InternalRouteManifest[1].Path, InternalRouteManifest[1].Scope, c.getPageDraft)
+	register(fiber.MethodPut, InternalRouteManifest[2].Path, InternalRouteManifest[2].Scope, c.putPageDraft)
+}
+
+func (c *CollabInternal) whoami(ctx *fiber.Ctx) error {
+	auth, ok := middleware.ServiceAuthentication(ctx)
+	if !ok {
+		return errorResponse(ctx, http.StatusServiceUnavailable, "service identity unavailable")
+	}
+
+	return ctx.Status(http.StatusOK).JSON(fiber.Map{
+		"principal_name": auth.PrincipalName,
+		"scopes":         auth.Scopes,
+		"token_id":       auth.TokenID,
+		"expires_at":     auth.ExpiresAt,
+	})
 }
 
 // getPageDraft returns the content the collab server should seed a fresh

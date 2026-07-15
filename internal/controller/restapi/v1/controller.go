@@ -23,6 +23,7 @@ type V1 struct {
 	licenseAudit       usecase.LicenseAudit
 	quranLicenseAudit  usecase.QuranSourceLicenseAudit
 	email              usecase.EmailAdmin
+	serviceIdentity    usecase.ServiceIdentity
 	emailWebhookSecret string
 	l                  logger.Interface
 	v                  *validator.Validate

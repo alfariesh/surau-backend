@@ -28,6 +28,7 @@ import (
 	"github.com/alfariesh/surau-backend/internal/usecase/personal"
 	"github.com/alfariesh/surau-backend/internal/usecase/quran"
 	"github.com/alfariesh/surau-backend/internal/usecase/reader"
+	"github.com/alfariesh/surau-backend/internal/usecase/serviceidentity"
 	"github.com/alfariesh/surau-backend/internal/usecase/unitregistry"
 	"github.com/alfariesh/surau-backend/internal/usecase/user"
 	"github.com/alfariesh/surau-backend/pkg/cryptobox"
@@ -40,17 +41,18 @@ import (
 )
 
 type useCases struct {
-	user           *user.UseCase
-	reader         *reader.UseCase
-	bookRAG        *bookrag.UseCase
-	quran          *quran.UseCase
-	anchor         *anchorresolver.UseCase
-	crossReference *crossreference.UseCase
-	personal       *personal.UseCase
-	editorial      *editorial.UseCase
-	email          *emailusecase.UseCase
-	notification   *notification.UseCase
-	unitRegistry   *unitregistry.UseCase
+	user            *user.UseCase
+	reader          *reader.UseCase
+	bookRAG         *bookrag.UseCase
+	quran           *quran.UseCase
+	anchor          *anchorresolver.UseCase
+	crossReference  *crossreference.UseCase
+	personal        *personal.UseCase
+	editorial       *editorial.UseCase
+	email           *emailusecase.UseCase
+	notification    *notification.UseCase
+	unitRegistry    *unitregistry.UseCase
+	serviceIdentity *serviceidentity.UseCase
 }
 
 type servers struct {
@@ -89,6 +91,17 @@ func initUseCases(cfg *config.Config, pg *postgres.Postgres, jwtManager *jwt.Man
 	anchorRepo := persistent.NewAnchorRepo(pg)
 	crossReferenceRepo := persistent.NewCrossReferenceRepo(pg)
 	emailRepo := persistent.NewEmailRepo(pg)
+	serviceIdentityRepo := persistent.NewServiceIdentityRepo(pg)
+
+	serviceIdentityUC := serviceidentity.New(serviceIdentityRepo, serviceidentity.Options{
+		AuditRetention: cfg.ServiceIdentity.AuditRetention,
+		AllowLegacy:    strings.TrimSpace(cfg.Collab.ServiceToken) != "",
+	})
+	if legacyToken := strings.TrimSpace(cfg.Collab.ServiceToken); legacyToken != "" {
+		if _, err = serviceIdentityUC.BootstrapLegacyCollab(context.Background(), legacyToken); err != nil {
+			l.Fatal(fmt.Errorf("app - initUseCases - bootstrap legacy collab identity: %w", err))
+		}
+	}
 
 	var llmClient bookrag.LLMClient
 	if cfg.RAG.LLMDriver == config.RAGLLMDriverRollout {
@@ -357,14 +370,15 @@ func initUseCases(cfg *config.Config, pg *postgres.Postgres, jwtManager *jwt.Man
 			CitationMode:         cfg.RAG.BookCitationMode,
 			LegacyFallback:       cfg.RAG.BookLegacyFallback,
 		}),
-		quran:          quran.New(quranRepo),
-		anchor:         anchorresolver.New(anchorRepo),
-		crossReference: crossreference.New(crossReferenceRepo),
-		personal:       personal.New(personalRepo, khatamNotifier),
-		editorial:      editorial.New(editorialRepo, unitRegistryUC, l),
-		email:          emailUC,
-		notification:   notificationUC,
-		unitRegistry:   unitRegistryUC,
+		quran:           quran.New(quranRepo),
+		anchor:          anchorresolver.New(anchorRepo),
+		crossReference:  crossreference.New(crossReferenceRepo),
+		personal:        personal.New(personalRepo, khatamNotifier),
+		editorial:       editorial.New(editorialRepo, unitRegistryUC, l),
+		email:           emailUC,
+		notification:    notificationUC,
+		unitRegistry:    unitRegistryUC,
+		serviceIdentity: serviceIdentityUC,
 	}
 }
 
@@ -393,6 +407,7 @@ func initServers(cfg *config.Config, pg *postgres.Postgres, uc useCases, jwtMana
 		uc.personal,
 		uc.editorial,
 		uc.email,
+		uc.serviceIdentity,
 		jwtManager,
 		l,
 	)
@@ -414,13 +429,14 @@ func (s *servers) startServers(
 	userUC *user.UseCase,
 	notificationUC *notification.UseCase,
 	unitRegistryUC *unitregistry.UseCase,
+	serviceIdentityUC *serviceidentity.UseCase,
 	l logger.Interface,
 ) {
 	loopCtx, cancel := context.WithCancel(context.Background())
 	s.loopStop = cancel
 
 	if cfg.App.BackgroundLoopsEnabled {
-		for _, spec := range buildLoopSpecs(cfg, emailUC, userUC, notificationUC, unitRegistryUC, l) {
+		for _, spec := range buildLoopSpecs(cfg, emailUC, userUC, notificationUC, unitRegistryUC, l, serviceIdentityUC) {
 			s.startLoop(loopCtx, spec, l)
 		}
 	}
@@ -437,8 +453,14 @@ func buildLoopSpecs(
 	notificationUC *notification.UseCase,
 	unitRegistryUC *unitregistry.UseCase,
 	l logger.Interface,
+	serviceIdentityUseCases ...*serviceidentity.UseCase,
 ) []loopSpec {
 	var specs []loopSpec
+
+	var serviceIdentityUC *serviceidentity.UseCase
+	if len(serviceIdentityUseCases) > 0 {
+		serviceIdentityUC = serviceIdentityUseCases[0]
+	}
 
 	if userUC != nil && cfg.AuthCleanup.Enabled {
 		specs = append(specs, loopSpec{
@@ -474,6 +496,15 @@ func buildLoopSpecs(
 			interval:     cfg.CitableAudit.Interval,
 			initialDelay: backgroundInitialDelay,
 			run:          citableAuditPass(unitRegistryUC, l),
+		})
+	}
+
+	if serviceIdentityUC != nil && cfg.ServiceIdentity.CleanupEnabled {
+		specs = append(specs, loopSpec{
+			name:         "service_identity_audit_cleanup",
+			interval:     cfg.ServiceIdentity.CleanupInterval,
+			initialDelay: backgroundInitialDelay,
+			run:          serviceIdentityAuditCleanupPass(serviceIdentityUC, l),
 		})
 	}
 
@@ -527,6 +558,24 @@ func authCleanupPass(userUC *user.UseCase, l logger.Interface) func(context.Cont
 			result.AuditLogs,
 			result.MFAChallenges,
 		)
+
+		return nil
+	}
+}
+
+func serviceIdentityAuditCleanupPass(
+	serviceIdentityUC *serviceidentity.UseCase,
+	l logger.Interface,
+) func(context.Context) error {
+	return func(ctx context.Context) error {
+		result, err := serviceIdentityUC.CleanupServiceRequestAudits(ctx)
+		if err != nil {
+			return fmt.Errorf("service identity audit cleanup: %w", err)
+		}
+
+		if result.RequestLogs > 0 {
+			l.Info("app - service identity audit cleanup: request_logs=%d", result.RequestLogs)
+		}
 
 		return nil
 	}
@@ -731,7 +780,7 @@ func run(cfg *config.Config, stop <-chan struct{}) {
 
 	uc := initUseCases(cfg, pg, jwtManager, l)
 	s := initServers(cfg, pg, uc, jwtManager, l)
-	s.startServers(cfg, uc.email, uc.user, uc.notification, uc.unitRegistry, l)
+	s.startServers(cfg, uc.email, uc.user, uc.notification, uc.unitRegistry, uc.serviceIdentity, l)
 	s.waitForShutdown(l, stop)
 }
 

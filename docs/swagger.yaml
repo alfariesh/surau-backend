@@ -2180,6 +2180,28 @@ definitions:
       updated_by:
         type: string
     type: object
+  entity.IssuedServiceToken:
+    properties:
+      created_at:
+        type: string
+      created_by:
+        type: string
+      expires_at:
+        type: string
+      id:
+        example: 550e8400-e29b-41d4-a716-446655440001
+        type: string
+      principal_id:
+        type: string
+      revoked_at:
+        type: string
+      token:
+        example: surau_st_550e8400-e29b-41d4-a716-446655440001.secret
+        type: string
+      token_kind:
+        example: structured
+        type: string
+    type: object
   entity.LanguageCoverage:
     properties:
       audio_sections:
@@ -3531,6 +3553,62 @@ definitions:
       updated_by:
         type: string
     type: object
+  entity.ServicePrincipal:
+    properties:
+      created_at:
+        type: string
+      created_by:
+        type: string
+      description:
+        example: Realtime draft bridge
+        type: string
+      id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      principal_name:
+        example: collab-server
+        type: string
+      revoked_at:
+        type: string
+      scopes:
+        example:
+        - collab:draft:write
+        items:
+          type: string
+        type: array
+      tokens:
+        items:
+          $ref: '#/definitions/entity.ServiceToken'
+        type: array
+      updated_at:
+        type: string
+    type: object
+  entity.ServiceToken:
+    properties:
+      created_at:
+        type: string
+      created_by:
+        type: string
+      expires_at:
+        type: string
+      id:
+        example: 550e8400-e29b-41d4-a716-446655440001
+        type: string
+      principal_id:
+        type: string
+      revoked_at:
+        type: string
+      token_kind:
+        example: structured
+        type: string
+    type: object
+  entity.ServiceTokenIssueResult:
+    properties:
+      credential:
+        $ref: '#/definitions/entity.IssuedServiceToken'
+      principal:
+        $ref: '#/definitions/entity.ServicePrincipal'
+    type: object
   entity.SourceBlock:
     properties:
       html:
@@ -3824,6 +3902,55 @@ definitions:
       user_id:
         example: 550e8400-e29b-41d4-a716-446655440000
         type: string
+    type: object
+  request.CreateServiceIdentity:
+    properties:
+      description:
+        example: Realtime draft bridge
+        maxLength: 500
+        type: string
+      principal_name:
+        example: collab-server
+        maxLength: 63
+        minLength: 3
+        type: string
+      scopes:
+        example:
+        - collab:draft:write
+        items:
+          type: string
+        minItems: 1
+        type: array
+    required:
+    - principal_name
+    - scopes
+    type: object
+  request.IssueServiceToken:
+    properties:
+      expires_at:
+        type: string
+    type: object
+  request.UpdateServiceIdentity:
+    properties:
+      description:
+        maxLength: 500
+        type: string
+      scopes:
+        items:
+          type: string
+        minItems: 1
+        type: array
+    required:
+    - scopes
+    type: object
+  response.ServiceIdentityList:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/entity.ServicePrincipal'
+        type: array
+      total:
+        type: integer
     type: object
   v1.Accepted:
     properties:
@@ -7510,6 +7637,270 @@ paths:
       summary: Publish email template version
       tags:
       - admin-emails
+  /admin/service-identities:
+    get:
+      description: List named machine principals and safe token metadata. Requires
+        manage-service-tokens.
+      operationId: admin-list-service-identities
+      parameters:
+      - default: 50
+        description: Limit (max 100)
+        in: query
+        name: limit
+        type: integer
+      - default: 0
+        description: Offset (max 10000)
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.ServiceIdentityList'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: List service identities
+      tags:
+      - admin
+      - service-identities
+    post:
+      consumes:
+      - application/json
+      description: Register an immutable principal name and scopes. Requires fresh
+        MFA.
+      operationId: admin-create-service-identity
+      parameters:
+      - description: Principal
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/request.CreateServiceIdentity'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/entity.ServicePrincipal'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Create service identity
+      tags:
+      - admin
+      - service-identities
+  /admin/service-identities/{id}:
+    get:
+      operationId: admin-get-service-identity
+      parameters:
+      - description: Principal UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.ServicePrincipal'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Get service identity
+      tags:
+      - admin
+      - service-identities
+    patch:
+      consumes:
+      - application/json
+      description: Replace description/scopes. Principal name is immutable. Requires
+        fresh MFA and If-Match.
+      operationId: admin-update-service-identity
+      parameters:
+      - description: Principal UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Current ETag or *
+        in: header
+        name: If-Match
+        required: true
+        type: string
+      - description: Mutable fields
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/request.UpdateServiceIdentity'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.ServicePrincipal'
+        "412":
+          description: Precondition Failed
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "428":
+          description: Precondition Required
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Update service identity scopes
+      tags:
+      - admin
+      - service-identities
+  /admin/service-identities/{id}/revoke:
+    post:
+      description: Permanently revoke the principal and all current/future credentials.
+        Requires fresh MFA and If-Match.
+      operationId: admin-revoke-service-identity
+      parameters:
+      - description: Principal UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Current ETag or *
+        in: header
+        name: If-Match
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.ServicePrincipal'
+        "412":
+          description: Precondition Failed
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "428":
+          description: Precondition Required
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Revoke service identity
+      tags:
+      - admin
+      - service-identities
+  /admin/service-identities/{id}/tokens:
+    post:
+      consumes:
+      - application/json
+      description: Return a new raw token exactly once. Default 30 days; maximum 90
+        days. Requires fresh MFA and If-Match.
+      operationId: admin-issue-service-token
+      parameters:
+      - description: Principal UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Current ETag or *
+        in: header
+        name: If-Match
+        required: true
+        type: string
+      - description: Optional expiry
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/request.IssueServiceToken'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/entity.ServiceTokenIssueResult'
+        "412":
+          description: Precondition Failed
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "428":
+          description: Precondition Required
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Issue service token
+      tags:
+      - admin
+      - service-identities
+  /admin/service-identities/{id}/tokens/{token_id}/revoke:
+    post:
+      description: Revoke one credential without affecting overlapping siblings. Requires
+        fresh MFA and If-Match.
+      operationId: admin-revoke-service-token
+      parameters:
+      - description: Principal UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Token UUID
+        in: path
+        name: token_id
+        required: true
+        type: string
+      - description: Current ETag or *
+        in: header
+        name: If-Match
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.ServicePrincipal'
+        "412":
+          description: Precondition Failed
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "428":
+          description: Precondition Required
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Revoke one service token
+      tags:
+      - admin
+      - service-identities
   /admin/users:
     get:
       description: Admin-only paginated user management list. Supports q, role, and

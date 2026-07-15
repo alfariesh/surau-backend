@@ -3,7 +3,9 @@
 package app
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"log"
 	"net/url"
 	"os"
@@ -13,11 +15,13 @@ import (
 	// migrate tools
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
+	"github.com/jackc/pgx/v5"
 )
 
 const (
-	_defaultAttempts = 20
-	_defaultTimeout  = time.Second
+	_defaultAttempts        = 20
+	_defaultTimeout         = time.Second
+	a2MigrationVersion uint = 20260715000003
 )
 
 func init() {
@@ -55,6 +59,7 @@ func init() {
 	// mid-way). Auto-forcing would silently skip a real migration, so instead fail
 	// with the exact recovery steps — otherwise the container just crash-loops on a
 	// cryptic "Dirty database" error with no guidance.
+	var currentVersion uint
 	if version, dirty, verr := m.Version(); verr != nil {
 		if !errors.Is(verr, migrate.ErrNilVersion) {
 			log.Fatalf("Migrate: cannot read schema version: %s", verr)
@@ -65,6 +70,17 @@ func init() {
 			"mid-way. Do NOT redeploy blindly. Inspect that migration, fix the data/schema, "+
 			"then run `migrate -path migrations -database $PG_URL force <last-good-version>` "+
 			"and redeploy. Refusing to auto-migrate.", version)
+	} else {
+		currentVersion = version
+	}
+
+	// A-2 is the first migration that creates cluster roles and grants existing
+	// objects. Prove CREATEROLE and ownership before migrate marks the schema
+	// dirty; otherwise a privilege mismatch would turn into a boot loop.
+	if currentVersion < a2MigrationVersion {
+		if err = preflightA2RoleMigration(databaseURL); err != nil {
+			log.Fatalf("Migrate: A-2 role preflight failed before schema mutation: %s", err)
+		}
 	}
 
 	err = m.Up()
@@ -79,6 +95,43 @@ func init() {
 	}
 
 	log.Printf("Migrate: up success")
+}
+
+func preflightA2RoleMigration(databaseURL string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	conn, err := pgx.Connect(ctx, databaseURL)
+	if err != nil {
+		return fmt.Errorf("connect: %w", err)
+	}
+	defer func() { _ = conn.Close(context.Background()) }()
+
+	var canCreateRoles, ownsPublicObjects bool
+	err = conn.QueryRow(ctx, `
+SELECT role.rolsuper OR role.rolcreaterole,
+       COALESCE(bool_and(objects.relowner = role.oid), TRUE)
+FROM pg_roles role
+LEFT JOIN (
+    SELECT class.relowner
+    FROM pg_class class
+    JOIN pg_namespace namespace ON namespace.oid = class.relnamespace
+    WHERE namespace.nspname = 'public'
+      AND class.relkind IN ('r', 'p', 'v', 'm')
+      AND class.relname <> 'schema_migrations'
+) objects ON TRUE
+WHERE role.rolname = current_user
+GROUP BY role.oid, role.rolsuper, role.rolcreaterole`).Scan(&canCreateRoles, &ownsPublicObjects)
+	if err != nil {
+		return fmt.Errorf("inspect role: %w", err)
+	}
+	if !canCreateRoles {
+		return errors.New("migration login needs CREATEROLE (or superuser) for A-2 NOLOGIN groups")
+	}
+	if !ownsPublicObjects {
+		return errors.New("migration login must own existing public tables/views before A-2 grants and triggers")
+	}
+
+	return nil
 }
 
 func withDefaultSSLMode(databaseURL, sslMode string) string {

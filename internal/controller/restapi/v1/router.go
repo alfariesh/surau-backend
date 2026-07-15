@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/alfariesh/surau-backend/internal/controller/restapi/middleware"
+	"github.com/alfariesh/surau-backend/internal/entity"
 	"github.com/alfariesh/surau-backend/internal/policy"
 	"github.com/alfariesh/surau-backend/internal/usecase"
 	"github.com/alfariesh/surau-backend/pkg/jwt"
@@ -50,6 +51,7 @@ func NewRoutes(
 	editorial usecase.Editorial,
 	email usecase.EmailAdmin,
 	emailWebhookSecret string,
+	serviceIdentity usecase.ServiceIdentity,
 	jwtManager *jwt.Manager,
 	l logger.Interface,
 ) {
@@ -82,6 +84,7 @@ func NewRoutes(
 		licenseAudit:       licenseAudit,
 		quranLicenseAudit:  quranLicenseAudit,
 		email:              email,
+		serviceIdentity:    serviceIdentity,
 		emailWebhookSecret: strings.TrimSpace(emailWebhookSecret),
 		l:                  l,
 		v:                  validator.New(validator.WithRequiredStructEnabled()),
@@ -114,7 +117,11 @@ func NewRoutes(
 
 	anchorGroup := apiV1Group.Group("/anchors", middleware.PublicRevalidate())
 	{
-		anchorGroup.Get("/resolve", r.resolveAnchor)
+		anchorGroup.Get(
+			"/resolve",
+			middleware.OptionalServicePrincipal(serviceIdentity, entity.ServiceScopeRAGEvalRead, l),
+			r.resolveAnchor,
+		)
 	}
 
 	crossReferenceGroup := apiV1Group.Group("/cross-references", middleware.PublicRevalidate())
@@ -125,19 +132,19 @@ func NewRoutes(
 	// Public reader routes
 	bookGroup := apiV1Group.Group("/books", middleware.PublicRevalidate())
 	{
-		bookGroup.Get("/", r.listBooks)
-		bookGroup.Get("/:book_id", r.getBook)
+		bookGroup.Get("/", middleware.OptionalServicePrincipal(serviceIdentity, entity.ServiceScopeEnrichmentRead, l), r.listBooks)
+		bookGroup.Get("/:book_id", middleware.OptionalServicePrincipal(serviceIdentity, entity.ServiceScopeEnrichmentRead, l), r.getBook)
 		bookGroup.Post("/:book_id/rag", limiter.New(limiter.Config{
 			Max:          bookRAGRequestsPerMinute,
 			Expiration:   time.Minute,
 			LimitReached: limiterLimitReached,
-		}), r.askBookRAG)
-		bookGroup.Get("/:book_id/pages", r.listBookPages)
-		bookGroup.Get("/:book_id/pages/:page_id", r.getBookPage)
-		bookGroup.Get("/:book_id/headings", r.listBookHeadings)
-		bookGroup.Get("/:book_id/sections/:heading_id", r.getBookSection)
-		bookGroup.Get("/:book_id/toc", r.listBookTOC)
-		bookGroup.Get("/:book_id/toc/:heading_id/read", r.readBookTOCSection)
+		}), middleware.OptionalServicePrincipal(serviceIdentity, entity.ServiceScopeRAGEvalRead, l), r.askBookRAG)
+		bookGroup.Get("/:book_id/pages", middleware.OptionalServicePrincipal(serviceIdentity, entity.ServiceScopeEnrichmentRead, l), r.listBookPages)
+		bookGroup.Get("/:book_id/pages/:page_id", middleware.OptionalServicePrincipal(serviceIdentity, entity.ServiceScopeEnrichmentRead, l), r.getBookPage)
+		bookGroup.Get("/:book_id/headings", middleware.OptionalServicePrincipal(serviceIdentity, entity.ServiceScopeEnrichmentRead, l), r.listBookHeadings)
+		bookGroup.Get("/:book_id/sections/:heading_id", middleware.OptionalServicePrincipal(serviceIdentity, entity.ServiceScopeEnrichmentRead, l), r.getBookSection)
+		bookGroup.Get("/:book_id/toc", middleware.OptionalServicePrincipal(serviceIdentity, entity.ServiceScopeEnrichmentRead, l), r.listBookTOC)
+		bookGroup.Get("/:book_id/toc/:heading_id/read", middleware.OptionalServicePrincipal(serviceIdentity, entity.ServiceScopeEnrichmentRead, l), r.readBookTOCSection)
 		bookGroup.Get("/:book_id/toc/:heading_id/playlist", r.getBookTOCPlaylist)
 		bookGroup.Get("/:book_id/quran-references", r.listBookQuranReferences)
 		bookGroup.Post("/:book_id/toc/:heading_id/translation-feedback", limiter.New(limiter.Config{
@@ -147,8 +154,8 @@ func NewRoutes(
 		}), r.createTranslationFeedback)
 	}
 
-	apiV1Group.Get("/categories", middleware.PublicCache(), r.listCategories)
-	apiV1Group.Get("/authors", middleware.PublicCache(), r.listAuthors)
+	apiV1Group.Get("/categories", middleware.PublicCache(), middleware.OptionalServicePrincipal(serviceIdentity, entity.ServiceScopeEnrichmentRead, l), r.listCategories)
+	apiV1Group.Get("/authors", middleware.PublicCache(), middleware.OptionalServicePrincipal(serviceIdentity, entity.ServiceScopeEnrichmentRead, l), r.listAuthors)
 
 	// Per-IP limiter for the expensive public search route (default key = client IP).
 	quranSearchLimiter := limiter.New(limiter.Config{
@@ -425,6 +432,24 @@ func NewRoutes(
 			emailGroup.Post("/campaigns/:id/retry-failed", r.adminEmailRetryFailedCampaign)
 			emailGroup.Post("/campaigns/:id/cancel", r.adminEmailCancelCampaign)
 		}
+	}
+
+	// Service credentials have an independent capability from user
+	// administration. Reads reveal metadata only; every mutation requires a
+	// fresh second factor and existing-resource writes require If-Match.
+	serviceIdentityGroup := protected.Group(
+		"/admin/service-identities",
+		authRequired,
+		middleware.RequireCapability(u, policy.CapManageServiceTokens),
+	)
+	{
+		serviceIdentityGroup.Get("/", r.adminServiceIdentities)
+		serviceIdentityGroup.Post("/", middleware.RequireFreshMFA(u), r.adminCreateServiceIdentity)
+		serviceIdentityGroup.Get("/:id", r.adminServiceIdentity)
+		serviceIdentityGroup.Patch("/:id", middleware.RequireFreshMFA(u), r.adminUpdateServiceIdentity)
+		serviceIdentityGroup.Post("/:id/tokens", middleware.RequireFreshMFA(u), r.adminIssueServiceToken)
+		serviceIdentityGroup.Post("/:id/tokens/:token_id/revoke", middleware.RequireFreshMFA(u), r.adminRevokeServiceToken)
+		serviceIdentityGroup.Post("/:id/revoke", middleware.RequireFreshMFA(u), r.adminRevokeServiceIdentity)
 	}
 }
 
