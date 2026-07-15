@@ -9,6 +9,7 @@ import (
 
 	"github.com/alfariesh/surau-backend/internal/backfill"
 	"github.com/alfariesh/surau-backend/internal/entity"
+	"github.com/alfariesh/surau-backend/pkg/jwt"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -47,7 +48,49 @@ var (
 		Name: "surau_citable_units",
 		Help: "Citable units in the registry by lifecycle.",
 	}, []string{"lifecycle"})
+
+	jwtKeysetReloads = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "surau_jwt_keyset_reloads_total",
+		Help: "JWT keyset reload attempts by bounded result.",
+	}, []string{"result"})
+
+	jwtKeysetKeys = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "surau_jwt_keyset_keys",
+		Help: "Number of HS256 verification keys in the current JWT keyset.",
+	})
+
+	jwtLegacyCompatibility = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "surau_jwt_legacy_compatibility_enabled",
+		Help: "Whether living JWTs without kid are accepted through the explicit legacy key (1=yes).",
+	})
+
+	jwtKeysetLastReload = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "surau_jwt_keyset_last_reload_timestamp_seconds",
+		Help: "Unix time of the last successful JWT keyset reload.",
+	})
 )
+
+func recordJWTKeysetStatus(status jwt.KeysetStatus) {
+	jwtKeysetKeys.Set(float64(len(status.KeyIDs)))
+	if status.LegacyKID == "" {
+		jwtLegacyCompatibility.Set(0)
+
+		return
+	}
+
+	jwtLegacyCompatibility.Set(1)
+}
+
+func recordJWTKeysetReload(success bool, status jwt.KeysetStatus) {
+	result := "error"
+	if success {
+		result = "success"
+		jwtKeysetLastReload.SetToCurrentTime()
+	}
+
+	jwtKeysetReloads.WithLabelValues(result).Inc()
+	recordJWTKeysetStatus(status)
+}
 
 // recordCitableAudit publishes one audit pass and returns the violation total
 // (the number the Grafana rule alerts on).

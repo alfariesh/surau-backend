@@ -199,7 +199,11 @@ type (
 
 	// JWT -.
 	jwt struct {
-		Secret string `env:"JWT_SECRET,required"`
+		// Secret is the one-release compatibility seed used when KeysetFile is
+		// empty. A-4 production deployments use the reloadable keyset file so a
+		// signing-key rotation does not require restarting the process.
+		Secret     string `env:"JWT_SECRET"`
+		KeysetFile string `env:"JWT_KEYSET_FILE"`
 		// TokenExpiry is the legacy single-token TTL; signing now uses
 		// AccessTokenExpiry. Kept validated for env back-compat.
 		TokenExpiry        time.Duration `env:"JWT_TOKEN_EXPIRY" envDefault:"24h"`
@@ -470,8 +474,12 @@ func NewConfig() (*Config, error) {
 		return nil, configError("SERVICE_IDENTITY_CLEANUP_INTERVAL must be positive")
 	}
 
-	if len(cfg.JWT.Secret) < 32 {
-		return nil, configError("JWT_SECRET must be at least 32 bytes")
+	cfg.JWT.KeysetFile = strings.TrimSpace(cfg.JWT.KeysetFile)
+	if cfg.JWT.Secret == "" && cfg.JWT.KeysetFile == "" {
+		return nil, configError("JWT_SECRET or JWT_KEYSET_FILE must be set")
+	}
+	if cfg.JWT.Secret != "" && len(cfg.JWT.Secret) < 32 {
+		return nil, configError("JWT_SECRET must be at least 32 bytes when set")
 	}
 	if cfg.JWT.TokenExpiry <= 0 || cfg.JWT.TokenExpiry > 24*time.Hour {
 		return nil, configError("JWT_TOKEN_EXPIRY must be positive and no more than 24h")
@@ -504,6 +512,9 @@ func NewConfig() (*Config, error) {
 	if err := validateMFA(cfg.MFA); err != nil {
 		return nil, err
 	}
+	if cfg.JWT.KeysetFile != "" && strings.TrimSpace(cfg.MFA.EncryptionKey) == "" {
+		return nil, configError("MFA_ENCRYPTION_KEY is required when JWT_KEYSET_FILE is set")
+	}
 	cfg.Email.CloudflareAccountID = strings.TrimSpace(cfg.Email.CloudflareAccountID)
 	cfg.Email.CloudflareAPIToken = strings.TrimSpace(cfg.Email.CloudflareAPIToken)
 	cfg.Email.DeliveryMode = strings.ToLower(strings.TrimSpace(cfg.Email.DeliveryMode))
@@ -532,6 +543,9 @@ func NewConfig() (*Config, error) {
 		cfg.Email.UnsubscribeTokenSecrets,
 	); err != nil {
 		return nil, err
+	}
+	if cfg.JWT.KeysetFile != "" && cfg.Email.UnsubscribeTokenSecret == "" && cfg.Email.UnsubscribeTokenSecrets == "" {
+		return nil, configError("EMAIL_UNSUBSCRIBE_TOKEN_SECRET or EMAIL_UNSUBSCRIBE_TOKEN_SECRETS is required when JWT_KEYSET_FILE is set")
 	}
 	switch cfg.Email.DeliveryMode {
 	case EmailDeliveryModeCloudflare:

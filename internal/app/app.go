@@ -673,22 +673,51 @@ func emailDispatchPass(cfg *config.Config, emailUC *emailusecase.UseCase) func(c
 	}
 }
 
-func (s *servers) waitForShutdown(l logger.Interface, stop <-chan struct{}) {
+func (s *servers) waitForShutdown(l logger.Interface, stop <-chan struct{}, jwtManager *jwt.Manager) {
 	interrupt := make(chan os.Signal, 1)
-	signal.Notify(interrupt, os.Interrupt, syscall.SIGTERM)
+	signal.Notify(interrupt, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+	defer signal.Stop(interrupt)
 
 	var err error
 
-	select {
-	case sig := <-interrupt:
-		l.Info("app - Run - signal: %s", sig.String())
-	case err = <-s.http.Notify():
-		l.Error(fmt.Errorf("app - Run - httpServer.Notify: %w", err))
-	case <-stop:
-		l.Info("app - Run - stop requested")
+	for {
+		select {
+		case sig := <-interrupt:
+			if sig == syscall.SIGHUP {
+				reloadJWTKeyset(jwtManager, l)
+
+				continue
+			}
+
+			l.Info("app - Run - signal: %s", sig.String())
+		case err = <-s.http.Notify():
+			l.Error(fmt.Errorf("app - Run - httpServer.Notify: %w", err))
+		case <-stop:
+			l.Info("app - Run - stop requested")
+		}
+
+		break
 	}
 
 	s.shutdownServers(l)
+}
+
+func reloadJWTKeyset(jwtManager *jwt.Manager, l logger.Interface) {
+	if err := jwtManager.Reload(); err != nil {
+		recordJWTKeysetReload(false, jwtManager.Status())
+		l.Error(fmt.Errorf("app - JWT keyset reload rejected; last valid keyset retained: %w", err))
+
+		return
+	}
+
+	status := jwtManager.Status()
+	recordJWTKeysetReload(true, status)
+	l.Info(
+		"app - JWT keyset reloaded: active_kid=%s legacy_kid=%s key_count=%d",
+		status.ActiveKID,
+		status.LegacyKID,
+		len(status.KeyIDs),
+	)
 }
 
 func (s *servers) shutdownServers(l logger.Interface) {
@@ -776,12 +805,26 @@ func run(cfg *config.Config, stop <-chan struct{}) {
 
 	// JWT. The manager's duration is the ACCESS token TTL; refresh tokens are
 	// opaque session tokens with their own configured expiry.
-	jwtManager := jwt.New(cfg.JWT.Secret, cfg.JWT.AccessTokenExpiry, cfg.JWT.Issuer, cfg.JWT.Audience)
+	var jwtManager *jwt.Manager
+	if cfg.JWT.KeysetFile != "" {
+		jwtManager, err = jwt.NewFromKeysetFile(
+			cfg.JWT.KeysetFile,
+			cfg.JWT.AccessTokenExpiry,
+			cfg.JWT.Issuer,
+			cfg.JWT.Audience,
+		)
+		if err != nil {
+			l.Fatal(fmt.Errorf("app - Run - JWT keyset bootstrap: %w", err))
+		}
+	} else {
+		jwtManager = jwt.New(cfg.JWT.Secret, cfg.JWT.AccessTokenExpiry, cfg.JWT.Issuer, cfg.JWT.Audience)
+	}
+	recordJWTKeysetStatus(jwtManager.Status())
 
 	uc := initUseCases(cfg, pg, jwtManager, l)
 	s := initServers(cfg, pg, uc, jwtManager, l)
 	s.startServers(cfg, uc.email, uc.user, uc.notification, uc.unitRegistry, uc.serviceIdentity, l)
-	s.waitForShutdown(l, stop)
+	s.waitForShutdown(l, stop, jwtManager)
 }
 
 func unsubscribeFrontendURL(cfg *config.Config) string {
