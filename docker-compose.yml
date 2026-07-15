@@ -207,8 +207,10 @@ services:
     environment:
       COLLAB_PORT: "8090"
       COLLAB_PG_URL: "postgres://user:myAwEsOm3pa55@w0rd@db:5432/db"
+      COLLAB_PG_URL_FILE: "${COLLAB_PG_URL_FILE:-}"
       COLLAB_GO_API_URL: "http://app:8080"
       COLLAB_SERVICE_TOKEN: "${COLLAB_SERVICE_TOKEN:-dev-collab-service-token-32-bytes-min}"
+      COLLAB_SERVICE_TOKEN_FILE: "${COLLAB_SERVICE_TOKEN_FILE:-}"
       COLLAB_DEBOUNCE_MS: "3000"
       COLLAB_DEBOUNCE_MAX_MS: "10000"
       COLLAB_TOKEN_GRACE_MS: "30000"

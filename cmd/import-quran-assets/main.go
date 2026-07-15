@@ -5,9 +5,9 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"os"
 	"strings"
 
+	"github.com/alfariesh/surau-backend/internal/dbcredential"
 	"github.com/alfariesh/surau-backend/internal/importer"
 )
 
@@ -28,7 +28,7 @@ func main() {
 	var recitationPaths repeatedStringFlag
 	var transliterationPaths repeatedStringFlag
 
-	flag.StringVar(&opts.PostgresURL, "pg-url", os.Getenv("PG_URL"), "PostgreSQL URL")
+	flag.StringVar(&opts.PostgresURL, "pg-url", dbcredential.ImporterURL(), "PostgreSQL URL (defaults to IMPORTER_PG_URL)")
 	flag.StringVar(&opts.SurahNamesPath, "surah-names-json", "", "QUL surah names JSON export")
 	flag.Var(&surahInfoPaths, "surah-info-json", "optional QUL surah-info JSON export; repeat for multiple languages")
 	flag.StringVar(&opts.ScriptQPCHafsPath, "script-qpc-hafs-json", "", "QUL QPC Hafs script JSON export")

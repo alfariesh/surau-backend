@@ -383,7 +383,7 @@ def generate_summary(
 
 def fetch_toc(base_url: str, book_id: int, lang: str) -> list[dict[str, Any]]:
     url = f"{base_url.rstrip('/')}/v1/books/{book_id}/toc?lang={lang}"
-    payload = request_json("GET", url)
+    payload = request_json("GET", url, surau_base_url=base_url)
     if not isinstance(payload, list):
         raise RuntimeError(f"GET {url} returned non-list TOC")
     return payload
@@ -391,7 +391,7 @@ def fetch_toc(base_url: str, book_id: int, lang: str) -> list[dict[str, Any]]:
 
 def fetch_toc_section(base_url: str, book_id: int, heading_id: int, lang: str) -> dict[str, Any]:
     url = f"{base_url.rstrip('/')}/v1/books/{book_id}/toc/{heading_id}/read?lang={lang}"
-    payload = request_json("GET", url)
+    payload = request_json("GET", url, surau_base_url=base_url)
     if not isinstance(payload, dict):
         raise RuntimeError(f"GET {url} returned non-object section")
     return payload

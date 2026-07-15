@@ -136,7 +136,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--suite", choices=["golden8", "fifty"], default="golden8")
     parser.add_argument("--page-source-json", default="", help="Use pre-fetched page rows instead of querying PG.")
-    parser.add_argument("--pg-url", default="", help="PostgreSQL URL; defaults to PG_URL/POSTGRES_URL")
+    parser.add_argument("--pg-url", default="", help="PostgreSQL URL; defaults to LANGEXTRACT_PG_URL")
     parser.add_argument("--env-file", default=str(kg_db.DEFAULT_ENV_FILE))
     parser.add_argument("--out-dir", default="")
     parser.add_argument("--model", default=DEFAULT_MODEL)

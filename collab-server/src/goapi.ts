@@ -3,10 +3,11 @@
 // extraction, audit logs and revision history stay on the single write path —
 // this process never touches the editorial tables directly.
 import type { Logger } from "./logger.js";
+import type { ServiceTokenProvider, TokenIdentity } from "./credentials.js";
 
 export interface GoApiOptions {
   baseUrl: string;
-  serviceToken: string;
+  tokenProvider: ServiceTokenProvider;
   logger: Logger;
 }
 
@@ -23,11 +24,23 @@ const RETRY_DELAYS_MS = [500, 2000, 5000];
 export class GoApi {
   constructor(private readonly opts: GoApiOptions) {}
 
+  async whoami(): Promise<TokenIdentity> {
+    const response = await fetch(`${this.opts.baseUrl}/internal/collab/whoami`, {
+      headers: { "X-Internal-Token": await this.opts.tokenProvider.getToken() },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!response.ok) {
+      throw new Error(`collab whoami returned ${response.status}`);
+    }
+
+    return (await response.json()) as TokenIdentity;
+  }
+
   async fetchPageDraft(bookId: number, pageId: number): Promise<PageDraft> {
     const response = await fetch(
       `${this.opts.baseUrl}/internal/collab/books/${bookId}/pages/${pageId}/draft`,
       {
-        headers: { "X-Internal-Token": this.opts.serviceToken },
+        headers: { "X-Internal-Token": await this.opts.tokenProvider.getToken() },
         signal: AbortSignal.timeout(10000),
       },
     );
@@ -58,7 +71,7 @@ export class GoApi {
             method: "PUT",
             headers: {
               "Content-Type": "application/json",
-              "X-Internal-Token": this.opts.serviceToken,
+              "X-Internal-Token": await this.opts.tokenProvider.getToken(),
             },
             body: JSON.stringify({
               content_html: contentHtml,

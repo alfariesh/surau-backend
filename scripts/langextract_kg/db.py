@@ -68,7 +68,13 @@ def normalize_postgres_url(postgres_url: str) -> str:
 
 
 def postgres_url_from_env() -> str:
-    return normalize_postgres_url(os.environ.get("PG_URL") or os.environ.get("POSTGRES_URL") or "")
+    dedicated = os.environ.get("LANGEXTRACT_PG_URL") or ""
+    if dedicated:
+        return normalize_postgres_url(dedicated)
+    allow_legacy = (os.environ.get("ALLOW_LEGACY_DB_CREDENTIALS") or "").strip().lower()
+    if allow_legacy in {"1", "true", "yes"}:
+        return normalize_postgres_url(os.environ.get("PG_URL") or os.environ.get("POSTGRES_URL") or "")
+    return ""
 
 
 def json_dumps(value: Any) -> str:
@@ -154,7 +160,7 @@ class DBClient:
     @classmethod
     def connect(cls, postgres_url: str) -> "DBClient":
         if not postgres_url:
-            raise ValueError("PG_URL or --pg-url is required for database access")
+            raise ValueError("LANGEXTRACT_PG_URL or --pg-url is required for database access")
         postgres_url = normalize_postgres_url(postgres_url)
         try:
             import psycopg  # type: ignore
@@ -529,12 +535,12 @@ WHERE id = %s
 INSERT INTO knowledge_mentions (
     id, run_id, book_id, page_id, heading_id, document_id, extraction_class,
     extraction_text, exact_quote, char_start, char_end, alignment_status,
-    attributes, normalized_text, normalization_version, grounded, confidence, review_status, source_hash,
+    attributes, normalized_text, normalization_version, grounded, confidence, source_hash,
     source_span_id, token_start, token_end, extraction_index, group_index, pass_index
 )
 VALUES (
     %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-    %s::jsonb, %s, %s, %s, %s, %s, %s,
+    %s::jsonb, %s, %s, %s, %s, %s,
     %s, %s, %s, %s, %s, %s
 )
 ON CONFLICT (run_id, book_id, page_id, extraction_class, char_start, char_end)
@@ -547,13 +553,13 @@ DO UPDATE SET
     normalization_version = EXCLUDED.normalization_version,
     grounded = EXCLUDED.grounded,
     confidence = EXCLUDED.confidence,
-    review_status = EXCLUDED.review_status,
     source_hash = EXCLUDED.source_hash,
     token_start = EXCLUDED.token_start,
     token_end = EXCLUDED.token_end,
     extraction_index = EXCLUDED.extraction_index,
     group_index = EXCLUDED.group_index,
     pass_index = EXCLUDED.pass_index
+WHERE knowledge_mentions.review_status = 'pending'
 RETURNING id
 """
         with self._cursor() as cur:
@@ -577,7 +583,6 @@ RETURNING id
                     record["normalization_version"],
                     bool(record.get("grounded", True)),
                     record.get("confidence"),
-                    record.get("review_status", "pending"),
                     record.get("source_hash"),
                     None,
                     record.get("token_start"),
@@ -588,6 +593,30 @@ RETURNING id
                 ),
             )
             row = cur.fetchone()
+            if row is None:
+                cur.execute(
+                    """
+SELECT id
+FROM knowledge_mentions
+WHERE run_id = %s AND book_id = %s AND page_id = %s
+  AND extraction_class = %s AND char_start = %s AND char_end = %s
+""",
+                    (
+                        record["run_id"],
+                        record["book_id"],
+                        record["page_id"],
+                        record["extraction_class"],
+                        record["char_start"],
+                        record["char_end"],
+                    ),
+                )
+                existing = cur.fetchone()
+                if existing is None:
+                    raise RuntimeError("reviewed mention conflict disappeared")
+                actual_mention_id = str(existing[0])
+                record["id"] = actual_mention_id
+                self._commit()
+                return actual_mention_id
             actual_mention_id = str(row[0])
         record["id"] = actual_mention_id
         if not record.get("source_span_id"):
@@ -599,7 +628,7 @@ RETURNING id
                 """
 UPDATE knowledge_mentions
 SET source_span_id = %s
-WHERE id = %s
+WHERE id = %s AND review_status = 'pending'
 """,
                 (source_span_id, actual_mention_id),
             )
@@ -694,7 +723,7 @@ SET unit_id = resolved.unit_id,
     unit_binding_version = 1,
     unit_source_hash = CASE WHEN resolved.binding_status = 'bound' THEN mention.source_hash ELSE NULL END
 FROM resolved
-WHERE mention.id = resolved.id
+WHERE mention.id = resolved.id AND mention.review_status = 'pending'
 """
         with self._cursor() as cur:
             cur.execute(sql, (mention_id,))
@@ -765,10 +794,10 @@ RETURNING id
 INSERT INTO knowledge_extraction_rejections (
     id, run_id, chunk_id, book_id, page_id, heading_id, document_id,
     extraction_class, extraction_text, exact_quote, char_start, char_end,
-    alignment_status, code, message, attributes, source_hash, raw_output_path, review_status
+    alignment_status, code, message, attributes, source_hash, raw_output_path
 )
 VALUES (
-    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s
+    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s
 )
 """
         inserted = 0
@@ -803,7 +832,6 @@ VALUES (
                         json_dumps(failure.get("attributes")),
                         failure.get("source_hash"),
                         failure.get("raw_output_path"),
-                        failure.get("review_status", "rejected"),
                     ),
                 )
                 inserted += 1
@@ -891,10 +919,10 @@ SELECT EXISTS (
         sql = """
 INSERT INTO knowledge_relations (
     id, run_id, predicate, object_literal, evidence_mention_id,
-    evidence_quote, certainty, review_status, attributes, source_span_id,
+    evidence_quote, certainty, attributes, source_span_id,
     subject_text, object_text, risk_level, requires_scholar_review
 )
-VALUES (%s, %s, %s, %s, %s, %s, %s, 'needs_review', %s::jsonb, %s, %s, %s, %s, %s)
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s)
 """
         with self._cursor() as cur:
             cur.execute(
@@ -929,10 +957,10 @@ VALUES (%s, %s, %s, %s, %s, %s, %s, 'needs_review', %s::jsonb, %s, %s, %s, %s, %
         sql = """
 INSERT INTO knowledge_claims (
     id, run_id, claim_type, claim_text_ar, claim_text_id,
-    evidence_mention_id, evidence_quote, status, attributes, source_span_id,
+    evidence_mention_id, evidence_quote, attributes, source_span_id,
     subject_text, object_text, predicate, risk_level, certainty, requires_scholar_review
 )
-VALUES (%s, %s, %s, %s, %s, %s, %s, 'needs_review', %s::jsonb, %s, %s, %s, %s, %s, %s, %s)
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s)
 """
         with self._cursor() as cur:
             cur.execute(
@@ -1017,9 +1045,9 @@ LIMIT 10
         sql = """
 INSERT INTO knowledge_entities (
     id, entity_type, canonical_name_ar, normalized_name_ar,
-    normalization_version, created_from_mention_id, review_status
+    normalization_version, created_from_mention_id
 )
-VALUES (%s, %s, %s, %s, %s, %s, 'pending')
+VALUES (%s, %s, %s, %s, %s, %s)
 """
         with self._cursor() as cur:
             cur.execute(sql, (entity_id, entity_type, text, normalized_alias, PROFILE_VERSION, mention["id"]))
@@ -1066,14 +1094,14 @@ ON CONFLICT (entity_id, lang, label_kind, label) DO NOTHING
         sql = """
 INSERT INTO knowledge_entity_aliases (
     id, entity_id, alias_text, normalized_alias, language,
-    normalization_version, alias_type, source_mention_id, review_status
+    normalization_version, alias_type, source_mention_id
 )
-VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
 ON CONFLICT (entity_id, normalized_alias, language, alias_type) DO UPDATE SET
     alias_text = EXCLUDED.alias_text,
     normalization_version = EXCLUDED.normalization_version,
-    source_mention_id = COALESCE(knowledge_entity_aliases.source_mention_id, EXCLUDED.source_mention_id),
-    review_status = EXCLUDED.review_status
+    source_mention_id = COALESCE(knowledge_entity_aliases.source_mention_id, EXCLUDED.source_mention_id)
+WHERE knowledge_entity_aliases.review_status = 'pending'
 """
         with self._cursor() as cur:
             cur.execute(
@@ -1087,7 +1115,6 @@ ON CONFLICT (entity_id, normalized_alias, language, alias_type) DO UPDATE SET
                     PROFILE_VERSION,
                     alias_type,
                     source_mention_id,
-                    review_status,
                 ),
             )
 
@@ -1103,18 +1130,18 @@ ON CONFLICT (entity_id, normalized_alias, language, alias_type) DO UPDATE SET
     ) -> None:
         sql = """
 INSERT INTO knowledge_entity_candidates (
-    mention_id, entity_id, score, strategy, reasons, review_status
+    mention_id, entity_id, score, strategy, reasons
 )
-VALUES (%s, %s, %s, %s, %s::jsonb, %s)
+VALUES (%s, %s, %s, %s, %s::jsonb)
 ON CONFLICT (mention_id, entity_id, strategy) DO UPDATE SET
     score = EXCLUDED.score,
-    reasons = EXCLUDED.reasons,
-    review_status = EXCLUDED.review_status
+    reasons = EXCLUDED.reasons
+WHERE knowledge_entity_candidates.review_status = 'pending'
 """
         with self._cursor() as cur:
             cur.execute(
                 sql,
-                (mention_id, entity_id, score, strategy, json_dumps(reasons), review_status),
+                (mention_id, entity_id, score, strategy, json_dumps(reasons)),
             )
         self._commit()
 

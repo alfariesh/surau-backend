@@ -135,14 +135,15 @@ what users actually edited.
 
 ## Operations
 
-- **Env (Go app):** `COLLAB_ENABLED=true`, `COLLAB_SERVICE_TOKEN` (32+ bytes,
-  `openssl rand -base64 32`).
-- **Env (collab-server):** `COLLAB_PORT`, `COLLAB_PG_URL`, `COLLAB_GO_API_URL`,
-  `COLLAB_SERVICE_TOKEN` (same value), `COLLAB_DEBOUNCE_MS=3000`,
+- **Env (Go app):** `COLLAB_ENABLED=true`; `COLLAB_SERVICE_TOKEN` hanya T1
+  compatibility satu rilis yang di-hash sekali ke registry A-2.
+- **Env (collab-server):** `COLLAB_PORT`, `COLLAB_PG_URL_FILE`,
+  `COLLAB_GO_API_URL`, `COLLAB_SERVICE_TOKEN_FILE`,
+  `COLLAB_DEBOUNCE_MS=3000`,
   `COLLAB_DEBOUNCE_MAX_MS=10000`, `COLLAB_TOKEN_GRACE_MS=30000`,
   `COLLAB_LOG_LEVEL=info`.
 - **Production deploy:** the collab service is opt-in behind a compose profile.
-  Set `COLLAB_ENABLED=true` + `COLLAB_SERVICE_TOKEN` in `.env.production`, then
+  Set `COLLAB_ENABLED=true`, mount root-owned secret files, then
   `docker compose --env-file .env.production -f docker-compose.prod.yml
   --profile collab up -d --build app collab` (the deploy-vps workflow does this
   automatically when `COLLAB_ENABLED=true`).
@@ -168,7 +169,13 @@ what users actually edited.
   Note `handle_path` strips the `/collab` prefix before proxying — the
   collab-server serves the websocket at its root. Clients connect to
   `wss://api.example.org/collab`.
-- **Health:** `GET :8090/healthz` (200 = websocket + Postgres OK).
+- **Health:** `GET :8090/healthz` (200 = Postgres + scoped `collab-server`
+  `whoami` OK).
+- **Rotation:** token and DSN files reload tanpa restart. Kandidat token harus
+  lolos `whoami`; kandidat pool harus lolos permission-probe `collab_documents`.
+  Kandidat gagal tidak mengganti credential aktif. Prosedur A/B dan bukti
+  container tidak restart ada di
+  [`service-identity-rotation.md`](service-identity-rotation.md).
 - **Crash safety:** verified — killing the collab container mid-edit loses at
   most the current debounce window; on restart, documents reload from
   `collab_documents` (and at final-connection close Hocuspocus flushes).
