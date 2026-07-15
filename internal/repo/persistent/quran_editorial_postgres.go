@@ -503,7 +503,7 @@ LIMIT $5 OFFSET $6`,
 
 // ImportSurahEditorialBatch applies one complete importer run atomically. The
 // default path writes draft only. Explicit publish preflights every effective
-// draft before publishing any row and only then applies public surah metadata.
+// draft before applying public surah metadata and publishing any row.
 //
 //nolint:cyclop,funlen,gocognit,gocyclo // one transaction spells out save, preflight, publish, metadata
 func (r *EditorialRepo) ImportSurahEditorialBatch(
@@ -564,6 +564,15 @@ func (r *EditorialRepo) ImportSurahEditorialBatch(
 		}
 	}
 
+	// Slug metadata must be registered before the published row is written.
+	// Both operations remain inside this transaction, so any later failure
+	// rolls the metadata change back together with the editorial publication.
+	for i := range metadata {
+		if err = applyQuranSurahMetadataTx(ctx, tx, metadata[i]); err != nil {
+			return 0, 0, fmt.Errorf("update surah %d metadata: %w", metadata[i].SurahID, err)
+		}
+	}
+
 	for i := range patches {
 		_, didPublish, publishErr := publishSurahEditorialDraftTx(
 			ctx, tx, "", patches[i].SurahID, patches[i].Lang, nil, entity.EditOriginImport,
@@ -576,12 +585,6 @@ func (r *EditorialRepo) ImportSurahEditorialBatch(
 
 		if didPublish {
 			published++
-		}
-	}
-
-	for i := range metadata {
-		if err = applyQuranSurahMetadataTx(ctx, tx, metadata[i]); err != nil {
-			return 0, 0, fmt.Errorf("update surah %d metadata: %w", metadata[i].SurahID, err)
 		}
 	}
 

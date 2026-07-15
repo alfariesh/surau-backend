@@ -3,6 +3,7 @@ package persistent
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"testing"
 	"time"
@@ -46,7 +47,11 @@ func TestLiveQuranEditorialConcurrencyAndRestore(t *testing.T) {
 SELECT surah.surah_id, candidate.lang
 FROM quran_surahs surah
 CROSS JOIN (VALUES ('en'), ('id'), ('ar')) AS candidate(lang)
-WHERE NOT EXISTS (
+WHERE EXISTS (
+    SELECT 1 FROM quran_surah_slug_registry registry
+    WHERE registry.surah_id = surah.surah_id AND registry.slug = surah.slug
+)
+  AND NOT EXISTS (
     SELECT 1 FROM quran_surah_editorial editorial
     WHERE editorial.surah_id = surah.surah_id AND editorial.lang = candidate.lang
 )
@@ -76,12 +81,11 @@ LIMIT 1`).Scan(&surahID)
 		require.NoError(t, err)
 
 		lang = "en"
-		_, err = pg.Pool.Exec(ctx, `
-INSERT INTO quran_surahs (surah_id, name_latin, ayah_count, metadata)
-VALUES ($1, 'Q-1 concurrency fixture', 0, '{"q1_concurrency_fixture":true}'::jsonb)`, surahID)
+		insertedParent, err = insertQuranSurahLiveFixture(
+			ctx, pg, surahID, fmt.Sprintf("q1-concurrency-fixture-%d", surahID),
+			"Q-1 concurrency fixture", 0, "q1_concurrency_fixture",
+		)
 		require.NoError(t, err)
-
-		insertedParent = true
 	} else {
 		require.NoError(t, err)
 	}
@@ -121,10 +125,9 @@ DELETE FROM quran_surah_editorial WHERE surah_id = $1 AND lang = $2`, surahID, l
 		cleanup()
 
 		if insertedParent {
-			if _, cleanupErr := pg.Pool.Exec(context.Background(),
-				`DELETE FROM quran_surahs
-                 WHERE surah_id = $1
-                   AND metadata ->> 'q1_concurrency_fixture' = 'true'`, surahID); cleanupErr != nil {
+			if cleanupErr := cleanupInsertedQuranSurah(
+				context.Background(), pg, surahID, "q1_concurrency_fixture",
+			); cleanupErr != nil {
 				t.Logf("cleanup Q-1 concurrency surah: %v", cleanupErr)
 			}
 		}

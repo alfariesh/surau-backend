@@ -1,13 +1,124 @@
 package persistent
 
 import (
+	"database/sql"
+	"errors"
+	"fmt"
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/alfariesh/surau-backend/internal/entity"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
+
+var (
+	errQuranSitemapScanTest              = errors.New("scan failed")
+	errUnexpectedQuranSitemapDestination = errors.New("unexpected Quran sitemap scan destination")
+)
+
+func TestScanQuranSitemapItem(t *testing.T) {
+	t.Parallel()
+
+	lastmod := time.Date(2026, time.July, 15, 12, 0, 0, 0, time.UTC)
+	item, err := scanQuranSitemapItem(quranSitemapScanRow{lastmod: lastmod})
+	require.NoError(t, err)
+	require.NotNil(t, item.AyahNumber)
+	require.NotNil(t, item.AyahKey)
+	assert.Equal(t, "ayah", item.PageType)
+	assert.Equal(t, 2, item.SurahID)
+	assert.Equal(t, 255, *item.AyahNumber)
+	assert.Equal(t, "2:255", *item.AyahKey)
+	assert.Equal(t, "al-baqarah", item.Slug)
+	assert.Equal(t, "id", item.Lang)
+	assert.Equal(t, lastmod, item.Lastmod)
+	assert.Equal(t, []string{"en", "id"}, item.AvailableLangs)
+
+	_, err = scanQuranSitemapItem(quranSitemapScanRow{err: errQuranSitemapScanTest})
+	require.ErrorIs(t, err, errQuranSitemapScanTest)
+}
+
+func TestScanQuranSitemapItemWithTotal(t *testing.T) {
+	t.Parallel()
+
+	lastmod := time.Date(2026, time.July, 15, 12, 0, 0, 0, time.UTC)
+	total := 0
+	item, err := scanQuranSitemapItemWithTotal(quranSitemapScanRow{lastmod: lastmod, withTotal: true}, &total)
+	require.NoError(t, err)
+	require.NotNil(t, item.AyahNumber)
+	require.NotNil(t, item.AyahKey)
+	assert.Equal(t, 42, total)
+	assert.Equal(t, 255, *item.AyahNumber)
+	assert.Equal(t, "2:255", *item.AyahKey)
+
+	_, err = scanQuranSitemapItemWithTotal(quranSitemapScanRow{err: errQuranSitemapScanTest}, &total)
+	require.ErrorIs(t, err, errQuranSitemapScanTest)
+}
+
+type quranSitemapScanRow struct {
+	lastmod   time.Time
+	withTotal bool
+	err       error
+}
+
+func (r quranSitemapScanRow) Scan(dest ...any) error {
+	if r.err != nil {
+		return r.err
+	}
+
+	if err := setQuranSitemapScanDestination(dest[0], "ayah"); err != nil {
+		return err
+	}
+
+	if err := setQuranSitemapScanDestination(dest[1], 2); err != nil {
+		return err
+	}
+
+	if err := setQuranSitemapScanDestination(dest[2], sql.NullInt64{Int64: 255, Valid: true}); err != nil {
+		return err
+	}
+
+	if err := setQuranSitemapScanDestination(dest[3], sql.NullString{String: "2:255", Valid: true}); err != nil {
+		return err
+	}
+
+	if err := setQuranSitemapScanDestination(dest[4], "al-baqarah"); err != nil {
+		return err
+	}
+
+	if err := setQuranSitemapScanDestination(dest[5], "id"); err != nil {
+		return err
+	}
+
+	if err := setQuranSitemapScanDestination(dest[6], r.lastmod); err != nil {
+		return err
+	}
+
+	if err := setQuranSitemapScanDestination(dest[7], []string{"en", "id"}); err != nil {
+		return err
+	}
+
+	if r.withTotal {
+		if err := setQuranSitemapScanDestination(dest[8], 42); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func setQuranSitemapScanDestination[T any](destination any, value T) error {
+	target, ok := destination.(*T)
+	if !ok {
+		return fmt.Errorf("%w: %T", errUnexpectedQuranSitemapDestination, destination)
+	}
+
+	*target = value
+
+	return nil
+}
 
 // TestQuranSurahSelectSQLColumnCountMatchesScan guards the SELECT/scan coupling:
 // quranSurahSelectSQL must emit exactly the number of top-level columns that

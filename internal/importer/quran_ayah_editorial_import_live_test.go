@@ -46,7 +46,11 @@ func TestLiveAyahEditorialImportWorkflow(t *testing.T) {
 SELECT surah.surah_id, candidate.ayah_number
 FROM quran_surahs surah
 CROSS JOIN generate_series(1, 286) AS candidate(ayah_number)
-WHERE NOT EXISTS (
+WHERE EXISTS (
+    SELECT 1 FROM quran_surah_slug_registry registry
+    WHERE registry.surah_id = surah.surah_id AND registry.slug = surah.slug
+)
+  AND NOT EXISTS (
     SELECT 1 FROM quran_ayahs ayah
     WHERE ayah.surah_id = surah.surah_id
       AND ayah.ayah_number = candidate.ayah_number
@@ -69,9 +73,14 @@ LIMIT 1`).Scan(&surahID)
 		require.NoError(t, err)
 
 		ayahNumber = 286
-		_, err = pool.Exec(ctx, `
-INSERT INTO quran_surahs (surah_id, ayah_count, metadata)
-		VALUES ($1, 0, '{"q1_ayah_importer_fixture":true}'::jsonb)`, surahID)
+		err = withQuranEditorialFixtureWriter(ctx, pool, func(tx pgx.Tx) error {
+			_, txErr := tx.Exec(ctx, `
+INSERT INTO quran_surahs (surah_id, slug, ayah_count, metadata)
+		VALUES ($1, $2, 0, '{"q1_ayah_importer_fixture":true}'::jsonb)`,
+				surahID, fmt.Sprintf("q1-ayah-importer-fixture-%d", surahID))
+
+			return txErr
+		})
 		require.NoError(t, err)
 
 		insertedParent = true
@@ -112,10 +121,9 @@ DELETE FROM quran_ayahs WHERE surah_id = $1 AND ayah_number = $2`, surahID, ayah
 		}
 
 		if insertedParent {
-			if _, cleanupErr := pool.Exec(cleanupCtx,
-				`DELETE FROM quran_surahs
-                 WHERE surah_id = $1
-                   AND metadata ->> 'q1_ayah_importer_fixture' = 'true'`, surahID); cleanupErr != nil {
+			if cleanupErr := cleanupInsertedQuranImporterSurah(
+				cleanupCtx, pool, surahID, "q1_ayah_importer_fixture",
+			); cleanupErr != nil {
 				t.Logf("cleanup Q-1 ayah importer surah parent: %v", cleanupErr)
 			}
 		}

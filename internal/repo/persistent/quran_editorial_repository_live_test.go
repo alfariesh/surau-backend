@@ -35,12 +35,11 @@ func TestLiveQuranAyahEditorialRepositoryWorkflow(t *testing.T) {
 	ctx := context.Background()
 
 	const (
-		surahID = 114
-		ayahNo  = 990008
-		ayahKey = "114:990008"
-		lang    = "id"
+		ayahNo = 990008
+		lang   = "id"
 	)
-	setupQuranEditorialAyahFixture(t, pg, surahID, ayahNo, ayahKey)
+
+	surahID, ayahKey := setupQuranEditorialAyahFixture(t, pg, 114, ayahNo)
 
 	repository := NewEditorialRepo(pg)
 
@@ -325,13 +324,11 @@ func TestLiveQuranEditorialImporterRepositoryMatrix(t *testing.T) {
 	assert.Zero(t, changed)
 	assert.Zero(t, published)
 
-	const (
-		ayahNo  = 990009
-		ayahKey = "114:990009"
-	)
-	setupQuranEditorialAyahFixture(t, pg, 114, ayahNo, ayahKey)
+	const ayahNo = 990009
+
+	ayahSurahID, ayahKey := setupQuranEditorialAyahFixture(t, pg, 114, ayahNo)
 	ayahPatch := QuranAyahEditorialPatch{
-		SurahID:       114,
+		SurahID:       ayahSurahID,
 		AyahNumber:    ayahNo,
 		Lang:          "en",
 		IntisariHTML:  new("<p>import draft</p>"),
@@ -429,24 +426,19 @@ type quranSurahMetadataSnapshot struct {
 func setupQuranEditorialAyahFixture(
 	t *testing.T,
 	pg *postgres.Postgres,
-	surahID,
+	preferredSurahID,
 	ayahNo int,
-	ayahKey string,
-) {
+) (int, string) {
 	t.Helper()
 
 	ctx := context.Background()
+	surahID, inserted, err := claimQuranSurahLiveFixture(
+		ctx, pg, preferredSurahID, "q1-repository-fixture",
+		"Q-1 repository fixture", 0, "q1_repository_parent_fixture",
+	)
+	require.NoError(t, err)
 
-	var insertedSurahID int
-
-	err := pg.Pool.QueryRow(ctx, `
-INSERT INTO quran_surahs (surah_id, name_latin, ayah_count)
-VALUES ($1, 'Q-1 repository fixture', 0)
-ON CONFLICT (surah_id) DO NOTHING
-RETURNING surah_id`, surahID).Scan(&insertedSurahID)
-	if !errors.Is(err, pgx.ErrNoRows) {
-		require.NoError(t, err)
-	}
+	ayahKey := fmt.Sprintf("%d:%d", surahID, ayahNo)
 
 	_, err = pg.Pool.Exec(ctx, `DELETE FROM quran_ayahs WHERE ayah_key = $1`, ayahKey)
 	require.NoError(t, err)
@@ -462,13 +454,16 @@ VALUES ($1, $2, $3, '{"q1_repository_fixture":true}'::jsonb)`, surahID, ayahNo, 
 			t.Logf("cleanup Q-1 repository ayah fixture: %v", cleanupErr)
 		}
 
-		if insertedSurahID != 0 {
-			if _, cleanupErr := pg.Pool.Exec(cleanupCtx,
-				`DELETE FROM quran_surahs WHERE surah_id = $1`, insertedSurahID); cleanupErr != nil {
+		if inserted {
+			if cleanupErr := cleanupInsertedQuranSurah(
+				cleanupCtx, pg, surahID, "q1_repository_parent_fixture",
+			); cleanupErr != nil {
 				t.Logf("cleanup Q-1 repository surah fixture: %v", cleanupErr)
 			}
 		}
 	})
+
+	return surahID, ayahKey
 }
 
 func insertCorruptQuranEditorialRevision(
@@ -510,32 +505,6 @@ func claimQuranSurahEditorialImportScope(
 	ctx := context.Background()
 
 	err := pg.Pool.QueryRow(ctx, `
-SELECT surah.surah_id, candidate.lang, surah.slug,
-       surah.chronological_order, surah.ruku_count, surah.updated_at
-FROM quran_surahs surah
-CROSS JOIN (VALUES ('en'), ('id'), ('ar')) AS candidate(lang)
-WHERE NOT EXISTS (
-    SELECT 1 FROM quran_surah_editorial editorial
-    WHERE editorial.surah_id = surah.surah_id AND editorial.lang = candidate.lang
-)
-  AND NOT EXISTS (
-    SELECT 1 FROM quran_editorial_revisions revision
-    WHERE revision.resource_type = 'surah'
-      AND revision.surah_id = surah.surah_id
-      AND revision.ayah_number IS NULL
-      AND revision.lang = candidate.lang
-)
-ORDER BY surah.surah_id DESC, candidate.lang
-LIMIT 1`).Scan(
-		&surahID,
-		&lang,
-		&result.slug,
-		&result.chronologicalOrder,
-		&result.rukuCount,
-		&result.updatedAt,
-	)
-	if errors.Is(err, pgx.ErrNoRows) {
-		err = pg.Pool.QueryRow(ctx, `
 SELECT candidate.surah_id
 FROM generate_series(1, 114) AS candidate(surah_id)
 WHERE NOT EXISTS (
@@ -543,28 +512,25 @@ WHERE NOT EXISTS (
 )
 ORDER BY candidate.surah_id DESC
 LIMIT 1`).Scan(&surahID)
-		if errors.Is(err, pgx.ErrNoRows) {
-			t.Skip("no empty surah editorial scope is available for importer repository test")
-		}
-
-		require.NoError(t, err)
-
-		lang = "en"
-		err = pg.Pool.QueryRow(ctx, `
-INSERT INTO quran_surahs (surah_id, name_latin, ayah_count, metadata)
-VALUES ($1, 'Q-1 importer repository fixture', 0, '{"q1_import_repository_fixture":true}'::jsonb)
-RETURNING slug, chronological_order, ruku_count, updated_at`, surahID).Scan(
-			&result.slug,
-			&result.chronologicalOrder,
-			&result.rukuCount,
-			&result.updatedAt,
-		)
-		require.NoError(t, err)
-
-		result.insertedParent = true
+	if errors.Is(err, pgx.ErrNoRows) {
+		t.Skip("no empty surah editorial scope is available for importer repository test")
 	}
 
 	require.NoError(t, err)
+
+	lang = "en"
+	err = pg.Pool.QueryRow(ctx, `
+INSERT INTO quran_surahs (surah_id, name_latin, ayah_count, metadata)
+VALUES ($1, 'Q-1 importer repository fixture', 0, '{"q1_import_repository_fixture":true}'::jsonb)
+RETURNING slug, chronological_order, ruku_count, updated_at`, surahID).Scan(
+		&result.slug,
+		&result.chronologicalOrder,
+		&result.rukuCount,
+		&result.updatedAt,
+	)
+	require.NoError(t, err)
+
+	result.insertedParent = true
 
 	return surahID, lang, result
 }
@@ -597,13 +563,6 @@ WHERE resource_type = 'surah' AND surah_id = $1 AND ayah_number IS NULL AND lang
 DELETE FROM quran_surah_editorial WHERE surah_id = $1 AND lang = $2`, surahID, lang)
 		}
 
-		if err == nil && !original.insertedParent {
-			_, err = tx.Exec(ctx, `
-UPDATE quran_surahs
-SET slug = $2, chronological_order = $3, ruku_count = $4, updated_at = $5
-WHERE surah_id = $1`, surahID, original.slug, original.chronologicalOrder, original.rukuCount, original.updatedAt)
-		}
-
 		if err == nil {
 			err = tx.Commit(ctx)
 		} else if tx != nil {
@@ -617,9 +576,9 @@ WHERE surah_id = $1`, surahID, original.slug, original.chronologicalOrder, origi
 		}
 
 		if original.insertedParent {
-			if _, deleteErr := pg.Pool.Exec(ctx, `
-DELETE FROM quran_surahs
-WHERE surah_id = $1 AND metadata ->> 'q1_import_repository_fixture' = 'true'`, surahID); deleteErr != nil {
+			if deleteErr := cleanupInsertedQuranSurah(
+				ctx, pg, surahID, "q1_import_repository_fixture",
+			); deleteErr != nil {
 				t.Logf("cleanup Q-1 importer repository parent: %v", deleteErr)
 			}
 		}
