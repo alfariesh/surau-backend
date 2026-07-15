@@ -134,7 +134,7 @@ kapabilitas terdokumentasi & beku-ber-test.
 **DS:** Salman bisa memberi seseorang hak "review terjemahan" tanpa menjadikannya penguasa penuh
 platform.
 
-### A-2 — Identitas mesin & token layanan ber-scope  *(P1, effort sedang)*
+### A-2 — Identitas mesin & token layanan ber-scope  *(P1, effort sedang)* ✅ **SELESAI 2026-07-15**
 
 **Rationale:** A-G3/R5/R6. **Isi:** registry identitas layanan (nama, scope, kedaluwarsa ≤90 hari,
 hash-at-rest, dicabut per-identitas) menggantikan `COLLAB_SERVICE_TOKEN` tunggal — konsumen awal:
@@ -150,6 +150,19 @@ teknis TIDAK BISA meng-update status review (dibuktikan test grants — memenuhi
 panggilan `/internal/*` ter-audit dengan nama principal.
 **DS:** kalau satu kunci mesin bocor, yang jatuh cuma satu pintu kecil — dan kelihatan siapa yang
 memakainya.
+
+**Bukti implementasi:** registry menyimpan principal bernama, scope kanonik, banyak credential,
+expiry maksimal 90 hari, dan digest SHA-256 tanpa kolom plaintext. Verifier membaca DB pada setiap
+request; test satu proses membuktikan T1+T2 sama-sama 200, lalu revoke T1 langsung menghasilkan 401
+tanpa restart sementara T2 tetap 200. Manifest Fiber mengunci semua `/internal/*` di middleware
+scope+audit fail-closed dengan retensi 90 hari. Collab hot-reload token dan pool DB secara atomik;
+rag-eval serta enrichment membatasi header ke origin Surau; U-0 hanya membekukan scope
+`prompt-registry:manage` dan `inference-budget:manage` sampai komponennya dibangun. Role DB
+`surau_extraction_writer`, `surau_importer`, dan `surau_collab_store` adalah `NOLOGIN` dengan grant
+eksplisit; login test nyata membuktikan pipeline tidak dapat mengubah status/isi reviewed,
+DELETE/DDL/auth (SQLSTATE 42501), sementara smoke importer dan collab tetap berfungsi. Runbook
+`docs/service-identity-rotation.md` mendokumentasikan overlap, rollback sebelum revoke, dan
+rotasi login A→B tanpa downtime.
 
 ### A-3 — MFA (TOTP) + step-up untuk aksi destruktif  *(P0, effort sedang)*
 
@@ -219,6 +232,9 @@ depannya.
 | A-D6 | Identitas mesin dua jalur: token HTTP ber-scope utk layanan; peran-DB ber-grant utk penulis massal (pipeline, importer) | Selaras W-D2; bulk-write via HTTP = overhead tanpa nilai | Semua via HTTP (memperlambat ekstraksi); status quo satu token + PG_URL |
 | A-D7 | Refresh 336h sliding | Kompromi UX-mobile vs jendela pencurian; sliding menghukum token diam saja | 720h tetap (jendela 30 hari); 168h (friksi mingguan) |
 | A-D8 | Step-up berbasis MFA segar utk aksi destruktif kelas-atas | Sesi panjang tak boleh setara niat segar utk aksi tak-terbalikkan | Password-ulang saja (phishable sekali) |
+| A-D9 | Verifikasi token membaca registry DB setiap request tanpa positive cache; audit `/internal/*` disimpan 90 hari dan fail-closed sebelum handler | Revoke/expiry harus berlaku pada proses hidup dan operasi internal tanpa audit tidak boleh lolos | Cache token positif (membuat jendela revoke); audit best-effort (kehilangan atribusi) |
+| A-D10 | Role DB A-2 adalah group `NOLOGIN` terpisah untuk extraction, importer, dan collab; login per-environment hanya satu membership dan expiry ≤90 hari | Memperkecil blast radius setiap consumer serta memungkinkan rotasi pool A/B tanpa mengubah ownership schema | Satu role bersama; kredensial owner; role LOGIN dari migrasi |
+| A-D11 | Scope U-0 dibekukan sekarang, tetapi principal/token tidak diterbitkan sebelum U-0 dibangun | Kontrak lintas-fase stabil tanpa secret menganggur yang dapat bocor | Menerbitkan token sekarang; menunda penamaan scope sampai U-0 |
 
 **Asumsi:** A-A1 — FE/mobile sanggup menambah alur TOTP & step-up dalam jendela rilis normal
 (alur lama tak pecah); A-A2 — daftar aksi destruktif kelas-atas final ditetapkan bersama matriks

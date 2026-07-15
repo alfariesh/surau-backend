@@ -308,7 +308,12 @@ Kerjakan Q-6 dari roadmap/phase-3-quran.md: simpan jejak delivery OneSignal acce
 Masuk PLAN MODE dulu; rencana wajib menyebut cara memenuhi setiap Acceptance Criterion Q-6, termasuk test lintas restart untuk anti-duplikat dan batas waktu lokal pengguna. Setelah saya setujui: kerjakan sampai tuntas — branch fitur, test, Definition of Done, centang PROGRAM.md & SESI.md, merge, verifikasi dev-api. Laporan akhir bahasa awam + tunjukkan cara saya melihat jumlah reminder terkirim/gagal.
 ```
 
-- [ ] **SESI 22 — Identitas mesin + token layanan ber-scope (A-2)**
+- [x] **SESI 22 — Identitas mesin + token layanan ber-scope (A-2)** — ✅ **SELESAI
+  2026-07-15**: registry principal+scope dan token hash-at-rest ≤90 hari; revoke live tanpa restart;
+  seluruh `/internal/*` ber-audit principal 90 hari; collab/rag-eval/enrichment dimigrasikan lewat
+  overlap T1/T2 dan U-0 dibekukan tanpa secret; role DB extraction/importer/collab sempit dengan
+  pending-only guard; runbook rotasi, Swagger, migrasi bolak-balik, unit/integration/Python/Node,
+  live PostgreSQL serial+race, diff-cover 75,5%, dan `make pre-commit` hijau.
 
 ```text
 Kerjakan A-2 dari roadmap/phase-2-auth.md: registry identitas layanan dengan nama principal, scope, kedaluwarsa ≤90 hari, hash-at-rest, dan pencabutan per-identitas; migrasikan collab-server (scope tulis-draft), runner eval (baca), otomasi enrichment HTTP, dan U-0 (kelola prompt-registry/budget) lewat overlap dua token tanpa downtime; audit setiap /internal/* dengan nama principal; formalkan role DB terpisah ber-grant sempit untuk pipeline ekstraksi pending-only dan importer, plus runbook rotasi.

@@ -202,8 +202,19 @@ menit/`Retry-After`, dan hanya menggerakkan last-success setelah sweep sehat. Co
 attempt, skip, gauge rolling 5 menit, dashboard accepted-vs-failed+alasan, dan alert Telegram
 `5 gagal + rasio ≥50%` memiliki budget konfigurasi 2m45s (<5 menit). Unit/integration, race,
 restart pool+collector, crash-window UUID sama, batas lokal+DST, migrasi up→down→up, transaksi
-attempt+counter, live PostgreSQL serial, dan `make pre-commit` hijau);
-sisa F2: A-2 (identitas mesin ber-scope), A-4 (dual-key JWT + drill), A-5 (refresh 336h);
+attempt+counter, live PostgreSQL serial, dan `make pre-commit` hijau) ∥ A-2 ✅ **SELESAI
+2026-07-15 (SESI 22)** (registry principal mesin dengan lima scope kanonik, token acak 256-bit
+berumur maksimal 90 hari dan hanya ber-hash SHA-256 di DB, overlap banyak token, revoke token atau
+principal yang berlaku per-request tanpa restart, API admin ber-kapabilitas+MFA+ETag, serta audit
+90 hari fail-closed untuk semua `/internal/*`. Collab hot-reload token+pool, rag-eval, dan otomasi
+enrichment berpindah lewat overlap T1/T2; kontrak U-0 dibekukan tanpa secret menganggur. Role
+`NOLOGIN` extraction/importer/collab ber-grant eksplisit sempit; trigger+column grant membuat
+pipeline pending-only dan baris reviewed immutable. Test proses-hidup membuktikan T1 dicabut
+langsung 401 sementara T2 tetap 200; login role nyata ditolak mengubah status/DELETE/DDL/auth
+dengan SQLSTATE 42501; importer Shamela+reader+Quran dan collab smoke lulus; migrasi up→down→up,
+unit/integration/Python/Node, live serial+race, diff-cover 75,5%, dan `make pre-commit` hijau;
+runbook rotasi dua-token/dua-login tersedia);
+sisa F2: A-4 (dual-key JWT + drill), A-5 (refresh 336h);
 **U-0 (lapisan inferensi) + U-6 (eval-harness → gate) DIMULAI DI SINI** — Fase 7 mensyaratkan
 keduanya "sejak hari pertama", dan enrichment kitab langsung ikut menumpang U-0.
 **Gerbang keluar:** editorial Quran ber-ETag+revisi; test eligibilitas anti-tafsir lulus (dirujuk
