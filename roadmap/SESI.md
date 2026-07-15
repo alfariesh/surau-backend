@@ -272,7 +272,7 @@ Masuk PLAN MODE dulu; rencana wajib menyebut cara memenuhi setiap Acceptance Cri
 > jawab sebelum SESI 19: (a) tafsir & syarah dulu; (b) urut trafik baca; atau (c) merata.
 > Tidak menjawab = default aman PROGRAM.md §5 PK-6: **(a), dengan trafik sebagai tie-break**.
 
-- [ ] **SESI 19 — Industrialisasi seluruh katalog + migrasi sitasi RAG (K-1)**
+- [x] **SESI 19 — Industrialisasi seluruh katalog + migrasi sitasi RAG (K-1)**
 
 ```text
 ultracode. Kerjakan K-1 dari roadmap/phase-4-kitab-editorial.md sesuai keputusan/default O-4-2: backfill 100% buku published dengan runner F1-H yang resumable dan ter-metrik, keraskan deriver pilot untuk footnote/quran_quote/HTML, petakan Provenance Class + generation identity B-6 + pewarisan License Status B-4, re-anchor knowledge_mentions dari halaman ke unit, lalu migrasikan sitasi book-RAG lewat dual-write legacy+unit di belakang flag → verifikasi parity → tukar default → pertahankan fallback legacy satu rilis; unit machine-unreviewed wajib tidak eligible secara struktural untuk retrieval interpretatif.

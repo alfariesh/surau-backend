@@ -156,8 +156,29 @@ Kolom generated+indeks parsial menjadikan corpus Quran mustahil eligible untuk r
 interpretatif; live gate
 `TestLiveQuranCitableUnitsNeverInterpretiveEligible` dirujuk wajib oleh U-6. Drill populated,
 rederive, takedown, parity rujukan approved lama, integration HTTP, worker-cache bypass, dan
-`make pre-commit` semuanya hijau) ∥ **K-1 (industrialisasi Citable Unit seluruh katalog + migrasi sitasi RAG —
-critical path, effort besar)** ∥ Q-4 (SEO sitemap/slug) + Q-6 (keandalan notifikasi);
+`make pre-commit` semuanya hijau) ∥ K-1 ✅ **SELESAI 2026-07-15 (SESI 19, implementasi final
+`be7756b`)** (deriver kitab kini block/DOM-aware untuk paragraf, footnote, kutipan Quran, dan
+HTML malformed tanpa kehilangan isi; natural key role+bahasa menjaga UUID pilot v1 serta
+memisahkan enrichment v2, sementara edit teks/split/merge/move membentuk lineage agar Anchor
+lama tetap resolve. Provenance Class, generation identity B-6, review status, dan pewarisan
+License Status B-4 ditegakkan per-unit; view retrieval struktural membuat Quran,
+`quran_quote`, machine-unreviewed, dan provenance tidak sah mustahil dipilih untuk retrieval
+interpretatif. Runner F1-H katalog bersifat durable, resumable, ter-metrik, commit atomik per
+buku, dan menjalankan O-4-2: 15 kitab tafsir/syarah lebih dulu lalu trafik serta `book_id`.
+`knowledge_mentions` kini dual-coordinate halaman+unit satu rilis dengan binding exact dan
+status fail-closed. Book-RAG menambah locator unit secara aditif dan rollout berpagar
+`legacy→dual→unit→default`; default kode kini `unit`, sedangkan fallback legacy bertipe
+tetap dipertahankan satu rilis. **Bukti dev katalog aktual:** 100/100 buku, 183.596 dokumen,
+214.842.335 rune kanonik, halaman/aset uncovered=0, stale=0; derivasi kedua 100/100 tanpa
+mutasi; parity 100/100 dan seluruh mismatch=0; unresolved Anchor, dangling projection,
+Cross-Reference, approved mention tanpa Anchor, serta machine-unreviewed eligible semuanya 0.
+Empat gate SHA yang sama lulus: [legacy 29377992619](https://github.com/alfariesh/surau-backend/actions/runs/29377992619)
+p95 286,793 ms; [dual 29379761923](https://github.com/alfariesh/surau-backend/actions/runs/29379761923)
+p95 284,204 ms + eval JSON/SSE 3/3 tanpa fallback; [unit 29381405017](https://github.com/alfariesh/surau-backend/actions/runs/29381405017)
+p95 279,243 ms + eval 3/3; [default 29383004001](https://github.com/alfariesh/surau-backend/actions/runs/29383004001)
+p95 288,415 ms + mode efektif `unit` 3/3 tanpa override/fallback. Seluruh CI, migrasi
+bolak-balik, unit/integration/live/race/RAG eval, dan `make pre-commit` hijau) ∥ Q-4 (SEO
+sitemap/slug) + Q-6 (keandalan notifikasi);
 sisa F2: A-2 (identitas mesin ber-scope), A-4 (dual-key JWT + drill), A-5 (refresh 336h);
 **U-0 (lapisan inferensi) + U-6 (eval-harness → gate) DIMULAI DI SINI** — Fase 7 mensyaratkan
 keduanya "sejak hari pertama", dan enrichment kitab langsung ikut menumpang U-0.
