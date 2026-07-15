@@ -34,9 +34,10 @@ func TestBuildLoopSpecsRegistersAllSixLoopsWhenEnabled(t *testing.T) {
 	cfg.Email.DispatchInterval = 15 * time.Second
 	cfg.Email.CloudflareEventPollingEnabled = true
 	cfg.Email.CloudflareEventPollingInterval = time.Minute
+	notificationUC := notification.New(nil, nil, nil, notification.Options{}, testLogger())
 
 	specs := buildLoopSpecs(cfg,
-		&emailusecase.UseCase{}, &user.UseCase{}, &notification.UseCase{}, &unitregistry.UseCase{}, testLogger())
+		&emailusecase.UseCase{}, &user.UseCase{}, notificationUC, &unitregistry.UseCase{}, testLogger())
 
 	names := loopNames(specs)
 	require.Equal(t,
@@ -47,6 +48,9 @@ func TestBuildLoopSpecsRegistersAllSixLoopsWhenEnabled(t *testing.T) {
 		assert.NotNilf(t, spec.run, "loop %s must carry a pass function", spec.name)
 		assert.Positivef(t, int64(spec.interval), "loop %s must have a positive interval", spec.name)
 	}
+
+	assert.Equal(t, notificationUC.RetryWakeups(), specs[1].wake,
+		"notification event failures must wake the existing F1-C reminder supervisor")
 
 	// Cleanup/reminder/alert/audit take the shared head start; email loops
 	// tick on their own interval from the start (initialDelay zero).

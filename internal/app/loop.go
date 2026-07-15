@@ -32,6 +32,7 @@ type loopSpec struct {
 	name         string
 	interval     time.Duration
 	initialDelay time.Duration
+	wake         <-chan struct{}
 	run          func(ctx context.Context) error
 
 	backoffBase time.Duration
@@ -62,11 +63,21 @@ func runSupervisedLoop(ctx context.Context, spec loopSpec, l logger.Interface) {
 	failures := 0
 
 	for {
+		wake := spec.wake
+		if failures > 0 {
+			// New work must not bypass an active outage backoff. The buffered wake remains pending
+			// and is coalesced into the next scheduled recovery pass.
+			wake = nil
+		}
+
 		select {
 		case <-ctx.Done():
 			return
 		case <-timer.C:
+		case <-wake:
 		}
+
+		drainLoopWake(spec.wake)
 
 		err := runLoopPass(ctx, spec, l)
 
@@ -75,7 +86,7 @@ func runSupervisedLoop(ctx context.Context, spec loopSpec, l logger.Interface) {
 		if err == nil {
 			failures = 0
 
-			timer.Reset(spec.interval)
+			resetLoopTimer(timer, spec.interval)
 
 			continue
 		}
@@ -88,9 +99,35 @@ func runSupervisedLoop(ctx context.Context, spec loopSpec, l logger.Interface) {
 		failures++
 		next := loopBackoffDelay(failures, spec.backoffBase, spec.backoffMax)
 
+		var hinted interface{ RetryAfter() time.Duration }
+		if errors.As(err, &hinted) && hinted.RetryAfter() > next {
+			next = hinted.RetryAfter()
+		}
+
 		l.Error(fmt.Errorf("app - loop pass failed (consecutive=%d, next retry in %s): %w", failures, next.Round(time.Millisecond), err))
-		timer.Reset(next)
+		resetLoopTimer(timer, next)
 	}
+}
+
+func drainLoopWake(wake <-chan struct{}) {
+	for {
+		select {
+		case <-wake:
+		default:
+			return
+		}
+	}
+}
+
+func resetLoopTimer(timer *time.Timer, delay time.Duration) {
+	if !timer.Stop() {
+		select {
+		case <-timer.C:
+		default:
+		}
+	}
+
+	timer.Reset(delay)
 }
 
 // runLoopPass executes one pass, converting a panic into an error so the
@@ -129,7 +166,7 @@ func loopBackoffDelay(failures int, base, maxDelay time.Duration) time.Duration 
 	}
 
 	jitter := 1 - loopJitterFraction + 2*loopJitterFraction*rand.Float64() //nolint:gosec // non-crypto jitter
-	delay = time.Duration(float64(delay) * jitter)
+	delay = min(time.Duration(float64(delay)*jitter), maxDelay)
 
 	if delay <= 0 {
 		delay = base

@@ -293,7 +293,15 @@ Kerjakan Q-4 dari roadmap/phase-3-quran.md: sediakan data sitemap/feed untuk hal
 Masuk PLAN MODE dulu; rencana wajib menyebut cara memenuhi setiap Acceptance Criterion Q-4, termasuk 100% halaman published masuk sitemap, akurasi lastmod ≤5 menit, dan test redirect slug lama. Setelah saya setujui: kerjakan sampai tuntas — branch fitur, test, Definition of Done, centang PROGRAM.md & SESI.md, merge, verifikasi dev-api. Laporan akhir bahasa awam + tunjukkan URL sitemap dan laporan cakupannya.
 ```
 
-- [ ] **SESI 21 — Notifikasi Quran yang terbukti & sopan waktu (Q-6)**
+- [x] **SESI 21 — Notifikasi Quran yang terbukti & sopan waktu (Q-6)** — ✅ **SELESAI
+  2026-07-15**: semua push OneSignal kini mempunyai ledger delivery+attempt accepted/failed,
+  alasan tersanitasi, UUID retry yang sama, metrik durable, dashboard, dan alert massal berbujet
+  2m45s. Reminder memiliki dedupe harian atomik di atas cooldown 20 jam, lease lintas instance,
+  quiet-hours timezone/DST fail-closed, serta retry yang berhenti tepat pada 21:00 lokal. Loop F1-C
+  yang sama menangani wake event, recovery, backoff 30 detik–15 menit/`Retry-After`, panic, dan
+  last-success sehat. Test lintas restart/crash, race 12 worker, dua tanggal lokal, DST New York,
+  06:59/07:00/20:59/21:00, retry melewati batas, migrasi bolak-balik, counter restart, alert
+  first-batch, integration, live PostgreSQL serial, dan `make pre-commit` semuanya hijau.
 
 ```text
 Kerjakan Q-6 dari roadmap/phase-3-quran.md: simpan jejak delivery OneSignal accepted/failed beserta alasan, ekspor metrik+alert kegagalan massal ≤5 menit, tambah kunci dedupe idempoten per user+jenis+hari di atas cooldown 20 jam existing, terapkan quiet-hours per timezone user (default 21:00–07:00 waktu lokal untuk reminder non-kritis), dan masukkan loop reminder ke supervisi F1-C dengan recovery, backoff, serta metrik last-success.

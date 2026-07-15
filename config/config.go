@@ -240,11 +240,13 @@ type (
 	// OneSignal -. Push-notification delivery via the OneSignal REST API. Disabled by default so the
 	// app builds and runs without credentials; the REST API key is a secret and must never be committed.
 	oneSignal struct {
-		Enabled          bool          `env:"ONESIGNAL_ENABLED" envDefault:"false"`
-		AppID            string        `env:"ONESIGNAL_APP_ID"`
-		RESTAPIKey       string        `env:"ONESIGNAL_REST_API_KEY"`
-		HTTPTimeout      time.Duration `env:"ONESIGNAL_HTTP_TIMEOUT" envDefault:"10s"`
-		ReminderInterval time.Duration `env:"ONESIGNAL_REMINDER_INTERVAL" envDefault:"1h"`
+		Enabled              bool          `env:"ONESIGNAL_ENABLED" envDefault:"false"`
+		AppID                string        `env:"ONESIGNAL_APP_ID"`
+		RESTAPIKey           string        `env:"ONESIGNAL_REST_API_KEY"`
+		HTTPTimeout          time.Duration `env:"ONESIGNAL_HTTP_TIMEOUT" envDefault:"10s"`
+		ReminderInterval     time.Duration `env:"ONESIGNAL_REMINDER_INTERVAL" envDefault:"1h"`
+		QuietHoursStartLocal string        `env:"ONESIGNAL_QUIET_HOURS_START_LOCAL" envDefault:"21:00"`
+		QuietHoursEndLocal   string        `env:"ONESIGNAL_QUIET_HOURS_END_LOCAL" envDefault:"07:00"`
 	}
 
 	// AuthRateLimit -.
@@ -790,6 +792,19 @@ func NewConfig() (*Config, error) {
 	default:
 		return nil, configError("RAG_BOOK_CITATION_MODE must be legacy, dual, or unit")
 	}
+
+	if !validLocalClock(cfg.OneSignal.QuietHoursStartLocal) {
+		return nil, configError("ONESIGNAL_QUIET_HOURS_START_LOCAL must use HH:MM (24-hour) format")
+	}
+
+	if !validLocalClock(cfg.OneSignal.QuietHoursEndLocal) {
+		return nil, configError("ONESIGNAL_QUIET_HOURS_END_LOCAL must use HH:MM (24-hour) format")
+	}
+
+	if cfg.OneSignal.QuietHoursStartLocal == cfg.OneSignal.QuietHoursEndLocal {
+		return nil, configError("OneSignal quiet-hours start and end must differ")
+	}
+
 	if cfg.OneSignal.Enabled {
 		if strings.TrimSpace(cfg.OneSignal.AppID) == "" {
 			return nil, configError("ONESIGNAL_APP_ID is required when ONESIGNAL_ENABLED is true")
@@ -825,6 +840,15 @@ func validAbsoluteHTTPURL(value string) bool {
 	}
 
 	return parsedURL.IsAbs() && (parsedURL.Scheme == "http" || parsedURL.Scheme == "https") && parsedURL.Host != ""
+}
+
+func validLocalClock(value string) bool {
+	parsed, err := time.Parse("15:04", value)
+	if err != nil {
+		return false
+	}
+
+	return parsed.Format("15:04") == value
 }
 
 // validCORSOrigin accepts the wildcard or a bare scheme://host[:port] origin

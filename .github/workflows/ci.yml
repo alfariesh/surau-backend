@@ -212,7 +212,8 @@ jobs:
           go test -p 1 -race -covermode atomic -coverprofile=coverage-live.txt
           -coverpkg=./internal/...,./pkg/...
           -run TestLive -skip '^TestLiveCrossReferenceQueryPerformance$'
-          ./internal/repo/persistent/ ./internal/importer/ ./internal/backfill/ ./internal/app/
+          ./internal/repo/persistent/ ./internal/importer/ ./internal/backfill/
+          ./internal/usecase/notification/ ./internal/app/
       - name: Cross-Reference 40k latency gate
         run: >-
           go test -p 1 -count=1 -run '^TestLiveCrossReferenceQueryPerformance$'

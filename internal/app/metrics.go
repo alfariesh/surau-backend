@@ -107,8 +107,10 @@ func recordLoopRun(loop string, err error) {
 }
 
 const (
-	emailQueueStatsCacheTTL = 10 * time.Second
-	emailQueueQueryTimeout  = 5 * time.Second
+	emailQueueStatsCacheTTL   = 10 * time.Second
+	emailQueueQueryTimeout    = 5 * time.Second
+	notificationStatsCacheTTL = 10 * time.Second
+	notificationQueryTimeout  = 5 * time.Second
 )
 
 // emailQueueCollector exposes email-pipeline gauges (queue depth, oldest due
@@ -186,6 +188,178 @@ func registerEmailQueueMetrics(pool *pgxpool.Pool) {
 	// MustRegister panics on double-registration; app.Run is called once per
 	// process (tests construct their own registries), so this is safe.
 	prometheus.MustRegister(newEmailQueueCollector(pool))
+}
+
+type notificationMetricSample struct {
+	kind             string
+	notificationType string
+	result           string
+	reasonCode       string
+	total            float64
+}
+
+// notificationMetricsCollector exports database-backed cumulative counters. Unlike process-local
+// counters, an accepted/failed attempt cannot disappear when the application restarts before the
+// next Prometheus scrape.
+type notificationMetricsCollector struct {
+	pool *pgxpool.Pool
+
+	mu             sync.Mutex
+	fetched        time.Time
+	samples        []notificationMetricSample
+	recentAccepted float64
+	recentFailed   float64
+
+	attemptsDesc   *prometheus.Desc
+	deliveriesDesc *prometheus.Desc
+	skipsDesc      *prometheus.Desc
+	recentDesc     *prometheus.Desc
+}
+
+func newNotificationMetricsCollector(pool *pgxpool.Pool) *notificationMetricsCollector {
+	return &notificationMetricsCollector{
+		pool: pool,
+		attemptsDesc: prometheus.NewDesc(
+			"surau_notification_delivery_attempts_total",
+			"OneSignal provider attempts by notification type, result, and bounded reason code.",
+			[]string{"notification_type", "result", "reason_code"},
+			nil,
+		),
+		deliveriesDesc: prometheus.NewDesc(
+			"surau_notification_deliveries_total",
+			"Unique logical OneSignal deliveries in a terminal accepted or failed state.",
+			[]string{"notification_type", "status"},
+			nil,
+		),
+		skipsDesc: prometheus.NewDesc(
+			"surau_notification_reminder_skips_total",
+			"Reminder evaluations skipped before a OneSignal provider attempt.",
+			[]string{"reason"},
+			nil,
+		),
+		recentDesc: prometheus.NewDesc(
+			"surau_notification_delivery_attempts_5m",
+			"OneSignal provider attempts observed in the rolling five-minute alert window.",
+			[]string{"result"},
+			nil,
+		),
+	}
+}
+
+func (c *notificationMetricsCollector) Describe(ch chan<- *prometheus.Desc) {
+	ch <- c.attemptsDesc
+
+	ch <- c.deliveriesDesc
+
+	ch <- c.skipsDesc
+
+	ch <- c.recentDesc
+}
+
+func (c *notificationMetricsCollector) Collect(ch chan<- prometheus.Metric) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if time.Since(c.fetched) > notificationStatsCacheTTL {
+		c.refresh()
+	}
+
+	for _, sample := range c.samples {
+		c.emit(ch, sample)
+	}
+
+	ch <- prometheus.MustNewConstMetric(c.recentDesc, prometheus.GaugeValue, c.recentAccepted, "accepted")
+
+	ch <- prometheus.MustNewConstMetric(c.recentDesc, prometheus.GaugeValue, c.recentFailed, "failed")
+}
+
+func (c *notificationMetricsCollector) refresh() {
+	ctx, cancel := context.WithTimeout(context.Background(), notificationQueryTimeout)
+	defer cancel()
+
+	rows, err := c.pool.Query(ctx, `
+SELECT metric_kind, notification_type, result, reason_code, total
+FROM notification_delivery_metric_totals
+ORDER BY metric_kind, notification_type, result, reason_code`)
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+
+	fresh := make([]notificationMetricSample, 0)
+
+	for rows.Next() {
+		var sample notificationMetricSample
+		if err := rows.Scan(
+			&sample.kind,
+			&sample.notificationType,
+			&sample.result,
+			&sample.reasonCode,
+			&sample.total,
+		); err != nil {
+			return
+		}
+
+		fresh = append(fresh, sample)
+	}
+
+	if rows.Err() != nil {
+		return
+	}
+
+	rows.Close()
+
+	var recentAccepted, recentFailed float64
+	if err := c.pool.QueryRow(ctx, `
+SELECT
+    count(*) FILTER (WHERE outcome = 'accepted'),
+    count(*) FILTER (WHERE outcome = 'failed')
+FROM notification_delivery_attempts
+WHERE occurred_at >= clock_timestamp() - INTERVAL '5 minutes'
+  AND occurred_at <= clock_timestamp()`).Scan(
+		&recentAccepted,
+		&recentFailed,
+	); err != nil {
+		return
+	}
+
+	c.samples = fresh
+	c.recentAccepted = recentAccepted
+	c.recentFailed = recentFailed
+	c.fetched = time.Now()
+}
+
+func (c *notificationMetricsCollector) emit(ch chan<- prometheus.Metric, sample notificationMetricSample) {
+	switch sample.kind {
+	case "delivery_attempt":
+		ch <- prometheus.MustNewConstMetric(
+			c.attemptsDesc,
+			prometheus.CounterValue,
+			sample.total,
+			sample.notificationType,
+			sample.result,
+			sample.reasonCode,
+		)
+	case "delivery":
+		ch <- prometheus.MustNewConstMetric(
+			c.deliveriesDesc,
+			prometheus.CounterValue,
+			sample.total,
+			sample.notificationType,
+			sample.result,
+		)
+	case "reminder_skip":
+		ch <- prometheus.MustNewConstMetric(
+			c.skipsDesc,
+			prometheus.CounterValue,
+			sample.total,
+			sample.reasonCode,
+		)
+	}
+}
+
+func registerNotificationMetrics(pool *pgxpool.Pool) {
+	prometheus.MustRegister(newNotificationMetricsCollector(pool))
 }
 
 const (
