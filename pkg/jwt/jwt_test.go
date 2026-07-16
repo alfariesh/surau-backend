@@ -18,7 +18,7 @@ func newTestManager(duration time.Duration) *suraujwt.Manager {
 	return suraujwt.New(testSecret, duration, suraujwt.DefaultIssuer, suraujwt.DefaultAudience)
 }
 
-func signRegisteredClaims(t *testing.T, claims jwtlib.RegisteredClaims, method jwtlib.SigningMethod) string {
+func signRegisteredClaims(t *testing.T, claims *jwtlib.RegisteredClaims, method jwtlib.SigningMethod) string {
 	t.Helper()
 
 	token := jwtlib.NewWithClaims(method, claims)
@@ -28,10 +28,10 @@ func signRegisteredClaims(t *testing.T, claims jwtlib.RegisteredClaims, method j
 	return tokenString
 }
 
-func baseClaims() jwtlib.RegisteredClaims {
+func baseClaims() *jwtlib.RegisteredClaims {
 	now := time.Now().UTC()
 
-	return jwtlib.RegisteredClaims{
+	return &jwtlib.RegisteredClaims{
 		Subject:   "user-123",
 		ExpiresAt: jwtlib.NewNumericDate(now.Add(time.Hour)),
 		IssuedAt:  jwtlib.NewNumericDate(now),

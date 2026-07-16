@@ -8,7 +8,7 @@ on:
       - 'api-v*'
 
 concurrency:
-  group: deploy-prod
+  group: surau-prod-operations
   cancel-in-progress: false
 
 permissions:
@@ -19,11 +19,13 @@ jobs:
     name: Deploy backend to PROD VPS
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    environment: prod
     env:
       VPS_HOST: ${{ secrets.PROD_VPS_HOST }}
       VPS_USER: ${{ secrets.PROD_VPS_USER }}
       VPS_DEPLOY_PATH: ${{ secrets.PROD_VPS_DEPLOY_PATH }}
       VPS_SSH_PRIVATE_KEY: ${{ secrets.PROD_VPS_SSH_PRIVATE_KEY }}
+      VPS_SSH_KNOWN_HOSTS: ${{ secrets.PROD_VPS_SSH_KNOWN_HOSTS }}
       DEPLOY_TAG: ${{ github.ref_name }}
     steps:
       - name: Deploy tag over SSH
@@ -35,6 +37,8 @@ jobs:
           : "${VPS_USER:?Set the PROD_VPS_USER repository secret}"
           : "${VPS_DEPLOY_PATH:?Set the PROD_VPS_DEPLOY_PATH repository secret}"
           : "${VPS_SSH_PRIVATE_KEY:?Set the PROD_VPS_SSH_PRIVATE_KEY repository secret}"
+          : "${VPS_SSH_KNOWN_HOSTS:?Set the pinned PROD_VPS_SSH_KNOWN_HOSTS secret}"
+          umask 077
 
           # Version is the tag without the api-v prefix, e.g. api-v0.8.0 -> 0.8.0.
           APP_VERSION="${DEPLOY_TAG#api-v}"
@@ -43,14 +47,29 @@ jobs:
           chmod 700 ~/.ssh
           printf '%s\n' "$VPS_SSH_PRIVATE_KEY" > ~/.ssh/surau_deploy_key
           chmod 600 ~/.ssh/surau_deploy_key
-          ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
+          printf '%s\n' "$VPS_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
 
-          ssh -i ~/.ssh/surau_deploy_key -o IdentitiesOnly=yes "$VPS_USER@$VPS_HOST" \
+          ssh -i ~/.ssh/surau_deploy_key -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts \
+            "$VPS_USER@$VPS_HOST" \
             "DEPLOY_TAG='$DEPLOY_TAG' DEPLOY_PATH='$VPS_DEPLOY_PATH' APP_VERSION='$APP_VERSION' APP_ENV='prod' bash -s" <<'REMOTE'
           set -euo pipefail
           export APP_VERSION APP_ENV
 
           cd "$DEPLOY_PATH"
+          # Once A-4 is installed, reject a release before checkout can replace
+          # the rotation runner/Compose file or a build can retag APP_IMAGE.
+          # The first A-4 release safely skips this because its predecessor has
+          # no deploy guard yet; the post-build guard below still protects it.
+          if [ -x ops/auth/assert-jwt-deploy-safe.sh ]; then
+            A4_PREDEPLOY_MODE="$(ENV_FILE=.env.production APP_ENV=prod \
+              ops/auth/assert-jwt-deploy-safe.sh)"
+            case "$A4_PREDEPLOY_MODE" in
+              safe|capture-legacy) ;;
+              *) echo "A-4 pre-deploy guard returned an invalid mode" >&2; exit 1 ;;
+            esac
+          fi
           # Deploy the exact tagged commit (detached HEAD), not a branch tip.
           git fetch --tags --force origin
           git checkout --force "refs/tags/$DEPLOY_TAG"
@@ -96,6 +115,25 @@ jobs:
           # container in place, which the health check would then pass — masking a
           # non-deploy.
           sudo -E docker compose --env-file .env.production -f docker-compose.prod.yml "${PROFILE_ARGS[@]}" build "${SERVICES[@]}"
+          # A-4 one-time bridge. The exact legacy signer is copied into the
+          # root-owned reloadable keyset before the first A-4 process starts;
+          # capture a fresh no-kid canary at the last possible moment so the
+          # subsequent PROD Worker-first activation retains its full lifetime.
+          # Retries validate the existing file without replacing it.
+          ENV_FILE=.env.production APP_ENV=prod ops/auth/bootstrap-jwt-keyset.sh
+          A4_BRIDGE_MODE="$(ENV_FILE=.env.production APP_ENV=prod \
+            ops/auth/assert-jwt-deploy-safe.sh)"
+          if [ "$A4_BRIDGE_MODE" = capture-legacy ]; then
+            LEGACY_APP_VERSION="$(curl -fsS http://127.0.0.1:8080/version \
+              | sed -n 's/.*"version":"\([A-Za-z0-9._-]*\)".*/\1/p')"
+            if [[ ! "$LEGACY_APP_VERSION" =~ ^[A-Za-z0-9._-]{1,64}$ ]]; then
+              echo "A-4 bridge could not identify the living legacy app version" >&2
+              exit 1
+            fi
+            ENV_FILE=.env.production COMPOSE_FILE=docker-compose.prod.yml \
+              APP_ENV=prod EXPECTED_VERSION="$LEGACY_APP_VERSION" \
+              ops/auth/rotate-jwt-keyset.sh capture-legacy
+          fi
           sudo -E docker compose --env-file .env.production -f docker-compose.prod.yml "${PROFILE_ARGS[@]}" up -d --force-recreate "${SERVICES[@]}"
           for attempt in {1..30}; do
             # Assert /version reports the tag we just deployed, so a container that did

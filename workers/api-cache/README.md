@@ -42,7 +42,41 @@ npm run deploy
 - Blocked requests return `429`, `Retry-After: 60`, `X-Surau-Cache: BYPASS`, and `X-Surau-RateLimit: BLOCKED`.
 - Daily quota blocks also include `X-Surau-RateLimit-Policy: rag-daily` and reset at UTC midnight.
 
-Set `JWT_SECRET` as a Worker secret matching the backend JWT secret. Without it, the Worker safely treats all RAG traffic as guest/IP quota.
+## JWT Verification and Key Rotation
+
+Set `JWT_KEYSET` as a Worker secret with the same JSON keyset installed on the backend:
+
+```sh
+npx wrangler secret put JWT_KEYSET
+```
+
+The value uses the strict version-1 shape below. Key IDs are 1–64 characters from
+`A-Z`, `a-z`, `0-9`, `_`, or `-`; every secret must be at least 32 bytes.
+
+```json
+{
+  "version": 1,
+  "active_kid": "2026-07-new",
+  "legacy_kid": "2026-01-old",
+  "keys": {
+    "2026-01-old": "<old-secret-at-least-32-bytes>",
+    "2026-07-new": "<new-secret-at-least-32-bytes>"
+  }
+}
+```
+
+- During overlap, deploy the Worker keyset containing old+new keys before the backend starts issuing `kid=new` tokens. Tokens with either exact `kid` remain user-identified; living tokens without `kid` use only `legacy_kid`.
+- At retirement, remove `legacy_kid` and the old key only after the backend's longest-lived old access token has expired. Old and no-`kid` tokens then safely receive guest/IP quota.
+- An unknown/non-string `kid`, wrong signature, or malformed configured keyset fails closed to guest/IP quota. If `JWT_KEYSET` exists but is invalid, the Worker never falls back to `JWT_SECRET`.
+- `JWT_SECRET` remains a temporary compatibility fallback only when `JWT_KEYSET` is completely absent. Delete it after all environments have installed a valid keyset.
+
+Keep keyset values in Wrangler secrets, never in `wrangler.jsonc`, source control, logs, or drill artifacts. `active_kid` is retained in the shared schema for backend/Worker parity; this Worker verifies tokens but never issues them.
+
+RAG responses also carry the additive operational header
+`X-Surau-JWT-Identity: user|guest`. The rotation drill uses it to prove the
+edge verifier changed in the safe order. Product clients must ignore this
+header; authorization remains the backend's responsibility and the header is
+not a role/profile contract.
 
 ## AI Gateway
 

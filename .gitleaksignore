@@ -1,0 +1,9 @@
+# A-4 deterministic test fixtures and a numeric minimum-length constant.
+# These fingerprints are scoped to the original feature commits so future
+# lookalikes remain findings.
+dd8ebc43dbe4dfcc0bda17432e51bf8181654d71:ops/auth/test-bootstrap-jwt-keyset.sh:generic-api-key:96
+dd8ebc43dbe4dfcc0bda17432e51bf8181654d71:ops/auth/test-bootstrap-jwt-keyset.sh:generic-api-key:161
+996195c55bb5d07a8662f8a18ece7f89fc0f17d9:config/config_test.go:generic-api-key:601
+996195c55bb5d07a8662f8a18ece7f89fc0f17d9:config/config_test.go:generic-api-key:625
+996195c55bb5d07a8662f8a18ece7f89fc0f17d9:pkg/jwt/keyset_test.go:generic-api-key:25
+996195c55bb5d07a8662f8a18ece7f89fc0f17d9:cmd/jwt-keyset/main.go:generic-api-key:29

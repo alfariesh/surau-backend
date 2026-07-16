@@ -1,6 +1,6 @@
 # Mobile Backend Integration Guide
 
-Last updated: 2026-07-13
+Last updated: 2026-07-15
 
 Dokumen ini adalah panduan utama untuk implementasi mobile app Islamic Surau dari backend ini. Fokusnya adalah kebutuhan FE mobile: urutan API call per screen, auth, data shape yang penting, strategi cache, error handling, dan behavior UI saat data terjemahan/audio belum lengkap.
 
@@ -43,6 +43,12 @@ Protected endpoint wajib memakai:
 ```http
 Authorization: Bearer <token>
 ```
+
+Token harus diperlakukan sebagai string opaque. A-4 menambahkan `kid` hanya di
+header internal JWT agar backend dapat merotasi kunci tanpa memutus sesi;
+mobile tidak perlu decode, memilih kunci, atau mengubah penyimpanan token.
+Selama overlap token lama tetap valid dan refresh normal menghasilkan token
+dengan signer baru.
 
 Response otomatis dikompresi (gzip/brotli) bila client mengirim header `Accept-Encoding`; HTTP client standar menangani ini otomatis tanpa konfigurasi tambahan.
 

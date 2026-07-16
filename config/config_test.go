@@ -593,6 +593,54 @@ func TestNewConfig_InvalidJWT(t *testing.T) {
 	}
 }
 
+func TestNewConfig_JWTKeysetFileReplacesLegacySecretRequirement(t *testing.T) {
+	setRequiredEnv(t)
+	t.Setenv("JWT_SECRET", "")
+	t.Setenv("JWT_KEYSET_FILE", "  /run/secrets/surau-jwt/keyset.json  ")
+	t.Setenv("MFA_ENCRYPTION_KEY", "dedicated-mfa-encryption-key-32-bytes")
+	t.Setenv("EMAIL_UNSUBSCRIBE_TOKEN_SECRET", "dedicated-unsubscribe-secret")
+
+	cfg, err := NewConfig()
+
+	require.NoError(t, err)
+	assert.Empty(t, cfg.JWT.Secret)
+	assert.Equal(t, "/run/secrets/surau-jwt/keyset.json", cfg.JWT.KeysetFile)
+}
+
+func TestNewConfig_JWTKeysetOnlyRequiresIndependentDerivedSecrets(t *testing.T) {
+	setRequiredEnv(t)
+	// The invariant applies from the first overlap deploy, while the legacy
+	// signer secret is intentionally still present.
+	t.Setenv("JWT_SECRET", "legacy-secret-remains-during-overlap")
+	t.Setenv("JWT_KEYSET_FILE", "/run/secrets/surau-jwt/keyset.json")
+	t.Setenv("MFA_ENCRYPTION_KEY", "")
+
+	_, err := NewConfig()
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "MFA_ENCRYPTION_KEY is required when JWT_KEYSET_FILE is set")
+
+	t.Setenv("MFA_ENCRYPTION_KEY", "dedicated-mfa-encryption-key-32-bytes")
+	t.Setenv("EMAIL_UNSUBSCRIBE_TOKEN_SECRET", "")
+	t.Setenv("EMAIL_UNSUBSCRIBE_TOKEN_SECRETS", "")
+
+	_, err = NewConfig()
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "EMAIL_UNSUBSCRIBE_TOKEN_SECRET")
+}
+
+func TestNewConfig_JWTRequiresSecretOrKeysetFile(t *testing.T) {
+	setRequiredEnv(t)
+	t.Setenv("JWT_SECRET", "")
+	t.Setenv("JWT_KEYSET_FILE", "")
+
+	_, err := NewConfig()
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "JWT_SECRET or JWT_KEYSET_FILE")
+}
+
 //nolint:paralleltest // t.Setenv (via setRequiredEnv) is incompatible with t.Parallel
 func TestNewConfig_AuthSessionDefaults(t *testing.T) {
 	setRequiredEnv(t)

@@ -6,7 +6,8 @@ import {
   edgeRateLimitKey,
   type Env,
   handleRequest,
-  normalizedCacheURL
+  normalizedCacheURL,
+  verifiedJWTSubject
 } from "../src/index";
 
 class MemoryKV {
@@ -146,6 +147,24 @@ const defaultEnv = (): Env => ({
   JWT_AUDIENCE: "surau-api"
 });
 
+const OLD_JWT_SECRET = "old-secret-0123456789abcdef0123456789abcdef";
+const NEW_JWT_SECRET = "new-secret-0123456789abcdef0123456789abcdef";
+
+function rotatingJWTEnv(): Env {
+  return {
+    ...defaultEnv(),
+    JWT_KEYSET: JSON.stringify({
+      version: 1,
+      active_kid: "new-2026-07",
+      legacy_kid: "old-2026-01",
+      keys: {
+        "old-2026-01": OLD_JWT_SECRET,
+        "new-2026-07": NEW_JWT_SECRET
+      }
+    })
+  };
+}
+
 function installMemoryCache(): MemoryCache {
   const cache = new MemoryCache();
   vi.stubGlobal("caches", { default: cache });
@@ -155,6 +174,13 @@ function installMemoryCache(): MemoryCache {
 
 function request(path: string, init?: RequestInit): Request {
   return new Request(`https://api.surau.org${path}`, init);
+}
+
+function bearerRequest(token: string): Request {
+  return request("/v1/books/0/rag", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` }
+  });
 }
 
 function jsonResponse(body: unknown, init?: ResponseInit): Response {
@@ -181,9 +207,12 @@ function memoryDurableNamespace(namespace: DurableObjectNamespace): MemoryDurabl
 async function signTestJWT(
   subject: string,
   secret = "0123456789abcdef0123456789abcdef",
-  overrides: Record<string, unknown> = {}
+  overrides: Record<string, unknown> = {},
+  headerOverrides: Record<string, unknown> = {}
 ): Promise<string> {
-  const header = base64URLFromBytes(new TextEncoder().encode(JSON.stringify({ alg: "HS256", typ: "JWT" })));
+  const header = base64URLFromBytes(
+    new TextEncoder().encode(JSON.stringify({ alg: "HS256", typ: "JWT", ...headerOverrides }))
+  );
   const nowSeconds = Math.floor(Date.now() / 1000);
   const payload = base64URLFromBytes(
     new TextEncoder().encode(
@@ -577,6 +606,7 @@ describe("Surau API cache policy", () => {
     expect(response.status).toBe(429);
     expect(response.headers.get("X-Surau-RateLimit")).toBe("BLOCKED");
     expect(response.headers.get("X-Surau-RateLimit-Policy")).toBe("rag-daily");
+    expect(response.headers.get("X-Surau-JWT-Identity")).toBe("guest");
     expect(response.headers.get("Retry-After")).toBe("80300");
     expect(await response.json()).toEqual({
       error: "rag daily quota exceeded",
@@ -614,11 +644,166 @@ describe("Surau API cache policy", () => {
 
     expect(response.status).toBe(429);
     expect(response.headers.get("X-Surau-RateLimit-Policy")).toBe("rag-daily");
+    expect(response.headers.get("X-Surau-JWT-Identity")).toBe("user");
     expect(response.headers.get("Retry-After")).toBe("83350");
     expect(fetchMock).toHaveBeenCalledTimes(50);
     expect(Array.from(memoryDurableNamespace(env.EDGE_RATE_LIMITER).objects.keys())).toContain(
       "rag-daily:user:user-123:2026-06-06"
     );
+  });
+
+  it("accepts old, new, and living no-kid tokens during the rotation overlap", async () => {
+    const env = rotatingJWTEnv();
+    const oldToken = await signTestJWT("old-user", OLD_JWT_SECRET, {}, { kid: "old-2026-01" });
+    const newToken = await signTestJWT("new-user", NEW_JWT_SECRET, {}, { kid: "new-2026-07" });
+    const noKidToken = await signTestJWT("legacy-user", OLD_JWT_SECRET);
+
+    await expect(verifiedJWTSubject(bearerRequest(oldToken), env)).resolves.toBe("old-user");
+    await expect(verifiedJWTSubject(bearerRequest(newToken), env)).resolves.toBe("new-user");
+    await expect(verifiedJWTSubject(bearerRequest(noKidToken), env)).resolves.toBe("legacy-user");
+  });
+
+  it("exposes a non-sensitive live verifier result for rotation smoke checks", async () => {
+    const env = rotatingJWTEnv();
+    const ctx = new TestExecutionContext();
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ ok: true })));
+    const tokens = [
+      await signTestJWT("old-user", OLD_JWT_SECRET, {}, { kid: "old-2026-01" }),
+      await signTestJWT("new-user", NEW_JWT_SECRET, {}, { kid: "new-2026-07" }),
+      await signTestJWT("legacy-user", OLD_JWT_SECRET)
+    ];
+
+    for (const token of tokens) {
+      const response = await handleRequest(
+        request("/v1/books/0/rag", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ question: "rotation smoke" })
+        }),
+        env,
+        ctx as unknown as ExecutionContext
+      );
+      expect(response.headers.get("X-Surau-JWT-Identity")).toBe("user");
+    }
+  });
+
+  it("rejects old and no-kid tokens after retirement while keeping the new key valid", async () => {
+    const env = {
+      ...defaultEnv(),
+      JWT_KEYSET: JSON.stringify({
+        version: 1,
+        active_kid: "new-2026-07",
+        keys: { "new-2026-07": NEW_JWT_SECRET }
+      })
+    };
+    const oldToken = await signTestJWT("old-user", OLD_JWT_SECRET, {}, { kid: "old-2026-01" });
+    const noKidToken = await signTestJWT("legacy-user", OLD_JWT_SECRET);
+    const newToken = await signTestJWT("new-user", NEW_JWT_SECRET, {}, { kid: "new-2026-07" });
+
+    await expect(verifiedJWTSubject(bearerRequest(oldToken), env)).resolves.toBeNull();
+    await expect(verifiedJWTSubject(bearerRequest(noKidToken), env)).resolves.toBeNull();
+    await expect(verifiedJWTSubject(bearerRequest(newToken), env)).resolves.toBe("new-user");
+  });
+
+  it("requires an exact, string kid and verifies only with the selected key", async () => {
+    const env = rotatingJWTEnv();
+    const unknownKid = await signTestJWT("unknown-user", OLD_JWT_SECRET, {}, { kid: "unknown" });
+    const nonStringKid = await signTestJWT("number-user", OLD_JWT_SECRET, {}, { kid: 17 });
+    const wrongSignature = await signTestJWT(
+      "wrong-user",
+      NEW_JWT_SECRET,
+      {},
+      { kid: "old-2026-01" }
+    );
+
+    await expect(verifiedJWTSubject(bearerRequest(unknownKid), env)).resolves.toBeNull();
+    await expect(verifiedJWTSubject(bearerRequest(nonStringKid), env)).resolves.toBeNull();
+    await expect(verifiedJWTSubject(bearerRequest(wrongSignature), env)).resolves.toBeNull();
+  });
+
+  it("fails closed on every invalid configured keyset without falling back to JWT_SECRET", async () => {
+    const fallbackToken = await signTestJWT("must-be-guest");
+    const invalidKeysets = [
+      "",
+      "not-json",
+      JSON.stringify({ version: 2, active_kid: "old", keys: { old: OLD_JWT_SECRET } }),
+      JSON.stringify({ version: 1, active_kid: "old", keys: { old: OLD_JWT_SECRET }, extra: true }),
+      JSON.stringify({ version: 1, active_kid: "missing", keys: { old: OLD_JWT_SECRET } }),
+      JSON.stringify({
+        version: 1,
+        active_kid: "old",
+        legacy_kid: "missing",
+        keys: { old: OLD_JWT_SECRET }
+      }),
+      JSON.stringify({ version: 1, active_kid: "old", keys: [] }),
+      JSON.stringify({ version: 1, active_kid: "old", keys: { old: "short" } }),
+      JSON.stringify({
+        version: 1,
+        active_kid: "old",
+        keys: { old: OLD_JWT_SECRET, duplicate: OLD_JWT_SECRET }
+      }),
+      JSON.stringify({
+        version: 1,
+        active_kid: "old",
+        keys: { old: OLD_JWT_SECRET, next: NEW_JWT_SECRET, stale: `${NEW_JWT_SECRET}-third` }
+      }),
+      JSON.stringify({
+        version: 1,
+        active_kid: "contains space",
+        keys: { "contains space": OLD_JWT_SECRET }
+      })
+    ];
+
+    for (const JWT_KEYSET of invalidKeysets) {
+      await expect(
+        verifiedJWTSubject(bearerRequest(fallbackToken), { ...defaultEnv(), JWT_KEYSET })
+      ).resolves.toBeNull();
+    }
+  });
+
+  it("accounts a signed bearer as guest when the configured keyset is invalid", async () => {
+    vi.setSystemTime(new Date("2026-06-06T00:00:00Z"));
+    const env = { ...defaultEnv(), JWT_KEYSET: "not-json" };
+    const token = await signTestJWT("must-be-guest");
+    const ctx = new TestExecutionContext();
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ ok: true })));
+
+    const response = await handleRequest(
+      request("/v1/books/0/rag", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "CF-Connecting-IP": "203.0.113.199"
+        },
+        body: JSON.stringify({ question: "smoke" })
+      }),
+      env,
+      ctx as unknown as ExecutionContext
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("X-Surau-JWT-Identity")).toBe("guest");
+    expect(Array.from(memoryDurableNamespace(env.EDGE_RATE_LIMITER).objects.keys())).toContain(
+      "rag-daily:ip:203.0.113.199:2026-06-06"
+    );
+    expect(Array.from(memoryDurableNamespace(env.EDGE_RATE_LIMITER).objects.keys())).not.toContain(
+      "rag-daily:user:must-be-guest:2026-06-06"
+    );
+  });
+
+  it("keeps JWT_SECRET compatibility only while JWT_KEYSET is absent", async () => {
+    const token = await signTestJWT("migration-user");
+
+    await expect(verifiedJWTSubject(bearerRequest(token), defaultEnv())).resolves.toBe("migration-user");
+  });
+
+  it("preserves legacy JWT_SECRET bytes instead of normalizing them", async () => {
+    const literalSecret = ` ${OLD_JWT_SECRET} `;
+    const token = await signTestJWT("literal-secret-user", literalSecret);
+
+    await expect(
+      verifiedJWTSubject(bearerRequest(token), { ...defaultEnv(), JWT_SECRET: literalSecret })
+    ).resolves.toBe("literal-secret-user");
   });
 
   it("falls back to IP daily quota for invalid Bearer tokens", async () => {

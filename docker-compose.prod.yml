@@ -96,7 +96,12 @@ services:
       PG_MAX_CONN_IDLE_TIME: ${PG_MAX_CONN_IDLE_TIME:-30m}
       PG_URL: ${PG_URL:?set PG_URL}
       JWT_TOKEN_EXPIRY: ${JWT_TOKEN_EXPIRY:-24h}
-      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
+      JWT_ACCESS_TOKEN_EXPIRY: ${JWT_ACCESS_TOKEN_EXPIRY:-15m}
+      JWT_REFRESH_TOKEN_EXPIRY: ${JWT_REFRESH_TOKEN_EXPIRY:-720h}
+      # JWT_SECRET is the pre-A-4 bootstrap fallback. Runtime rotation uses the
+      # atomically replaced keyset inside the directory bind below.
+      JWT_SECRET: ${JWT_SECRET:-}
+      JWT_KEYSET_FILE: ${JWT_KEYSET_FILE:-/run/secrets/surau-jwt/keyset.json}
       JWT_ISSUER: ${JWT_ISSUER:-surau-backend}
       JWT_AUDIENCE: ${JWT_AUDIENCE:-surau-api}
       # MFA / TOTP (A-3). Set MFA_ENCRYPTION_KEY in .env.production so JWT
@@ -225,6 +230,13 @@ services:
         condition: service_healthy
     ports:
       - "${APP_BIND_ADDR:-127.0.0.1}:${APP_PUBLISHED_PORT:-8080}:8080"
+    volumes:
+      # Bind the directory, not the individual file: an atomic rename on the
+      # host must become visible inside the running container before SIGHUP.
+      - type: bind
+        source: ${JWT_SECRETS_DIR:-/var/lib/surau/secrets/jwt}
+        target: /run/secrets/surau-jwt
+        read_only: true
     networks:
       - internal
 

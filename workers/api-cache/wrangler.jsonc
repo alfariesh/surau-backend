@@ -71,6 +71,7 @@
 			}
 		}
 	],
+	// JWT_KEYSET is required as a Wrangler secret; never place key material in vars.
 	"vars": {
 		"ORIGIN_BASE_URL": "https://origin-api.surau.org",
 		"CACHE_VERSION": "1",

@@ -13,6 +13,7 @@ export interface Env {
   RAG_DAILY_QUOTA_ENABLED?: string;
   RAG_DAILY_GUEST_LIMIT?: string;
   RAG_DAILY_USER_LIMIT?: string;
+  JWT_KEYSET?: string;
   JWT_SECRET?: string;
   JWT_ISSUER?: string;
   JWT_AUDIENCE?: string;
@@ -20,6 +21,7 @@ export interface Env {
 
 export type CacheStatus = "BYPASS" | "L1-HIT" | "KV-HIT" | "MISS" | "STALE";
 type RateLimitStatus = "PASS" | "BLOCKED";
+type JWTIdentityStatus = "user" | "guest";
 type RateLimitBindingName =
   | "RAG_RATE_LIMITER"
   | "AUTH_EDGE_RATE_LIMITER"
@@ -56,6 +58,7 @@ interface EdgeRateLimitDecision {
 }
 
 interface RagDailyQuotaDecision {
+  identity: JWTIdentityStatus;
   key: string;
   limit: number;
   retryAfterSeconds: number;
@@ -69,6 +72,18 @@ interface EdgeRateLimitCheck {
 interface RagDailyQuotaCheck {
   blocked: boolean;
   decision: RagDailyQuotaDecision;
+}
+
+interface JWTKeyset {
+  version: 1;
+  active_kid: string;
+  legacy_kid?: string;
+  keys: Record<string, string>;
+}
+
+interface JWTHeader {
+  alg?: unknown;
+  kid?: unknown;
 }
 
 interface EdgeRateLimiterRequest {
@@ -90,9 +105,14 @@ const DEFAULT_RAG_DAILY_GUEST_LIMIT = 100;
 const DEFAULT_RAG_DAILY_USER_LIMIT = 50;
 const DEFAULT_JWT_ISSUER = "surau-backend";
 const DEFAULT_JWT_AUDIENCE = "surau-api";
+const JWT_KID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
+const JWT_KEYSET_FIELDS = new Set(["version", "active_kid", "legacy_kid", "keys"]);
+const MINIMUM_JWT_KEY_BYTES = 32;
+const MAXIMUM_JWT_KEYS = 2;
 const CACHE_STATUS_HEADER = "X-Surau-Cache";
 const RATE_LIMIT_STATUS_HEADER = "X-Surau-RateLimit";
 const RATE_LIMIT_POLICY_HEADER = "X-Surau-RateLimit-Policy";
+const JWT_IDENTITY_STATUS_HEADER = "X-Surau-JWT-Identity";
 const RATE_LIMIT_RETRY_AFTER_SECONDS = 60;
 const ORIGIN_LOOP_STATUS = 508;
 
@@ -228,7 +248,7 @@ export async function handleRequest(request: Request, env: Env, ctx: ExecutionCo
   const response = await handleCacheRequest(request, env, ctx, config);
 
   if (rateLimitCheck || ragDailyQuotaCheck) {
-    return responseWithRateLimitStatus(response, "PASS");
+    return responseWithRateLimitStatus(response, "PASS", ragDailyQuotaCheck?.decision.identity);
   }
 
   return response;
@@ -591,6 +611,7 @@ async function ragDailyQuotaDecision(request: Request, env: Env): Promise<RagDai
 
   if (userID) {
     return {
+      identity: "user",
       key: `rag-daily:user:${userID}:${dateKey}`,
       limit: positiveInt(env.RAG_DAILY_USER_LIMIT, DEFAULT_RAG_DAILY_USER_LIMIT),
       retryAfterSeconds
@@ -598,6 +619,7 @@ async function ragDailyQuotaDecision(request: Request, env: Env): Promise<RagDai
   }
 
   return {
+    identity: "guest",
     key: `rag-daily:ip:${clientIP(request)}:${dateKey}`,
     limit: positiveInt(env.RAG_DAILY_GUEST_LIMIT, DEFAULT_RAG_DAILY_GUEST_LIMIT),
     retryAfterSeconds
@@ -690,6 +712,7 @@ function ragDailyQuotaResponse(decision: RagDailyQuotaDecision): Response {
         [CACHE_STATUS_HEADER]: "BYPASS",
         [RATE_LIMIT_STATUS_HEADER]: "BLOCKED",
         [RATE_LIMIT_POLICY_HEADER]: "rag-daily",
+        [JWT_IDENTITY_STATUS_HEADER]: decision.identity,
         "Cache-Control": "no-store",
         "Content-Type": "application/json; charset=utf-8",
         "Retry-After": decision.retryAfterSeconds.toString()
@@ -777,9 +800,16 @@ function responseWithCacheStatus(
   });
 }
 
-function responseWithRateLimitStatus(response: Response, rateLimitStatus: RateLimitStatus): Response {
+function responseWithRateLimitStatus(
+  response: Response,
+  rateLimitStatus: RateLimitStatus,
+  jwtIdentityStatus?: JWTIdentityStatus
+): Response {
   const headers = new Headers(response.headers);
   headers.set(RATE_LIMIT_STATUS_HEADER, rateLimitStatus);
+  if (jwtIdentityStatus) {
+    headers.set(JWT_IDENTITY_STATUS_HEADER, jwtIdentityStatus);
+  }
 
   return new Response(response.body, {
     status: response.status,
@@ -910,10 +940,9 @@ async function sha256Hex(value: string): Promise<string> {
     .join("");
 }
 
-async function verifiedJWTSubject(request: Request, env: Env): Promise<string | null> {
+export async function verifiedJWTSubject(request: Request, env: Env): Promise<string | null> {
   const token = bearerToken(request.headers.get("authorization"));
-  const secret = env.JWT_SECRET?.trim();
-  if (!token || !secret) {
+  if (!token) {
     return null;
   }
 
@@ -923,8 +952,18 @@ async function verifiedJWTSubject(request: Request, env: Env): Promise<string | 
       return null;
     }
 
-    const header = JSON.parse(utf8FromBase64URL(parts[0] ?? "")) as { alg?: string };
+    const parsedHeader: unknown = JSON.parse(utf8FromBase64URL(parts[0] ?? ""));
+    if (!isRecord(parsedHeader)) {
+      return null;
+    }
+
+    const header = parsedHeader as JWTHeader;
     if (header.alg !== "HS256") {
+      return null;
+    }
+
+    const secret = jwtVerificationSecret(header, env);
+    if (!secret) {
       return null;
     }
 
@@ -959,6 +998,111 @@ async function verifiedJWTSubject(request: Request, env: Env): Promise<string | 
   } catch {
     return null;
   }
+}
+
+function jwtVerificationSecret(header: JWTHeader, env: Env): string | null {
+  // Once JWT_KEYSET is configured, it is authoritative. A malformed keyset must
+  // never silently fall back to JWT_SECRET because that would resurrect a key
+  // the operator intended to retire.
+  if (env.JWT_KEYSET !== undefined) {
+    const keyset = parseJWTKeyset(env.JWT_KEYSET);
+    if (!keyset) {
+      return null;
+    }
+
+    if (Object.hasOwn(header, "kid")) {
+      if (typeof header.kid !== "string" || !JWT_KID_PATTERN.test(header.kid)) {
+        return null;
+      }
+
+      return Object.hasOwn(keyset.keys, header.kid) ? keyset.keys[header.kid] ?? null : null;
+    }
+
+    if (!keyset.legacy_kid) {
+      return null;
+    }
+
+    return keyset.keys[keyset.legacy_kid] ?? null;
+  }
+
+  // Temporary migration compatibility for deployments that have not installed
+  // JWT_KEYSET yet. Remove JWT_SECRET only after every environment has moved.
+  const legacySecret = env.JWT_SECRET;
+  return legacySecret && textEncoder.encode(legacySecret).byteLength >= MINIMUM_JWT_KEY_BYTES
+    ? legacySecret
+    : null;
+}
+
+function parseJWTKeyset(value: string): JWTKeyset | null {
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (!isRecord(parsed) || Object.keys(parsed).some((field) => !JWT_KEYSET_FIELDS.has(field))) {
+      return null;
+    }
+
+    if (
+      parsed.version !== 1 ||
+      typeof parsed.active_kid !== "string" ||
+      !JWT_KID_PATTERN.test(parsed.active_kid)
+    ) {
+      return null;
+    }
+
+    if (
+      Object.hasOwn(parsed, "legacy_kid") &&
+      (typeof parsed.legacy_kid !== "string" || !JWT_KID_PATTERN.test(parsed.legacy_kid))
+    ) {
+      return null;
+    }
+
+    if (!isRecord(parsed.keys)) {
+      return null;
+    }
+
+    const entries = Object.entries(parsed.keys);
+    if (entries.length < 1 || entries.length > MAXIMUM_JWT_KEYS) {
+      return null;
+    }
+
+    const keys = Object.create(null) as Record<string, string>;
+    const secrets = new Set<string>();
+    for (const [kid, secret] of entries) {
+      if (
+        !JWT_KID_PATTERN.test(kid) ||
+        typeof secret !== "string" ||
+        textEncoder.encode(secret).byteLength < MINIMUM_JWT_KEY_BYTES
+      ) {
+        return null;
+      }
+      if (secrets.has(secret)) {
+        return null;
+      }
+      keys[kid] = secret;
+      secrets.add(secret);
+    }
+
+    if (!Object.hasOwn(keys, parsed.active_kid)) {
+      return null;
+    }
+
+    const legacyKid = typeof parsed.legacy_kid === "string" ? parsed.legacy_kid : undefined;
+    if (legacyKid && !Object.hasOwn(keys, legacyKid)) {
+      return null;
+    }
+
+    return {
+      version: 1,
+      active_kid: parsed.active_kid,
+      ...(legacyKid ? { legacy_kid: legacyKid } : {}),
+      keys
+    };
+  } catch {
+    return null;
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function validJWTPayload(

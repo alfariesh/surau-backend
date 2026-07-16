@@ -22,7 +22,9 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
     CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
     go build -o /bin/rag-eval ./cmd/rag-eval && \
     CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
-    go build -o /bin/import-books ./cmd/import-books
+    go build -o /bin/import-books ./cmd/import-books && \
+    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+    go build -o /bin/jwt-keyset ./cmd/jwt-keyset
 
 # Step 3: Final
 FROM scratch
@@ -41,6 +43,9 @@ COPY --from=builder /app/eval /eval
 # delete), run via `docker compose run --rm --no-deps -v <src>:/shamela
 # --entrypoint /import-books app -book-ids=... -source-dir=/shamela`.
 COPY --from=builder /bin/import-books /import-books
+# A-4: ops-only atomic JWT keyset rotation CLI. Runtime key material remains
+# mounted from the host and is never baked into this image.
+COPY --from=builder /bin/jwt-keyset /jwt-keyset
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 
 CMD ["/app"]
