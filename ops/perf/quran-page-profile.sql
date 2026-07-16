@@ -137,10 +137,16 @@ JOIN quran_citable_unit_bindings b
  AND b.ayah_number = a.ayah_number
 JOIN citable_units u
   ON u.id = b.unit_id
+ AND u.corpus = 'quran'
  AND u.lifecycle = 'active'
-JOIN citable_units_with_effective_license license
-  ON license.id = u.id
- AND license.effective_license_status = 'permitted'
+JOIN LATERAL (
+    SELECT license.id
+    FROM citable_units_with_effective_license license
+    WHERE license.id = u.id
+      AND license.corpus = 'quran'
+      AND license.effective_license_status = 'permitted'
+    LIMIT 1
+) license ON true
 LEFT JOIN quran_ayah_translations t
   ON t.source_id = b.translation_source_id
  AND t.surah_id = b.surah_id
@@ -187,10 +193,16 @@ JOIN quran_citable_unit_bindings b
  AND b.ayah_number = a.ayah_number
 JOIN citable_units u
   ON u.id = b.unit_id
+ AND u.corpus = 'quran'
  AND u.lifecycle = 'active'
-JOIN citable_units_with_effective_license license
-  ON license.id = u.id
- AND license.effective_license_status = 'permitted'
+JOIN LATERAL (
+    SELECT license.id
+    FROM citable_units_with_effective_license license
+    WHERE license.id = u.id
+      AND license.corpus = 'quran'
+      AND license.effective_license_status = 'permitted'
+    LIMIT 1
+) license ON true
 LEFT JOIN quran_ayah_translations t
   ON t.source_id = b.translation_source_id
  AND t.surah_id = b.surah_id
