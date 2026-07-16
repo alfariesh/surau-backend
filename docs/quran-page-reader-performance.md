@@ -88,9 +88,11 @@ jumlah dan hash identitas Quran tidak berubah.
 ## Kebijakan cache
 
 Keputusan eksplisitnya adalah tetap **bypass/revalidate**:
-`Cache-Control: public, max-age=0, must-revalidate`, `X-Surau-Cache: BYPASS`, dan
-`CF-Cache-Status: DYNAMIC`. Ini mempertahankan pencabutan lisensi secara langsung.
-Caching spekulatif tidak dipakai untuk memenuhi target performa.
+`Cache-Control: public, max-age=0, must-revalidate` dan
+`CF-Cache-Status: DYNAMIC`. Worker produksi wajib menambahkan
+`X-Surau-Cache: BYPASS`; dev tidak memiliki route Worker sehingga header itu wajib tidak ada.
+Ini mempertahankan pencabutan lisensi secara langsung. Caching spekulatif tidak dipakai untuk
+memenuhi target performa.
 
 ## Pengukuran dan gate
 

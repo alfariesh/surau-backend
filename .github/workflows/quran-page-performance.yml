@@ -100,15 +100,17 @@ jobs:
           if [ "$PERF_ENVIRONMENT" = prod ]; then
             public_url=https://api.surau.org
             origin_hostname_url=https://origin-api.surau.org
+            public_cache_policy=cloudflare-bypass
           else
             public_url=https://dev-api.surau.org
             origin_hostname_url=""
+            public_cache_policy=cloudflare-direct
           fi
 
-          run_public_bench public-default "$public_url" cloudflare-bypass \
+          run_public_bench public-default "$public_url" "$public_cache_policy" \
             -pages 1,48,421,604 -requests 12 -warmups-per-page 1 -concurrency 1 \
             -query 'view=reader_minimal'
-          run_public_bench public-worst-page "$public_url" cloudflare-bypass \
+          run_public_bench public-worst-page "$public_url" "$public_cache_policy" \
             -pages 585 -requests 4 -warmups-per-page 0 -concurrency 1 \
             -query 'view=reader_minimal'
 
@@ -125,7 +127,7 @@ jobs:
           if [ "$PERF_PHASE" = postdeploy ]; then
             public_c10_requests=50
           fi
-          run_public_bench public-c10 "$public_url" cloudflare-bypass \
+          run_public_bench public-c10 "$public_url" "$public_cache_policy" \
             -pages 1,48,421,585,604 -requests "$public_c10_requests" \
             -warmups-per-page 0 -concurrency 10 -query 'view=reader_minimal'
 
