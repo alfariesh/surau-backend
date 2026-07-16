@@ -29,6 +29,14 @@ SELECT COALESCE((
     LIMIT 1
 ), '') AS transliteration_source_id \gset
 
+SELECT quote_literal(COALESCE(
+           array_agg(page_ayah.ayah_key ORDER BY page_ayah.surah_id, page_ayah.ayah_number),
+           ARRAY[]::text[]
+       ))
+       AS page_ayah_keys
+FROM quran_ayahs page_ayah
+WHERE page_ayah.page_number = :page_number \gset
+
 \echo main_reader_query_page_:page_number
 EXPLAIN (ANALYZE, BUFFERS, SETTINGS, FORMAT JSON)
 SELECT a.surah_id,
@@ -154,5 +162,62 @@ WHERE a.ayah_key = ANY(ARRAY(
       OR (b.role = 'transliteration' AND b.source_updated_at = x.updated_at AND u.text = x.text)
   )
 ORDER BY b.surah_id, b.ayah_number, b.ordinal;
+
+-- pgx caches statements per connection. PostgreSQL may switch a parameterized
+-- statement from a custom to a generic plan after its first five executions.
+-- Execute both choices against the exact same bounded page array so a
+-- connection-specific plan regression cannot hide behind an average.
+PREPARE quran_citable_hydration(text[]) AS
+SELECT a.ayah_key,
+       u.id::text,
+       u.anchor,
+       u.parent_unit_id::text,
+       u.marker,
+       u.text,
+       b.role,
+       b.translation_source_id,
+       b.transliteration_source_id,
+       b.footnote_key
+FROM quran_ayahs a
+JOIN quran_surahs s
+  ON s.surah_id = a.surah_id
+ AND s.units_stale_at IS NULL
+JOIN quran_citable_unit_bindings b
+  ON b.surah_id = a.surah_id
+ AND b.ayah_number = a.ayah_number
+JOIN citable_units u
+  ON u.id = b.unit_id
+ AND u.lifecycle = 'active'
+JOIN citable_units_with_effective_license license
+  ON license.id = u.id
+ AND license.effective_license_status = 'permitted'
+LEFT JOIN quran_ayah_translations t
+  ON t.source_id = b.translation_source_id
+ AND t.surah_id = b.surah_id
+ AND t.ayah_number = b.ayah_number
+LEFT JOIN quran_ayah_transliterations x
+  ON x.source_id = b.transliteration_source_id
+ AND x.surah_id = b.surah_id
+ AND x.ayah_number = b.ayah_number
+WHERE a.ayah_key = ANY($1::text[])
+  AND (
+      (b.role = 'primary_text' AND b.source_updated_at = a.updated_at AND u.text = a.text_qpc_hafs)
+      OR (b.role = 'translation' AND b.source_updated_at = t.updated_at AND u.text = t.text)
+      OR (b.role = 'footnote' AND b.source_updated_at = t.updated_at)
+      OR (b.role = 'transliteration' AND b.source_updated_at = x.updated_at AND u.text = x.text)
+  )
+ORDER BY b.surah_id, b.ayah_number, b.ordinal;
+
+SET LOCAL plan_cache_mode = 'force_custom_plan';
+\echo citable_hydration_custom_plan_page_:page_number
+EXPLAIN (ANALYZE, BUFFERS, SETTINGS, FORMAT JSON)
+EXECUTE quran_citable_hydration(:page_ayah_keys);
+
+SET LOCAL plan_cache_mode = 'force_generic_plan';
+\echo citable_hydration_generic_plan_page_:page_number
+EXPLAIN (ANALYZE, BUFFERS, SETTINGS, FORMAT JSON)
+EXECUTE quran_citable_hydration(:page_ayah_keys);
+
+DEALLOCATE quran_citable_hydration;
 
 ROLLBACK;

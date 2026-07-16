@@ -121,11 +121,13 @@ jobs:
               -query 'view=reader_minimal'
           fi
 
+          public_c10_requests=20
           if [ "$PERF_PHASE" = postdeploy ]; then
-            run_public_bench public-c10 "$public_url" cloudflare-bypass \
-              -pages 1,48,421,585,604 -requests 50 -warmups-per-page 0 -concurrency 10 \
-              -query 'view=reader_minimal'
+            public_c10_requests=50
           fi
+          run_public_bench public-c10 "$public_url" cloudflare-bypass \
+            -pages 1,48,421,585,604 -requests "$public_c10_requests" \
+            -warmups-per-page 0 -concurrency 10 -query 'view=reader_minimal'
 
       - name: Configure pinned SSH connection
         shell: bash
