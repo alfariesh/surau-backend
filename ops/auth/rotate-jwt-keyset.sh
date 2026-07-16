@@ -83,9 +83,13 @@ compose() {
 
 db_psql() {
   # Expansion is intentionally deferred to the database container.
+  # stdin must stay detached: deploy workflows run this script inside an SSH
+  # heredoc, and `docker compose exec -T` would otherwise consume every remote
+  # command that follows the rotation call while still returning success.
   # shellcheck disable=SC2016
   compose exec -T db sh -c \
-    'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" "$@"' sh "$@"
+    'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" "$@"' sh "$@" \
+    </dev/null
 }
 
 run_keyset_cli() {

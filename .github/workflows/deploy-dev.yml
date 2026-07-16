@@ -580,7 +580,7 @@ jobs:
             fi
             ENV_FILE=.env.production COMPOSE_FILE=docker-compose.prod.yml \
               APP_ENV=dev EXPECTED_VERSION="$LEGACY_APP_VERSION" \
-              ops/auth/rotate-jwt-keyset.sh capture-legacy
+              ops/auth/rotate-jwt-keyset.sh capture-legacy </dev/null
           fi
           CANDIDATE_COMPOSE_ARGS=()
           if [ "$CANDIDATE_BOOK_RAG_MODE" = default ]; then
@@ -611,12 +611,12 @@ jobs:
                 set +e
                 ENV_FILE=.env.production COMPOSE_FILE=docker-compose.prod.yml \
                   APP_ENV=dev EXPECTED_VERSION="$APP_VERSION" \
-                  ops/auth/rotate-jwt-keyset.sh prepare
+                  ops/auth/rotate-jwt-keyset.sh prepare </dev/null
                 jwt_prepare_status=$?
                 if [ "$jwt_prepare_status" -eq 0 ]; then
                   ENV_FILE=.env.production COMPOSE_FILE=docker-compose.prod.yml \
                     APP_ENV=dev EXPECTED_VERSION="$APP_VERSION" \
-                    ops/auth/rotate-jwt-keyset.sh activate-drill
+                    ops/auth/rotate-jwt-keyset.sh activate-drill </dev/null
                   jwt_activate_status=$?
                 else
                   jwt_activate_status=1
