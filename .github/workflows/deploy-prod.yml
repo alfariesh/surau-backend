@@ -201,6 +201,9 @@ jobs:
           test "$page_one_count" = 7
           test "$page_one_keys" = '1:1,1:2,1:3,1:4,1:5,1:6,1:7'
           test "$final_ayah" = '114:6'
+          printf 'Quran page corpus verified: total=%s assigned=%s pages=%s range=%s-%s out_of_range=%s page_one=%s final=%s\n' \
+            "$total_ayahs" "$assigned_ayahs" "$distinct_pages" "$first_page" "$last_page" \
+            "$out_of_range" "$page_one_count" "$final_ayah"
 
           # Exercise the same public contracts the frontend uses, against the
           # origin that was just deployed. Current unit identity proves the

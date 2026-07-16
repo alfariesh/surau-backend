@@ -78,6 +78,7 @@ func TestQuranProdRolloutGatesReleaseOnCompletePageNavigation(t *testing.T) {
 	assert.Contains(t, text, `test "$page_one_count" = 7`)
 	assert.Contains(t, text, `test "$page_one_keys" = '1:1,1:2,1:3,1:4,1:5,1:6,1:7'`)
 	assert.Contains(t, text, `test "$final_ayah" = '114:6'`)
+	assert.Contains(t, text, "Quran page corpus verified:")
 	assert.Contains(t, text, `grep -q '"target_type":"quran_ayah"'`)
 	assert.Contains(t, text, `grep -Eq '"primary_unit_id":"[0-9a-f-]+"'`)
 	assert.Contains(t, text, `grep -Eq '"primary_unit_anchor":"quran/[0-9]+:[0-9]+/u/1"'`)
