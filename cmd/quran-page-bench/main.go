@@ -30,25 +30,26 @@ import (
 )
 
 const (
-	exitSuccess           = 0
-	exitFailure           = 1
-	exitUsage             = 2
-	maxConcurrency        = 10
-	maxRequests           = 200
-	maxRunDuration        = time.Minute
-	maxResponse           = 4 << 20
-	defaultRequests       = 20
-	defaultRequestTimeout = 15 * time.Second
-	versionResponseLimit  = 64 << 10
-	privateFileMode       = 0o600
-	requestIDByteLength   = 12
-	percentileP50         = 50
-	percentileP95         = 95
-	percentileBase        = 100
-	cachePolicyNone       = ""
-	cachePolicyOrigin     = "origin-revalidate"
-	cachePolicyCloudflare = "cloudflare-bypass"
-	revalidateCacheHeader = "public, max-age=0, must-revalidate"
+	exitSuccess                 = 0
+	exitFailure                 = 1
+	exitUsage                   = 2
+	maxConcurrency              = 10
+	maxRequests                 = 200
+	maxRunDuration              = time.Minute
+	maxResponse                 = 4 << 20
+	defaultRequests             = 20
+	defaultRequestTimeout       = 15 * time.Second
+	versionResponseLimit        = 64 << 10
+	privateFileMode             = 0o600
+	requestIDByteLength         = 12
+	percentileP50               = 50
+	percentileP95               = 95
+	percentileBase              = 100
+	cachePolicyNone             = ""
+	cachePolicyOrigin           = "origin-revalidate"
+	cachePolicyCloudflare       = "cloudflare-bypass"
+	cachePolicyCloudflareDirect = "cloudflare-direct"
+	revalidateCacheHeader       = "public, max-age=0, must-revalidate"
 )
 
 var (
@@ -202,7 +203,7 @@ func parseOptions(args []string) (options, error) {
 		cachePolicy     = flags.String(
 			"cache-policy",
 			cachePolicyNone,
-			"required cache policy: origin-revalidate or cloudflare-bypass",
+			"required cache policy: origin-revalidate, cloudflare-bypass, or cloudflare-direct",
 		)
 		output = flags.String("output", "", "optional JSON output path")
 	)
@@ -248,7 +249,7 @@ func parseOptions(args []string) (options, error) {
 		return options{}, fmt.Errorf("%w: p95-budget-ms must not be negative", errInvalidConfig)
 	}
 	switch *cachePolicy {
-	case cachePolicyNone, cachePolicyOrigin, cachePolicyCloudflare:
+	case cachePolicyNone, cachePolicyOrigin, cachePolicyCloudflare, cachePolicyCloudflareDirect:
 	default:
 		return options{}, fmt.Errorf("%w: invalid cache-policy %q", errInvalidConfig, *cachePolicy)
 	}
@@ -689,6 +690,16 @@ func validateCachePolicy(policy string, headers http.Header) error {
 		(headers.Get("X-Surau-Cache") != "BYPASS" || headers.Get("CF-Cache-Status") != "DYNAMIC") {
 		return fmt.Errorf(
 			"%w: Cloudflare cache policy is X-Surau-Cache=%q CF-Cache-Status=%q",
+			errReaderContract,
+			headers.Get("X-Surau-Cache"),
+			headers.Get("CF-Cache-Status"),
+		)
+	}
+
+	if policy == cachePolicyCloudflareDirect &&
+		(headers.Get("X-Surau-Cache") != "" || headers.Get("CF-Cache-Status") != "DYNAMIC") {
+		return fmt.Errorf(
+			"%w: direct Cloudflare cache policy is X-Surau-Cache=%q CF-Cache-Status=%q",
 			errReaderContract,
 			headers.Get("X-Surau-Cache"),
 			headers.Get("CF-Cache-Status"),

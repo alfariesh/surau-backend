@@ -134,6 +134,27 @@ func TestValidateCachePolicyRejectsUnexpectedCloudflareCaching(t *testing.T) {
 	require.ErrorContains(t, validateCachePolicy(cachePolicyCloudflare, headers), "L1-HIT")
 }
 
+func TestValidateCachePolicyAcceptsDirectCloudflareRevalidation(t *testing.T) {
+	t.Parallel()
+
+	headers := http.Header{
+		"Cache-Control":   []string{revalidateCacheHeader},
+		"Cf-Cache-Status": []string{"DYNAMIC"},
+	}
+	require.NoError(t, validateCachePolicy(cachePolicyCloudflareDirect, headers))
+}
+
+func TestValidateCachePolicyRejectsWorkerOnDirectCloudflareRoute(t *testing.T) {
+	t.Parallel()
+
+	headers := http.Header{
+		"Cache-Control":   []string{revalidateCacheHeader},
+		"Cf-Cache-Status": []string{"DYNAMIC"},
+		"X-Surau-Cache":   []string{"BYPASS"},
+	}
+	require.ErrorContains(t, validateCachePolicy(cachePolicyCloudflareDirect, headers), "BYPASS")
+}
+
 func TestValidatePageBodyRejectsMismatchedFootnoteParent(t *testing.T) {
 	t.Parallel()
 

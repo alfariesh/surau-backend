@@ -79,20 +79,23 @@ Baseline membandingkan reader default, tanpa terjemahan untuk Arab/Indonesia, fu
 serta ramp concurrency 1, 2, 5, dan 10. Jalur publik menjalankan 20 request c10 saat baseline;
 postdeploy menaikkannya menjadi 50 request c10. Jalur yang diukur terpisah:
 
-1. `api.surau.org`, melalui Cloudflare Worker;
-2. `origin-api.surau.org`, melewati Worker cache tetapi masih melalui jaringan Cloudflare;
-3. active application slot pada `127.0.0.1` di VPS.
+1. `api.surau.org`, melalui Cloudflare Worker produksi;
+2. `dev-api.surau.org`, langsung melalui proxy Cloudflare tanpa route Worker dev;
+3. `origin-api.surau.org`, melewati Worker cache tetapi masih melalui jaringan Cloudflare;
+4. active application slot pada `127.0.0.1` di VPS.
 
-Target `<200 ms` berlaku pada jalur ketiga. Jalur Cloudflare tetap dilaporkan agar biaya jaringan
+Target `<200 ms` berlaku pada jalur keempat. Jalur Cloudflare tetap dilaporkan agar biaya jaringan
 dan kebijakan edge terlihat jelas.
 
 ## Kebijakan cache yang dikunci
 
-Semua Quran GET tetap `X-Surau-Cache: BYPASS`, `CF-Cache-Status: DYNAMIC`, dan
-`Cache-Control: public, max-age=0, must-revalidate`. Benchmark memeriksa ketiga header tersebut
-pada jalur Cloudflare dan `Cache-Control` pada origin. Keputusan ini disengaja: pencabutan lisensi
-harus langsung berlaku dan tidak boleh menunggu objek edge kedaluwarsa. Conditional ETag masih
-boleh menghasilkan `304`, tetapi request tetap mencapai origin.
+Semua Quran GET tetap `Cache-Control: public, max-age=0, must-revalidate` dan
+`CF-Cache-Status: DYNAMIC`. Pada produksi, Worker wajib menambahkan
+`X-Surau-Cache: BYPASS`. Dev sengaja tidak mempunyai route Worker, sehingga benchmark justru
+mewajibkan header `X-Surau-Cache` tidak ada pada `dev-api.surau.org`. Jalur origin juga hanya
+memeriksa `Cache-Control`. Keputusan ini disengaja: pencabutan lisensi harus langsung berlaku dan
+tidak boleh menunggu objek edge kedaluwarsa. Conditional ETag masih boleh menghasilkan `304`,
+tetapi request tetap mencapai origin.
 
 Optimasi endpoint tidak boleh mengubah kebijakan ini tanpa keputusan produk dan audit lisensi
 terpisah.
