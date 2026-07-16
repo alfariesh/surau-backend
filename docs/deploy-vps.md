@@ -194,11 +194,18 @@ extraction/importer/collab tidak dibuat oleh migration; ikuti runbook
 [`service-identity-rotation.md`](service-identity-rotation.md) melalui
 `\password` interaktif dan expiry maksimum 90 hari.
 
-Deploy dev juga menjalankan recovery Q-2 yang idempotent setelah aplikasi baru sehat:
+Deploy dev dan prod juga menjalankan recovery Q-2 yang idempotent setelah aplikasi baru sehat:
 `quran-page-navigation-v1 -restart` lalu `citable-units-quran -restart`. Workflow baru dianggap
 berhasil bila reader halaman 1 mengembalikan `primary_unit_id`, dan target `quran_ayah` pada
 resolver B-2 membawa `primary_unit_id` serta `primary_unit_anchor` aktif. Sesuai kontrak Anchor,
 target baru bertipe `citable_unit` hanya untuk input Anchor unit kanonik `quran/.../u/...`.
+Khusus prod, GitHub Release belum dibuat sebelum audit database membuktikan 6.236/6.236 ayat
+memiliki `page_number`, tepat 604 halaman dalam rentang 1–604, halaman 1 persis `1:1`–`1:7`,
+dan ujung halaman 604 adalah `114:6`. Kegagalan job atau audit membuat workflow merah tetapi
+tidak mematikan aplikasi sehat; job dapat diulang dari checkpoint karena hanya mengisi nilai
+`NULL` dan menolak konflik assignment existing. Sebelum GitHub Release dibuat, runner juga
+mengulang smoke yang sama melalui `https://api.surau.org` agar jalur publik Cloudflare terbukti
+menyajikan versi, reader halaman, dan resolusi Anchor yang baru.
 
 Khusus migrasi indeks FTS K-1 `20260713000016`, deploy dev memiliki recovery yang dibatasi pada
 state exact `version=20260713000016, dirty=true`. Recovery hanya berjalan setelah snapshot
