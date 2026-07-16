@@ -72,6 +72,7 @@ var (
 
 func recordJWTKeysetStatus(status jwt.KeysetStatus) {
 	jwtKeysetKeys.Set(float64(len(status.KeyIDs)))
+
 	if status.LegacyKID == "" {
 		jwtLegacyCompatibility.Set(0)
 
@@ -85,6 +86,7 @@ func recordJWTKeysetReload(success bool, status jwt.KeysetStatus) {
 	result := "error"
 	if success {
 		result = "success"
+
 		jwtKeysetLastReload.SetToCurrentTime()
 	}
 

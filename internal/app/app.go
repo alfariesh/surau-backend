@@ -675,6 +675,7 @@ func emailDispatchPass(cfg *config.Config, emailUC *emailusecase.UseCase) func(c
 
 func (s *servers) waitForShutdown(l logger.Interface, stop <-chan struct{}, jwtManager *jwt.Manager) {
 	interrupt := make(chan os.Signal, 1)
+
 	signal.Notify(interrupt, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	defer signal.Stop(interrupt)
 
@@ -819,6 +820,7 @@ func run(cfg *config.Config, stop <-chan struct{}) {
 	} else {
 		jwtManager = jwt.New(cfg.JWT.Secret, cfg.JWT.AccessTokenExpiry, cfg.JWT.Issuer, cfg.JWT.Audience)
 	}
+
 	recordJWTKeysetStatus(jwtManager.Status())
 
 	uc := initUseCases(cfg, pg, jwtManager, l)

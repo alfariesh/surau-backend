@@ -593,7 +593,6 @@ func TestNewConfig_InvalidJWT(t *testing.T) {
 	}
 }
 
-//nolint:paralleltest // t.Setenv mutates process-global environment variables
 func TestNewConfig_JWTKeysetFileReplacesLegacySecretRequirement(t *testing.T) {
 	setRequiredEnv(t)
 	t.Setenv("JWT_SECRET", "")
@@ -608,7 +607,6 @@ func TestNewConfig_JWTKeysetFileReplacesLegacySecretRequirement(t *testing.T) {
 	assert.Equal(t, "/run/secrets/surau-jwt/keyset.json", cfg.JWT.KeysetFile)
 }
 
-//nolint:paralleltest // t.Setenv mutates process-global environment variables
 func TestNewConfig_JWTKeysetOnlyRequiresIndependentDerivedSecrets(t *testing.T) {
 	setRequiredEnv(t)
 	// The invariant applies from the first overlap deploy, while the legacy
@@ -632,7 +630,6 @@ func TestNewConfig_JWTKeysetOnlyRequiresIndependentDerivedSecrets(t *testing.T) 
 	assert.Contains(t, err.Error(), "EMAIL_UNSUBSCRIBE_TOKEN_SECRET")
 }
 
-//nolint:paralleltest // t.Setenv mutates process-global environment variables
 func TestNewConfig_JWTRequiresSecretOrKeysetFile(t *testing.T) {
 	setRequiredEnv(t)
 	t.Setenv("JWT_SECRET", "")

@@ -49,6 +49,7 @@ func TestReloadJWTKeysetSwitchesSignerWithoutRestart(t *testing.T) {
 	newToken, err := manager.GenerateToken("new-user")
 	require.NoError(t, err)
 	assert.Equal(t, "new", appJWTTokenKID(t, newToken))
+
 	_, err = manager.ParseToken(oldToken)
 	require.NoError(t, err)
 	_, err = manager.ParseToken(newToken)
@@ -71,6 +72,7 @@ func writeAppJWTKeyset(t *testing.T, path string, keyset jwt.Keyset) {
 
 	contents, err := json.Marshal(keyset)
 	require.NoError(t, err)
+
 	temporary := path + ".tmp"
 	require.NoError(t, os.WriteFile(temporary, contents, 0o600))
 	require.NoError(t, os.Rename(temporary, path))

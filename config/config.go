@@ -478,6 +478,7 @@ func NewConfig() (*Config, error) {
 	if cfg.JWT.Secret == "" && cfg.JWT.KeysetFile == "" {
 		return nil, configError("JWT_SECRET or JWT_KEYSET_FILE must be set")
 	}
+
 	if cfg.JWT.Secret != "" && len(cfg.JWT.Secret) < 32 {
 		return nil, configError("JWT_SECRET must be at least 32 bytes when set")
 	}
@@ -512,6 +513,7 @@ func NewConfig() (*Config, error) {
 	if err := validateMFA(cfg.MFA); err != nil {
 		return nil, err
 	}
+
 	if cfg.JWT.KeysetFile != "" && strings.TrimSpace(cfg.MFA.EncryptionKey) == "" {
 		return nil, configError("MFA_ENCRYPTION_KEY is required when JWT_KEYSET_FILE is set")
 	}
@@ -544,6 +546,7 @@ func NewConfig() (*Config, error) {
 	); err != nil {
 		return nil, err
 	}
+
 	if cfg.JWT.KeysetFile != "" && cfg.Email.UnsubscribeTokenSecret == "" && cfg.Email.UnsubscribeTokenSecrets == "" {
 		return nil, configError("EMAIL_UNSUBSCRIBE_TOKEN_SECRET or EMAIL_UNSUBSCRIBE_TOKEN_SECRETS is required when JWT_KEYSET_FILE is set")
 	}
