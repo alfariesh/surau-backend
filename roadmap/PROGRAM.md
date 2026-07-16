@@ -65,12 +65,19 @@ policy [test AST kontrak, terbukti menangkap pelanggaran suntikan]; **AC-3** mat
 didokumentasikan di docs/auth-frontend.md; audit mencatat kapabilitas; RoleRequiresMFA dipindah ke policy
 [scholar_reviewer kini mandat MFA]; 4 kapabilitas [curate-entities/approve-neutral&sensitive-claim/
 manage-service-tokens] dideklarasikan utk W-0/W-5/W-6/A-2 tapi belum ada rute; diff-coverage 98,4%).
+**A-4 (rotasi JWT tanpa logout)** ✅ **SELESAI 2026-07-16 (S23, PR #152 + #153, rilis
+`api-v0.4.2`)** (token baru HS256 membawa `kid`; verifier strict menerima old+new selama overlap
+dan token no-`kid` hidup hanya lewat `legacy_kid`; penerbit berpindah via hot reload tanpa restart;
+rollback menjaga kedua verifier; retirement ditolak dini dan baru membuang kunci lama sesudah TTL
+terlama+margin. Drill dev/prod membuktikan old/no-`kid` valid saat overlap lalu `401` setelahnya,
+new-kid+refresh tetap `200`; 33 sesi dev + 35 sesi prod tanpa revoke tak terganti atau 401 tak
+terduga; canary bersih; runbook+artifact lengkap, next drill 2027-01-16).
 **Gerbang keluar:** request-ID→trace hidup + 5 alert teruji; playbook F1-H terpakai ≥1 backfill
 nyata; CI 10-run hijau tanpa retry ✅ **TERBUKTI 2026-07-08** (workflow integration-soak, 10/10
 lulus dalam 10,5 menit tanpa satu pun retry:
 https://github.com/alfariesh/surau-backend/actions/runs/28953164078); login admin ber-MFA ✅
 **TERBUKTI 2026-07-09 (S9)**; matriks kapabilitas beku-ber-test ✅ **TERBUKTI 2026-07-09 (S10)**.
-**Gerbang keluar W1 (auth) TERPENUHI** — sisa A-4/A-5/A-6 (JWT dual-key, refresh harden, alert anomali)
+**Gerbang keluar W1 (auth) TERPENUHI** — sisa A-5/A-6 (refresh harden, alert anomali)
 menyusul kapan saja; W2 (Content Backbone) dapat mulai.
 **Keputusan:** O-2-1 (cakupan MFA — cepat, lihat PK-3).
 
@@ -214,7 +221,7 @@ langsung 401 sementara T2 tetap 200; login role nyata ditolak mengubah status/DE
 dengan SQLSTATE 42501; importer Shamela+reader+Quran dan collab smoke lulus; migrasi up→down→up,
 unit/integration/Python/Node, live serial+race, diff-cover 75,5%, dan `make pre-commit` hijau;
 runbook rotasi dua-token/dua-login tersedia);
-sisa F2: A-4 (dual-key JWT + drill), A-5 (refresh 336h);
+sisa F2: A-5 (refresh 336h);
 **U-0 (lapisan inferensi) + U-6 (eval-harness → gate) DIMULAI DI SINI** — Fase 7 mensyaratkan
 keduanya "sejak hari pertama", dan enrichment kitab langsung ikut menumpang U-0.
 **Gerbang keluar:** editorial Quran ber-ETag+revisi; test eligibilitas anti-tafsir lulus (dirujuk
