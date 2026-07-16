@@ -133,9 +133,10 @@ type (
 
 	// App -.
 	app struct {
-		Name                   string `env:"APP_NAME,required"`
-		Version                string `env:"APP_VERSION,required"`
-		BackgroundLoopsEnabled bool   `env:"BACKGROUND_LOOPS_ENABLED" envDefault:"true"`
+		Name                          string `env:"APP_NAME,required"`
+		Version                       string `env:"APP_VERSION,required"`
+		BackgroundLoopsEnabled        bool   `env:"BACKGROUND_LOOPS_ENABLED" envDefault:"true"`
+		BackgroundLoopsActivationFile string `env:"BACKGROUND_LOOPS_ACTIVATION_FILE"`
 		// Env is the deployment environment (dev/prod), surfaced by GET /version so a
 		// deploy can be verified and clients can tell which backend they hit.
 		Env string `env:"APP_ENV" envDefault:"dev"`

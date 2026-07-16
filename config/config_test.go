@@ -86,6 +86,7 @@ func TestNewConfig_BookRAGCitationDefaults(t *testing.T) {
 	unsetEnv(t, "RAG_BOOK_LEGACY_FALLBACK_ENABLED")
 	unsetEnv(t, "RAG_LLM_DRIVER")
 	unsetEnv(t, "BACKGROUND_LOOPS_ENABLED")
+	unsetEnv(t, "BACKGROUND_LOOPS_ACTIVATION_FILE")
 
 	cfg, err := NewConfig()
 
@@ -94,6 +95,20 @@ func TestNewConfig_BookRAGCitationDefaults(t *testing.T) {
 	assert.True(t, cfg.RAG.BookLegacyFallback)
 	assert.Equal(t, RAGLLMDriverOpenAI, cfg.RAG.LLMDriver)
 	assert.True(t, cfg.App.BackgroundLoopsEnabled)
+	assert.Empty(t, cfg.App.BackgroundLoopsActivationFile)
+}
+
+func TestNewConfig_BackgroundLoopActivationFile(t *testing.T) {
+	setRequiredEnv(t)
+	t.Setenv("BACKGROUND_LOOPS_ENABLED", "false")
+	t.Setenv("BACKGROUND_LOOPS_ACTIVATION_FILE", "/run/surau-deploy/background-loops-active")
+
+	cfg, err := NewConfig()
+
+	require.NoError(t, err)
+	assert.False(t, cfg.App.BackgroundLoopsEnabled)
+	assert.Equal(t, "/run/surau-deploy/background-loops-active",
+		cfg.App.BackgroundLoopsActivationFile)
 }
 
 func TestNewConfig_DeterministicRolloutLLMRequiresIsolatedDevProcess(t *testing.T) {

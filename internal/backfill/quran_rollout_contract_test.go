@@ -21,11 +21,14 @@ func TestQuranDevRolloutOrdersNavigationBeforeCitableReconcile(t *testing.T) {
 	citable := strings.Index(text, "-job=citable-units-quran")
 	pageSmoke := strings.Index(text, "/v1/quran/pages/1/ayahs")
 	resolverSmoke := strings.Index(text, "/v1/anchors/resolve?page_number=1")
+	cutover := strings.Index(text, `ops/deploy/blue-green-app.sh deploy "$APP_VERSION"`)
 
 	require.NotEqual(t, -1, navigation)
 	require.NotEqual(t, -1, citable)
 	require.NotEqual(t, -1, pageSmoke)
 	require.NotEqual(t, -1, resolverSmoke)
+	require.NotEqual(t, -1, cutover)
+	assert.Less(t, cutover, navigation)
 	assert.Less(t, navigation, citable)
 	assert.Less(t, citable, pageSmoke)
 	assert.Less(t, pageSmoke, resolverSmoke)
@@ -33,6 +36,9 @@ func TestQuranDevRolloutOrdersNavigationBeforeCitableReconcile(t *testing.T) {
 	assert.Contains(t, text, `grep -Eq '"primary_unit_id":"[0-9a-f-]+"'`)
 	assert.Contains(t, text, `grep -Eq '"primary_unit_anchor":"quran/[0-9]+:[0-9]+/u/1"'`)
 	assert.NotContains(t, text, `grep -q '"target_type":"citable_unit"'`)
+	assert.Contains(t, text, "AVAILABILITY_URL=https://dev-api.surau.org/healthz")
+	assert.Contains(t, text, "ops/deploy/blue-green-app.sh rollback")
+	assert.NotContains(t, text, `up -d --force-recreate "${SERVICES[@]}"`)
 }
 
 func TestQuranProdRolloutGatesReleaseOnCompletePageNavigation(t *testing.T) {
@@ -43,7 +49,7 @@ func TestQuranProdRolloutGatesReleaseOnCompletePageNavigation(t *testing.T) {
 
 	text := string(workflow)
 
-	healthy := strings.Index(text, `candidate_healthy=true`)
+	healthy := strings.Index(text, `ops/deploy/blue-green-app.sh deploy "$APP_VERSION"`)
 	navigation := strings.Index(text, "-job=quran-page-navigation-v1")
 	citable := strings.Index(text, "-job=citable-units-quran")
 	corpusGate := strings.Index(text, `test "$total_ayahs" = 6236`)
@@ -86,4 +92,8 @@ func TestQuranProdRolloutGatesReleaseOnCompletePageNavigation(t *testing.T) {
 	assert.Contains(t, text, "-job=citable-units-quran -chunk-size=1 -sleep=0s -restart </dev/null")
 	assert.Contains(t, text, "https://api.surau.org/v1/quran/pages/1/ayahs?view=reader_minimal")
 	assert.Contains(t, text, "https://api.surau.org/v1/anchors/resolve?page_number=1")
+	assert.Contains(t, text, "AVAILABILITY_URL=https://api.surau.org/healthz")
+	assert.Contains(t, text, "ops/deploy/blue-green-app.sh rollback")
+	assert.Contains(t, text, `sudo docker exec "$ACTIVE_APP_CONTAINER"`)
+	assert.NotContains(t, text, `up -d --force-recreate "${SERVICES[@]}"`)
 }

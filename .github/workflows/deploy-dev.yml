@@ -80,6 +80,24 @@ jobs:
           export APP_ENV
 
           cd "$DEPLOY_PATH"
+          DEPLOY_STATE_DIR=/var/lib/surau/deploy
+          CURRENT_API_PORT="$(sudo cat "$DEPLOY_STATE_DIR/active-api-port" 2>/dev/null || true)"
+          CURRENT_API_PORT="${CURRENT_API_PORT:-8080}"
+          [[ "$CURRENT_API_PORT" =~ ^(8080|18080|18081)$ ]] || {
+            echo "invalid active API port state" >&2
+            exit 1
+          }
+          CURRENT_API_URL="http://127.0.0.1:${CURRENT_API_PORT}"
+          CURRENT_APP_CONTAINER="$(sudo cat "$DEPLOY_STATE_DIR/active-api-container" 2>/dev/null || true)"
+          if [ -z "$CURRENT_APP_CONTAINER" ] && [ "$CURRENT_API_PORT" = 8080 ]; then
+            CURRENT_APP_CONTAINER="$(sudo docker compose --env-file .env.production \
+              -f docker-compose.prod.yml ps -q app | head -1)"
+          fi
+          [[ "$CURRENT_APP_CONTAINER" =~ ^[a-f0-9]{12,64}$ ]] || {
+            echo "active app container is unavailable" >&2
+            exit 1
+          }
+          test "$(sudo docker inspect -f '{{.State.Running}}' "$CURRENT_APP_CONTAINER")" = true
 
           # Once A-4 is installed, reject a deploy that would mutate the
           # worktree or retag APP_IMAGE while a JWT rotation is in progress.
@@ -104,8 +122,12 @@ jobs:
           stop_stale_container_processes() {
             service_name="$1"
             process_name="$2"
-            container_id="$(sudo docker compose --env-file .env.production \
-              -f docker-compose.prod.yml ps -q "$service_name" 2>/dev/null || true)"
+            if [ "$service_name" = app ]; then
+              container_id="$CURRENT_APP_CONTAINER"
+            else
+              container_id="$(sudo docker compose --env-file .env.production \
+                -f docker-compose.prod.yml ps -q "$service_name" 2>/dev/null || true)"
+            fi
             if [ -z "$container_id" ]; then
               return
             fi
@@ -190,7 +212,7 @@ jobs:
           ROLLOUT_EVIDENCE=.k1-book-rag-dual-evidence
           UNIT_DEFAULT_MARKER=.k1-book-rag-unit-default-enabled
           RAG_EVAL_API_CONTAINER=surau-k1-rag-eval-api
-          RAG_EVAL_API_URL=http://127.0.0.1:18080
+          RAG_EVAL_API_URL=http://127.0.0.1:19080
           cleanup_rag_eval_api() {
             sudo docker rm -f "$RAG_EVAL_API_CONTAINER" >/dev/null 2>&1 || true
           }
@@ -279,7 +301,7 @@ jobs:
           # Save only rollout-owned state. The candidate mode is injected into
           # compose via the process environment and is not persisted until all
           # verification gates pass. If a candidate container fails any gate,
-          # the EXIT trap restores these files and recreates the prior mode.
+          # the EXIT trap restores these files and switches to the prior slot.
           ROLLOUT_STATE_DIR="$(mktemp -d .k1-rollout-state.XXXXXX)"
           grep '^RAG_BOOK_CITATION_MODE=' .env.production > "$ROLLOUT_STATE_DIR/mode-lines" || true
           if [ -f "$ROLLOUT_EVIDENCE" ]; then
@@ -308,6 +330,7 @@ jobs:
           }
 
           ROLLBACK_ARMED=false
+          BLUE_GREEN_CUTOVER=false
           A4_SIGNER_ACTIVATED=false
           ROLLOUT_COMMITTED=false
           cleanup_rollout() {
@@ -315,19 +338,18 @@ jobs:
             trap - EXIT
             set +e
             cleanup_rag_eval_api
-            if [ "$status" -ne 0 ] && [ "$ROLLBACK_ARMED" = true ] && \
-               [ "$ROLLOUT_COMMITTED" = false ] && [ "$A4_SIGNER_ACTIVATED" = false ]; then
+            if [ "$status" -ne 0 ] && [ "$ROLLOUT_COMMITTED" = false ] && \
+               [ "$A4_SIGNER_ACTIVATED" = false ] && \
+               { [ "$ROLLBACK_ARMED" = true ] || [ "$BLUE_GREEN_CUTOVER" = false ]; }; then
               echo "K-1 rollout candidate failed; restoring $CURRENT_BOOK_RAG_MODE" >&2
               restore_rollout_state
               unset RAG_BOOK_CITATION_MODE
-              ROLLBACK_COMPOSE_ARGS=()
-              if [ "$CURRENT_BOOK_RAG_MODE" = default ]; then
-                ROLLBACK_COMPOSE_ARGS=(-f docker-compose.code-default.yml)
+              if [ "$BLUE_GREEN_CUTOVER" = true ]; then
+                ENV_FILE=.env.production COMPOSE_FILE=docker-compose.prod.yml \
+                  AVAILABILITY_URL=https://dev-api.surau.org/healthz \
+                  ops/deploy/blue-green-app.sh rollback || \
+                  echo "blue-green rollback failed; operator action required" >&2
               fi
-              sudo -E docker compose --env-file .env.production -f docker-compose.prod.yml \
-                "${ROLLBACK_COMPOSE_ARGS[@]}" "${PROFILE_ARGS[@]}" \
-                up -d --force-recreate "${SERVICES[@]}" || \
-                echo "K-1 rollback recreate failed; operator action required" >&2
             fi
             rm -f "$ROLLOUT_STATE_DIR/mode-lines" "$ROLLOUT_STATE_DIR/evidence" \
               "$ROLLOUT_STATE_DIR/had-evidence" "$ROLLOUT_STATE_DIR/had-default-marker"
@@ -371,7 +393,7 @@ jobs:
               "SELECT version::text || chr(58) || dirty::text FROM schema_migrations"' </dev/null)"
           if [ "$schema_state" = "20260714000003:true" ]; then
             echo "Recovering interrupted book-scoped K-1 FTS migration..."
-            sudo docker compose --env-file .env.production -f docker-compose.prod.yml stop app
+            sudo docker stop --time 15 "$CURRENT_APP_CONTAINER"
             sudo docker compose --env-file .env.production -f docker-compose.prod.yml \
               exec -T db sh -c \
               'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
@@ -389,15 +411,14 @@ jobs:
               echo "Book-scoped K-1 FTS rewind produced unexpected state: $rewound_book_fts_state" >&2
               exit 1
             fi
-            sudo docker compose --env-file .env.production -f docker-compose.prod.yml start app
+            sudo docker start "$CURRENT_APP_CONTAINER"
             for recovery_attempt in {1..60}; do
-              if curl -fsS http://127.0.0.1:8080/healthz >/dev/null; then
+              if curl -fsS "$CURRENT_API_URL/healthz" >/dev/null; then
                 break
               fi
               if [ "$recovery_attempt" -eq 60 ]; then
                 echo "Book-scoped K-1 FTS rewind did not restore the existing app" >&2
-                sudo docker compose --env-file .env.production -f docker-compose.prod.yml \
-                  logs --tail=120 app
+                sudo docker logs --tail=120 "$CURRENT_APP_CONTAINER"
                 exit 1
               fi
               sleep 2
@@ -448,7 +469,7 @@ jobs:
               "SELECT version::text || chr(58) || dirty::text FROM schema_migrations"' </dev/null)"
           if [ "$schema_state" = "20260713000016:true" ]; then
             echo "Recovering interrupted K-1 FTS migration after protected snapshot..."
-            sudo docker compose --env-file .env.production -f docker-compose.prod.yml stop app
+            sudo docker stop --time 15 "$CURRENT_APP_CONTAINER"
             sudo docker compose --env-file .env.production -f docker-compose.prod.yml \
               exec -T db sh -c \
               'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
@@ -491,15 +512,14 @@ jobs:
               echo "K-1 FTS migration recovery did not produce a valid index" >&2
               exit 1
             fi
-            sudo docker compose --env-file .env.production -f docker-compose.prod.yml start app
+            sudo docker start "$CURRENT_APP_CONTAINER"
             for recovery_attempt in {1..60}; do
-              if curl -fsS http://127.0.0.1:8080/healthz >/dev/null; then
+              if curl -fsS "$CURRENT_API_URL/healthz" >/dev/null; then
                 break
               fi
               if [ "$recovery_attempt" -eq 60 ]; then
                 echo "K-1 FTS migration recovery did not restore the existing app" >&2
-                sudo docker compose --env-file .env.production -f docker-compose.prod.yml \
-                  logs --tail=120 app
+                sudo docker logs --tail=120 "$CURRENT_APP_CONTAINER"
                 exit 1
               fi
               sleep 2
@@ -557,11 +577,8 @@ jobs:
           # Bound build-cache growth so a full disk can't fail the build.
           sudo docker builder prune -f --filter 'until=72h' >/dev/null 2>&1 || true
 
-          # Build explicitly so a build error (e.g. disk full) fails the deploy loudly,
-          # then --force-recreate so the freshly built image AND the new APP_VERSION are
-          # guaranteed to run. A plain `up --build` can rebuild yet leave the OLD
-          # container in place, which the health check would then pass — masking a
-          # non-deploy.
+          # Build before creating the isolated candidate slot. The living app
+          # remains available while the candidate migrates and becomes ready.
           sudo -E docker compose --env-file .env.production -f docker-compose.prod.yml "${PROFILE_ARGS[@]}" build "${SERVICES[@]}"
           # A-4 one-time bridge: materialize the exact current signer as a
           # root-owned keyset and pin JWT-derived MFA/unsubscribe seeds before
@@ -572,17 +589,18 @@ jobs:
           A4_BRIDGE_MODE="$(ENV_FILE=.env.production APP_ENV=dev \
             ops/auth/assert-jwt-deploy-safe.sh)"
           if [ "$A4_BRIDGE_MODE" = capture-legacy ]; then
-            LEGACY_APP_VERSION="$(curl -fsS http://127.0.0.1:8080/version \
+            LEGACY_APP_VERSION="$(curl -fsS "$CURRENT_API_URL/version" \
               | sed -n 's/.*"version":"\([A-Za-z0-9._-]*\)".*/\1/p')"
             if [[ ! "$LEGACY_APP_VERSION" =~ ^[A-Za-z0-9._-]{1,64}$ ]]; then
               echo "A-4 bridge could not identify the living legacy app version" >&2
               exit 1
             fi
             ENV_FILE=.env.production COMPOSE_FILE=docker-compose.prod.yml \
-              APP_ENV=dev EXPECTED_VERSION="$LEGACY_APP_VERSION" \
+              APP_ENV=dev EXPECTED_VERSION="$LEGACY_APP_VERSION" API_URL="$CURRENT_API_URL" \
               ops/auth/rotate-jwt-keyset.sh capture-legacy </dev/null
           fi
           CANDIDATE_COMPOSE_ARGS=()
+          CANDIDATE_COMPOSE_OVERRIDE=""
           if [ "$CANDIDATE_BOOK_RAG_MODE" = default ]; then
             # Remove both sources of explicit configuration before creating
             # the candidate. The Compose override deletes the base mapping,
@@ -590,32 +608,49 @@ jobs:
             remove_env_value RAG_BOOK_CITATION_MODE
             unset RAG_BOOK_CITATION_MODE
             CANDIDATE_COMPOSE_ARGS=(-f docker-compose.code-default.yml)
+            CANDIDATE_COMPOSE_OVERRIDE=docker-compose.code-default.yml
           else
             export RAG_BOOK_CITATION_MODE="$RUNTIME_BOOK_RAG_MODE"
           fi
+
+          ENV_FILE=.env.production COMPOSE_FILE=docker-compose.prod.yml \
+            COMPOSE_OVERRIDE_FILE="$CANDIDATE_COMPOSE_OVERRIDE" \
+            AVAILABILITY_URL=https://dev-api.surau.org/healthz \
+            ops/deploy/blue-green-app.sh deploy "$APP_VERSION"
+          BLUE_GREEN_CUTOVER=true
           ROLLBACK_ARMED=true
-          sudo -E docker compose --env-file .env.production -f docker-compose.prod.yml \
-            "${CANDIDATE_COMPOSE_ARGS[@]}" "${PROFILE_ARGS[@]}" \
-            up -d --force-recreate "${SERVICES[@]}"
-          for attempt in {1..30}; do
-            # Assert /version reports the version we just deployed, so a container that
-            # did not roll over is caught instead of looking healthy.
-            if curl -fsS http://127.0.0.1:8080/healthz >/dev/null &&
-               curl -fsS http://127.0.0.1:8080/readyz >/dev/null &&
-               curl -fsS http://127.0.0.1:8080/version | grep -q "\"version\":\"$APP_VERSION\"" &&
-               { [ -z "$COLLAB_CHECK" ] || curl -fsS "$COLLAB_CHECK" >/dev/null; }; then
+          ACTIVE_API_PORT="$(sudo cat "$DEPLOY_STATE_DIR/active-api-port")"
+          ACTIVE_APP_CONTAINER="$(sudo cat "$DEPLOY_STATE_DIR/active-api-container")"
+          [[ "$ACTIVE_API_PORT" =~ ^(18080|18081)$ ]]
+          [[ "$ACTIVE_APP_CONTAINER" =~ ^[a-f0-9]{64}$ ]]
+          ACTIVE_API_URL="http://127.0.0.1:${ACTIVE_API_PORT}"
+
+          if [ -n "$COLLAB_CHECK" ]; then
+            sudo -E docker compose --env-file .env.production -f docker-compose.prod.yml \
+              "${PROFILE_ARGS[@]}" up -d --force-recreate --no-deps collab
+            collab_healthy=false
+            for _ in {1..30}; do
+              if curl -fsS "$COLLAB_CHECK" >/dev/null; then
+                collab_healthy=true
+                break
+              fi
+              sleep 2
+            done
+            [ "$collab_healthy" = true ]
+          fi
+
               if [ "$A4_BRIDGE_MODE" = capture-legacy ]; then
                 # DEV has no separate Worker route. Once the direct-origin A-4
                 # app is healthy, execute the complete overlap + rollback drill
                 # immediately, before the captured no-kid token can age out.
                 set +e
                 ENV_FILE=.env.production COMPOSE_FILE=docker-compose.prod.yml \
-                  APP_ENV=dev EXPECTED_VERSION="$APP_VERSION" \
+                  APP_ENV=dev EXPECTED_VERSION="$APP_VERSION" API_URL="$ACTIVE_API_URL" \
                   ops/auth/rotate-jwt-keyset.sh prepare </dev/null
                 jwt_prepare_status=$?
                 if [ "$jwt_prepare_status" -eq 0 ]; then
                   ENV_FILE=.env.production COMPOSE_FILE=docker-compose.prod.yml \
-                    APP_ENV=dev EXPECTED_VERSION="$APP_VERSION" \
+                    APP_ENV=dev EXPECTED_VERSION="$APP_VERSION" API_URL="$ACTIVE_API_URL" \
                     ops/auth/rotate-jwt-keyset.sh activate-drill </dev/null
                   jwt_activate_status=$?
                 else
@@ -645,10 +680,10 @@ jobs:
               # QPC page metadata first, then reconcile the same B-1 registry.
               # Both jobs are resumable/idempotent; -restart also catches rows
               # marked stale after an earlier completed run.
-              sudo -E docker compose --env-file .env.production -f docker-compose.prod.yml "${PROFILE_ARGS[@]}" \
-                exec -T app /backfill -job=quran-page-navigation-v1 -chunk-size=500 -sleep=0s -restart
-              sudo -E docker compose --env-file .env.production -f docker-compose.prod.yml "${PROFILE_ARGS[@]}" \
-                exec -T app /backfill -job=citable-units-quran -chunk-size=1 -sleep=0s -restart
+              sudo docker exec "$ACTIVE_APP_CONTAINER" \
+                /backfill -job=quran-page-navigation-v1 -chunk-size=500 -sleep=0s -restart </dev/null
+              sudo docker exec "$ACTIVE_APP_CONTAINER" \
+                /backfill -job=citable-units-quran -chunk-size=1 -sleep=0s -restart </dev/null
 
               # Materialize the O-4-2 priority queue and the rest of the
               # raw-published catalog before committing any requested rollout
@@ -656,19 +691,17 @@ jobs:
               # restart only the drift-aware catalog job; a completed
               # determinism job exits cleanly without replaying all books.
               run_with_heartbeat k1-priority-catalog \
-                sudo -E docker compose --env-file .env.production -f docker-compose.prod.yml "${PROFILE_ARGS[@]}" \
-                exec -T -e GOMEMLIMIT=640MiB -e GOGC=50 app \
+                sudo docker exec -e GOMEMLIMIT=640MiB -e GOGC=50 "$ACTIVE_APP_CONTAINER" \
                   /backfill -job=citable-units-kitab-catalog -catalog-priority-only \
-                  -chunk-size=1 -sleep=200ms -restart
+                  -chunk-size=1 -sleep=200ms -restart </dev/null
               run_with_heartbeat k1-full-catalog \
-                sudo -E docker compose --env-file .env.production -f docker-compose.prod.yml "${PROFILE_ARGS[@]}" \
-                exec -T -e GOMEMLIMIT=640MiB -e GOGC=50 app \
+                sudo docker exec -e GOMEMLIMIT=640MiB -e GOGC=50 "$ACTIVE_APP_CONTAINER" \
                   /backfill -job=citable-units-kitab-catalog \
-                  -chunk-size=1 -sleep=200ms -restart
+                  -chunk-size=1 -sleep=200ms -restart </dev/null
               run_with_heartbeat k1-determinism-rederive \
-                sudo -E docker compose --env-file .env.production -f docker-compose.prod.yml "${PROFILE_ARGS[@]}" \
-                exec -T -e GOMEMLIMIT=640MiB -e GOGC=50 app \
-                  /backfill -job=citable-units-kitab-catalog-rederive -chunk-size=1 -sleep=200ms -restart
+                sudo docker exec -e GOMEMLIMIT=640MiB -e GOGC=50 "$ACTIVE_APP_CONTAINER" \
+                  /backfill -job=citable-units-kitab-catalog-rederive \
+                  -chunk-size=1 -sleep=200ms -restart </dev/null
               # The catalog can replace a large share of active rows. Refresh
               # planner statistics after LOAD so the p95 proof measures the
               # intended FTS plan rather than stale pre-backfill estimates.
@@ -678,8 +711,8 @@ jobs:
                     'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
                       -c "ANALYZE citable_units"' </dev/null
               run_with_heartbeat k1-catalog-verification \
-                sudo -E docker compose --env-file .env.production -f docker-compose.prod.yml "${PROFILE_ARGS[@]}" \
-                exec -T -e GOMEMLIMIT=640MiB -e GOGC=50 app /backfill -verify-citable-catalog
+                sudo docker exec -e GOMEMLIMIT=640MiB -e GOGC=50 "$ACTIVE_APP_CONTAINER" \
+                  /backfill -verify-citable-catalog </dev/null
 
               # Promotion evidence is generated by the deployed immutable
               # image. A short-lived API process uses the same database and
@@ -697,9 +730,10 @@ jobs:
                 }
 
                 cleanup_rag_eval_api
-                sudo -E docker compose --env-file .env.production -f docker-compose.prod.yml "${PROFILE_ARGS[@]}" \
+                sudo -E docker compose --env-file .env.production -f docker-compose.prod.yml \
+                  "${CANDIDATE_COMPOSE_ARGS[@]}" "${PROFILE_ARGS[@]}" \
                   run --detach --no-deps --name "$RAG_EVAL_API_CONTAINER" \
-                    --publish 127.0.0.1:18080:8080 \
+                    --publish 127.0.0.1:19080:8080 \
                     --env APP_ENV=dev \
                     --env BACKGROUND_LOOPS_ENABLED=false \
                     --env RAG_LLM_DRIVER=deterministic-rollout \
@@ -760,15 +794,15 @@ jobs:
 
               # Do not call the rollout complete unless the two formerly
               # missing FE surfaces expose current Citable Unit identities.
-              curl -fsS 'http://127.0.0.1:8080/v1/quran/pages/1/ayahs?view=reader_minimal' \
+              curl -fsS "$ACTIVE_API_URL/v1/quran/pages/1/ayahs?view=reader_minimal" \
                 | grep -Eq '"primary_unit_id":"[0-9a-f-]+"'
               quran_page_resolution="$(curl -fsS \
-                'http://127.0.0.1:8080/v1/anchors/resolve?page_number=1')"
+                "$ACTIVE_API_URL/v1/anchors/resolve?page_number=1")"
               grep -q '"target_type":"quran_ayah"' <<<"$quran_page_resolution"
               grep -Eq '"primary_unit_id":"[0-9a-f-]+"' <<<"$quran_page_resolution"
               grep -Eq '"primary_unit_anchor":"quran/[0-9]+:[0-9]+/u/1"' \
                 <<<"$quran_page_resolution"
-              curl -fsS http://127.0.0.1:8080/readyz >/dev/null
+              curl -fsS "$ACTIVE_API_URL/readyz" >/dev/null
 
               case "$TARGET_BOOK_RAG_STATE" in
                 preserve) ;;
@@ -803,11 +837,4 @@ jobs:
               # Reclaim old images ONLY after the new release is proven healthy.
               sudo docker image prune -f
               exit 0
-            fi
-
-            sleep 2
-          done
-
-          sudo docker compose --env-file .env.production -f docker-compose.prod.yml "${PROFILE_ARGS[@]}" logs --tail=120 "${SERVICES[@]}"
-          exit 1
           REMOTE

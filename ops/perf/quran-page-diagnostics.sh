@@ -46,6 +46,7 @@ printf '%s\n' "$output_dir"
 compose=(sudo docker compose --env-file .env.production -f docker-compose.prod.yml)
 active_port=8080
 active_port_file=/var/lib/surau/deploy/active-api-port
+active_container_file=/var/lib/surau/deploy/active-api-container
 if [ -f "$active_port_file" ]; then
   candidate_port="$(tr -d '[:space:]' < "$active_port_file")"
   if [[ "$candidate_port" =~ ^(18080|18081)$ ]]; then
@@ -56,6 +57,15 @@ if [ -f "$active_port_file" ]; then
   fi
 fi
 origin_url="http://127.0.0.1:${active_port}"
+app_container_id="$(sudo cat "$active_container_file" 2>/dev/null || true)"
+if [[ ! "$app_container_id" =~ ^[a-f0-9]{12,64}$ ]] ||
+   [[ "$(sudo docker inspect -f '{{.State.Running}}' "$app_container_id" 2>/dev/null || true)" != true ]]; then
+  app_container_id="$("${compose[@]}" ps -q app | head -1)"
+fi
+if [[ ! "$app_container_id" =~ ^[a-f0-9]{12,64}$ ]]; then
+  echo "active app container is unavailable" >&2
+  exit 1
+fi
 
 psql_readonly() {
   # Expansion belongs inside the database container, where these two env vars live.
@@ -72,7 +82,7 @@ guard_resources() {
     return 1
   fi
 
-  container_id="$("${compose[@]}" ps -q app)"
+  container_id="$app_container_id"
   cpu_value="$(sudo docker stats --no-stream --format '{{.CPUPerc}}' "$container_id" | tr -d '%')"
   if ! [[ "$cpu_value" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
     echo "abort: cannot read application CPU" >&2
@@ -163,6 +173,95 @@ FROM citable_units_with_effective_license
 WHERE corpus = 'quran'
 GROUP BY effective_license_status
 ORDER BY effective_license_status;
+
+-- Semantic fingerprints exclude only operational timestamps that the
+-- idempotent reconcile is allowed to refresh. They prove that deploy/profile
+-- activity did not lose or rewrite Quran text, translations (including
+-- footnotes), transliterations, Citable Unit identities/Anchors, bindings, or
+-- source/effective licensing state.
+WITH fingerprints AS (
+    SELECT 'quran_surahs'::TEXT AS dataset,
+           count(*) AS row_count,
+           md5(COALESCE(string_agg(
+               (to_jsonb(s) - 'updated_at' - 'units_derived_at' - 'units_stale_at')::TEXT,
+               '|' ORDER BY surah_id
+           ), '')) AS content_hash
+    FROM quran_surahs s
+
+    UNION ALL
+
+    SELECT 'quran_ayahs', count(*), md5(COALESCE(string_agg(
+        (to_jsonb(a) - 'updated_at')::TEXT,
+        '|' ORDER BY surah_id, ayah_number
+    ), ''))
+    FROM quran_ayahs a
+
+    UNION ALL
+
+    SELECT 'quran_translations', count(*), md5(COALESCE(string_agg(
+        (to_jsonb(t) - 'updated_at')::TEXT,
+        '|' ORDER BY source_id, surah_id, ayah_number
+    ), ''))
+    FROM quran_ayah_translations t
+
+    UNION ALL
+
+    SELECT 'quran_transliterations', count(*), md5(COALESCE(string_agg(
+        (to_jsonb(x) - 'updated_at')::TEXT,
+        '|' ORDER BY source_id, surah_id, ayah_number
+    ), ''))
+    FROM quran_ayah_transliterations x
+
+    UNION ALL
+
+    SELECT 'quran_citable_units', count(*), md5(COALESCE(string_agg(
+        (to_jsonb(u) - 'created_at' - 'updated_at')::TEXT,
+        '|' ORDER BY id
+    ), ''))
+    FROM citable_units u
+    WHERE corpus = 'quran'
+
+    UNION ALL
+
+    SELECT 'quran_citable_bindings', count(*), md5(COALESCE(string_agg(
+        (to_jsonb(b) - 'created_at' - 'updated_at')::TEXT,
+        '|' ORDER BY surah_id, ayah_number, ordinal
+    ), ''))
+    FROM quran_citable_unit_bindings b
+
+    UNION ALL
+
+    SELECT 'quran_translation_sources', count(*), md5(COALESCE(string_agg(
+        to_jsonb(ts)::TEXT, '|' ORDER BY id
+    ), ''))
+    FROM quran_translation_sources ts
+
+    UNION ALL
+
+    SELECT 'quran_transliteration_sources', count(*), md5(COALESCE(string_agg(
+        to_jsonb(xs)::TEXT, '|' ORDER BY id
+    ), ''))
+    FROM quran_transliteration_sources xs
+
+    UNION ALL
+
+    SELECT 'quran_script_sources', count(*), md5(COALESCE(string_agg(
+        to_jsonb(ss)::TEXT, '|' ORDER BY id
+    ), ''))
+    FROM quran_script_sources ss
+
+    UNION ALL
+
+    SELECT 'quran_effective_licenses', count(*), md5(COALESCE(string_agg(
+        concat_ws(':', id::TEXT, effective_license_status, license_source),
+        '|' ORDER BY id
+    ), ''))
+    FROM citable_units_with_effective_license
+    WHERE corpus = 'quran'
+)
+SELECT dataset, row_count, content_hash
+FROM fingerprints
+ORDER BY dataset;
 SQL
 }
 
@@ -328,15 +427,19 @@ fi
   sudo docker stats --no-stream --format 'table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.PIDs}}'
   printf '%s\n' 'selected_app_environment:'
   sudo docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' \
-    "$("${compose[@]}" ps -q app)" \
+    "$app_container_id" \
     | grep -E '^(PG_POOL_MAX|GOMAXPROCS|OTEL_ENABLED|OTEL_TRACE_SAMPLE_RATIO|HTTP_USE_PREFORK_MODE)=' \
     || true
   sudo docker inspect -f \
     'cpu_quota={{.HostConfig.CpuQuota}} cpu_period={{.HostConfig.CpuPeriod}} cpuset={{.HostConfig.CpusetCpus}} memory={{.HostConfig.Memory}}' \
-    "$("${compose[@]}" ps -q app)"
+    "$app_container_id"
 } >"$output_dir/runtime.txt"
 
 capture_ingress_state
+if sudo test -f /var/lib/surau/deploy/last-api-availability.tsv; then
+  sudo cat /var/lib/surau/deploy/last-api-availability.tsv \
+    | tee "$output_dir/deploy-availability.tsv" >/dev/null
+fi
 
 if ! capture_database_state before; then
   printf 'database-before exit=1\n' >>"$output_dir/diagnostic-failures.txt"
@@ -368,7 +471,6 @@ for concurrency in 1 2 5; do
     -concurrency "$concurrency" -query 'view=reader_minimal'
 done
 
-app_container_id="$("${compose[@]}" ps -q app)"
 run_profiled_bench origin-ramp-c10 \
   -pages 1,421,585,604 -requests 10 -warmups-per-page 0 \
   -concurrency 10 -query 'view=reader_minimal'

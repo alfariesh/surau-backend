@@ -123,9 +123,18 @@ FROM quran_ayahs a
 JOIN quran_surahs s ON s.surah_id = a.surah_id AND s.units_stale_at IS NULL
 JOIN quran_citable_unit_bindings b
   ON b.surah_id = a.surah_id AND b.ayah_number = a.ayah_number
-JOIN citable_units u ON u.id = b.unit_id AND u.lifecycle = 'active'
-JOIN citable_units_with_effective_license license
-  ON license.id = u.id AND license.effective_license_status = 'permitted'
+JOIN citable_units u
+  ON u.id = b.unit_id
+ AND u.corpus = 'quran'
+ AND u.lifecycle = 'active'
+JOIN LATERAL (
+    SELECT license.id
+    FROM citable_units_with_effective_license license
+    WHERE license.id = u.id
+      AND license.corpus = 'quran'
+      AND license.effective_license_status = 'permitted'
+    LIMIT 1
+) license ON true
 LEFT JOIN quran_ayah_translations t
   ON t.source_id = b.translation_source_id
  AND t.surah_id = b.surah_id AND t.ayah_number = b.ayah_number

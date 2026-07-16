@@ -10,6 +10,7 @@ ENV_FILE="${ENV_FILE:-.env.production}"
 COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.prod.yml}"
 ROLE_NAME="surau_collab_dev_202607_b"
 GROUP_ROLE="surau_collab_store"
+ACTIVE_CONTAINER_FILE="${ACTIVE_CONTAINER_FILE:-/var/lib/surau/deploy/active-api-container}"
 
 if [[ "$MODE" != "prepare" && "$MODE" != "cutover" ]]; then
   echo "usage: $0 prepare|cutover" >&2
@@ -34,6 +35,18 @@ set_env_value() {
   ' "$ENV_FILE" > "$temporary"
   chmod 0600 "$temporary"
   mv -f "$temporary" "$ENV_FILE"
+}
+
+app_container_id() {
+  local container_id
+  container_id="$(sudo cat "$ACTIVE_CONTAINER_FILE" 2>/dev/null || true)"
+  if [[ "$container_id" =~ ^[a-f0-9]{12,64}$ ]] &&
+     [[ "$(sudo docker inspect -f '{{.State.Running}}' "$container_id" 2>/dev/null || true)" == true ]]; then
+    printf '%s\n' "$container_id"
+
+    return
+  fi
+  compose ps -q app | head -1
 }
 
 SECRETS_DIR="$(env_value COLLAB_SECRETS_DIR)"
@@ -268,7 +281,7 @@ cutover_role() {
     exit 1
   fi
 
-  before_app="$(compose ps -q app | xargs sudo docker inspect -f '{{.Id}} {{.State.StartedAt}}')"
+  before_app="$(app_container_id | xargs sudo docker inspect -f '{{.Id}} {{.State.StartedAt}}')"
   before_collab="$(compose ps -q collab | xargs sudo docker inspect -f '{{.Id}} {{.State.StartedAt}}')"
   sudo mv -f "$candidate_host" "$PG_URL_FILE"
   candidate_host=""
@@ -283,7 +296,7 @@ cutover_role() {
     sleep 1
   done
   curl -fsS http://127.0.0.1:8090/healthz >/dev/null
-  after_app="$(compose ps -q app | xargs sudo docker inspect -f '{{.Id}} {{.State.StartedAt}}')"
+  after_app="$(app_container_id | xargs sudo docker inspect -f '{{.Id}} {{.State.StartedAt}}')"
   after_collab="$(compose ps -q collab | xargs sudo docker inspect -f '{{.Id}} {{.State.StartedAt}}')"
   if [[ "$before_app" != "$after_app" || "$before_collab" != "$after_collab" ]]; then
     echo "collab DB cutover restarted a container" >&2

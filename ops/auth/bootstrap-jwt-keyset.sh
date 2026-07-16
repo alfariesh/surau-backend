@@ -10,6 +10,7 @@ APP_ENV="${APP_ENV:-prod}"
 APP_IMAGE="${APP_IMAGE:-}"
 COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.prod.yml}"
 ALLOW_NO_RUNNING_SIGNER="${ALLOW_NO_RUNNING_SIGNER:-false}"
+ACTIVE_CONTAINER_FILE="${ACTIVE_CONTAINER_FILE:-/var/lib/surau/deploy/active-api-container}"
 
 if [[ ! -f "$ENV_FILE" ]]; then
   echo "JWT bootstrap rejected: env file is missing" >&2
@@ -87,7 +88,12 @@ fi
 # signer already serving users. This catches shell-env/Compose drift before a
 # mismatched keyset can replace the living process. No secret or hash is output.
 if ! sudo test -f "$keyset_file"; then
-  running_app_id="$(sudo -E docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" ps -q app)"
+  running_app_id="$(sudo cat "$ACTIVE_CONTAINER_FILE" 2>/dev/null || true)"
+  if [[ ! "$running_app_id" =~ ^[0-9a-f]{12,64}$ ]] ||
+     [[ "$(sudo docker inspect -f '{{.State.Running}}' "$running_app_id" 2>/dev/null || true)" != true ]]; then
+    running_app_id="$(sudo -E docker compose --env-file "$ENV_FILE" \
+      -f "$COMPOSE_FILE" ps -q app | head -1)"
+  fi
   if [[ -z "$running_app_id" ]]; then
     if [[ "$ALLOW_NO_RUNNING_SIGNER" != true ]]; then
       echo "JWT bootstrap rejected: no running legacy app signer was found" >&2

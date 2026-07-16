@@ -113,7 +113,9 @@ jobs:
             ops/service-identities/test-collab-dev-credentials.sh \
             ops/auth/bootstrap-jwt-keyset.sh ops/auth/test-bootstrap-jwt-keyset.sh \
             ops/auth/assert-jwt-deploy-safe.sh ops/auth/test-assert-jwt-deploy-safe.sh \
-            ops/auth/rotate-jwt-keyset.sh ops/auth/test-rotate-jwt-keyset.sh
+            ops/auth/rotate-jwt-keyset.sh ops/auth/test-rotate-jwt-keyset.sh \
+            ops/deploy/blue-green-app.sh ops/deploy/test-blue-green-app.sh \
+            ops/perf/quran-page-diagnostics.sh
       - name: Backup script tests (encryption round-trip + latest selection)
         run: bash ops/backup/test-backup-scripts.sh
       - name: A-2 collab credential rollout tests
@@ -124,6 +126,8 @@ jobs:
         run: bash ops/auth/test-assert-jwt-deploy-safe.sh
       - name: A-4 JWT rotation state-machine tests
         run: bash ops/auth/test-rotate-jwt-keyset.sh
+      - name: Zero-downtime API cutover tests
+        run: bash ops/deploy/test-blue-green-app.sh
 
   unit-tests:
     name: runner / tests / unit
@@ -227,12 +231,18 @@ jobs:
         run: >-
           go test -p 1 -race -covermode atomic -coverprofile=coverage-live.txt
           -coverpkg=./internal/...,./pkg/...
-          -run TestLive -skip '^TestLiveCrossReferenceQueryPerformance$'
+          -run TestLive
+          -skip '^(TestLiveCrossReferenceQueryPerformance|TestLiveQuranCitableHydrationGenericPlanPerformanceGate)$'
           ./internal/repo/persistent/ ./internal/importer/ ./internal/backfill/
           ./internal/usecase/notification/ ./internal/app/
       - name: Cross-Reference 40k latency gate
         run: >-
           go test -p 1 -count=1 -run '^TestLiveCrossReferenceQueryPerformance$'
+          ./internal/repo/persistent/
+      - name: Quran hydration production-shape latency gate
+        run: >-
+          go test -p 1 -count=1
+          -run '^TestLiveQuranCitableHydrationGenericPlanPerformanceGate$'
           ./internal/repo/persistent/
       - name: Upload live coverage profile
         uses: actions/upload-artifact@v4

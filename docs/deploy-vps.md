@@ -1,6 +1,9 @@
 # Deploy VPS dengan Docker Compose
 
-Dokumen ini untuk deployment di VPS: aplikasi Go berjalan sebagai container, PostgreSQL berjalan sebagai container, dan port aplikasi hanya dibuka ke `127.0.0.1:8080` agar bisa diletakkan di belakang Caddy/Cloudflare.
+Dokumen ini untuk deployment di VPS: aplikasi Go berjalan sebagai container,
+PostgreSQL berjalan sebagai container, dan port aplikasi hanya dibuka ke
+loopback. Bootstrap pertama memakai `127.0.0.1:8080`; workflow berikutnya
+memakai slot `127.0.0.1:18080`/`18081` di belakang Caddy/Cloudflare.
 
 ## Environments & release flow (dev + prod)
 
@@ -17,7 +20,7 @@ Ada DUA VPS terpisah, di-deploy oleh dua GitHub Actions workflow:
   git tag -a api-v0.8.0 -m "API v0.8.0"
   git push origin api-v0.8.0
   ```
-  Workflow prod checkout commit di tag itu (detached HEAD), deploy ke PROD VPS (`APP_VERSION=0.8.0`, `APP_ENV=prod`), lalu buat GitHub Release otomatis. **Rollback** = deploy ulang tag sebelumnya (`git push origin api-v0.7.x` ulang, atau `workflow_dispatch`) atau restore snapshot pra-deploy terenkripsi dari `/var/backups/surau/predeploy/` / R2 `predeploy/prod/` (lihat §Pemulihan schema DIRTY).
+  Workflow prod checkout commit di tag itu (detached HEAD), deploy ke PROD VPS (`APP_VERSION=0.8.0`, `APP_ENV=prod`), lalu buat GitHub Release otomatis. **Rollback aplikasi** memakai slot sebelumnya sebagaimana dijelaskan di §7; restore snapshot pra-deploy terenkripsi hanya untuk rollback data/schema dan mengikuti §Pemulihan schema DIRTY.
 - **Verifikasi env:** `curl https://api.surau.org/version` → `{"name","version","env":"prod"}`; `curl https://dev-api.surau.org/version` → `env:"dev"`.
 - Kedua VPS pakai `docker-compose.prod.yml` + `.env.production` masing-masing (nilai beda: dev pakai `LOG_LEVEL=debug`, `SWAGGER_ENABLED=true`, `EMAIL_DELIVERY_MODE=log`, `ONESIGNAL_ENABLED=false`; prod pakai nilai produksi). Reverse proxy: `deploy/Caddyfile.tmpl` (ganti `{$DOMAIN}` per host).
 - **Secrets GitHub** (Settings → Environments → `dev`/`prod`):
@@ -59,7 +62,8 @@ Edit `.env.production`:
 - Jika mengaktifkan `EMAIL_CLOUDFLARE_EVENT_POLLING_ENABLED=true`, isi `EMAIL_CLOUDFLARE_ZONE_ID` dan `EMAIL_CLOUDFLARE_ANALYTICS_API_TOKEN`; token ini harus punya permission GraphQL Analytics Read untuk zone `surau.org`.
 - Pastikan domain `EMAIL_FROM_ADDRESS` sudah onboard di Cloudflare Email Service untuk Email Sending.
 - Biarkan `APP_BIND_ADDR=127.0.0.1` jika reverse proxy ada di server yang sama.
-- Biarkan `APP_PUBLISHED_PORT=8080`, kecuali port 8080 sudah dipakai service lain.
+- Biarkan `APP_PUBLISHED_PORT=8080` untuk container bootstrap. Workflow
+  blue/green mengelola port slot berikutnya sendiri.
 - Isi `CORS_ALLOWED_ORIGINS` dengan origin web frontend (mis. `https://surau.org`); kosongkan jika belum ada client browser. Aplikasi mobile native tidak butuh CORS.
 - Konfigurasi reverse proxy (Nginx/Caddy) agar membalas 404 untuk `/internal` dan `/metrics` — keduanya hanya untuk jaringan privat (nginx dev sudah melakukannya di `nginx/nginx.conf`).
 
@@ -96,7 +100,10 @@ curl -i http://127.0.0.1:8080/readyz
 curl -i https://api.surau.org/healthz
 ```
 
-`/healthz` mengecek proses HTTP. `/readyz` mengecek koneksi PostgreSQL.
+Perintah loopback `:8080` berlaku untuk bootstrap. Setelah deploy workflow,
+jalankan `ops/deploy/blue-green-app.sh status` untuk melihat port aktif atau
+gunakan URL publik. `/healthz` mengecek proses HTTP; `/readyz` mengecek koneksi
+PostgreSQL.
 
 ## 5. Cloudflare DNS
 
@@ -113,7 +120,10 @@ Untuk email verification dan password reset, buka Cloudflare Dashboard > Compute
 
 ## 6. Reverse proxy contoh
 
-Contoh Nginx host config:
+Template produksi yang didukung workflow adalah `deploy/Caddyfile.tmpl`; target
+awal `:8080` akan ditulis ulang secara atomik ke slot aktif. Contoh Nginx di
+bawah hanya untuk bootstrap/manual deployment dan tidak mengikuti blue/green
+otomatis:
 
 ```nginx
 server {
@@ -134,11 +144,34 @@ Untuk HTTPS, pasang Certbot atau gunakan Caddy/Cloudflare Tunnel.
 
 ## 7. Update aplikasi
 
+Update normal hanya melalui workflow GitHub. Workflow membangun image tanpa
+menyentuh proses hidup, menyalakan candidate pada port `18080` atau `18081`
+dengan background loop pause, lalu memeriksa `/healthz`, `/readyz`, dan versi
+exact. Caddy divalidasi dan di-reload ke candidate tanpa menutup listener.
+Setelah trafik berpindah, background loop lama dipause, container lama
+dihentikan, dan loop candidate diaktifkan. Monitor `https://<domain>/healthz`
+berjalan setiap 250 md selama cutover; satu status selain 200 menggagalkan
+cutover. Bukti terakhir tersimpan di
+`/var/lib/surau/deploy/last-api-availability.tsv`.
+
+State slot aktif dan sebelumnya berada di `/var/lib/surau/deploy/`. Jangan
+menghapus container stopped sebelumnya sebelum soak selesai. Rollback aplikasi
+tanpa migrasi down:
+
 ```sh
-git pull
-docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build
-docker compose --env-file .env.production -f docker-compose.prod.yml logs -f app
+cd /srv/surau/backend
+ENV_FILE=.env.production COMPOSE_FILE=docker-compose.prod.yml \
+  AVAILABILITY_URL=https://api.surau.org/healthz \
+  ops/deploy/blue-green-app.sh rollback
+ops/deploy/blue-green-app.sh status
 ```
+
+Rollback mempause loop slot aktif lebih dulu, menghidupkan slot sebelumnya,
+memvalidasi health/versi, me-reload Caddy, lalu mengaktifkan tepat satu set loop.
+Migration harus additive dan kompatibel dengan image sebelumnya. Jika rollback
+schema benar-benar diperlukan, pulihkan snapshot atau jalankan migration down
+yang sudah diuji hanya setelah analisis dampak data; workflow tidak melakukan
+auto-rollback schema.
 
 ## Catatan data
 

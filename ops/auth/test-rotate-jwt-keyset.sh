@@ -188,6 +188,11 @@ if [[ "${1:-}" == "kill" ]]; then
   exit 0
 fi
 
+if [[ "${1:-}" == "logs" ]]; then
+  cat "$MOCK_ROOT/reload-log" 2>/dev/null || true
+  exit 0
+fi
+
 if [[ "${1:-}" == "inspect" ]]; then
   case "${3:-}" in
     '{{.State.StartedAt}}') printf '%s\n' '2026-07-15T09:59:00.000000000Z' ;;
