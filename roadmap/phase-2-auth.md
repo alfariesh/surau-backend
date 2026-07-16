@@ -179,7 +179,7 @@ terbukti.
 **DS:** login admin Salman meminta kode dari aplikasinya — dan aksi paling berbahaya minta kode
 lagi.
 
-### A-4 — Kelincahan JWT: rotasi dual-key ber-`kid`  *(P1, effort kecil–sedang)*
+### A-4 — Kelincahan JWT: rotasi dual-key ber-`kid`  *(P1, effort kecil–sedang)* — ✅ **SELESAI 2026-07-16**
 
 **Rationale:** A-G4/R2; charter G12. **Isi:** header `kid` pada token baru; verifikasi menerima
 himpunan kunci aktif (lama+baru) selama jendela overlap; penerbitan pindah ke kunci baru seketika;
@@ -191,6 +191,15 @@ kompleksitas tanpa konsumen eksternal).
 lama tetap valid selama jendela; setelah jendela, kunci lama ditolak.
 **DS:** "ganti kunci gedung" berubah dari renovasi menjadi rutinitas — pengguna tak merasakan
 apa-apa.
+
+**Bukti selesai:** [PR #152](https://github.com/alfariesh/surau-backend/pull/152) + perbaikan
+deploy [PR #153](https://github.com/alfariesh/surau-backend/pull/153), rilis `api-v0.4.2` pada SHA
+`2225b8a9427a82b3f7948b1745252fae8ef08387`. Drill dev dan prod membuktikan token no-`kid`,
+old-kid, dan new-kid tetap valid selama overlap; rollback signer aman; setelah gerbang TTL+margin,
+dua kelas token lama ditolak sementara new-kid dan refresh keluarga sesi yang sama tetap valid.
+Snapshot **33 sesi dev** dan **35 sesi prod** tidak mengalami revoke tanpa pengganti,
+`unexpected_canary_401=0`, container tidak restart, dan cleanup canary tuntas. Bukti operasional
+lengkap serta jadwal drill berikutnya 2027-01-16 ada di `docs/jwt-key-rotation.md`.
 
 ### A-5 — Pengerasan refresh & sesi  *(P1, effort kecil)*
 

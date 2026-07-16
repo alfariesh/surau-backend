@@ -320,7 +320,14 @@ Kerjakan A-2 dari roadmap/phase-2-auth.md: registry identitas layanan dengan nam
 Masuk PLAN MODE dulu; rencana wajib menyebut cara memenuhi setiap Acceptance Criterion A-2, termasuk bukti token collab yang dicabut berhenti tanpa restart, test grants yang melarang pipeline mengubah review status, serta migrasi konsumen tanpa putus layanan. Setelah saya setujui: kerjakan sampai tuntas — branch fitur, test, Definition of Done, centang PROGRAM.md & SESI.md, merge, verifikasi dev-api. Laporan akhir bahasa awam.
 ```
 
-- [ ] **SESI 23 — Rotasi JWT tanpa logout (A-4)**
+- [x] **SESI 23 — Rotasi JWT tanpa logout (A-4)** — ✅ **SELESAI 2026-07-16**:
+  token baru membawa `kid`, verifier strict hanya menerima kunci lama+baru yang aktif, dan token
+  no-`kid` yang masih hidup kompatibel hanya lewat `legacy_kid`. Hot reload memindahkan signer
+  tanpa restart; rollback menjaga kedua verifier. Drill dev lalu prod membuktikan token lama tetap
+  valid selama overlap dan `401` setelah TTL terlama+margin, sementara new-kid serta refresh sesi
+  yang sama tetap `200`. Snapshot 33 sesi dev dan 35 sesi prod tidak mengalami revoke tanpa
+  pengganti/401 tak terduga; canary bersih. PR #152+#153, rilis `api-v0.4.2`, runbook, CI penuh,
+  dan artifact dev/prod lengkap; drill berikutnya paling lambat 2027-01-16.
 
 ```text
 Kerjakan A-4 dari roadmap/phase-2-auth.md: tambahkan kid pada token baru, verifikasi terhadap himpunan kunci HS256 aktif lama+baru selama overlap, pindahkan penerbitan ke kunci baru seketika, lalu tolak kunci lama setelah masa hidup token terlama; tulis runbook dan lakukan drill rotasi pertama di dev lalu prod tanpa logout pengguna.

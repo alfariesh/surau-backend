@@ -57,8 +57,9 @@ release yang sama.
   rotasi) serta tag rilis `api-v*` (workflow deploy prod). Job rotasi sendiri
   tetap menolak dispatch selain dari `main`.
 - Secret VPS harus berada di Environment masing-masing. Kredensial Cloudflare
-  hanya ada di Environment `prod` dan dibatasi ke account serta Worker
-  `surau-api-cache` yang diperlukan untuk update secret dan deploy.
+  hanya ada di Environment `prod`: `Workers Scripts:Edit` pada account yang
+  menjalankan `surau-api-cache`, ditambah `Workers Routes:Edit` hanya untuk zona
+  `surau.org`.
 - Jangan memakai token Cloudflare global, akun manusia, atau keyset dari
   lingkungan lain. Salinan keyset Worker hanya hidup sementara di runner dan
   harus dihancurkan setelah pemakaian.
@@ -291,34 +292,47 @@ berubah. Jangan simpan token, refresh token, password, email canary, keyset,
 
 | Bukti | Nilai aktual |
 |---|---|
-| Deploy run, SHA, `/version` | `BELUM DIISI` |
-| Capture no-`kid` tepat sebelum cutover | `BELUM DIISI` |
-| `start`/activation otomatis dan artifact `status` | `BELUM DIISI` |
-| Old no-`kid` + old-kid + new-kid valid saat overlap | `BELUM DIISI` |
-| `retire_not_before`, waktu retire, artifact final | `BELUM DIISI` |
-| Old no-`kid` + old-kid `401`; new-kid + refresh `200` | `BELUM DIISI` |
-| Container ID/StartedAt sama; delta restart `0` | `BELUM DIISI` |
-| Canary aktif `1`; total sesi canary tetap; snapshot sesi lain; unexpected `401=0`; revoke tanpa pengganti `0` | `BELUM DIISI` |
-| Review metrik/log `401` dev | `BELUM DIISI` |
-| Test deterministik backend/CLI/Worker | `BELUM DIISI` |
-| Keputusan | `BELUM DIISI: LULUS / GAGAL / DITAHAN` |
+| Deploy run, SHA, `/version` | [run 29477348259](https://github.com/alfariesh/surau-backend/actions/runs/29477348259) sukses; SHA `2225b8a9427a82b3f7948b1745252fae8ef08387`; publik `dev-2225b8a`; `/healthz` dan `/readyz` `OK`. |
+| Capture no-`kid` tepat sebelum cutover | `legacy-recaptured` 2026-07-16 06:50:04 UTC dari binary lama `dev-3ee4919`; probe no-`kid` `200`. |
+| `start`/activation otomatis dan artifact `status` | Kunci `dev-20260716T065012Z` disiapkan 06:50:13 UTC dan aktif 06:50:23 UTC; [status run 29479745260](https://github.com/alfariesh/surau-backend/actions/runs/29479745260) sukses. |
+| Old no-`kid` + old-kid + new-kid valid saat overlap | Ketiganya `200`; rollback penerbit ke old-kid `200`, lalu aktivasi ulang new-kid `200`. |
+| `retire_not_before`, waktu retire, artifact final | Gerbang 07:10:23 UTC; dipensiunkan 07:25:00 UTC melalui [run 29479818273](https://github.com/alfariesh/surau-backend/actions/runs/29479818273); [status final 29479895821](https://github.com/alfariesh/surau-backend/actions/runs/29479895821) menunjukkan `retired` dan hanya satu kunci. |
+| Old no-`kid` + old-kid `401`; new-kid + refresh `200` | Dua token lama masing-masing `401`; new-kid `200`; keluarga refresh canary tetap aktif dan menerbitkan token new-kid. |
+| Container ID/StartedAt sama; delta restart `0` | `container_unchanged=true` dan `container_restarts=0` dari prepare sampai retirement final. |
+| Canary aktif `1`; total sesi canary tetap; snapshot sesi lain; unexpected `401=0`; revoke tanpa pengganti `0` | Keluarga canary aktif; snapshot **33** sesi pengguna lain; `unexpected_canary_401=0`; `unreplaced_session_revocations=0`; cleanup akhir `canary_users=0`. |
+| Review metrik/log `401` dev | Log memuat tepat dua `401` yang memang diharapkan untuk probe retirement; `unexpected_canary_401=0`. Metrik HTTP saat review tidak mempunyai seri `401`, sehingga keputusan memakai pasangan bukti log bernomor request-ID + guard canary, bukan mengklaim metrik yang tidak ada. |
+| Test deterministik backend/CLI/Worker | `make pre-commit`, integration, Go JWT/keyset, lifecycle shell, Worker **30/30**, typecheck, shellcheck, actionlint, yamllint, dan gitleaks hijau pada SHA rilis. |
+| Keputusan | **LULUS 2026-07-16** — token lama hidup selama overlap lalu ditolak setelah gerbang, tanpa sesi terputus. |
 
 ### Drill prod pertama
 
 | Bukti | Nilai aktual |
 |---|---|
-| Release/tag/SHA, deploy run, `/version` | `BELUM DIISI` |
-| Capture no-`kid` tepat sebelum cutover | `BELUM DIISI` |
-| Environment approval + kredensial Worker least-privilege | `BELUM DIISI` |
-| `start` run + receipt Worker dual-key | `BELUM DIISI` |
-| Old no-`kid` + old-kid + new-kid valid di origin dan Worker saat overlap | `BELUM DIISI` |
-| `retire_not_before`, waktu retire, receipt Worker single-key | `BELUM DIISI` |
-| Old no-`kid` + old-kid ditolak; new-kid + refresh tetap valid | `BELUM DIISI` |
-| Container ID/StartedAt sama; delta restart `0` | `BELUM DIISI` |
-| Canary aktif `1`; total sesi canary tetap; snapshot sesi lain; unexpected `401=0`; revoke tanpa pengganti `0` | `BELUM DIISI` |
-| Review metrik `401` produksi | `BELUM DIISI` |
-| Cleanup canary dan secret sementara | `BELUM DIISI` |
-| Keputusan dan `next_due` enam bulan | `BELUM DIISI: LULUS / GAGAL / DITAHAN` |
+| Release/tag/SHA, deploy run, `/version` | [release `api-v0.4.2`](https://github.com/alfariesh/surau-backend/releases/tag/api-v0.4.2), SHA `2225b8a9427a82b3f7948b1745252fae8ef08387`; [deploy run 29480067927](https://github.com/alfariesh/surau-backend/actions/runs/29480067927) sukses; publik `0.4.2`; `/healthz` dan `/readyz` `OK`. |
+| Capture no-`kid` tepat sebelum cutover | `legacy-captured` 2026-07-16 07:34:49 UTC dari binary lama `0.4.1`; probe no-`kid` `200`. |
+| Environment approval + kredensial Worker least-privilege | Setiap aksi prod melewati required reviewer GitHub Environment. Token Cloudflare: account `Workers Scripts:Edit` + zona `surau.org` saja `Workers Routes:Edit`; SSH memakai host key terpin. |
+| `start` run + receipt Worker dual-key | [run 29480973809](https://github.com/alfariesh/surau-backend/actions/runs/29480973809) sukses; Worker `surau-api-cache` terunggah dan route terpasang, receipt Version ID `426d0f1d-ea12-4792-97e2-a23c6af4b071`; signer baru aktif sesudahnya. |
+| Old no-`kid` + old-kid + new-kid valid di origin dan Worker saat overlap | Ketiganya `200` di origin/public route dan beridentitas `user` di Worker; rollback old-kid dan aktivasi ulang new-kid juga lulus. [Status 29481125565](https://github.com/alfariesh/surau-backend/actions/runs/29481125565) tetap `active`. |
+| `retire_not_before`, waktu retire, receipt Worker single-key | [Status gerbang 29482132527](https://github.com/alfariesh/surau-backend/actions/runs/29482132527) membuktikan `retirement_due=true` setelah 08:06:16 UTC. [Retire 29482329916](https://github.com/alfariesh/surau-backend/actions/runs/29482329916) mengunggah `JWT_KEYSET` single-key, menghapus fallback `JWT_SECRET` Worker, lalu memensiunkan backend pada 08:08:09 UTC. |
+| Old no-`kid` + old-kid ditolak; new-kid + refresh tetap valid | Token no-`kid` dan old-kid masing-masing `401` di origin dan menjadi `guest` di Worker; new-kid `200`/`user`; refresh keluarga sesi yang sama `200` dan menerbitkan new-kid. |
+| Container ID/StartedAt sama; delta restart `0` | `container_unchanged=true` dan `container_restarts=0` dari prepare sampai retirement final; hot reload final mencatat satu kunci dan `legacy_kid` kosong. |
+| Canary aktif `1`; total sesi canary tetap; snapshot sesi lain; unexpected `401=0`; revoke tanpa pengganti `0` | Keluarga canary aktif sepanjang pembuktian; snapshot **35** sesi pengguna lain; `unexpected_canary_401=0`; `unreplaced_session_revocations=0`. |
+| Review metrik `401` produksi | Selama overlap log mencatat **0** `401`. Retirement menghasilkan tepat **4** `401` yang diharapkan: dua probe origin dan dua probe public route; sesudah probe kembali **0**. Prometheus tidak mengekspor seri `status_code=401`, sehingga bukti keputusan adalah empat request-ID log + guard canary, tanpa mengklaim seri metrik yang tidak tersedia. |
+| Cleanup canary dan secret sementara | [Status final 29482446425](https://github.com/alfariesh/surau-backend/actions/runs/29482446425) menunjukkan `retired` dan satu kunci; state credential remote `removed`; `canary_users=0`; export Worker/runner sementara dihapus; fallback Worker lama terhapus. |
+| Keputusan dan `next_due` enam bulan | **LULUS 2026-07-16** — nol sesi pengguna terputus; jadwal berikutnya paling lambat **2027-01-16**. |
 
 Prod hanya boleh ditandai lulus setelah seluruh kolom mempunyai bukti nyata dan
 drill dev untuk release yang sama sudah lulus.
+
+### Catatan kegagalan aman drill pertama
+
+- [Deploy dev 29476104945](https://github.com/alfariesh/surau-backend/actions/runs/29476104945)
+  berhenti setelah capture karena proses `psql` mengambil stdin SSH; versi publik
+  tetap binary lama sehingga belum ada cutover. [PR #153](https://github.com/alfariesh/surau-backend/pull/153)
+  menambahkan regresi test dan memperbaiki aliran stdin sebelum drill diulang.
+- [Start prod 29480455483](https://github.com/alfariesh/surau-backend/actions/runs/29480455483)
+  gagal saat route Worker belum berizin. Bukti log menyatakan signer tetap kunci
+  lama; state hanya `prepared`. Setelah token Cloudflare diberi
+  `Workers Routes:Edit` khusus `surau.org`, retry memakai `new_kid` yang sama dan
+  baru mengaktifkan signer sesudah Worker berhasil. Tidak ada logout pada kedua
+  kegagalan aman ini.
