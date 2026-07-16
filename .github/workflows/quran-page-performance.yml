@@ -1,0 +1,248 @@
+name: Quran Page Performance
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Environment whose origin and database will be profiled
+        required: true
+        type: choice
+        default: dev
+        options:
+          - dev
+          - prod
+      phase:
+        description: Baseline records evidence; postdeploy also enforces the c10 p95 gate
+        required: true
+        type: choice
+        default: baseline
+        options:
+          - baseline
+          - postdeploy
+      expected_version:
+        description: Exact /version value (dev-abcdef0 or X.Y.Z)
+        required: true
+        type: string
+
+concurrency:
+  group: surau-${{ inputs.environment }}-operations
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  profile:
+    name: Profile Quran page reader (${{ inputs.environment }}, ${{ inputs.phase }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: ${{ inputs.environment }}
+    env:
+      VPS_HOST: ${{ secrets[inputs.environment == 'prod' && 'PROD_VPS_HOST' || 'DEV_VPS_HOST'] }}
+      VPS_USER: ${{ secrets[inputs.environment == 'prod' && 'PROD_VPS_USER' || 'DEV_VPS_USER'] }}
+      VPS_DEPLOY_PATH: ${{ secrets[inputs.environment == 'prod' && 'PROD_VPS_DEPLOY_PATH' || 'DEV_VPS_DEPLOY_PATH'] }}
+      VPS_SSH_PRIVATE_KEY: ${{ secrets[inputs.environment == 'prod' && 'PROD_VPS_SSH_PRIVATE_KEY' || 'DEV_VPS_SSH_PRIVATE_KEY'] }}
+      VPS_SSH_KNOWN_HOSTS: ${{ secrets[inputs.environment == 'prod' && 'PROD_VPS_SSH_KNOWN_HOSTS' || 'DEV_VPS_SSH_KNOWN_HOSTS'] }}
+      PERF_ENVIRONMENT: ${{ inputs.environment }}
+      PERF_PHASE: ${{ inputs.phase }}
+      EXPECTED_VERSION: ${{ inputs.expected_version }}
+    steps:
+      - name: Check out reviewed diagnostics
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Validate inputs and diagnostics
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$PERF_ENVIRONMENT" in dev|prod) ;; *) exit 2 ;; esac
+          case "$PERF_PHASE" in baseline|postdeploy) ;; *) exit 2 ;; esac
+          if [[ ! "$EXPECTED_VERSION" =~ ^(dev-[0-9a-f]{7}|[0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            echo "expected_version must be dev-abcdef0 or X.Y.Z" >&2
+            exit 2
+          fi
+          bash -n ops/perf/quran-page-diagnostics.sh
+          go test ./cmd/quran-page-bench
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+            go build -trimpath -o "$RUNNER_TEMP/quran-page-bench" ./cmd/quran-page-bench
+
+      - name: Measure public Cloudflare routes
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/quran-page-public"
+          run_public_bench() {
+            local name="$1" base_url="$2" cache_policy="$3" status
+            shift 3
+            set +e
+            "$RUNNER_TEMP/quran-page-bench" \
+              -base-url "$base_url" -expected-version "$EXPECTED_VERSION" \
+              -cache-policy "$cache_policy" \
+              -output "$RUNNER_TEMP/quran-page-public/${name}.json" \
+              "$@"
+            status=$?
+            set -e
+            if [ "$status" -ne 0 ]; then
+              printf '%s exit=%s\n' "$name" "$status" \
+                >>"$RUNNER_TEMP/quran-page-public/public-failures.txt"
+              # A response report proves that the intended version was measured.
+              # A failure before report creation (for example version mismatch) is fatal.
+              if [ ! -s "$RUNNER_TEMP/quran-page-public/${name}.json" ]; then
+                return "$status"
+              fi
+            fi
+          }
+          if [ "$PERF_ENVIRONMENT" = prod ]; then
+            public_url=https://api.surau.org
+            origin_hostname_url=https://origin-api.surau.org
+          else
+            public_url=https://dev-api.surau.org
+            origin_hostname_url=""
+          fi
+
+          run_public_bench public-default "$public_url" cloudflare-bypass \
+            -pages 1,48,421,604 -requests 12 -warmups-per-page 1 -concurrency 1 \
+            -query 'view=reader_minimal'
+          run_public_bench public-worst-page "$public_url" cloudflare-bypass \
+            -pages 585 -requests 4 -warmups-per-page 0 -concurrency 1 \
+            -query 'view=reader_minimal'
+
+          if [ -n "$origin_hostname_url" ]; then
+            run_public_bench origin-hostname-default "$origin_hostname_url" origin-revalidate \
+              -pages 1,48,421,604 -requests 8 -warmups-per-page 0 -concurrency 1 \
+              -query 'view=reader_minimal'
+            run_public_bench origin-hostname-worst-page "$origin_hostname_url" origin-revalidate \
+              -pages 585 -requests 3 -warmups-per-page 0 -concurrency 1 \
+              -query 'view=reader_minimal'
+          fi
+
+          if [ "$PERF_PHASE" = postdeploy ]; then
+            run_public_bench public-c10 "$public_url" cloudflare-bypass \
+              -pages 1,48,421,585,604 -requests 50 -warmups-per-page 0 -concurrency 10 \
+              -query 'view=reader_minimal'
+          fi
+
+      - name: Configure pinned SSH connection
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${VPS_HOST:?missing environment VPS host}"
+          : "${VPS_USER:?missing environment VPS user}"
+          : "${VPS_DEPLOY_PATH:?missing environment deploy path}"
+          : "${VPS_SSH_PRIVATE_KEY:?missing environment SSH key}"
+          : "${VPS_SSH_KNOWN_HOSTS:?missing pinned SSH known-hosts}"
+          [[ "$VPS_HOST" =~ ^[A-Za-z0-9.-]+$ ]] || { echo "invalid VPS host" >&2; exit 2; }
+          [[ "$VPS_USER" =~ ^[A-Za-z0-9_-]+$ ]] || { echo "invalid VPS user" >&2; exit 2; }
+          [[ "$VPS_DEPLOY_PATH" =~ ^/[A-Za-z0-9_./-]+$ ]] || {
+            echo "invalid VPS deploy path" >&2
+            exit 2
+          }
+          umask 077
+          mkdir -p ~/.ssh
+          printf '%s\n' "$VPS_SSH_PRIVATE_KEY" > ~/.ssh/surau_perf_key
+          printf '%s\n' "$VPS_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 0600 ~/.ssh/surau_perf_key ~/.ssh/known_hosts
+          cat >~/.ssh/config <<EOF
+          Host surau-perf
+            HostName $VPS_HOST
+            User $VPS_USER
+            IdentityFile ~/.ssh/surau_perf_key
+            IdentitiesOnly yes
+            BatchMode yes
+            StrictHostKeyChecking yes
+            UserKnownHostsFile ~/.ssh/known_hosts
+            ConnectTimeout 30
+            ServerAliveInterval 30
+            ServerAliveCountMax 20
+          EOF
+          chmod 0600 ~/.ssh/config
+          ssh surau-perf true
+
+      - name: Run fixed read-only origin and PostgreSQL profile
+        id: remote
+        shell: bash
+        run: |
+          set -euo pipefail
+          remote_dir="$(ssh surau-perf 'mktemp -d /tmp/surau-quran-page-workflow.XXXXXX')"
+          if [[ ! "$remote_dir" =~ ^/tmp/surau-quran-page-workflow\.[A-Za-z0-9]+$ ]]; then
+            echo "remote mktemp returned an unsafe path" >&2
+            exit 1
+          fi
+          printf '%s\n' "$remote_dir" > "$RUNNER_TEMP/quran-page-remote-dir"
+
+          scp "$RUNNER_TEMP/quran-page-bench" \
+            ops/perf/quran-page-diagnostics.sh \
+            ops/perf/quran-page-profile.sql \
+            "surau-perf:$remote_dir/"
+          ssh surau-perf "chmod 0700 '$remote_dir/quran-page-bench' '$remote_dir/quran-page-diagnostics.sh'"
+
+          printf -v remote_command \
+            "'%s/quran-page-diagnostics.sh' '%s' '%s' '%s' '%s' '%s/quran-page-bench' '%s/quran-page-profile.sql'" \
+            "$remote_dir" "$PERF_ENVIRONMENT" "$PERF_PHASE" "$EXPECTED_VERSION" \
+            "$VPS_DEPLOY_PATH" "$remote_dir" "$remote_dir"
+          set +e
+          remote_output="$(ssh surau-perf "$remote_command" 2>&1)"
+          remote_status=$?
+          set -e
+          printf '%s\n' "$remote_output"
+          printf '%s\n' "$remote_output" >"$RUNNER_TEMP/quran-page-remote-output.txt"
+          artifact_path="$(printf '%s\n' "$remote_output" | sed -n 's/^artifact=//p' | tail -1)"
+          if [[ ! "$artifact_path" =~ ^/tmp/surau-quran-page-(dev|prod)-(baseline|postdeploy)\.[A-Za-z0-9]+\.tar\.gz$ ]]; then
+            echo "remote diagnostics did not return a safe artifact path" >&2
+            exit 1
+          fi
+          printf '%s\n' "$artifact_path" > "$RUNNER_TEMP/quran-page-artifact-path"
+          scp "surau-perf:$artifact_path" "$RUNNER_TEMP/quran-page-origin.tar.gz"
+          if [ "$remote_status" -ne 0 ]; then
+            echo "remote diagnostics reported a failed gate (exit $remote_status)" >&2
+            exit "$remote_status"
+          fi
+
+      - name: Upload sanitized evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quran-page-${{ inputs.environment }}-${{ inputs.phase }}-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/quran-page-public/*.json
+            ${{ runner.temp }}/quran-page-public/*.txt
+            ${{ runner.temp }}/quran-page-origin.tar.gz
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Clean up SSH and remote temporary files
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          if [ -f "$RUNNER_TEMP/quran-page-remote-dir" ]; then
+            remote_dir="$(cat "$RUNNER_TEMP/quran-page-remote-dir")"
+            if [[ "$remote_dir" =~ ^/tmp/surau-quran-page-workflow\.[A-Za-z0-9]+$ ]]; then
+              ssh surau-perf "rm -rf '$remote_dir'" >/dev/null 2>&1
+            fi
+          fi
+          if [ -f "$RUNNER_TEMP/quran-page-artifact-path" ]; then
+            artifact_path="$(cat "$RUNNER_TEMP/quran-page-artifact-path")"
+            if [[ "$artifact_path" =~ ^/tmp/surau-quran-page-(dev|prod)-(baseline|postdeploy)\.[A-Za-z0-9]+\.tar\.gz$ ]]; then
+              output_dir="${artifact_path%.tar.gz}"
+              ssh surau-perf "rm -rf '$output_dir' '$artifact_path'" >/dev/null 2>&1
+            fi
+          fi
+          rm -f ~/.ssh/config ~/.ssh/known_hosts ~/.ssh/surau_perf_key
+
+      - name: Enforce public postdeploy gate
+        if: always() && inputs.phase == 'postdeploy'
+        shell: bash
+        run: |
+          set -euo pipefail
+          failures="$RUNNER_TEMP/quran-page-public/public-failures.txt"
+          if [ -s "$failures" ]; then
+            echo "public Cloudflare benchmark failed:" >&2
+            cat "$failures" >&2
+            exit 1
+          fi
