@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"os"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -415,6 +416,59 @@ func TestLoopBackoffDelayDefaults(t *testing.T) {
 
 	assert.GreaterOrEqual(t, got, time.Duration(float64(loopBackoffBase)*(1-loopJitterFraction)))
 	assert.LessOrEqual(t, got, time.Duration(float64(loopBackoffBase)*(1+loopJitterFraction)))
+}
+
+func TestBackgroundLoopsCanPauseAndResumeWithoutOverlap(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var calls atomic.Int64
+
+	s := servers{
+		loopCtx: ctx,
+		loopSpecs: []loopSpec{{
+			name:         "test_deploy_activation",
+			initialDelay: time.Millisecond,
+			interval:     time.Hour,
+			run: func(context.Context) error {
+				calls.Add(1)
+
+				return nil
+			},
+		}},
+	}
+
+	s.activateBackgroundLoops(testLogger())
+	s.activateBackgroundLoops(testLogger())
+	require.Eventually(t, func() bool { return calls.Load() == 1 }, 2*time.Second, time.Millisecond)
+	time.Sleep(20 * time.Millisecond)
+	assert.Equal(t, int64(1), calls.Load())
+
+	s.pauseBackgroundLoops(testLogger())
+	require.True(t, waitGroupDoneWithin(&s.loopWG, 2*time.Second))
+
+	s.activateBackgroundLoops(testLogger())
+	require.Eventually(t, func() bool { return calls.Load() == 2 }, 2*time.Second, time.Millisecond)
+
+	s.pauseBackgroundLoops(testLogger())
+	assert.Equal(t, int64(2), calls.Load())
+
+	cancel()
+	require.True(t, waitGroupDoneWithin(&s.loopWG, 2*time.Second))
+}
+
+func TestBackgroundLoopsActivationMarkerRequiresRegularFile(t *testing.T) {
+	t.Parallel()
+
+	marker := t.TempDir() + "/background-loops-active"
+	require.NoError(t, os.WriteFile(marker, []byte("active\n"), 0o600))
+
+	assert.True(t, backgroundLoopsActivationExists(marker))
+	assert.False(t, backgroundLoopsActivationExists(t.TempDir()))
+	assert.False(t, backgroundLoopsActivationExists(marker+"-missing"))
+	assert.False(t, backgroundLoopsActivationExists(""))
 }
 
 func waitGroupDoneWithin(wg *sync.WaitGroup, timeout time.Duration) bool {

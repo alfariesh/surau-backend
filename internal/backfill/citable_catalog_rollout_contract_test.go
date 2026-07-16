@@ -22,14 +22,14 @@ func TestK1DevRolloutKeepsDefaultStateOutOfApplicationConfig(t *testing.T) {
 	text := string(workflow)
 	normalizeDefault := strings.Index(text, `if [ "$RUNTIME_BOOK_RAG_MODE" = default ]; then`)
 	unsetRuntimeOverride := strings.Index(text, `if [ "$CANDIDATE_BOOK_RAG_MODE" = default ]; then`)
-	composeUpAfterOverride := strings.Index(
+	cutoverAfterOverride := strings.Index(
 		text[unsetRuntimeOverride:],
-		`up -d --force-recreate "${SERVICES[@]}"`,
+		`ops/deploy/blue-green-app.sh deploy "$APP_VERSION"`,
 	)
 
 	require.NotEqual(t, -1, normalizeDefault)
 	require.NotEqual(t, -1, unsetRuntimeOverride)
-	require.NotEqual(t, -1, composeUpAfterOverride)
+	require.NotEqual(t, -1, cutoverAfterOverride)
 	assert.Less(t, normalizeDefault, unsetRuntimeOverride)
 	assert.Contains(t, text, "RUNTIME_BOOK_RAG_MODE=unit")
 	assert.Contains(t, text, "CANDIDATE_BOOK_RAG_MODE=default")
@@ -37,7 +37,9 @@ func TestK1DevRolloutKeepsDefaultStateOutOfApplicationConfig(t *testing.T) {
 	assert.Contains(t, text, "unset RAG_BOOK_CITATION_MODE")
 	assert.Contains(t, text, "remove_env_value RAG_BOOK_CITATION_MODE")
 	assert.Contains(t, text, `CANDIDATE_COMPOSE_ARGS=(-f docker-compose.code-default.yml)`)
-	assert.Contains(t, text, `ROLLBACK_COMPOSE_ARGS=(-f docker-compose.code-default.yml)`)
+	assert.Contains(t, text, `CANDIDATE_COMPOSE_OVERRIDE=docker-compose.code-default.yml`)
+	assert.Contains(t, text, `COMPOSE_OVERRIDE_FILE="$CANDIDATE_COMPOSE_OVERRIDE"`)
+	assert.Contains(t, text, "ops/deploy/blue-green-app.sh rollback")
 	assert.Contains(t, string(override), "RAG_BOOK_CITATION_MODE: null")
 	assert.Contains(t, text, `export RAG_BOOK_CITATION_MODE="$RUNTIME_BOOK_RAG_MODE"`)
 	assert.NotContains(t, text, `export RAG_BOOK_CITATION_MODE="$CANDIDATE_BOOK_RAG_MODE"`)
@@ -96,7 +98,7 @@ func TestK1DevRolloutKeepsLongCatalogCommandsObservable(t *testing.T) {
 	assert.Contains(t, text, "stop_stale_container_processes db pg_dump")
 	assert.Contains(t, text, `sudo kill -TERM "${stale_pids[@]}"`)
 	assert.Contains(t, text, `sudo kill -KILL "${stale_pids[@]}"`)
-	assert.Contains(t, text, "exec -T -e GOMEMLIMIT=640MiB -e GOGC=50 app")
+	assert.Contains(t, text, `docker exec -e GOMEMLIMIT=640MiB -e GOGC=50 "$ACTIVE_APP_CONTAINER"`)
 	assert.Contains(t, text, "-o ConnectTimeout=30")
 	assert.Contains(t, text, "-o ServerAliveCountMax=20")
 	assert.Contains(t, text, `: "${VPS_SSH_KNOWN_HOSTS:?Set the pinned DEV_VPS_SSH_KNOWN_HOSTS secret}"`)
@@ -138,8 +140,8 @@ func TestK1DevRolloutRecoversOnlyKnownInterruptedFTSMigrationAfterSnapshot(t *te
 	assert.Contains(t, text, "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_citable_units_text_fts_interpretive")
 	assert.Contains(t, text, `index_valid" != "t"`)
 	assert.Contains(t, text, `completed_state" != "20260713000016:false"`)
-	assert.Contains(t, text, "sudo docker compose --env-file .env.production -f docker-compose.prod.yml stop app")
-	assert.Contains(t, text, "sudo docker compose --env-file .env.production -f docker-compose.prod.yml start app")
+	assert.Contains(t, text, `sudo docker stop --time 15 "$CURRENT_APP_CONTAINER"`)
+	assert.Contains(t, text, `sudo docker start "$CURRENT_APP_CONTAINER"`)
 }
 
 func TestK1DevRolloutPrebuildsBookScopedFTSBeforeCandidateBoot(t *testing.T) {

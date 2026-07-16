@@ -166,6 +166,10 @@ what users actually edited.
   }
   ```
 
+  `:8080` adalah target bootstrap. Workflow deploy memvalidasi lalu menulis
+  ulang tepat baris API terakhir ke slot aktif `:18080`/`:18081`; route collab
+  `:8090` tidak diubah.
+
   Note `handle_path` strips the `/collab` prefix before proxying — the
   collab-server serves the websocket at its root. Clients connect to
   `wss://api.example.org/collab`.

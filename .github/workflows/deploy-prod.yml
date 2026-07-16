@@ -60,6 +60,13 @@ jobs:
           export APP_VERSION APP_ENV
 
           cd "$DEPLOY_PATH"
+          CURRENT_API_PORT="$(sudo cat /var/lib/surau/deploy/active-api-port 2>/dev/null || true)"
+          CURRENT_API_PORT="${CURRENT_API_PORT:-8080}"
+          [[ "$CURRENT_API_PORT" =~ ^(8080|18080|18081)$ ]] || {
+            echo "invalid active API port state" >&2
+            exit 1
+          }
+          CURRENT_API_URL="http://127.0.0.1:${CURRENT_API_PORT}"
           # Once A-4 is installed, reject a release before checkout can replace
           # the rotation runner/Compose file or a build can retag APP_IMAGE.
           # The first A-4 release safely skips this because its predecessor has
@@ -111,11 +118,8 @@ jobs:
           # Bound build-cache growth so a full disk can't fail the build.
           sudo docker builder prune -f --filter 'until=72h' >/dev/null 2>&1 || true
 
-          # Build explicitly so a build error (e.g. disk full) fails the deploy loudly,
-          # then --force-recreate so the freshly built image AND the new APP_VERSION are
-          # guaranteed to run. A plain `up --build` can rebuild yet leave the OLD
-          # container in place, which the health check would then pass — masking a
-          # non-deploy.
+          # Build before creating the isolated candidate slot. The living app
+          # remains untouched until the candidate reports the exact tag version.
           sudo -E docker compose --env-file .env.production -f docker-compose.prod.yml "${PROFILE_ARGS[@]}" build "${SERVICES[@]}"
           # A-4 one-time bridge. The exact legacy signer is copied into the
           # root-owned reloadable keyset before the first A-4 process starts;
@@ -126,35 +130,53 @@ jobs:
           A4_BRIDGE_MODE="$(ENV_FILE=.env.production APP_ENV=prod \
             ops/auth/assert-jwt-deploy-safe.sh)"
           if [ "$A4_BRIDGE_MODE" = capture-legacy ]; then
-            LEGACY_APP_VERSION="$(curl -fsS http://127.0.0.1:8080/version \
+            LEGACY_APP_VERSION="$(curl -fsS "$CURRENT_API_URL/version" \
               | sed -n 's/.*"version":"\([A-Za-z0-9._-]*\)".*/\1/p')"
             if [[ ! "$LEGACY_APP_VERSION" =~ ^[A-Za-z0-9._-]{1,64}$ ]]; then
               echo "A-4 bridge could not identify the living legacy app version" >&2
               exit 1
             fi
             ENV_FILE=.env.production COMPOSE_FILE=docker-compose.prod.yml \
-              APP_ENV=prod EXPECTED_VERSION="$LEGACY_APP_VERSION" \
+              APP_ENV=prod EXPECTED_VERSION="$LEGACY_APP_VERSION" API_URL="$CURRENT_API_URL" \
               ops/auth/rotate-jwt-keyset.sh capture-legacy </dev/null
           fi
-          sudo -E docker compose --env-file .env.production -f docker-compose.prod.yml "${PROFILE_ARGS[@]}" up -d --force-recreate "${SERVICES[@]}"
-          candidate_healthy=false
-          for attempt in {1..30}; do
-            # Assert /version reports the tag we just deployed, so a container that did
-            # not roll over is caught instead of looking healthy.
-            if curl -fsS http://127.0.0.1:8080/healthz >/dev/null &&
-               curl -fsS http://127.0.0.1:8080/readyz >/dev/null &&
-               curl -fsS http://127.0.0.1:8080/version | grep -q "\"version\":\"$APP_VERSION\"" &&
-               { [ -z "$COLLAB_CHECK" ] || curl -fsS "$COLLAB_CHECK" >/dev/null; }; then
-              candidate_healthy=true
-              break
+
+          ROLLBACK_ARMED=false
+          rollback_on_error() {
+            status=$?
+            trap - ERR
+            set +e
+            if [ "$ROLLBACK_ARMED" = true ]; then
+              ENV_FILE=.env.production COMPOSE_FILE=docker-compose.prod.yml \
+                AVAILABILITY_URL=https://api.surau.org/healthz \
+                ops/deploy/blue-green-app.sh rollback
             fi
+            exit "$status"
+          }
+          trap rollback_on_error ERR
 
-            sleep 2
-          done
+          ENV_FILE=.env.production COMPOSE_FILE=docker-compose.prod.yml \
+            AVAILABILITY_URL=https://api.surau.org/healthz \
+            ops/deploy/blue-green-app.sh deploy "$APP_VERSION"
+          ROLLBACK_ARMED=true
+          ACTIVE_API_PORT="$(sudo cat /var/lib/surau/deploy/active-api-port)"
+          ACTIVE_APP_CONTAINER="$(sudo cat /var/lib/surau/deploy/active-api-container)"
+          [[ "$ACTIVE_API_PORT" =~ ^(18080|18081)$ ]]
+          [[ "$ACTIVE_APP_CONTAINER" =~ ^[a-f0-9]{64}$ ]]
+          ACTIVE_API_URL="http://127.0.0.1:${ACTIVE_API_PORT}"
 
-          if [ "$candidate_healthy" != true ]; then
-            sudo docker compose --env-file .env.production -f docker-compose.prod.yml "${PROFILE_ARGS[@]}" logs --tail=120 "${SERVICES[@]}"
-            exit 1
+          if [ -n "$COLLAB_CHECK" ]; then
+            sudo -E docker compose --env-file .env.production -f docker-compose.prod.yml \
+              "${PROFILE_ARGS[@]}" up -d --force-recreate --no-deps collab
+            collab_healthy=false
+            for _ in {1..30}; do
+              if curl -fsS "$COLLAB_CHECK" >/dev/null; then
+                collab_healthy=true
+                break
+              fi
+              sleep 2
+            done
+            [ "$collab_healthy" = true ]
           fi
 
           # Q-2 production rollout/recovery. The frozen QPC job only fills
@@ -164,10 +186,10 @@ jobs:
           # Keep stdin detached so neither docker exec can consume the SSH
           # heredoc and silently skip the gates that follow.
           echo "Reconciling Quran page navigation and Citable Units..."
-          sudo -E docker compose --env-file .env.production -f docker-compose.prod.yml "${PROFILE_ARGS[@]}" \
-            exec -T app /backfill -job=quran-page-navigation-v1 -chunk-size=500 -sleep=0s -restart </dev/null
-          sudo -E docker compose --env-file .env.production -f docker-compose.prod.yml "${PROFILE_ARGS[@]}" \
-            exec -T app /backfill -job=citable-units-quran -chunk-size=1 -sleep=0s -restart </dev/null
+          sudo docker exec "$ACTIVE_APP_CONTAINER" \
+            /backfill -job=quran-page-navigation-v1 -chunk-size=500 -sleep=0s -restart </dev/null
+          sudo docker exec "$ACTIVE_APP_CONTAINER" \
+            /backfill -job=citable-units-quran -chunk-size=1 -sleep=0s -restart </dev/null
 
           # A release is not healthy merely because the route exists. Prove
           # the complete QPC Hafs v1 corpus before exposing success: all 6,236
@@ -208,15 +230,18 @@ jobs:
           # Exercise the same public contracts the frontend uses, against the
           # origin that was just deployed. Current unit identity proves the
           # second reconcile completed rather than only filling page numbers.
-          curl -fsS 'http://127.0.0.1:8080/v1/quran/pages/1/ayahs?view=reader_minimal' \
+          curl -fsS "$ACTIVE_API_URL/v1/quran/pages/1/ayahs?view=reader_minimal" \
             | grep -Eq '"primary_unit_id":"[0-9a-f-]+"'
           quran_page_resolution="$(curl -fsS \
-            'http://127.0.0.1:8080/v1/anchors/resolve?page_number=1')"
+            "$ACTIVE_API_URL/v1/anchors/resolve?page_number=1")"
           grep -q '"target_type":"quran_ayah"' <<<"$quran_page_resolution"
           grep -Eq '"primary_unit_id":"[0-9a-f-]+"' <<<"$quran_page_resolution"
           grep -Eq '"primary_unit_anchor":"quran/[0-9]+:[0-9]+/u/1"' \
             <<<"$quran_page_resolution"
-          curl -fsS http://127.0.0.1:8080/readyz >/dev/null
+          curl -fsS "$ACTIVE_API_URL/readyz" >/dev/null
+
+          ROLLBACK_ARMED=false
+          trap - ERR
 
           # Reclaim old images ONLY after the release, data gates, and reader
           # contracts are all proven healthy.
@@ -229,7 +254,7 @@ jobs:
           set -euo pipefail
 
           APP_VERSION="${DEPLOY_TAG#api-v}"
-          for attempt in {1..12}; do
+          for _ in {1..12}; do
             if curl -fsS --max-time 10 https://api.surau.org/healthz >/dev/null &&
                curl -fsS --max-time 10 https://api.surau.org/readyz >/dev/null &&
                curl -fsS --max-time 10 https://api.surau.org/version \

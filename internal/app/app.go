@@ -61,8 +61,13 @@ type servers struct {
 	// Supervised background loops (F1-C): one shared cancel plus a drain
 	// WaitGroup so shutdown can wait for in-flight passes (bounded by
 	// loopDrainTimeout).
-	loopStop context.CancelFunc
-	loopWG   sync.WaitGroup
+	loopCtx     context.Context
+	loopStop    context.CancelFunc
+	loopWG      sync.WaitGroup
+	loopSpecs   []loopSpec
+	loopMu      sync.Mutex
+	loopRunStop context.CancelFunc
+	loopActive  bool
 }
 
 func initUseCases(cfg *config.Config, pg *postgres.Postgres, jwtManager *jwt.Manager, l logger.Interface) useCases {
@@ -433,15 +438,66 @@ func (s *servers) startServers(
 	l logger.Interface,
 ) {
 	loopCtx, cancel := context.WithCancel(context.Background())
+	s.loopCtx = loopCtx
 	s.loopStop = cancel
+	s.loopSpecs = buildLoopSpecs(
+		cfg, emailUC, userUC, notificationUC, unitRegistryUC, l, serviceIdentityUC,
+	)
 
-	if cfg.App.BackgroundLoopsEnabled {
-		for _, spec := range buildLoopSpecs(cfg, emailUC, userUC, notificationUC, unitRegistryUC, l, serviceIdentityUC) {
-			s.startLoop(loopCtx, spec, l)
-		}
+	if cfg.App.BackgroundLoopsEnabled ||
+		backgroundLoopsActivationExists(cfg.App.BackgroundLoopsActivationFile) {
+		s.activateBackgroundLoops(l)
 	}
 
 	s.http.Start()
+}
+
+func (s *servers) activateBackgroundLoops(l logger.Interface) {
+	s.loopMu.Lock()
+	defer s.loopMu.Unlock()
+
+	if s.loopActive {
+		return
+	}
+
+	runCtx, cancel := context.WithCancel(s.loopCtx)
+	s.loopRunStop = cancel
+
+	s.loopActive = true
+
+	for _, spec := range s.loopSpecs {
+		s.startLoop(runCtx, spec, l)
+	}
+
+	l.Info("app - background loops activated: count=%d", len(s.loopSpecs))
+}
+
+func (s *servers) pauseBackgroundLoops(l logger.Interface) {
+	s.loopMu.Lock()
+	defer s.loopMu.Unlock()
+
+	if !s.loopActive {
+		l.Info("app - background loops paused: count=0")
+
+		return
+	}
+
+	s.loopRunStop()
+	s.loopRunStop = nil
+	s.loopActive = false
+	s.loopWG.Wait()
+	l.Info("app - background loops paused: count=%d", len(s.loopSpecs))
+}
+
+func backgroundLoopsActivationExists(path string) bool {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return false
+	}
+
+	info, err := os.Stat(path)
+
+	return err == nil && info.Mode().IsRegular()
 }
 
 // buildLoopSpecs assembles the supervised background loops, applying the same
@@ -676,7 +732,14 @@ func emailDispatchPass(cfg *config.Config, emailUC *emailusecase.UseCase) func(c
 func (s *servers) waitForShutdown(l logger.Interface, stop <-chan struct{}, jwtManager *jwt.Manager) {
 	interrupt := make(chan os.Signal, 1)
 
-	signal.Notify(interrupt, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+	signal.Notify(
+		interrupt,
+		os.Interrupt,
+		syscall.SIGTERM,
+		syscall.SIGHUP,
+		syscall.SIGUSR1,
+		syscall.SIGUSR2,
+	)
 	defer signal.Stop(interrupt)
 
 	var err error
@@ -686,6 +749,18 @@ func (s *servers) waitForShutdown(l logger.Interface, stop <-chan struct{}, jwtM
 		case sig := <-interrupt:
 			if sig == syscall.SIGHUP {
 				reloadJWTKeyset(jwtManager, l)
+
+				continue
+			}
+
+			if sig == syscall.SIGUSR1 {
+				s.activateBackgroundLoops(l)
+
+				continue
+			}
+
+			if sig == syscall.SIGUSR2 {
+				s.pauseBackgroundLoops(l)
 
 				continue
 			}

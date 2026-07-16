@@ -7,7 +7,9 @@ COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.prod.yml}"
 APP_ENV="${APP_ENV:-}"
 EXPECTED_VERSION="${EXPECTED_VERSION:-}"
 APP_IMAGE="${APP_IMAGE:-}"
-API_URL="${API_URL:-http://127.0.0.1:8080}"
+API_URL="${API_URL:-}"
+ACTIVE_CONTAINER_FILE="${ACTIVE_CONTAINER_FILE:-/var/lib/surau/deploy/active-api-container}"
+ACTIVE_PORT_FILE="${ACTIVE_PORT_FILE:-/var/lib/surau/deploy/active-api-port}"
 
 case "$MODE" in
   capture-legacy|prepare|activate-drill|rollback|retire-prepare|retire-finalize|status|cleanup) ;;
@@ -34,6 +36,15 @@ fi
 if [[ -z "$EXPECTED_VERSION" ]]; then
   echo "JWT rotation rejected: EXPECTED_VERSION is required" >&2
   exit 1
+fi
+if [[ -z "$API_URL" ]]; then
+  active_port="$(sudo cat "$ACTIVE_PORT_FILE" 2>/dev/null || true)"
+  active_port="${active_port:-8080}"
+  if [[ ! "$active_port" =~ ^(8080|18080|18081)$ ]]; then
+    echo "JWT rotation rejected: active API port state is invalid" >&2
+    exit 1
+  fi
+  API_URL="http://127.0.0.1:${active_port}"
 fi
 
 env_value() {
@@ -105,7 +116,15 @@ run_keyset_cli() {
 }
 
 app_container_id() {
-  compose ps -q app
+  local container_id
+  container_id="$(sudo cat "$ACTIVE_CONTAINER_FILE" 2>/dev/null || true)"
+  if [[ "$container_id" =~ ^[a-f0-9]{12,64}$ ]] &&
+     [[ "$(sudo docker inspect -f '{{.State.Running}}' "$container_id" 2>/dev/null || true)" == true ]]; then
+    printf '%s\n' "$container_id"
+
+    return
+  fi
+  compose ps -q app | head -1
 }
 
 app_container_started_at() {
@@ -205,7 +224,7 @@ reload_app() {
     after="$(app_container_id)"
     after_started="$(app_container_started_at "$after")"
     after_restarts="$(app_container_restart_count "$after")"
-    logs="$(compose logs --no-color --since "$reload_started" app 2>/dev/null || true)"
+    logs="$(sudo docker logs --since "$reload_started" "$before" 2>/dev/null || true)"
     if [[ "$after" == "$before" && "$after_started" == "$before_started" &&
           "$after_restarts" == "$before_restarts" ]] &&
        curl --fail --silent --show-error --max-time 5 "$API_URL/readyz" >/dev/null &&
