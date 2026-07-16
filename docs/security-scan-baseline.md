@@ -41,8 +41,11 @@ ditambahkan ke allowlist `.gitleaks.toml`, bukan di-skip.
 
 1. **Anggap bocor permanen** — history git tidak dianggap bersih walau di-force-push.
 2. **Rotasi SUMBERNYA dulu**, baru bersihkan repo:
-   - `JWT_SECRET` → ganti nilai di `.env.production` kedua VPS → restart app (`docker compose up
-     -d --force-recreate app`); semua sesi login terputus (pengguna login ulang).
+   - Kunci penandatangan JWT → **jangan** mengganti `JWT_SECRET` atau me-restart app secara
+     manual. Jalankan prosedur insiden di [`docs/jwt-key-rotation.md`](jwt-key-rotation.md):
+     tambahkan kunci baru, pindahkan penerbitan seketika, pertahankan verifier lama+baru selama
+     umur token terlama, lalu pensiunkan kunci bocor. Prosedur ini mencabut kunci bocor tanpa
+     logout massal dan menghasilkan bukti token lama/baru yang tersanitasi.
    - Kredensial R2 (`R2_ACCESS_KEY_ID/SECRET`) → buat token baru di Cloudflare → update
      `/etc/surau-backup/env` di kedua VPS + `/etc/surau-backup/pgbackrest.conf` → `pgbackrest
      check` + jalankan `surau-backup-watchdog` untuk memastikan hijau.
@@ -56,5 +59,6 @@ ditambahkan ke allowlist `.gitleaks.toml`, bukan di-skip.
    bukan secret; kalau secret nyata: biarkan gitleaks tetap menjaga.
 4. Catat insiden (apa, kapan, rotasi apa) di PR/issue terkait.
 
-Rotasi berkala terjadwal (kalender, dual-key JWT) = milik Fase 2/P8-6 — runbook ini untuk
-respons insiden.
+Rotasi berkala enam-bulanan dan rotasi insiden JWT memakai runner A-4 yang sama; bedanya,
+insiden dimulai segera dan jendela overlap dipilih dari token hidup yang sudah terbit, bukan
+menunggu kalender.

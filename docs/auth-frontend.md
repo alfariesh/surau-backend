@@ -118,6 +118,13 @@ Frontend memakai `preferences.preferred_content_lang` sebagai default bahasa Qur
 
 Token dipakai apa adanya di header `Authorization`.
 
+Sejak A-4, backend menambahkan `kid` (ID kunci) di header internal token untuk
+rotasi tanpa logout. Ini tidak mengubah shape login/refresh dan tidak meminta
+perubahan frontend: simpan token sebagai string opaque, jangan memilih kunci,
+dan jangan bergantung pada hasil decode JWT. Token lama yang masih hidup tetap
+diterima selama overlap rotasi; refresh berikutnya memperoleh token baru secara
+normal.
+
 ### Error
 
 ```json

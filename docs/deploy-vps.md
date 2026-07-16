@@ -20,7 +20,11 @@ Ada DUA VPS terpisah, di-deploy oleh dua GitHub Actions workflow:
   Workflow prod checkout commit di tag itu (detached HEAD), deploy ke PROD VPS (`APP_VERSION=0.8.0`, `APP_ENV=prod`), lalu buat GitHub Release otomatis. **Rollback** = deploy ulang tag sebelumnya (`git push origin api-v0.7.x` ulang, atau `workflow_dispatch`) atau restore snapshot pra-deploy terenkripsi dari `/var/backups/surau/predeploy/` / R2 `predeploy/prod/` (lihat §Pemulihan schema DIRTY).
 - **Verifikasi env:** `curl https://api.surau.org/version` → `{"name","version","env":"prod"}`; `curl https://dev-api.surau.org/version` → `env:"dev"`.
 - Kedua VPS pakai `docker-compose.prod.yml` + `.env.production` masing-masing (nilai beda: dev pakai `LOG_LEVEL=debug`, `SWAGGER_ENABLED=true`, `EMAIL_DELIVERY_MODE=log`, `ONESIGNAL_ENABLED=false`; prod pakai nilai produksi). Reverse proxy: `deploy/Caddyfile.tmpl` (ganti `{$DOMAIN}` per host).
-- **Secrets GitHub** (Settings → Secrets → Actions): `DEV_VPS_HOST/USER/DEPLOY_PATH/SSH_PRIVATE_KEY` + `PROD_VPS_HOST/USER/DEPLOY_PATH/SSH_PRIVATE_KEY`.
+- **Secrets GitHub** (Settings → Environments → `dev`/`prod`):
+  `DEV_VPS_HOST/USER/DEPLOY_PATH/SSH_PRIVATE_KEY/SSH_KNOWN_HOSTS` dan pasangan
+  `PROD_VPS_*`. Nilai `SSH_KNOWN_HOSTS` harus dipatok dari host key yang
+  diverifikasi di luar workflow; deploy tidak mempelajari kunci melalui
+  `ssh-keyscan`.
 
 Bagian di bawah = langkah setup satu VPS (berlaku untuk dev maupun prod).
 
@@ -44,7 +48,11 @@ Edit `.env.production`:
 
 - Ganti `POSTGRES_PASSWORD`.
 - Ganti password yang sama di bagian `PG_URL`.
-- Ganti `JWT_SECRET` dengan output `openssl rand -hex 32`.
+- Untuk instalasi pertama, ganti `JWT_SECRET` dengan output
+  `openssl rand -hex 32`. Sejak A-4 nilai ini hanya jembatan bootstrap menuju
+  keyset root-only; penerbitan dan verifikasi runtime memakai
+  `JWT_KEYSET_FILE=/run/secrets/surau-jwt/keyset.json`. Jangan mengganti atau
+  merotasinya manual—ikuti `docs/jwt-key-rotation.md`.
 - Biarkan `JWT_ISSUER=surau-backend` dan `JWT_AUDIENCE=surau-api`, kecuali ada kebutuhan integrasi token khusus.
 - Biarkan `AUTH_RATE_LIMIT_ENABLED=true` untuk limiter DB-backed lintas instance; override nilai `AUTH_RATE_LIMIT_*` hanya jika traffic/UX membutuhkan.
 - Isi `CF_EMAIL_ACCOUNT_ID`, `CF_EMAIL_API_TOKEN`, `EMAIL_FROM_ADDRESS`, `EMAIL_VERIFY_FRONTEND_URL`, `PASSWORD_RESET_FRONTEND_URL`, `EMAIL_CHANGE_FRONTEND_URL`, dan `EMAIL_UNSUBSCRIBE_PUBLIC_URL=https://api.surau.org/v1/email/unsubscribe`.
@@ -60,9 +68,21 @@ Jika password database berisi karakter khusus seperti `@`, `#`, `/`, atau `:`, e
 
 ## 3. Build dan jalankan
 
+Build image lebih dulu, lalu materialisasikan keyset root-only sebelum container
+`app` pertama pernah dinyalakan. `ALLOW_NO_RUNNING_SIGNER=true` hanya sah untuk
+instalasi VPS baru yang belum pernah melayani token. Gunakan `APP_ENV=dev` pada
+VPS DEV.
+
 ```sh
-docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build
+docker compose --env-file .env.production -f docker-compose.prod.yml build app
+ALLOW_NO_RUNNING_SIGNER=true ENV_FILE=.env.production APP_ENV=prod \
+  ops/auth/bootstrap-jwt-keyset.sh
+docker compose --env-file .env.production -f docker-compose.prod.yml up -d
 ```
+
+Pada upgrade host yang sudah melayani pengguna, jangan memakai
+`ALLOW_NO_RUNNING_SIGNER=true`; workflow deploy membandingkan signer hidup dan
+menjalankan jembatan kompatibilitas secara otomatis.
 
 Aplikasi otomatis menjalankan migration saat container `app` start karena Dockerfile membangun binary dengan tag `migrate`.
 Migration auth terbaru menambahkan `users.token_version`, `auth_rate_limits`, `auth_audit_logs`, email verification/reset/change token tables, dan soft-delete account fields. Setelah password reset, change password, change email, atau delete account, JWT lama otomatis ditolak dan user harus login ulang.
