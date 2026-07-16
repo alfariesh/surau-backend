@@ -31,6 +31,8 @@ dikemas dan diunggah sebelum job dinyatakan gagal, sehingga kasus buruk tidak me
 buktinya. Isinya hanya timing, header cache, execution plan, statistik resource,
 jumlah/checksum data, dan profile stack bila `perf` sudah tersedia di host. Isi teks Quran,
 credential, `.env.production`, dan body respons tidak disimpan.
+Snapshot ingress hanya memuat status Nginx/Caddy, listener port relevan, serta baris
+`server_name`/`proxy_pass` localhost untuk API; konfigurasi TLS dan rahasia tidak disalin.
 
 ## Batas keselamatan
 
@@ -49,6 +51,12 @@ mencapai 40 dari konfigurasi maksimum 50 atau CPU service API sudah mencapai 85%
 
 `EXPLAIN (ANALYZE, BUFFERS, SETTINGS, FORMAT JSON)` berjalan di transaksi `READ ONLY` dengan
 `statement_timeout=20s`, `lock_timeout=250ms`, lalu `ROLLBACK`.
+Snapshot `pg_stat_statements` memakai nama kolom I/O PostgreSQL 18 dan menyimpan
+min/maksimum/standar deviasi waktu eksekusi agar dua execution-plan class yang berbeda tidak
+tersembunyi di balik nilai rata-rata.
+Karena pgx memakai prepared statement per koneksi, profiler juga membandingkan custom plan dan
+generic plan untuk query hydration dengan array ayah yang sama. Ini hanya pengukuran read-only;
+pilihan plan runtime tidak diubah oleh workflow.
 
 Ramp c10 juga mengambil snapshot `pg_stat_activity` dan resource container sekali per detik
 (maksimum 20 snapshot). Ini membedakan waktu eksekusi database dari antrean pool aplikasi.
@@ -68,7 +76,8 @@ Halaman representatif dipilih dari frozen QPC Hafs map:
 | 604 | 15 | batas akhir mushaf |
 
 Baseline membandingkan reader default, tanpa terjemahan untuk Arab/Indonesia, full view, audio,
-serta ramp concurrency 1, 2, 5, dan 10. Jalur yang diukur terpisah:
+serta ramp concurrency 1, 2, 5, dan 10. Jalur publik menjalankan 20 request c10 saat baseline;
+postdeploy menaikkannya menjadi 50 request c10. Jalur yang diukur terpisah:
 
 1. `api.surau.org`, melalui Cloudflare Worker;
 2. `origin-api.surau.org`, melewati Worker cache tetapi masih melalui jaringan Cloudflare;

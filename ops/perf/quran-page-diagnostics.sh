@@ -86,7 +86,7 @@ guard_resources() {
 
 capture_database_state() {
   local label="$1"
-  psql_readonly >"$output_dir/database-${label}.txt" <<'SQL'
+  psql_readonly >"$output_dir/database-${label}.txt" 2>&1 <<'SQL'
 \pset pager off
 \timing on
 SELECT now() AS captured_at,
@@ -130,9 +130,14 @@ WHERE relname IN (
 )
 ORDER BY relname, indexrelname;
 
-SELECT queryid, calls, total_plan_time, total_exec_time, mean_exec_time, rows,
+SELECT queryid, calls, plans,
+       total_plan_time, min_plan_time, max_plan_time, mean_plan_time, stddev_plan_time,
+       total_exec_time, min_exec_time, max_exec_time, mean_exec_time, stddev_exec_time,
+       rows,
        shared_blks_hit, shared_blks_read, temp_blks_read, temp_blks_written,
-       blk_read_time, blk_write_time, query
+       shared_blk_read_time, shared_blk_write_time,
+       temp_blk_read_time, temp_blk_write_time,
+       query
 FROM pg_stat_statements
 WHERE query ILIKE '%quran_ayah%'
    OR query ILIKE '%quran_citable_unit_bindings%'
@@ -159,6 +164,33 @@ WHERE corpus = 'quran'
 GROUP BY effective_license_status
 ORDER BY effective_license_status;
 SQL
+}
+
+capture_ingress_state() {
+  local service service_state
+  {
+    for service in nginx caddy; do
+      if command -v systemctl >/dev/null 2>&1; then
+        service_state="$(sudo systemctl is-active "$service" 2>/dev/null || true)"
+        printf '%s=%s\n' "$service" "${service_state:-unknown}"
+      fi
+    done
+    printf '%s\n' listeners
+    sudo ss -ltnH 2>/dev/null \
+      | awk '$4 ~ /:(80|443|8080|18080|18081)$/ { print $1, $4 }' \
+      || true
+
+    if command -v nginx >/dev/null 2>&1 && sudo systemctl is-active --quiet nginx; then
+      printf '%s\n' nginx-api-routing
+      sudo nginx -T 2>/dev/null \
+        | awk '
+          /^# configuration file / { config = $0 }
+          /^[[:space:]]*server_name[[:space:]].*api\.surau\.org/ { print config; print }
+          /^[[:space:]]*proxy_pass[[:space:]]+http:\/\/127\.0\.0\.1:(8080|18080|18081)/ { print config; print }
+        ' \
+        || true
+    fi
+  } >"$output_dir/ingress.txt"
 }
 
 run_bench() {
@@ -304,7 +336,12 @@ fi
     "$("${compose[@]}" ps -q app)"
 } >"$output_dir/runtime.txt"
 
-capture_database_state before
+capture_ingress_state
+
+if ! capture_database_state before; then
+  printf 'database-before exit=1\n' >>"$output_dir/diagnostic-failures.txt"
+  diagnostics_failed=true
+fi
 
 run_bench origin-default \
   -pages 1,48,421,604 -requests 12 -warmups-per-page 1 -concurrency 1 \
@@ -388,7 +425,10 @@ fi
 
 capture_tempo_traces
 
-capture_database_state after
+if ! capture_database_state after; then
+  printf 'database-after exit=1\n' >>"$output_dir/diagnostic-failures.txt"
+  diagnostics_failed=true
+fi
 guard_resources
 
 tar -C "$output_dir" -czf "${output_dir}.tar.gz" .
