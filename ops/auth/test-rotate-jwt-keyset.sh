@@ -139,6 +139,9 @@ if [[ "${1:-}" == "compose" ]]; then
       cat "$MOCK_ROOT/reload-log" 2>/dev/null || true
       ;;
     exec)
+      if [[ "${MOCK_CONSUME_STDIN:-0}" == "1" ]]; then
+        cat >/dev/null
+      fi
       query="$*"
       case "$query" in
         *"SELECT statement_timestamp()"*) printf '%s\n' '2026-07-15 10:00:00.000000|3' ;;
@@ -512,7 +515,12 @@ EOF
 status_output="$(run_rotation status)"
 [[ "$status_output" == *'keyset=not-installed legacy_capture=true'* ]] || fail 'pre-A-4 status was not reported'
 write_keyset_state stable dev-legacy dev-legacy dev-legacy '' 1
-capture_output="$(run_rotation capture-legacy)"
+exec 9<<<'parent-heredoc-continuation'
+capture_output="$(MOCK_CONSUME_STDIN=1 run_rotation capture-legacy <&9)"
+IFS= read -r remaining_parent_input <&9 || true
+exec 9<&-
+[[ "$remaining_parent_input" == parent-heredoc-continuation ]] \
+  || fail 'rotation consumed the parent SSH heredoc after legacy capture'
 [[ "$capture_output" == *'legacy no-kid canary captured'* ]] || fail 'legacy canary was not captured'
 [[ "$(state_value LEGACY_WAS_NO_KID)" == true ]] || fail 'legacy token was not recorded as no-kid'
 [[ -z "$(state_value OLD_KID)" ]] || fail 'pre-A-4 token unexpectedly had kid'

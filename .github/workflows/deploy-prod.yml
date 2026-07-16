@@ -132,7 +132,7 @@ jobs:
             fi
             ENV_FILE=.env.production COMPOSE_FILE=docker-compose.prod.yml \
               APP_ENV=prod EXPECTED_VERSION="$LEGACY_APP_VERSION" \
-              ops/auth/rotate-jwt-keyset.sh capture-legacy
+              ops/auth/rotate-jwt-keyset.sh capture-legacy </dev/null
           fi
           sudo -E docker compose --env-file .env.production -f docker-compose.prod.yml "${PROFILE_ARGS[@]}" up -d --force-recreate "${SERVICES[@]}"
           for attempt in {1..30}; do
