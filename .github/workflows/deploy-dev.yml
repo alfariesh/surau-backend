@@ -382,7 +382,7 @@ jobs:
             # A files. After the new app migrates the NOLOGIN group role, the
             # health gate below replaces the DB file with narrow B atomically.
             ENV_FILE=.env.production COMPOSE_FILE=docker-compose.prod.yml \
-              ops/service-identities/collab-dev-credentials.sh prepare
+              ops/service-identities/collab-dev-credentials.sh prepare </dev/null
           fi
 
           # The book-scoped FTS expand migration is index-only. If a previous
@@ -679,7 +679,7 @@ jobs:
               fi
               if [ -n "$COLLAB_CHECK" ]; then
                 ENV_FILE=.env.production COMPOSE_FILE=docker-compose.prod.yml \
-                  ops/service-identities/collab-dev-credentials.sh cutover
+                  ops/service-identities/collab-dev-credentials.sh cutover </dev/null
               fi
 
               # A-5 release gate: exercise the changed authenticated routes on

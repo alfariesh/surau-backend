@@ -117,7 +117,7 @@ jobs:
             # Production intentionally stops at prepare: the DEV-specific DB
             # role cutover remains an explicit, separately reviewed operation.
             ENV_FILE=.env.production COMPOSE_FILE=docker-compose.prod.yml \
-              ops/service-identities/collab-dev-credentials.sh prepare
+              ops/service-identities/collab-dev-credentials.sh prepare </dev/null
           fi
 
           # Snapshot the DB before the new image auto-migrates on boot, so a bad
