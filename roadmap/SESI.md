@@ -335,7 +335,7 @@ Masuk PLAN MODE dulu; rencana wajib menyebut cara memenuhi setiap Acceptance Cri
 ```
 
 - [x] **SESI 24 — Refresh 14 hari + sesi berlabel perangkat (A-5)** — ✅ **SELESAI
-  2026-07-18**: refresh kini memakai jendela diam 14 hari yang sliding; sesi aktif terus
+  2026-07-18 (PR #163)**: refresh kini memakai jendela diam 14 hari yang sliding; sesi aktif terus
   diperpanjang, tepat 14 hari diam ditolak tanpa alarm reuse palsu, dan sesi existing ber-expiry
   30 hari tetap kompatibel berdasarkan aktivitas terakhir. Daftar sesi mendapat `device_label`
   aditif yang mudah dibaca dengan fallback aman saat metadata kosong/tak dikenal, sementara raw

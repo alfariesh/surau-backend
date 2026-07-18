@@ -221,7 +221,7 @@ langsung 401 sementara T2 tetap 200; login role nyata ditolak mengubah status/DE
 dengan SQLSTATE 42501; importer Shamela+reader+Quran dan collab smoke lulus; migrasi up→down→up,
 unit/integration/Python/Node, live serial+race, diff-cover 75,5%, dan `make pre-commit` hijau;
 runbook rotasi dua-token/dua-login tersedia);
-**A-5 (refresh 336h sliding + label perangkat)** ✅ **SELESAI 2026-07-18 (SESI 24)**
+**A-5 (refresh 336h sliding + label perangkat)** ✅ **SELESAI 2026-07-18 (SESI 24, PR #163)**
 (token diam tepat 14 hari ditolak tanpa alarm reuse palsu; refresh aktif memperpanjang keluarga
 melewati satu jendela; sesi existing 720h kompatibel lewat `min(expires_at,last_used_at+336h)`;
 rotasi atomik single-winner, reuse→revoke keluarga, revoke per-sesi, dan notifikasi login baru

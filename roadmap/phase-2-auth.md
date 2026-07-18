@@ -201,7 +201,7 @@ Snapshot **33 sesi dev** dan **35 sesi prod** tidak mengalami revoke tanpa pengg
 `unexpected_canary_401=0`, container tidak restart, dan cleanup canary tuntas. Bukti operasional
 lengkap serta jadwal drill berikutnya 2027-01-16 ada di `docs/jwt-key-rotation.md`.
 
-### A-5 — Pengerasan refresh & sesi  *(P1, effort kecil)* — ✅ **SELESAI 2026-07-18 (SESI 24)**
+### A-5 — Pengerasan refresh & sesi  *(P1, effort kecil)* — ✅ **SELESAI 2026-07-18 (SESI 24, PR #163)**
 
 **Rationale:** A-G5/R3. **Isi:** umur refresh **720h → 336h (14 hari) sliding** (aktif memakai =
 diperpanjang; diam 14 hari = login ulang — keputusan saya: keseimbangan UX mobile vs jendela
