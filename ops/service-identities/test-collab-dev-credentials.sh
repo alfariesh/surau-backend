@@ -5,6 +5,15 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
+# The deploy workflows send their remote commands through an SSH heredoc.
+# Guard the cutover database helper against consuming every command after it.
+db_psql_body="$(sed -n '/^db_psql() {$/,/^}$/p' \
+  "$SCRIPT_DIR/collab-dev-credentials.sh")"
+if [[ "$db_psql_body" != *'</dev/null'* ]]; then
+  echo "db_psql must detach stdin so SSH deploy scripts can continue" >&2
+  exit 1
+fi
+
 mkdir -p "$TMP_DIR/bin"
 cat > "$TMP_DIR/bin/sudo" <<'MOCK'
 #!/usr/bin/env bash

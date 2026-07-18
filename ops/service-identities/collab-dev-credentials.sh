@@ -124,9 +124,12 @@ compose() {
 
 db_psql() {
   # Expansion is intentionally deferred to the database container.
+  # Deploy runs this helper inside an SSH heredoc, so the database client must
+  # not consume the remaining remote deployment script from standard input.
   # shellcheck disable=SC2016
   compose exec -T db sh -c \
-    'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" "$@"' sh "$@"
+    'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" "$@"' sh "$@" \
+    </dev/null
 }
 
 assert_role_acl() {
