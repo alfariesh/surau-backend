@@ -77,7 +77,7 @@ nyata; CI 10-run hijau tanpa retry ✅ **TERBUKTI 2026-07-08** (workflow integra
 lulus dalam 10,5 menit tanpa satu pun retry:
 https://github.com/alfariesh/surau-backend/actions/runs/28953164078); login admin ber-MFA ✅
 **TERBUKTI 2026-07-09 (S9)**; matriks kapabilitas beku-ber-test ✅ **TERBUKTI 2026-07-09 (S10)**.
-**Gerbang keluar W1 (auth) TERPENUHI** — sisa A-5/A-6 (refresh harden, alert anomali)
+**Gerbang keluar W1 (auth) TERPENUHI** — sisa A-6 (alert anomali)
 menyusul kapan saja; W2 (Content Backbone) dapat mulai.
 **Keputusan:** O-2-1 (cakupan MFA — cepat, lihat PK-3).
 
@@ -221,7 +221,13 @@ langsung 401 sementara T2 tetap 200; login role nyata ditolak mengubah status/DE
 dengan SQLSTATE 42501; importer Shamela+reader+Quran dan collab smoke lulus; migrasi up→down→up,
 unit/integration/Python/Node, live serial+race, diff-cover 75,5%, dan `make pre-commit` hijau;
 runbook rotasi dua-token/dua-login tersedia);
-sisa F2: A-5 (refresh 336h);
+**A-5 (refresh 336h sliding + label perangkat)** ✅ **SELESAI 2026-07-18 (SESI 24)**
+(token diam tepat 14 hari ditolak tanpa alarm reuse palsu; refresh aktif memperpanjang keluarga
+melewati satu jendela; sesi existing 720h kompatibel lewat `min(expires_at,last_used_at+336h)`;
+rotasi atomik single-winner, reuse→revoke keluarga, revoke per-sesi, dan notifikasi login baru
+tetap teruji. `device_label` aditif memakai label tetap yang aman serta fallback tanpa memantulkan
+metadata mentah. Unit/race, integration Docker, live PostgreSQL serial, Swagger, panduan rilis
+FE/mobile, `make pre-commit`, dan canary endpoint auth dev tersedia; tanpa migrasi schema);
 **U-0 (lapisan inferensi) + U-6 (eval-harness → gate) DIMULAI DI SINI** — Fase 7 mensyaratkan
 keduanya "sejak hari pertama", dan enrichment kitab langsung ikut menumpang U-0.
 **Gerbang keluar:** editorial Quran ber-ETag+revisi; test eligibilitas anti-tafsir lulus (dirujuk

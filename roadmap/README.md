@@ -33,7 +33,7 @@ konten** di atasnya (lihat 1.3 dan bagian 3).
 | Domain | Kematangan | Bukti kunci | Masalah terbesar |
 |---|---|---|---|
 | **Fondasi rekayasa** (layering, lint, CI, migrasi) | **Kuat** | 33 linter aktif (`.golangci.yml`), CI 10 job (lint, vuln-scan, unit, live, integration, collab), 57 pasang migrasi disiplin, tidak ada dependensi sirkular | Request-ID tidak masuk baris log; tanpa distributed tracing; kode mati `amqp_rpc`/`nats_rpc`; label Prometheus hardcoded `"my-service-name"` (`router.go`) |
-| **Auth & identity** | **Kuat** (pasca-hardening Jun 2026) | Rotasi sesi refresh + deteksi reuse + alert admin, lockout progresif, rate-limit berbasis DB (lintas instance), `token_version` untuk revokasi instan, bcrypt cost 12, audit log; dokumentasi FE 1.200+ baris (`docs/auth-frontend.md`) | Tanpa MFA (terutama admin); `JWT_SECRET` tak bisa dirotasi tanpa restart; refresh token hidup 720 jam tanpa device binding |
+| **Auth & identity** | **Kuat** (pasca-hardening Jul 2026) | MFA+step-up, rotasi JWT dual-key tanpa logout, refresh sliding 14 hari, daftar sesi berlabel, deteksi reuse + revoke per-perangkat, lockout progresif, rate-limit DB, `token_version`, bcrypt cost 12, audit log | Alert anomali auth selain reuse dan failover email masih perlu A-6 |
 | **Quran (teks primer)** | **Kuat di data, sedang di editorial** | Kunci kanonik `(surah_id, ayah_number)` + `ayah_key "s:a"` dengan CHECK constraints; importer QUL/Kemenag ber-checksum & idempoten; `license_status` menjadi gerbang API (hanya `permitted` tampil); trigger coverage; backlog correctness F01–F24/G1–G13 sudah dibereskan | Editorial surah/ayah **single-state, last-write-wins**: tanpa draft/publish, tanpa riwayat revisi, tanpa ETag (kontras dengan kitab); qira'at/riwayat teks tidak dimodelkan (hanya Hafs); `tafsir_range` baru pointer tanpa isi |
 | **Kitab reader + editorial** | **Kuat di alur, lemah di kesiapan-RAG** | Workflow produksi `candidate→drafting→in_review→ready→published`, ETag If-Match (412/428/`*`), snapshot revisi (50 terakhir), collab sidecar sehat, kontrak multilingual berprinsip (exact-language + metadata availability, tanpa fallback diam-diam) | **Tidak ada ID paragraf yang bisa disitasi** (blok diparse in-memory oleh `readerutil.NormalizeContent`, tidak disimpan); **provenance tidak terpisahkan** (teks asli vs suntingan vs mesin); edisi/tahqiq tidak dimodelkan (kolom `type` integer tak terdekode); importer Shamela menimpa konten saat re-import tanpa rollback |
 | **Book-RAG (satu buku)** | **Matang dalam scope-nya** | Retrieval "vectorless" ala PageIndex (tree TOC + beam search), validasi sitasi kutipan-eksak dengan retry perbaikan, prompt guardrail "Use only the SOURCE BLOCKS", kuota harian & rate-limit di edge worker | Hanya satu buku per pertanyaan; **golden eval cuma 7 kasus dan tidak dijadikan gate CI**; satu provider LLM tanpa abstraksi; tanpa cache hasil LLM |
@@ -306,8 +306,8 @@ melihat satu tautan "kitab X mengutip ayat Y" dan "hadith Z dikutip kitab X" yan
 sama, masing-masing dengan status review.
 
 **Fase 2 — Auth & identity** (paralel). Rationale: sudah kuat; sisa risiko nyata terukur. Fokus yang
-saya tetapkan: MFA admin (TOTP), rotasi JWT dual-key tanpa restart, peninjauan umur refresh-token
-(720h → rekomendasi 168h/7 hari + sliding), alert anomali auth dasar. **AC:** rotasi secret tanpa
+saya tetapkan: MFA admin (TOTP), rotasi JWT dual-key tanpa restart, umur refresh-token
+720h → **336h/14 hari sliding** (diratifikasi A-D7), dan alert anomali auth dasar. **AC:** rotasi secret tanpa
 downtime terverifikasi; login admin butuh faktor kedua. **DS:** login admin Salman meminta kode OTP.
 
 **Fase 3 — Quran primer (tanpa RAG).** Rationale: data kuat; editorial & scope teks perlu naik

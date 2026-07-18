@@ -15,7 +15,7 @@
 
 Hardening Jun 2026 (PR #28 dkk.) nyata dan berkualitas:
 
-- **Sesi & token**: akses pendek (15m prod) + refresh (720h) dalam **keluarga sesi ber-rotasi
+- **Sesi & token**: akses pendek (15m prod) + refresh (336h sliding) dalam **keluarga sesi ber-rotasi
   atomik** dengan **deteksi reuse** (race di `RotateAuthSession` → `ErrInvalidRefreshToken`) +
   **alert admin** saat reuse terdeteksi; `users.token_version` membatalkan semua JWT lama seketika
   pada reset/ganti-password/ganti-email/hapus-akun; endpoint daftar/cabut sesi ada (ber-rate-limit).
@@ -201,7 +201,7 @@ Snapshot **33 sesi dev** dan **35 sesi prod** tidak mengalami revoke tanpa pengg
 `unexpected_canary_401=0`, container tidak restart, dan cleanup canary tuntas. Bukti operasional
 lengkap serta jadwal drill berikutnya 2027-01-16 ada di `docs/jwt-key-rotation.md`.
 
-### A-5 — Pengerasan refresh & sesi  *(P1, effort kecil)*
+### A-5 — Pengerasan refresh & sesi  *(P1, effort kecil)* — ✅ **SELESAI 2026-07-18 (SESI 24)**
 
 **Rationale:** A-G5/R3. **Isi:** umur refresh **720h → 336h (14 hari) sliding** (aktif memakai =
 diperpanjang; diam 14 hari = login ulang — keputusan saya: keseimbangan UX mobile vs jendela
@@ -213,6 +213,18 @@ dipertahankan; peristiwa "login perangkat baru" tetap bernotifikasi.
 **AC:** refresh yang tak dipakai 14 hari ditolak; pemakaian aktif tak pernah terputus; sesi
 tampil berlabel perangkat.
 **DS:** daftar "perangkat yang sedang login" di akun terlihat jelas dan bisa dicabut satu-satu.
+
+**Bukti selesai:** jendela inaktivitas `336h` ditegakkan pada rotasi, daftar, dan cabut sesi
+secara atomik; baris existing dengan expiry lama tetap hidup bila dipakai dalam 14 hari dan
+expiry efektifnya di-clamp tanpa migrasi paksa. Test jam deterministik membuktikan `14d-1ns`
+diterima, tepat `14d`/lebih ditolak, serta keluarga aktif yang refresh tiap 13 hari tetap hidup
+melewati 60 hari. Label aditif `device_label` memakai kosakata aman (contoh `Chrome di Mac`,
+`Aplikasi Surau di Android`) dan fallback tetap `Perangkat tidak dikenal` untuk metadata kosong,
+berbahaya, atau tak dikenali tanpa memantulkan input mentah. Integration/live PostgreSQL menjaga
+rotasi single-winner, reuse→revoke keluarga, revoke per-sesi, dan notifikasi perangkat baru.
+Kontrak serta komunikasi rilis FE/mobile ada di `docs/auth-frontend.md` dan
+`docs/mobile-backend-integration-guide.md`; deploy dev menjalankan canary A-5 yang membersihkan
+akun uji sendiri.
 
 ### A-6 — Alert anomali auth + ketahanan email  *(P1/P2, effort kecil)*
 

@@ -245,14 +245,19 @@ export function resolveContentLang(input: {
 
 ## 4. Auth Flow
 
-Mobile auth memakai JWT Bearer token. Tidak ada cookie auth. **MFA (TOTP) tersedia sejak A-3**: bila `POST /v1/auth/login` membalas `{ "mfa_required": true, "mfa_token": "..." }` (bukan token), minta kode 6 digit lalu `POST /v1/auth/mfa/verify` `{ mfa_token, code }` → pasangan token normal; akun tanpa MFA tidak berubah alurnya. Detail lengkap (enrollment, step-up, recovery) di `docs/auth-frontend.md` §Flow MFA. Endpoint session/refresh yang lebih baru (`POST /v1/auth/refresh`, `POST /v1/auth/logout`, `GET/DELETE /v1/auth/sessions`) belum tercakup di dokumen ini — cek `docs/auth-frontend.md` dan `/swagger/index.html`.
+Mobile auth memakai JWT Bearer token, tanpa cookie. Login biasa atau MFA verify menghasilkan pasangan access token 15 menit + refresh token dengan jendela diam sliding 14 hari. Bila `POST /v1/auth/login` membalas `{ "mfa_required": true, "mfa_token": "..." }`, minta kode 6 digit lalu `POST /v1/auth/mfa/verify` `{ mfa_token, code }` untuk memperoleh pasangan token. Detail enrollment/step-up/recovery ada di `docs/auth-frontend.md` §Flow MFA.
 
 Endpoint ringkas:
 
 | Method | Path | Auth | Success |
 | --- | --- | --- | --- |
 | `POST` | `/v1/auth/register` | Public | `201 User` |
-| `POST` | `/v1/auth/login` | Public | `200 {"token":"..."}` |
+| `POST` | `/v1/auth/login` | Public | `200 Token` |
+| `POST` | `/v1/auth/refresh` | Refresh token | `200 Token` |
+| `POST` | `/v1/auth/logout` | Refresh token | `200 {"logged_out":true}` |
+| `POST` | `/v1/auth/logout-all` | Bearer | `200 {"sessions_revoked":true}` |
+| `GET` | `/v1/auth/sessions` | Bearer | `200 {items: SessionInfo[],total}` |
+| `DELETE` | `/v1/auth/sessions/{id}` | Bearer | `200 {"session_revoked":true}` |
 | `POST` | `/v1/auth/verify-email` | Public | `200 {"email_verified":true}` |
 | `POST` | `/v1/auth/resend-verification` | Public | `202 {"accepted":true}` |
 | `POST` | `/v1/auth/forgot-password` | Public | `202 {"accepted":true}` |
@@ -270,7 +275,9 @@ Auth gotchas:
 - Email verification/reset/change-email tidak dikirim synchronous di dalam request: backend menyimpannya ke antrian durable, lalu dispatcher background mengirimkannya (default tick 15 detik, biasanya tiba dalam ~15-30 detik). Setelah register, tampilkan copy "cek email kamu; email bisa butuh sampai ±30 detik untuk tiba". `503 email delivery failed` sekarang hanya muncul bila backend gagal menyimpan email ke antrian (kegagalan DB) — provider email yang down/lambat tidak lagi menggagalkan signup atau menambah latensi.
 - Email verification dan change-email email berisi link dan OTP 6 digit. OTP default berlaku `10m`; memakai OTP atau link akan menghabiskan verifikasi yang sama.
 - `POST /v1/auth/change-email/verify` tetap butuh Bearer token user yang sedang login. Jika deep link membuka app dari cold start, restore session dulu sebelum submit token.
-- Dokumen ini belum mencakup flow refresh token. Saat protected endpoint mengembalikan `401`, hapus token lokal dan minta login ulang.
+- Refresh berhasil selalu mengembalikan refresh token baru. Jalankan hanya satu refresh in-flight per sesi dan simpan pasangan baru secara atomik; replay token lama atau refresh paralel sengaja dianggap reuse dan dapat mencabut sesi perangkat tersebut.
+- Tepat 14 hari tanpa refresh berhasil membuat sesi kedaluwarsa. Sesi existing yang aktif tetap lanjut; pengguna yang sudah diam 14 hari akan login ulang satu kali.
+- `401 invalid_refresh_token` berarti hapus access+refresh token dan minta login ulang. Jangan retry token refresh yang sama.
 - Setelah reset password, change password, change email, atau delete account, JWT lama akan invalid.
 - Jangan trim password. Password valid `8..72` bytes, bukan karakter.
 - FE baru sebaiknya pakai `name` atau `display_name` saat register. `username` masih diterima untuk kompatibilitas client lama.
@@ -298,7 +305,12 @@ Login success:
 
 ```json
 {
-  "token": "eyJhbGciOiJIUzI1NiIs..."
+  "token": "<access-token>",
+  "access_token": "<access-token>",
+  "refresh_token": "opaque-refresh-token",
+  "token_type": "Bearer",
+  "expires_in": 900,
+  "session_id": "550e8400-e29b-41d4-a716-446655440000"
 }
 ```
 
@@ -378,18 +390,25 @@ Delete account request:
 
 Mobile startup session flow:
 
-1. Ambil token dari secure storage.
-2. Jika token ada, panggil `GET /v1/user/profile`.
-3. Jika `200`, simpan `UserAccount`, pakai `preferences.preferred_content_lang`.
-4. Jika `401`, hapus token dan tampilkan login.
-5. Jika `onboarding_required=true`, arahkan ke onboarding sebelum reader utama.
+1. Ambil access+refresh token sebagai satu record dari secure storage.
+2. Bila access token masih hidup, panggil `GET /v1/user/profile`.
+3. Bila access token expired/ditolak, masuk ke single-flight refresh: `POST /v1/auth/refresh` dengan refresh token sekarang.
+4. Bila refresh `200`, ganti kedua token secara atomik lalu ulangi profile sekali; bila `401 invalid_refresh_token`, hapus keduanya dan tampilkan login.
+5. Setelah profile `200`, simpan `UserAccount`, pakai `preferences.preferred_content_lang`; bila `onboarding_required=true`, arahkan ke onboarding sebelum reader utama.
 
 Storage rekomendasi:
 
 - iOS: Keychain.
 - Android: EncryptedSharedPreferences/Keystore.
-- Jangan simpan token di plain AsyncStorage tanpa enkripsi.
-- Logout client cukup hapus token lokal dan state user.
+- Jangan simpan access atau refresh token di plain AsyncStorage tanpa enkripsi.
+- Logout normal memanggil `POST /v1/auth/logout` sebelum menghapus token lokal. Jika perangkat offline, hapus lokal dan biarkan sesi server berakhir melalui jendela diam.
+- Kirim User-Agent stabil pada login, MFA verify, dan refresh, misalnya `SurauAndroid/4.2.0 (Android 15)` atau `SurauiOS/4.2.0 (iOS 18)`.
+
+Manage devices memakai `GET /v1/auth/sessions`. Tampilkan `device_label` sebagai judul, `last_used_at` sebagai aktivitas terakhir, `is_current` untuk badge “perangkat ini”, dan panggil `DELETE /v1/auth/sessions/{id}` untuk mencabut satu perangkat. `device_label` selalu non-empty; metadata kosong/asing menjadi `Perangkat tidak dikenal`. Jangan merender raw `user_agent` sebagai HTML.
+
+Copy komunikasi rilis:
+
+> Demi keamanan, sesi Surau yang tidak dipakai selama 14 hari kini meminta login ulang. Selama aplikasi aktif dan memperbarui sesi, Anda tetap masuk. Halaman keamanan juga kini menampilkan nama perangkat yang lebih mudah dikenali.
 
 ## 5. Profile, Onboarding, Preferences
 

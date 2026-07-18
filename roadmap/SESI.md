@@ -334,7 +334,15 @@ Kerjakan A-4 dari roadmap/phase-2-auth.md: tambahkan kid pada token baru, verifi
 Masuk PLAN MODE dulu; rencana wajib menyebut cara memenuhi setiap Acceptance Criterion A-4, termasuk kompatibilitas token tanpa kid yang masih hidup, strategi rollback aman, bukti token lama valid selama overlap lalu ditolak setelahnya, serta nol sesi terputus pada drill. Setelah saya setujui: kerjakan sampai tuntas — branch fitur, test, Definition of Done, centang PROGRAM.md & SESI.md, merge, verifikasi dev-api dan hasil drill. Laporan akhir bahasa awam.
 ```
 
-- [ ] **SESI 24 — Refresh 14 hari + sesi berlabel perangkat (A-5)**
+- [x] **SESI 24 — Refresh 14 hari + sesi berlabel perangkat (A-5)** — ✅ **SELESAI
+  2026-07-18**: refresh kini memakai jendela diam 14 hari yang sliding; sesi aktif terus
+  diperpanjang, tepat 14 hari diam ditolak tanpa alarm reuse palsu, dan sesi existing ber-expiry
+  30 hari tetap kompatibel berdasarkan aktivitas terakhir. Daftar sesi mendapat `device_label`
+  aditif yang mudah dibaca dengan fallback aman saat metadata kosong/tak dikenal, sementara raw
+  field lama tetap ada. Rotasi atomik, deteksi reuse+revoke keluarga, revoke satu sesi, dan
+  notifikasi perangkat baru tetap teruji. Swagger, panduan rilis FE/mobile, unit/race,
+  integration Docker, live PostgreSQL, `make pre-commit`, serta canary auth dev disertakan; tidak
+  ada migrasi schema.
 
 ```text
 Kerjakan A-5 dari roadmap/phase-2-auth.md: ubah umur refresh dari 720h menjadi 336h (14 hari) sliding sehingga pemakaian aktif memperpanjang sesi dan token diam 14 hari ditolak; tambahkan label perangkat/klien yang terbaca manusia pada daftar sesi; pertahankan deteksi reuse, revoke per-sesi, rotasi, dan notifikasi perangkat baru; dokumentasikan perubahan perilaku untuk komunikasi rilis FE/mobile.
