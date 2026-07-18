@@ -5781,8 +5781,11 @@ definitions:
       created_at:
         example: "2026-01-01T00:00:00Z"
         type: string
+      device_label:
+        example: Safari di iPhone
+        type: string
       expires_at:
-        example: "2026-02-01T00:00:00Z"
+        example: "2026-01-16T08:30:00Z"
         type: string
       id:
         example: 550e8400-e29b-41d4-a716-446655440000
@@ -8822,7 +8825,8 @@ paths:
     post:
       consumes:
       - application/json
-      description: Exchange a refresh token for a new access/refresh token pair
+      description: Exchange a single-use refresh token for a new pair and extend the
+        14-day inactivity window
       operationId: refresh-session
       parameters:
       - description: Refresh token
@@ -8964,7 +8968,8 @@ paths:
       - auth
   /auth/sessions:
     get:
-      description: List the current user's active devices/sessions (manage devices)
+      description: List active devices with a safe human-readable device_label (manage
+        devices)
       operationId: list-sessions
       produces:
       - application/json

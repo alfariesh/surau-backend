@@ -23,6 +23,7 @@ var (
 	ErrPasswordResetRateLimited         = errors.New("password reset rate limited")
 	ErrInvalidEmailChangeToken          = errors.New("invalid email change token")
 	ErrInvalidRefreshToken              = errors.New("invalid refresh token")
+	ErrRefreshSessionExpired            = errors.New("refresh session expired")
 	ErrAuthSessionNotFound              = errors.New("auth session not found")
 	ErrAccountLocked                    = errors.New("account temporarily locked")
 	ErrLastAdmin                        = errors.New("cannot demote the last admin")

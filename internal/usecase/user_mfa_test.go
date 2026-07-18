@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/alfariesh/surau-backend/internal/entity"
+	"github.com/alfariesh/surau-backend/internal/usecase/authmeta"
 	"github.com/alfariesh/surau-backend/internal/usecase/user"
 	"github.com/alfariesh/surau-backend/pkg/cryptobox"
 	"github.com/alfariesh/surau-backend/pkg/jwt"
@@ -301,6 +302,38 @@ func TestVerifyMFALogin(t *testing.T) {
 		assert.NotEmpty(t, result.AccessToken)
 		assert.NotEmpty(t, result.RefreshToken)
 		require.NotNil(t, created.MFAVerifiedAt, "session born step-up fresh")
+	})
+
+	t.Run("incomplete verify metadata falls back to the password challenge", func(t *testing.T) {
+		t.Parallel()
+
+		f := newMFAFixture(t)
+		challenge := liveChallenge()
+		challenge.UserAgent = "SurauAndroid/4.2.0 (Android 15)"
+		challenge.ClientIP = "203.0.113.42"
+		f.mfa.EXPECT().GetMFAChallengeByTokenHash(gomock.Any(), gomock.Any(), entity.MFAChallengePurposeLogin).
+			Return(challenge, nil)
+		f.repo.EXPECT().GetByID(gomock.Any(), testMFAUserID).Return(testMFAUser(), nil)
+		f.mfa.EXPECT().GetMFA(gomock.Any(), testMFAUserID).
+			Return(entity.UserMFA{UserID: testMFAUserID, TOTPSecretEnc: f.sealedSecret(t), ConfirmedAt: &confirmedAt}, nil)
+		f.mfa.EXPECT().AdvanceMFATOTPStep(gomock.Any(), testMFAUserID, gomock.Any()).Return(nil)
+		f.mfa.EXPECT().ConsumeMFAChallenge(gomock.Any(), "challenge-1").Return(nil)
+
+		var created entity.AuthSession
+
+		f.sessions.EXPECT().CreateAuthSession(gomock.Any(), gomock.Any()).
+			DoAndReturn(func(_ context.Context, session entity.AuthSession) error {
+				created = session
+
+				return nil
+			})
+
+		ctx := authmeta.With(context.Background(), authmeta.Meta{Transport: "unknown"})
+		_, err := f.uc.VerifyMFALogin(ctx, "mfa-token", totpCodeNow(t))
+
+		require.NoError(t, err)
+		assert.Equal(t, challenge.UserAgent, created.UserAgent)
+		assert.Equal(t, challenge.ClientIP, created.ClientIP)
 	})
 
 	t.Run("recovery code path consumes exactly the stored hash", func(t *testing.T) {

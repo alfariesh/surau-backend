@@ -98,7 +98,7 @@ services:
       PG_URL: ${PG_URL:?set PG_URL}
       JWT_TOKEN_EXPIRY: ${JWT_TOKEN_EXPIRY:-24h}
       JWT_ACCESS_TOKEN_EXPIRY: ${JWT_ACCESS_TOKEN_EXPIRY:-15m}
-      JWT_REFRESH_TOKEN_EXPIRY: ${JWT_REFRESH_TOKEN_EXPIRY:-720h}
+      JWT_REFRESH_TOKEN_EXPIRY: ${JWT_REFRESH_TOKEN_EXPIRY:-336h}
       # JWT_SECRET is the pre-A-4 bootstrap fallback. Runtime rotation uses the
       # atomically replaced keyset inside the directory bind below.
       JWT_SECRET: ${JWT_SECRET:-}

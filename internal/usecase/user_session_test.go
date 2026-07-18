@@ -23,6 +23,16 @@ func newUserUseCaseWithSessions(
 ) (*user.UseCase, *MockUserRepo, *MockAuthSessionRepo, *MockAuthLockoutRepo) {
 	t.Helper()
 
+	return newUserUseCaseWithSessionClock(t, 24*time.Hour, nil)
+}
+
+func newUserUseCaseWithSessionClock(
+	t *testing.T,
+	refreshTTL time.Duration,
+	now func() time.Time,
+) (*user.UseCase, *MockUserRepo, *MockAuthSessionRepo, *MockAuthLockoutRepo) {
+	t.Helper()
+
 	ctrl := gomock.NewController(t)
 
 	repo := NewMockUserRepo(ctrl)
@@ -39,11 +49,194 @@ func newUserUseCaseWithSessions(
 		EmailChangeCooldown:   time.Minute,
 		Sessions:              sessions,
 		Lockout:               lockout,
-		RefreshTokenTTL:       24 * time.Hour,
+		RefreshTokenTTL:       refreshTTL,
 		LockoutOptions:        user.LockoutOptions{Enabled: true},
+		Now:                   now,
 	})
 
 	return useCase, repo, sessions, lockout
+}
+
+func TestRefreshSessionSlidingInactivityWindow(t *testing.T) {
+	t.Parallel()
+
+	const refreshTTL = 336 * time.Hour
+
+	fixedNow := time.Date(2026, time.July, 18, 12, 0, 0, 0, time.UTC)
+	activeLegacySession := func(tokenHash string, lastUsedAt time.Time) entity.AuthSession {
+		return entity.AuthSession{
+			ID:               "session-old",
+			FamilyID:         "family-1",
+			UserID:           "user-id-123",
+			RefreshTokenHash: tokenHash,
+			TokenVersion:     3,
+			UserAgent:        "Mozilla/5.0 Chrome/126.0.0.0 Safari/537.36",
+			ClientIP:         "203.0.113.10",
+			CreatedAt:        fixedNow.Add(-30 * 24 * time.Hour),
+			LastUsedAt:       lastUsedAt,
+			// Legacy rows may still carry the previous 30-day absolute expiry.
+			ExpiresAt: fixedNow.Add(30 * 24 * time.Hour),
+		}
+	}
+
+	t.Run("legacy session active just before deadline rotates into fourteen-day successor", func(t *testing.T) {
+		t.Parallel()
+
+		uc, users, sessions, _ := newUserUseCaseWithSessionClock(t, refreshTTL, func() time.Time {
+			return fixedNow
+		})
+		rawToken, tokenHash := testRefreshToken(t)
+		legacy := activeLegacySession(tokenHash, fixedNow.Add(-refreshTTL).Add(time.Nanosecond))
+
+		sessions.EXPECT().GetAuthSessionByTokenHash(gomock.Any(), tokenHash).Return(legacy, nil)
+		users.EXPECT().GetByID(gomock.Any(), legacy.UserID).
+			Return(entity.User{ID: legacy.UserID, TokenVersion: legacy.TokenVersion}, nil)
+
+		var successor entity.AuthSession
+
+		sessions.EXPECT().
+			RotateAuthSession(gomock.Any(), legacy.ID, gomock.Any(), gomock.Any()).
+			DoAndReturn(func(
+				_ context.Context,
+				_ string,
+				next *entity.AuthSession,
+				validity repoContract.AuthSessionValidity,
+			) error {
+				successor = *next
+
+				assert.Equal(t, fixedNow, validity.Now)
+				assert.Equal(t, fixedNow.Add(-refreshTTL), validity.IdleCutoff)
+
+				return nil
+			})
+
+		result, err := uc.RefreshSession(context.Background(), rawToken)
+
+		require.NoError(t, err)
+		assert.Equal(t, fixedNow, successor.LastUsedAt)
+		assert.Equal(t, fixedNow.Add(refreshTTL), successor.ExpiresAt)
+		assert.Equal(t, successor.ExpiresAt, result.RefreshExpiresAt)
+		assert.Equal(t, legacy.FamilyID, successor.FamilyID)
+		assert.Equal(t, legacy.UserAgent, successor.UserAgent)
+		assert.Equal(t, legacy.ClientIP, successor.ClientIP)
+	})
+
+	for _, tc := range []struct {
+		name       string
+		lastUsedAt time.Time
+		expiresAt  time.Time
+	}{
+		{
+			name:       "exactly fourteen days idle is rejected",
+			lastUsedAt: fixedNow.Add(-refreshTTL),
+			expiresAt:  fixedNow.Add(30 * 24 * time.Hour),
+		},
+		{
+			name:       "more than fourteen days idle is rejected",
+			lastUsedAt: fixedNow.Add(-refreshTTL).Add(-time.Nanosecond),
+			expiresAt:  fixedNow.Add(30 * 24 * time.Hour),
+		},
+		{
+			name:       "earlier absolute expiry still wins",
+			lastUsedAt: fixedNow.Add(-time.Hour),
+			expiresAt:  fixedNow,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			uc, _, sessions, _ := newUserUseCaseWithSessionClock(t, refreshTTL, func() time.Time {
+				return fixedNow
+			})
+			rawToken, tokenHash := testRefreshToken(t)
+			stored := activeLegacySession(tokenHash, tc.lastUsedAt)
+			stored.ExpiresAt = tc.expiresAt
+			sessions.EXPECT().GetAuthSessionByTokenHash(gomock.Any(), tokenHash).Return(stored, nil)
+
+			_, err := uc.RefreshSession(context.Background(), rawToken)
+
+			require.ErrorIs(t, err, entity.ErrInvalidRefreshToken)
+		})
+	}
+
+	t.Run("expiry discovered inside transaction is not treated as reuse", func(t *testing.T) {
+		t.Parallel()
+
+		uc, users, sessions, _ := newUserUseCaseWithSessionClock(t, refreshTTL, func() time.Time {
+			return fixedNow
+		})
+		rawToken, tokenHash := testRefreshToken(t)
+		stored := activeLegacySession(tokenHash, fixedNow.Add(-time.Hour))
+
+		sessions.EXPECT().GetAuthSessionByTokenHash(gomock.Any(), tokenHash).Return(stored, nil)
+		users.EXPECT().GetByID(gomock.Any(), stored.UserID).
+			Return(entity.User{ID: stored.UserID, TokenVersion: stored.TokenVersion}, nil)
+		sessions.EXPECT().
+			RotateAuthSession(gomock.Any(), stored.ID, gomock.Any(), gomock.Any()).
+			Return(entity.ErrRefreshSessionExpired)
+
+		_, err := uc.RefreshSession(context.Background(), rawToken)
+
+		require.ErrorIs(t, err, entity.ErrInvalidRefreshToken)
+		// No RevokeAuthSessionFamily expectation: ordinary expiry must not
+		// trigger the reuse detector or revoke/alarm path.
+	})
+}
+
+func TestRefreshSessionActiveFamilyCanOutliveSingleWindow(t *testing.T) {
+	t.Parallel()
+
+	const refreshTTL = 336 * time.Hour
+
+	currentNow := time.Date(2026, time.January, 14, 0, 0, 0, 0, time.UTC)
+	uc, users, sessions, _ := newUserUseCaseWithSessionClock(t, refreshTTL, func() time.Time {
+		return currentNow
+	})
+	rawToken, tokenHash := testRefreshToken(t)
+	state := entity.AuthSession{
+		ID:               "session-first",
+		FamilyID:         "family-long-lived",
+		UserID:           "user-id-123",
+		RefreshTokenHash: tokenHash,
+		TokenVersion:     3,
+		CreatedAt:        currentNow.Add(-13 * 24 * time.Hour),
+		LastUsedAt:       currentNow.Add(-13 * 24 * time.Hour),
+		ExpiresAt:        currentNow.Add(30 * 24 * time.Hour),
+	}
+
+	sessions.EXPECT().GetAuthSessionByTokenHash(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, _ string) (entity.AuthSession, error) {
+			return state, nil
+		}).Times(6)
+	users.EXPECT().GetByID(gomock.Any(), state.UserID).
+		Return(entity.User{ID: state.UserID, TokenVersion: state.TokenVersion}, nil).
+		Times(6)
+	sessions.EXPECT().RotateAuthSession(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(
+			_ context.Context,
+			oldID string,
+			next *entity.AuthSession,
+			validity repoContract.AuthSessionValidity,
+		) error {
+			assert.Equal(t, state.ID, oldID)
+			assert.Equal(t, currentNow, validity.Now)
+			assert.Equal(t, currentNow.Add(refreshTTL), next.ExpiresAt)
+			assert.Equal(t, "family-long-lived", next.FamilyID)
+			state = *next
+
+			return nil
+		}).Times(6)
+
+	for range 6 {
+		result, err := uc.RefreshSession(context.Background(), rawToken)
+		require.NoError(t, err)
+
+		rawToken = result.RefreshToken
+		currentNow = currentNow.Add(13 * 24 * time.Hour)
+	}
+
+	assert.Equal(t, "family-long-lived", state.FamilyID)
+	assert.True(t, currentNow.Sub(time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)) > 60*24*time.Hour)
 }
 
 func testRefreshToken(t *testing.T) (token, tokenHash string) {
@@ -145,9 +338,14 @@ func TestRefreshSession(t *testing.T) {
 		var next entity.AuthSession
 
 		sessions.EXPECT().
-			RotateAuthSession(gomock.Any(), "session-old", gomock.Any()).
-			DoAndReturn(func(_ context.Context, _ string, session entity.AuthSession) error {
-				next = session
+			RotateAuthSession(gomock.Any(), "session-old", gomock.Any(), gomock.Any()).
+			DoAndReturn(func(
+				_ context.Context,
+				_ string,
+				session *entity.AuthSession,
+				_ repoContract.AuthSessionValidity,
+			) error {
+				next = *session
 
 				return nil
 			})
@@ -235,7 +433,7 @@ func TestRefreshSession(t *testing.T) {
 		repo.EXPECT().GetByID(gomock.Any(), "user-id-123").
 			Return(entity.User{ID: "user-id-123", TokenVersion: 3}, nil)
 		sessions.EXPECT().
-			RotateAuthSession(gomock.Any(), "session-old", gomock.Any()).
+			RotateAuthSession(gomock.Any(), "session-old", gomock.Any(), gomock.Any()).
 			Return(entity.ErrInvalidRefreshToken)
 		sessions.EXPECT().RevokeAuthSessionFamily(gomock.Any(), "family-1").Return(int64(1), nil)
 

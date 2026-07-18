@@ -654,18 +654,18 @@ func (mr *MockAuthSessionRepoMockRecorder) GetAuthSessionByTokenHash(ctx, tokenH
 }
 
 // ListActiveAuthSessions mocks base method.
-func (m *MockAuthSessionRepo) ListActiveAuthSessions(ctx context.Context, userID string) ([]entity.AuthSession, error) {
+func (m *MockAuthSessionRepo) ListActiveAuthSessions(ctx context.Context, userID string, validity repo.AuthSessionValidity) ([]entity.AuthSession, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ListActiveAuthSessions", ctx, userID)
+	ret := m.ctrl.Call(m, "ListActiveAuthSessions", ctx, userID, validity)
 	ret0, _ := ret[0].([]entity.AuthSession)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // ListActiveAuthSessions indicates an expected call of ListActiveAuthSessions.
-func (mr *MockAuthSessionRepoMockRecorder) ListActiveAuthSessions(ctx, userID any) *gomock.Call {
+func (mr *MockAuthSessionRepoMockRecorder) ListActiveAuthSessions(ctx, userID, validity any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListActiveAuthSessions", reflect.TypeOf((*MockAuthSessionRepo)(nil).ListActiveAuthSessions), ctx, userID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListActiveAuthSessions", reflect.TypeOf((*MockAuthSessionRepo)(nil).ListActiveAuthSessions), ctx, userID, validity)
 }
 
 // RevokeAllAuthSessions mocks base method.
@@ -684,17 +684,17 @@ func (mr *MockAuthSessionRepoMockRecorder) RevokeAllAuthSessions(ctx, userID any
 }
 
 // RevokeAuthSessionByID mocks base method.
-func (m *MockAuthSessionRepo) RevokeAuthSessionByID(ctx context.Context, userID, sessionID string) error {
+func (m *MockAuthSessionRepo) RevokeAuthSessionByID(ctx context.Context, userID, sessionID string, validity repo.AuthSessionValidity) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "RevokeAuthSessionByID", ctx, userID, sessionID)
+	ret := m.ctrl.Call(m, "RevokeAuthSessionByID", ctx, userID, sessionID, validity)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // RevokeAuthSessionByID indicates an expected call of RevokeAuthSessionByID.
-func (mr *MockAuthSessionRepoMockRecorder) RevokeAuthSessionByID(ctx, userID, sessionID any) *gomock.Call {
+func (mr *MockAuthSessionRepoMockRecorder) RevokeAuthSessionByID(ctx, userID, sessionID, validity any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RevokeAuthSessionByID", reflect.TypeOf((*MockAuthSessionRepo)(nil).RevokeAuthSessionByID), ctx, userID, sessionID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RevokeAuthSessionByID", reflect.TypeOf((*MockAuthSessionRepo)(nil).RevokeAuthSessionByID), ctx, userID, sessionID, validity)
 }
 
 // RevokeAuthSessionFamily mocks base method.
@@ -713,17 +713,17 @@ func (mr *MockAuthSessionRepoMockRecorder) RevokeAuthSessionFamily(ctx, familyID
 }
 
 // RotateAuthSession mocks base method.
-func (m *MockAuthSessionRepo) RotateAuthSession(ctx context.Context, oldID string, next entity.AuthSession) error {
+func (m *MockAuthSessionRepo) RotateAuthSession(ctx context.Context, oldID string, next *entity.AuthSession, validity repo.AuthSessionValidity) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "RotateAuthSession", ctx, oldID, next)
+	ret := m.ctrl.Call(m, "RotateAuthSession", ctx, oldID, next, validity)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // RotateAuthSession indicates an expected call of RotateAuthSession.
-func (mr *MockAuthSessionRepoMockRecorder) RotateAuthSession(ctx, oldID, next any) *gomock.Call {
+func (mr *MockAuthSessionRepoMockRecorder) RotateAuthSession(ctx, oldID, next, validity any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RotateAuthSession", reflect.TypeOf((*MockAuthSessionRepo)(nil).RotateAuthSession), ctx, oldID, next)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RotateAuthSession", reflect.TypeOf((*MockAuthSessionRepo)(nil).RotateAuthSession), ctx, oldID, next, validity)
 }
 
 // MockAuthLockoutRepo is a mock of AuthLockoutRepo interface.

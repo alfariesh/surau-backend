@@ -19,12 +19,12 @@ import (
 func repoCleanupPolicy(opts CleanupOptions) repo.AuthCleanupPolicy {
 	tokenRetention := opts.TokenRetention
 	if tokenRetention <= 0 {
-		tokenRetention = defaultAuthDataTTL
+		tokenRetention = defaultAuthDataRetention
 	}
 
 	sessionRetention := opts.SessionRetention
 	if sessionRetention <= 0 {
-		sessionRetention = defaultAuthDataTTL
+		sessionRetention = defaultAuthDataRetention
 	}
 
 	return repo.AuthCleanupPolicy{
@@ -89,20 +89,35 @@ func (uc *UseCase) RefreshSession(ctx context.Context, refreshToken string) (res
 	}
 
 	auditUserID = session.UserID
+	now := uc.now().UTC()
+	validity := uc.authSessionValidity(now)
 
-	user, err := uc.userForRefreshableSession(ctx, &session)
+	user, err := uc.userForRefreshableSession(ctx, &session, now)
 	if err != nil {
 		return entity.LoginResult{}, err
 	}
 
-	result, err = uc.issueSessionRow(ctx, &user, uuid.NewString(), session.FamilyID, func(next *entity.AuthSession) error {
+	result, err = uc.issueSessionRowAt(ctx, &user, uuid.NewString(), session.FamilyID, now, func(next *entity.AuthSession) error {
 		// Step-up freshness survives rotation: the successor row inherits
 		// the MFA stamp (A-3).
 		next.MFAVerifiedAt = session.MFAVerifiedAt
+		// Some mobile/network stacks omit metadata on refresh. This is the
+		// same session family, so retain the last useful values instead of
+		// degrading its human-readable device entry.
+		if next.UserAgent == "" {
+			next.UserAgent = session.UserAgent
+		}
 
-		return uc.sessions.RotateAuthSession(ctx, session.ID, *next)
+		if next.ClientIP == "" || next.ClientIP == unknownAuthMetadata {
+			next.ClientIP = session.ClientIP
+		}
+
+		return uc.sessions.RotateAuthSession(ctx, session.ID, next, validity)
 	})
 	if err != nil {
+		if errors.Is(err, entity.ErrRefreshSessionExpired) {
+			return entity.LoginResult{}, entity.ErrInvalidRefreshToken
+		}
 		// Losing the rotation race means another caller already spent this
 		// token — treat it as reuse and kill the family.
 		if errors.Is(err, entity.ErrInvalidRefreshToken) {
@@ -203,9 +218,15 @@ func (uc *UseCase) ListSessions(ctx context.Context, userID string) ([]entity.Au
 		return []entity.AuthSession{}, nil
 	}
 
-	sessions, err := uc.sessions.ListActiveAuthSessions(ctx, userID)
+	now := uc.now().UTC()
+
+	sessions, err := uc.sessions.ListActiveAuthSessions(ctx, userID, uc.authSessionValidity(now))
 	if err != nil {
 		return nil, fmt.Errorf("UserUseCase - ListSessions - ListActiveAuthSessions: %w", err)
+	}
+
+	for i := range sessions {
+		sessions[i].ExpiresAt = uc.effectiveAuthSessionDeadline(&sessions[i])
 	}
 
 	return sessions, nil
@@ -234,7 +255,13 @@ func (uc *UseCase) RevokeSession(ctx context.Context, userID, sessionID string) 
 		return entity.ErrAuthSessionNotFound
 	}
 
-	if err = uc.sessions.RevokeAuthSessionByID(ctx, auditUserID, sessionID); err != nil {
+	now := uc.now().UTC()
+	if err = uc.sessions.RevokeAuthSessionByID(
+		ctx,
+		auditUserID,
+		sessionID,
+		uc.authSessionValidity(now),
+	); err != nil {
 		if errors.Is(err, entity.ErrAuthSessionNotFound) {
 			return entity.ErrAuthSessionNotFound
 		}
@@ -267,6 +294,7 @@ func (uc *UseCase) CleanupAuthData(ctx context.Context) (entity.AuthCleanupResul
 func (uc *UseCase) userForRefreshableSession(
 	ctx context.Context,
 	session *entity.AuthSession,
+	now time.Time,
 ) (entity.User, error) {
 	if session.RevokedAt != nil || session.ReplacedByID != nil {
 		uc.revokeSessionFamilyForReuse(ctx, session)
@@ -274,7 +302,7 @@ func (uc *UseCase) userForRefreshableSession(
 		return entity.User{}, entity.ErrInvalidRefreshToken
 	}
 
-	if !time.Now().UTC().Before(session.ExpiresAt) {
+	if !now.Before(uc.effectiveAuthSessionDeadline(session)) {
 		return entity.User{}, entity.ErrInvalidRefreshToken
 	}
 
@@ -307,6 +335,17 @@ func (uc *UseCase) issueSessionRow(
 	familyID string,
 	store func(*entity.AuthSession) error,
 ) (entity.LoginResult, error) {
+	return uc.issueSessionRowAt(ctx, user, sessionID, familyID, uc.now().UTC(), store)
+}
+
+func (uc *UseCase) issueSessionRowAt(
+	ctx context.Context,
+	user *entity.User,
+	sessionID string,
+	familyID string,
+	now time.Time,
+	store func(*entity.AuthSession) error,
+) (entity.LoginResult, error) {
 	rawTokenBytes := make([]byte, refreshTokenBytes)
 	if _, err := rand.Read(rawTokenBytes); err != nil {
 		return entity.LoginResult{}, fmt.Errorf("UserUseCase - issueSessionRow - rand.Read: %w", err)
@@ -314,7 +353,6 @@ func (uc *UseCase) issueSessionRow(
 
 	rawToken := base64.RawURLEncoding.EncodeToString(rawTokenBytes)
 
-	now := time.Now().UTC()
 	refreshExpiresAt := now.Add(uc.refreshTokenTTL)
 	meta := authmeta.From(ctx)
 	session := entity.AuthSession{
@@ -351,6 +389,22 @@ func (uc *UseCase) issueSessionRow(
 		RefreshToken:     rawToken,
 		RefreshExpiresAt: refreshExpiresAt,
 	}, nil
+}
+
+func (uc *UseCase) authSessionValidity(now time.Time) repo.AuthSessionValidity {
+	return repo.AuthSessionValidity{
+		Now:        now,
+		IdleCutoff: now.Add(-uc.refreshTokenTTL),
+	}
+}
+
+func (uc *UseCase) effectiveAuthSessionDeadline(session *entity.AuthSession) time.Time {
+	idleDeadline := session.LastUsedAt.Add(uc.refreshTokenTTL)
+	if session.ExpiresAt.Before(idleDeadline) {
+		return session.ExpiresAt
+	}
+
+	return idleDeadline
 }
 
 func (uc *UseCase) revokeSessionFamilyForReuse(ctx context.Context, session *entity.AuthSession) {

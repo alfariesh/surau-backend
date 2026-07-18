@@ -19,7 +19,11 @@ func TestListSessionsRoute(t *testing.T) {
 
 		now := time.Date(2026, 6, 10, 12, 0, 0, 0, time.UTC)
 		app := newAuthTestApp(&fakeAuthUser{sessions: []entity.AuthSession{
-			{ID: "s1", FamilyID: "fam-current", UserAgent: "iPhone", ClientIP: "203.0.113.1", LastUsedAt: now, ExpiresAt: now},
+			{
+				ID: "s1", FamilyID: "fam-current",
+				UserAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) Version/17.5 Safari/604.1",
+				ClientIP:  "203.0.113.1", LastUsedAt: now, ExpiresAt: now,
+			},
 			{ID: "s2", FamilyID: "fam-other", UserAgent: "Chrome", ClientIP: "203.0.113.2", LastUsedAt: now, ExpiresAt: now},
 		}})
 
@@ -33,9 +37,10 @@ func TestListSessionsRoute(t *testing.T) {
 
 		body := readTestBody(t, resp)
 		assert.Contains(t, body, `"id":"s1"`)
-		assert.Contains(t, body, `"user_agent":"iPhone"`)
+		assert.Contains(t, body, `"device_label":"Safari di iPhone"`)
+		assert.Contains(t, body, `"device_label":"Chrome"`)
 		// s1 matches the access token's session family, s2 does not.
-		assert.Contains(t, body, `"id":"s1","user_agent":"iPhone","client_ip":"203.0.113.1"`)
+		assert.Contains(t, body, `"id":"s1","user_agent":"Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) Version/17.5 Safari/604.1","device_label":"Safari di iPhone","client_ip":"203.0.113.1"`)
 		assert.Contains(t, body, `"is_current":true`)
 		assert.Contains(t, body, `"is_current":false`)
 		// Sensitive fields are never serialized.

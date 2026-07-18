@@ -3983,7 +3983,7 @@
         },
         "/auth/refresh": {
             "post": {
-                "description": "Exchange a refresh token for a new access/refresh token pair",
+                "description": "Exchange a single-use refresh token for a new pair and extend the 14-day inactivity window",
                 "consumes": [
                     "application/json"
                 ],
@@ -4201,7 +4201,7 @@
         },
         "/auth/sessions": {
             "get": {
-                "description": "List the current user's active devices/sessions (manage devices)",
+                "description": "List active devices with a safe human-readable device_label (manage devices)",
                 "produces": [
                     "application/json"
                 ],
@@ -21720,9 +21720,13 @@
                     "type": "string",
                     "example": "2026-01-01T00:00:00Z"
                 },
+                "device_label": {
+                    "type": "string",
+                    "example": "Safari di iPhone"
+                },
                 "expires_at": {
                     "type": "string",
-                    "example": "2026-02-01T00:00:00Z"
+                    "example": "2026-01-16T08:30:00Z"
                 },
                 "id": {
                     "type": "string",

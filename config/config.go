@@ -19,6 +19,7 @@ const (
 	RAGLLMDriverRollout         = "deterministic-rollout"
 
 	minCollabServiceTokenBytes = 32
+	maxRefreshTokenExpiry      = 336 * time.Hour
 )
 
 // errConfig is the static root of every configuration validation error.
@@ -209,7 +210,7 @@ type (
 		// AccessTokenExpiry. Kept validated for env back-compat.
 		TokenExpiry        time.Duration `env:"JWT_TOKEN_EXPIRY" envDefault:"24h"`
 		AccessTokenExpiry  time.Duration `env:"JWT_ACCESS_TOKEN_EXPIRY" envDefault:"15m"`
-		RefreshTokenExpiry time.Duration `env:"JWT_REFRESH_TOKEN_EXPIRY" envDefault:"720h"`
+		RefreshTokenExpiry time.Duration `env:"JWT_REFRESH_TOKEN_EXPIRY" envDefault:"336h"`
 		Issuer             string        `env:"JWT_ISSUER" envDefault:"surau-backend"`
 		Audience           string        `env:"JWT_AUDIENCE" envDefault:"surau-api"`
 	}
@@ -491,8 +492,8 @@ func NewConfig() (*Config, error) {
 		return nil, configError("JWT_ACCESS_TOKEN_EXPIRY must be positive and no more than 24h")
 	}
 
-	if cfg.JWT.RefreshTokenExpiry < cfg.JWT.AccessTokenExpiry || cfg.JWT.RefreshTokenExpiry > 8760*time.Hour {
-		return nil, configError("JWT_REFRESH_TOKEN_EXPIRY must be at least JWT_ACCESS_TOKEN_EXPIRY and no more than 8760h")
+	if cfg.JWT.RefreshTokenExpiry < cfg.JWT.AccessTokenExpiry || cfg.JWT.RefreshTokenExpiry > maxRefreshTokenExpiry {
+		return nil, configError("JWT_REFRESH_TOKEN_EXPIRY must be at least JWT_ACCESS_TOKEN_EXPIRY and no more than 336h")
 	}
 
 	if err := validateAuthLockout(cfg.AuthLockout); err != nil {
@@ -501,6 +502,10 @@ func NewConfig() (*Config, error) {
 
 	if err := validateAuthCleanup(cfg.AuthCleanup); err != nil {
 		return nil, err
+	}
+
+	if cfg.AuthCleanup.Enabled && cfg.AuthCleanup.SessionRetention < cfg.JWT.RefreshTokenExpiry {
+		return nil, configError("AUTH_CLEANUP_SESSION_RETENTION must be at least JWT_REFRESH_TOKEN_EXPIRY")
 	}
 
 	if cfg.AuthAlert.Enabled && cfg.AuthAlert.Interval <= 0 {
