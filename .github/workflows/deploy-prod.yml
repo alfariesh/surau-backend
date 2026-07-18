@@ -83,6 +83,21 @@ jobs:
           git fetch --tags --force origin
           git checkout --force "refs/tags/$DEPLOY_TAG"
 
+          set_env_value() {
+            key="$1"
+            value="$2"
+            if grep -q "^${key}=" .env.production; then
+              sed -i "s/^${key}=.*/${key}=${value}/" .env.production
+            else
+              printf '%s=%s\n' "$key" "$value" >> .env.production
+            fi
+          }
+
+          # Keep future production releases compatible with the A-5 config
+          # ceiling while retaining rotated rows for reuse detection.
+          set_env_value JWT_REFRESH_TOKEN_EXPIRY 336h
+          set_env_value AUTH_CLEANUP_SESSION_RETENTION 720h
+
           # A production host must never inherit the image's post-K-1 unit
           # default before an explicit release rollout. The first K-1 release
           # is pinned to legacy; later releases preserve the operator's flag.

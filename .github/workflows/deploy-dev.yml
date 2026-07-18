@@ -195,6 +195,12 @@ jobs:
             sed -i "/^${key}=/d" .env.production
           }
 
+          # A-5 is a host policy, not merely an image default. Materialize the
+          # non-secret values so an existing 720h/168h host cannot bypass the
+          # 14-day inactivity window or delete reuse evidence too early.
+          set_env_value JWT_REFRESH_TOKEN_EXPIRY 336h
+          set_env_value AUTH_CLEANUP_SESSION_RETENTION 720h
+
           run_with_heartbeat() {
             label="$1"
             shift
@@ -675,6 +681,11 @@ jobs:
                 ENV_FILE=.env.production COMPOSE_FILE=docker-compose.prod.yml \
                   ops/service-identities/collab-dev-credentials.sh cutover
               fi
+
+              # A-5 release gate: exercise the changed authenticated routes on
+              # the active dev slot with an isolated, self-cleaning canary.
+              ENV_FILE=.env.production COMPOSE_FILE=docker-compose.prod.yml \
+                APP_ENV=dev API_URL="$ACTIVE_API_URL" ops/auth/verify-a5-dev.sh </dev/null
 
               # Q-2 rollout/recovery is deliberately ordered: restore frozen
               # QPC page metadata first, then reconcile the same B-1 registry.
