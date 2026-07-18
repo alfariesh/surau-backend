@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/alfariesh/surau-backend/internal/entity"
+	repoContract "github.com/alfariesh/surau-backend/internal/repo"
 	"github.com/alfariesh/surau-backend/pkg/postgres"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -279,7 +280,10 @@ func TestLiveMFASessionStampGateAndRotation(t *testing.T) {
 		ExpiresAt:        time.Now().Add(time.Hour),
 		MFAVerifiedAt:    fetched.MFAVerifiedAt,
 	}
-	require.NoError(t, repo.RotateAuthSession(ctx, first.ID, next))
+	require.NoError(t, repo.RotateAuthSession(ctx, first.ID, &next, repoContract.AuthSessionValidity{
+		Now:        next.CreatedAt,
+		IdleCutoff: next.CreatedAt.Add(-24 * time.Hour),
+	}))
 
 	gate, err = repo.GetMFAGateData(ctx, userID, familyID)
 	require.NoError(t, err)

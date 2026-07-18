@@ -3,6 +3,7 @@ package integration_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"testing"
@@ -16,9 +17,12 @@ type sessionTokenResponse struct {
 }
 
 type sessionInfo struct {
-	ID        string `json:"id"`
-	UserAgent string `json:"user_agent"`
-	IsCurrent bool   `json:"is_current"`
+	ID          string    `json:"id"`
+	UserAgent   string    `json:"user_agent"`
+	DeviceLabel string    `json:"device_label"`
+	LastUsedAt  time.Time `json:"last_used_at"`
+	ExpiresAt   time.Time `json:"expires_at"`
+	IsCurrent   bool      `json:"is_current"`
 }
 
 type sessionListResponse struct {
@@ -110,7 +114,8 @@ func listSessions(t *testing.T, accessToken string) sessionListResponse {
 func TestAuthSessionManagementFlow(t *testing.T) {
 	email, _ := registerVerifiedUser(t)
 
-	deviceA := loginWithUA(t, email, "IntegrationDeviceA/1.0")
+	deviceAUserAgent := "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/537.36 Chrome/126.0.0.0 Safari/537.36"
+	deviceA := loginWithUA(t, email, deviceAUserAgent)
 	loginWithUA(t, email, "IntegrationDeviceB/2.0")
 
 	// 1. Both devices show up; exactly the caller's device is flagged current.
@@ -127,11 +132,22 @@ func TestAuthSessionManagementFlow(t *testing.T) {
 		if s.IsCurrent {
 			currentCount++
 
-			if s.UserAgent != "IntegrationDeviceA/1.0" {
+			if s.UserAgent != deviceAUserAgent {
 				t.Fatalf("current session has user_agent %q, want device A", s.UserAgent)
+			}
+
+			if s.DeviceLabel != "Chrome di Mac" {
+				t.Fatalf("current session has device_label %q, want Chrome di Mac", s.DeviceLabel)
+			}
+
+			if delta := s.ExpiresAt.Sub(s.LastUsedAt); delta != 336*time.Hour {
+				t.Fatalf("current session window = %s, want exactly 336h", delta)
 			}
 		} else {
 			deviceBSessionID = s.ID
+			if s.DeviceLabel != "Perangkat tidak dikenal" {
+				t.Fatalf("unknown metadata label = %q, want safe fallback", s.DeviceLabel)
+			}
 		}
 	}
 
@@ -181,6 +197,99 @@ func TestAuthSessionManagementFlow(t *testing.T) {
 	}
 }
 
+func TestRefreshSlidingWindowForExistingSessions(t *testing.T) {
+	email, userID := registerVerifiedUser(t)
+	tokens := loginWithUA(t, email, "SurauAndroid/4.2.0 (Android 15)")
+
+	pool := integrationDB(t)
+	defer pool.Close()
+
+	ctx, cancel := context.WithTimeout(t.Context(), requestTimeout)
+	defer cancel()
+
+	// Simulate a legacy 720h row that was still active thirteen days ago.
+	_, err := pool.Exec(ctx, `
+UPDATE auth_sessions
+SET last_used_at = now() - interval '13 days',
+    expires_at = now() + interval '30 days'
+WHERE family_id = $1 AND revoked_at IS NULL`, tokens.SessionID)
+	if err != nil {
+		t.Fatalf("age active legacy session: %v", err)
+	}
+
+	legacyList := listSessions(t, tokens.AccessToken)
+	if len(legacyList.Sessions) != 1 {
+		t.Fatalf("active legacy session list expected 1 row, got %d", len(legacyList.Sessions))
+	}
+
+	if delta := legacyList.Sessions[0].ExpiresAt.Sub(legacyList.Sessions[0].LastUsedAt); delta != 336*time.Hour {
+		t.Fatalf("legacy effective list window = %s, want 336h", delta)
+	}
+
+	refreshBody := fmt.Sprintf(`{"refresh_token":%q}`, tokens.RefreshToken)
+
+	resp := doJSON(t, http.MethodPost, baseURL()+"/v1/auth/refresh", bytes.NewBufferString(refreshBody), "")
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		t.Fatalf("active legacy refresh expected 200, got %d", resp.StatusCode)
+	}
+
+	var rotated sessionTokenResponse
+	decodeAndClose(t, resp, &rotated)
+
+	var successorWindowSeconds int64
+
+	err = pool.QueryRow(ctx, `
+SELECT EXTRACT(EPOCH FROM (expires_at - last_used_at))::bigint
+FROM auth_sessions
+WHERE family_id = $1 AND revoked_at IS NULL`, tokens.SessionID).Scan(&successorWindowSeconds)
+	if err != nil {
+		t.Fatalf("read successor window: %v", err)
+	}
+
+	if successorWindowSeconds != int64((336*time.Hour)/time.Second) {
+		t.Fatalf("successor window = %ds, want exactly 336h", successorWindowSeconds)
+	}
+
+	// The same stored 30-day expiry must not rescue a row that has been idle
+	// beyond the new 14-day boundary.
+	_, err = pool.Exec(ctx, `
+UPDATE auth_sessions
+SET last_used_at = now() - interval '14 days 1 minute',
+    expires_at = now() + interval '30 days'
+WHERE family_id = $1 AND revoked_at IS NULL`, tokens.SessionID)
+	if err != nil {
+		t.Fatalf("age idle legacy session: %v", err)
+	}
+
+	list := listSessions(t, rotated.AccessToken)
+	if len(list.Sessions) != 0 {
+		t.Fatalf("idle session must be hidden from list, got %d rows", len(list.Sessions))
+	}
+
+	idleBody := fmt.Sprintf(`{"refresh_token":%q}`, rotated.RefreshToken)
+	resp = doJSON(t, http.MethodPost, baseURL()+"/v1/auth/refresh", bytes.NewBufferString(idleBody), "")
+	idleStatus := resp.StatusCode
+	resp.Body.Close()
+
+	if idleStatus != http.StatusUnauthorized {
+		t.Fatalf("idle legacy refresh expected 401, got %d", idleStatus)
+	}
+
+	var reuseAudits int
+
+	err = pool.QueryRow(ctx, `
+SELECT COUNT(*) FROM auth_audit_logs
+WHERE event = 'refresh_reuse_detected' AND user_id = $1`, userID).Scan(&reuseAudits)
+	if err != nil {
+		t.Fatalf("query idle audit logs: %v", err)
+	}
+
+	if reuseAudits != 0 {
+		t.Fatalf("ordinary idle expiry wrote %d reuse audits, want 0", reuseAudits)
+	}
+}
+
 func TestRefreshReuseDetectedAudit(t *testing.T) {
 	email, userID := registerVerifiedUser(t)
 	tokens := loginWithUA(t, email, "IntegrationReuse/1.0")
@@ -226,8 +335,103 @@ WHERE event = 'refresh_reuse_detected' AND user_id = $1`, userID).Scan(&count)
 		t.Fatalf("expected >=1 refresh_reuse_detected audit row for user, got %d", count)
 	}
 
-	// The reused token must not have minted a new session.
-	if rotated.AccessToken == "" {
-		t.Fatal("first refresh should have returned a new access token")
+	// Reuse revokes the whole family, including the successor that was valid
+	// immediately before the replay.
+	rotatedBody := fmt.Sprintf(`{"refresh_token":%q}`, rotated.RefreshToken)
+	resp = doJSON(t, http.MethodPost, baseURL()+"/v1/auth/refresh", bytes.NewBufferString(rotatedBody), "")
+	rotatedStatus := resp.StatusCode
+	resp.Body.Close()
+
+	if rotatedStatus != http.StatusUnauthorized {
+		t.Fatalf("successor after family reuse expected 401, got %d", rotatedStatus)
+	}
+}
+
+func TestConcurrentRefreshHasOneWinnerAndRevokesFamily(t *testing.T) {
+	email, _ := registerVerifiedUser(t)
+	tokens := loginWithUA(t, email, "ConcurrentRefresh/1.0")
+	body := fmt.Sprintf(`{"refresh_token":%q}`, tokens.RefreshToken)
+
+	type refreshAttempt struct {
+		status int
+		tokens sessionTokenResponse
+		err    error
+	}
+
+	start := make(chan struct{})
+	results := make(chan refreshAttempt, 2)
+
+	for range 2 {
+		go func() {
+			<-start
+
+			ctx, cancel := context.WithTimeout(t.Context(), requestTimeout)
+			defer cancel()
+
+			req, err := http.NewRequestWithContext(
+				ctx,
+				http.MethodPost,
+				baseURL()+"/v1/auth/refresh",
+				bytes.NewBufferString(body),
+			)
+			if err != nil {
+				results <- refreshAttempt{err: err}
+
+				return
+			}
+
+			req.Header.Set("Content-Type", "application/json")
+
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				results <- refreshAttempt{err: err}
+
+				return
+			}
+			defer resp.Body.Close()
+
+			attempt := refreshAttempt{status: resp.StatusCode}
+			if resp.StatusCode == http.StatusOK {
+				attempt.err = json.NewDecoder(resp.Body).Decode(&attempt.tokens)
+			}
+
+			results <- attempt
+		}()
+	}
+
+	close(start)
+
+	winners := make([]sessionTokenResponse, 0, 1)
+	unauthorized := 0
+
+	for range 2 {
+		attempt := <-results
+		if attempt.err != nil {
+			t.Fatalf("concurrent refresh request: %v", attempt.err)
+		}
+
+		switch attempt.status {
+		case http.StatusOK:
+			winners = append(winners, attempt.tokens)
+		case http.StatusUnauthorized:
+			unauthorized++
+		default:
+			t.Fatalf("concurrent refresh returned unexpected status %d", attempt.status)
+		}
+	}
+
+	if len(winners) != 1 || unauthorized != 1 {
+		t.Fatalf("concurrent refresh winners=%d unauthorized=%d, want 1/1", len(winners), unauthorized)
+	}
+
+	// The losing spend is intentional reuse detection, so it revokes the
+	// successor issued to the winner as well.
+	winnerBody := fmt.Sprintf(`{"refresh_token":%q}`, winners[0].RefreshToken)
+	resp := doJSON(t, http.MethodPost, baseURL()+"/v1/auth/refresh", bytes.NewBufferString(winnerBody), "")
+	status := resp.StatusCode
+	resp.Body.Close()
+
+	if status != http.StatusUnauthorized {
+		t.Fatalf("winner successor after concurrent reuse expected 401, got %d", status)
 	}
 }

@@ -33,7 +33,7 @@ x-backend-app-environment: &x-backend-app-environment
   # JWT
   JWT_TOKEN_EXPIRY: "24h"
   JWT_ACCESS_TOKEN_EXPIRY: "15m"
-  JWT_REFRESH_TOKEN_EXPIRY: "720h"
+  JWT_REFRESH_TOKEN_EXPIRY: "336h"
   JWT_SECRET: "dev-secret-change-me-32-bytes-minimum"
   JWT_KEYSET_FILE: ""
   JWT_ISSUER: "surau-backend"

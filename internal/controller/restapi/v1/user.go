@@ -122,7 +122,7 @@ func (r *V1) login(ctx *fiber.Ctx) error {
 }
 
 // @Summary     Refresh session
-// @Description Exchange a refresh token for a new access/refresh token pair
+// @Description Exchange a single-use refresh token for a new pair and extend the 14-day inactivity window
 // @ID          refresh-session
 // @Tags        auth
 // @Accept      json
@@ -244,7 +244,7 @@ func (r *V1) logoutAll(ctx *fiber.Ctx) error {
 }
 
 // @Summary     List active sessions
-// @Description List the current user's active devices/sessions (manage devices)
+// @Description List active devices with a safe human-readable device_label (manage devices)
 // @ID          list-sessions
 // @Tags        auth
 // @Produce     json

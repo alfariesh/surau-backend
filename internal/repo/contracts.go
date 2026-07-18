@@ -10,6 +10,13 @@ import (
 
 //go:generate mockgen -source=contracts.go -destination=../usecase/mocks_repo_test.go -package=usecase_test
 
+// AuthSessionValidity pins one refresh/session operation to a single instant.
+// IdleCutoff is Now minus the configured sliding inactivity window.
+type AuthSessionValidity struct {
+	Now        time.Time
+	IdleCutoff time.Time
+}
+
 type (
 	// TranslationRepo -.
 	TranslationRepo interface {
@@ -67,18 +74,32 @@ type (
 		// RotateAuthSession atomically revokes the old session row and inserts
 		// its replacement. Returns entity.ErrInvalidRefreshToken when the old
 		// row was already revoked or replaced (concurrent rotation = reuse).
-		RotateAuthSession(ctx context.Context, oldID string, next entity.AuthSession) error
+		RotateAuthSession(
+			ctx context.Context,
+			oldID string,
+			next *entity.AuthSession,
+			validity AuthSessionValidity,
+		) error
 		RevokeAuthSessionFamily(ctx context.Context, familyID string) (int64, error)
 		// RevokeAllAuthSessions revokes every active session for the user and
 		// bumps users.token_version in one transaction (logout everywhere).
 		RevokeAllAuthSessions(ctx context.Context, userID string) (int64, error)
 		// ListActiveAuthSessions returns the user's unrevoked, unexpired sessions
 		// (one row per active device), newest activity first.
-		ListActiveAuthSessions(ctx context.Context, userID string) ([]entity.AuthSession, error)
+		ListActiveAuthSessions(
+			ctx context.Context,
+			userID string,
+			validity AuthSessionValidity,
+		) ([]entity.AuthSession, error)
 		// RevokeAuthSessionByID revokes the family of one active session, scoped
 		// to the owning user. Returns entity.ErrAuthSessionNotFound when no
 		// active session matches the id for that user.
-		RevokeAuthSessionByID(ctx context.Context, userID, sessionID string) error
+		RevokeAuthSessionByID(
+			ctx context.Context,
+			userID,
+			sessionID string,
+			validity AuthSessionValidity,
+		) error
 	}
 
 	// AuthLockoutRepo stores progressive login lockout counters.

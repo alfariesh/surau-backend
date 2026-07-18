@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	sq "github.com/Masterminds/squirrel"
 	"github.com/alfariesh/surau-backend/internal/entity"
+	"github.com/alfariesh/surau-backend/internal/repo"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -69,21 +71,58 @@ func (r *UserRepo) GetAuthSessionByTokenHash(ctx context.Context, tokenHash stri
 	return session, nil
 }
 
-// RotateAuthSession revokes the old session row and inserts its replacement
-// atomically. Losing a concurrent rotation race returns
-// entity.ErrInvalidRefreshToken so callers treat it as token reuse.
-func (r *UserRepo) RotateAuthSession(ctx context.Context, oldID string, next entity.AuthSession) error { //nolint:gocritic // value param fixed by the repo interface contract
+// RotateAuthSession locks and validates the old row, then revokes it and
+// inserts its replacement atomically. A concurrent spend remains reuse, while
+// ordinary inactivity expiry is reported separately so it does not raise a
+// false security alarm.
+func (r *UserRepo) RotateAuthSession(
+	ctx context.Context,
+	oldID string,
+	next *entity.AuthSession,
+	validity repo.AuthSessionValidity,
+) error {
 	tx, err := r.Pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("UserRepo - RotateAuthSession - r.Pool.Begin: %w", err)
 	}
 	defer tx.Rollback(ctx)
 
+	state, err := r.lockAuthSessionRotationState(ctx, tx, oldID)
+	if err != nil {
+		return err
+	}
+
+	if err := state.validate(validity); err != nil {
+		return err
+	}
+
+	if retireErr := r.retireAuthSession(ctx, tx, oldID, next.ID, validity.Now); retireErr != nil {
+		return retireErr
+	}
+
+	if insertErr := r.insertRotatedAuthSession(ctx, tx, next); insertErr != nil {
+		return insertErr
+	}
+
+	if err = tx.Commit(ctx); err != nil {
+		return fmt.Errorf("UserRepo - RotateAuthSession - tx.Commit: %w", err)
+	}
+
+	return nil
+}
+
+func (r *UserRepo) retireAuthSession(
+	ctx context.Context,
+	tx pgx.Tx,
+	oldID string,
+	replacementID string,
+	now time.Time,
+) error {
 	revokeSQL, revokeArgs, err := r.Builder.
 		Update("auth_sessions").
-		Set("revoked_at", sq.Expr("now()")).
-		Set("replaced_by_id", next.ID).
-		Set("last_used_at", sq.Expr("now()")).
+		Set("revoked_at", now).
+		Set("replaced_by_id", replacementID).
+		Set("last_used_at", now).
 		Where(sq.Eq{"id": oldID}).
 		Where("revoked_at IS NULL").
 		Where("replaced_by_id IS NULL").
@@ -101,6 +140,14 @@ func (r *UserRepo) RotateAuthSession(ctx context.Context, oldID string, next ent
 		return entity.ErrInvalidRefreshToken
 	}
 
+	return nil
+}
+
+func (r *UserRepo) insertRotatedAuthSession(
+	ctx context.Context,
+	tx pgx.Tx,
+	next *entity.AuthSession,
+) error {
 	insertSQL, insertArgs, err := r.Builder.
 		Insert("auth_sessions").
 		Columns(authSessionColumns).
@@ -128,8 +175,55 @@ func (r *UserRepo) RotateAuthSession(ctx context.Context, oldID string, next ent
 		return fmt.Errorf("UserRepo - RotateAuthSession - insert Exec: %w", err)
 	}
 
-	if err = tx.Commit(ctx); err != nil {
-		return fmt.Errorf("UserRepo - RotateAuthSession - tx.Commit: %w", err)
+	return nil
+}
+
+type authSessionRotationState struct {
+	revokedAt  *time.Time
+	replacedBy *string
+	lastUsedAt time.Time
+	expiresAt  time.Time
+}
+
+func (r *UserRepo) lockAuthSessionRotationState(
+	ctx context.Context,
+	tx pgx.Tx,
+	oldID string,
+) (authSessionRotationState, error) {
+	stateSQL, stateArgs, err := r.Builder.
+		Select("revoked_at", "replaced_by_id", "last_used_at", "expires_at").
+		From("auth_sessions").
+		Where(sq.Eq{"id": oldID}).
+		Suffix("FOR UPDATE").
+		ToSql()
+	if err != nil {
+		return authSessionRotationState{}, fmt.Errorf("UserRepo - RotateAuthSession - state Builder: %w", err)
+	}
+
+	var state authSessionRotationState
+	if err = tx.QueryRow(ctx, stateSQL, stateArgs...).Scan(
+		&state.revokedAt,
+		&state.replacedBy,
+		&state.lastUsedAt,
+		&state.expiresAt,
+	); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return authSessionRotationState{}, entity.ErrInvalidRefreshToken
+		}
+
+		return authSessionRotationState{}, fmt.Errorf("UserRepo - RotateAuthSession - state QueryRow: %w", err)
+	}
+
+	return state, nil
+}
+
+func (state authSessionRotationState) validate(validity repo.AuthSessionValidity) error {
+	if state.revokedAt != nil || state.replacedBy != nil {
+		return entity.ErrInvalidRefreshToken
+	}
+
+	if !validity.Now.Before(state.expiresAt) || !state.lastUsedAt.After(validity.IdleCutoff) {
+		return entity.ErrRefreshSessionExpired
 	}
 
 	return nil
@@ -209,13 +303,18 @@ func (r *UserRepo) RevokeAllAuthSessions(ctx context.Context, userID string) (in
 // ListActiveAuthSessions returns the user's unrevoked, unexpired sessions
 // ordered by most recent activity. Rotation keeps one active row per family,
 // so each row corresponds to one active device.
-func (r *UserRepo) ListActiveAuthSessions(ctx context.Context, userID string) ([]entity.AuthSession, error) {
+func (r *UserRepo) ListActiveAuthSessions(
+	ctx context.Context,
+	userID string,
+	validity repo.AuthSessionValidity,
+) ([]entity.AuthSession, error) {
 	sqlText, args, err := r.Builder.
 		Select(authSessionColumns).
 		From("auth_sessions").
 		Where(sq.Eq{"user_id": userID}).
 		Where("revoked_at IS NULL").
-		Where("expires_at > now()").
+		Where(sq.Gt{"expires_at": validity.Now}).
+		Where(sq.Gt{"last_used_at": validity.IdleCutoff}).
 		OrderBy("last_used_at DESC").
 		ToSql()
 	if err != nil {
@@ -250,13 +349,19 @@ func (r *UserRepo) ListActiveAuthSessions(ctx context.Context, userID string) ([
 // the owning user so callers cannot revoke other users' sessions. The session
 // row id is resolved to its family first, then the whole rotation chain is
 // revoked (a family has one active row, so this kills exactly that device).
-func (r *UserRepo) RevokeAuthSessionByID(ctx context.Context, userID, sessionID string) error {
+func (r *UserRepo) RevokeAuthSessionByID(
+	ctx context.Context,
+	userID,
+	sessionID string,
+	validity repo.AuthSessionValidity,
+) error {
 	lookupSQL, lookupArgs, err := r.Builder.
 		Select("family_id").
 		From("auth_sessions").
 		Where(sq.Eq{"id": sessionID, "user_id": userID}).
 		Where("revoked_at IS NULL").
-		Where("expires_at > now()").
+		Where(sq.Gt{"expires_at": validity.Now}).
+		Where(sq.Gt{"last_used_at": validity.IdleCutoff}).
 		ToSql()
 	if err != nil {
 		return fmt.Errorf("UserRepo - RevokeAuthSessionByID - lookup Builder: %w", err)

@@ -114,6 +114,7 @@ jobs:
             ops/auth/bootstrap-jwt-keyset.sh ops/auth/test-bootstrap-jwt-keyset.sh \
             ops/auth/assert-jwt-deploy-safe.sh ops/auth/test-assert-jwt-deploy-safe.sh \
             ops/auth/rotate-jwt-keyset.sh ops/auth/test-rotate-jwt-keyset.sh \
+            ops/auth/verify-a5-dev.sh \
             ops/deploy/blue-green-app.sh ops/deploy/test-blue-green-app.sh \
             ops/perf/quran-page-diagnostics.sh
       - name: Backup script tests (encryption round-trip + latest selection)

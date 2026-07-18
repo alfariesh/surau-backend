@@ -4,6 +4,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	jwtpkg "github.com/alfariesh/surau-backend/pkg/jwt"
 	"github.com/stretchr/testify/assert"
@@ -668,7 +669,7 @@ func TestNewConfig_AuthSessionDefaults(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Equal(t, "15m0s", cfg.JWT.AccessTokenExpiry.String())
-	assert.Equal(t, "720h0m0s", cfg.JWT.RefreshTokenExpiry.String())
+	assert.Equal(t, "336h0m0s", cfg.JWT.RefreshTokenExpiry.String())
 	assert.True(t, cfg.AuthLockout.Enabled)
 	assert.Equal(t, 5, cfg.AuthLockout.Threshold)
 	assert.Equal(t, "1m0s", cfg.AuthLockout.BaseDuration.String())
@@ -701,10 +702,16 @@ func TestNewConfig_AuthSessionValidation(t *testing.T) {
 			wantErr: "JWT_REFRESH_TOKEN_EXPIRY",
 		},
 		{
-			name:    "refresh expiry over one year",
+			name:    "refresh expiry over fourteen days",
 			key:     "JWT_REFRESH_TOKEN_EXPIRY",
-			value:   "9000h",
+			value:   "337h",
 			wantErr: "JWT_REFRESH_TOKEN_EXPIRY",
+		},
+		{
+			name:    "cleanup retention below refresh window",
+			key:     "AUTH_CLEANUP_SESSION_RETENTION",
+			value:   "168h",
+			wantErr: "AUTH_CLEANUP_SESSION_RETENTION",
 		},
 		{
 			name:    "lockout threshold zero",
@@ -749,4 +756,15 @@ func TestNewConfig_AuthSessionValidation(t *testing.T) {
 			assert.Contains(t, err.Error(), tc.wantErr)
 		})
 	}
+}
+
+func TestNewConfig_AuthSessionAllowsShorterEmergencyWindow(t *testing.T) {
+	setRequiredEnv(t)
+	t.Setenv("JWT_REFRESH_TOKEN_EXPIRY", "168h")
+	t.Setenv("AUTH_CLEANUP_SESSION_RETENTION", "720h")
+
+	cfg, err := NewConfig()
+
+	require.NoError(t, err)
+	assert.Equal(t, 168*time.Hour, cfg.JWT.RefreshTokenExpiry)
 }

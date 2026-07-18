@@ -244,7 +244,7 @@ func (uc *UseCase) mfaLoginChallengeFor(ctx context.Context, user *entity.User) 
 		return entity.LoginResult{}, false, err
 	}
 
-	now := time.Now().UTC()
+	now := uc.now().UTC()
 	expiresAt := now.Add(uc.mfaOptions.ChallengeTTL)
 	meta := authmeta.From(ctx)
 
@@ -312,10 +312,11 @@ func (uc *UseCase) VerifyMFALogin(ctx context.Context, mfaToken, code string) (r
 		return entity.LoginResult{}, err
 	}
 
-	now := time.Now().UTC()
+	now := uc.now().UTC()
+	ctx = authContextWithChallengeMetadata(ctx, &challenge)
 	sessionID := uuid.NewString()
 
-	result, err = uc.issueSessionRow(ctx, &user, sessionID, sessionID, func(session *entity.AuthSession) error {
+	result, err = uc.issueSessionRowAt(ctx, &user, sessionID, sessionID, now, func(session *entity.AuthSession) error {
 		if uc.sessions == nil {
 			return nil
 		}
@@ -334,6 +335,20 @@ func (uc *UseCase) VerifyMFALogin(ctx context.Context, mfaToken, code string) (r
 	uc.notifyNewLogin(ctx, user)
 
 	return result, nil
+}
+
+func authContextWithChallengeMetadata(ctx context.Context, challenge *entity.MFAChallenge) context.Context {
+	meta := authmeta.From(ctx)
+	if strings.TrimSpace(meta.UserAgent) == "" {
+		meta.UserAgent = challenge.UserAgent
+	}
+
+	clientIP := strings.TrimSpace(meta.ClientIP)
+	if clientIP == "" || clientIP == unknownAuthMetadata || clientIP == strings.TrimSpace(meta.Transport) {
+		meta.ClientIP = challenge.ClientIP
+	}
+
+	return authmeta.With(ctx, meta)
 }
 
 // loadLoginChallenge resolves a live login challenge to its user and their

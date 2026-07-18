@@ -43,6 +43,7 @@ const (
 	otpMaxValue             = 1000000
 	maxEmailUserAgentRunes  = 160
 	defaultSupportEmail     = "support@surau.org"
+	unknownAuthMetadata     = "unknown"
 
 	// passwordHashCost is the bcrypt cost for account passwords, raised above
 	// bcrypt.DefaultCost (10). Existing lower-cost hashes keep verifying
@@ -52,9 +53,10 @@ const (
 	// and rate-limited, so a higher cost only adds request latency.
 	otpHashCost = bcrypt.DefaultCost
 
-	// defaultAuthDataTTL is the 30-day default for refresh-token lifetime and
-	// auth row retention when no explicit option is configured.
-	defaultAuthDataTTL = 720 * time.Hour
+	// Refresh sessions use a 14-day sliding inactivity window. Auth rows remain
+	// available for 30 days so replay evidence is not deleted prematurely.
+	defaultRefreshTokenTTL   = 336 * time.Hour
+	defaultAuthDataRetention = 720 * time.Hour
 
 	// decoyLoginHash is a fixed bcrypt hash (cost 10) compared against during
 	// logins for unknown accounts so the response time matches a wrong-password
@@ -143,6 +145,7 @@ type UseCase struct {
 	rateLimit                RateLimitOptions
 	emailNotifications       EmailNotificationOptions
 	alert                    AlertOptions
+	now                      func() time.Time
 	alertMu                  sync.Mutex
 	alertWatermark           time.Time
 }
@@ -264,6 +267,9 @@ type Options struct {
 	RateLimit                RateLimitOptions
 	EmailNotifications       EmailNotificationOptions
 	Alert                    AlertOptions
+	// Now is an injectable clock used by refresh/session lifecycle tests.
+	// Production callers leave it nil and use time.Now.
+	Now func() time.Time
 }
 
 // New -.
@@ -303,7 +309,12 @@ func New(r repo.UserRepo, j *jwt.Manager, emailSender repo.EmailSender, opts Opt
 
 	refreshTokenTTL := opts.RefreshTokenTTL
 	if refreshTokenTTL <= 0 {
-		refreshTokenTTL = defaultAuthDataTTL
+		refreshTokenTTL = defaultRefreshTokenTTL
+	}
+
+	now := opts.Now
+	if now == nil {
+		now = time.Now
 	}
 
 	return &UseCase{
@@ -338,9 +349,10 @@ func New(r repo.UserRepo, j *jwt.Manager, emailSender repo.EmailSender, opts Opt
 		rateLimit:                normalizeRateLimitOptions(opts.RateLimit),
 		emailNotifications:       normalizeEmailNotificationOptions(opts.EmailNotifications),
 		alert:                    normalizeAlertOptions(opts.Alert),
+		now:                      now,
 		// Seed the alert watermark at construction so the first scan only
 		// considers reuse events that happen after boot, never the backlog.
-		alertWatermark: time.Now().UTC(),
+		alertWatermark: now().UTC(),
 	}
 }
 
@@ -2403,7 +2415,7 @@ func (uc *UseCase) notifyNewLogin(ctx context.Context, user entity.User) {
 
 	device := truncateRunes(userAgent, maxEmailUserAgentRunes)
 	if device == "" {
-		device = "unknown"
+		device = unknownAuthMetadata
 	}
 	emailCtx := uc.newAuthEmailContext(ctx, user)
 	details := localizedLoginDetails(emailCtx, now, clientIP, device)
@@ -2525,7 +2537,7 @@ func loginFingerprintInputs(meta authmeta.Meta) (string, string, bool) {
 	userAgent := strings.TrimSpace(meta.UserAgent)
 	transport := strings.TrimSpace(meta.Transport)
 
-	if clientIP == transport || clientIP == "unknown" {
+	if clientIP == transport || clientIP == unknownAuthMetadata {
 		clientIP = ""
 	}
 	if clientIP == "" && userAgent == "" {
@@ -3743,7 +3755,8 @@ func localizedLoginDetails(emailCtx authEmailContext, eventTime time.Time, clien
 	if strings.TrimSpace(clientIP) == "" {
 		clientIP = localizedUnknown(emailCtx.Lang)
 	}
-	if strings.TrimSpace(device) == "" || device == "unknown" {
+
+	if strings.TrimSpace(device) == "" || device == unknownAuthMetadata {
 		device = localizedUnknown(emailCtx.Lang)
 	}
 
@@ -3776,7 +3789,7 @@ func localizedEmailTime(emailCtx authEmailContext, eventTime time.Time) (string,
 func localizedUnknown(lang string) string {
 	switch lang {
 	case contentlang.English:
-		return "unknown"
+		return unknownAuthMetadata
 	case contentlang.Arabic:
 		return "غير معروف"
 	default:

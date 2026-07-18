@@ -5,8 +5,8 @@ Dokumen ini adalah kontrak integrasi auth untuk frontend Surau. Satu-satunya tra
 ## Ringkasan
 
 - Auth memakai JWT Bearer token.
-- Login sukses selalu mengembalikan shape yang sama: `{ "token": "..." }`.
-- Tidak ada cookie auth. **MFA (TOTP) tersedia sejak A-3**: akun ber-MFA mendapat langkah kode 6 digit setelah password (lihat `## Flow MFA`); akun tanpa MFA memakai alur login lama TANPA perubahan. Endpoint session/refresh yang lebih baru (`POST /v1/auth/refresh`, `POST /v1/auth/logout`, `GET/DELETE /v1/auth/sessions`) belum tercakup penuh di dokumen ini — cek `/swagger/index.html` untuk skemanya.
+- Login sukses mengembalikan access token 15 menit + refresh token sliding 14 hari. Field `token` tetap alias `access_token` untuk kompatibilitas client lama.
+- Tidak ada cookie auth. **MFA (TOTP) tersedia sejak A-3**: akun ber-MFA mendapat langkah kode 6 digit setelah password (lihat `## Flow MFA`); akun tanpa MFA memakai alur login yang sama. Flow refresh dan pengelolaan perangkat dijelaskan di `## Refresh sliding & sesi perangkat (A-5)`.
 - Email verification, reset password, dan change email di-queue secara durable oleh backend, lalu dikirim asynchronous oleh dispatcher background memakai Cloudflare Email Service (default tick 15 detik; email biasanya tiba dalam ~15-30 detik).
 - User baru belum bisa login sampai email verified.
 - Reset password, change password, change email, dan delete account akan membuat semua JWT lama invalid.
@@ -112,11 +112,16 @@ Frontend memakai `preferences.preferred_content_lang` sebagai default bahasa Qur
 
 ```json
 {
-  "token": "eyJhbGciOiJIUzI1NiIs..."
+  "token": "<access-token>",
+  "access_token": "<access-token>",
+  "refresh_token": "opaque-refresh-token-baru",
+  "token_type": "Bearer",
+  "expires_in": 900,
+  "session_id": "550e8400-e29b-41d4-a716-446655440000"
 }
 ```
 
-Token dipakai apa adanya di header `Authorization`.
+`access_token` dipakai apa adanya di header `Authorization`. `refresh_token` hanya dikirim ke endpoint refresh/logout dan wajib disimpan di storage aman. `expires_in` adalah umur access token, bukan refresh token.
 
 Sejak A-4, backend menambahkan `kid` (ID kunci) di header internal token untuk
 rotasi tanpa logout. Ini tidak mengubah shape login/refresh dan tidak meminta
@@ -124,6 +129,76 @@ perubahan frontend: simpan token sebagai string opaque, jangan memilih kunci,
 dan jangan bergantung pada hasil decode JWT. Token lama yang masih hidup tetap
 diterima selama overlap rotasi; refresh berikutnya memperoleh token baru secara
 normal.
+
+## Refresh sliding & sesi perangkat (A-5)
+
+Refresh token memakai jendela **diam 14 hari (336 jam), sliding**:
+
+- setiap `POST /v1/auth/refresh` yang berhasil merotasi refresh token dan membuka jendela 14 hari baru;
+- tepat 14 hari sejak login/refresh terakhir sudah dianggap kedaluwarsa;
+- panggilan API biasa tidak menggeser jendela; “aktif” berarti client berhasil melakukan refresh;
+- sesi existing yang terakhir aktif kurang dari 14 hari tetap berjalan dan masuk kebijakan baru pada refresh berikutnya;
+- pengguna existing yang sudah diam 14 hari atau lebih akan diminta login ulang satu kali.
+
+Request refresh:
+
+```http
+POST /v1/auth/refresh
+Content-Type: application/json
+```
+
+```json
+{ "refresh_token": "opaque-refresh-token-sekarang" }
+```
+
+Success `200` memakai shape `Token` di atas. Kedua token yang dikembalikan menggantikan pasangan lama. Implementasi FE/mobile wajib:
+
+1. Menjalankan maksimal **satu refresh in-flight per sesi** (single-flight/mutex).
+2. Menyimpan `access_token` dan `refresh_token` baru secara atomik sebelum melepas request lain.
+3. Tidak pernah mencoba ulang refresh token lama setelah mendapat pasangan baru. Replay atau dua refresh paralel sengaja dianggap reuse dan mencabut seluruh family perangkat tersebut.
+4. Bila refresh membalas `401` dengan `code: "invalid_refresh_token"`, hapus kedua token dan arahkan ke login; jangan retry dengan token yang sama.
+
+Logout perangkat saat ini memakai refresh token dan idempoten:
+
+```http
+POST /v1/auth/logout
+Content-Type: application/json
+
+{ "refresh_token": "opaque-refresh-token-sekarang" }
+```
+
+Daftar perangkat:
+
+```http
+GET /v1/auth/sessions
+Authorization: Bearer <access_token>
+```
+
+```json
+{
+  "items": [
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+      "user_agent": "Mozilla/5.0 ...",
+      "device_label": "Chrome di Mac",
+      "client_ip": "203.0.113.42",
+      "created_at": "2026-07-01T08:00:00Z",
+      "last_used_at": "2026-07-18T08:00:00Z",
+      "expires_at": "2026-08-01T08:00:00Z",
+      "is_current": true
+    }
+  ],
+  "total": 1
+}
+```
+
+Gunakan `device_label` sebagai teks utama. Nilainya berasal dari kosakata aman seperti `Chrome di Mac`, `Safari di iPhone`, atau `Aplikasi Surau di Android`; metadata kosong/tidak dikenal menjadi `Perangkat tidak dikenal`. Label adalah petunjuk UX, bukan bukti identitas. `user_agent` dipertahankan untuk kompatibilitas/diagnostik dan harus dirender sebagai plain text, tidak pernah sebagai HTML. Mobile sebaiknya mengirim User-Agent stabil seperti `SurauAndroid/<versi> (Android <versi>)` atau `SurauiOS/<versi> (iOS <versi>)` pada login, MFA verify, dan refresh.
+
+Cabut satu perangkat dengan `DELETE /v1/auth/sessions/{id}`. Refresh token perangkat itu mati langsung; access token yang sudah terbit dapat bertahan sampai expiry pendeknya. Perangkat lain tidak ikut dicabut.
+
+Copy komunikasi rilis yang dapat dipakai FE/mobile:
+
+> Demi keamanan, sesi Surau yang tidak dipakai selama 14 hari kini meminta login ulang. Selama aplikasi aktif dan memperbarui sesi, Anda tetap masuk. Halaman keamanan juga kini menampilkan nama perangkat yang lebih mudah dikenali.
 
 ### Error
 
@@ -173,7 +248,12 @@ Jangan lakukan `.trim()` pada password sebelum dikirim.
 | Method | Path | Auth | Success |
 | --- | --- | --- | --- |
 | `POST` | `/v1/auth/register` | Public | `201 User` |
-| `POST` | `/v1/auth/login` | Public | `200 { "token": "..." }` |
+| `POST` | `/v1/auth/login` | Public | `200 Token` |
+| `POST` | `/v1/auth/refresh` | Refresh token | `200 Token` |
+| `POST` | `/v1/auth/logout` | Refresh token | `200 { "logged_out": true }` |
+| `POST` | `/v1/auth/logout-all` | Bearer | `200 { "sessions_revoked": true }` |
+| `GET` | `/v1/auth/sessions` | Bearer | `200 { items: SessionInfo[], total }` |
+| `DELETE` | `/v1/auth/sessions/{id}` | Bearer | `200 { "session_revoked": true }` |
 | `POST` | `/v1/auth/verify-email` | Public | `200 { "email_verified": true }` |
 | `POST` | `/v1/auth/resend-verification` | Public | `202 { "accepted": true }` |
 | `POST` | `/v1/auth/forgot-password` | Public | `202 { "accepted": true }` |
@@ -823,10 +903,10 @@ Token menjadi invalid ketika:
 
 Frontend behavior:
 
-- Pada protected request yang mendapat `401`, clear token lokal.
-- Redirect ke login atau tampilkan session expired.
-- Jangan retry otomatis dengan token yang sama.
-- Dokumen ini tidak mencakup flow refresh token; tanpa refresh, user harus login ulang untuk memperoleh token baru (lihat `/swagger/index.html` untuk `POST /v1/auth/refresh`).
+- Pada access token expired, jalankan satu refresh terkoordinasi lalu ulangi request satu kali dengan access token baru.
+- Pada `401 invalid_refresh_token`, clear access+refresh token dan tampilkan login/session expired.
+- Jangan retry refresh dengan token yang sama atau menjalankan beberapa refresh paralel.
+- Reset/change password, change email, delete account, logout-all, dan reuse refresh tetap membatalkan sesi sesuai kontrak keamanan yang ada.
 
 ## Rate Limit Behavior
 
