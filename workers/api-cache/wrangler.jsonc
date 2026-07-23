@@ -81,6 +81,7 @@
 		"RAG_DAILY_QUOTA_ENABLED": "true",
 		"RAG_DAILY_GUEST_LIMIT": "100",
 		"RAG_DAILY_USER_LIMIT": "50",
+		"QURAN_SEARCH_ALLOWED_ORIGINS": "https://surau.org,https://www.surau.org",
 		"JWT_ISSUER": "surau-backend",
 		"JWT_AUDIENCE": "surau-api"
 	}

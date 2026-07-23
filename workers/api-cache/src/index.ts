@@ -13,6 +13,7 @@ export interface Env {
   RAG_DAILY_QUOTA_ENABLED?: string;
   RAG_DAILY_GUEST_LIMIT?: string;
   RAG_DAILY_USER_LIMIT?: string;
+  QURAN_SEARCH_ALLOWED_ORIGINS?: string;
   JWT_KEYSET?: string;
   JWT_SECRET?: string;
   JWT_ISSUER?: string;
@@ -103,6 +104,7 @@ const DEFAULT_STALE_TTL_SECONDS = 86400;
 const DEFAULT_MAX_CACHE_BYTES = 2_000_000;
 const DEFAULT_RAG_DAILY_GUEST_LIMIT = 100;
 const DEFAULT_RAG_DAILY_USER_LIMIT = 50;
+const DEFAULT_QURAN_SEARCH_ALLOWED_ORIGINS = "https://surau.org,https://www.surau.org";
 const DEFAULT_JWT_ISSUER = "surau-backend";
 const DEFAULT_JWT_AUDIENCE = "surau-api";
 const JWT_KID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
@@ -234,24 +236,122 @@ export class EdgeRateLimiter {
 }
 
 export async function handleRequest(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+  const preflightResponse = quranSearchPreflightResponse(request, env);
+  if (preflightResponse) {
+    return preflightResponse;
+  }
+
   const config = cacheConfig(env);
   const rateLimitCheck = await checkEdgeRateLimit(request, env);
   if (rateLimitCheck?.blocked) {
-    return edgeRateLimitResponse(rateLimitCheck.decision);
+    return withQuranSearchCORS(request, env, edgeRateLimitResponse(rateLimitCheck.decision));
   }
 
   const ragDailyQuotaCheck = await checkRagDailyQuota(request, env);
   if (ragDailyQuotaCheck?.blocked) {
-    return ragDailyQuotaResponse(ragDailyQuotaCheck.decision);
+    return withQuranSearchCORS(request, env, ragDailyQuotaResponse(ragDailyQuotaCheck.decision));
   }
 
   const response = await handleCacheRequest(request, env, ctx, config);
 
   if (rateLimitCheck || ragDailyQuotaCheck) {
-    return responseWithRateLimitStatus(response, "PASS", ragDailyQuotaCheck?.decision.identity);
+    return withQuranSearchCORS(
+      request,
+      env,
+      responseWithRateLimitStatus(response, "PASS", ragDailyQuotaCheck?.decision.identity)
+    );
   }
 
-  return response;
+  return withQuranSearchCORS(request, env, response);
+}
+
+function quranSearchPreflightResponse(request: Request, env: Env): Response | null {
+  if (request.method.toUpperCase() !== "OPTIONS" || !isQuranSearchPath(new URL(request.url).pathname)) {
+    return null;
+  }
+
+  const origin = allowedQuranSearchOrigin(request, env);
+  if (!origin) {
+    return new Response(null, {
+      status: 204,
+      headers: {
+        "Cache-Control": "no-store",
+        "Cross-Origin-Resource-Policy": "same-site",
+        Vary: "Origin"
+      }
+    });
+  }
+
+  return new Response(null, {
+    status: 204,
+    headers: {
+      "Access-Control-Allow-Methods": "GET, OPTIONS",
+      "Access-Control-Allow-Origin": origin,
+      "Access-Control-Max-Age": "600",
+      "Cache-Control": "no-store",
+      "Cross-Origin-Resource-Policy": "same-site",
+      Vary: "Origin"
+    }
+  });
+}
+
+function withQuranSearchCORS(request: Request, env: Env, response: Response): Response {
+  if (request.method.toUpperCase() !== "GET" || !isQuranSearchPath(new URL(request.url).pathname)) {
+    return response;
+  }
+
+  const origin = allowedQuranSearchOrigin(request, env);
+  if (!origin) {
+    return response;
+  }
+
+  const headers = new Headers(response.headers);
+  headers.set("Access-Control-Allow-Origin", origin);
+  headers.set("Cross-Origin-Resource-Policy", "same-site");
+  appendVary(headers, "Origin");
+
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers
+  });
+}
+
+function allowedQuranSearchOrigin(request: Request, env: Env): string | null {
+  const origin = request.headers.get("origin")?.trim();
+  if (!origin) {
+    return null;
+  }
+
+  return quranSearchAllowedOrigins(env).has(origin) ? origin : null;
+}
+
+function quranSearchAllowedOrigins(env: Env): Set<string> {
+  const configured = env.QURAN_SEARCH_ALLOWED_ORIGINS ?? DEFAULT_QURAN_SEARCH_ALLOWED_ORIGINS;
+
+  return new Set(
+    configured
+      .split(",")
+      .map((origin) => origin.trim())
+      .filter(Boolean)
+  );
+}
+
+function isQuranSearchPath(pathname: string): boolean {
+  const path = stripTrailingSlash(pathname);
+
+  return path === "/v1/quran/search";
+}
+
+function appendVary(headers: Headers, value: string): void {
+  const values = new Set(
+    (headers.get("Vary") ?? "")
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean)
+  );
+  values.add(value);
+  headers.set("Vary", Array.from(values).join(", "));
 }
 
 async function handleCacheRequest(
