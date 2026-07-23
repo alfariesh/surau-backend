@@ -142,6 +142,7 @@ const defaultEnv = (): Env => ({
   RAG_DAILY_QUOTA_ENABLED: "true",
   RAG_DAILY_GUEST_LIMIT: "100",
   RAG_DAILY_USER_LIMIT: "50",
+  QURAN_SEARCH_ALLOWED_ORIGINS: "https://surau.org,https://www.surau.org",
   JWT_SECRET: "0123456789abcdef0123456789abcdef",
   JWT_ISSUER: "surau-backend",
   JWT_AUDIENCE: "surau-api"
@@ -371,6 +372,119 @@ describe("Surau API cache policy", () => {
     expect(response.headers.get("X-Surau-RateLimit")).toBe("PASS");
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(memoryRateLimit(env.SEARCH_RATE_LIMITER).keys).toEqual(["search:ip:203.0.113.79"]);
+  });
+
+  it("allows direct browser Quran search only from configured origins and keys limits by user IP", async () => {
+    const env = defaultEnv();
+    const ctx = new TestExecutionContext();
+    const fetchMock = vi.fn(async () =>
+      jsonResponse(
+        { items: [], total: 0 },
+        {
+          headers: {
+            "Cache-Control": "no-store",
+            "Content-Type": "application/json",
+            Vary: "Accept-Encoding"
+          }
+        }
+      )
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await handleRequest(
+      request("/v1/quran/search?q=rahman", {
+        headers: {
+          "CF-Connecting-IP": "203.0.113.90",
+          Origin: "https://www.surau.org"
+        }
+      }),
+      env,
+      ctx as unknown as ExecutionContext
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Access-Control-Allow-Origin")).toBe("https://www.surau.org");
+    expect(response.headers.get("Cross-Origin-Resource-Policy")).toBe("same-site");
+    expect(response.headers.get("Vary")).toBe("Accept-Encoding, Origin");
+
+    await handleRequest(
+      request("/v1/quran/search?q=rahman", {
+        headers: {
+          "CF-Connecting-IP": "203.0.113.92",
+          Origin: "https://www.surau.org"
+        }
+      }),
+      env,
+      ctx as unknown as ExecutionContext
+    );
+
+    expect(memoryRateLimit(env.SEARCH_RATE_LIMITER).keys).toEqual([
+      "search:ip:203.0.113.90",
+      "search:ip:203.0.113.92"
+    ]);
+  });
+
+  it("answers Quran search preflight without forwarding it to origin", async () => {
+    const env = defaultEnv();
+    const ctx = new TestExecutionContext();
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await handleRequest(
+      request("/v1/quran/search?q=rahman", {
+        method: "OPTIONS",
+        headers: { Origin: "https://surau.org" }
+      }),
+      env,
+      ctx as unknown as ExecutionContext
+    );
+
+    expect(response.status).toBe(204);
+    expect(response.headers.get("Access-Control-Allow-Origin")).toBe("https://surau.org");
+    expect(response.headers.get("Access-Control-Allow-Methods")).toBe("GET, OPTIONS");
+    expect(response.headers.has("Access-Control-Allow-Credentials")).toBe(false);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("does not grant Quran search CORS to unconfigured origins", async () => {
+    const env = defaultEnv();
+    const ctx = new TestExecutionContext();
+    const fetchMock = vi.fn(async () => jsonResponse({ items: [], total: 0 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await handleRequest(
+      request("/v1/quran/search?q=rahman", {
+        headers: { Origin: "https://attacker.example" }
+      }),
+      env,
+      ctx as unknown as ExecutionContext
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.has("Access-Control-Allow-Origin")).toBe(false);
+  });
+
+  it("keeps Quran search rate-limit errors readable by an allowed browser origin", async () => {
+    const env = defaultEnv();
+    memoryRateLimit(env.SEARCH_RATE_LIMITER).block();
+    const ctx = new TestExecutionContext();
+    vi.stubGlobal("fetch", vi.fn());
+
+    const response = await handleRequest(
+      request("/v1/quran/search?q=rahman", {
+        headers: {
+          "CF-Connecting-IP": "203.0.113.91",
+          Origin: "https://surau.org"
+        }
+      }),
+      env,
+      ctx as unknown as ExecutionContext
+    );
+
+    expect(response.status).toBe(429);
+    expect(response.headers.get("Access-Control-Allow-Origin")).toBe("https://surau.org");
+    expect(response.headers.get("Retry-After")).toBe("60");
+    await expect(response.json()).resolves.toMatchObject({ code: "EDGE_RATE_LIMITED" });
   });
 
   it("selects edge rate limit policies for expensive endpoints only", () => {

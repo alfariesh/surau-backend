@@ -1218,6 +1218,14 @@ Rate limit: per-IP limiter; exceeding it returns `429` with the standard error e
 `Cache-Control: no-store`; Quran GET lainnya mengirim `public, max-age=0, must-revalidate` + ETag
 dan seluruh prefix `/v1/quran` bypass cache Worker agar takedown lisensi langsung berlaku.
 
+Search interaktif dipanggil langsung dari browser agar rate-limit key tetap memakai IP pengguna,
+bukan IP server frontend. Cloudflare Worker menerima `GET` dan preflight `OPTIONS` hanya untuk
+exact origin yang tercantum pada `QURAN_SEARCH_ALLOWED_ORIGINS` (produksi default:
+`https://surau.org,https://www.surau.org`). Respons origin yang diizinkan menyertakan
+`Access-Control-Allow-Origin: <exact-origin>`, `Vary: Origin`, dan
+`Cross-Origin-Resource-Policy: same-site`; wildcard dan credentials tidak digunakan. Staging
+wajib memakai allowlist terpisah. Origin lain tidak memperoleh `Access-Control-Allow-Origin`.
+
 ### Query Params
 
 | Param | Type | Default | Notes |
