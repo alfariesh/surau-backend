@@ -103,3 +103,12 @@ curl -sS -D - -o /dev/null -X POST 'https://api.surau.org/v1/books/797/rag?lang=
 Expect the first public request to return `X-Surau-Cache: MISS`, the second to return `L1-HIT` or `KV-HIT`, and authenticated/search requests to return `BYPASS`.
 The kitab request must return `X-Surau-Cache: BYPASS` and `Cache-Control: public, max-age=0, must-revalidate` on every call.
 Expensive endpoints that pass the limiter include `X-Surau-RateLimit: PASS`; blocked requests return `429`.
+
+## Quran Search Browser Access
+
+`GET /v1/quran/search` may be called directly by Surau's browser clients so the edge limiter keys
+requests by the reader's IP instead of a shared frontend-server IP. The Worker grants CORS only to
+the exact origins listed in `QURAN_SEARCH_ALLOWED_ORIGINS` (comma-separated), never sends
+`Access-Control-Allow-Credentials`, and handles `OPTIONS` without forwarding it to the origin.
+Production is restricted to `https://surau.org` and `https://www.surau.org`; staging must configure
+its own explicit allowlist.

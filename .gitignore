@@ -39,3 +39,4 @@ temp-langextract/
 temp-pageIndex-condb/
 temp-books-enriched/
 .playwright-mcp/
+.gstack/
