@@ -24,6 +24,7 @@ type V1 struct {
 	quranLicenseAudit  usecase.QuranSourceLicenseAudit
 	email              usecase.EmailAdmin
 	serviceIdentity    usecase.ServiceIdentity
+	pushIdentity       usecase.PushIdentity
 	emailWebhookSecret string
 	l                  logger.Interface
 	v                  *validator.Validate

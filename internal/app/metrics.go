@@ -407,6 +407,211 @@ func registerNotificationMetrics(pool *pgxpool.Pool) {
 	prometheus.MustRegister(newNotificationMetricsCollector(pool))
 }
 
+type oneSignalErasureMetricSample struct {
+	operation  string
+	outcome    string
+	reasonCode string
+	total      float64
+}
+
+type oneSignalErasureCollector struct {
+	pool       *pgxpool.Pool
+	staleAfter time.Duration
+
+	mu           sync.Mutex
+	fetched      time.Time
+	queue        map[string]float64
+	stale        float64
+	attempts     []oneSignalErasureMetricSample
+	queueDesc    *prometheus.Desc
+	staleDesc    *prometheus.Desc
+	attemptsDesc *prometheus.Desc
+}
+
+func newOneSignalErasureCollector(
+	pool *pgxpool.Pool,
+	staleAfter time.Duration,
+) *oneSignalErasureCollector {
+	return &oneSignalErasureCollector{
+		pool:       pool,
+		staleAfter: staleAfter,
+		queue:      make(map[string]float64),
+		queueDesc: prometheus.NewDesc(
+			"surau_onesignal_erasure_queue",
+			"OneSignal user-erasure workflows by durable status.",
+			[]string{"status"},
+			nil,
+		),
+		staleDesc: prometheus.NewDesc(
+			"surau_onesignal_erasure_stale",
+			"OneSignal user erasures not verified before the configured privacy deadline.",
+			nil,
+			nil,
+		),
+		attemptsDesc: prometheus.NewDesc(
+			"surau_onesignal_erasure_attempts_total",
+			"Durable OneSignal erasure provider attempts by operation, outcome, and bounded reason.",
+			[]string{"operation", "outcome", "reason_code"},
+			nil,
+		),
+	}
+}
+
+func (c *oneSignalErasureCollector) Describe(ch chan<- *prometheus.Desc) {
+	ch <- c.queueDesc
+
+	ch <- c.staleDesc
+
+	ch <- c.attemptsDesc
+}
+
+func (c *oneSignalErasureCollector) Collect(ch chan<- prometheus.Metric) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if time.Since(c.fetched) > notificationStatsCacheTTL {
+		c.refresh()
+	}
+
+	for _, status := range []string{
+		entity.OneSignalErasureStatusPending,
+		entity.OneSignalErasureStatusVerifying,
+		entity.OneSignalErasureStatusVerified,
+	} {
+		ch <- prometheus.MustNewConstMetric(c.queueDesc, prometheus.GaugeValue, c.queue[status], status)
+	}
+
+	ch <- prometheus.MustNewConstMetric(c.staleDesc, prometheus.GaugeValue, c.stale)
+
+	for _, sample := range c.attempts {
+		ch <- prometheus.MustNewConstMetric(
+			c.attemptsDesc,
+			prometheus.CounterValue,
+			sample.total,
+			sample.operation,
+			sample.outcome,
+			sample.reasonCode,
+		)
+	}
+}
+
+func (c *oneSignalErasureCollector) refresh() {
+	ctx, cancel := context.WithTimeout(context.Background(), notificationQueryTimeout)
+	defer cancel()
+
+	freshQueue, err := c.loadOneSignalErasureQueue(ctx)
+	if err != nil {
+		return
+	}
+
+	stale, err := c.loadOneSignalErasureStale(ctx)
+	if err != nil {
+		return
+	}
+
+	attempts, err := c.loadOneSignalErasureAttempts(ctx)
+	if err != nil {
+		return
+	}
+
+	c.queue = freshQueue
+	c.stale = stale
+	c.attempts = attempts
+	c.fetched = time.Now()
+}
+
+func (c *oneSignalErasureCollector) loadOneSignalErasureQueue(
+	ctx context.Context,
+) (map[string]float64, error) {
+	rows, err := c.pool.Query(ctx, `
+SELECT status, count(*)
+FROM onesignal_user_erasures
+GROUP BY status`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	freshQueue := make(map[string]float64)
+
+	for rows.Next() {
+		var (
+			status string
+			total  float64
+		)
+
+		if err := rows.Scan(&status, &total); err != nil {
+			return nil, err
+		}
+
+		freshQueue[status] = total
+	}
+
+	if rows.Err() != nil {
+		return nil, rows.Err()
+	}
+
+	return freshQueue, nil
+}
+
+func (c *oneSignalErasureCollector) loadOneSignalErasureStale(ctx context.Context) (float64, error) {
+	var stale float64
+
+	if err := c.pool.QueryRow(
+		ctx, `
+SELECT count(*)
+FROM onesignal_user_erasures
+WHERE status <> 'verified'
+  AND created_at < clock_timestamp() - ($1 * INTERVAL '1 second')`,
+		c.staleAfter.Seconds(),
+	).Scan(&stale); err != nil {
+		return 0, err
+	}
+
+	return stale, nil
+}
+
+func (c *oneSignalErasureCollector) loadOneSignalErasureAttempts(
+	ctx context.Context,
+) ([]oneSignalErasureMetricSample, error) {
+	attemptRows, err := c.pool.Query(ctx, `
+SELECT operation, outcome, reason_code, count(*)
+FROM onesignal_user_erasure_attempts
+GROUP BY operation, outcome, reason_code
+ORDER BY operation, outcome, reason_code`)
+	if err != nil {
+		return nil, err
+	}
+	defer attemptRows.Close()
+
+	attempts := make([]oneSignalErasureMetricSample, 0)
+
+	for attemptRows.Next() {
+		var sample oneSignalErasureMetricSample
+
+		if err := attemptRows.Scan(
+			&sample.operation,
+			&sample.outcome,
+			&sample.reasonCode,
+			&sample.total,
+		); err != nil {
+			return nil, err
+		}
+
+		attempts = append(attempts, sample)
+	}
+
+	if attemptRows.Err() != nil {
+		return nil, attemptRows.Err()
+	}
+
+	return attempts, nil
+}
+
+func registerOneSignalErasureMetrics(pool *pgxpool.Pool, staleAfter time.Duration) {
+	prometheus.MustRegister(newOneSignalErasureCollector(pool, staleAfter))
+}
+
 const (
 	backfillStatsCacheTTL = 60 * time.Second
 	backfillQueryTimeout  = 5 * time.Second

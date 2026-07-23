@@ -217,6 +217,103 @@ groups:
                     type: last
         noDataState: OK
         execErrState: Error
+      - uid: surau-onesignal-erasure-stale
+        title: OneSignal user erasure exceeded 24 hours
+        condition: C
+        for: 1m
+        labels:
+          env: $OBS_ENV_LABEL
+          source: privacy
+        annotations:
+          summary: Ada penghapusan user OneSignal yang belum terverifikasi setelah 24 jam — buka
+            runbook docs/onesignal-erasure.md dan telusuri hanya dengan HMAC audit.
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: max(surau_onesignal_erasure_stale) > bool 0
+              instant: true
+              range: false
+              datasource:
+                type: prometheus
+                uid: prometheus
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              datasource:
+                type: __expr__
+                uid: __expr__
+              conditions:
+                - evaluator:
+                    type: gt
+                    params:
+                      - 0
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - A
+                  reducer:
+                    type: last
+        noDataState: OK
+        execErrState: Error
+      - uid: surau-onesignal-erasure-provider-auth
+        title: OneSignal erasure provider authorization failure
+        condition: C
+        for: 1m
+        labels:
+          env: $OBS_ENV_LABEL
+          source: privacy
+        annotations:
+          summary: OneSignal menolak App API Key untuk penghapusan user — periksa secret provider;
+            jangan menyalin key, UUID, atau JWT ke log/tiket.
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: >-
+                sum(increase(surau_onesignal_erasure_attempts_total{
+                  outcome="failed",reason_code="unauthorized"
+                }[5m])) > bool 0
+              instant: true
+              range: false
+              datasource:
+                type: prometheus
+                uid: prometheus
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              datasource:
+                type: __expr__
+                uid: __expr__
+              conditions:
+                - evaluator:
+                    type: gt
+                    params:
+                      - 0
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - A
+                  reducer:
+                    type: last
+        noDataState: OK
+        execErrState: Error
       - uid: surau-citable-audit
         title: citable unit registry violation
         condition: C

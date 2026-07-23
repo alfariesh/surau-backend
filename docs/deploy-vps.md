@@ -66,6 +66,13 @@ Edit `.env.production`:
   blue/green mengelola port slot berikutnya sendiri.
 - Isi `CORS_ALLOWED_ORIGINS` dengan origin web frontend (mis. `https://surau.org`); kosongkan jika belum ada client browser. Aplikasi mobile native tidak butuh CORS.
 - Konfigurasi reverse proxy (Nginx/Caddy) agar membalas 404 untuk `/internal` dan `/metrics` — keduanya hanya untuk jaringan privat (nginx dev sudah melakukannya di `nginx/nginx.conf`).
+- Untuk OneSignal identity, mount private key ES256 Identity Verification yang berbeda dari APNs
+  `.p8` secara read-only melalui `ONESIGNAL_SECRETS_DIR`. Isi App API Key, owner-binding secret,
+  dan erasure secret dari secret manager. Erasure secret minimum 32 byte dan harus dedicated.
+  Aktifkan `ONESIGNAL_ERASURE_ENABLED=true` sebelum `ONESIGNAL_IDENTITY_ENABLED=true`; aplikasi
+  fail-fast bila kontrak ini tidak lengkap. Setelah identity pernah aktif di production, erasure
+  harus tetap enabled meskipun personal push dipause. Lihat
+  [runbook OneSignal erasure](onesignal-erasure.md).
 
 Jika memakai database cloud, ganti `PG_URL` ke URL provider. Untuk database yang wajib SSL, pakai `?sslmode=require`.
 Jika password database berisi karakter khusus seperti `@`, `#`, `/`, atau `:`, encode password tersebut di `PG_URL`.
@@ -89,7 +96,13 @@ Pada upgrade host yang sudah melayani pengguna, jangan memakai
 menjalankan jembatan kompatibilitas secara otomatis.
 
 Aplikasi otomatis menjalankan migration saat container `app` start karena Dockerfile membangun binary dengan tag `migrate`.
-Migration auth terbaru menambahkan `users.token_version`, `auth_rate_limits`, `auth_audit_logs`, email verification/reset/change token tables, dan soft-delete account fields. Setelah password reset, change password, change email, atau delete account, JWT lama otomatis ditolak dan user harus login ulang.
+Migration auth terbaru menambahkan `users.token_version`, `auth_rate_limits`, `auth_audit_logs`,
+email verification/reset/change token tables, soft-delete account fields, dan durable outbox
+`onesignal_user_erasures`. Setelah password reset, change password, change email, atau delete
+account, JWT lama otomatis ditolak dan user harus login ulang. Delete account lokal dan insert
+outbox OneSignal atomik; provider deletion berjalan asynchronous sampai GET menghasilkan `404`.
+Log dan bukti deploy dilarang memuat UUID, JWT, App API Key, erasure secret, identity private key,
+atau APNs key mentah.
 
 ## 4. Cek health
 

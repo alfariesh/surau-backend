@@ -49,7 +49,7 @@ delivery dev yang sengaja diaktifkan tanpa menyasar pengguna nyata.
   tabel/index top-20 datang dari collector app (`surau_db_relation_*`). Panel slow-statements
   butuh db berjalan dgn preload `pg_stat_statements` (docs/deploy-vps.md §Tuning Postgres).
 - Provisioning Grafana dari `ops/observability/grafana/provisioning/` (datasource, dashboard,
-  contact point Telegram, 9 alert rules) — semua file di git, tiba di VPS via checkout deploy.
+  contact point Telegram, 11 alert rules) — semua file di git, tiba di VPS via checkout deploy.
 
 ## Alert (semua → Telegram, prefix env)
 
@@ -59,6 +59,8 @@ delivery dev yang sengaja diaktifkan tanpa menyasar pengguna nyata.
 | p95 latency breach | p95 >500ms selama 10m | API melambat |
 | email stuck / dead letter | antrean tertua >30m ATAU failed >0 | pipeline email macet/gagal permanen — remediasi: kirim ulang via `POST /v1/admin/emails/messages/{id}/resend` (F1-C, lihat docs/admin-email-api.md §Resend) |
 | OneSignal mass delivery failure | ≥5 attempt gagal DAN rasio gagal ≥50% dalam rolling 5m, bertahan 1m | gangguan massal push; periksa kredensial, rate-limit, status provider, dan log loop reminder |
+| OneSignal erasure stale | ada provider erasure belum `verified` setelah 24h | privacy SLA terlewati; ikuti `docs/onesignal-erasure.md` memakai HMAC audit saja |
+| OneSignal erasure provider auth | attempt erasure mendapat `401/403` dalam 5m | App API Key ditolak; perbaiki secret tanpa menyalin key/UUID/JWT ke log atau tiket |
 | backup heartbeat stale | sukses terakhir >26 jam | dead-man backup (lapis dashboard; watchdog S1 tetap ada) |
 | disk space low | sisa <15% | disk hampir penuh |
 | app down | scrape gagal 3m | app mati/boot-loop (termasuk schema DIRTY) |
@@ -81,6 +83,10 @@ rolling `surau_notification_delivery_attempts_5m`, yang dihitung langsung dari a
 ini membuat batch kegagalan pertama tetap terlihat walau belum ada sampel counter sebelumnya.
 Query rule/dashboard memakai deduplikasi replica karena setiap instance API membaca total database
 global yang sama.
+
+Provider erasure mengekspor `surau_onesignal_erasure_queue`,
+`surau_onesignal_erasure_attempts_total`, dan `surau_onesignal_erasure_stale`. Semua label
+low-cardinality; UUID, JWT, ciphertext, HMAC penuh, dan secret tidak pernah menjadi label metrik.
 
 ## Rollout / update stack di VPS
 

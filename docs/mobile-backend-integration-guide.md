@@ -388,6 +388,11 @@ Delete account request:
 }
 ```
 
+Response `200` berarti akun, session, dan kemampuan memperoleh OneSignal identity JWT baru sudah
+dinonaktifkan secara lokal. Penghapusan user/subscription OneSignal berjalan asynchronous di
+backend hingga View User menghasilkan `404`; mobile tidak perlu polling dan kontrak response tidak
+berubah. Kegagalan membuat outbox provider me-rollback delete account dan muncul sebagai `500`.
+
 Mobile startup session flow:
 
 1. Ambil access+refresh token sebagai satu record dari secure storage.

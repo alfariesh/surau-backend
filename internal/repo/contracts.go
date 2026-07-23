@@ -57,7 +57,11 @@ type (
 		GetEmailChangeTokenByHash(ctx context.Context, tokenHash string) (entity.EmailChangeToken, error)
 		GetLatestUnusedEmailChangeToken(ctx context.Context, userID string) (entity.EmailChangeToken, error)
 		ChangeEmailWithToken(ctx context.Context, tokenID, userID, newEmail string) (entity.EmailChangeResult, error)
-		DeleteAccount(ctx context.Context, userID string) error
+		DeleteAccount(
+			ctx context.Context,
+			userID string,
+			erasure *entity.OneSignalErasureCreate,
+		) error
 		RecordAuthLoginFingerprint(ctx context.Context, fingerprint entity.AuthLoginFingerprint) (bool, error)
 		AcquireAuthNotificationCooldown(ctx context.Context, cooldown entity.AuthNotificationCooldown) (bool, error)
 	}
@@ -100,6 +104,25 @@ type (
 			sessionID string,
 			validity AuthSessionValidity,
 		) error
+	}
+
+	// OneSignalErasureRepo owns the durable provider-erasure outbox.
+	OneSignalErasureRepo interface {
+		ClaimDueOneSignalErasures(
+			ctx context.Context,
+			now time.Time,
+			leaseToken string,
+			leaseExpiresAt time.Time,
+			limit int,
+		) ([]entity.OneSignalErasure, error)
+		RecordOneSignalErasureAttempt(ctx context.Context, attempt *entity.OneSignalErasureAttempt) error
+		CleanupVerifiedOneSignalErasures(ctx context.Context, verifiedBefore time.Time) (int64, error)
+	}
+
+	// OneSignalUserEraser deletes and verifies users using server-side credentials.
+	OneSignalUserEraser interface {
+		DeleteUser(ctx context.Context, externalID string) (entity.OneSignalErasureProviderResult, error)
+		ViewUser(ctx context.Context, externalID string) (entity.OneSignalErasureProviderResult, error)
 	}
 
 	// AuthLockoutRepo stores progressive login lockout counters.

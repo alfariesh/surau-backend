@@ -2312,6 +2312,61 @@ definitions:
         example: 550e8400-e29b-41d4-a716-446655440000
         type: string
     type: object
+  entity.PushIdentityToken:
+    properties:
+      eligible_intents:
+        example:
+        - notify_khatam_milestones
+        items:
+          type: string
+        type: array
+      expires_at:
+        example: "2026-01-01T00:15:00Z"
+        type: string
+      expires_in:
+        example: 900
+        type: integer
+      external_id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      identity_token:
+        type: string
+      owner_binding:
+        example: ob1.opaque-value
+        type: string
+      schema_version:
+        example: surau.push.identity.v1
+        type: string
+    type: object
+  entity.PushRouteInput:
+    properties:
+      intent:
+        maxLength: 80
+        type: string
+      owner_binding:
+        maxLength: 128
+        type: string
+      schema_version:
+        type: string
+      scope:
+        enum:
+        - public
+        - personal
+        type: string
+    required:
+    - intent
+    - schema_version
+    - scope
+    type: object
+  entity.PushRouteResolution:
+    properties:
+      destination:
+        example: home
+        type: string
+      intent:
+        example: open_khatam_progress
+        type: string
+    type: object
   entity.QuranAudioSegment:
     properties:
       ayah_key:
@@ -13454,6 +13509,57 @@ paths:
       summary: Batch save reading progress
       tags:
       - me
+  /me/push/identity-token:
+    post:
+      description: Identity is derived exclusively from the authenticated account
+        and active session.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.PushIdentityToken'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Issue a short-lived OneSignal identity token
+      tags:
+      - push
+  /me/push/resolve:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: String-only notification data
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/entity.PushRouteInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.PushRouteResolution'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Resolve a push route against the active account
+      tags:
+      - push
   /me/quran/khatam:
     get:
       description: Return the authenticated user's active khatam cycle with completed

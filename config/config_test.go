@@ -64,6 +64,86 @@ func TestNewConfig_OneSignalQuietHours(t *testing.T) {
 	})
 }
 
+func TestValidateOneSignalIdentity(t *testing.T) {
+	t.Parallel()
+
+	valid := oneSignal{
+		AppID:                  "7a650cae-1c1e-4b19-a7fe-393c14b894f0",
+		IdentityEnabled:        true,
+		IdentityPrivateKeyFile: "/run/secrets/onesignal-identity.pem",
+		IdentityTokenTTL:       15 * time.Minute,
+		OwnerBindingSecret:     "01234567890123456789012345678901",
+		ErasureEnabled:         true,
+	}
+	require.NoError(t, validateOneSignalIdentity(&valid))
+
+	tooLong := valid
+	tooLong.IdentityTokenTTL = time.Hour + time.Second
+	require.ErrorContains(t, validateOneSignalIdentity(&tooLong), "at most 1h")
+
+	shortSecret := valid
+	shortSecret.OwnerBindingSecret = "short"
+	require.ErrorContains(t, validateOneSignalIdentity(&shortSecret), "at least 32 bytes")
+}
+
+func TestValidateOneSignalErasure(t *testing.T) {
+	t.Parallel()
+
+	valid := oneSignal{
+		AppID:                    "7a650cae-1c1e-4b19-a7fe-393c14b894f0",
+		RESTAPIKey:               "server-only-key",
+		HTTPTimeout:              10 * time.Second,
+		ErasureEnabled:           true,
+		ErasureSecret:            "01234567890123456789012345678901",
+		ErasureInterval:          time.Minute,
+		ErasureBatchSize:         50,
+		ErasureLeaseDuration:     2 * time.Minute,
+		ErasureVerificationDelay: 30 * time.Second,
+		ErasureStaleAfter:        24 * time.Hour,
+		ErasureRetention:         90 * 24 * time.Hour,
+	}
+	require.NoError(t, validateOneSignalErasure(&valid))
+
+	shortSecret := valid
+	shortSecret.ErasureSecret = "short"
+	require.ErrorContains(t, validateOneSignalErasure(&shortSecret), "at least 32 bytes")
+
+	shortLease := valid
+	shortLease.ErasureLeaseDuration = shortLease.HTTPTimeout
+	require.ErrorContains(t, validateOneSignalErasure(&shortLease), "must exceed")
+
+	wrongApp := valid
+	wrongApp.AppID = "11111111-1111-4111-8111-111111111111"
+	require.ErrorContains(t, validateOneSignalErasure(&wrongApp), "must match")
+
+	identityPaused := valid
+	identityPaused.IdentityEnabled = false
+	require.NoError(t, validateOneSignalErasure(&identityPaused))
+}
+
+func TestNewConfigRejectsIdentityWhenErasureIsNotReady(t *testing.T) {
+	setRequiredEnv(t)
+	t.Setenv("ONESIGNAL_APP_ID", "7a650cae-1c1e-4b19-a7fe-393c14b894f0")
+	t.Setenv("ONESIGNAL_IDENTITY_ENABLED", "true")
+	t.Setenv("ONESIGNAL_IDENTITY_PRIVATE_KEY_FILE", "/run/secrets/onesignal/identity.pem")
+	t.Setenv("ONESIGNAL_OWNER_BINDING_SECRET", "01234567890123456789012345678901")
+	t.Setenv("ONESIGNAL_ERASURE_ENABLED", "false")
+
+	_, err := NewConfig()
+
+	require.ErrorContains(t, err, "ONESIGNAL_ERASURE_ENABLED must be true")
+}
+
+func TestNewConfigKeepsErasureEnabledAfterProductionIdentityActivation(t *testing.T) {
+	setRequiredEnv(t)
+	t.Setenv("APP_ENV", "prod")
+	t.Setenv("ONESIGNAL_ERASURE_ENABLED", "false")
+
+	_, err := NewConfig()
+
+	require.ErrorContains(t, err, "must remain true in production")
+}
+
 func unsetEnv(t *testing.T, key string) {
 	t.Helper()
 

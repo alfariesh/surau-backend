@@ -16,6 +16,7 @@ import (
 
 	"github.com/alfariesh/surau-backend/config"
 	"github.com/alfariesh/surau-backend/internal/controller/restapi"
+	"github.com/alfariesh/surau-backend/internal/entity"
 	"github.com/alfariesh/surau-backend/internal/repo"
 	"github.com/alfariesh/surau-backend/internal/repo/persistent"
 	"github.com/alfariesh/surau-backend/internal/repo/webapi"
@@ -25,7 +26,9 @@ import (
 	"github.com/alfariesh/surau-backend/internal/usecase/editorial"
 	emailusecase "github.com/alfariesh/surau-backend/internal/usecase/email"
 	"github.com/alfariesh/surau-backend/internal/usecase/notification"
+	"github.com/alfariesh/surau-backend/internal/usecase/onesignalerasure"
 	"github.com/alfariesh/surau-backend/internal/usecase/personal"
+	"github.com/alfariesh/surau-backend/internal/usecase/pushidentity"
 	"github.com/alfariesh/surau-backend/internal/usecase/quran"
 	"github.com/alfariesh/surau-backend/internal/usecase/reader"
 	"github.com/alfariesh/surau-backend/internal/usecase/serviceidentity"
@@ -41,18 +44,20 @@ import (
 )
 
 type useCases struct {
-	user            *user.UseCase
-	reader          *reader.UseCase
-	bookRAG         *bookrag.UseCase
-	quran           *quran.UseCase
-	anchor          *anchorresolver.UseCase
-	crossReference  *crossreference.UseCase
-	personal        *personal.UseCase
-	editorial       *editorial.UseCase
-	email           *emailusecase.UseCase
-	notification    *notification.UseCase
-	unitRegistry    *unitregistry.UseCase
-	serviceIdentity *serviceidentity.UseCase
+	user             *user.UseCase
+	reader           *reader.UseCase
+	bookRAG          *bookrag.UseCase
+	quran            *quran.UseCase
+	anchor           *anchorresolver.UseCase
+	crossReference   *crossreference.UseCase
+	personal         *personal.UseCase
+	editorial        *editorial.UseCase
+	email            *emailusecase.UseCase
+	notification     *notification.UseCase
+	unitRegistry     *unitregistry.UseCase
+	serviceIdentity  *serviceidentity.UseCase
+	pushIdentity     *pushidentity.UseCase
+	oneSignalErasure *onesignalerasure.UseCase
 }
 
 type servers struct {
@@ -163,6 +168,32 @@ func initUseCases(cfg *config.Config, pg *postgres.Postgres, jwtManager *jwt.Man
 		lockoutRepo = userRepo
 	}
 
+	var oneSignalErasureUC *onesignalerasure.UseCase
+
+	if cfg.OneSignal.ErasureEnabled {
+		var erasureErr error
+
+		oneSignalErasureUC, erasureErr = onesignalerasure.New(
+			userRepo,
+			webapi.NewOneSignalErasureClient(webapi.OneSignalOptions{
+				AppID:      cfg.OneSignal.AppID,
+				RESTAPIKey: cfg.OneSignal.RESTAPIKey,
+				Timeout:    cfg.OneSignal.HTTPTimeout,
+			}),
+			&onesignalerasure.Options{
+				AppID:             cfg.OneSignal.AppID,
+				Secret:            cfg.OneSignal.ErasureSecret,
+				BatchSize:         cfg.OneSignal.ErasureBatchSize,
+				LeaseDuration:     cfg.OneSignal.ErasureLeaseDuration,
+				VerificationDelay: cfg.OneSignal.ErasureVerificationDelay,
+				Retention:         cfg.OneSignal.ErasureRetention,
+			},
+		)
+		if erasureErr != nil {
+			panic(fmt.Errorf("initialize OneSignal erasure: %w", erasureErr))
+		}
+	}
+
 	// OneSignal push notifications. When disabled, the notifier and the typed-interface handles stay
 	// nil so the khatam/login hooks and the reminder cron are no-ops. Keeping the handles as the
 	// consumer interface types (not the concrete *UseCase) avoids the nil-pointer-in-interface trap.
@@ -171,7 +202,10 @@ func initUseCases(cfg *config.Config, pg *postgres.Postgres, jwtManager *jwt.Man
 		khatamNotifier personal.Notifier
 		loginNotifier  user.PushNotifier
 	)
-	if cfg.OneSignal.Enabled {
+
+	if cfg.OneSignal.Enabled && cfg.OneSignal.IdentityEnabled {
+		// iOS v1 is deliberately restricted to the khatam product category.
+		// Push identity is initialized below after the user usecase is available.
 		notificationUC = notification.New(
 			userRepo,
 			personalRepo,
@@ -184,186 +218,211 @@ func initUseCases(cfg *config.Config, pg *postgres.Postgres, jwtManager *jwt.Man
 				QuietStart:  cfg.OneSignal.QuietHoursStartLocal,
 				QuietEnd:    cfg.OneSignal.QuietHoursEndLocal,
 				PushTimeout: cfg.OneSignal.HTTPTimeout,
+				AllowedTypes: []string{
+					entity.NotificationTypeKhatamMilestone,
+					entity.NotificationTypeKhatamCompleted,
+				},
 			},
 			l,
 		)
 		khatamNotifier = notificationUC
-		loginNotifier = notificationUC
+		// New-login and streak pushes remain ineligible for this OneSignal app.
+	}
+
+	userUC := user.New(userRepo, jwtManager, emailSender, user.Options{
+		VerifyFrontendURL:        cfg.Email.VerifyFrontendURL,
+		VerificationTTL:          cfg.Email.VerificationTTL,
+		VerificationOTPTTL:       cfg.Email.VerificationOTPTTL,
+		ResendCooldown:           cfg.Email.ResendCooldown,
+		PasswordResetFrontendURL: cfg.Email.PasswordResetFrontendURL,
+		PasswordResetTTL:         cfg.Email.PasswordResetTTL,
+		PasswordResetCooldown:    cfg.Email.PasswordResetCooldown,
+		EmailChangeFrontendURL:   cfg.Email.EmailChangeFrontendURL,
+		EmailChangeTTL:           cfg.Email.EmailChangeTTL,
+		EmailChangeOTPTTL:        cfg.Email.EmailChangeOTPTTL,
+		EmailChangeCooldown:      cfg.Email.EmailChangeCooldown,
+		SupportEmail:             cfg.Email.ReplyTo,
+		EmailService:             emailUC,
+		PushNotifier:             loginNotifier,
+		RateLimiter:              rateLimiter,
+		AuditLogger:              userRepo,
+		Sessions:                 userRepo,
+		Lockout:                  lockoutRepo,
+		Maintenance:              userRepo,
+		MFA:                      userRepo,
+		MFABox:                   mfaBox,
+		MFAOptions: user.MFAOptions{
+			StepUpTTL:       cfg.MFA.StepUpTTL,
+			EnrollmentGrace: cfg.MFA.EnrollmentGrace,
+			ChallengeTTL:    cfg.MFA.ChallengeTTL,
+			ResetTTL:        cfg.MFA.ResetTTL,
+			TOTPIssuer:      cfg.MFA.TOTPIssuer,
+		},
+		RefreshTokenTTL: cfg.JWT.RefreshTokenExpiry,
+		LockoutOptions: user.LockoutOptions{
+			Enabled:      cfg.AuthLockout.Enabled,
+			Threshold:    cfg.AuthLockout.Threshold,
+			BaseDuration: cfg.AuthLockout.BaseDuration,
+			Factor:       cfg.AuthLockout.Factor,
+			MaxDuration:  cfg.AuthLockout.MaxDuration,
+		},
+		Cleanup: user.CleanupOptions{
+			TokenRetention:   cfg.AuthCleanup.TokenRetention,
+			SessionRetention: cfg.AuthCleanup.SessionRetention,
+			AuditRetention:   cfg.AuthCleanup.AuditRetention,
+		},
+		EmailNotifications: user.EmailNotificationOptions{
+			Enabled:                cfg.AuthEmail.NotificationsEnabled,
+			NewLoginEnabled:        cfg.AuthEmail.NewLoginEnabled,
+			FailedLoginEnabled:     cfg.AuthEmail.FailedLoginEnabled,
+			PasswordChangedEnabled: cfg.AuthEmail.PasswordChangedEnabled,
+			EmailVerifiedEnabled:   cfg.AuthEmail.EmailVerifiedEnabled,
+			RoleChangedEnabled:     cfg.AuthEmail.RoleChangedEnabled,
+			EmailChangedEnabled:    cfg.AuthEmail.EmailChangedEnabled,
+			AccountDeletedEnabled:  cfg.AuthEmail.AccountDeletedEnabled,
+			FailedLoginCooldown:    cfg.AuthEmail.FailedLoginCooldown,
+		},
+		Alert: user.AlertOptions{
+			Enabled:    cfg.AuthAlert.Enabled,
+			Recipients: cfg.AuthAlert.Recipients,
+		},
+		ProviderErasure: oneSignalErasureUC,
+		RateLimit: user.RateLimitOptions{
+			LoginEmail: user.RateLimitRule{
+				Max:    cfg.AuthRateLimit.LoginEmailMax,
+				Window: cfg.AuthRateLimit.LoginEmailWindow,
+			},
+			LoginIP: user.RateLimitRule{
+				Max:    cfg.AuthRateLimit.LoginIPMax,
+				Window: cfg.AuthRateLimit.LoginIPWindow,
+			},
+			RegisterEmail: user.RateLimitRule{
+				Max:    cfg.AuthRateLimit.RegisterEmailMax,
+				Window: cfg.AuthRateLimit.RegisterEmailWindow,
+			},
+			RegisterIP: user.RateLimitRule{
+				Max:    cfg.AuthRateLimit.RegisterIPMax,
+				Window: cfg.AuthRateLimit.RegisterIPWindow,
+			},
+			ForgotPasswordEmail: user.RateLimitRule{
+				Max:    cfg.AuthRateLimit.ForgotPasswordEmailMax,
+				Window: cfg.AuthRateLimit.ForgotPasswordEmailWindow,
+			},
+			ForgotPasswordIP: user.RateLimitRule{
+				Max:    cfg.AuthRateLimit.ForgotPasswordIPMax,
+				Window: cfg.AuthRateLimit.ForgotPasswordIPWindow,
+			},
+			VerifyEmailOTPEmail: user.RateLimitRule{
+				Max:    cfg.AuthRateLimit.VerifyEmailOTPEmailMax,
+				Window: cfg.AuthRateLimit.VerifyEmailOTPEmailWindow,
+			},
+			VerifyEmailOTPIP: user.RateLimitRule{
+				Max:    cfg.AuthRateLimit.VerifyEmailOTPIPMax,
+				Window: cfg.AuthRateLimit.VerifyEmailOTPIPWindow,
+			},
+			ResendVerificationEmail: user.RateLimitRule{
+				Max:    cfg.AuthRateLimit.ResendVerificationEmailMax,
+				Window: cfg.AuthRateLimit.ResendVerificationEmailWindow,
+			},
+			ResendVerificationIP: user.RateLimitRule{
+				Max:    cfg.AuthRateLimit.ResendVerificationIPMax,
+				Window: cfg.AuthRateLimit.ResendVerificationIPWindow,
+			},
+			ResetPasswordToken: user.RateLimitRule{
+				Max:    cfg.AuthRateLimit.ResetPasswordTokenMax,
+				Window: cfg.AuthRateLimit.ResetPasswordTokenWindow,
+			},
+			ResetPasswordIP: user.RateLimitRule{
+				Max:    cfg.AuthRateLimit.ResetPasswordIPMax,
+				Window: cfg.AuthRateLimit.ResetPasswordIPWindow,
+			},
+			ChangePasswordUser: user.RateLimitRule{
+				Max:    cfg.AuthRateLimit.ChangePasswordUserMax,
+				Window: cfg.AuthRateLimit.ChangePasswordUserWindow,
+			},
+			ChangePasswordIP: user.RateLimitRule{
+				Max:    cfg.AuthRateLimit.ChangePasswordIPMax,
+				Window: cfg.AuthRateLimit.ChangePasswordIPWindow,
+			},
+			ChangeEmailUser: user.RateLimitRule{
+				Max:    cfg.AuthRateLimit.ChangeEmailUserMax,
+				Window: cfg.AuthRateLimit.ChangeEmailUserWindow,
+			},
+			ChangeEmailIP: user.RateLimitRule{
+				Max:    cfg.AuthRateLimit.ChangeEmailIPMax,
+				Window: cfg.AuthRateLimit.ChangeEmailIPWindow,
+			},
+			ChangeEmailToken: user.RateLimitRule{
+				Max:    cfg.AuthRateLimit.ChangeEmailTokenMax,
+				Window: cfg.AuthRateLimit.ChangeEmailTokenWindow,
+			},
+			DeleteAccountUser: user.RateLimitRule{
+				Max:    cfg.AuthRateLimit.DeleteAccountUserMax,
+				Window: cfg.AuthRateLimit.DeleteAccountUserWindow,
+			},
+			DeleteAccountIP: user.RateLimitRule{
+				Max:    cfg.AuthRateLimit.DeleteAccountIPMax,
+				Window: cfg.AuthRateLimit.DeleteAccountIPWindow,
+			},
+			RefreshToken: user.RateLimitRule{
+				Max:    cfg.AuthRateLimit.RefreshTokenMax,
+				Window: cfg.AuthRateLimit.RefreshTokenWindow,
+			},
+			RefreshIP: user.RateLimitRule{
+				Max:    cfg.AuthRateLimit.RefreshIPMax,
+				Window: cfg.AuthRateLimit.RefreshIPWindow,
+			},
+			VerifyEmailToken: user.RateLimitRule{
+				Max:    cfg.AuthRateLimit.VerifyEmailTokenMax,
+				Window: cfg.AuthRateLimit.VerifyEmailTokenWindow,
+			},
+			MFAVerifyToken: user.RateLimitRule{
+				Max:    cfg.AuthRateLimit.MFAVerifyTokenMax,
+				Window: cfg.AuthRateLimit.MFAVerifyTokenWindow,
+			},
+			MFAVerifyIP: user.RateLimitRule{
+				Max:    cfg.AuthRateLimit.MFAVerifyIPMax,
+				Window: cfg.AuthRateLimit.MFAVerifyIPWindow,
+			},
+			MFAStepUpUser: user.RateLimitRule{
+				Max:    cfg.AuthRateLimit.MFAStepUpUserMax,
+				Window: cfg.AuthRateLimit.MFAStepUpUserWindow,
+			},
+			MFAStepUpIP: user.RateLimitRule{
+				Max:    cfg.AuthRateLimit.MFAStepUpIPMax,
+				Window: cfg.AuthRateLimit.MFAStepUpIPWindow,
+			},
+			MFAResetEmail: user.RateLimitRule{
+				Max:    cfg.AuthRateLimit.MFAResetEmailMax,
+				Window: cfg.AuthRateLimit.MFAResetEmailWindow,
+			},
+			MFAResetIP: user.RateLimitRule{
+				Max:    cfg.AuthRateLimit.MFAResetIPMax,
+				Window: cfg.AuthRateLimit.MFAResetIPWindow,
+			},
+		},
+	})
+
+	var pushIdentityUC *pushidentity.UseCase
+
+	if cfg.OneSignal.IdentityEnabled {
+		var err error
+
+		pushIdentityUC, err = pushidentity.New(userUC, pushidentity.Options{
+			AppID: cfg.OneSignal.AppID, PrivateKeyFile: cfg.OneSignal.IdentityPrivateKeyFile,
+			BindingSecret: cfg.OneSignal.OwnerBindingSecret, TTL: cfg.OneSignal.IdentityTokenTTL,
+		})
+		if err != nil {
+			panic(fmt.Errorf("initialize OneSignal identity: %w", err))
+		}
+	}
+
+	if notificationUC != nil && pushIdentityUC != nil {
+		notificationUC.SetOwnerBinding(pushIdentityUC.OwnerBinding)
 	}
 
 	return useCases{
-		user: user.New(userRepo, jwtManager, emailSender, user.Options{
-			VerifyFrontendURL:        cfg.Email.VerifyFrontendURL,
-			VerificationTTL:          cfg.Email.VerificationTTL,
-			VerificationOTPTTL:       cfg.Email.VerificationOTPTTL,
-			ResendCooldown:           cfg.Email.ResendCooldown,
-			PasswordResetFrontendURL: cfg.Email.PasswordResetFrontendURL,
-			PasswordResetTTL:         cfg.Email.PasswordResetTTL,
-			PasswordResetCooldown:    cfg.Email.PasswordResetCooldown,
-			EmailChangeFrontendURL:   cfg.Email.EmailChangeFrontendURL,
-			EmailChangeTTL:           cfg.Email.EmailChangeTTL,
-			EmailChangeOTPTTL:        cfg.Email.EmailChangeOTPTTL,
-			EmailChangeCooldown:      cfg.Email.EmailChangeCooldown,
-			SupportEmail:             cfg.Email.ReplyTo,
-			EmailService:             emailUC,
-			PushNotifier:             loginNotifier,
-			RateLimiter:              rateLimiter,
-			AuditLogger:              userRepo,
-			Sessions:                 userRepo,
-			Lockout:                  lockoutRepo,
-			Maintenance:              userRepo,
-			MFA:                      userRepo,
-			MFABox:                   mfaBox,
-			MFAOptions: user.MFAOptions{
-				StepUpTTL:       cfg.MFA.StepUpTTL,
-				EnrollmentGrace: cfg.MFA.EnrollmentGrace,
-				ChallengeTTL:    cfg.MFA.ChallengeTTL,
-				ResetTTL:        cfg.MFA.ResetTTL,
-				TOTPIssuer:      cfg.MFA.TOTPIssuer,
-			},
-			RefreshTokenTTL: cfg.JWT.RefreshTokenExpiry,
-			LockoutOptions: user.LockoutOptions{
-				Enabled:      cfg.AuthLockout.Enabled,
-				Threshold:    cfg.AuthLockout.Threshold,
-				BaseDuration: cfg.AuthLockout.BaseDuration,
-				Factor:       cfg.AuthLockout.Factor,
-				MaxDuration:  cfg.AuthLockout.MaxDuration,
-			},
-			Cleanup: user.CleanupOptions{
-				TokenRetention:   cfg.AuthCleanup.TokenRetention,
-				SessionRetention: cfg.AuthCleanup.SessionRetention,
-				AuditRetention:   cfg.AuthCleanup.AuditRetention,
-			},
-			EmailNotifications: user.EmailNotificationOptions{
-				Enabled:                cfg.AuthEmail.NotificationsEnabled,
-				NewLoginEnabled:        cfg.AuthEmail.NewLoginEnabled,
-				FailedLoginEnabled:     cfg.AuthEmail.FailedLoginEnabled,
-				PasswordChangedEnabled: cfg.AuthEmail.PasswordChangedEnabled,
-				EmailVerifiedEnabled:   cfg.AuthEmail.EmailVerifiedEnabled,
-				RoleChangedEnabled:     cfg.AuthEmail.RoleChangedEnabled,
-				EmailChangedEnabled:    cfg.AuthEmail.EmailChangedEnabled,
-				AccountDeletedEnabled:  cfg.AuthEmail.AccountDeletedEnabled,
-				FailedLoginCooldown:    cfg.AuthEmail.FailedLoginCooldown,
-			},
-			Alert: user.AlertOptions{
-				Enabled:    cfg.AuthAlert.Enabled,
-				Recipients: cfg.AuthAlert.Recipients,
-			},
-			RateLimit: user.RateLimitOptions{
-				LoginEmail: user.RateLimitRule{
-					Max:    cfg.AuthRateLimit.LoginEmailMax,
-					Window: cfg.AuthRateLimit.LoginEmailWindow,
-				},
-				LoginIP: user.RateLimitRule{
-					Max:    cfg.AuthRateLimit.LoginIPMax,
-					Window: cfg.AuthRateLimit.LoginIPWindow,
-				},
-				RegisterEmail: user.RateLimitRule{
-					Max:    cfg.AuthRateLimit.RegisterEmailMax,
-					Window: cfg.AuthRateLimit.RegisterEmailWindow,
-				},
-				RegisterIP: user.RateLimitRule{
-					Max:    cfg.AuthRateLimit.RegisterIPMax,
-					Window: cfg.AuthRateLimit.RegisterIPWindow,
-				},
-				ForgotPasswordEmail: user.RateLimitRule{
-					Max:    cfg.AuthRateLimit.ForgotPasswordEmailMax,
-					Window: cfg.AuthRateLimit.ForgotPasswordEmailWindow,
-				},
-				ForgotPasswordIP: user.RateLimitRule{
-					Max:    cfg.AuthRateLimit.ForgotPasswordIPMax,
-					Window: cfg.AuthRateLimit.ForgotPasswordIPWindow,
-				},
-				VerifyEmailOTPEmail: user.RateLimitRule{
-					Max:    cfg.AuthRateLimit.VerifyEmailOTPEmailMax,
-					Window: cfg.AuthRateLimit.VerifyEmailOTPEmailWindow,
-				},
-				VerifyEmailOTPIP: user.RateLimitRule{
-					Max:    cfg.AuthRateLimit.VerifyEmailOTPIPMax,
-					Window: cfg.AuthRateLimit.VerifyEmailOTPIPWindow,
-				},
-				ResendVerificationEmail: user.RateLimitRule{
-					Max:    cfg.AuthRateLimit.ResendVerificationEmailMax,
-					Window: cfg.AuthRateLimit.ResendVerificationEmailWindow,
-				},
-				ResendVerificationIP: user.RateLimitRule{
-					Max:    cfg.AuthRateLimit.ResendVerificationIPMax,
-					Window: cfg.AuthRateLimit.ResendVerificationIPWindow,
-				},
-				ResetPasswordToken: user.RateLimitRule{
-					Max:    cfg.AuthRateLimit.ResetPasswordTokenMax,
-					Window: cfg.AuthRateLimit.ResetPasswordTokenWindow,
-				},
-				ResetPasswordIP: user.RateLimitRule{
-					Max:    cfg.AuthRateLimit.ResetPasswordIPMax,
-					Window: cfg.AuthRateLimit.ResetPasswordIPWindow,
-				},
-				ChangePasswordUser: user.RateLimitRule{
-					Max:    cfg.AuthRateLimit.ChangePasswordUserMax,
-					Window: cfg.AuthRateLimit.ChangePasswordUserWindow,
-				},
-				ChangePasswordIP: user.RateLimitRule{
-					Max:    cfg.AuthRateLimit.ChangePasswordIPMax,
-					Window: cfg.AuthRateLimit.ChangePasswordIPWindow,
-				},
-				ChangeEmailUser: user.RateLimitRule{
-					Max:    cfg.AuthRateLimit.ChangeEmailUserMax,
-					Window: cfg.AuthRateLimit.ChangeEmailUserWindow,
-				},
-				ChangeEmailIP: user.RateLimitRule{
-					Max:    cfg.AuthRateLimit.ChangeEmailIPMax,
-					Window: cfg.AuthRateLimit.ChangeEmailIPWindow,
-				},
-				ChangeEmailToken: user.RateLimitRule{
-					Max:    cfg.AuthRateLimit.ChangeEmailTokenMax,
-					Window: cfg.AuthRateLimit.ChangeEmailTokenWindow,
-				},
-				DeleteAccountUser: user.RateLimitRule{
-					Max:    cfg.AuthRateLimit.DeleteAccountUserMax,
-					Window: cfg.AuthRateLimit.DeleteAccountUserWindow,
-				},
-				DeleteAccountIP: user.RateLimitRule{
-					Max:    cfg.AuthRateLimit.DeleteAccountIPMax,
-					Window: cfg.AuthRateLimit.DeleteAccountIPWindow,
-				},
-				RefreshToken: user.RateLimitRule{
-					Max:    cfg.AuthRateLimit.RefreshTokenMax,
-					Window: cfg.AuthRateLimit.RefreshTokenWindow,
-				},
-				RefreshIP: user.RateLimitRule{
-					Max:    cfg.AuthRateLimit.RefreshIPMax,
-					Window: cfg.AuthRateLimit.RefreshIPWindow,
-				},
-				VerifyEmailToken: user.RateLimitRule{
-					Max:    cfg.AuthRateLimit.VerifyEmailTokenMax,
-					Window: cfg.AuthRateLimit.VerifyEmailTokenWindow,
-				},
-				MFAVerifyToken: user.RateLimitRule{
-					Max:    cfg.AuthRateLimit.MFAVerifyTokenMax,
-					Window: cfg.AuthRateLimit.MFAVerifyTokenWindow,
-				},
-				MFAVerifyIP: user.RateLimitRule{
-					Max:    cfg.AuthRateLimit.MFAVerifyIPMax,
-					Window: cfg.AuthRateLimit.MFAVerifyIPWindow,
-				},
-				MFAStepUpUser: user.RateLimitRule{
-					Max:    cfg.AuthRateLimit.MFAStepUpUserMax,
-					Window: cfg.AuthRateLimit.MFAStepUpUserWindow,
-				},
-				MFAStepUpIP: user.RateLimitRule{
-					Max:    cfg.AuthRateLimit.MFAStepUpIPMax,
-					Window: cfg.AuthRateLimit.MFAStepUpIPWindow,
-				},
-				MFAResetEmail: user.RateLimitRule{
-					Max:    cfg.AuthRateLimit.MFAResetEmailMax,
-					Window: cfg.AuthRateLimit.MFAResetEmailWindow,
-				},
-				MFAResetIP: user.RateLimitRule{
-					Max:    cfg.AuthRateLimit.MFAResetIPMax,
-					Window: cfg.AuthRateLimit.MFAResetIPWindow,
-				},
-			},
-		}),
+		user:   userUC,
 		reader: reader.New(readerRepo),
 		bookRAG: bookrag.New(bookRAGRepo, llmClient, bookrag.Options{
 			MaxContextPages:      cfg.RAG.MaxContextPages,
@@ -375,15 +434,17 @@ func initUseCases(cfg *config.Config, pg *postgres.Postgres, jwtManager *jwt.Man
 			CitationMode:         cfg.RAG.BookCitationMode,
 			LegacyFallback:       cfg.RAG.BookLegacyFallback,
 		}),
-		quran:           quran.New(quranRepo),
-		anchor:          anchorresolver.New(anchorRepo),
-		crossReference:  crossreference.New(crossReferenceRepo),
-		personal:        personal.New(personalRepo, khatamNotifier),
-		editorial:       editorial.New(editorialRepo, unitRegistryUC, l),
-		email:           emailUC,
-		notification:    notificationUC,
-		unitRegistry:    unitRegistryUC,
-		serviceIdentity: serviceIdentityUC,
+		quran:            quran.New(quranRepo),
+		anchor:           anchorresolver.New(anchorRepo),
+		crossReference:   crossreference.New(crossReferenceRepo),
+		personal:         personal.New(personalRepo, khatamNotifier),
+		editorial:        editorial.New(editorialRepo, unitRegistryUC, l),
+		email:            emailUC,
+		notification:     notificationUC,
+		unitRegistry:     unitRegistryUC,
+		serviceIdentity:  serviceIdentityUC,
+		pushIdentity:     pushIdentityUC,
+		oneSignalErasure: oneSignalErasureUC,
 	}
 }
 
@@ -413,6 +474,7 @@ func initServers(cfg *config.Config, pg *postgres.Postgres, uc useCases, jwtMana
 		uc.editorial,
 		uc.email,
 		uc.serviceIdentity,
+		uc.pushIdentity,
 		jwtManager,
 		l,
 	)
@@ -435,6 +497,7 @@ func (s *servers) startServers(
 	notificationUC *notification.UseCase,
 	unitRegistryUC *unitregistry.UseCase,
 	serviceIdentityUC *serviceidentity.UseCase,
+	oneSignalErasureUC *onesignalerasure.UseCase,
 	l logger.Interface,
 ) {
 	loopCtx, cancel := context.WithCancel(context.Background())
@@ -443,6 +506,7 @@ func (s *servers) startServers(
 	s.loopSpecs = buildLoopSpecs(
 		cfg, emailUC, userUC, notificationUC, unitRegistryUC, l, serviceIdentityUC,
 	)
+	s.loopSpecs = append(s.loopSpecs, buildOneSignalErasureLoopSpecs(cfg, oneSignalErasureUC, l)...)
 
 	if cfg.App.BackgroundLoopsEnabled ||
 		backgroundLoopsActivationExists(cfg.App.BackgroundLoopsActivationFile) {
@@ -565,6 +629,47 @@ func buildLoopSpecs(
 	}
 
 	return append(specs, buildEmailLoopSpecs(cfg, emailUC)...)
+}
+
+func buildOneSignalErasureLoopSpecs(
+	cfg *config.Config,
+	erasureUC *onesignalerasure.UseCase,
+	l logger.Interface,
+) []loopSpec {
+	if erasureUC == nil || !cfg.OneSignal.ErasureEnabled {
+		return nil
+	}
+
+	return []loopSpec{{
+		name:         "onesignal_user_erasure",
+		interval:     cfg.OneSignal.ErasureInterval,
+		initialDelay: backgroundInitialDelay,
+		wake:         erasureUC.Wakeups(),
+		run:          oneSignalErasurePass(erasureUC, l),
+	}}
+}
+
+func oneSignalErasurePass(
+	erasureUC *onesignalerasure.UseCase,
+	l logger.Interface,
+) func(context.Context) error {
+	return func(ctx context.Context) error {
+		report, err := erasureUC.Dispatch(ctx)
+		if report.Claimed > 0 || report.Retained > 0 {
+			l.Info(
+				"app - OneSignal erasure: claimed=%d verified=%d retained_cleanup=%d",
+				report.Claimed,
+				report.Verified,
+				report.Retained,
+			)
+		}
+
+		if err != nil {
+			return fmt.Errorf("OneSignal user erasure: %w", err)
+		}
+
+		return nil
+	}
 }
 
 // buildEmailLoopSpecs gates the email loops exactly as the pre-supervisor
@@ -875,6 +980,11 @@ func run(cfg *config.Config, stop <-chan struct{}) {
 	if cfg.Metrics.Enabled {
 		registerEmailQueueMetrics(pg.Pool)
 		registerNotificationMetrics(pg.Pool)
+
+		if cfg.OneSignal.ErasureEnabled {
+			registerOneSignalErasureMetrics(pg.Pool, cfg.OneSignal.ErasureStaleAfter)
+		}
+
 		registerBackfillMetrics(pg.Pool)
 		registerDBSizeMetrics(pg.Pool)
 	}
@@ -900,7 +1010,16 @@ func run(cfg *config.Config, stop <-chan struct{}) {
 
 	uc := initUseCases(cfg, pg, jwtManager, l)
 	s := initServers(cfg, pg, uc, jwtManager, l)
-	s.startServers(cfg, uc.email, uc.user, uc.notification, uc.unitRegistry, uc.serviceIdentity, l)
+	s.startServers(
+		cfg,
+		uc.email,
+		uc.user,
+		uc.notification,
+		uc.unitRegistry,
+		uc.serviceIdentity,
+		uc.oneSignalErasure,
+		l,
+	)
 	s.waitForShutdown(l, stop, jwtManager)
 }
 

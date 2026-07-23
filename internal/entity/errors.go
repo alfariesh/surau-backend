@@ -111,6 +111,7 @@ var (
 	ErrInvalidActivityDate              = errors.New("invalid activity date")
 	ErrInvalidActivityRange             = errors.New("invalid activity range")
 	ErrPushDeliveryFailed               = errors.New("push delivery failed")
+	ErrOneSignalErasureLeaseLost        = errors.New("OneSignal erasure lease lost")
 	ErrUnitNotFound                     = errors.New("citable unit not found")
 	ErrUnitReconcileConflict            = errors.New("unit registry changed since plan was built")
 	ErrQuranPrimaryTextDrift            = errors.New("quran primary text changed after Citable Unit mint")

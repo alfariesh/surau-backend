@@ -12,6 +12,12 @@ import (
 //go:generate mockgen -source=contracts.go -destination=./mocks_usecase_test.go -package=usecase_test
 
 type (
+	// PushIdentity issues verified OneSignal login tokens and resolves personal routes.
+	PushIdentity interface {
+		Issue(ctx context.Context, userID, familyID string) (entity.PushIdentityToken, error)
+		Resolve(ctx context.Context, userID, familyID string, input entity.PushRouteInput) entity.PushRouteResolution
+	}
+
 	// Translation -.
 	Translation interface {
 		Translate(ctx context.Context, userID string, t entity.Translation) (entity.Translation, error)

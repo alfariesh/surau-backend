@@ -23,6 +23,8 @@ import (
 
 const testJWTSecret = "0123456789abcdef0123456789abcdef"
 
+var errTestDatabaseUnavailable = errors.New("database unavailable")
+
 func newUserUseCase(t *testing.T) (*user.UseCase, *MockUserRepo, *MockEmailSender) {
 	t.Helper()
 
@@ -1421,7 +1423,7 @@ func TestDeleteAccount(t *testing.T) {
 
 		repo.EXPECT().GetByID(context.Background(), "user-id-123").
 			Return(entity.User{ID: "user-id-123", Email: "test@example.com", PasswordHash: string(hash)}, nil)
-		repo.EXPECT().DeleteAccount(context.Background(), "user-id-123").Return(nil)
+		repo.EXPECT().DeleteAccount(context.Background(), "user-id-123", nil).Return(nil)
 
 		err = uc.DeleteAccount(context.Background(), "user-id-123", "password123")
 
@@ -1442,6 +1444,75 @@ func TestDeleteAccount(t *testing.T) {
 
 		require.ErrorIs(t, err, entity.ErrInvalidCredentials)
 	})
+
+	t.Run("atomically passes provider erasure and wakes only after commit", func(t *testing.T) {
+		t.Parallel()
+
+		ctrl := gomock.NewController(t)
+		userRepo := NewMockUserRepo(ctrl)
+		emailSender := NewMockEmailSender(ctrl)
+		jwtManager := jwt.New(testJWTSecret, time.Hour, jwt.DefaultIssuer, jwt.DefaultAudience)
+		prepared := entity.OneSignalErasureCreate{
+			ID: "erasure-id", AppID: "app-id",
+			ExternalIDCiphertext: "ciphertext", ExternalIDHash: strings.Repeat("a", 64),
+		}
+		erasure := &providerErasureStub{prepared: prepared}
+		uc := user.New(userRepo, jwtManager, emailSender, user.Options{ProviderErasure: erasure})
+		hash, err := bcrypt.GenerateFromPassword([]byte("password123"), bcrypt.DefaultCost)
+		require.NoError(t, err)
+
+		userRepo.EXPECT().GetByID(context.Background(), "user-id-123").
+			Return(entity.User{ID: "user-id-123", PasswordHash: string(hash)}, nil)
+		userRepo.EXPECT().DeleteAccount(context.Background(), "user-id-123", &prepared).Return(nil)
+
+		err = uc.DeleteAccount(context.Background(), "user-id-123", "password123")
+
+		require.NoError(t, err)
+		assert.Equal(t, "user-id-123", erasure.preparedFor)
+		assert.Equal(t, 1, erasure.wakeCount)
+	})
+
+	t.Run("does not wake provider worker when local transaction fails", func(t *testing.T) {
+		t.Parallel()
+
+		ctrl := gomock.NewController(t)
+		userRepo := NewMockUserRepo(ctrl)
+		emailSender := NewMockEmailSender(ctrl)
+		jwtManager := jwt.New(testJWTSecret, time.Hour, jwt.DefaultIssuer, jwt.DefaultAudience)
+		prepared := entity.OneSignalErasureCreate{ID: "erasure-id"}
+		erasure := &providerErasureStub{prepared: prepared}
+		uc := user.New(userRepo, jwtManager, emailSender, user.Options{ProviderErasure: erasure})
+		hash, err := bcrypt.GenerateFromPassword([]byte("password123"), bcrypt.DefaultCost)
+		require.NoError(t, err)
+
+		dbErr := errTestDatabaseUnavailable
+
+		userRepo.EXPECT().GetByID(context.Background(), "user-id-123").
+			Return(entity.User{ID: "user-id-123", PasswordHash: string(hash)}, nil)
+		userRepo.EXPECT().DeleteAccount(context.Background(), "user-id-123", &prepared).Return(dbErr)
+
+		err = uc.DeleteAccount(context.Background(), "user-id-123", "password123")
+
+		require.ErrorIs(t, err, dbErr)
+		assert.Zero(t, erasure.wakeCount)
+	})
+}
+
+type providerErasureStub struct {
+	prepared    entity.OneSignalErasureCreate
+	prepareErr  error
+	preparedFor string
+	wakeCount   int
+}
+
+func (s *providerErasureStub) Prepare(userID string) (entity.OneSignalErasureCreate, error) {
+	s.preparedFor = userID
+
+	return s.prepared, s.prepareErr
+}
+
+func (s *providerErasureStub) Wake() {
+	s.wakeCount++
 }
 
 func TestAuthEmailNotifications(t *testing.T) {
@@ -1713,7 +1784,7 @@ func TestAuthEmailNotifications(t *testing.T) {
 			Username: "testuser",
 			Email:    "test@example.com",
 		})
-		repo.EXPECT().DeleteAccount(context.Background(), "user-id-123").Return(nil)
+		repo.EXPECT().DeleteAccount(context.Background(), "user-id-123", nil).Return(nil)
 		emailSender.EXPECT().Send(context.Background(), gomock.Any()).DoAndReturn(
 			func(_ context.Context, message entity.EmailMessage) (entity.EmailSendResult, error) {
 				assert.Equal(t, "test@example.com", message.To)

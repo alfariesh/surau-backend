@@ -856,7 +856,13 @@ Error penting:
 
 ## Flow Delete Account
 
-Delete account adalah soft delete yang tidak bisa dipulihkan lewat public API. Backend menganonimkan akun, menghapus data personal user, dan membuat semua JWT lama invalid.
+Delete account adalah soft delete yang tidak bisa dipulihkan lewat public API. Backend menganonimkan
+akun, menghapus data personal user, dan membuat semua JWT lama invalid. Jika OneSignal identity
+aktif, anonimisasi lokal dan insert outbox penghapusan provider commit secara atomik; kegagalan
+outbox membuat seluruh transaksi rollback dan memakai response `500` existing. Setelah response
+`200`, penghapusan lokal sudah efektif, sedangkan Delete User OneSignal diverifikasi asynchronous
+sampai View User menghasilkan `404`. Tidak ada perubahan request/response FE. Runbook:
+[OneSignal provider erasure](onesignal-erasure.md).
 
 ```http
 POST /v1/auth/delete-account

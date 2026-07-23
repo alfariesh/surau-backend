@@ -10841,6 +10841,87 @@
                 ]
             }
         },
+        "/me/push/identity-token": {
+            "post": {
+                "description": "Identity is derived exclusively from the authenticated account and active session.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "push"
+                ],
+                "summary": "Issue a short-lived OneSignal identity token",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.PushIdentityToken"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/me/push/resolve": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "push"
+                ],
+                "summary": "Resolve a push route against the active account",
+                "parameters": [
+                    {
+                        "description": "String-only notification data",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/entity.PushRouteInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.PushRouteResolution"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
         "/me/quran/khatam": {
             "get": {
                 "description": "Return the authenticated user's active khatam cycle with completed juz marks.",
@@ -16810,6 +16891,84 @@
                 "id": {
                     "type": "string",
                     "example": "550e8400-e29b-41d4-a716-446655440000"
+                }
+            }
+        },
+        "entity.PushIdentityToken": {
+            "type": "object",
+            "properties": {
+                "eligible_intents": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "notify_khatam_milestones"
+                    ]
+                },
+                "expires_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:15:00Z"
+                },
+                "expires_in": {
+                    "type": "integer",
+                    "example": 900
+                },
+                "external_id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "identity_token": {
+                    "type": "string"
+                },
+                "owner_binding": {
+                    "type": "string",
+                    "example": "ob1.opaque-value"
+                },
+                "schema_version": {
+                    "type": "string",
+                    "example": "surau.push.identity.v1"
+                }
+            }
+        },
+        "entity.PushRouteInput": {
+            "type": "object",
+            "required": [
+                "intent",
+                "schema_version",
+                "scope"
+            ],
+            "properties": {
+                "intent": {
+                    "type": "string",
+                    "maxLength": 80
+                },
+                "owner_binding": {
+                    "type": "string",
+                    "maxLength": 128
+                },
+                "schema_version": {
+                    "type": "string"
+                },
+                "scope": {
+                    "type": "string",
+                    "enum": [
+                        "public",
+                        "personal"
+                    ]
+                }
+            }
+        },
+        "entity.PushRouteResolution": {
+            "type": "object",
+            "properties": {
+                "destination": {
+                    "type": "string",
+                    "example": "home"
+                },
+                "intent": {
+                    "type": "string",
+                    "example": "open_khatam_progress"
                 }
             }
         },

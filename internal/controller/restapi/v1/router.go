@@ -52,6 +52,7 @@ func NewRoutes(
 	email usecase.EmailAdmin,
 	emailWebhookSecret string,
 	serviceIdentity usecase.ServiceIdentity,
+	pushIdentity usecase.PushIdentity,
 	jwtManager *jwt.Manager,
 	l logger.Interface,
 ) {
@@ -85,6 +86,7 @@ func NewRoutes(
 		quranLicenseAudit:  quranLicenseAudit,
 		email:              email,
 		serviceIdentity:    serviceIdentity,
+		pushIdentity:       pushIdentity,
 		emailWebhookSecret: strings.TrimSpace(emailWebhookSecret),
 		l:                  l,
 		v:                  validator.New(validator.WithRequiredStructEnabled()),
@@ -254,6 +256,8 @@ func NewRoutes(
 
 	meGroup := protected.Group("/me", authRequired, personalWriteLimiter)
 	{
+		meGroup.Post("/push/identity-token", r.issuePushIdentityToken)
+		meGroup.Post("/push/resolve", r.resolvePushRoute)
 		meGroup.Get("/sync", r.syncPersonalData)
 		meGroup.Get("/activity", r.getReadingActivity)
 		meGroup.Get("/activity/streak", r.getReadingStreak)

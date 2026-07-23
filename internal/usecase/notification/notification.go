@@ -107,6 +107,8 @@ type UseCase struct {
 	leaseDuration time.Duration
 	now           func() time.Time
 	log           logger.Interface
+	allowedTypes  map[string]bool
+	ownerBinding  func(string, int64) string
 }
 
 // Options carries operator-configurable quiet hours plus deterministic test seams.
@@ -116,6 +118,8 @@ type Options struct {
 	PushTimeout   time.Duration
 	LeaseDuration time.Duration
 	Now           func() time.Time
+	AllowedTypes  []string
+	OwnerBinding  func(string, int64) string
 }
 
 // DispatchReport is one supervised sweep, separated from provider health errors.
@@ -156,6 +160,10 @@ func New(
 		opts.Now = time.Now
 	}
 
+	allowedTypes := make(map[string]bool, len(opts.AllowedTypes))
+	for _, notificationType := range opts.AllowedTypes {
+		allowedTypes[notificationType] = true
+	}
 	return &UseCase{
 		accounts:      accounts,
 		deliveries:    deliveries,
@@ -168,6 +176,8 @@ func New(
 		leaseDuration: opts.LeaseDuration,
 		now:           opts.Now,
 		log:           l,
+		allowedTypes:  allowedTypes,
+		ownerBinding:  opts.OwnerBinding,
 	}
 }
 
@@ -176,6 +186,11 @@ func New(
 // coalesced so a burst of failures cannot grow an in-memory queue.
 func (uc *UseCase) RetryWakeups() <-chan struct{} {
 	return uc.retryWake
+}
+
+// SetOwnerBinding wires the account-generation signer after the identity usecase is initialized.
+func (uc *UseCase) SetOwnerBinding(binding func(string, int64) string) {
+	uc.ownerBinding = binding
 }
 
 func (uc *UseCase) wakeRetryLoop() {
@@ -219,6 +234,7 @@ func (uc *UseCase) NotifyKhatamCompleted(ctx context.Context, userID string) {
 			ExternalIDs: []string{userID},
 			Headings:    localized(lang, khatamCompletedHeadings),
 			Contents:    localized(lang, khatamCompletedContents),
+			Data:        uc.personalKhatamData(&account),
 		}, true
 	})
 }
@@ -239,6 +255,7 @@ func (uc *UseCase) NotifyKhatamMilestone(ctx context.Context, userID string, juz
 			ExternalIDs: []string{userID},
 			Headings:    localized(lang, khatamMilestoneHeadings),
 			Contents:    localizedf(lang, khatamMilestoneContents, juzCount),
+			Data:        uc.personalKhatamData(&account),
 		}, true
 	})
 }
@@ -572,7 +589,7 @@ func (uc *UseCase) dispatchEvent(
 	notificationType string,
 	compose func(entity.UserAccount) (entity.PushNotification, bool),
 ) {
-	if userID == "" {
+	if userID == "" || !uc.allowed(notificationType) {
 		return
 	}
 	go func() {
@@ -654,10 +671,21 @@ func (uc *UseCase) deliver(ctx context.Context, delivery *entity.NotificationDel
 		return entity.NotificationStatusFailed, nil
 	}
 
-	providerCtx, cancel := context.WithTimeout(ctx, uc.pushTimeout)
-	result, sendErr := uc.pusher.Send(providerCtx, delivery.Payload, delivery.IdempotencyKey)
+	var result entity.PushDeliveryResult
 
-	cancel()
+	var sendErr error
+
+	if !uc.allowed(delivery.NotificationType) {
+		result = entity.PushDeliveryResult{
+			Outcome: entity.PushDeliveryFailed, ReasonCode: "ineligible_category",
+			ReasonDetail: "notification category is not eligible for this app", Retryable: false,
+		}
+	} else {
+		providerCtx, cancel := context.WithTimeout(ctx, uc.pushTimeout)
+		result, sendErr = uc.pusher.Send(providerCtx, delivery.Payload, delivery.IdempotencyKey)
+
+		cancel()
+	}
 
 	normalizeProviderResult(&result, sendErr)
 	terminal := uc.deliveryIsTerminal(delivery, &result)
@@ -697,6 +725,24 @@ func (uc *UseCase) deliver(ctx context.Context, delivery *entity.NotificationDel
 	}
 
 	return status, nil
+}
+
+func (uc *UseCase) allowed(notificationType string) bool {
+	return len(uc.allowedTypes) == 0 || uc.allowedTypes[notificationType]
+}
+
+func (uc *UseCase) personalKhatamData(account *entity.UserAccount) map[string]string {
+	if uc.ownerBinding == nil {
+		return nil
+	}
+
+	return map[string]string{
+		"schema_version": entity.PushDataSchemaV1,
+		"scope":          "personal",
+		"category":       "notify_khatam_milestones",
+		"intent":         "open_khatam_progress",
+		"owner_binding":  uc.ownerBinding(account.ID, account.TokenVersion),
+	}
 }
 
 func (uc *UseCase) expireReminderBeforeProvider(

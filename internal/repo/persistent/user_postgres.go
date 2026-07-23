@@ -1115,17 +1115,44 @@ func (r *UserRepo) ChangeEmailWithToken(
 }
 
 // DeleteAccount soft-deletes and anonymizes a user account in one transaction.
-func (r *UserRepo) DeleteAccount(ctx context.Context, userID string) error {
+func (r *UserRepo) DeleteAccount(
+	ctx context.Context,
+	userID string,
+	erasure *entity.OneSignalErasureCreate,
+) error {
 	tx, err := r.Pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("UserRepo - DeleteAccount - r.Pool.Begin: %w", err)
 	}
 	defer tx.Rollback(ctx)
 
+	if err := anonymizeDeletedUser(ctx, tx, userID); err != nil {
+		return err
+	}
+
+	if err := cleanupDeletedUserData(ctx, tx, userID); err != nil {
+		return err
+	}
+
+	if erasure != nil {
+		if err := insertOneSignalErasureOutbox(ctx, tx, erasure); err != nil {
+			return err
+		}
+	}
+
+	if err = tx.Commit(ctx); err != nil {
+		return fmt.Errorf("UserRepo - DeleteAccount - tx.Commit: %w", err)
+	}
+
+	return nil
+}
+
+func anonymizeDeletedUser(ctx context.Context, tx pgx.Tx, userID string) error {
 	shortID := userID
 	if len(shortID) > 12 {
 		shortID = shortID[:12]
 	}
+
 	deletedEmail := "deleted+" + userID + "@deleted.local"
 	deletedUsername := "deleted-user-" + shortID
 
@@ -1150,6 +1177,10 @@ WHERE id = $1
 		return entity.ErrUserNotFound
 	}
 
+	return nil
+}
+
+func cleanupDeletedUserData(ctx context.Context, tx pgx.Tx, userID string) error {
 	statements := []string{
 		"UPDATE user_profiles SET display_name = NULL, timezone = NULL, country_code = NULL, personalization_enabled = false, updated_at = now() WHERE user_id = $1",
 		"DELETE FROM user_preferences WHERE user_id = $1",
@@ -1169,14 +1200,36 @@ WHERE id = $1
 		"DELETE FROM mfa_challenges WHERE user_id = $1",
 		"UPDATE auth_audit_logs SET email = NULL, client_ip = NULL, user_agent = NULL WHERE user_id = $1",
 	}
+
 	for _, statement := range statements {
-		if _, err = tx.Exec(ctx, statement, userID); err != nil {
+		if _, err := tx.Exec(ctx, statement, userID); err != nil {
 			return fmt.Errorf("UserRepo - DeleteAccount - cleanup Exec: %w", err)
 		}
 	}
 
-	if err = tx.Commit(ctx); err != nil {
-		return fmt.Errorf("UserRepo - DeleteAccount - tx.Commit: %w", err)
+	return nil
+}
+
+func insertOneSignalErasureOutbox(
+	ctx context.Context,
+	tx pgx.Tx,
+	erasure *entity.OneSignalErasureCreate,
+) error {
+	const query = `
+INSERT INTO onesignal_user_erasures (
+    id, app_id, external_id_ciphertext, external_id_hash, status, next_attempt_at
+) VALUES ($1, $2, $3, $4, 'pending', $5)`
+
+	if _, err := tx.Exec(
+		ctx,
+		query,
+		erasure.ID,
+		erasure.AppID,
+		erasure.ExternalIDCiphertext,
+		erasure.ExternalIDHash,
+		erasure.NextAttemptAt.UTC(),
+	); err != nil {
+		return fmt.Errorf("UserRepo - DeleteAccount - erasure outbox Exec: %w", err)
 	}
 
 	return nil

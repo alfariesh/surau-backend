@@ -58,6 +58,7 @@ func NewRouter(
 	e usecase.Editorial,
 	email usecase.EmailAdmin,
 	serviceIdentity usecase.ServiceIdentity,
+	pushIdentity usecase.PushIdentity,
 	jwtManager *jwt.Manager,
 	l logger.Interface,
 ) {
@@ -157,6 +158,7 @@ func NewRouter(
 			email,
 			cfg.Email.CloudflareWebhookSecret,
 			serviceIdentity,
+			pushIdentity,
 			jwtManager,
 			l,
 		)

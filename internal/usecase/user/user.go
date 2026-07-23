@@ -145,6 +145,7 @@ type UseCase struct {
 	rateLimit                RateLimitOptions
 	emailNotifications       EmailNotificationOptions
 	alert                    AlertOptions
+	providerErasure          ProviderErasure
 	now                      func() time.Time
 	alertMu                  sync.Mutex
 	alertWatermark           time.Time
@@ -159,6 +160,12 @@ type PushNotifier interface {
 // TransactionalEmailService sends admin-managed transactional emails.
 type TransactionalEmailService interface {
 	SendTransactional(ctx context.Context, req entity.TransactionalEmailRequest) error
+}
+
+// ProviderErasure prepares a privacy-safe outbox row and wakes its durable worker.
+type ProviderErasure interface {
+	Prepare(userID string) (entity.OneSignalErasureCreate, error)
+	Wake()
 }
 
 // RateLimitRule configures one auth rate-limit dimension.
@@ -267,6 +274,7 @@ type Options struct {
 	RateLimit                RateLimitOptions
 	EmailNotifications       EmailNotificationOptions
 	Alert                    AlertOptions
+	ProviderErasure          ProviderErasure
 	// Now is an injectable clock used by refresh/session lifecycle tests.
 	// Production callers leave it nil and use time.Now.
 	Now func() time.Time
@@ -349,6 +357,7 @@ func New(r repo.UserRepo, j *jwt.Manager, emailSender repo.EmailSender, opts Opt
 		rateLimit:                normalizeRateLimitOptions(opts.RateLimit),
 		emailNotifications:       normalizeEmailNotificationOptions(opts.EmailNotifications),
 		alert:                    normalizeAlertOptions(opts.Alert),
+		providerErasure:          opts.ProviderErasure,
 		now:                      now,
 		// Seed the alert watermark at construction so the first scan only
 		// considers reuse events that happen after boot, never the backlog.
@@ -1373,9 +1382,26 @@ func (uc *UseCase) DeleteAccount(ctx context.Context, userID, currentPassword st
 	if uc.notificationEnabled(uc.emailNotifications.AccountDeletedEnabled) && validEmail(user.Email) {
 		emailCtx = uc.newAuthEmailContext(ctx, user)
 	}
-	if err = uc.repo.DeleteAccount(ctx, user.ID); err != nil {
+
+	var erasure *entity.OneSignalErasureCreate
+
+	if uc.providerErasure != nil {
+		prepared, prepareErr := uc.providerErasure.Prepare(user.ID)
+		if prepareErr != nil {
+			return fmt.Errorf("UserUseCase - DeleteAccount - prepare provider erasure: %w", prepareErr)
+		}
+
+		erasure = &prepared
+	}
+
+	if err = uc.repo.DeleteAccount(ctx, user.ID, erasure); err != nil {
 		return fmt.Errorf("UserUseCase - DeleteAccount - uc.repo.DeleteAccount: %w", err)
 	}
+
+	if uc.providerErasure != nil {
+		uc.providerErasure.Wake()
+	}
+
 	uc.notifyAccountDeleted(ctx, user, emailCtx)
 
 	return nil

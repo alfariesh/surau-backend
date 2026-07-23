@@ -19,6 +19,9 @@ const (
 	RAGLLMDriverRollout         = "deterministic-rollout"
 
 	minCollabServiceTokenBytes = 32
+	minOneSignalBindingBytes   = 32
+	minOneSignalErasureBytes   = 32
+	surauOneSignalAppID        = "7a650cae-1c1e-4b19-a7fe-393c14b894f0"
 	maxRefreshTokenExpiry      = 336 * time.Hour
 )
 
@@ -100,6 +103,98 @@ func validateAuthCleanup(cleanup authCleanup) error {
 
 	if cleanup.AuditRetention < 0 {
 		return configError("AUTH_CLEANUP_AUDIT_RETENTION must not be negative")
+	}
+
+	return nil
+}
+
+func validateOneSignalIdentity(cfg *oneSignal) error {
+	if !cfg.IdentityEnabled {
+		return nil
+	}
+
+	if strings.TrimSpace(cfg.AppID) == "" {
+		return configError("ONESIGNAL_APP_ID is required when ONESIGNAL_IDENTITY_ENABLED is true")
+	}
+
+	if strings.TrimSpace(cfg.AppID) != surauOneSignalAppID {
+		return configError("ONESIGNAL_APP_ID must match the Surau OneSignal app")
+	}
+
+	if strings.TrimSpace(cfg.IdentityPrivateKeyFile) == "" {
+		return configError("ONESIGNAL_IDENTITY_PRIVATE_KEY_FILE is required when OneSignal identity is enabled")
+	}
+
+	if cfg.IdentityTokenTTL <= 0 || cfg.IdentityTokenTTL > time.Hour {
+		return configError("ONESIGNAL_IDENTITY_TOKEN_TTL must be positive and at most 1h")
+	}
+
+	if len(cfg.OwnerBindingSecret) < minOneSignalBindingBytes {
+		return configError("ONESIGNAL_OWNER_BINDING_SECRET must be at least 32 bytes")
+	}
+
+	if !cfg.ErasureEnabled {
+		return configError("ONESIGNAL_ERASURE_ENABLED must be true when OneSignal identity is enabled")
+	}
+
+	return nil
+}
+
+func validateOneSignalErasure(cfg *oneSignal) error {
+	if !cfg.ErasureEnabled {
+		return nil
+	}
+
+	if err := validateOneSignalErasureProvider(cfg); err != nil {
+		return err
+	}
+
+	return validateOneSignalErasureWorker(cfg)
+}
+
+func validateOneSignalErasureProvider(cfg *oneSignal) error {
+	if strings.TrimSpace(cfg.AppID) == "" {
+		return configError("ONESIGNAL_APP_ID is required when OneSignal erasure is enabled")
+	}
+
+	if strings.TrimSpace(cfg.AppID) != surauOneSignalAppID {
+		return configError("ONESIGNAL_APP_ID must match the Surau OneSignal app")
+	}
+
+	if strings.TrimSpace(cfg.RESTAPIKey) == "" {
+		return configError("ONESIGNAL_REST_API_KEY is required when OneSignal erasure is enabled")
+	}
+
+	if len(cfg.ErasureSecret) < minOneSignalErasureBytes {
+		return configError("ONESIGNAL_ERASURE_SECRET must be at least 32 bytes")
+	}
+
+	return nil
+}
+
+func validateOneSignalErasureWorker(cfg *oneSignal) error {
+	if cfg.ErasureInterval <= 0 || cfg.ErasureVerificationDelay <= 0 {
+		return configError("OneSignal erasure intervals must be positive")
+	}
+
+	if cfg.ErasureBatchSize < 1 || cfg.ErasureBatchSize > 100 {
+		return configError("ONESIGNAL_ERASURE_BATCH_SIZE must be between 1 and 100")
+	}
+
+	if cfg.ErasureLeaseDuration <= cfg.HTTPTimeout {
+		return configError("ONESIGNAL_ERASURE_LEASE_DURATION must exceed ONESIGNAL_HTTP_TIMEOUT")
+	}
+
+	if cfg.ErasureStaleAfter <= 0 || cfg.ErasureRetention <= 0 {
+		return configError("OneSignal erasure stale threshold and retention must be positive")
+	}
+
+	return nil
+}
+
+func validateOneSignalProductionErasure(appEnv string, cfg *oneSignal) error {
+	if strings.EqualFold(strings.TrimSpace(appEnv), "prod") && !cfg.ErasureEnabled {
+		return configError("ONESIGNAL_ERASURE_ENABLED must remain true in production after identity activation")
 	}
 
 	return nil
@@ -257,13 +352,25 @@ type (
 	// OneSignal -. Push-notification delivery via the OneSignal REST API. Disabled by default so the
 	// app builds and runs without credentials; the REST API key is a secret and must never be committed.
 	oneSignal struct {
-		Enabled              bool          `env:"ONESIGNAL_ENABLED" envDefault:"false"`
-		AppID                string        `env:"ONESIGNAL_APP_ID"`
-		RESTAPIKey           string        `env:"ONESIGNAL_REST_API_KEY"`
-		HTTPTimeout          time.Duration `env:"ONESIGNAL_HTTP_TIMEOUT" envDefault:"10s"`
-		ReminderInterval     time.Duration `env:"ONESIGNAL_REMINDER_INTERVAL" envDefault:"1h"`
-		QuietHoursStartLocal string        `env:"ONESIGNAL_QUIET_HOURS_START_LOCAL" envDefault:"21:00"`
-		QuietHoursEndLocal   string        `env:"ONESIGNAL_QUIET_HOURS_END_LOCAL" envDefault:"07:00"`
+		Enabled                  bool          `env:"ONESIGNAL_ENABLED" envDefault:"false"`
+		AppID                    string        `env:"ONESIGNAL_APP_ID"`
+		RESTAPIKey               string        `env:"ONESIGNAL_REST_API_KEY"`
+		HTTPTimeout              time.Duration `env:"ONESIGNAL_HTTP_TIMEOUT" envDefault:"10s"`
+		ReminderInterval         time.Duration `env:"ONESIGNAL_REMINDER_INTERVAL" envDefault:"1h"`
+		QuietHoursStartLocal     string        `env:"ONESIGNAL_QUIET_HOURS_START_LOCAL" envDefault:"21:00"`
+		QuietHoursEndLocal       string        `env:"ONESIGNAL_QUIET_HOURS_END_LOCAL" envDefault:"07:00"`
+		IdentityEnabled          bool          `env:"ONESIGNAL_IDENTITY_ENABLED" envDefault:"false"`
+		IdentityPrivateKeyFile   string        `env:"ONESIGNAL_IDENTITY_PRIVATE_KEY_FILE"`
+		IdentityTokenTTL         time.Duration `env:"ONESIGNAL_IDENTITY_TOKEN_TTL" envDefault:"15m"`
+		OwnerBindingSecret       string        `env:"ONESIGNAL_OWNER_BINDING_SECRET"`
+		ErasureEnabled           bool          `env:"ONESIGNAL_ERASURE_ENABLED" envDefault:"false"`
+		ErasureSecret            string        `env:"ONESIGNAL_ERASURE_SECRET"`
+		ErasureInterval          time.Duration `env:"ONESIGNAL_ERASURE_INTERVAL" envDefault:"1m"`
+		ErasureBatchSize         int           `env:"ONESIGNAL_ERASURE_BATCH_SIZE" envDefault:"50"`
+		ErasureLeaseDuration     time.Duration `env:"ONESIGNAL_ERASURE_LEASE_DURATION" envDefault:"2m"`
+		ErasureVerificationDelay time.Duration `env:"ONESIGNAL_ERASURE_VERIFICATION_DELAY" envDefault:"30s"`
+		ErasureStaleAfter        time.Duration `env:"ONESIGNAL_ERASURE_STALE_AFTER" envDefault:"24h"`
+		ErasureRetention         time.Duration `env:"ONESIGNAL_ERASURE_RETENTION" envDefault:"2160h"`
 	}
 
 	// AuthRateLimit -.
@@ -861,6 +968,18 @@ func NewConfig() (*Config, error) {
 		if cfg.OneSignal.ReminderInterval <= 0 {
 			return nil, configError("ONESIGNAL_REMINDER_INTERVAL must be positive")
 		}
+	}
+
+	if err := validateOneSignalIdentity(&cfg.OneSignal); err != nil {
+		return nil, err
+	}
+
+	if err := validateOneSignalErasure(&cfg.OneSignal); err != nil {
+		return nil, err
+	}
+
+	if err := validateOneSignalProductionErasure(cfg.App.Env, &cfg.OneSignal); err != nil {
+		return nil, err
 	}
 
 	return cfg, nil
