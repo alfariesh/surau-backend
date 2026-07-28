@@ -12,7 +12,6 @@ from __future__ import annotations
 import argparse
 import concurrent.futures
 import json
-import os
 import sys
 import time
 from datetime import datetime, timezone
@@ -29,32 +28,17 @@ from translate_reader_assets import (
     DEFAULT_ENV_FILE,
     TARGET_NAMES,
     load_env_file,
-    load_json_object,
     request_json,
 )
+from surau_inference import (
+    InferenceClient,
+    RESUMABLE_EXIT_CODE,
+    attribution_metadata,
+    budget_exceeded,
+    generation_identity,
+    parse_output,
+)
 
-
-SYSTEM_PROMPT = """You are a senior Islamic-studies catalog editor.
-
-Translate Arabic Islamic catalog metadata into the target language as polished,
-native library/catalog prose. Stay strictly inside the supplied metadata. Do
-not invent historical claims, book summaries, author details, edition data, or
-virtues that are not present or clearly implied by the source.
-
-Output strict JSON only.
-
-Rules:
-- Preserve proper names accurately while making common names readable.
-- Translate descriptive book titles semantically into the target language.
-  Transliterate only proper names, author names, place names, or titles that
-  function as fixed proper nouns.
-- Translate category names naturally.
-- Translate bibliographic notes faithfully; keep numbers, dates, edition notes,
-  and source markers.
-- If a field is empty or has no useful source content, return an empty string
-  for that field rather than inventing text.
-- Do not add footnotes, apologies, translator comments, or marketing language.
-"""
 
 TARGET_STYLE_GUIDES = {
     "id": """Indonesian catalog style:
@@ -75,15 +59,11 @@ TARGET_STYLE_GUIDES = {
 def main() -> int:
     args = parse_args()
     load_env_file(Path(args.env_file).expanduser())
-    if not args.model:
-        args.model = os.environ.get("DEEPSEEK_MODEL", "deepseek-v4-flash")
-    if not args.deepseek_base_url:
-        args.deepseek_base_url = os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
-    args.generation = new_generation_identity(args.model, CATALOG_TRANSLATION_PROMPT_VERSION)
-
-    api_key = os.environ.get(args.api_key_env)
-    if not api_key and not args.dry_run:
-        raise SystemExit(f"{args.api_key_env} is required. Put it in {args.env_file}.")
+    inference_client = None
+    if args.dry_run:
+        args.generation = new_generation_identity("dry-run", CATALOG_TRANSLATION_PROMPT_VERSION)
+    else:
+        inference_client = InferenceClient.from_env(args.inference_base_url, args.timeout_seconds)
 
     items = collect_items(args)
     if args.limit > 0:
@@ -102,11 +82,12 @@ def main() -> int:
     mode = "a" if args.resume and out_path.exists() else "w"
     successes = 0
     failures: list[dict[str, Any]] = []
+    budget_blocked = False
     with out_path.open(mode, encoding="utf-8") as out_file:
         with concurrent.futures.ThreadPoolExecutor(max_workers=args.concurrency) as executor:
             futures = {}
             for index, item in enumerate(items, start=1):
-                future = executor.submit(translate_item, args, api_key or "", item, index, len(items))
+                future = executor.submit(translate_item, args, inference_client, item, index, len(items))
                 futures[future] = (index, item)
                 if args.sleep_seconds > 0 and index < len(items):
                     time.sleep(args.sleep_seconds)
@@ -116,8 +97,21 @@ def main() -> int:
                 try:
                     asset = future.result()
                 except Exception as err:
-                    failures.append({"item": item_key(item), "error": str(err)})
+                    cap = budget_exceeded(err)
+                    failures.append(
+                        {
+                            "item": item_key(item),
+                            "error": str(err),
+                            "status": "resumable" if cap else "failed",
+                            "retry_after": cap.retry_after if cap else 0,
+                        }
+                    )
                     print(f"[{index}/{len(items)}] failed {item_key(item)}: {err}", file=sys.stderr)
+                    if cap:
+                        budget_blocked = True
+                        for pending in futures:
+                            pending.cancel()
+                        break
                     if args.fail_fast:
                         raise
                     continue
@@ -132,6 +126,9 @@ def main() -> int:
         failure_path = out_path.with_suffix(out_path.suffix + ".failures.json")
         failure_path.write_text(json.dumps(failures, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         print(f"failed {len(failures)} items; see {failure_path}", file=sys.stderr)
+        if budget_blocked:
+            print("inference budget exceeded; batch is resumable with --resume", file=sys.stderr)
+            return RESUMABLE_EXIT_CODE
         return 1
 
     return 0
@@ -146,9 +143,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--out", required=True, help="Output JSONL file")
     parser.add_argument("--limit", type=int, default=0, help="Limit total selected catalog items")
     parser.add_argument("--page-size", type=int, default=100)
-    parser.add_argument("--model", default=None, help="DeepSeek model; defaults to DEEPSEEK_MODEL or deepseek-v4-flash")
-    parser.add_argument("--deepseek-base-url", default=None, help="DeepSeek API base URL")
-    parser.add_argument("--api-key-env", default="DEEPSEEK_API_KEY")
+    parser.add_argument("--inference-base-url", default=None, help="Surau U-0 gateway base URL")
     parser.add_argument("--env-file", default=str(DEFAULT_ENV_FILE))
     parser.add_argument("--max-tokens", type=int, default=3000)
     parser.add_argument("--timeout-seconds", type=int, default=120)
@@ -206,7 +201,7 @@ def fetch_paginated(base_url: str, path: str, key: str, page_size: int) -> list[
 
 def translate_item(
     args: argparse.Namespace,
-    api_key: str,
+    inference_client: InferenceClient | None,
     item: dict[str, Any],
     index: int,
     total: int,
@@ -217,12 +212,19 @@ def translate_item(
 
     if args.dry_run:
         translated = dry_run_translation(item_type, data)
+        generation = dict(args.generation)
+        inference_metadata: dict[str, Any] = {"provider": "dry-run", "model": "dry-run"}
     else:
-        translated = call_deepseek(args, api_key, item_type, data)
+        if inference_client is None:
+            raise RuntimeError("inference client is required")
+        translated, inference_result = translate_catalog_item(
+            args, inference_client, item_type, data
+        )
+        generation = generation_identity(inference_result)
+        inference_metadata = attribution_metadata(inference_result)
 
     metadata = {
-        "provider": "deepseek",
-        "model": args.model,
+        **inference_metadata,
         "unit": f"catalog_{item_type}",
         "source_lang": "ar",
         "target_lang": args.target_lang,
@@ -238,10 +240,10 @@ def translate_item(
             "bibliography": translated.get("bibliography", ""),
             "hint": translated.get("hint", ""),
             "description": translated.get("description", ""),
-            "source": args.model,
+            "source": generation["model_id"],
             "translation_status": "generated",
             "provenance_class": MACHINE_PROVENANCE_CLASS,
-            "generation": dict(args.generation),
+            "generation": generation,
             "metadata": metadata,
         }
     if item_type == "author":
@@ -252,10 +254,10 @@ def translate_item(
             "name": translated["name"],
             "biography": translated.get("biography", ""),
             "death_text": translated.get("death_text", ""),
-            "source": args.model,
+            "source": generation["model_id"],
             "translation_status": "generated",
             "provenance_class": MACHINE_PROVENANCE_CLASS,
-            "generation": dict(args.generation),
+            "generation": generation,
             "metadata": metadata,
         }
     if item_type == "category":
@@ -264,54 +266,40 @@ def translate_item(
             "category_id": int(data["id"]),
             "lang": args.target_lang,
             "name": translated["name"],
-            "source": args.model,
+            "source": generation["model_id"],
             "translation_status": "generated",
             "provenance_class": MACHINE_PROVENANCE_CLASS,
-            "generation": dict(args.generation),
+            "generation": generation,
             "metadata": metadata,
         }
 
     raise RuntimeError(f"unsupported item type {item_type}")
 
 
-def call_deepseek(args: argparse.Namespace, api_key: str, item_type: str, data: dict[str, Any]) -> dict[str, str]:
+def translate_catalog_item(
+    args: argparse.Namespace,
+    client: InferenceClient,
+    item_type: str,
+    data: dict[str, Any],
+) -> tuple[dict[str, str], dict[str, Any]]:
     target_name = TARGET_NAMES[args.target_lang]
     schema = schema_for(item_type)
-    payload = {
-        "model": args.model,
-        "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
+    result = client.invoke(
+        "catalog-translation",
+        json.dumps(
             {
-                "role": "user",
-                "content": json.dumps(
-                    {
-                        "target_language": target_name,
-                        "target_style_guide": TARGET_STYLE_GUIDES[args.target_lang],
-                        "item_type": item_type,
-                        "source": data,
-                        "json_schema": schema,
-                    },
-                    ensure_ascii=False,
-                ),
+                "target_language": target_name,
+                "target_style_guide": TARGET_STYLE_GUIDES[args.target_lang],
+                "item_type": item_type,
+                "source": data,
+                "json_schema": schema,
             },
-        ],
-        "response_format": {"type": "json_object"},
-        "thinking": {"type": "disabled"},
-        "temperature": 0.2,
-        "max_tokens": args.max_tokens,
-    }
-    headers = {"Authorization": f"Bearer {api_key}"}
-    response = request_json(
-        "POST",
-        f"{args.deepseek_base_url.rstrip('/')}/chat/completions",
-        headers=headers,
-        payload=payload,
-        timeout_seconds=args.timeout_seconds,
-        retries=args.retries,
+            ensure_ascii=False,
+        ),
+        cache_vary={"target_language": args.target_lang, "item_type": item_type},
     )
-    content = response["choices"][0]["message"]["content"]
-    translated = load_json_object(content)
-    return {key: str(translated.get(key, "")).strip() for key in schema}
+    translated = parse_output(result)
+    return {key: str(translated.get(key, "")).strip() for key in schema}, result
 
 
 def schema_for(item_type: str) -> dict[str, str]:

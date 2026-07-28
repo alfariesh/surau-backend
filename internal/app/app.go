@@ -25,6 +25,7 @@ import (
 	"github.com/alfariesh/surau-backend/internal/usecase/crossreference"
 	"github.com/alfariesh/surau-backend/internal/usecase/editorial"
 	emailusecase "github.com/alfariesh/surau-backend/internal/usecase/email"
+	"github.com/alfariesh/surau-backend/internal/usecase/inference"
 	"github.com/alfariesh/surau-backend/internal/usecase/notification"
 	"github.com/alfariesh/surau-backend/internal/usecase/onesignalerasure"
 	"github.com/alfariesh/surau-backend/internal/usecase/personal"
@@ -56,6 +57,7 @@ type useCases struct {
 	notification     *notification.UseCase
 	unitRegistry     *unitregistry.UseCase
 	serviceIdentity  *serviceidentity.UseCase
+	inference        *inference.UseCase
 	pushIdentity     *pushidentity.UseCase
 	oneSignalErasure *onesignalerasure.UseCase
 }
@@ -75,6 +77,7 @@ type servers struct {
 	loopActive  bool
 }
 
+//nolint:gosec // U-0 passes credential environment-variable names, never credential values.
 func initUseCases(cfg *config.Config, pg *postgres.Postgres, jwtManager *jwt.Manager, l logger.Interface) useCases {
 	userRepo := persistent.NewUserRepo(pg)
 
@@ -102,6 +105,7 @@ func initUseCases(cfg *config.Config, pg *postgres.Postgres, jwtManager *jwt.Man
 	crossReferenceRepo := persistent.NewCrossReferenceRepo(pg)
 	emailRepo := persistent.NewEmailRepo(pg)
 	serviceIdentityRepo := persistent.NewServiceIdentityRepo(pg)
+	inferenceRepo := persistent.NewInferenceRepo(pg)
 
 	serviceIdentityUC := serviceidentity.New(serviceIdentityRepo, serviceidentity.Options{
 		AuditRetention: cfg.ServiceIdentity.AuditRetention,
@@ -113,19 +117,37 @@ func initUseCases(cfg *config.Config, pg *postgres.Postgres, jwtManager *jwt.Man
 		}
 	}
 
-	var llmClient bookrag.LLMClient
-	if cfg.RAG.LLMDriver == config.RAGLLMDriverRollout {
-		llmClient = webapi.NewDeterministicRolloutLLMClient()
-	} else {
-		llmClient = webapi.NewOpenAICompatibleClient(webapi.OpenAICompatibleOptions{
-			BaseURL:     cfg.RAG.LLMBaseURL,
-			APIKey:      cfg.RAG.LLMAPIKey,
-			Model:       cfg.RAG.LLMModel,
-			Timeout:     cfg.RAG.LLMTimeout,
-			MaxTokens:   cfg.RAG.LLMMaxTokens,
-			Temperature: cfg.RAG.LLMTemperature,
-		})
+	inferenceSeed := strings.TrimSpace(cfg.Inference.CacheEncryptionKey)
+	if inferenceSeed == "" && strings.EqualFold(strings.TrimSpace(cfg.App.Env), "test") {
+		inferenceSeed = cfg.JWT.Secret
 	}
+
+	inferenceUC, err := inference.New(
+		inferenceRepo,
+		webapi.NewInferenceProvider(),
+		inference.Options{
+			Driver:             cfg.RAG.LLMDriver,
+			PrimaryBaseURL:     cfg.RAG.LLMBaseURL,
+			PrimaryModel:       cfg.RAG.LLMModel,
+			PrimaryAPIKeyEnv:   "RAG_LLM_API_KEY",
+			PrimaryCatalogURL:  cfg.Inference.SumoPodCatalogURL,
+			SecondaryBaseURL:   cfg.Inference.DeepSeekBaseURL,
+			SecondaryModel:     cfg.Inference.DeepSeekModel,
+			SecondaryAPIKeyEnv: "DEEPSEEK_API_KEY",
+			CacheSeed:          inferenceSeed,
+			Timeout:            cfg.RAG.LLMTimeout,
+			MaxOutputTokens:    cfg.RAG.LLMMaxTokens,
+			Temperature:        cfg.RAG.LLMTemperature,
+		},
+	)
+	if err != nil {
+		l.Fatal(fmt.Errorf("app - initUseCases - inference.New: %w", err))
+	}
+
+	if err = inferenceUC.Initialize(context.Background()); err != nil {
+		l.Fatal(fmt.Errorf("app - initUseCases - inference.Initialize: %w", err))
+	}
+
 	var emailSender repo.EmailSender
 	if cfg.Email.DeliveryMode == config.EmailDeliveryModeLog {
 		emailSender = webapi.NewLogEmailSender()
@@ -424,7 +446,7 @@ func initUseCases(cfg *config.Config, pg *postgres.Postgres, jwtManager *jwt.Man
 	return useCases{
 		user:   userUC,
 		reader: reader.New(readerRepo),
-		bookRAG: bookrag.New(bookRAGRepo, llmClient, bookrag.Options{
+		bookRAG: bookrag.New(bookRAGRepo, inferenceUC, bookrag.Options{
 			MaxContextPages:      cfg.RAG.MaxContextPages,
 			TreeFullMaxNodes:     cfg.RAG.TreeFullMaxNodes,
 			TreeBlockMaxNodes:    cfg.RAG.TreeBlockMaxNodes,
@@ -443,6 +465,7 @@ func initUseCases(cfg *config.Config, pg *postgres.Postgres, jwtManager *jwt.Man
 		notification:     notificationUC,
 		unitRegistry:     unitRegistryUC,
 		serviceIdentity:  serviceIdentityUC,
+		inference:        inferenceUC,
 		pushIdentity:     pushIdentityUC,
 		oneSignalErasure: oneSignalErasureUC,
 	}
@@ -474,6 +497,7 @@ func initServers(cfg *config.Config, pg *postgres.Postgres, uc useCases, jwtMana
 		uc.editorial,
 		uc.email,
 		uc.serviceIdentity,
+		uc.inference,
 		uc.pushIdentity,
 		jwtManager,
 		l,
@@ -497,6 +521,7 @@ func (s *servers) startServers(
 	notificationUC *notification.UseCase,
 	unitRegistryUC *unitregistry.UseCase,
 	serviceIdentityUC *serviceidentity.UseCase,
+	inferenceUC *inference.UseCase,
 	oneSignalErasureUC *onesignalerasure.UseCase,
 	l logger.Interface,
 ) {
@@ -507,6 +532,7 @@ func (s *servers) startServers(
 		cfg, emailUC, userUC, notificationUC, unitRegistryUC, l, serviceIdentityUC,
 	)
 	s.loopSpecs = append(s.loopSpecs, buildOneSignalErasureLoopSpecs(cfg, oneSignalErasureUC, l)...)
+	s.loopSpecs = append(s.loopSpecs, buildInferenceBudgetLoopSpecs(cfg, inferenceUC)...)
 
 	if cfg.App.BackgroundLoopsEnabled ||
 		backgroundLoopsActivationExists(cfg.App.BackgroundLoopsActivationFile) {
@@ -514,6 +540,26 @@ func (s *servers) startServers(
 	}
 
 	s.http.Start()
+}
+
+func buildInferenceBudgetLoopSpecs(
+	cfg *config.Config,
+	inferenceUC *inference.UseCase,
+) []loopSpec {
+	if inferenceUC == nil {
+		return nil
+	}
+
+	return []loopSpec{{
+		name:         "inference_budget_metrics",
+		interval:     cfg.Inference.BudgetRefreshPeriod,
+		initialDelay: backgroundInitialDelay,
+		run: func(ctx context.Context) error {
+			_, err := inferenceUC.Budget(ctx)
+
+			return err
+		},
+	}}
 }
 
 func (s *servers) activateBackgroundLoops(l logger.Interface) {
@@ -1017,6 +1063,7 @@ func run(cfg *config.Config, stop <-chan struct{}) {
 		uc.notification,
 		uc.unitRegistry,
 		uc.serviceIdentity,
+		uc.inference,
 		uc.oneSignalErasure,
 		l,
 	)

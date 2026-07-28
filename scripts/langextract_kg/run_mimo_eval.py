@@ -8,7 +8,6 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass
 from datetime import datetime
 import json
-import os
 from pathlib import Path
 import sys
 import time
@@ -23,7 +22,6 @@ if __package__ in (None, ""):
         attach_machine_generation,
         assign_failure_chunks,
         dedupe_records_with_rejections,
-        machine_generation_identity,
         run_extraction,
         run_status_for_failures,
         write_jsonl,
@@ -31,6 +29,7 @@ if __package__ in (None, ""):
     from langextract_kg.prompts import get_prompt  # type: ignore
     from langextract_kg.qa_extractions import validate_rows  # type: ignore
     from langextract_kg.visualize_run import write_visualization  # type: ignore
+    from surau_inference import InferenceClient  # type: ignore
 else:
     from . import db as kg_db
     from .extract_knowledge import (
@@ -38,7 +37,6 @@ else:
         attach_machine_generation,
         assign_failure_chunks,
         dedupe_records_with_rejections,
-        machine_generation_identity,
         run_extraction,
         run_status_for_failures,
         write_jsonl,
@@ -46,10 +44,9 @@ else:
     from .prompts import get_prompt
     from .qa_extractions import validate_rows
     from .visualize_run import write_visualization
+    from scripts.surau_inference import InferenceClient
 
 
-DEFAULT_MODEL = "xmtp/mimo-v2.5-pro"
-DEFAULT_BASE_URL = "http://localhost:20128/v1"
 DEFAULT_TASKS = ("mentions", "terms", "citations")
 GROUNDING_REJECTION_CODES = {"UNGROUNDED", "NON_EXACT_QUOTE"}
 MODEL_ERROR_CODES = {
@@ -139,9 +136,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--pg-url", default="", help="PostgreSQL URL; defaults to LANGEXTRACT_PG_URL")
     parser.add_argument("--env-file", default=str(kg_db.DEFAULT_ENV_FILE))
     parser.add_argument("--out-dir", default="")
-    parser.add_argument("--model", default=DEFAULT_MODEL)
-    parser.add_argument("--llm-base-url", default=DEFAULT_BASE_URL)
-    parser.add_argument("--api-key-env", default="LANGEXTRACT_LLM_API_KEY")
+    parser.add_argument(
+        "--inference-base-url",
+        default=None,
+        help="Surau API base URL; provider/model come from the U-0 dev registry.",
+    )
     parser.add_argument("--tasks", default=",".join(DEFAULT_TASKS))
     parser.add_argument("--max-char-buffer", type=int, default=1800)
     parser.add_argument("--context-window-chars", type=int, default=250)
@@ -305,7 +304,10 @@ def run_eval(
     out_root: Path,
     pages_path: Path,
 ) -> dict[str, Any]:
-    api_key = os.environ.get(args.api_key_env) or os.environ.get("RAG_LLM_API_KEY") or "local-mimo-eval"
+    inference_client = InferenceClient.from_env(
+        args.inference_base_url,
+        timeout_seconds=max(1, int(args.request_timeout_seconds)),
+    )
     page_meta = {(int(row["book_id"]), int(row["page_id"])): row for row in rows}
     task_names = parse_tasks(args.tasks)
 
@@ -322,8 +324,6 @@ def run_eval(
         run_args = SimpleNamespace(
             run_id=run_id,
             task=task,
-            model=args.model,
-            llm_base_url=args.llm_base_url,
             temperature=args.temperature,
             max_output_tokens=args.max_output_tokens,
             max_workers=args.max_workers,
@@ -334,10 +334,14 @@ def run_eval(
             batch_length=args.batch_length,
             out_dir=str(out_dir),
         )
-        generation = machine_generation_identity(run_id, args.model, prompt.version)
+        session = inference_client.create_session(f"langextract-{task}")
+        session_id = str(session.get("id") or "")
+        if not session_id:
+            raise RuntimeError("U-0 inference gateway did not return an eval session id")
         started = time.perf_counter()
-        result = run_extraction(run_args, prompt, pages, api_key, generation)
+        result = run_extraction(run_args, prompt, pages, inference_client, session_id)
         elapsed = round(time.perf_counter() - started, 2)
+        generation = result["generation"]
 
         records, duplicate_failures = dedupe_records_with_rejections(result["records"])
         failures = [*result["failures"], *duplicate_failures]
@@ -373,6 +377,9 @@ def run_eval(
                 "task": task,
                 "run_id": run_id,
                 "prompt_version": prompt.version,
+                "provider": result["provider"],
+                "model": generation["model_id"],
+                "inference_session_id": session_id,
                 "status": run_status_for_failures(failures),
                 "elapsed_sec": elapsed,
                 "records": len(records),
@@ -405,8 +412,7 @@ def run_eval(
     return {
         "source": {
             "suite": args.suite,
-            "model": args.model,
-            "base_url": args.llm_base_url,
+            "inference_route": "dev-registry",
             "write_db": False,
             "pages_file": str(pages_path),
             "page_count": len(rows),

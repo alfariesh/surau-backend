@@ -205,6 +205,8 @@ EMAIL_HTTP_TIMEOUT=10s \
 RAG_LLM_API_KEY='your-openai-compatible-key' \
 RAG_LLM_BASE_URL='https://ai.sumopod.com/v1' \
 RAG_LLM_MODEL='glm-5.1' \
+DEEPSEEK_API_KEY='your-deepseek-key' \
+INFERENCE_CACHE_ENCRYPTION_KEY="$(openssl rand -hex 32)" \
 RAG_BOOK_CITATION_MODE='unit' \
 RAG_BOOK_LEGACY_FALLBACK_ENABLED='true' \
 go run -tags migrate ./cmd/app
@@ -228,7 +230,17 @@ curl -X POST 'http://127.0.0.1:8080/v1/books/797/rag?lang=id' \
   -d '{"question":"Apa definisi hadis sahih?","max_citations":5}'
 ```
 
-Set `RAG_LLM_API_KEY` for your OpenAI-compatible provider. Optional defaults are `RAG_LLM_BASE_URL=https://ai.sumopod.com/v1`, `RAG_LLM_MODEL=glm-5.1`, `RAG_LLM_TIMEOUT=45s`, `RAG_LLM_MAX_TOKENS=1400`, `RAG_LLM_TEMPERATURE=0.1`, `RAG_MAX_CONTEXT_PAGES=8`, `RAG_TREE_FULL_MAX_NODES=450`, `RAG_TREE_BLOCK_MAX_NODES=120`, `RAG_TREE_BEAM_SIZE=3`, `RAG_TREE_MAX_TURNS=6`, and `RAG_TREE_MAX_BLOCKS_PER_TURN=6`.
+Book-RAG calls the shared U-0 inference layer. SumoPod/`glm-5.1` is primary and
+DeepSeek/`deepseek-v4-flash` is secondary; both credentials plus the independent
+`INFERENCE_CACHE_ENCRYPTION_KEY` are required for non-test readiness. Task, model,
+prompt/schema, token, cost, cache, failover, and Generation Run are metered for
+every provider attempt. Operational details and daily-cost instructions are in
+[`docs/inference-operations.md`](docs/inference-operations.md). Retrieval tuning
+defaults remain `RAG_LLM_TIMEOUT=45s`, `RAG_LLM_MAX_TOKENS=1400`,
+`RAG_LLM_TEMPERATURE=0.1`, `RAG_MAX_CONTEXT_PAGES=8`,
+`RAG_TREE_FULL_MAX_NODES=450`, `RAG_TREE_BLOCK_MAX_NODES=120`,
+`RAG_TREE_BEAM_SIZE=3`, `RAG_TREE_MAX_TURNS=6`, and
+`RAG_TREE_MAX_BLOCKS_PER_TURN=6`.
 
 `RAG_BOOK_CITATION_MODE` mengendalikan perpindahan sitasi K-1 tanpa big-bang:
 
@@ -288,7 +300,14 @@ hadir pada mode dual/unit, baik di JSON maupun event SSE `citations`/`done`. Den
 diagnostik, bukan untuk mengubah tampilan sitasi. Kontrak mobile lengkap ada di
 [`docs/mobile-backend-integration-guide.md`](docs/mobile-backend-integration-guide.md).
 
-Reader TOC summaries can be generated separately with `scripts/generate_reader_summaries.py`. Generate canonical Arabic summaries first with `--summary-lang ar` and `--max-source-chars 0`, import them, then translate those summaries to `id` or `en` with `scripts/translate_reader_assets.py --summary-only`. The summary generator defaults to `SUMMARY_LLM_BASE_URL=https://ai.sumopod.com/v1`, `SUMMARY_LLM_MODEL=glm-5.1`, and falls back to the `RAG_LLM_*` environment if `SUMMARY_LLM_*` is not set. Summaries are stored per `(book_id, heading_id, lang)` for reader display and RAG tree ranking; citations still come from original page text.
+Reader TOC summaries can be generated separately with
+`scripts/generate_reader_summaries.py`. Generate canonical Arabic summaries first
+with `--summary-lang ar` and `--max-source-chars 0`, import them, then translate
+those summaries to `id` or `en` with `scripts/translate_reader_assets.py
+--summary-only`. The generator requires `SURAU_INFERENCE_SERVICE_TOKEN` and uses
+the registry task `reader-summary`; it cannot select a provider or model.
+Summaries are stored per `(book_id, heading_id, lang)` for reader display and RAG
+tree ranking; citations still come from original page text.
 
 Run the black-box golden eval against a local or deployed API:
 
@@ -516,12 +535,12 @@ editorial. Effective importer changes create revisions with `origin=import`;
 byte-identical re-imports are no-ops. `--ayah-editorial-json` is repeatable, and
 `--dry-run` validates without writing.
 
-## Generate Test Translations with DeepSeek
+## Generate Test Translations through U-0
 
 For quick multilingual reader testing, `scripts/translate_reader_assets.py` fetches Arabic TOC sections from the local backend and writes importer-compatible translation JSONL.
 
 ```sh
-printf 'DEEPSEEK_API_KEY=your-key\n' > .env.local
+printf 'SURAU_INFERENCE_SERVICE_TOKEN=surau_st_<token-id>.<secret>\n' > .env.local
 
 python3 scripts/translate_reader_assets.py \
   --base-url http://127.0.0.1:8080 \
@@ -545,7 +564,8 @@ See [`scripts/README.md`](scripts/README.md) for script-specific usage and the r
 Surau-owned catalog/reader GETs made by the translation and summary scripts use
 `SURAU_ENRICHMENT_SERVICE_TOKEN_FILE` (or the direct env fallback) as principal
 `http-enrichment`. The helper refuses to attach that header to a different
-origin, so it never reaches DeepSeek, Sumopod, or another LLM provider.
+origin. Generation calls separately use principal `u0-inference`; provider
+credentials stay only in the API process and never reach generator scripts.
 
 Machine token/API details and the no-downtime A/B procedure are documented in
 [`docs/service-identities.md`](docs/service-identities.md) and

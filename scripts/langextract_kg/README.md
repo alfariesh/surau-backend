@@ -8,12 +8,15 @@ Create `.env.local` at the repo root:
 
 ```env
 LANGEXTRACT_PG_URL=postgres://surau_extraction_YYYYMM_b:password@localhost:5432/db?sslmode=disable
-LANGEXTRACT_LLM_BASE_URL=https://ai.sumopod.com/v1
-LANGEXTRACT_LLM_MODEL=glm-5.1
-LANGEXTRACT_LLM_API_KEY=<your-api-key>
+SURAU_API_BASE_URL=http://127.0.0.1:8080
+SURAU_INFERENCE_SERVICE_TOKEN=surau_st_<token-id>.<secret>
 ```
 
-`LANGEXTRACT_LLM_API_KEY` falls back to `RAG_LLM_API_KEY`.
+Token harus milik principal A-2 `u0-inference` dengan scope `inference:invoke`.
+Pipeline tidak lagi membaca provider key/model/base URL: ia membuka session U-0
+berpinned. Primary boleh failover sebelum output pertama; setelah sukses pertama,
+provider/model tidak boleh berubah. Gangguan setelah pin menghentikan run dengan
+status resumable, dan resume membuat session/run baru.
 `LANGEXTRACT_PG_URL` must be a login that belongs only to the
 `surau_extraction_writer` group. The pipeline has no review-status column
 grants, creates machine rows as `pending`, and only updates conflicts that are
@@ -65,10 +68,10 @@ python3 scripts/langextract_kg/qa_extractions.py --run-id <run_uuid>
 ## Notes
 
 - Source text comes from `book_pages.content_text`; raw reader tables are not modified.
-- Every DB-backed extraction creates one UUID that is shared by
-  `generation_runs` and `knowledge_extraction_runs`. Registration and
-  extraction-run creation happen in one transaction; a reused UUID with a
-  different task/model/prompt/provider descriptor is rejected.
+- Every DB-backed extraction receives its UUID/model/prompt/provider from the
+  successful U-0 attempt. `generation_runs` is already registered by the
+  gateway; `knowledge_extraction_runs` binds to that exact tuple. A reused UUID
+  with a different descriptor is rejected.
 - Mention, chunk-audit, and rejection JSONL rows carry
   `provenance_class=machine` plus the typed `generation` model/prompt/run tuple,
   including runs without `--write-db`. QA rejects missing, malformed, or
@@ -78,11 +81,10 @@ python3 scripts/langextract_kg/qa_extractions.py --run-id <run_uuid>
   with that identity; the LangExtract visualizer remains compatible with the
   additive document fields.
 - The run records the exact prompt version from `prompts.py` (`mentions_v2`,
-  `terms_v2`, `citations_v3`, or `relations_v1`) and the configured model.
+  `terms_v2`, `citations_v3`, or `relations_v1`) and the model returned by U-0.
   New machine knowledge rows must never be written without that run identity.
-- `glm-5.1` uses the local `OpenAICompatibleJSONModel` adapter because the
-  installed LangExtract package is 1.3.0 and does not expose the newer OpenAI
-  schema provider available in `temp-langextract`.
+- LangExtract uses the local compatibility model only as an adapter to the
+  Surau gateway. It never constructs a provider URL or imports a provider SDK.
 - Common person names such as `أحمد`, `محمد`, `علي`, and `أبو بكر` are stored as ambiguous mentions and are not auto-merged.
 - `book_title` is treated as a legacy class. New mention extraction uses
   `work_title`; Quran surah references belong in `citations` as

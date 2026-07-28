@@ -686,6 +686,156 @@
     "displayMode": "gradient",
     "showUnfilled": true
    }
+  },
+  {
+   "id": 18,
+   "title": "LLM cost today",
+   "description": "Biaya 24 jam terakhir dalam USD; ledger sumber tetap integer nano-USD.",
+   "type": "stat",
+   "gridPos": {"x": 0, "y": 54, "w": 6, "h": 7},
+   "datasource": {"type": "prometheus", "uid": "prometheus"},
+   "targets": [{
+    "refId": "A",
+    "expr": "sum(increase(surau_inference_cost_nano_usd_total[24h])) / 1e9",
+    "instant": true,
+    "range": false,
+    "datasource": {"type": "prometheus", "uid": "prometheus"}
+   }],
+   "fieldConfig": {"defaults": {"unit": "currencyUSD", "decimals": 6, "min": 0}, "overrides": []},
+   "options": {"reduceOptions": {"values": false, "calcs": ["lastNotNull"], "fields": ""}, "textMode": "auto"}
+  },
+  {
+   "id": 19,
+   "title": "LLM daily breakdown — task / provider",
+   "description": "Biaya per task dan provider pada rentang dashboard.",
+   "type": "timeseries",
+   "gridPos": {"x": 6, "y": 54, "w": 18, "h": 7},
+   "datasource": {"type": "prometheus", "uid": "prometheus"},
+   "targets": [{
+    "refId": "A",
+    "expr": "sum by (task, provider) (increase(surau_inference_cost_nano_usd_total[$__rate_interval])) / 1e9",
+    "legendFormat": "{{task}} · {{provider}}",
+    "datasource": {"type": "prometheus", "uid": "prometheus"}
+   }],
+   "fieldConfig": {"defaults": {"unit": "currencyUSD", "decimals": 6, "min": 0}, "overrides": []}
+  },
+  {
+   "id": 20,
+   "title": "LLM tokens — input / cached / output",
+   "description": "Token menurut task, provider, arah, dan sumber provider/estimasi.",
+   "type": "timeseries",
+   "gridPos": {"x": 0, "y": 61, "w": 12, "h": 8},
+   "datasource": {"type": "prometheus", "uid": "prometheus"},
+   "targets": [{
+    "refId": "A",
+    "expr": "sum by (task, provider, direction, source) (increase(surau_inference_tokens_total[$__rate_interval]))",
+    "legendFormat": "{{task}} · {{provider}} · {{direction}} · {{source}}",
+    "datasource": {"type": "prometheus", "uid": "prometheus"}
+   }],
+   "fieldConfig": {"defaults": {"unit": "short", "decimals": 0, "min": 0}, "overrides": []}
+  },
+  {
+   "id": 21,
+   "title": "LLM budget guard",
+   "description": "Progress baseline serta rasio cap harian/bulanan. Alarm Telegram aktif hanya untuk mode enforce.",
+   "type": "bargauge",
+   "gridPos": {"x": 12, "y": 61, "w": 12, "h": 8},
+   "datasource": {"type": "prometheus", "uid": "prometheus"},
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "surau_inference_budget_baseline_progress_ratio",
+     "instant": true,
+     "range": false,
+     "legendFormat": "baseline progress",
+     "datasource": {"type": "prometheus", "uid": "prometheus"}
+    },
+    {
+     "refId": "B",
+     "expr": "surau_inference_budget_usage_ratio{window=\"daily\",mode=\"enforce\"}",
+     "instant": true,
+     "range": false,
+     "legendFormat": "daily cap",
+     "datasource": {"type": "prometheus", "uid": "prometheus"}
+    },
+    {
+     "refId": "C",
+     "expr": "surau_inference_budget_usage_ratio{window=\"monthly\",mode=\"enforce\"}",
+     "instant": true,
+     "range": false,
+     "legendFormat": "monthly cap",
+     "datasource": {"type": "prometheus", "uid": "prometheus"}
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percentunit",
+     "min": 0,
+     "max": 1,
+     "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 0.8}, {"color": "red", "value": 1}]}
+    },
+    "overrides": []
+   },
+   "options": {"orientation": "horizontal", "displayMode": "gradient", "showUnfilled": true}
+  },
+  {
+   "id": 22,
+   "title": "LLM exact vs estimated cost / cache hit-rate",
+   "description": "Biaya berdasarkan token provider versus estimasi konservatif, plus efektivitas cache aman.",
+   "type": "timeseries",
+   "gridPos": {"x": 0, "y": 69, "w": 12, "h": 8},
+   "datasource": {"type": "prometheus", "uid": "prometheus"},
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "sum by (usage_source) (increase(surau_inference_cost_by_usage_source_nano_usd_total[$__rate_interval])) / 1e9",
+     "legendFormat": "cost · {{usage_source}}",
+     "datasource": {"type": "prometheus", "uid": "prometheus"}
+    },
+    {
+     "refId": "B",
+     "expr": "sum(rate(surau_inference_cache_total{result=\"hit\"}[5m])) / clamp_min(sum(rate(surau_inference_cache_total[5m])), 1e-9)",
+     "legendFormat": "cache hit-rate",
+     "datasource": {"type": "prometheus", "uid": "prometheus"}
+    }
+   ],
+   "fieldConfig": {"defaults": {"min": 0}, "overrides": []}
+  },
+  {
+   "id": 23,
+   "title": "LLM failover / budget rejection",
+   "description": "Jumlah failover dan penolakan pagar biaya pada rentang dashboard.",
+   "type": "stat",
+   "gridPos": {"x": 12, "y": 69, "w": 12, "h": 8},
+   "datasource": {"type": "prometheus", "uid": "prometheus"},
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "sum(increase(surau_inference_failovers_total[$__range])) or vector(0)",
+     "instant": true,
+     "range": false,
+     "legendFormat": "failover",
+     "datasource": {"type": "prometheus", "uid": "prometheus"}
+    },
+    {
+     "refId": "B",
+     "expr": "sum(increase(surau_inference_budget_rejections_total[$__range])) or vector(0)",
+     "instant": true,
+     "range": false,
+     "legendFormat": "budget rejected",
+     "datasource": {"type": "prometheus", "uid": "prometheus"}
+    },
+    {
+     "refId": "C",
+     "expr": "max(surau_inference_budget_config_alert{kind=\"zero_baseline\"}) or vector(0)",
+     "instant": true,
+     "range": false,
+     "legendFormat": "baseline config alert",
+     "datasource": {"type": "prometheus", "uid": "prometheus"}
+    }
+   ],
+   "fieldConfig": {"defaults": {"unit": "short", "decimals": 0, "min": 0}, "overrides": []},
+   "options": {"reduceOptions": {"values": false, "calcs": ["lastNotNull"], "fields": ""}, "textMode": "auto"}
   }
  ],
  "tags": [

@@ -301,6 +301,14 @@ func (r *V1) bookRAGErrorResponse(ctx *fiber.Ctx, err error) error {
 		return errorResponse(ctx, http.StatusServiceUnavailable, "rag unit materialization stale")
 	}
 
+	var exceeded *entity.InferenceBudgetExceededError
+	if errors.As(err, &exceeded) ||
+		errors.Is(err, entity.ErrInferenceProviderFailure) ||
+		errors.Is(err, entity.ErrInferenceSessionPinned) ||
+		errors.Is(err, entity.ErrInferenceRouteMissing) {
+		return inferenceErrorResponse(ctx, err)
+	}
+
 	return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
 }
 

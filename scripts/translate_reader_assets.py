@@ -2,7 +2,7 @@
 """Translate Surau TOC sections into import-reader-assets JSONL records.
 
 The script fetches Arabic section content from the local Surau backend and sends it
-to DeepSeek. Output rows can be imported with:
+through the U-0 inference gateway. Output rows can be imported with:
 
     go run ./cmd/import-reader-assets --file=translated.jsonl
 """
@@ -30,6 +30,14 @@ from generation_identity import (
     new_generation_identity,
 )
 from surau_http import surau_headers
+from surau_inference import (
+    InferenceClient,
+    RESUMABLE_EXIT_CODE,
+    attribution_metadata,
+    budget_exceeded,
+    generation_identity,
+    parse_output,
+)
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -49,61 +57,6 @@ PROFILE_CHOICES = [
     "history",
     "adab_tazkiyah",
 ]
-
-
-SYSTEM_PROMPT = """You are a senior Islamic-studies book writer and editor.
-
-Produce a faithful edited rendering of classical Arabic Islamic text in the
-target language. Your role is not to sound like a translator. Your role is to
-make the reader feel they are reading a carefully edited Islamic book that
-preserves the author's meaning, scholarly register, argument flow, reverence,
-and technical precision.
-
-Editorial boundaries:
-- Stay inside the source. Do not add arguments, soften claims, modernize the
-  author's position, add rhetorical flourishes, invent metaphors, summarize
-  away details, or expand beyond what is present or clearly implied.
-- Remove translator-ish phrasing. Prefer natural book prose over word-for-word
-  sentence order, while preserving all legal, theological, and evidentiary
-  distinctions.
-- Convert obvious source structure into natural book structure without changing
-  meaning. Do not preserve raw editorial brackets around questions merely
-  because they appear in the source. For example, source patterns like
-  "[They said: ...]" should become a clean question label in the target
-  language, followed by the question text.
-- If the source is terse, keep it dignified and clear. Do not make it chatty.
-- If the source is polemical, preserve the substance without making it harsher
-  than the source.
-- Follow the supplied translation_profile guide. It may ask you to preserve
-  selected Arabic technical terms, or to translate more naturally for narrative
-  genres. The profile refines style; it never permits adding meaning.
-
-Style requirements:
-- Output strict JSON only, with keys "title" and "content".
-- The "content" value must be Markdown.
-- Use clear paragraphs and natural sentence rhythm.
-- Render Qur'an passages, hadith matn, and clearly quoted speech as standalone
-  Markdown blockquotes (`> ...`). Do not keep them inline inside ordinary
-  paragraphs, and do not use blockquotes for explanatory prose.
-- Put references such as surah/ayah numbers or hadith attributions immediately
-  before or after the relevant blockquote when the source gives them. Do not
-  invent references.
-- Use *italics* for transliterated technical terms such as *tawhid*, *shirk*,
-  *iman*, *fiqh*, *sunnah*, *hadith*, *isnad*, *taqwa*, or similar terms.
-- Use **bold** sparingly for important section labels or core propositions.
-- Keep Qur'an/hadith references, names, honorifics, and Arabic book titles
-  accurate. Do not invent references.
-- If a technical term has no exact equivalent, keep a transliterated term and
-  briefly clarify it in smooth prose on first use.
-- Do not add translator commentary, footnotes, apologies, or external
-  explanations.
-
-Example JSON output:
-{
-  "title": "Introduction by the Editor",
-  "content": "In this section, the author explains the foundation of *tawhid* with careful attention to the language of the early scholars."
-}
-"""
 
 
 TARGET_NAMES = {
@@ -141,24 +94,11 @@ TARGET_STYLE_GUIDES = {
 def main() -> int:
     args = parse_args()
     load_env_file(Path(args.env_file).expanduser())
-    if not args.model:
-        args.model = os.environ.get("DEEPSEEK_MODEL") or os.environ.get("RAG_LLM_MODEL") or "deepseek-v4-flash"
-    if not args.deepseek_base_url:
-        args.deepseek_base_url = (
-            os.environ.get("DEEPSEEK_BASE_URL")
-            or os.environ.get("RAG_LLM_BASE_URL")
-            or "https://api.deepseek.com"
-        )
-    if not args.provider_name:
-        args.provider_name = resolve_provider_name(args.deepseek_base_url)
-    initialize_generation_runs(args)
-
-    api_key = os.environ.get(args.api_key_env) or os.environ.get("RAG_LLM_API_KEY")
-    if not api_key and not args.dry_run:
-        raise SystemExit(
-            f"{args.api_key_env} or RAG_LLM_API_KEY is required. Put it in "
-            f"{args.env_file} or export it first."
-        )
+    inference_client = None
+    if args.dry_run:
+        initialize_generation_runs(args)
+    else:
+        inference_client = InferenceClient.from_env(args.inference_base_url, args.timeout_seconds)
 
     profile_map = load_translation_profiles(Path(args.profile_map).expanduser())
     book_metadata = fetch_book_metadata(args.base_url, args.book_id)
@@ -219,15 +159,27 @@ def main() -> int:
     success_count = 0
     failures: list[dict[str, Any]] = []
     generated_assets: list[dict[str, Any]] = []
+    budget_blocked = False
 
     with out_path.open(out_mode, encoding="utf-8") as out_file, failure_path.open(failure_mode, encoding="utf-8") as failure_file:
         if args.concurrency == 1:
             for index, heading_id in enumerate(heading_ids, start=1):
                 try:
-                    assets = translate_heading_assets(args, api_key or "", heading_id, index, len(heading_ids))
+                    assets = translate_heading_assets(args, inference_client, heading_id, index, len(heading_ids))
                 except Exception as err:
                     record_failure(failure_file, args, heading_id, index, len(heading_ids), err)
-                    failures.append({"heading_id": heading_id, "error": str(err)})
+                    cap = budget_exceeded(err)
+                    failures.append(
+                        {
+                            "heading_id": heading_id,
+                            "error": str(err),
+                            "status": "resumable" if cap else "failed",
+                            "retry_after": cap.retry_after if cap else 0,
+                        }
+                    )
+                    if cap:
+                        budget_blocked = True
+                        break
                     if args.fail_fast:
                         raise
                     continue
@@ -245,7 +197,7 @@ def main() -> int:
                     future = executor.submit(
                         translate_heading_assets,
                         args,
-                        api_key or "",
+                        inference_client,
                         heading_id,
                         index,
                         len(heading_ids),
@@ -260,7 +212,20 @@ def main() -> int:
                         assets = future.result()
                     except Exception as err:
                         record_failure(failure_file, args, heading_id, index, len(heading_ids), err)
-                        failures.append({"heading_id": heading_id, "error": str(err)})
+                        cap = budget_exceeded(err)
+                        failures.append(
+                            {
+                                "heading_id": heading_id,
+                                "error": str(err),
+                                "status": "resumable" if cap else "failed",
+                                "retry_after": cap.retry_after if cap else 0,
+                            }
+                        )
+                        if cap:
+                            budget_blocked = True
+                            for pending in futures:
+                                pending.cancel()
+                            break
                         if args.fail_fast:
                             raise
                         continue
@@ -278,6 +243,9 @@ def main() -> int:
     print(f"wrote {success_count} JSONL records to {out_path}", file=sys.stderr)
     if args.eval_report:
         write_eval_report(Path(args.eval_report), args, generated_assets, failures)
+    if budget_blocked:
+        print("inference budget exceeded; batch is resumable with --resume", file=sys.stderr)
+        return RESUMABLE_EXIT_CODE
     if failures:
         print(f"failed {len(failures)} headings; see {failure_path}", file=sys.stderr)
         return 1
@@ -296,10 +264,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--profile", choices=PROFILE_CHOICES, default="auto", help="Translation profile; auto uses book category metadata")
     parser.add_argument("--profile-map", default=str(DEFAULT_PROFILE_MAP), help="Translation profile JSON config")
     parser.add_argument("--out", required=True, help="Output JSONL file")
-    parser.add_argument("--model", default=None, help="LLM model; defaults to DEEPSEEK_MODEL, RAG_LLM_MODEL, or deepseek-v4-flash")
-    parser.add_argument("--deepseek-base-url", default=None, help="OpenAI-compatible API base URL")
-    parser.add_argument("--provider-name", default=None, help="Provider label written to metadata; defaults from LLM_PROVIDER_NAME or base URL")
-    parser.add_argument("--api-key-env", default="DEEPSEEK_API_KEY", help="Environment variable containing the DeepSeek API key")
+    parser.add_argument("--inference-base-url", default=None, help="Surau U-0 gateway base URL")
     parser.add_argument(
         "--env-file",
         default=str(DEFAULT_ENV_FILE),
@@ -317,32 +282,36 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--fail-fast", action="store_true", help="Stop on the first failed heading")
     parser.add_argument("--include-summary", action="store_true", help="Also translate existing source TOC summary rows")
     parser.add_argument("--summary-only", action="store_true", help="Only translate existing source TOC summaries")
-    parser.add_argument("--dry-run", action="store_true", help="Fetch sections and write placeholder rows without calling DeepSeek")
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Fetch sections and write placeholder rows without calling an inference provider",
+    )
     return parser.parse_args()
 
 
 def initialize_generation_runs(args: argparse.Namespace) -> None:
-    """Create one run per active prompt family for this invocation."""
+    """Create dry-run-only identities; real identities always come from U-0."""
     if not args.summary_only:
         args.translation_generation = new_generation_identity(
-            args.model,
+            "dry-run",
             READER_TRANSLATION_PROMPT_VERSION,
         )
     if args.include_summary or args.summary_only:
         args.summary_translation_generation = new_generation_identity(
-            args.model,
+            "dry-run",
             READER_SUMMARY_TRANSLATION_PROMPT_VERSION,
         )
 
 
 def translate_heading_asset(
     args: argparse.Namespace,
-    api_key: str,
+    inference_client: InferenceClient | None,
     heading_id: int,
     index: int,
     total: int,
 ) -> dict[str, Any]:
-    assets = translate_heading_assets(args, api_key, heading_id, index, total)
+    assets = translate_heading_assets(args, inference_client, heading_id, index, total)
     for asset in assets:
         if asset.get("kind") == "translation":
             return asset
@@ -351,7 +320,7 @@ def translate_heading_asset(
 
 def translate_heading_assets(
     args: argparse.Namespace,
-    api_key: str,
+    inference_client: InferenceClient | None,
     heading_id: int,
     index: int,
     total: int,
@@ -378,11 +347,13 @@ def translate_heading_assets(
                 "title": f"[DRY RUN] {section.get('title', '')}",
                 "content": source_text[:500],
             }
+            translation_generation = dict(args.translation_generation)
+            translation_metadata: dict[str, Any] = {"provider": "dry-run", "model": "dry-run"}
         else:
-            translated = translate_section(
-                api_key=api_key,
-                deepseek_base_url=args.deepseek_base_url,
-                model=args.model,
+            if inference_client is None:
+                raise RuntimeError("inference client is required")
+            translated, inference_result = translate_section(
+                client=inference_client,
                 target_lang=args.target_lang,
                 book_metadata=args.book_metadata,
                 profile_name=args.selected_profile,
@@ -390,10 +361,9 @@ def translate_heading_assets(
                 profile_config=args.selected_profile_config,
                 source_title=section.get("title", ""),
                 source_text=source_text,
-                max_tokens=args.max_tokens,
-                timeout_seconds=args.timeout_seconds,
-                retries=args.retries,
             )
+            translation_generation = generation_identity(inference_result)
+            translation_metadata = attribution_metadata(inference_result)
         assets.append(
             build_translation_asset(
                 args,
@@ -403,11 +373,15 @@ def translate_heading_assets(
                 section,
                 translated,
                 bool(args.max_source_chars > 0 and len(original_text) > args.max_source_chars),
+                translation_generation,
+                translation_metadata,
             )
         )
 
     if include_summary or summary_only:
-        summary_asset = translate_summary_asset(args, api_key, heading_id, index, total, section)
+        summary_asset = translate_summary_asset(
+            args, inference_client, heading_id, index, total, section
+        )
         if summary_asset is not None:
             assets.append(summary_asset)
 
@@ -422,8 +396,9 @@ def build_translation_asset(
     section: dict[str, Any],
     translated: dict[str, str],
     truncated_source: bool,
+    generation: dict[str, str],
+    inference_metadata: dict[str, Any],
 ) -> dict[str, Any]:
-    provider_name = getattr(args, "provider_name", None) or resolve_provider_name(args.deepseek_base_url)
     return {
         "kind": "translation",
         "book_id": args.book_id,
@@ -431,13 +406,12 @@ def build_translation_asset(
         "lang": args.target_lang,
         "title": translated["title"],
         "content": translated["content"],
-        "source": args.model,
+        "source": generation["model_id"],
         "translation_status": "generated",
         "provenance_class": MACHINE_PROVENANCE_CLASS,
-        "generation": dict(args.translation_generation),
+        "generation": generation,
         "metadata": {
-            "provider": provider_name,
-            "model": args.model,
+            **inference_metadata,
             "format": "markdown",
             "source_lang": args.source_lang,
             "target_lang": args.target_lang,
@@ -460,13 +434,12 @@ def build_translation_asset(
 
 def translate_summary_asset(
     args: argparse.Namespace,
-    api_key: str,
+    inference_client: InferenceClient | None,
     heading_id: int,
     index: int,
     total: int,
     section: dict[str, Any],
 ) -> dict[str, Any] | None:
-    provider_name = getattr(args, "provider_name", None) or resolve_provider_name(args.deepseek_base_url)
     source_summary = str(section.get("summary") or "").strip()
     source_summary_lang = str(section.get("summary_lang") or args.source_lang).strip() or args.source_lang
     if not source_summary:
@@ -477,19 +450,20 @@ def translate_summary_asset(
 
     if args.dry_run:
         translated_summary = f"[DRY RUN] {source_summary[:300]}"
+        generation = dict(args.summary_translation_generation)
+        inference_metadata: dict[str, Any] = {"provider": "dry-run", "model": "dry-run"}
     else:
-        translated_summary = translate_summary(
-            api_key=api_key,
-            deepseek_base_url=args.deepseek_base_url,
-            model=args.model,
+        if inference_client is None:
+            raise RuntimeError("inference client is required")
+        translated_summary, inference_result = translate_summary(
+            client=inference_client,
             target_lang=args.target_lang,
             source_lang=source_summary_lang,
             source_title=section.get("title", ""),
             source_summary=source_summary,
-            max_tokens=min(args.max_tokens, 1200),
-            timeout_seconds=args.timeout_seconds,
-            retries=args.retries,
         )
+        generation = generation_identity(inference_result)
+        inference_metadata = attribution_metadata(inference_result)
 
     return {
         "kind": "heading_summary",
@@ -497,13 +471,12 @@ def translate_summary_asset(
         "heading_id": heading_id,
         "lang": args.target_lang,
         "summary": translated_summary,
-        "source": args.model,
+        "source": generation["model_id"],
         "summary_status": "generated",
         "provenance_class": MACHINE_PROVENANCE_CLASS,
-        "generation": dict(args.summary_translation_generation),
+        "generation": generation,
         "metadata": {
-            "provider": provider_name,
-            "model": args.model,
+            **inference_metadata,
             "unit": "toc_summary",
             "style_version": "reader-summary-v1",
             "source_lang": source_summary_lang,
@@ -692,18 +665,6 @@ def resolve_translation_profile(
     return best_profile, "auto:" + ",".join(best_matches[:3])
 
 
-def resolve_provider_name(base_url: str) -> str:
-    env_name = os.environ.get("LLM_PROVIDER_NAME")
-    if env_name and env_name.strip():
-        return env_name.strip()
-    normalized = base_url.casefold()
-    if "deepseek" in normalized:
-        return "deepseek"
-    if "sumopod" in normalized:
-        return "sumopod"
-    return "openai-compatible"
-
-
 def metadata_text(metadata: dict[str, Any], keys: list[str]) -> str:
     values: list[str] = []
     for key in keys:
@@ -808,9 +769,7 @@ def write_eval_report(
 
 def translate_section(
     *,
-    api_key: str,
-    deepseek_base_url: str,
-    model: str,
+    client: InferenceClient,
     target_lang: str,
     book_metadata: dict[str, Any],
     profile_name: str,
@@ -818,10 +777,7 @@ def translate_section(
     profile_config: dict[str, Any],
     source_title: str,
     source_text: str,
-    max_tokens: int,
-    timeout_seconds: int,
-    retries: int,
-) -> dict[str, str]:
+) -> tuple[dict[str, str], dict[str, Any]]:
     target_name = TARGET_NAMES[target_lang]
     user_payload = {
         "target_language": target_name,
@@ -839,101 +795,57 @@ def translate_section(
         "source_text": source_text,
         "json_schema": {"title": "string", "content": "markdown string"},
     }
-    payload = {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {
-                "role": "user",
-                "content": (
-                    "Translate the following Arabic Islamic text into "
-                    f"{target_name}. Use the supplied translation_profile "
-                    "and term_policy. Return json only.\n\n"
-                    + json.dumps(user_payload, ensure_ascii=False)
-                ),
-            },
-        ],
-        "response_format": {"type": "json_object"},
-        "thinking": {"type": "disabled"},
-        "temperature": 0.35,
-        "max_tokens": max_tokens,
-    }
-    headers = {"Authorization": f"Bearer {api_key}"}
-    url = f"{deepseek_base_url.rstrip('/')}/chat/completions"
-
-    response = request_json("POST", url, headers=headers, payload=payload, timeout_seconds=timeout_seconds, retries=retries)
-    message = response["choices"][0]["message"]
-    content = message.get("content") or message.get("reasoning_content", "")
-    translated = load_json_object(content)
+    result = client.invoke(
+        "reader-translation",
+        "Translate the following Arabic Islamic text into "
+        f"{target_name}. Use the supplied translation_profile "
+        "and term_policy. Return json only.\n\n"
+        + json.dumps(user_payload, ensure_ascii=False),
+        cache_vary={
+            "target_language": target_lang,
+            "translation_profile": profile_name,
+            "term_style": TERM_STYLE,
+        },
+    )
+    translated = parse_output(result)
 
     title = str(translated.get("title", "")).strip()
     body = str(translated.get("content", "")).strip()
     if not title or not body:
-        raise RuntimeError("DeepSeek returned JSON without non-empty title/content")
+        raise RuntimeError("inference returned JSON without non-empty title/content")
 
-    return {"title": title, "content": body}
+    return {"title": title, "content": body}, result
 
 
 def translate_summary(
     *,
-    api_key: str,
-    deepseek_base_url: str,
-    model: str,
+    client: InferenceClient,
     target_lang: str,
     source_lang: str,
     source_title: str,
     source_summary: str,
-    max_tokens: int,
-    timeout_seconds: int,
-    retries: int,
-) -> str:
+) -> tuple[str, dict[str, Any]]:
     target_name = TARGET_NAMES[target_lang]
-    payload = {
-        "model": model,
-        "messages": [
+    result = client.invoke(
+        "reader-summary-translation",
+        json.dumps(
             {
-                "role": "system",
-                "content": (
-                    "Translate reader-facing Islamic book section summaries faithfully. "
-                    "Keep the summary concise and natural. Do not add details outside "
-                    "the source summary. Return strict JSON only with key \"summary\"."
-                ),
+                "target_language": target_name,
+                "target_style_guide": TARGET_STYLE_GUIDES[target_lang],
+                "source_language": source_lang,
+                "source_title": source_title,
+                "source_summary": source_summary,
+                "json_schema": {"summary": "string"},
             },
-            {
-                "role": "user",
-                "content": json.dumps(
-                    {
-                        "target_language": target_name,
-                        "target_style_guide": TARGET_STYLE_GUIDES[target_lang],
-                        "source_language": source_lang,
-                        "source_title": source_title,
-                        "source_summary": source_summary,
-                        "json_schema": {"summary": "string"},
-                    },
-                    ensure_ascii=False,
-                ),
-            },
-        ],
-        "response_format": {"type": "json_object"},
-        "thinking": {"type": "disabled"},
-        "temperature": 0.25,
-        "max_tokens": max_tokens,
-    }
-    response = request_json(
-        "POST",
-        f"{deepseek_base_url.rstrip('/')}/chat/completions",
-        headers={"Authorization": f"Bearer {api_key}"},
-        payload=payload,
-        timeout_seconds=timeout_seconds,
-        retries=retries,
+            ensure_ascii=False,
+        ),
+        cache_vary={"target_language": target_lang, "source_language": source_lang},
     )
-    message = response["choices"][0]["message"]
-    content = message.get("content") or message.get("reasoning_content", "")
-    parsed = load_json_object(content)
+    parsed = parse_output(result)
     summary = str(parsed.get("summary") or "").strip()
     if not summary:
-        raise RuntimeError("DeepSeek returned JSON without non-empty summary")
-    return summary
+        raise RuntimeError("inference returned JSON without non-empty summary")
+    return summary, result
 
 
 def request_json(

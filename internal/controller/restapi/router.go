@@ -58,6 +58,7 @@ func NewRouter(
 	e usecase.Editorial,
 	email usecase.EmailAdmin,
 	serviceIdentity usecase.ServiceIdentity,
+	inference usecase.Inference,
 	pushIdentity usecase.PushIdentity,
 	jwtManager *jwt.Manager,
 	l logger.Interface,
@@ -138,6 +139,24 @@ func NewRouter(
 			return ctx.SendStatus(http.StatusServiceUnavailable)
 		}
 
+		if inference != nil && !strings.EqualFold(strings.TrimSpace(cfg.App.Env), "test") {
+			missing, err := inference.ProviderCredentialReadiness(pingCtx)
+			if err != nil {
+				l.Error(err, "readyz - inference registry")
+
+				return ctx.SendStatus(http.StatusServiceUnavailable)
+			}
+
+			if len(missing) > 0 {
+				l.Warn(
+					"readyz - missing inference provider credentials: %s",
+					strings.Join(missing, ","),
+				)
+
+				return ctx.SendStatus(http.StatusServiceUnavailable)
+			}
+		}
+
 		return ctx.SendStatus(http.StatusOK)
 	})
 
@@ -158,19 +177,22 @@ func NewRouter(
 			email,
 			cfg.Email.CloudflareWebhookSecret,
 			serviceIdentity,
+			inference,
 			pushIdentity,
 			jwtManager,
 			l,
 		)
 	}
 
-	// Internal service-to-service bridge for the collab websocket server.
+	// Internal service-to-service bridge and the U-0 inference gateway.
 	// Every route performs a live registry lookup and durable principal audit;
 	// the reverse proxy still must not forward /internal (nginx returns 404).
+	internalGroup := app.Group("/internal")
 	if cfg.Collab.Enabled {
-		internalGroup := app.Group("/internal")
 		v1.NewInternalRoutes(internalGroup, e, serviceIdentity, l)
 	}
+
+	v1.NewInferenceInternalRoutes(internalGroup, inference, serviceIdentity, l)
 
 	// Catch-all (F1-D): unmatched routes answer with the standard error
 	// envelope instead of fiber's plain-text 404. Registered last so every

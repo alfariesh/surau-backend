@@ -13,6 +13,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
 import translate_catalog_assets as tc  # noqa: E402
+from surau_inference import InferenceError, RESUMABLE_EXIT_CODE  # noqa: E402
 
 
 class TranslateCatalogAssetsTest(unittest.TestCase):
@@ -123,7 +124,64 @@ class TranslateCatalogAssetsTest(unittest.TestCase):
         appended = json.loads(lines[1])
         self.assertEqual(appended["book_id"], 2)
         self.assertNotEqual(appended["generation"]["run_id"], old_generation["run_id"])
-        self.assertEqual(appended["generation"]["model_id"], "new-model")
+        self.assertEqual(appended["generation"]["model_id"], "dry-run")
+
+    def test_budget_cap_stops_with_resumable_exit_and_no_unattributed_output(self) -> None:
+        original_parse_args = tc.parse_args
+        original_collect_items = tc.collect_items
+        original_load_env = tc.load_env_file
+        original_from_env = tc.InferenceClient.from_env
+        original_translate_item = tc.translate_item
+        with tempfile.TemporaryDirectory() as tmp:
+            output_path = Path(tmp) / "catalog.jsonl"
+            args = argparse.Namespace(
+                env_file="/does/not/exist",
+                dry_run=False,
+                inference_base_url="http://gateway.test",
+                timeout_seconds=10,
+                limit=0,
+                out=str(output_path),
+                resume=False,
+                concurrency=1,
+                sleep_seconds=0,
+                fail_fast=False,
+                target_lang="id",
+            )
+            tc.parse_args = lambda: args
+            tc.collect_items = lambda unused_args: [
+                {"type": "book", "data": {"id": 9, "name": "كتاب"}}
+            ]
+            tc.load_env_file = lambda unused_path: None
+            tc.InferenceClient.from_env = classmethod(  # type: ignore[method-assign]
+                lambda cls, base_url, timeout: object()
+            )
+
+            def reject_for_cap(*unused_args: object, **unused_kwargs: object) -> dict[str, object]:
+                raise InferenceError(
+                    "inference budget exceeded",
+                    code="inference_budget_exceeded",
+                    retry_after=321,
+                )
+
+            tc.translate_item = reject_for_cap
+            try:
+                exit_code = tc.main()
+            finally:
+                tc.parse_args = original_parse_args
+                tc.collect_items = original_collect_items
+                tc.load_env_file = original_load_env
+                tc.InferenceClient.from_env = original_from_env  # type: ignore[method-assign]
+                tc.translate_item = original_translate_item
+
+            failures = json.loads(
+                output_path.with_suffix(".jsonl.failures.json").read_text(encoding="utf-8")
+            )
+            output = output_path.read_text(encoding="utf-8")
+
+        self.assertEqual(exit_code, RESUMABLE_EXIT_CODE)
+        self.assertEqual(output, "")
+        self.assertEqual(failures[0]["status"], "resumable")
+        self.assertEqual(failures[0]["retry_after"], 321)
 
 
 if __name__ == "__main__":

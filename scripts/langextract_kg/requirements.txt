@@ -1,2 +1,2 @@
-langextract[openai]
+langextract
 psycopg[binary]

@@ -1,0 +1,336 @@
+[
+  {
+    "task_key": "bookrag-tree-full",
+    "task_class": "rerank",
+    "output_kind": "structured",
+    "cache_ttl_seconds": 3600,
+    "persistent_enrichment": false,
+    "prompt_version": "bookrag-tree-full-v1",
+    "messages": [
+      {
+        "role": "system",
+        "content": "You are a PageIndex-style retrieval planner for a classical Islamic book.\nChoose the TOC nodes most likely to contain evidence for the user's question.\nReturn strict JSON only: {\"thinking\":\"short reason\",\"node_ids\":[11,12]}. Use heading IDs as node_ids."
+      },
+      {"role": "user", "content": "{{.user}}"}
+    ],
+    "response_schema_version": "tree-selection-v1",
+    "response_schema": {
+      "type": "object",
+      "required": ["node_ids"],
+      "properties": {
+        "thinking": {"type": "string"},
+        "node_ids": {"type": "array", "items": {"type": "integer"}},
+        "done": {"type": "boolean"}
+      },
+      "additionalProperties": true
+    }
+  },
+  {
+    "task_key": "bookrag-tree-block",
+    "task_class": "rerank",
+    "output_kind": "structured",
+    "cache_ttl_seconds": 3600,
+    "persistent_enrichment": false,
+    "prompt_version": "bookrag-tree-block-v1",
+    "messages": [
+      {
+        "role": "system",
+        "content": "You are a PageIndex-style block tree retrieval planner for one classical Islamic book.\nRank only candidate heading IDs from the current block.\nUse semantic relevance, lexical hints, titles, page ranges, and path context.\nSet done=true only if selected nodes are specific enough to fetch source pages; for broad sections with useful children, set done=false.\nReturn strict JSON only: {\"thinking\":\"short reason\",\"node_ids\":[11,12],\"done\":false}."
+      },
+      {"role": "user", "content": "{{.user}}"}
+    ],
+    "response_schema_version": "tree-selection-v1",
+    "response_schema": {
+      "type": "object",
+      "required": ["node_ids"],
+      "properties": {
+        "thinking": {"type": "string"},
+        "node_ids": {"type": "array", "items": {"type": "integer"}},
+        "done": {"type": "boolean"}
+      },
+      "additionalProperties": true
+    }
+  },
+  {
+    "task_key": "bookrag-tree-retry",
+    "task_class": "rerank",
+    "output_kind": "structured",
+    "cache_ttl_seconds": 3600,
+    "persistent_enrichment": false,
+    "prompt_version": "bookrag-tree-retry-v1",
+    "messages": [
+      {
+        "role": "system",
+        "content": "Return strict JSON only: {\"thinking\":\"short reason\",\"node_ids\":[11]}.\nChoose 1-5 heading IDs from the provided flat TOC. Do not return an empty list if any heading is plausibly relevant."
+      },
+      {"role": "user", "content": "{{.user}}"}
+    ],
+    "response_schema_version": "tree-selection-v1",
+    "response_schema": {
+      "type": "object",
+      "required": ["node_ids"],
+      "properties": {
+        "thinking": {"type": "string"},
+        "node_ids": {"type": "array", "items": {"type": "integer"}},
+        "done": {"type": "boolean"}
+      },
+      "additionalProperties": true
+    }
+  },
+  {
+    "task_key": "bookrag-answer",
+    "task_class": "answer",
+    "output_kind": "structured",
+    "cache_ttl_seconds": 600,
+    "persistent_enrichment": false,
+    "prompt_version": "bookrag-answer-v1",
+    "messages": [
+      {
+        "role": "system",
+        "content": "You answer questions about one classical Islamic book.\nUse only the SOURCE BLOCKS. Do not use outside knowledge.\nAnswer in the same language as the user's question.\nEvery factual claim must include citation markers like [1].\nEach citation quote must be copied exactly from the Arabic source text in the matching source block.\nQuestion spelling may omit or include Arabic diacritics, braces, or vowel endings; use normalized matches as evidence, but copy citation quotes exactly.\nIf the sources do not contain enough evidence, say that the answer is not found in the provided sources.\nReturn strict JSON only:\n{\"answer\":\"... [1]\",\"citations\":[{\"ref\":\"1\",\"quote\":\"exact Arabic quote from source 1\"}]}"
+      },
+      {"role": "user", "content": "{{.user}}"}
+    ],
+    "response_schema_version": "bookrag-answer-v1",
+    "response_schema": {
+      "type": "object",
+      "required": ["answer", "citations"],
+      "properties": {
+        "answer": {"type": "string"},
+        "citations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["ref", "quote"],
+            "properties": {
+              "ref": {"type": "string"},
+              "quote": {"type": "string"}
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  {
+    "task_key": "bookrag-answer-repair",
+    "task_class": "answer",
+    "output_kind": "structured",
+    "cache_ttl_seconds": 600,
+    "persistent_enrichment": false,
+    "prompt_version": "bookrag-answer-repair-v1",
+    "messages": [
+      {
+        "role": "system",
+        "content": "You answer questions about one classical Islamic book using only SOURCE BLOCKS. Repair the previous answer. Re-check the source blocks before saying not found. Keep only citations whose quote appears exactly in the matching Arabic source. Every factual claim must include [ref]. Return strict JSON only: {\"answer\":\"... [1]\",\"citations\":[{\"ref\":\"1\",\"quote\":\"exact Arabic quote\"}]}."
+      },
+      {"role": "user", "content": "{{.user}}"}
+    ],
+    "response_schema_version": "bookrag-answer-v1",
+    "response_schema": {
+      "type": "object",
+      "required": ["answer", "citations"],
+      "properties": {
+        "answer": {"type": "string"},
+        "citations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["ref", "quote"],
+            "properties": {
+              "ref": {"type": "string"},
+              "quote": {"type": "string"}
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  {
+    "task_key": "reader-translation",
+    "task_class": "rewrite",
+    "output_kind": "structured",
+    "cache_ttl_seconds": 0,
+    "persistent_enrichment": true,
+    "prompt_version": "reader-translation-v1",
+    "messages": [
+      {"role": "system", "content": "Produce a faithful edited rendering of the supplied classical Arabic Islamic text in the requested language. Stay inside the source, preserve scholarly distinctions and references, and return strict JSON with non-empty keys title and content."},
+      {"role": "user", "content": "{{.user}}"}
+    ],
+    "response_schema_version": "reader-translation-v1",
+    "response_schema": {
+      "type": "object",
+      "required": ["title", "content"],
+      "properties": {"title": {"type": "string"}, "content": {"type": "string"}},
+      "additionalProperties": false
+    }
+  },
+  {
+    "task_key": "reader-summary",
+    "task_class": "rewrite",
+    "output_kind": "structured",
+    "cache_ttl_seconds": 0,
+    "persistent_enrichment": true,
+    "prompt_version": "reader-summary-v1",
+    "messages": [
+      {"role": "system", "content": "Generate a faithful, concise reader summary using only the supplied source. Preserve qualifications and scholarly distinctions. Return strict JSON with one non-empty string key summary."},
+      {"role": "user", "content": "{{.user}}"}
+    ],
+    "response_schema_version": "reader-summary-v1",
+    "response_schema": {
+      "type": "object",
+      "required": ["summary"],
+      "properties": {"summary": {"type": "string"}},
+      "additionalProperties": false
+    }
+  },
+  {
+    "task_key": "reader-summary-translation",
+    "task_class": "rewrite",
+    "output_kind": "structured",
+    "cache_ttl_seconds": 0,
+    "persistent_enrichment": true,
+    "prompt_version": "reader-summary-translation-v1",
+    "messages": [
+      {"role": "system", "content": "Translate the supplied scholarly summary faithfully into the requested language. Add nothing. Return strict JSON with one non-empty string key summary."},
+      {"role": "user", "content": "{{.user}}"}
+    ],
+    "response_schema_version": "reader-summary-v1",
+    "response_schema": {
+      "type": "object",
+      "required": ["summary"],
+      "properties": {"summary": {"type": "string"}},
+      "additionalProperties": false
+    }
+  },
+  {
+    "task_key": "catalog-translation",
+    "task_class": "rewrite",
+    "output_kind": "structured",
+    "cache_ttl_seconds": 0,
+    "persistent_enrichment": true,
+    "prompt_version": "catalog-translation-v1",
+    "messages": [
+      {"role": "system", "content": "Translate the supplied Islamic book catalog metadata faithfully and concisely. Preserve names, titles, and uncertainty. Return only the strict JSON shape requested in the user input."},
+      {"role": "user", "content": "{{.user}}"}
+    ],
+    "response_schema_version": "catalog-translation-v1",
+    "response_schema": {"type": "object", "minProperties": 1}
+  },
+  {
+    "task_key": "langextract-mentions",
+    "task_class": "rewrite",
+    "output_kind": "structured",
+    "cache_ttl_seconds": 0,
+    "persistent_enrichment": true,
+    "prompt_version": "mentions_v2",
+    "policy_sha256": "38e90f594f46ea7a826a10a006ce42ab7ebe1560b4d6cac03eedfc6f05575b65",
+    "messages": [
+      {"role": "system", "content": "Extract grounded knowledge mentions exactly according to the supplied examples and policy. Never invent a source span. Return strict JSON only."},
+      {"role": "user", "content": "{{.user}}"}
+    ],
+    "response_schema_version": "langextract-v1",
+    "response_schema": {"type": "object"}
+  },
+  {
+    "task_key": "langextract-terms",
+    "task_class": "rewrite",
+    "output_kind": "structured",
+    "cache_ttl_seconds": 0,
+    "persistent_enrichment": true,
+    "prompt_version": "terms_v2",
+    "policy_sha256": "2173f9bf7ecfdef8b3bbed3ba5257f00355e30d09daa1d5c6fdef546686df091",
+    "messages": [
+      {"role": "system", "content": "Extract grounded scholarly terms exactly according to the supplied examples and policy. Never invent a source span. Return strict JSON only."},
+      {"role": "user", "content": "{{.user}}"}
+    ],
+    "response_schema_version": "langextract-v1",
+    "response_schema": {"type": "object"}
+  },
+  {
+    "task_key": "langextract-citations",
+    "task_class": "rewrite",
+    "output_kind": "structured",
+    "cache_ttl_seconds": 0,
+    "persistent_enrichment": true,
+    "prompt_version": "citations_v3",
+    "policy_sha256": "e8c085796275ce04fe4970dd76260fad11c2d70cdecb5080c7ec51ca9aeb5471",
+    "messages": [
+      {"role": "system", "content": "Extract grounded citations exactly according to the supplied examples and policy. Never invent a source span. Return strict JSON only."},
+      {"role": "user", "content": "{{.user}}"}
+    ],
+    "response_schema_version": "langextract-v1",
+    "response_schema": {"type": "object"}
+  },
+  {
+    "task_key": "langextract-relations",
+    "task_class": "rewrite",
+    "output_kind": "structured",
+    "cache_ttl_seconds": 0,
+    "persistent_enrichment": true,
+    "prompt_version": "relations_v1",
+    "policy_sha256": "3b01198eb60a0008264cf5c5f158a54a6f96505a2ba76a3484a2bd83b5b31a3e",
+    "messages": [
+      {"role": "system", "content": "Extract grounded relations exactly according to the supplied examples and policy. Never invent a source span. Return strict JSON only."},
+      {"role": "user", "content": "{{.user}}"}
+    ],
+    "response_schema_version": "langextract-v1",
+    "response_schema": {"type": "object"}
+  },
+  {
+    "task_key": "query-rewrite",
+    "task_class": "rewrite",
+    "output_kind": "structured",
+    "cache_ttl_seconds": 86400,
+    "persistent_enrichment": false,
+    "prompt_version": "query-rewrite-v1",
+    "messages": [
+      {"role": "system", "content": "Rewrite the query only for retrieval while preserving meaning. Return strict JSON with key query."},
+      {"role": "user", "content": "{{.user}}"}
+    ],
+    "response_schema_version": "query-rewrite-v1",
+    "response_schema": {"type": "object", "required": ["query"], "properties": {"query": {"type": "string"}}, "additionalProperties": false}
+  },
+  {
+    "task_key": "candidate-rerank",
+    "task_class": "rerank",
+    "output_kind": "structured",
+    "cache_ttl_seconds": 3600,
+    "persistent_enrichment": false,
+    "prompt_version": "candidate-rerank-v1",
+    "messages": [
+      {"role": "system", "content": "Rank only supplied candidate IDs for relevance. Return strict JSON with key ids."},
+      {"role": "user", "content": "{{.user}}"}
+    ],
+    "response_schema_version": "candidate-rerank-v1",
+    "response_schema": {"type": "object", "required": ["ids"], "properties": {"ids": {"type": "array", "items": {"type": "string"}}}, "additionalProperties": false}
+  },
+  {
+    "task_key": "rag-judge",
+    "task_class": "judge",
+    "output_kind": "structured",
+    "cache_ttl_seconds": 0,
+    "persistent_enrichment": false,
+    "prompt_version": "rag-judge-v1",
+    "messages": [
+      {"role": "system", "content": "Judge only against the supplied rubric and evidence. A missing or invalid result is never a pass. Return strict JSON with passed and reason."},
+      {"role": "user", "content": "{{.user}}"}
+    ],
+    "response_schema_version": "rag-judge-v1",
+    "response_schema": {"type": "object", "required": ["passed", "reason"], "properties": {"passed": {"type": "boolean"}, "reason": {"type": "string"}}, "additionalProperties": false}
+  },
+  {
+    "task_key": "embed-classical-ar-id",
+    "task_class": "embed",
+    "output_kind": "embedding",
+    "cache_ttl_seconds": 2592000,
+    "persistent_enrichment": false,
+    "prompt_version": "embed-classical-ar-id-v1-disabled",
+    "messages": [{"role": "user", "content": "{{.user}}"}],
+    "response_schema_version": "embedding-v1",
+    "response_schema": {"type": "object", "required": ["embedding"], "properties": {"embedding": {"type": "array", "items": {"type": "number"}}}}
+  }
+]

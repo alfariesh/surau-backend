@@ -60,36 +60,27 @@ class TranslationProfileTest(unittest.TestCase):
         self.assertIn("category:", source)
 
     def test_translate_section_payload_contains_profile_context(self) -> None:
-        calls: list[dict[str, object]] = []
-        original_request_json = tr.request_json
+        calls: list[tuple[str, str, dict[str, object]]] = []
 
-        def fake_request_json(method: str, url: str, **kwargs: object) -> dict[str, object]:
-            calls.append({"method": method, "url": url, "kwargs": kwargs})
-            return {"choices": [{"message": {"content": json.dumps({"title": "Title", "content": "Body content"})}}]}
+        class FakeClient:
+            def invoke(self, task: str, user: str, **kwargs: object) -> dict[str, object]:
+                calls.append((task, user, kwargs))
+                return {"output": json.dumps({"title": "Title", "content": "Body content"})}
 
-        tr.request_json = fake_request_json
-        try:
-            translated = tr.translate_section(
-                api_key="test-key",
-                deepseek_base_url="https://example.test",
-                model="deepseek-v4-flash",
-                target_lang="id",
-                book_metadata={"name": "كتاب الفقه", "category_id": 2, "category_name": "فقه"},
-                profile_name="fiqh",
-                profile_source="manual",
-                profile_config=self.profile_map["profiles"]["fiqh"],
-                source_title="باب الطهارة",
-                source_text="نص عربي",
-                max_tokens=500,
-                timeout_seconds=1,
-                retries=0,
-            )
-        finally:
-            tr.request_json = original_request_json
+        translated, _ = tr.translate_section(
+            client=FakeClient(),  # type: ignore[arg-type]
+            target_lang="id",
+            book_metadata={"name": "كتاب الفقه", "category_id": 2, "category_name": "فقه"},
+            profile_name="fiqh",
+            profile_source="manual",
+            profile_config=self.profile_map["profiles"]["fiqh"],
+            source_title="باب الطهارة",
+            source_text="نص عربي",
+        )
 
         self.assertEqual(translated["title"], "Title")
-        payload = calls[0]["kwargs"]["payload"]  # type: ignore[index]
-        user_content = payload["messages"][1]["content"]  # type: ignore[index]
+        self.assertEqual(calls[0][0], "reader-translation")
+        user_content = calls[0][1]
         self.assertIn('"translation_profile": "fiqh"', user_content)
         self.assertIn('"profile_style_guide"', user_content)
         self.assertIn('"category_name": "فقه"', user_content)
@@ -101,8 +92,16 @@ class TranslationProfileTest(unittest.TestCase):
         def fake_fetch(base_url: str, book_id: int, heading_id: int, lang: str) -> dict[str, object]:
             return {"title": "باب", "original_text": "نص عربي طويل"}
 
-        def fake_translate(**kwargs: object) -> dict[str, str]:
-            return {"title": "Bab", "content": "Konten terjemahan yang cukup panjang."}
+        def fake_translate(**kwargs: object) -> tuple[dict[str, str], dict[str, object]]:
+            del kwargs
+            return (
+                {"title": "Bab", "content": "Konten terjemahan yang cukup panjang."},
+                {
+                    "generation": TRANSLATION_GENERATION,
+                    "provider": "deepseek",
+                    "model": TRANSLATION_GENERATION["model_id"],
+                },
+            )
 
         tr.fetch_toc_section = fake_fetch
         tr.translate_section = fake_translate
@@ -112,20 +111,14 @@ class TranslationProfileTest(unittest.TestCase):
                 book_id=10,
                 source_lang="ar",
                 target_lang="id",
-                model="deepseek-v4-flash",
-                deepseek_base_url="https://example.test",
                 max_source_chars=0,
-                max_tokens=500,
-                timeout_seconds=1,
-                retries=0,
                 dry_run=False,
                 book_metadata={"category_id": 2, "category_name": "فقه"},
                 selected_profile="fiqh",
                 selected_profile_source="manual",
                 selected_profile_config=self.profile_map["profiles"]["fiqh"],
-                translation_generation=TRANSLATION_GENERATION,
             )
-            asset = tr.translate_heading_asset(args, "test-key", 5, 1, 1)
+            asset = tr.translate_heading_asset(args, object(), 5, 1, 1)
         finally:
             tr.fetch_toc_section = original_fetch
             tr.translate_section = original_translate
@@ -145,9 +138,16 @@ class TranslationProfileTest(unittest.TestCase):
         def fake_fetch(base_url: str, book_id: int, heading_id: int, lang: str) -> dict[str, object]:
             return {"title": "باب", "summary": "يتناول الباب معنى التقوى.", "summary_lang": "ar"}
 
-        def fake_translate_summary(**kwargs: object) -> str:
+        def fake_translate_summary(**kwargs: object) -> tuple[str, dict[str, object]]:
             self.assertEqual(kwargs["source_summary"], "يتناول الباب معنى التقوى.")
-            return "Bab ini menjelaskan makna takwa."
+            return (
+                "Bab ini menjelaskan makna takwa.",
+                {
+                    "generation": SUMMARY_TRANSLATION_GENERATION,
+                    "provider": "sumopod",
+                    "model": SUMMARY_TRANSLATION_GENERATION["model_id"],
+                },
+            )
 
         tr.fetch_toc_section = fake_fetch
         tr.translate_summary = fake_translate_summary
@@ -157,12 +157,7 @@ class TranslationProfileTest(unittest.TestCase):
                 book_id=10,
                 source_lang="ar",
                 target_lang="id",
-                model="glm-5.1",
-                deepseek_base_url="https://example.test",
                 max_source_chars=0,
-                max_tokens=500,
-                timeout_seconds=1,
-                retries=0,
                 dry_run=False,
                 include_summary=False,
                 summary_only=True,
@@ -170,9 +165,8 @@ class TranslationProfileTest(unittest.TestCase):
                 selected_profile="general",
                 selected_profile_source="manual",
                 selected_profile_config=self.profile_map["profiles"]["general"],
-                summary_translation_generation=SUMMARY_TRANSLATION_GENERATION,
             )
-            assets = tr.translate_heading_assets(args, "test-key", 5, 1, 1)
+            assets = tr.translate_heading_assets(args, object(), 5, 1, 1)
         finally:
             tr.fetch_toc_section = original_fetch
             tr.translate_summary = original_translate_summary

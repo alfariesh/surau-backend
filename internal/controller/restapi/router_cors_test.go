@@ -38,6 +38,7 @@ func TestCORSPreflightAllowsEditorialIfMatchHeader(t *testing.T) {
 		nil,
 		nil,
 		nil,
+		nil,
 		logger.New("error"),
 	)
 

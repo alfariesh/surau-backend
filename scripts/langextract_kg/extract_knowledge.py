@@ -8,7 +8,6 @@ from datetime import datetime, timezone
 import hashlib
 from importlib import metadata
 import json
-import os
 from pathlib import Path
 import re
 import sys
@@ -35,9 +34,14 @@ if __package__ in (None, ""):
         normalized_grounding_key,
         normalized_key,
     )
-    from langextract_kg.openai_compatible_model import OpenAICompatibleJSONModel  # type: ignore
+    from langextract_kg.openai_compatible_model import SurauInferenceJSONModel  # type: ignore
     from langextract_kg.prompts import get_prompt  # type: ignore
     from langextract_kg.visualize_run import write_visualization  # type: ignore
+    from surau_inference import (  # type: ignore
+        InferenceClient,
+        RESUMABLE_EXIT_CODE,
+        budget_exceeded,
+    )
 else:
     from . import db as kg_db
     from .arabic_normalize import (
@@ -52,9 +56,10 @@ else:
         normalized_grounding_key,
         normalized_key,
     )
-    from .openai_compatible_model import OpenAICompatibleJSONModel
+    from .openai_compatible_model import SurauInferenceJSONModel
     from .prompts import get_prompt
     from .visualize_run import write_visualization
+    from scripts.surau_inference import InferenceClient, RESUMABLE_EXIT_CODE, budget_exceeded
 
 
 DEFAULT_OUT_DIR = Path("/tmp/surau-langextract-kg")
@@ -63,27 +68,20 @@ DEFAULT_OUT_DIR = Path("/tmp/surau-langextract-kg")
 def main() -> int:
     args = parse_args()
     kg_db.load_env_file(Path(args.env_file).expanduser())
-    resolve_llm_config(args)
+    resolve_runtime_config(args)
 
     if args.task == "relations" and not args.enable_relations:
         raise SystemExit("--task relations is disabled by default; pass --enable-relations to run it")
 
-    api_key = os.environ.get(args.api_key_env) or os.environ.get("RAG_LLM_API_KEY", "")
-    if not api_key:
-        raise SystemExit(
-            f"{args.api_key_env} or RAG_LLM_API_KEY is required. Put it in {args.env_file} "
-            "or export it first."
-        )
-
     prompt = get_prompt(args.task)
     run_id = args.run_id or kg_db.new_uuid()
-    generation = machine_generation_identity(run_id, args.model, prompt.version)
-    run_id = generation["run_id"]
+    run_id = str(UUID(run_id))
     args.run_id = run_id
     out_dir = Path(args.out_dir).expanduser()
     out_dir.mkdir(parents=True, exist_ok=True)
 
     client = kg_db.DBClient.connect(args.pg_url)
+    run_registered = False
     try:
         skip_pages: set[int] = set()
         if args.resume:
@@ -103,12 +101,31 @@ def main() -> int:
         if not pages:
             raise SystemExit("No source pages selected.")
 
-        run_record = build_run_record(args, prompt.version, run_id, len(pages))
+        inference_client = InferenceClient.from_env(
+            args.inference_base_url,
+            timeout_seconds=max(1, int(args.request_timeout_seconds)),
+        )
+        session = inference_client.create_session(f"langextract-{args.task}")
+        session_id = str(session.get("id") or "")
+        if not session_id:
+            raise RuntimeError("U-0 inference gateway did not return a batch session id")
+
+        result = run_extraction(args, prompt, pages, inference_client, session_id)
+        generation = result["generation"]
+        provider = str(result["provider"])
+        run_record = build_run_record(
+            args,
+            prompt.version,
+            run_id,
+            len(pages),
+            model_id=generation["model_id"],
+            provider=provider,
+            session_id=session_id,
+        )
         if args.write_db:
             client.register_prompt_version(prompt)
             client.create_run(run_record)
-
-        result = run_extraction(args, prompt, pages, api_key, generation)
+            run_registered = True
         records, duplicate_failures = dedupe_records_with_rejections(result["records"])
         annotated_docs = result["annotated_docs"]
         failures = [*result["failures"], *duplicate_failures]
@@ -135,7 +152,7 @@ def main() -> int:
 
         stored = 0
         status = run_status_for_failures(failures)
-        if args.write_db:
+        if args.write_db and run_registered:
             document_audit_ids = client.insert_extraction_documents(documents_audit)
             chunk_ids = client.insert_extraction_chunks(chunks_audit, document_audit_ids)
             stored = client.insert_mentions_with_candidates(records)
@@ -170,8 +187,8 @@ def main() -> int:
             )
         )
         return 0 if not failures else 1
-    except Exception:
-        if args.write_db:
+    except Exception as pipeline_error:
+        if args.write_db and run_registered:
             try:
                 client.finish_run(
                     run_id,
@@ -182,6 +199,21 @@ def main() -> int:
                 )
             except Exception:
                 pass
+        cap = budget_exceeded(pipeline_error)
+        if cap:
+            print(
+                json.dumps(
+                    {
+                        "run_id": run_id,
+                        "task": args.task,
+                        "status": "resumable",
+                        "error_code": cap.code,
+                        "retry_after": cap.retry_after,
+                    }
+                ),
+                file=sys.stderr,
+            )
+            return RESUMABLE_EXIT_CODE
         raise
     finally:
         client.close()
@@ -203,12 +235,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--write-db", action="store_true", help="Persist run, mentions, and candidates")
     parser.add_argument("--resume", action="store_true", help="Skip pages already processed for this task/prompt")
     parser.add_argument("--out-dir", default=str(DEFAULT_OUT_DIR), help="Output directory for JSONL/HTML review files")
-    parser.add_argument("--model", default=None, help="LLM model; defaults to LANGEXTRACT_LLM_MODEL or glm-5.1")
-    parser.add_argument("--llm-base-url", default=None, help="OpenAI-compatible base URL")
     parser.add_argument(
-        "--api-key-env",
-        default="LANGEXTRACT_LLM_API_KEY",
-        help="Environment variable containing the LLM API key",
+        "--inference-base-url",
+        default=None,
+        help="Surau API base URL; defaults to SURAU_INFERENCE_BASE_URL",
     )
     parser.add_argument("--env-file", default=str(kg_db.DEFAULT_ENV_FILE), help="Local dotenv file")
     parser.add_argument("--run-id", default="", help="Optional UUID for deterministic reruns")
@@ -224,29 +254,30 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def resolve_llm_config(args: argparse.Namespace) -> None:
+def resolve_runtime_config(args: argparse.Namespace) -> None:
     if not args.pg_url:
         args.pg_url = kg_db.postgres_url_from_env()
-    if not args.model:
-        args.model = os.environ.get("LANGEXTRACT_LLM_MODEL") or os.environ.get("RAG_LLM_MODEL") or "glm-5.1"
-    if not args.llm_base_url:
-        args.llm_base_url = (
-            os.environ.get("LANGEXTRACT_LLM_BASE_URL")
-            or os.environ.get("RAG_LLM_BASE_URL")
-            or "https://ai.sumopod.com/v1"
-        )
     if args.dry_run:
         args.write_db = False
 
 
-def build_run_record(args: argparse.Namespace, prompt_version: str, run_id: str, total_docs: int) -> dict[str, Any]:
+def build_run_record(
+    args: argparse.Namespace,
+    prompt_version: str,
+    run_id: str,
+    total_docs: int,
+    *,
+    model_id: str,
+    provider: str,
+    session_id: str,
+) -> dict[str, Any]:
     return {
         "id": run_id,
         "task_name": args.task,
         "prompt_version": prompt_version,
-        "model_id": args.model,
-        "provider": "openai",
-        "provider_base_url": args.llm_base_url,
+        "model_id": model_id,
+        "provider": provider,
+        "provider_base_url": None,
         "parameters": {
             "max_char_buffer": args.max_char_buffer,
             "context_window_chars": args.context_window_chars,
@@ -259,6 +290,7 @@ def build_run_record(args: argparse.Namespace, prompt_version: str, run_id: str,
             "created_at": datetime.now(timezone.utc).isoformat(),
             "langextract": langextract_runtime_info(),
             "prompt_policy_hash": getattr(get_prompt(args.task), "policy_hash", ""),
+            "inference_session_id": session_id,
         },
         "source_scope": {
             "book_id": args.book_id,
@@ -310,18 +342,18 @@ def run_extraction(
     args: argparse.Namespace,
     prompt: Any,
     pages: list[kg_db.PageSource],
-    api_key: str,
-    generation: dict[str, str],
+    inference_client: InferenceClient,
+    session_id: str,
 ) -> dict[str, Any]:
     raw_audits: list[dict[str, Any]] = []
-    model = OpenAICompatibleJSONModel(
-        model_id=args.model,
-        api_key=api_key,
-        base_url=args.llm_base_url,
+    model = SurauInferenceJSONModel(
+        task_key=f"langextract-{args.task}",
+        client=inference_client,
+        session_id=session_id,
+        policy_hash=prompt.policy_hash,
         temperature=args.temperature,
         max_output_tokens=args.max_output_tokens,
         max_workers=args.max_workers,
-        request_timeout_seconds=getattr(args, "request_timeout_seconds", 180.0),
         audit_sink=raw_audits,
     )
     tokenizer = lx_tokenizer.RegexTokenizer()
@@ -365,6 +397,11 @@ def run_extraction(
         show_progress=True,
         tokenizer=tokenizer,
     )
+    generation, provider = batch_generation_identity(
+        args.run_id,
+        prompt.version,
+        model.attributions,
+    )
     hydrate_chunk_audits(
         chunks_audit,
         raw_audits,
@@ -398,7 +435,33 @@ def run_extraction(
         "failures": failures,
         "documents_audit": documents_audit,
         "chunks_audit": chunks_audit,
+        "generation": generation,
+        "provider": provider,
     }
+
+
+def batch_generation_identity(
+    run_id: str,
+    expected_prompt_version: str,
+    attributions: list[dict[str, Any]],
+) -> tuple[dict[str, str], str]:
+    """Derive the B-6 run only after U-0 has pinned an actual provider/model."""
+    if not attributions:
+        raise RuntimeError("LangExtract completed without U-0 inference attribution")
+    providers = {str(item.get("provider") or "") for item in attributions}
+    models = {str(item.get("model") or "") for item in attributions}
+    prompt_versions = {str(item.get("prompt_version") or "") for item in attributions}
+    if "" in providers or "" in models or "" in prompt_versions:
+        raise RuntimeError("LangExtract received incomplete U-0 inference attribution")
+    if len(providers) != 1 or len(models) != 1:
+        raise RuntimeError("U-0 batch session changed provider/model after it was pinned")
+    if prompt_versions != {expected_prompt_version}:
+        raise RuntimeError(
+            "U-0 prompt version does not match the frozen LangExtract policy "
+            f"({prompt_versions!r} != {expected_prompt_version!r})"
+        )
+    generation = machine_generation_identity(run_id, next(iter(models)), expected_prompt_version)
+    return generation, next(iter(providers))
 
 
 def document_id_for_page(book_id: int, page_id: int) -> str:

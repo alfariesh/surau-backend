@@ -1083,6 +1083,29 @@ definitions:
         example: /v1/books/797/toc/11/read?lang=id
         type: string
     type: object
+  entity.BookRAGInference:
+    properties:
+      cache_status:
+        type: string
+      call_id:
+        type: string
+      cost:
+        $ref: '#/definitions/entity.InferenceCost'
+      failover:
+        type: boolean
+      generation:
+        $ref: '#/definitions/entity.GenerationIdentity'
+      model:
+        type: string
+      prompt_version:
+        type: string
+      provider:
+        type: string
+      response_schema_version:
+        type: string
+      usage:
+        $ref: '#/definitions/entity.InferenceUsage'
+    type: object
   entity.BookRAGResponse:
     properties:
       answer:
@@ -1094,6 +1117,8 @@ definitions:
         items:
           $ref: '#/definitions/entity.BookRAGCitation'
         type: array
+      inference:
+        $ref: '#/definitions/entity.BookRAGInference'
       question:
         example: Apa definisi hadis sahih?
         type: string
@@ -2178,6 +2203,119 @@ definitions:
         example: "2026-01-01T00:00:00Z"
         type: string
       updated_by:
+        type: string
+    type: object
+  entity.InferenceBudgetPatch:
+    properties:
+      daily_cap_nano_usd:
+        type: integer
+      mode:
+        enum:
+        - baseline
+        - enforce
+        - disabled
+        type: string
+      monthly_cap_nano_usd:
+        type: integer
+      reason:
+        maxLength: 500
+        minLength: 3
+        type: string
+    required:
+    - mode
+    - reason
+    type: object
+  entity.InferenceBudgetStatus:
+    properties:
+      alert_percent:
+        type: number
+      baseline_cost_nano_usd:
+        type: integer
+      baseline_days:
+        type: integer
+      baseline_ends_at:
+        type: string
+      baseline_started_at:
+        type: string
+      config_alert:
+        type: string
+      daily_cap_nano_usd:
+        type: integer
+      daily_reset_at:
+        type: string
+      daily_used_nano_usd:
+        type: integer
+      mode:
+        type: string
+      monthly_cap_nano_usd:
+        type: integer
+      monthly_reset_at:
+        type: string
+      monthly_used_nano_usd:
+        type: integer
+      next_reset_at:
+        type: string
+      reserved_nano_usd:
+        type: integer
+      revision:
+        type: integer
+      timezone:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  entity.InferenceCost:
+    properties:
+      nano_usd:
+        type: integer
+      price_version:
+        type: string
+      source:
+        type: string
+      usd:
+        type: string
+    type: object
+  entity.InferenceUsage:
+    properties:
+      cached_input_tokens:
+        type: integer
+      input_tokens:
+        type: integer
+      output_tokens:
+        type: integer
+      source:
+        type: string
+    type: object
+  entity.InferenceUsageList:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/entity.InferenceUsageRow'
+        type: array
+      total:
+        type: integer
+    type: object
+  entity.InferenceUsageRow:
+    properties:
+      cached_input_tokens:
+        type: integer
+      calls:
+        type: integer
+      cost_nano_usd:
+        type: integer
+      day:
+        type: string
+      input_tokens:
+        type: integer
+      model:
+        type: string
+      output_tokens:
+        type: integer
+      provider:
+        type: string
+      task_class:
+        type: string
+      task_key:
         type: string
     type: object
   entity.IssuedServiceToken:
@@ -7695,6 +7833,113 @@ paths:
       summary: Publish email template version
       tags:
       - admin-emails
+  /admin/inference/budget:
+    get:
+      operationId: admin-inference-budget
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.InferenceBudgetStatus'
+      security:
+      - BearerAuth: []
+      summary: Read LLM budget guard
+      tags:
+      - admin
+      - inference
+    patch:
+      consumes:
+      - application/json
+      description: Creates an append-only policy revision. Requires fresh MFA, If-Match
+        and reason.
+      operationId: admin-update-inference-budget
+      parameters:
+      - description: Current budget revision ETag or *
+        in: header
+        name: If-Match
+        required: true
+        type: string
+      - description: Budget revision
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/entity.InferenceBudgetPatch'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.InferenceBudgetStatus'
+        "412":
+          description: Precondition Failed
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "428":
+          description: Precondition Required
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Replace LLM budget policy
+      tags:
+      - admin
+      - inference
+  /admin/inference/registry:
+    get:
+      operationId: admin-inference-registry
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List active LLM registry
+      tags:
+      - admin
+      - inference
+  /admin/inference/usage:
+    get:
+      description: Shows metered token/cost totals. Requires manage-service-tokens.
+      operationId: admin-inference-usage
+      parameters:
+      - description: RFC3339 start; default 30 days ago
+        in: query
+        name: from
+        type: string
+      - description: RFC3339 end; default now
+        in: query
+        name: to
+        type: string
+      - default: day
+        description: day, task, provider, or model
+        in: query
+        name: group_by
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.InferenceUsageList'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: List daily LLM usage and cost
+      tags:
+      - admin
+      - inference
   /admin/service-identities:
     get:
       description: List named machine principals and safe token metadata. Requires

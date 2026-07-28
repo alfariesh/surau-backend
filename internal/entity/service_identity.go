@@ -11,6 +11,7 @@ const (
 	ServiceScopeEnrichmentRead        = "enrichment:read"
 	ServiceScopePromptRegistryManage  = "prompt-registry:manage"
 	ServiceScopeInferenceBudgetManage = "inference-budget:manage"
+	ServiceScopeInferenceInvoke       = "inference:invoke"
 
 	ServicePrincipalUnattributed = "unattributed"
 
@@ -36,6 +37,7 @@ func AllServiceScopes() []string {
 		ServiceScopeEnrichmentRead,
 		ServiceScopePromptRegistryManage,
 		ServiceScopeInferenceBudgetManage,
+		ServiceScopeInferenceInvoke,
 	}
 }
 

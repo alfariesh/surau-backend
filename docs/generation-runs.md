@@ -1,13 +1,15 @@
 # Kontrak identitas generation-run
 
-Last updated: 2026-07-11
+Last updated: 2026-07-28
 
 Dokumen ini adalah kontrak normatif B-6 untuk semua keluaran LLM baru yang disimpan oleh jalur
 enrichment aktif. Setiap keluaran machine wajib dapat dijawab dengan tiga fakta: run mana yang
 membuatnya, model apa yang dipakai, dan versi prompt apa yang dipakai.
 
-Book-RAG real-time tidak termasuk karena jawabannya tidak disimpan sebagai enrichment. Resolver
-Quran juga tidak termasuk machine: ia deterministik dan tetap memakai method `resolver`.
+U-0 memperluas kontrak ini ke Book-RAG real-time: setiap **provider attempt** mendapat
+`generation_runs` sendiri, walaupun jawabannya tidak menjadi enrichment persisten. Logical call
+menunjuk run dari attempt yang menghasilkan output akhir. Resolver Quran tidak termasuk machine:
+ia deterministik dan tetap memakai method `resolver`.
 
 ## Registry immutable
 
@@ -59,20 +61,27 @@ setelah dicetak. Cross-Reference machine mengunci run serta mencocokkan tuple le
 
 ## Generator aktif dan versi prompt
 
-Satu invocation membuat satu UUID run per keluarga prompt aktif dan memakai UUID itu untuk semua
-row keluarga tersebut:
+Generator tidak lagi membuat UUID/model/prompt sendiri. Ia mengirim `task_key` dan variabel ke
+`POST /internal/inference/invoke`; gateway U-0 mengembalikan identitas provider attempt aktual
+untuk ditempel pada setiap row:
 
 | Keluaran | `task_name` | `prompt_version` |
 |---|---|---|
-| Terjemahan bagian kitab | `reader_translation` | `reader-translation-v1` |
-| Ringkasan Arab | `reader_summary` | `reader-summary-v1` |
-| Terjemahan ringkasan | `reader_summary_translation` | `reader-summary-translation-v1` |
-| Terjemahan katalog buku/penulis/kategori | `catalog_translation` | `catalog-translation-v1` |
-| Ekstraksi knowledge | nilai task ekstraksi (`mentions`, `terms`, `citations`, `relations`) | versi di `scripts/langextract_kg/prompts.py` |
+| Terjemahan bagian kitab | `reader-translation` | `reader-translation-v1` |
+| Ringkasan Arab | `reader-summary` | `reader-summary-v1` |
+| Terjemahan ringkasan | `reader-summary-translation` | `reader-summary-translation-v1` |
+| Terjemahan katalog buku/penulis/kategori | `catalog-translation` | `catalog-translation-v1` |
+| Ekstraksi knowledge | `langextract-mentions|terms|citations|relations` | `mentions_v2`, `terms_v2`, `citations_v3`, `relations_v1` |
 
-Invocation reader yang mengerjakan terjemahan bagian dan terjemahan ringkasan sekaligus memakai
-dua run berbeda. `--resume` mempertahankan row lama apa adanya dan hanya menulis row baru dengan
-run invocation saat ini; ia tidak mengganti identitas row yang dilewati.
+Satu output memakai satu run aktual. Failover sebelum sukses menghasilkan run attempt primer
+gagal dan run sekunder sukses; hanya identitas sekunder yang menempel ke output. Ekstraksi
+knowledge memakai session berpinned: failover boleh terjadi sebelum output pertama, lalu
+provider/model dibekukan. Gangguan setelah pin menghentikan batch sebagai resumable; resume
+membuat session/run baru. `--resume` mempertahankan row lama apa adanya dan tidak mengganti
+identitas row yang dilewati.
+
+Cache hit Book-RAG tetap menunjuk run asal yang membuat ciphertext, tetapi logical call baru
+dicatat dengan biaya `0`. Enrichment persisten dan judge tidak dicache.
 
 ## Kontrak JSONL enrichment
 

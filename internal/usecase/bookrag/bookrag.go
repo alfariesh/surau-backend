@@ -2,6 +2,7 @@ package bookrag
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -19,13 +20,14 @@ import (
 )
 
 const (
-	defaultMaxCitations = 5
-	maxCitationsLimit   = 10
-	defaultCandidateCap = 10
-	sourceTextLimit     = 4000
-	translationLimit    = 1200
-	arabicSearchMarks   = "\u064b\u064c\u064d\u064e\u064f\u0650\u0651\u0652\u0653\u0654\u0655\u0670\u0640"
-	fallbackQuoteLimit  = 420
+	defaultMaxCitations      = 5
+	expectedInferenceResults = 4
+	maxCitationsLimit        = 10
+	defaultCandidateCap      = 10
+	sourceTextLimit          = 4000
+	translationLimit         = 1200
+	arabicSearchMarks        = "\u064b\u064c\u064d\u064e\u064f\u0650\u0651\u0652\u0653\u0654\u0655\u0670\u0640"
+	fallbackQuoteLimit       = 420
 
 	defaultTreeFullMaxNodes     = 450
 	defaultTreeBlockMaxNodes    = 120
@@ -64,10 +66,9 @@ var (
 	}, []string{"result"})
 )
 
-// LLMClient is the minimal chat-completion interface needed by book RAG.
+// LLMClient is the U-0 task-key interface needed by Book-RAG.
 type LLMClient interface {
-	Complete(ctx context.Context, messages []entity.RAGChatMessage) (string, error)
-	Stream(ctx context.Context, messages []entity.RAGChatMessage, emit func(delta string) error) error
+	Invoke(ctx context.Context, input entity.InferenceInvoke) (entity.InferenceResult, error)
 }
 
 // Options configures the book RAG usecase.
@@ -94,6 +95,33 @@ type UseCase struct {
 	treeMaxBlocksPerTurn int
 	citationMode         string
 	legacyFallback       bool
+}
+
+type inferenceCollectorKey struct{}
+
+func (uc *UseCase) complete(
+	ctx context.Context,
+	taskKey string,
+	userPrompt string,
+) (string, error) {
+	sourceHash := fmt.Sprintf("%x", sha256.Sum256([]byte(userPrompt)))
+
+	result, err := uc.llm.Invoke(ctx, entity.InferenceInvoke{
+		TaskKey:       taskKey,
+		Variables:     map[string]any{"user": userPrompt},
+		CacheVary:     map[string]any{"citation_mode": uc.citationMode},
+		IndexVersion:  "bookrag-pageindex-v1",
+		SourceVersion: "sha256:" + sourceHash,
+	})
+	if err != nil {
+		return "", err
+	}
+
+	if collector, ok := ctx.Value(inferenceCollectorKey{}).(*[]entity.InferenceResult); ok {
+		*collector = append(*collector, result)
+	}
+
+	return result.Output, nil
 }
 
 type citationParityMismatchError struct {
@@ -159,6 +187,8 @@ func (uc *UseCase) AskBook(
 	maxCitations int,
 	includeTrace bool,
 ) (entity.BookRAGResponse, error) {
+	inferenceResults := make([]entity.InferenceResult, 0, expectedInferenceResults)
+	ctx = context.WithValue(ctx, inferenceCollectorKey{}, &inferenceResults)
 	question = strings.TrimSpace(question)
 	if question == "" {
 		return entity.BookRAGResponse{}, entity.ErrInvalidQuestion
@@ -197,6 +227,16 @@ func (uc *UseCase) AskBook(
 	}
 
 	bookRAGRequests.WithLabelValues(mode, result).Inc()
+
+	if err == nil && len(inferenceResults) > 0 {
+		final := inferenceResults[len(inferenceResults)-1]
+		response.Inference = &entity.BookRAGInference{
+			CallID: final.CallID, Generation: final.Generation,
+			Provider: final.Provider, Model: final.Model, Prompt: final.Prompt,
+			Schema: final.Schema, Usage: final.Usage, Cost: final.Cost,
+			CacheStatus: final.CacheStatus, Failover: final.Failover,
+		}
+	}
 
 	return response, err
 }
@@ -540,8 +580,22 @@ func (uc *UseCase) AskBookStream(
 
 	response, err := uc.AskBook(ctx, bookID, question, lang, maxCitations, includeTrace)
 	if err != nil {
-		_ = emit("error", map[string]any{"error": publicErrorMessage(err)})
-		return err
+		var exceeded *entity.InferenceBudgetExceededError
+
+		payload := map[string]any{"error": publicErrorMessage(err)}
+
+		if errors.As(err, &exceeded) {
+			payload["code"] = "inference_budget_exceeded"
+			payload["retry_after"] = int64(max(exceeded.RetryAfter.Seconds(), 1))
+			payload["reset_at"] = exceeded.ResetAt
+		} else if errors.Is(err, entity.ErrInferenceProviderFailure) ||
+			errors.Is(err, entity.ErrInferenceSessionPinned) {
+			payload["code"] = "inference_provider_unavailable"
+		}
+
+		emitErr := emit("error", payload)
+
+		return errors.Join(err, emitErr)
 	}
 
 	for _, chunk := range splitAnswerChunks(response.Answer, 120) {
@@ -592,25 +646,14 @@ func (uc *UseCase) selectTreeNodesFull(
 		return treeSelectionResult{}, fmt.Errorf("BookRAG - selectTreeNodes - Marshal tree: %w", err)
 	}
 
-	messages := []entity.RAGChatMessage{
-		{
-			Role: "system",
-			Content: `You are a PageIndex-style retrieval planner for a classical Islamic book.
-Choose the TOC nodes most likely to contain evidence for the user's question.
-Return strict JSON only: {"thinking":"short reason","node_ids":[11,12]}. Use heading IDs as node_ids.`,
-		},
-		{
-			Role: "user",
-			Content: fmt.Sprintf(
-				"Book: %s\nQuestion: %s\nCompact TOC tree JSON:\n%s",
-				doc.Title,
-				question,
-				string(treeJSON),
-			),
-		},
-	}
+	userPrompt := fmt.Sprintf(
+		"Book: %s\nQuestion: %s\nCompact TOC tree JSON:\n%s",
+		doc.Title,
+		question,
+		string(treeJSON),
+	)
 
-	raw, err := uc.llm.Complete(ctx, messages)
+	raw, err := uc.complete(ctx, "bookrag-tree-full", userPrompt)
 	if err != nil {
 		return treeSelectionResult{}, err
 	}
@@ -624,8 +667,16 @@ Return strict JSON only: {"thinking":"short reason","node_ids":[11,12]}. Use hea
 		return selection, nil
 	}
 
-	retryRaw, err := uc.llm.Complete(ctx, retryTreeSelectionMessages(doc, question, structure, raw))
+	retryRaw, err := uc.complete(
+		ctx, "bookrag-tree-retry",
+		retryTreeSelectionPrompt(doc, question, structure, raw),
+	)
 	if err != nil {
+		var exceeded *entity.InferenceBudgetExceededError
+		if errors.As(err, &exceeded) {
+			return selection, err
+		}
+
 		return selection, nil
 	}
 	selection.LLMCalls = 2
@@ -751,7 +802,7 @@ func (uc *UseCase) rankTreeBlock(
 	blockIndex int,
 	blockCount int,
 ) (treeSelectionResult, error) {
-	messages := treeBlockSelectionMessages(
+	userPrompt := treeBlockSelectionPrompt(
 		doc,
 		question,
 		tree,
@@ -763,7 +814,8 @@ func (uc *UseCase) rankTreeBlock(
 		blockCount,
 		uc.treeBeamSize,
 	)
-	raw, err := uc.llm.Complete(ctx, messages)
+
+	raw, err := uc.complete(ctx, "bookrag-tree-block", userPrompt)
 	if err != nil {
 		return treeSelectionResult{}, err
 	}
@@ -774,7 +826,7 @@ func (uc *UseCase) rankTreeBlock(
 	return selection, nil
 }
 
-func treeBlockSelectionMessages(
+func treeBlockSelectionPrompt(
 	doc entity.RAGBookDocument,
 	question string,
 	tree *ragTreeIndex,
@@ -785,7 +837,7 @@ func treeBlockSelectionMessages(
 	blockIndex int,
 	blockCount int,
 	beamSize int,
-) []entity.RAGChatMessage {
+) string {
 	var user strings.Builder
 	user.WriteString(fmt.Sprintf("Book: %s\n", doc.Title))
 	user.WriteString(fmt.Sprintf("Question: %s\n", question))
@@ -828,25 +880,15 @@ func treeBlockSelectionMessages(
 	}
 	user.WriteString(fmt.Sprintf("Pick up to %d candidate IDs from this block, best first.\n", beamSize))
 
-	return []entity.RAGChatMessage{
-		{
-			Role: "system",
-			Content: `You are a PageIndex-style block tree retrieval planner for one classical Islamic book.
-Rank only candidate heading IDs from the current block.
-Use semantic relevance, lexical hints, titles, page ranges, and path context.
-Set done=true only if selected nodes are specific enough to fetch source pages; for broad sections with useful children, set done=false.
-Return strict JSON only: {"thinking":"short reason","node_ids":[11,12],"done":false}.`,
-		},
-		{Role: "user", Content: user.String()},
-	}
+	return user.String()
 }
 
-func retryTreeSelectionMessages(
+func retryTreeSelectionPrompt(
 	doc entity.RAGBookDocument,
 	question string,
 	structure []entity.RAGStructureNode,
 	previous string,
-) []entity.RAGChatMessage {
+) string {
 	var flat strings.Builder
 	for _, node := range structure {
 		flat.WriteString(fmt.Sprintf(
@@ -860,23 +902,13 @@ func retryTreeSelectionMessages(
 		))
 	}
 
-	return []entity.RAGChatMessage{
-		{
-			Role: "system",
-			Content: `Return strict JSON only: {"thinking":"short reason","node_ids":[11]}.
-Choose 1-5 heading IDs from the provided flat TOC. Do not return an empty list if any heading is plausibly relevant.`,
-		},
-		{
-			Role: "user",
-			Content: fmt.Sprintf(
-				"Book: %s\nQuestion: %s\nPrevious unusable response: %s\nFlat TOC:\n%s",
-				doc.Title,
-				question,
-				previous,
-				flat.String(),
-			),
-		},
-	}
+	return fmt.Sprintf(
+		"Book: %s\nQuestion: %s\nPrevious unusable response: %s\nFlat TOC:\n%s",
+		doc.Title,
+		question,
+		previous,
+		flat.String(),
+	)
 }
 
 func (uc *UseCase) answerWithValidatedCitations(
@@ -885,8 +917,7 @@ func (uc *UseCase) answerWithValidatedCitations(
 	sources []entity.RAGPageSource,
 	maxCitations int,
 ) (string, []entity.BookRAGCitation, bool, error) {
-	messages := answerMessages(question, sources, "")
-	raw, err := uc.llm.Complete(ctx, messages)
+	raw, err := uc.complete(ctx, "bookrag-answer", answerPrompt(question, sources, ""))
 	if err != nil {
 		return "", nil, false, err
 	}
@@ -942,8 +973,9 @@ func (uc *UseCase) repairAnswer(
 	invalidAnswer string,
 	maxCitations int,
 ) (string, []entity.BookRAGCitation, bool, error) {
-	repairMessages := answerMessages(question, sources, invalidAnswer)
-	repairedRaw, err := uc.llm.Complete(ctx, repairMessages)
+	repairedRaw, err := uc.complete(
+		ctx, "bookrag-answer-repair", answerPrompt(question, sources, invalidAnswer),
+	)
 	if err != nil {
 		return "", nil, false, err
 	}
@@ -1218,20 +1250,7 @@ func fallbackAnswerText(question string, citation entity.BookRAGCitation) string
 	return fmt.Sprintf("Sumber menyebutkan: %s [%s].", citation.Quote, citation.Ref)
 }
 
-func answerMessages(question string, sources []entity.RAGPageSource, invalidAnswer string) []entity.RAGChatMessage {
-	system := `You answer questions about one classical Islamic book.
-Use only the SOURCE BLOCKS. Do not use outside knowledge.
-Answer in the same language as the user's question.
-Every factual claim must include citation markers like [1].
-Each citation quote must be copied exactly from the Arabic source text in the matching source block.
-Question spelling may omit or include Arabic diacritics, braces, or vowel endings; use normalized matches as evidence, but copy citation quotes exactly.
-If the sources do not contain enough evidence, say that the answer is not found in the provided sources.
-Return strict JSON only:
-{"answer":"... [1]","citations":[{"ref":"1","quote":"exact Arabic quote from source 1"}]}`
-	if invalidAnswer != "" {
-		system += "\nYou are repairing a previous answer. Re-check the source blocks before saying not found. Keep only citations whose quote appears exactly in the matching Arabic source."
-	}
-
+func answerPrompt(question string, sources []entity.RAGPageSource, invalidAnswer string) string {
 	var user strings.Builder
 	user.WriteString("Question:\n")
 	user.WriteString(question)
@@ -1245,10 +1264,7 @@ Return strict JSON only:
 		user.WriteString(invalidAnswer)
 	}
 
-	return []entity.RAGChatMessage{
-		{Role: "system", Content: system},
-		{Role: "user", Content: user.String()},
-	}
+	return user.String()
 }
 
 func formatSourceBlock(source entity.RAGPageSource) string {

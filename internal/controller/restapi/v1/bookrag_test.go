@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/alfariesh/surau-backend/internal/entity"
 	"github.com/alfariesh/surau-backend/pkg/logger"
@@ -136,6 +137,55 @@ func TestAskBookRAGUnitMaterializationUnavailable(t *testing.T) {
 			assert.Contains(t, string(body), `"code":"`+test.code+`"`)
 		})
 	}
+}
+
+func TestAskBookRAGBudgetExceededUsesStable503Contract(t *testing.T) {
+	t.Parallel()
+
+	resetAt := time.Date(2026, 7, 29, 0, 0, 0, 0, time.FixedZone("Asia/Jakarta", 7*60*60))
+	app := newBookRAGTestApp(&fakeBookRAG{err: &entity.InferenceBudgetExceededError{
+		RetryAfter: 90 * time.Second, ResetAt: resetAt, Window: "daily",
+	}})
+	req := httptest.NewRequestWithContext(
+		t.Context(), http.MethodPost, "/v1/books/797/rag?lang=id",
+		bytes.NewBufferString(`{"question":"Apa definisi hadis sahih?"}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := app.Test(req)
+	require.NoError(t, err)
+
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+	assert.Equal(t, "90", resp.Header.Get("Retry-After"))
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	assert.Contains(t, string(body), `"code":"inference_budget_exceeded"`)
+	assert.Contains(t, string(body), `"retry_after":90`)
+	assert.Contains(t, string(body), `"window":"daily"`)
+	assert.Contains(t, string(body), `"reset_at":"2026-07-29T00:00:00+07:00"`)
+}
+
+func TestAskBookRAGProviderUnavailableUsesStable503Code(t *testing.T) {
+	t.Parallel()
+
+	app := newBookRAGTestApp(&fakeBookRAG{err: entity.ErrInferenceProviderFailure})
+	req := httptest.NewRequestWithContext(
+		t.Context(), http.MethodPost, "/v1/books/797/rag?lang=id",
+		bytes.NewBufferString(`{"question":"Apa definisi hadis sahih?"}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := app.Test(req)
+	require.NoError(t, err)
+
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	assert.Contains(t, string(body), `"code":"inference_provider_unavailable"`)
 }
 
 func TestAskBookRAGStream(t *testing.T) {

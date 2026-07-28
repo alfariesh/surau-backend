@@ -992,6 +992,32 @@ export type BookRAGResponse = {
     source_refs?: string[];
     repaired: boolean;
   } | null;
+  inference?: {
+    call_id: string;
+    generation: {
+      run_id: string;
+      model_id: string;
+      prompt_version: string;
+    };
+    provider: string;
+    model: string;
+    prompt_version: string;
+    response_schema_version: string;
+    usage: {
+      input_tokens: number;
+      cached_input_tokens: number;
+      output_tokens: number;
+      source: "provider" | "estimated" | "cache";
+    };
+    cost: {
+      nano_usd: number;
+      usd: string;
+      source: "provider" | "registry" | "cache";
+      price_version?: string;
+    };
+    cache_status: "hit" | "miss" | "bypass";
+    failover: boolean;
+  };
 };
 ```
 
@@ -1019,7 +1045,12 @@ Jika `stream=true`, response memakai Server-Sent Events dengan headers `Content-
 | `delta` | `{text}` | Append answer chunk. |
 | `citations` | `BookRAGCitation[]` | Render source cards. |
 | `done` | `BookRAGResponse` | Finalize answer. |
-| `error` | `{"error":"..."}` | Stop stream and show error. |
+| `error` | error envelope terstruktur | Stop stream and show error; untuk `inference_budget_exceeded`, honor `retry_after` dan jangan menunggu `delta`/`done`. |
+
+HTTP `503 inference_budget_exceeded` membawa `Retry-After`, `retry_after`, serta
+waktu reset; cache hit berbiaya nol masih boleh berhasil. HTTP `503
+inference_provider_unavailable` berarti kedua provider tidak tersedia. Field
+`inference` bersifat aditif dan diagnostik; aplikasi boleh mengabaikannya.
 
 Translation feedback request:
 

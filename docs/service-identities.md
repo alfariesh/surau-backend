@@ -11,7 +11,7 @@ Nama principal tidak dapat diubah dan pencabutan principal bersifat permanen.
 | `collab-server` | `collab:draft:write` | seluruh `/internal/collab/*`, termasuk `whoami` |
 | `rag-eval` | `rag-eval:read` | Book RAG dan resolver Anchor publik saat header hadir |
 | `http-enrichment` | `enrichment:read` | reader/catalog publik saat header hadir |
-| `u0-inference` | `prompt-registry:manage`, `inference-budget:manage` | kontrak U-0; belum ada principal aktif atau secret |
+| `u0-inference` | `inference:invoke`, `prompt-registry:manage`, `inference-budget:manage` | gateway U-0 untuk generator batch, registry prompt, dan pagar biaya |
 
 Daftar ini beku di kode dan `CHECK` PostgreSQL. Scope baru harus aditif dan
 memperbarui keduanya beserta contract test. Header tetap

@@ -219,6 +219,7 @@ type (
 		CitableAudit    citableAudit
 		MFA             mfa
 		RAG             rag
+		Inference       inference
 		Collab          collab
 		ServiceIdentity serviceIdentity
 		Metrics         metrics
@@ -504,7 +505,6 @@ type (
 	rag struct {
 		LLMDriver            string        `env:"RAG_LLM_DRIVER" envDefault:"openai-compatible"`
 		LLMBaseURL           string        `env:"RAG_LLM_BASE_URL" envDefault:"https://ai.sumopod.com/v1"`
-		LLMAPIKey            string        `env:"RAG_LLM_API_KEY"`
 		LLMModel             string        `env:"RAG_LLM_MODEL" envDefault:"glm-5.1"`
 		LLMTimeout           time.Duration `env:"RAG_LLM_TIMEOUT" envDefault:"45s"`
 		LLMMaxTokens         int           `env:"RAG_LLM_MAX_TOKENS" envDefault:"1400"`
@@ -517,6 +517,16 @@ type (
 		TreeMaxBlocksPerTurn int           `env:"RAG_TREE_MAX_BLOCKS_PER_TURN" envDefault:"6"`
 		BookCitationMode     string        `env:"RAG_BOOK_CITATION_MODE" envDefault:"unit"`
 		BookLegacyFallback   bool          `env:"RAG_BOOK_LEGACY_FALLBACK_ENABLED" envDefault:"true"`
+	}
+
+	// Inference configures the U-0 provider registry. Provider credentials
+	// remain in their named environment variables and are never persisted.
+	inference struct {
+		CacheEncryptionKey  string        `env:"INFERENCE_CACHE_ENCRYPTION_KEY"`
+		SumoPodCatalogURL   string        `env:"INFERENCE_SUMOPOD_CATALOG_URL" envDefault:"https://api-gate.sumopod.com/webhook/sumopod/ai/models"`
+		DeepSeekBaseURL     string        `env:"INFERENCE_DEEPSEEK_BASE_URL" envDefault:"https://api.deepseek.com"`
+		DeepSeekModel       string        `env:"INFERENCE_DEEPSEEK_MODEL" envDefault:"deepseek-v4-flash"`
+		BudgetRefreshPeriod time.Duration `env:"INFERENCE_BUDGET_REFRESH_PERIOD" envDefault:"5m"`
 	}
 
 	// Metrics -.
@@ -900,6 +910,10 @@ func NewConfig() (*Config, error) {
 	}
 	if cfg.RAG.LLMTimeout <= 0 {
 		return nil, configError("RAG_LLM_TIMEOUT must be positive")
+	}
+
+	if cfg.Inference.BudgetRefreshPeriod <= 0 {
+		return nil, configError("INFERENCE_BUDGET_REFRESH_PERIOD must be positive")
 	}
 
 	cfg.RAG.LLMDriver = strings.ToLower(strings.TrimSpace(cfg.RAG.LLMDriver))

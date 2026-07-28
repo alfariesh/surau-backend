@@ -106,4 +106,19 @@ type BookRAGResponse struct {
 	Answer        string            `json:"answer"`
 	Citations     []BookRAGCitation `json:"citations"`
 	Trace         *BookRAGTrace     `json:"trace"`
+	Inference     *BookRAGInference `json:"inference,omitempty"`
+}
+
+// BookRAGInference exposes only safe final-call attribution and metering.
+type BookRAGInference struct {
+	CallID      string             `json:"call_id"`
+	Generation  GenerationIdentity `json:"generation"`
+	Provider    string             `json:"provider"`
+	Model       string             `json:"model"`
+	Prompt      string             `json:"prompt_version"`
+	Schema      string             `json:"response_schema_version"`
+	Usage       InferenceUsage     `json:"usage"`
+	Cost        InferenceCost      `json:"cost"`
+	CacheStatus string             `json:"cache_status"`
+	Failover    bool               `json:"failover"`
 }

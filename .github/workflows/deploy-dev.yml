@@ -200,6 +200,9 @@ jobs:
           # 14-day inactivity window or delete reuse evidence too early.
           set_env_value JWT_REFRESH_TOKEN_EXPIRY 336h
           set_env_value AUTH_CLEANUP_SESSION_RETENTION 720h
+          if ! grep -Eq '^INFERENCE_CACHE_ENCRYPTION_KEY=.{32,}$' .env.production; then
+            set_env_value INFERENCE_CACHE_ENCRYPTION_KEY "$(openssl rand -hex 32)"
+          fi
 
           run_with_heartbeat() {
             label="$1"
