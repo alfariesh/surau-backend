@@ -156,6 +156,12 @@ WHERE a.task_key = ''
 
 Hasil yang sehat adalah `0`.
 
+Setelah smoke Book-RAG pada dev, jalankan workflow manual **Inference DEV verification** dari
+`main`. Workflow ini menolak deploy bila `/version` bukan SHA workflow, readiness/metrics gagal,
+manifest/route/harga/scope A-2 tidak lengkap, belum ada provider attempt termeter, atau live
+attribution violations tidak nol. Query bersifat baca-saja dan tidak mencetak prompt, output,
+pertanyaan, maupun secret.
+
 ## Inventaris call-site aktif
 
 | Jalur | Task U-0 |
