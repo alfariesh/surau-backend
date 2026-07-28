@@ -1,0 +1,77 @@
+name: Inference DEV provider preflight
+
+on:
+  workflow_dispatch:
+
+jobs:
+  provider-readiness:
+    name: runner / inference / dev provider readiness
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: dev
+    env:
+      VPS_HOST: ${{ secrets.DEV_VPS_HOST }}
+      VPS_USER: ${{ secrets.DEV_VPS_USER }}
+      VPS_DEPLOY_PATH: ${{ secrets.DEV_VPS_DEPLOY_PATH }}
+      VPS_SSH_PRIVATE_KEY: ${{ secrets.DEV_VPS_SSH_PRIVATE_KEY }}
+      VPS_SSH_KNOWN_HOSTS: ${{ secrets.DEV_VPS_SSH_KNOWN_HOSTS }}
+    steps:
+      - name: Verify two provider credentials and primary price catalog
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          : "${VPS_HOST:?Set the DEV_VPS_HOST repository secret}"
+          : "${VPS_USER:?Set the DEV_VPS_USER repository secret}"
+          : "${VPS_DEPLOY_PATH:?Set the DEV_VPS_DEPLOY_PATH repository secret}"
+          : "${VPS_SSH_PRIVATE_KEY:?Set the DEV_VPS_SSH_PRIVATE_KEY repository secret}"
+          : "${VPS_SSH_KNOWN_HOSTS:?Set the pinned DEV_VPS_SSH_KNOWN_HOSTS secret}"
+          umask 077
+
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$VPS_SSH_PRIVATE_KEY" > ~/.ssh/surau_deploy_key
+          chmod 600 ~/.ssh/surau_deploy_key
+          printf '%s\n' "$VPS_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+          ssh -i ~/.ssh/surau_deploy_key \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile=~/.ssh/known_hosts \
+            -o ConnectTimeout=30 \
+            "$VPS_USER@$VPS_HOST" \
+            "DEPLOY_PATH='$VPS_DEPLOY_PATH' bash -s" <<'REMOTE'
+          set -euo pipefail
+          cd "$DEPLOY_PATH"
+          test -r .env.production
+
+          require_nonempty_env() {
+            key="$1"
+            minimum_length="$2"
+            if ! awk -v key="$key" -v minimum="$minimum_length" '
+              index($0, key "=") == 1 {
+                value = substr($0, length(key) + 2)
+                present = length(value) >= minimum
+              }
+              END { exit present ? 0 : 1 }
+            ' .env.production; then
+              echo "U-0 preflight failed: $key is missing or too short" >&2
+              exit 1
+            fi
+          }
+
+          require_nonempty_env RAG_LLM_API_KEY 8
+          require_nonempty_env DEEPSEEK_API_KEY 8
+
+          catalog_url="$(awk -F= '
+            $1 == "INFERENCE_SUMOPOD_CATALOG_URL" {
+              print substr($0, index($0, "=") + 1)
+            }
+          ' .env.production | tail -1)"
+          catalog_url="${catalog_url:-https://api-gate.sumopod.com/webhook/sumopod/ai/models}"
+          curl -fsS --connect-timeout 10 --max-time 30 "$catalog_url" |
+            grep -F '"glm-5.1"' >/dev/null
+
+          echo "U-0 provider preflight: 2/2 credentials present; glm-5.1 price catalog reachable"
+          REMOTE
