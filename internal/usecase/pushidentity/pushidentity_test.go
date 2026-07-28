@@ -50,11 +50,16 @@ func TestIssueUsesAuthenticatedIdentityAndES256(t *testing.T) {
 	require.NotContains(t, got.IdentityToken, userID)
 
 	claims := &oneSignalClaims{}
-	parsed, err := jwtlib.ParseWithClaims(got.IdentityToken, claims, func(token *jwtlib.Token) (any, error) {
-		require.Equal(t, "ES256", token.Method.Alg())
+	parsed, err := jwtlib.ParseWithClaims(
+		got.IdentityToken,
+		claims,
+		func(token *jwtlib.Token) (any, error) {
+			require.Equal(t, "ES256", token.Method.Alg())
 
-		return &key.PublicKey, nil
-	})
+			return &key.PublicKey, nil
+		},
+		jwtlib.WithTimeFunc(func() time.Time { return now }),
+	)
 	require.NoError(t, err)
 	require.True(t, parsed.Valid)
 	require.Equal(t, userID, claims.Identity.ExternalID)
