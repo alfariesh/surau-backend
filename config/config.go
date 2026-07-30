@@ -522,11 +522,16 @@ type (
 	// Inference configures the U-0 provider registry. Provider credentials
 	// remain in their named environment variables and are never persisted.
 	inference struct {
-		CacheEncryptionKey  string        `env:"INFERENCE_CACHE_ENCRYPTION_KEY"`
-		SumoPodCatalogURL   string        `env:"INFERENCE_SUMOPOD_CATALOG_URL" envDefault:"https://api-gate.sumopod.com/webhook/sumopod/ai/models"`
-		DeepSeekBaseURL     string        `env:"INFERENCE_DEEPSEEK_BASE_URL" envDefault:"https://api.deepseek.com"`
-		DeepSeekModel       string        `env:"INFERENCE_DEEPSEEK_MODEL" envDefault:"deepseek-v4-flash"`
-		BudgetRefreshPeriod time.Duration `env:"INFERENCE_BUDGET_REFRESH_PERIOD" envDefault:"5m"`
+		CacheEncryptionKey              string        `env:"INFERENCE_CACHE_ENCRYPTION_KEY"`
+		SumoPodCatalogURL               string        `env:"INFERENCE_SUMOPOD_CATALOG_URL" envDefault:"https://api-gate.sumopod.com/webhook/sumopod/ai/models"`
+		SumoPodPriceVersion             string        `env:"INFERENCE_SUMOPOD_PRICE_VERSION"`
+		SumoPodInputUSDPerMillion       string        `env:"INFERENCE_SUMOPOD_INPUT_USD_PER_MILLION"`
+		SumoPodCachedInputUSDPerMillion string        `env:"INFERENCE_SUMOPOD_CACHED_INPUT_USD_PER_MILLION"`
+		SumoPodOutputUSDPerMillion      string        `env:"INFERENCE_SUMOPOD_OUTPUT_USD_PER_MILLION"`
+		SecondaryEnabled                bool          `env:"INFERENCE_SECONDARY_ENABLED" envDefault:"true"`
+		DeepSeekBaseURL                 string        `env:"INFERENCE_DEEPSEEK_BASE_URL" envDefault:"https://api.deepseek.com"`
+		DeepSeekModel                   string        `env:"INFERENCE_DEEPSEEK_MODEL" envDefault:"deepseek-v4-flash"`
+		BudgetRefreshPeriod             time.Duration `env:"INFERENCE_BUDGET_REFRESH_PERIOD" envDefault:"5m"`
 	}
 
 	// Metrics -.

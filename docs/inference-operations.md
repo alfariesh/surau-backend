@@ -79,10 +79,38 @@ Route default:
 | primer | SumoPod / `glm-5.1` | katalog akun `INFERENCE_SUMOPOD_CATALOG_URL`, disinkronkan saat boot |
 | sekunder | DeepSeek / `deepseek-v4-flash` | [dokumentasi harga resmi DeepSeek](https://api-docs.deepseek.com/quick_start/pricing/) |
 
+Keputusan operator 2026-07-30 untuk **dev** memakai satu provider SumoPod dengan model
+`deepseek-v4-pro`. Harga snapshot akun yang berlaku:
+
+| Jenis token | USD per 1 juta token |
+|---|---:|
+| input | 0,50 |
+| cached input | 0,004 |
+| output | 0,95 |
+
+Konfigurasi dev memakai versi immutable
+`sumopod-account-2026-07-30-deepseek-v4-pro` dan
+`INFERENCE_SECONDARY_ENABLED=false`. Ini adalah failover yang sengaja dinonaktifkan, bukan dua
+provider dengan nama berbeda. Suite integration tetap membuktikan kemampuan failover dua
+provider; dev belum tahan outage SumoPod penuh sampai provider independen diaktifkan kembali.
+
 Boot/readiness gagal tertutup bila route berbayar tidak memiliki harga, hash manifest DB berbeda
 dari binary, credential salah satu route hilang, atau katalog SumoPod tidak dapat memberi harga
 model primer. Harga disimpan sebagai versi immutable; panggilan lama tetap dapat diaudit dengan
 harga yang berlaku saat itu.
+
+Jika katalog harga provider tidak tersedia, operator boleh memasang **satu tuple lengkap** dari
+dashboard akun:
+
+```dotenv
+INFERENCE_SUMOPOD_PRICE_VERSION=sumopod-account-2026-07-30-deepseek-v4-pro
+INFERENCE_SUMOPOD_INPUT_USD_PER_MILLION=0.50
+INFERENCE_SUMOPOD_CACHED_INPUT_USD_PER_MILLION=0.004
+INFERENCE_SUMOPOD_OUTPUT_USD_PER_MILLION=0.95
+```
+
+Tuple parsial atau harga negatif menolak boot. Mengubah tarif wajib memakai `PRICE_VERSION` baru;
+versi yang sudah masuk ledger tidak boleh digunakan ulang dengan nominal berbeda.
 
 Environment rahasia API:
 
@@ -91,9 +119,9 @@ Environment rahasia API:
 - `INFERENCE_CACHE_ENCRYPTION_KEY`, minimal 32 byte dan terpisah dari kedua credential provider.
 
 Jalankan workflow manual **Inference DEV provider preflight** dari branch `main` sebelum
-me-merge perubahan provider. Pemeriksaan ini hanya memastikan dua credential terisi dan katalog
-harga primer memuat `glm-5.1`; nilainya tidak pernah dicetak atau disalin keluar VPS. U-0 tidak
-boleh di-merge bila preflight ini merah.
+me-merge perubahan provider. Pemeriksaan memastikan semua credential route aktif terisi, model
+primer benar-benar tersedia, dan harga berasal dari katalog atau tuple operator lengkap; nilainya
+tidak pernah dicetak atau disalin keluar VPS. U-0 tidak boleh di-merge bila preflight ini merah.
 
 Jangan menyalin nilai ketiganya ke registry, trace, cache payload, tiket, log, atau generator.
 Rotasi token gateway generator mengikuti overlap T1/T2 principal `u0-inference` pada
@@ -101,9 +129,13 @@ Rotasi token gateway generator mengikuti overlap T1/T2 principal `u0-inference` 
 
 ## Failover dan pemulihan
 
-Maksimum dua provider dicoba. Timeout/network, 408/429/5xx, output kosong, atau output yang gagal
+Maksimum dua provider dicoba bila `INFERENCE_SECONDARY_ENABLED=true`. Timeout/network,
+408/429/5xx, output kosong, atau output yang gagal
 JSON Schema boleh pindah ke sekunder; request-invalid 400 tidak. Bila keduanya gagal, API
 mengembalikan `503 inference_provider_unavailable`.
+
+Jika `INFERENCE_SECONDARY_ENABLED=false`, hanya route primer yang diregistrasikan. Jangan
+menduplikasi key/endpoint primer sebagai provider kedua karena itu memberi kesan ketahanan palsu.
 
 Untuk batch LangExtract, provider/model dipin setelah output sukses pertama. Gangguan setelah pin
 menghentikan batch agar satu run tidak mencampur model. Perbaiki provider, lalu resume sebagai

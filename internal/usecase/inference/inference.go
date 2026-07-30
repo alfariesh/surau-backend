@@ -44,6 +44,7 @@ const (
 	inferenceCatalogMaxBytes       = 4 << 20
 	inferenceCatalogErrorBodyBytes = 4096
 	deterministicProviderTimeoutMS = 1000
+	operatorPriceTupleFields       = 4
 	deepSeekPriority               = 2
 	deepSeekInputNanoPerMillion    = 140_000_000
 	deepSeekCachedNanoPerMillion   = 2_800_000
@@ -108,9 +109,13 @@ type Options struct {
 	PrimaryAPIKeyEnv            string
 	PrimaryCatalogURL           string
 	PrimaryPriceVersion         string
+	PrimaryInputUSDPerMillion   string
+	PrimaryCachedUSDPerMillion  string
+	PrimaryOutputUSDPerMillion  string
 	PrimaryInputNanoPerMillion  int64
 	PrimaryCachedNanoPerMillion int64
 	PrimaryOutputNanoPerMillion int64
+	DisableSecondary            bool
 	SecondaryBaseURL            string
 	SecondaryModel              string
 	SecondaryAPIKeyEnv          string
@@ -157,7 +162,7 @@ func New(
 // Initialize verifies the binary-owned prompt/schema content and reconciles
 // only non-secret provider routing. A content conflict fails application boot.
 func (uc *UseCase) Initialize(ctx context.Context) error {
-	if err := uc.syncPrimaryCatalogPrice(ctx); err != nil {
+	if err := uc.syncPrimaryPrice(ctx); err != nil {
 		return err
 	}
 
@@ -173,15 +178,23 @@ func (uc *UseCase) Initialize(ctx context.Context) error {
 	return uc.repo.SyncRoutes(ctx, uc.routes(manifests))
 }
 
+func (uc *UseCase) syncPrimaryPrice(ctx context.Context) error {
+	if uc.options.Driver == inferenceDriverDeterministic {
+		return nil
+	}
+
+	if configured, err := uc.syncPrimaryOperatorPrice(); configured || err != nil {
+		return err
+	}
+
+	return uc.syncPrimaryCatalogPrice(ctx)
+}
+
 // syncPrimaryCatalogPrice imports the effective, discount-adjusted price from
 // the same catalog consumed by the SumoPod account dashboard. The provider
 // secret is deliberately not sent: this catalog is public and contains no
 // account credential.
 func (uc *UseCase) syncPrimaryCatalogPrice(ctx context.Context) error {
-	if uc.options.Driver == inferenceDriverDeterministic {
-		return nil
-	}
-
 	catalogURL := strings.TrimSpace(uc.options.PrimaryCatalogURL)
 	if catalogURL == "" {
 		return fmt.Errorf("%w: SumoPod price catalog URL is empty", entity.ErrInferenceRouteMissing)
@@ -233,6 +246,57 @@ func (uc *UseCase) syncPrimaryCatalogPrice(ctx context.Context) error {
 	uc.options.PrimaryOutputNanoPerMillion = price.OutputNanoPerMillion
 
 	return nil
+}
+
+// syncPrimaryOperatorPrice accepts a complete, append-only account price
+// snapshot when a provider no longer exposes a machine-readable price
+// catalog. Partial tuples fail closed so a paid route can never silently use
+// zero or stale prices.
+func (uc *UseCase) syncPrimaryOperatorPrice() (bool, error) {
+	version := strings.TrimSpace(uc.options.PrimaryPriceVersion)
+	input := strings.TrimSpace(uc.options.PrimaryInputUSDPerMillion)
+	cached := strings.TrimSpace(uc.options.PrimaryCachedUSDPerMillion)
+	output := strings.TrimSpace(uc.options.PrimaryOutputUSDPerMillion)
+	configured := 0
+
+	for _, value := range []string{version, input, cached, output} {
+		if value != "" {
+			configured++
+		}
+	}
+
+	if configured == 0 {
+		return false, nil
+	}
+
+	if configured != operatorPriceTupleFields {
+		return true, fmt.Errorf(
+			"%w: SumoPod operator price override must include version, input, cached input and output",
+			entity.ErrInferenceRouteMissing,
+		)
+	}
+
+	inputNano, err := pricePerMillionToNano(input)
+	if err != nil {
+		return true, fmt.Errorf("SumoPod operator input price: %w", err)
+	}
+
+	cachedNano, err := pricePerMillionToNano(cached)
+	if err != nil {
+		return true, fmt.Errorf("SumoPod operator cached-input price: %w", err)
+	}
+
+	outputNano, err := pricePerMillionToNano(output)
+	if err != nil {
+		return true, fmt.Errorf("SumoPod operator output price: %w", err)
+	}
+
+	uc.options.PrimaryPriceVersion = version
+	uc.options.PrimaryInputNanoPerMillion = inputNano
+	uc.options.PrimaryCachedNanoPerMillion = cachedNano
+	uc.options.PrimaryOutputNanoPerMillion = outputNano
+
+	return true, nil
 }
 
 func discardCatalogBody(body io.Reader) {
@@ -299,12 +363,20 @@ func parseCatalogPrice(payload []byte, modelID string) (catalogPrice, error) {
 func pricePerTokenToNanoPerMillion(raw json.RawMessage) (int64, error) {
 	value := strings.Trim(strings.TrimSpace(string(raw)), `"`)
 
+	return roundedDecimal(value, nanoPerUSDPerMillionTokens)
+}
+
+func pricePerMillionToNano(value string) (int64, error) {
+	return roundedDecimal(strings.TrimSpace(value), nanoPerUSD)
+}
+
+func roundedDecimal(value string, multiplier int64) (int64, error) {
 	rational, ok := new(big.Rat).SetString(value)
 	if !ok || rational.Sign() < 0 {
 		return 0, fmt.Errorf("%w: %q", errInvalidPriceDecimal, value)
 	}
 
-	rational.Mul(rational, big.NewRat(nanoPerUSDPerMillionTokens, 1))
+	rational.Mul(rational, big.NewRat(multiplier, 1))
 
 	quotient, remainder := new(big.Int).QuoRem(
 		rational.Num(),
@@ -363,19 +435,21 @@ func (uc *UseCase) routes(
 			}))
 		}
 
-		routes = append(routes, routeFromManifest(manifest, entity.InferenceRoute{
-			Priority: deepSeekPriority, ProviderKey: "deepseek",
-			BaseURL:   uc.options.SecondaryBaseURL,
-			APIKeyEnv: uc.options.SecondaryAPIKeyEnv, ModelKey: uc.options.SecondaryModel,
-			ProviderModelID:      uc.options.SecondaryModel,
-			PriceVersion:         "deepseek-official-2026-07-28",
-			InputNanoPerMillion:  deepSeekInputNanoPerMillion,
-			CachedNanoPerMillion: deepSeekCachedNanoPerMillion,
-			OutputNanoPerMillion: deepSeekOutputNanoPerMillion,
-			SupportsJSON:         true, TimeoutMS: int(uc.options.Timeout.Milliseconds()),
-			MaxOutputTokens: uc.options.MaxOutputTokens,
-			Temperature:     uc.options.Temperature,
-		}))
+		if !uc.options.DisableSecondary {
+			routes = append(routes, routeFromManifest(manifest, entity.InferenceRoute{
+				Priority: deepSeekPriority, ProviderKey: "deepseek",
+				BaseURL:   uc.options.SecondaryBaseURL,
+				APIKeyEnv: uc.options.SecondaryAPIKeyEnv, ModelKey: uc.options.SecondaryModel,
+				ProviderModelID:      uc.options.SecondaryModel,
+				PriceVersion:         "deepseek-official-2026-07-28",
+				InputNanoPerMillion:  deepSeekInputNanoPerMillion,
+				CachedNanoPerMillion: deepSeekCachedNanoPerMillion,
+				OutputNanoPerMillion: deepSeekOutputNanoPerMillion,
+				SupportsJSON:         true, TimeoutMS: int(uc.options.Timeout.Milliseconds()),
+				MaxOutputTokens: uc.options.MaxOutputTokens,
+				Temperature:     uc.options.Temperature,
+			}))
+		}
 	}
 
 	return routes
@@ -1427,23 +1501,41 @@ func (uc *UseCase) ProviderCredentialReadiness(
 			continue
 		}
 
-		if strings.TrimSpace(os.Getenv(routes[i].APIKeyEnv)) == "" {
-			if _, ok := seen[routes[i].APIKeyEnv]; !ok {
-				missing = append(missing, routes[i].APIKeyEnv)
-				seen[routes[i].APIKeyEnv] = struct{}{}
-			}
-		}
-	}
-
-	if uc.options.Driver != inferenceDriverDeterministic {
-		if _, ok := providers["sumopod"]; !ok {
-			missing = append(missing, "INFERENCE_SUMOPOD_CATALOG_ROUTE")
+		if strings.TrimSpace(os.Getenv(routes[i].APIKeyEnv)) != "" {
+			continue
 		}
 
-		if _, ok := providers["deepseek"]; !ok {
-			missing = append(missing, "INFERENCE_DEEPSEEK_ROUTE")
+		if _, ok := seen[routes[i].APIKeyEnv]; ok {
+			continue
 		}
+
+		missing = append(missing, routes[i].APIKeyEnv)
+		seen[routes[i].APIKeyEnv] = struct{}{}
 	}
+
+	missing = append(missing, uc.missingProviderRoutes(providers)...)
 
 	return missing, nil
+}
+
+func (uc *UseCase) missingProviderRoutes(providers map[string]struct{}) []string {
+	if uc.options.Driver == inferenceDriverDeterministic {
+		return nil
+	}
+
+	missing := make([]string, 0, maxProviderAttempts)
+
+	if _, ok := providers["sumopod"]; !ok {
+		missing = append(missing, "INFERENCE_SUMOPOD_CATALOG_ROUTE")
+	}
+
+	if uc.options.DisableSecondary {
+		return missing
+	}
+
+	if _, ok := providers["deepseek"]; !ok {
+		missing = append(missing, "INFERENCE_DEEPSEEK_ROUTE")
+	}
+
+	return missing
 }

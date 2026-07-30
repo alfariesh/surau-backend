@@ -352,6 +352,7 @@ pintar justru dari pertanyaan yang dulu gagal.
 | U-D12 | Agentic hanya sebagai tier riset terkurung async (v2) | Nilai nyata utk multi-hop; risiko runaway dikurung cap+whitelist | Agentic sebagai jalur default |
 | U-D13 | Cache jawaban ber-kunci (pertanyaan-normal, filter, profil-lensa, gaya, bahasa, versi indeks), TTL pendek, berlabel | Personalisasi tanpa kebocoran cache antar-profil | Cache global tanpa profil (jawaban salah-lensa) |
 | U-D14 | Preferensi baru dititip di seam Reader Experience (aditif); guest via param | Q3-D7 — satu substrat personal; nol breaking | Tabel preferensi RAG terpisah |
+| U-D15 | Runtime dev U-0 memakai SumoPod-only (`deepseek-v4-pro`) dengan snapshot harga akun immutable; secondary independen dapat diaktifkan kembali lewat config | Keputusan operator 2026-07-30 untuk menyelesaikan dev tanpa menyamarkan satu gateway sebagai dua provider; kapabilitas dua-provider tetap wajib teruji | Menggandakan key/endpoint SumoPod sebagai “provider kedua” palsu |
 
 **Asumsi:** U-A1 — model embedding multilingual yang lolos mini-eval id↔ar tersedia via provider
 OpenAI-compatible (kriteria: kualitas Arab klasik, dimensi ±384, biaya; jika TIDAK lolos, kelas

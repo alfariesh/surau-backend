@@ -154,6 +154,89 @@ func TestInitializeSynchronizesExactSumoPodCatalogPrice(t *testing.T) {
 	assert.EqualValues(t, 320_000_000, primary.OutputNanoPerMillion)
 }
 
+//nolint:gosec // All values are public pricing and dummy variable/key material.
+func TestInitializeUsesCompleteOperatorPriceWithoutCatalog(t *testing.T) {
+	t.Parallel()
+
+	catalogCalls := 0
+
+	catalog := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		catalogCalls++
+	}))
+	defer catalog.Close()
+
+	registry := &catalogCaptureRepo{}
+	uc, err := New(registry, &helperProvider{}, Options{
+		Driver:                     "openai-compatible",
+		PrimaryCatalogURL:          catalog.URL,
+		PrimaryBaseURL:             "https://ai.sumopod.com/v1",
+		PrimaryModel:               "deepseek-v4-pro",
+		PrimaryAPIKeyEnv:           "U0_PRIMARY_CREDENTIAL_ENV",
+		PrimaryPriceVersion:        "sumopod-account-2026-07-30-deepseek-v4-pro",
+		PrimaryInputUSDPerMillion:  "0.50",
+		PrimaryCachedUSDPerMillion: "0.004",
+		PrimaryOutputUSDPerMillion: "0.95",
+		DisableSecondary:           true,
+		CacheSeed:                  "u0-operator-price-cache-seed-at-least-thirty-two-bytes",
+		Timeout:                    time.Second,
+		MaxOutputTokens:            100,
+	})
+	require.NoError(t, err)
+	require.NoError(t, uc.Initialize(t.Context()))
+	assert.Zero(t, catalogCalls)
+	require.NotEmpty(t, registry.routes)
+	primary := registry.routes[0]
+	assert.Equal(t, "sumopod-account-2026-07-30-deepseek-v4-pro", primary.PriceVersion)
+	assert.EqualValues(t, 500_000_000, primary.InputNanoPerMillion)
+	assert.EqualValues(t, 4_000_000, primary.CachedNanoPerMillion)
+	assert.EqualValues(t, 950_000_000, primary.OutputNanoPerMillion)
+
+	for _, route := range registry.routes {
+		assert.Equal(t, 1, route.Priority)
+		assert.Equal(t, "sumopod", route.ProviderKey)
+	}
+}
+
+func TestInitializeRejectsPartialOrInvalidOperatorPrice(t *testing.T) {
+	t.Parallel()
+
+	for _, testCase := range []struct {
+		name        string
+		options     Options
+		expectedErr error
+	}{
+		{
+			name: "partial",
+			options: Options{
+				PrimaryPriceVersion:       "sumopod-account-v1",
+				PrimaryInputUSDPerMillion: "0.50",
+			},
+			expectedErr: entity.ErrInferenceRouteMissing,
+		},
+		{
+			name: "negative",
+			options: Options{
+				PrimaryPriceVersion:        "sumopod-account-v1",
+				PrimaryInputUSDPerMillion:  "-0.50",
+				PrimaryCachedUSDPerMillion: "0.004",
+				PrimaryOutputUSDPerMillion: "0.95",
+			},
+			expectedErr: errInvalidPriceDecimal,
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			testCase.options.Driver = "openai-compatible"
+			testCase.options.DisableSecondary = true
+			testCase.options.CacheSeed = "u0-invalid-operator-price-cache-seed-at-least-thirty-two-bytes"
+			uc, err := New(&catalogCaptureRepo{}, &helperProvider{}, testCase.options)
+			require.NoError(t, err)
+			require.ErrorIs(t, uc.Initialize(t.Context()), testCase.expectedErr)
+		})
+	}
+}
+
 func TestCatalogPriceFailsClosed(t *testing.T) {
 	t.Parallel()
 
