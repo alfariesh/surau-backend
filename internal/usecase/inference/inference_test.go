@@ -390,7 +390,8 @@ type helperProvider struct{}
 
 type catalogCaptureRepo struct {
 	repo.InferenceRepo
-	routes []entity.InferenceRoute
+	routes          []entity.InferenceRoute
+	ephemeralModels []entity.InferenceRoute
 }
 
 func (*catalogCaptureRepo) SyncManifest(
@@ -409,6 +410,15 @@ func (capture *catalogCaptureRepo) SyncRoutes(
 	return nil
 }
 
+func (capture *catalogCaptureRepo) SyncEphemeralModels(
+	_ context.Context,
+	routes []entity.InferenceRoute,
+) error {
+	capture.ephemeralModels = routes
+
+	return nil
+}
+
 func (*helperProvider) Chat(
 	context.Context,
 	entity.InferenceRoute,
@@ -423,4 +433,33 @@ func (*helperProvider) Embed(
 	entity.InferenceProviderRequest,
 ) (entity.InferenceProviderResponse, error) {
 	return entity.InferenceProviderResponse{}, nil
+}
+
+func TestDeterministicInitializeKeepsRoutesProcessLocal(t *testing.T) {
+	t.Parallel()
+
+	registry := &catalogCaptureRepo{}
+	uc, err := New(registry, &helperProvider{}, Options{
+		Driver:          inferenceDriverDeterministic,
+		CacheSeed:       "u0-deterministic-route-isolation-seed-at-least-thirty-two-bytes",
+		MaxOutputTokens: 100,
+	})
+	require.NoError(t, err)
+	require.NoError(t, uc.Initialize(t.Context()))
+
+	assert.Empty(t, registry.routes, "the evaluator must not reconcile serving routes")
+	require.NotEmpty(t, registry.ephemeralModels)
+
+	routes, err := uc.resolveRoutes(t.Context(), "bookrag-answer", "")
+	require.NoError(t, err)
+	require.Len(t, routes, 1)
+	assert.Equal(t, inferenceDriverDeterministic, routes[0].ProviderKey)
+	assert.Len(t, routes[0].PromptSHA256, 64)
+	assert.Len(t, routes[0].ResponseSchemaSHA256, 64)
+	assert.NotEmpty(t, routes[0].MessagesTemplate)
+	assert.NotEmpty(t, routes[0].ResponseSchema)
+
+	missing, err := uc.ProviderCredentialReadiness(t.Context())
+	require.NoError(t, err)
+	assert.Empty(t, missing)
 }
