@@ -67,6 +67,24 @@ jobs:
           [[ "$db_container" =~ ^[a-f0-9]{12,64}$ ]]
           test "$(sudo docker inspect -f '{{.State.Running}}' "$db_container")" = true
 
+          secondary_enabled="$(sed -n \
+            's/^[[:space:]]*INFERENCE_SECONDARY_ENABLED[[:space:]]*=[[:space:]]*//p' \
+            .env.production | tail -n 1 | tr '[:upper:]' '[:lower:]')"
+          case "$secondary_enabled" in
+            false|0|no|off)
+              expected_route_count=16
+              expected_provider_count=1
+              ;;
+            ""|true|1|yes|on)
+              expected_route_count=32
+              expected_provider_count=2
+              ;;
+            *)
+              echo "U-0 verification failed: invalid INFERENCE_SECONDARY_ENABLED" >&2
+              exit 1
+              ;;
+          esac
+
           assert_sql() {
             label="$1"
             sql="$2"
@@ -83,14 +101,14 @@ jobs:
           assert_sql "migration is current and clean" \
             "SELECT CASE WHEN version >= 20260728000001 AND NOT dirty THEN 1 ELSE 0 END
              FROM schema_migrations"
-          assert_sql "17 task manifests and 16 dual-provider routes are active" \
+          assert_sql "17 task manifests and configured provider routes are active" \
             "SELECT CASE WHEN
                (SELECT count(*) FROM inference_tasks) = 17
                AND (SELECT count(*) FROM inference_prompt_versions) = 17
                AND (SELECT count(*) FROM inference_response_schemas) = 17
-               AND (SELECT count(*) FROM inference_routes WHERE enabled) = 32
+               AND (SELECT count(*) FROM inference_routes WHERE enabled) = $expected_route_count
                AND (SELECT count(DISTINCT provider_key)
-                    FROM inference_routes WHERE enabled) = 2
+                    FROM inference_routes WHERE enabled) = $expected_provider_count
              THEN 1 ELSE 0 END"
           assert_sql "paid routes have immutable prices" \
             "SELECT CASE WHEN count(*) = 0 THEN 1 ELSE 0 END

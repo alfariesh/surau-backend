@@ -144,8 +144,17 @@ func (l *catalogParityLLM) Invoke(
 		return entity.InferenceResult{}, entity.ErrInvalidQuestion
 	}
 
+	system := input.TaskKey
+	if input.TaskKey == "bookrag-answer" || input.TaskKey == "bookrag-answer-repair" {
+		// U-0 callers provide an immutable task key instead of the former raw
+		// system prompt. Preserve the deterministic rollout stub's distinction
+		// between tree selection and answer generation without bypassing the
+		// shared inference contract.
+		system = "You answer questions about one classical Islamic book."
+	}
+
 	output, err := l.Complete(ctx, []entity.RAGChatMessage{
-		{Role: "system", Content: input.TaskKey},
+		{Role: "system", Content: system},
 		{Role: "user", Content: user},
 	})
 
