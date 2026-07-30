@@ -139,6 +139,7 @@ type inferenceControllerFake struct {
 	usecase.Inference
 	result           entity.InferenceResult
 	invokeErr        error
+	invoked          entity.InferenceInvoke
 	budgetStatus     entity.InferenceBudgetStatus
 	updatedBudget    entity.InferenceBudgetStatus
 	expectedRevision int64
@@ -146,9 +147,11 @@ type inferenceControllerFake struct {
 }
 
 func (f *inferenceControllerFake) Invoke(
-	context.Context,
-	entity.InferenceInvoke,
+	_ context.Context,
+	input entity.InferenceInvoke, //nolint:gocritic // Spy stores the immutable input for contract assertions.
 ) (entity.InferenceResult, error) {
+	f.invoked = input
+
 	return f.result, f.invokeErr
 }
 

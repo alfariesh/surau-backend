@@ -83,3 +83,24 @@ func TestDeterministicRolloutLLMStreamEmitsOneValidatedPayload(t *testing.T) {
 	require.NoError(t, err)
 	assert.JSONEq(t, `{"thinking":"deterministic rollout evidence","node_ids":[5],"done":true}`, emitted)
 }
+
+func TestDeterministicRolloutLLMReturnsJudgeSchema(t *testing.T) {
+	t.Parallel()
+
+	client := NewDeterministicRolloutLLMClient()
+	content, err := client.Complete(t.Context(), []entity.RAGChatMessage{
+		{
+			Role: "system",
+			Content: "Judge only against the supplied rubric and evidence. " +
+				"Return strict JSON with passed and reason.",
+		},
+		{Role: "user", Content: `{"rubric":{},"evidence":[]}`},
+	})
+
+	require.NoError(t, err)
+	assert.JSONEq(
+		t,
+		`{"passed":true,"reason":"Deterministic rollout accepted the supplied evidence packet."}`,
+		content,
+	)
+}

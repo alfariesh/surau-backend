@@ -44,6 +44,10 @@ func (c *DeterministicRolloutLLMClient) Complete(
 		return "", err
 	}
 
+	if rolloutIsJudgePrompt(messages) {
+		return `{"passed":true,"reason":"Deterministic rollout accepted the supplied evidence packet."}`, nil
+	}
+
 	if rolloutIsAnswerPrompt(messages) {
 		return rolloutAnswer(messages)
 	}
@@ -78,6 +82,17 @@ func (c *DeterministicRolloutLLMClient) Stream(
 func rolloutIsAnswerPrompt(messages []entity.RAGChatMessage) bool {
 	for i := range messages {
 		if messages[i].Role == "system" && strings.Contains(messages[i].Content, "You answer questions") {
+			return true
+		}
+	}
+
+	return false
+}
+
+func rolloutIsJudgePrompt(messages []entity.RAGChatMessage) bool {
+	for i := range messages {
+		if messages[i].Role == "system" &&
+			strings.Contains(messages[i].Content, "Judge only against the supplied rubric and evidence") {
 			return true
 		}
 	}

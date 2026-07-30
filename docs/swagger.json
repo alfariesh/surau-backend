@@ -10562,6 +10562,73 @@
                 }
             }
         },
+        "/eval/judge": {
+            "post": {
+                "description": "Service-only advisory judge. Accepts no task key or free-form rubric/prompt. Requires rag-eval:read.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "eval",
+                    "inference"
+                ],
+                "summary": "Judge one allowlisted RAG evaluation",
+                "operationId": "eval-judge",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Service token with rag-eval:read",
+                        "name": "X-Internal-Token",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "Evaluation evidence",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/entity.EvalJudgeRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.EvalJudgeResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                }
+            }
+        },
         "/me/activity": {
             "get": {
                 "description": "Return daily reading-activity buckets and an aggregate for [from, to]. Defaults to the last 30 days ending at to (or the server's UTC date). Activity days follow the local calendar date of each save's client_observed_at offset. Max range 366 days.",
@@ -16838,6 +16905,85 @@
                 },
                 "suppressed": {
                     "type": "integer"
+                }
+            }
+        },
+        "entity.EvalJudgeEvidence": {
+            "type": "object",
+            "required": [
+                "anchor",
+                "quote",
+                "ref"
+            ],
+            "properties": {
+                "anchor": {
+                    "type": "string"
+                },
+                "quote": {
+                    "type": "string"
+                },
+                "ref": {
+                    "type": "string"
+                },
+                "unit_anchor": {
+                    "type": "string"
+                },
+                "unit_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "entity.EvalJudgeRequest": {
+            "type": "object",
+            "required": [
+                "answer",
+                "case_id",
+                "evidence",
+                "question",
+                "rubric_version"
+            ],
+            "properties": {
+                "answer": {
+                    "type": "string"
+                },
+                "case_id": {
+                    "type": "string"
+                },
+                "evidence": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "$ref": "#/definitions/entity.EvalJudgeEvidence"
+                    }
+                },
+                "question": {
+                    "type": "string"
+                },
+                "rubric_version": {
+                    "type": "string"
+                }
+            }
+        },
+        "entity.EvalJudgeResponse": {
+            "type": "object",
+            "properties": {
+                "case_id": {
+                    "type": "string"
+                },
+                "inference": {
+                    "$ref": "#/definitions/entity.BookRAGInference"
+                },
+                "passed": {
+                    "type": "boolean"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "rubric_sha256": {
+                    "type": "string"
+                },
+                "rubric_version": {
+                    "type": "string"
                 }
             }
         },

@@ -128,6 +128,19 @@ func NewRoutes(
 		)
 	}
 
+	evalGroup := apiV1Group.Group("/eval")
+	{
+		evalGroup.Post(
+			"/judge",
+			middleware.RequireServicePrincipal(
+				serviceIdentity,
+				entity.ServiceScopeRAGEvalRead,
+				l,
+			),
+			r.evalJudge,
+		)
+	}
+
 	crossReferenceGroup := apiV1Group.Group("/cross-references", middleware.PublicRevalidate())
 	{
 		crossReferenceGroup.Get("/", r.listCrossReferences)

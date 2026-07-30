@@ -1,0 +1,299 @@
+{
+  "schema_version": "eval-catalog-v1",
+  "minimum_pass_rate": 90,
+  "migration_state": {
+    "serving": "tree",
+    "tree_retired": false
+  },
+  "categories": [
+    {
+      "id": "kitab-groundedness",
+      "label": "Kitab groundedness",
+      "status": "active",
+      "blocking": false,
+      "profiles": ["scheduled", "release"],
+      "owner": "U-6",
+      "minimum_cases": 3
+    },
+    {
+      "id": "quran-routing",
+      "label": "Ayat to tafsir routing",
+      "status": "active",
+      "blocking": false,
+      "profiles": ["scheduled", "release"],
+      "owner": "U-6",
+      "depends_on": ["Q-2"],
+      "minimum_cases": 2
+    },
+    {
+      "id": "not-found",
+      "label": "Safe not-found",
+      "status": "active",
+      "blocking": false,
+      "profiles": ["scheduled", "release"],
+      "owner": "U-6",
+      "minimum_cases": 2
+    },
+    {
+      "id": "content-injection",
+      "label": "Content injection safety",
+      "status": "active",
+      "blocking": true,
+      "profiles": ["pr", "scheduled", "release"],
+      "owner": "U-6",
+      "minimum_cases": 2
+    },
+    {
+      "id": "citation-validity",
+      "label": "Citation validity",
+      "status": "active",
+      "blocking": true,
+      "profiles": ["pr", "scheduled", "release"],
+      "owner": "U-6",
+      "minimum_cases": 2
+    },
+    {
+      "id": "quran-anti-tafsir",
+      "label": "Quran anti-tafsir construction",
+      "status": "active",
+      "blocking": true,
+      "profiles": ["pr", "scheduled", "release"],
+      "owner": "U-6",
+      "depends_on": ["Q-2"],
+      "minimum_cases": 1
+    },
+    {
+      "id": "cross-lingual-id-ar",
+      "label": "Indonesian and Arabic retrieval parity",
+      "status": "seed",
+      "blocking": false,
+      "owner": "U-1",
+      "depends_on": ["U-1"]
+    },
+    {
+      "id": "composition-structure",
+      "label": "Structured composition validity",
+      "status": "seed",
+      "blocking": false,
+      "owner": "U-3",
+      "depends_on": ["U-3"]
+    },
+    {
+      "id": "ikhtilaf-completeness",
+      "label": "Attributed ikhtilaf completeness",
+      "status": "seed",
+      "blocking": true,
+      "owner": "U-3",
+      "depends_on": ["U-3"]
+    },
+    {
+      "id": "lens-no-flattening",
+      "label": "Lens never flattens ikhtilaf",
+      "status": "seed",
+      "blocking": true,
+      "owner": "U-4",
+      "depends_on": ["U-3", "U-4"]
+    },
+    {
+      "id": "hadith",
+      "label": "Hadith authority grading",
+      "status": "seed",
+      "blocking": true,
+      "owner": "H-7",
+      "depends_on": ["H-7"]
+    },
+    {
+      "id": "wiki",
+      "label": "Wiki claim grounding",
+      "status": "seed",
+      "blocking": true,
+      "owner": "W-7",
+      "depends_on": ["W-7"]
+    }
+  ],
+  "cases": [
+    {
+      "id": "kitab-book-1-json",
+      "categories": ["kitab-groundedness"],
+      "profiles": ["scheduled", "release"],
+      "runner": "http_bookrag",
+      "source_name": "book_1_author_json"
+    },
+    {
+      "id": "kitab-book-1-sse",
+      "categories": ["kitab-groundedness"],
+      "profiles": ["scheduled", "release"],
+      "runner": "http_bookrag",
+      "source_name": "book_1_author_sse"
+    },
+    {
+      "id": "kitab-book-3-json",
+      "categories": ["kitab-groundedness"],
+      "profiles": ["scheduled", "release"],
+      "runner": "http_bookrag",
+      "source_name": "book_3_birth_json"
+    },
+    {
+      "id": "quran-2-183-to-tafsir-id",
+      "categories": ["quran-routing"],
+      "profiles": ["scheduled", "release"],
+      "runner": "http_bookrag",
+      "source_name": "quran_2_183_to_sadi_id"
+    },
+    {
+      "id": "quran-2-183-to-tafsir-variant",
+      "categories": ["quran-routing"],
+      "profiles": ["scheduled", "release"],
+      "runner": "http_bookrag",
+      "source_name": "quran_2_183_to_sadi_variant"
+    },
+    {
+      "id": "not-found-book-1",
+      "categories": ["not-found"],
+      "profiles": ["scheduled", "release"],
+      "runner": "http_bookrag",
+      "source_name": "book_1_quantum_not_found"
+    },
+    {
+      "id": "not-found-book-3",
+      "categories": ["not-found"],
+      "profiles": ["scheduled", "release"],
+      "runner": "http_bookrag",
+      "source_name": "book_3_blockchain_not_found"
+    },
+    {
+      "id": "content-injection-repaired",
+      "categories": ["content-injection"],
+      "profiles": ["pr", "scheduled", "release"],
+      "runner": "go_test",
+      "package": "github.com/alfariesh/surau-backend/internal/usecase/bookrag",
+      "test": "TestUseCaseRejectsContentInjectionAndRepairsFromEvidence"
+    },
+    {
+      "id": "content-injection-safe-fallback",
+      "categories": ["content-injection"],
+      "profiles": ["pr", "scheduled", "release"],
+      "runner": "go_test",
+      "package": "github.com/alfariesh/surau-backend/internal/usecase/bookrag",
+      "test": "TestUseCaseRejectsContentInjectionWhenRepairRepeatsAttack"
+    },
+    {
+      "id": "citation-invalid-locator-rejected",
+      "categories": ["citation-validity"],
+      "profiles": ["pr", "scheduled", "release"],
+      "runner": "go_test",
+      "package": "github.com/alfariesh/surau-backend/internal/rageval",
+      "test": "TestEvaluateCaseFailsInvalidCitationLocator"
+    },
+    {
+      "id": "citation-missing-quote-rejected",
+      "categories": ["citation-validity"],
+      "profiles": ["pr", "scheduled", "release"],
+      "runner": "go_test",
+      "package": "github.com/alfariesh/surau-backend/internal/rageval",
+      "test": "TestEvaluateCaseFailsMissingQuote"
+    },
+    {
+      "id": "quran-citable-units-never-interpretive",
+      "categories": ["quran-anti-tafsir"],
+      "profiles": ["pr", "scheduled", "release"],
+      "runner": "go_test",
+      "package": "github.com/alfariesh/surau-backend/internal/repo/persistent",
+      "test": "TestLiveQuranCitableUnitsNeverInterpretiveEligible"
+    }
+  ],
+  "seeds": [
+    {
+      "id": "u1-id-ar-anchor-pairs",
+      "category": "cross-lingual-id-ar",
+      "owner": "U-1",
+      "depends_on": ["U-1"],
+      "minimum_scenarios": 8,
+      "required_assertions": [
+        "Indonesian and Arabic questions resolve to the same expected Anchor",
+        "cross-corpus retrieval remains license-eligible",
+        "candidate is compared against tree on the same catalog snapshot"
+      ],
+      "examples": [
+        {
+          "id": "u1-seed-quran-2-183",
+          "questions": {
+            "id": "Mengapa puasa menjadi sebab ketakwaan menurut tafsir QS 2:183?",
+            "ar": "لماذا كان الصيام من أسباب التقوى في تفسير الآية ٢:١٨٣؟"
+          },
+          "expected_anchor": "kitab/42/h/104/u/4"
+        },
+        {
+          "id": "u1-seed-fawakih-author",
+          "questions": {
+            "id": "Siapa penulis الفواكه العذاب?",
+            "ar": "من مؤلف رسالة الفواكه العذاب؟"
+          },
+          "expected_anchor": "kitab/1/h/2/u/5"
+        }
+      ],
+      "notes": "Inactive until the U-1 candidate index and embedding path exist."
+    },
+    {
+      "id": "u3-structure",
+      "category": "composition-structure",
+      "owner": "U-3",
+      "depends_on": ["U-3"],
+      "minimum_scenarios": 3,
+      "required_assertions": [
+        "EvidencePack component schema is valid",
+        "every composed claim maps to a Citable Unit",
+        "invalid component order or missing provenance fails deterministically"
+      ]
+    },
+    {
+      "id": "u3-ikhtilaf",
+      "category": "ikhtilaf-completeness",
+      "owner": "U-3",
+      "depends_on": ["U-3"],
+      "minimum_scenarios": 3,
+      "required_assertions": [
+        "all supported positions remain present and attributed",
+        "ikhtilaf-v1 is advisory and human-sampled",
+        "deterministic attribution failure is blocking"
+      ]
+    },
+    {
+      "id": "u4-lens-matrix",
+      "category": "lens-no-flattening",
+      "owner": "U-4",
+      "depends_on": ["U-3", "U-4"],
+      "minimum_scenarios": 6,
+      "required_assertions": [
+        "every style by madhhab matrix combination preserves the multi-position panel",
+        "lens framing is labelled",
+        "personalization never removes or merges an attributed position"
+      ]
+    },
+    {
+      "id": "h7-hadith",
+      "category": "hadith",
+      "owner": "H-7",
+      "depends_on": ["H-7"],
+      "minimum_scenarios": 10,
+      "required_assertions": [
+        "grading is per authority and never global",
+        "lafaz is verbatim",
+        "daif is never displayed as sahih",
+        "takhrij and retrieval eligibility remain resolvable"
+      ]
+    },
+    {
+      "id": "w7-wiki",
+      "category": "wiki",
+      "owner": "W-7",
+      "depends_on": ["W-7"],
+      "minimum_scenarios": 10,
+      "required_assertions": [
+        "approved claims have source citations",
+        "biography and according-to-scholar queries resolve expected Anchors",
+        "confusable entities remain distinct"
+      ]
+    }
+  ]
+}

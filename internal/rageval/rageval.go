@@ -1,3 +1,4 @@
+//nolint:gocritic,wsl_v5 // Evaluation snapshots are immutable values and the request lifecycle stays explicit.
 package rageval
 
 import (
@@ -12,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"reflect"
+	"slices"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -21,6 +23,7 @@ const (
 	DefaultBaseURL              = "http://127.0.0.1:8080"
 	DefaultCasesPath            = "eval/bookrag_smoke.jsonl"
 	DefaultTimeout              = 150 * time.Second
+	EvalReportSchemaVersion     = "eval-report-v1"
 	anchorResolutionMaxBodySize = 1 << 20
 	sseScannerInitialBufferSize = 64 * 1024
 	sseScannerMaxLineSize       = 4 * 1024 * 1024
@@ -33,12 +36,15 @@ var (
 	errSSEMissingEvent       = errors.New("missing required SSE event")
 	errSSECitationsDivergent = errors.New("citations event differs from done response")
 	errServiceTokenBaseURL   = errors.New("service token base URL must be absolute")
+	errNoCasesForProfile     = errors.New("no cases selected for profile")
 )
 
 // Options configures a BookRAG evaluation run.
 type Options struct {
 	BaseURL              string
 	CasesPath            string
+	CatalogPath          string
+	Profile              string
 	Output               string
 	Timeout              time.Duration
 	FailFast             bool
@@ -48,14 +54,20 @@ type Options struct {
 	ExpectedCitationMode string
 	ForbidLegacyFallback bool
 	ProgressWriter       io.Writer
+	JudgeURL             string
+	JudgeToken           string
+	SampleMonth          string
+	CommitSHA            string
 	// ServiceToken identifies the runner on Surau requests. It never changes
 	// rate limits or public response semantics.
 	ServiceToken string
 }
 
-// GoldenCase is one JSONL evaluation case.
-type GoldenCase struct {
+// EvalCase is one backwards-compatible JSONL evaluation case.
+type EvalCase struct {
 	Name                  string   `json:"name"`
+	Categories            []string `json:"categories,omitempty"`
+	Profiles              []string `json:"profiles,omitempty"`
 	BookID                int      `json:"book_id"`
 	Lang                  string   `json:"lang,omitempty"`
 	Question              string   `json:"question"`
@@ -69,42 +81,65 @@ type GoldenCase struct {
 	ExpectedHeadingIDs    []int    `json:"expected_heading_ids,omitempty"`
 	ExpectedPageIDs       []int    `json:"expected_page_ids,omitempty"`
 	AnswerMustContain     []string `json:"answer_must_contain,omitempty"`
+	AnswerMustNotContain  []string `json:"answer_must_not_contain,omitempty"`
 	QuoteMustContain      []string `json:"quote_must_contain,omitempty"`
 	RequireUnitCitations  bool     `json:"require_unit_citations,omitempty"`
+	ForbiddenAnchorPrefix []string `json:"forbidden_unit_anchor_prefixes,omitempty"`
+	JudgeRubricVersion    string   `json:"judge_rubric_version,omitempty"`
 }
 
-// Summary is the machine-readable output for one evaluation run.
-type Summary struct {
-	BaseURL    string        `json:"base_url"`
-	CasesPath  string        `json:"cases_path"`
-	Total      int           `json:"total"`
-	Passed     int           `json:"passed"`
-	Failed     int           `json:"failed"`
-	Warnings   int           `json:"warnings"`
-	DurationMS int64         `json:"duration_ms"`
-	Results    []CaseResult  `json:"results"`
-	StartedAt  time.Time     `json:"started_at"`
-	FinishedAt time.Time     `json:"finished_at"`
-	Timeout    time.Duration `json:"timeout"`
+// GoldenCase is retained as an alias so existing callers and JSONL files keep
+// compiling while U-6 grows the harness beyond the original BookRAG surface.
+type GoldenCase = EvalCase
+
+// EvalReport is the machine-readable U-6 report for one evaluation run.
+type EvalReport struct {
+	SchemaVersion  string            `json:"schema_version"`
+	CatalogHash    string            `json:"catalog_hash,omitempty"`
+	CommitSHA      string            `json:"commit_sha,omitempty"`
+	Profile        string            `json:"profile,omitempty"`
+	BaseURL        string            `json:"base_url"`
+	CasesPath      string            `json:"cases_path"`
+	Total          int               `json:"total"`
+	Passed         int               `json:"passed"`
+	Failed         int               `json:"failed"`
+	Warnings       int               `json:"warnings"`
+	PassRate       float64           `json:"pass_rate"`
+	DurationMS     int64             `json:"duration_ms"`
+	Results        []CaseResult      `json:"results"`
+	Categories     []CategorySummary `json:"categories,omitempty"`
+	Judges         []JudgeSummary    `json:"judges,omitempty"`
+	HumanSamples   []HumanSample     `json:"human_samples,omitempty"`
+	MigrationState MigrationState    `json:"migration_state"`
+	StartedAt      time.Time         `json:"started_at"`
+	FinishedAt     time.Time         `json:"finished_at"`
+	Timeout        time.Duration     `json:"timeout"`
 }
+
+// Summary remains a compatibility alias for the pre-U-6 command.
+type Summary = EvalReport
 
 // CaseResult is the assertion result for one golden case.
 type CaseResult struct {
-	Name       string     `json:"name"`
-	BookID     int        `json:"book_id"`
-	Question   string     `json:"question"`
-	Passed     bool       `json:"passed"`
-	Errors     []string   `json:"errors,omitempty"`
-	Warnings   []string   `json:"warnings,omitempty"`
-	DurationMS int64      `json:"duration_ms"`
-	StatusCode int        `json:"status_code"`
-	Attempt    int        `json:"attempt"`
-	Answer     string     `json:"answer,omitempty"`
-	Citations  []Citation `json:"citations,omitempty"`
-	Trace      *Trace     `json:"trace,omitempty"`
-	HTTPBody   string     `json:"http_body,omitempty"`
-	Error      string     `json:"error,omitempty"`
-	Case       GoldenCase `json:"case"`
+	Name               string       `json:"name"`
+	Categories         []string     `json:"categories,omitempty"`
+	Runner             string       `json:"runner,omitempty"`
+	BookID             int          `json:"book_id"`
+	Question           string       `json:"question"`
+	Passed             bool         `json:"passed"`
+	Errors             []string     `json:"errors,omitempty"`
+	Warnings           []string     `json:"warnings,omitempty"`
+	DurationMS         int64        `json:"duration_ms"`
+	StatusCode         int          `json:"status_code"`
+	Attempt            int          `json:"attempt"`
+	FirstAttemptFailed bool         `json:"first_attempt_failed,omitempty"`
+	Answer             string       `json:"answer,omitempty"`
+	Citations          []Citation   `json:"citations,omitempty"`
+	Trace              *Trace       `json:"trace,omitempty"`
+	HTTPBody           string       `json:"http_body,omitempty"`
+	Error              string       `json:"error,omitempty"`
+	Judge              *JudgeResult `json:"judge,omitempty"`
+	Case               GoldenCase   `json:"case"`
 }
 
 // Citation mirrors the public BookRAG citation payload.
@@ -209,6 +244,36 @@ func Run(ctx context.Context, opts Options) (Summary, error) {
 	if err != nil {
 		return Summary{}, err
 	}
+
+	var catalog *EvalCatalog
+	if strings.TrimSpace(opts.CatalogPath) != "" {
+		loaded, loadErr := LoadCatalog(opts.CatalogPath)
+		if loadErr != nil {
+			return Summary{}, loadErr
+		}
+		catalog = &loaded
+	}
+
+	selected := make([]GoldenCase, 0, len(cases))
+	for _, tc := range cases {
+		if !profileMatches(tc.Profiles, opts.Profile) {
+			continue
+		}
+		if catalog != nil {
+			definition, ok := caseDefinitionBySource(*catalog, opts.Profile, tc.Name)
+			if !ok {
+				continue
+			}
+			tc.Name = definition.ID
+			tc.Categories = slices.Clone(definition.Categories)
+		}
+		selected = append(selected, tc)
+	}
+	cases = selected
+	if len(cases) == 0 {
+		return Summary{}, errNoCasesForProfile
+	}
+
 	if opts.Limit > 0 && opts.Limit < len(cases) {
 		cases = cases[:opts.Limit]
 	}
@@ -234,13 +299,40 @@ func Run(ctx context.Context, opts Options) (Summary, error) {
 		}
 
 		var result CaseResult
+		var firstAttemptDetail string
+		firstAttemptFailed := false
 		for attempt := 1; attempt <= opts.Retries+1; attempt++ {
 			writeProgress(opts.ProgressWriter, "start", tc, attempt, CaseResult{})
 			result = EvaluateCase(ctx, client, opts.BaseURL, tc, opts.StrictAnswer)
 			result.Attempt = attempt
+			if attempt == 1 && !result.Passed {
+				firstAttemptFailed = true
+				firstAttemptDetail = result.Error
+				if firstAttemptDetail == "" {
+					firstAttemptDetail = strings.Join(result.Errors, "; ")
+				}
+			}
 			writeProgress(opts.ProgressWriter, "finish", tc, attempt, result)
 			if result.Passed {
 				break
+			}
+		}
+		result.FirstAttemptFailed = firstAttemptFailed
+		if result.Passed && firstAttemptFailed {
+			result.Warnings = append(
+				result.Warnings,
+				"passed only after retry; first attempt failed: "+firstAttemptDetail,
+			)
+		}
+		if result.Passed && strings.TrimSpace(tc.JudgeRubricVersion) != "" {
+			judged := evaluateJudge(ctx, opts.BaseURL, opts, tc, result)
+			result.Judge = &judged
+			if judged.Status != "completed" {
+				detail := judged.Reason
+				if detail == "" {
+					detail = judged.Error
+				}
+				result.Warnings = append(result.Warnings, "judge "+judged.Status+": "+detail)
 			}
 		}
 		results = append(results, result)
@@ -251,23 +343,19 @@ func Run(ctx context.Context, opts Options) (Summary, error) {
 	finishedAt := time.Now()
 
 	summary := Summary{
-		BaseURL:    opts.BaseURL,
-		CasesPath:  opts.CasesPath,
-		Total:      len(results),
-		Results:    results,
-		StartedAt:  startedAt,
-		FinishedAt: finishedAt,
-		DurationMS: finishedAt.Sub(startedAt).Milliseconds(),
-		Timeout:    opts.Timeout,
+		SchemaVersion: EvalReportSchemaVersion,
+		CommitSHA:     strings.TrimSpace(opts.CommitSHA),
+		Profile:       opts.Profile,
+		BaseURL:       opts.BaseURL,
+		CasesPath:     opts.CasesPath,
+		Results:       results,
+		StartedAt:     startedAt,
+		FinishedAt:    finishedAt,
+		DurationMS:    finishedAt.Sub(startedAt).Milliseconds(),
+		Timeout:       opts.Timeout,
 	}
-	for _, result := range results {
-		if result.Passed {
-			summary.Passed++
-		} else {
-			summary.Failed++
-		}
-		summary.Warnings += len(result.Warnings)
-	}
+	refreshReport(&summary, catalog)
+	summary.HumanSamples = selectHumanSamples(summary.Results, opts.SampleMonth)
 
 	return summary, nil
 }
@@ -355,10 +443,12 @@ func EvaluateCase(
 ) (result CaseResult) {
 	start := time.Now()
 	result = CaseResult{
-		Name:     tc.Name,
-		BookID:   tc.BookID,
-		Question: tc.Question,
-		Case:     tc,
+		Name:       tc.Name,
+		Categories: slices.Clone(tc.Categories),
+		Runner:     RunnerHTTPBookRAG,
+		BookID:     tc.BookID,
+		Question:   tc.Question,
+		Case:       tc,
 	}
 	defer func() {
 		result.DurationMS = time.Since(start).Milliseconds()
@@ -507,6 +597,8 @@ func WriteSummary(w io.Writer, summary Summary, output string) error {
 		encoder := json.NewEncoder(w)
 		encoder.SetIndent("", "  ")
 		return encoder.Encode(summary)
+	case "markdown":
+		return writeMarkdown(w, summary)
 	default:
 		return fmt.Errorf("unsupported output %q", output)
 	}
@@ -528,6 +620,7 @@ func normalizeOptions(opts Options) Options {
 	if strings.TrimSpace(opts.Output) == "" {
 		opts.Output = "table"
 	}
+	opts.Profile = strings.TrimSpace(opts.Profile)
 
 	return opts
 }
@@ -733,6 +826,21 @@ func validateResponse(tc GoldenCase, resp ragResponse, strictAnswer bool) ([]str
 			}
 		}
 	}
+	for i := range resp.Citations {
+		citation := &resp.Citations[i]
+		if citation.UnitAnchor == nil {
+			continue
+		}
+		for _, prefix := range tc.ForbiddenAnchorPrefix {
+			if strings.HasPrefix(*citation.UnitAnchor, prefix) {
+				errs = append(errs, fmt.Sprintf(
+					"citation[%d] unit_anchor has forbidden prefix %q",
+					i,
+					prefix,
+				))
+			}
+		}
+	}
 	if len(tc.ExpectedHeadingIDs) > 0 && !anyCitationHeading(resp.Citations, tc.ExpectedHeadingIDs) {
 		errs = append(errs, fmt.Sprintf("expected citation heading in %v", tc.ExpectedHeadingIDs))
 	}
@@ -747,6 +855,11 @@ func validateResponse(tc GoldenCase, resp ragResponse, strictAnswer bool) ([]str
 			} else {
 				warnings = append(warnings, message)
 			}
+		}
+	}
+	for _, needle := range tc.AnswerMustNotContain {
+		if containsFold(resp.Answer, needle) {
+			errs = append(errs, fmt.Sprintf("answer contains forbidden %q", needle))
 		}
 	}
 	for _, needle := range tc.QuoteMustContain {

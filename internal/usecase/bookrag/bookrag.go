@@ -50,6 +50,12 @@ var (
 	looseNodeIDsRE         = regexp.MustCompile(`(?i)(?:node_ids|heading_ids)\s*:\s*\[([^\]]+)\]`)
 	looseSelectionDoneRE   = regexp.MustCompile(`(?i)done\s*:\s*(true|false)`)
 	looseSelectionIDItemRE = regexp.MustCompile(`\d+`)
+	contentInstructionRE   = regexp.MustCompile(
+		`(?i)(ignore (all |any |the )?(previous|prior) instructions?|` +
+			`system (message|prompt)|developer (message|instruction)|` +
+			`prompt injection|follow (this|these) instructions?|` +
+			`output exactly|respond (only )?with|print exactly)`,
+	)
 
 	// Labels are intentionally bounded enums: never attach book/unit IDs.
 	bookRAGRequests = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -1092,10 +1098,10 @@ func sourceLikelyContainsAnswer(question string, sources []entity.RAGPageSource)
 	for _, source := range sources {
 		haystack.WriteString(source.HeadingTitle)
 		haystack.WriteByte(' ')
-		haystack.WriteString(source.ContentText)
+		haystack.WriteString(withoutContentInstructions(source.ContentText))
 		haystack.WriteByte(' ')
 		if source.TranslationText != nil {
-			haystack.WriteString(*source.TranslationText)
+			haystack.WriteString(withoutContentInstructions(*source.TranslationText))
 			haystack.WriteByte(' ')
 		}
 	}
@@ -1143,7 +1149,7 @@ func extractiveFallbackAnswer(
 }
 
 func fallbackQuote(question string, source entity.RAGPageSource) string {
-	segments := sourceSegments(source.ContentText)
+	segments := sourceSegments(withoutContentInstructions(source.ContentText))
 	if len(segments) == 0 {
 		return ""
 	}
@@ -1259,7 +1265,8 @@ func answerPrompt(question string, sources []entity.RAGPageSource, invalidAnswer
 		user.WriteString(formatSourceBlock(source))
 		user.WriteString("\n")
 	}
-	if invalidAnswer != "" {
+
+	if invalidAnswer != "" && !answerContainsContentInstructionPayload(invalidAnswer, sources) {
 		user.WriteString("\nInvalid previous answer:\n")
 		user.WriteString(invalidAnswer)
 	}
@@ -1277,11 +1284,11 @@ func formatSourceBlock(source entity.RAGPageSource) string {
 		source.PageID,
 		nullableStringValue(source.PrintedPage),
 		nullableStringValue(source.Part),
-		clipText(source.ContentText, sourceTextLimit),
+		clipText(withoutContentInstructions(source.ContentText), sourceTextLimit),
 	))
 	if source.TranslationText != nil && source.PageID == source.StartPageID {
 		builder.WriteString("Translation aid:\n")
-		builder.WriteString(clipText(*source.TranslationText, translationLimit))
+		builder.WriteString(clipText(withoutContentInstructions(*source.TranslationText), translationLimit))
 		builder.WriteByte('\n')
 	}
 
@@ -1777,6 +1784,7 @@ type citationDraft struct {
 	Quote string
 }
 
+//nolint:wsl_v5 // Marker, source, and verbatim checks form one fail-closed validation pipeline.
 func parseAndValidateAnswer(
 	raw string,
 	sources []entity.RAGPageSource,
@@ -1784,6 +1792,9 @@ func parseAndValidateAnswer(
 ) (string, []entity.BookRAGCitation, bool) {
 	completion, err := parseAnswerCompletion(raw)
 	if err != nil || strings.TrimSpace(completion.Answer) == "" {
+		return "", nil, false
+	}
+	if answerContainsContentInstructionPayload(completion.Answer, sources) {
 		return "", nil, false
 	}
 
@@ -1828,11 +1839,12 @@ func parseAndValidateAnswer(
 		}
 
 		quote := strings.TrimSpace(draft.Quote)
-		if source.UnitID != nil && !strings.Contains(source.ContentText, quote) {
+		safeContent := withoutContentInstructions(source.ContentText)
+		if source.UnitID != nil && !strings.Contains(safeContent, quote) {
 			return "", nil, false
 		}
 
-		if source.UnitID == nil && !containsNormalized(source.ContentText, quote) {
+		if source.UnitID == nil && !containsNormalized(safeContent, quote) {
 			return "", nil, false
 		}
 
@@ -1853,6 +1865,53 @@ func parseAndValidateAnswer(
 	}
 
 	return completion.Answer, citations, true
+}
+
+// withoutContentInstructions removes lines that look like instructions to the
+// model. Corpus text is untrusted data: such lines are neither sent as evidence
+// nor accepted as verbatim citations.
+//
+//nolint:wsl_v5 // Line filtering is intentionally compact so removed evidence is auditable.
+func withoutContentInstructions(content string) string {
+	lines := strings.Split(strings.ReplaceAll(content, "\r\n", "\n"), "\n")
+	safe := make([]string, 0, len(lines))
+	for _, line := range lines {
+		if contentInstructionRE.MatchString(line) {
+			continue
+		}
+		safe = append(safe, line)
+	}
+
+	return strings.TrimSpace(strings.Join(safe, "\n"))
+}
+
+//nolint:cyclop,gocognit,gocritic,gocyclo,wsl_v5 // Every untrusted source/text/token is scanned fail-closed before output.
+func answerContainsContentInstructionPayload(
+	answer string,
+	sources []entity.RAGPageSource,
+) bool {
+	for _, source := range sources {
+		for _, content := range []string{source.ContentText, nullableStringValue(source.TranslationText)} {
+			for line := range strings.SplitSeq(strings.ReplaceAll(content, "\r\n", "\n"), "\n") {
+				if !contentInstructionRE.MatchString(line) {
+					continue
+				}
+				line = strings.TrimSpace(line)
+				if line != "" && strings.Contains(answer, line) {
+					return true
+				}
+				for token := range strings.FieldsSeq(line) {
+					token = strings.Trim(token, `"'`+"`"+`.,:;!?()[]{}<>`)
+					if len(token) >= 8 && strings.Contains(token, "_") &&
+						strings.Contains(answer, token) {
+						return true
+					}
+				}
+			}
+		}
+	}
+
+	return false
 }
 
 func parseAnswerCompletion(raw string) (answerCompletion, error) {
