@@ -1,9 +1,9 @@
-name: RAG Eval Smoke
-# F1-D9: scheduled + non-gating by construction (never runs on pull_request,
-# so it can never block a merge — the full eval gate belongs to Fase 7). It
-# drives the black-box harness against dev-api, which already has the seeded
-# corpus and a configured LLM; a failure alarms Telegram so RAG regressions
-# surface early instead of waiting for a user.
+name: RAG Eval W3
+
+# U-6 W3 scheduled observation. It never runs on pull_request, so it cannot
+# block a merge. A red run is still intentional: Telegram turns deterministic
+# regressions, first-attempt flakes, and missing advisory judge coverage into
+# an operator alarm.
 on:
   schedule:
     # Sunday 19:00 UTC = Monday 02:00 WIB, weekly.
@@ -11,11 +11,30 @@ on:
   workflow_dispatch: {}
 
 jobs:
-  smoke:
-    name: runner / rag-eval-smoke
+  evaluate-dev:
+    name: runner / rag-eval / U-6 scheduled dev
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 35
+    services:
+      postgres:
+        image: postgres:18.4-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
     env:
+      PG_URL: "postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable"
+      SURAU_LIVE_PG: "postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable"
+      RAG_EVAL_BASE_URL: https://dev-api.surau.org
+      RAG_EVAL_SERVICE_TOKEN: ${{ secrets.RAG_EVAL_SERVICE_TOKEN }}
+      RAG_EVAL_JUDGE_TOKEN: ${{ secrets.RAG_EVAL_SERVICE_TOKEN }}
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
     steps:
@@ -23,60 +42,125 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version: 1.26.5
-      - name: Check the eval corpus exists on dev
-        id: corpus
-        # The smoke cases pin Shamela book IDs; dev currently carries only a
-        # sample subset, so run the harness only once those books are imported
-        # (data task) — a skip is reported loudly instead of a permanent red.
+      - name: Install migrate CLI
+        run: go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.19.1
+      - name: Apply migrations for the construction gate
+        run: migrate -path migrations -database "$PG_URL" up
+      - name: Pin report identity to the deployed dev version
         run: |
           set -euo pipefail
-          missing=""
-          for book in 797 7312 12876; do
-            code="$(curl -s -o /dev/null -w '%{http_code}' "https://dev-api.surau.org/v1/books/${book}")"
-            [ "$code" = "200" ] || missing="${missing} ${book}"
-          done
-          if [ -n "$missing" ]; then
-            echo "present=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::rag-eval smoke SKIPPED — eval books not on dev-api yet:${missing}"
-            {
-              echo "### RAG eval smoke: DILEWATI"
-              echo ""
-              echo "Buku korpus eval belum ada di dev-api:${missing} — impor dulu (tugas data), lalu smoke ini otomatis berjalan penuh."
-            } >> "$GITHUB_STEP_SUMMARY"
+          version="$(curl -fsS https://dev-api.surau.org/version | jq -r '.version')"
+          [[ "$version" =~ ^dev-[0-9a-f]{7}$ ]]
+          echo "RAG_EVAL_COMMIT_SHA=${version#dev-}" >> "$GITHUB_ENV"
+      - name: Run named deterministic construction cases
+        run: |
+          set -euo pipefail
+          case_pattern='^(TestUseCaseRejectsContentInjectionAndRepairsFromEvidence|'
+          case_pattern+='TestUseCaseRejectsContentInjectionWhenRepairRepeatsAttack|'
+          case_pattern+='TestEvaluateCaseFailsInvalidCitationLocator|TestEvaluateCaseFailsMissingQuote|'
+          case_pattern+='TestLiveQuranCitableUnitsNeverInterpretiveEligible)$'
+          go test -p 1 -count=1 -json \
+            -run "$case_pattern" \
+            ./internal/rageval ./internal/usecase/bookrag ./internal/repo/persistent \
+            | tee u6-go-test.jsonl
+      - name: Run W3 HTTP profile with one observable scheduled retry
+        id: http
+        run: |
+          set +e
+          go run ./cmd/rag-eval run \
+            -catalog eval/u6/catalog.json \
+            -profile scheduled \
+            -cases eval/u6/w3_http.jsonl \
+            -retries 1 \
+            -output json \
+            -verbose > u6-http-report.json 2> >(tee u6-http-progress.log >&2)
+          status=$?
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          exit 0
+      - name: Merge category report and enforce deterministic policy
+        id: gate
+        run: |
+          set +e
+          go run ./cmd/rag-eval report \
+            -catalog eval/u6/catalog.json \
+            -profile scheduled \
+            -http-report u6-http-report.json \
+            -go-test-json u6-go-test.jsonl \
+            -output json > u6-report.json
+          report_status=$?
+          if [ "$report_status" -eq 0 ]; then
+            go run ./cmd/rag-eval report \
+              -catalog eval/u6/catalog.json \
+              -profile scheduled \
+              -http-report u6-http-report.json \
+              -go-test-json u6-go-test.jsonl \
+              -output markdown > u6-report.md
+            go run ./cmd/rag-eval gate \
+              -catalog eval/u6/catalog.json \
+              -report u6-report.json > u6-gate.json
+            gate_status=$?
           else
-            echo "present=true" >> "$GITHUB_OUTPUT"
+            gate_status=1
           fi
-      - name: Telegram notice — smoke skipped (corpus missing)
-        if: steps.corpus.outputs.present == 'false'
-        uses: ./.github/actions/telegram-notify
+          echo "report_status=$report_status" >> "$GITHUB_OUTPUT"
+          echo "gate_status=$gate_status" >> "$GITHUB_OUTPUT"
+          exit 0
+      - name: Publish pass-rate dashboard
+        if: always()
+        run: |
+          if [ -f u6-report.md ]; then
+            cat u6-report.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            {
+              echo "## U-6 evaluation"
+              echo ""
+              echo "Report could not be built; inspect the uploaded raw artifacts."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Upload W3 report and human-review packet
+        if: always()
+        uses: actions/upload-artifact@v4
         with:
-          message: >-
-            ⚠️ RAG eval smoke DILEWATI: buku korpus eval (797/7312/12876) belum diimpor ke dev-api.
-            Smoke berjalan penuh otomatis setelah impor:
-            ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-      - name: Run rag-eval smoke against dev-api
-        if: steps.corpus.outputs.present == 'true'
+          name: u6-scheduled-eval
+          path: |
+            u6-go-test.jsonl
+            u6-http-report.json
+            u6-http-progress.log
+            u6-report.json
+            u6-report.md
+            u6-gate.json
+      - name: Raise scheduled alarms
+        if: always()
         env:
-          RAG_EVAL_SERVICE_TOKEN: ${{ secrets.RAG_EVAL_SERVICE_TOKEN }}
+          HTTP_STATUS: ${{ steps.http.outputs.status }}
+          REPORT_STATUS: ${{ steps.gate.outputs.report_status }}
+          GATE_STATUS: ${{ steps.gate.outputs.gate_status }}
         run: |
           set -euo pipefail
-          go run ./cmd/rag-eval -base-url https://dev-api.surau.org \
-            -cases eval/bookrag_smoke.jsonl -output json -verbose | tee rag-eval.json
-      - name: Publish result summary
-        if: always() && steps.corpus.outputs.present == 'true'
-        run: |
-          set -euo pipefail
-          {
-            echo "### RAG eval smoke (non-gating, F1-D9)"
-            echo ""
-            echo '```json'
-            cat rag-eval.json 2>/dev/null || echo '"no output produced"'
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-      - name: Telegram alarm — RAG smoke failed
+          alarm=0
+          if [ "${HTTP_STATUS:-1}" -ne 0 ] ||
+             [ "${REPORT_STATUS:-1}" -ne 0 ] ||
+             [ "${GATE_STATUS:-1}" -ne 0 ]; then
+            echo "::error::U-6 deterministic scheduled evaluation failed"
+            alarm=1
+          fi
+          if [ -f u6-report.json ] &&
+             jq -e '.results[] | select(.first_attempt_failed == true)' u6-report.json >/dev/null; then
+            echo "::error::At least one case failed its first attempt; retry did not erase the alarm"
+            alarm=1
+          fi
+          if [ -f u6-report.json ] &&
+             jq -e '.results[] | select(.judge.status != null and .judge.status != "completed")' \
+               u6-report.json >/dev/null; then
+            echo "::error::Advisory judge was skipped or failed"
+            alarm=1
+          fi
+          exit "$alarm"
+      - name: Telegram alarm — U-6 scheduled eval failed
         if: failure()
         uses: ./.github/actions/telegram-notify
         with:
           message: >-
-            ❌ RAG eval smoke GAGAL terhadap dev-api (regresi RAG atau dev-api bermasalah):
+            ❌ U-6 W3 eval di dev-api memerlukan perhatian. Periksa pass-rate
+            per kategori, percobaan pertama, dan status judge:
             ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

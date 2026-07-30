@@ -1,0 +1,10 @@
+{
+  "version": "ikhtilaf-v1",
+  "kind": "ikhtilaf",
+  "criteria": [
+    "Every materially different position present in the supplied evidence remains visible.",
+    "Each position is attributed to its named authority or school.",
+    "No preference or framing erases disagreement or creates a platform-wide verdict."
+  ],
+  "failure_policy": "Omitting, flattening, or misattributing a documented position is a failure."
+}

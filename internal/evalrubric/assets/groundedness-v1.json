@@ -1,0 +1,10 @@
+{
+  "version": "groundedness-v1",
+  "kind": "groundedness",
+  "criteria": [
+    "Every factual claim in the answer is supported by the supplied verbatim evidence.",
+    "Citation markers refer only to supplied evidence.",
+    "The answer does not introduce an interpretation that is absent from the evidence."
+  ],
+  "failure_policy": "Any unsupported factual claim, missing evidence, or invalid output is a failure."
+}

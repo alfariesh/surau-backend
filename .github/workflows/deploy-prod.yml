@@ -15,8 +15,104 @@ permissions:
   contents: write
 
 jobs:
+  eval-gate:
+    name: Pre-deploy / U-6 retrieval release gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    services:
+      postgres:
+        image: postgres:18.4-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PG_URL: "postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable"
+      SURAU_LIVE_PG: "postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable"
+      RAG_EVAL_BASE_URL: https://dev-api.surau.org
+      RAG_EVAL_SERVICE_TOKEN: ${{ secrets.RAG_EVAL_SERVICE_TOKEN }}
+      RAG_EVAL_JUDGE_TOKEN: ${{ secrets.RAG_EVAL_SERVICE_TOKEN }}
+      RAG_EVAL_COMMIT_SHA: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: 1.26.5
+      - name: Require the exact tag SHA to be proven on dev
+        run: |
+          set -euo pipefail
+          expected="dev-${GITHUB_SHA:0:7}"
+          actual="$(curl -fsS https://dev-api.surau.org/version | jq -r '.version')"
+          if [ "$actual" != "$expected" ]; then
+            echo "release blocked: dev reports $actual, expected $expected" >&2
+            exit 1
+          fi
+      - name: Install migrate CLI
+        run: go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.19.1
+      - name: Apply migrations for the construction gate
+        run: migrate -path migrations -database "$PG_URL" up
+      - name: Run named deterministic W3 cases without retry
+        run: |
+          set -euo pipefail
+          case_pattern='^(TestUseCaseRejectsContentInjectionAndRepairsFromEvidence|'
+          case_pattern+='TestUseCaseRejectsContentInjectionWhenRepairRepeatsAttack|'
+          case_pattern+='TestEvaluateCaseFailsInvalidCitationLocator|TestEvaluateCaseFailsMissingQuote|'
+          case_pattern+='TestLiveQuranCitableUnitsNeverInterpretiveEligible)$'
+          go test -p 1 -count=1 -json \
+            -run "$case_pattern" \
+            ./internal/rageval ./internal/usecase/bookrag ./internal/repo/persistent \
+            | tee u6-go-test.jsonl
+      - name: Run exact W3 HTTP release profile without retry
+        run: |
+          set -euo pipefail
+          go run ./cmd/rag-eval run \
+            -catalog eval/u6/catalog.json \
+            -profile release \
+            -cases eval/u6/w3_http.jsonl \
+            -retries 0 \
+            -output json \
+            -verbose > u6-http-report.json
+      - name: Build and enforce release category report
+        run: |
+          set -euo pipefail
+          go run ./cmd/rag-eval report \
+            -catalog eval/u6/catalog.json \
+            -profile release \
+            -http-report u6-http-report.json \
+            -go-test-json u6-go-test.jsonl \
+            -output json > u6-report.json
+          go run ./cmd/rag-eval report \
+            -catalog eval/u6/catalog.json \
+            -profile release \
+            -http-report u6-http-report.json \
+            -go-test-json u6-go-test.jsonl \
+            -output markdown > u6-report.md
+          cat u6-report.md >> "$GITHUB_STEP_SUMMARY"
+          go run ./cmd/rag-eval gate \
+            -catalog eval/u6/catalog.json \
+            -report u6-report.json > u6-gate.json
+      - name: Upload U-6 release evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: u6-release-eval
+          path: |
+            u6-go-test.jsonl
+            u6-http-report.json
+            u6-report.json
+            u6-report.md
+            u6-gate.json
+
   deploy:
     name: Deploy backend to PROD VPS
+    needs: eval-gate
     runs-on: ubuntu-latest
     timeout-minutes: 45
     environment: prod

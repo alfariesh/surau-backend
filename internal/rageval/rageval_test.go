@@ -1,3 +1,4 @@
+//nolint:wsl_v5 // HTTP fixture routing and assertion setup stay adjacent for readability.
 package rageval
 
 import (
@@ -208,7 +209,64 @@ func TestEvaluateCaseRequiresUnitAnchorToResolveToCitationUnit(t *testing.T) {
 	assert.True(t, result.Passed, result.Errors)
 }
 
-func TestEvaluateCaseFailsWrongPage(t *testing.T) {
+func TestEvaluateCaseFailsInvalidCitationLocator(t *testing.T) {
+	t.Parallel()
+
+	t.Run("wrong page", func(t *testing.T) {
+		t.Parallel()
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprint(w, `{
+				"book_id":797,
+				"answer":"Jawaban [1].",
+				"citations":[{"ref":"1","book_id":797,"heading_id":11,"page_id":99,"anchor":"toc-11","quote":"x","url":"/x"}],
+				"trace":{"retrieval_mode":"full_tree","tree_llm_calls":1,"repaired":false}
+			}`)
+		}))
+		defer server.Close()
+
+		result := EvaluateCase(context.Background(), server.Client(), server.URL, GoldenCase{
+			Name:            "wrong_page",
+			BookID:          797,
+			Question:        "Apa definisi hadis sahih?",
+			ExpectedPageIDs: []int{12},
+		}, false)
+
+		assert.False(t, result.Passed)
+		assert.Contains(t, result.Errors, "expected citation page in [12]")
+	})
+
+	t.Run("unresolvable unit anchor", func(t *testing.T) {
+		t.Parallel()
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			if r.URL.Path == "/v1/anchors/resolve" {
+				fmt.Fprint(w, `{"boundaries":[{"active_targets":[{"unit_id":"different-unit"}]}]}`)
+
+				return
+			}
+			fmt.Fprint(w, `{
+				"book_id":797,
+				"answer":"Jawaban [1].",
+				"citations":[{"ref":"1","book_id":797,"heading_id":11,"page_id":12,"anchor":"toc-11","quote":"x","url":"/x","unit_id":"unit-1","unit_anchor":"kitab/797/h/11/u/42"}],
+				"trace":{"retrieval_mode":"full_tree","tree_llm_calls":1,"repaired":false}
+			}`)
+		}))
+		defer server.Close()
+
+		result := EvaluateCase(context.Background(), server.Client(), server.URL, GoldenCase{
+			Name: "unresolvable_anchor", BookID: 797, Question: "question",
+			RequireUnitCitations: true,
+		}, false)
+
+		assert.False(t, result.Passed)
+		assert.Contains(t, result.Errors, "citation[0] unit_anchor did not resolve to unit_id")
+	})
+}
+
+func TestEvaluateCaseFailsMissingQuote(t *testing.T) {
 	t.Parallel()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -216,21 +274,19 @@ func TestEvaluateCaseFailsWrongPage(t *testing.T) {
 		fmt.Fprint(w, `{
 			"book_id":797,
 			"answer":"Jawaban [1].",
-			"citations":[{"ref":"1","book_id":797,"heading_id":11,"page_id":99,"anchor":"toc-11","quote":"x","url":"/x"}],
+			"citations":[{"ref":"1","book_id":797,"heading_id":11,"page_id":12,"anchor":"toc-11","quote":"x","url":"/x"}],
 			"trace":{"retrieval_mode":"full_tree","tree_llm_calls":1,"repaired":false}
 		}`)
 	}))
 	defer server.Close()
 
 	result := EvaluateCase(context.Background(), server.Client(), server.URL, GoldenCase{
-		Name:            "wrong_page",
-		BookID:          797,
-		Question:        "Apa definisi hadis sahih?",
-		ExpectedPageIDs: []int{12},
+		Name: "missing_quote", BookID: 797, Question: "question",
+		QuoteMustContain: []string{"verbatim evidence is absent"},
 	}, false)
 
 	assert.False(t, result.Passed)
-	assert.Contains(t, result.Errors, "expected citation page in [12]")
+	assert.Contains(t, result.Errors, `citation quote missing "verbatim evidence is absent"`)
 }
 
 func TestEvaluateCasePassesNotFound(t *testing.T) {
@@ -375,6 +431,8 @@ func TestRunRetriesFailedCase(t *testing.T) {
 	require.Len(t, summary.Results, 1)
 	assert.Equal(t, 2, calls)
 	assert.Equal(t, 2, summary.Results[0].Attempt)
+	assert.True(t, summary.Results[0].FirstAttemptFailed)
+	assert.Contains(t, summary.Results[0].Warnings[0], "passed only after retry")
 	assert.Equal(t, 1, summary.Passed)
 }
 

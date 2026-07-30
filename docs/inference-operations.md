@@ -48,6 +48,8 @@ JSON mengembalikan HTTP `503`, code `inference_budget_exceeded`, `Retry-After`, 
 waktu reset. SSE mengirim satu event `error` terstruktur lalu berhenti sebelum delta jawaban.
 Generator keluar dengan kode `75`, mempertahankan output lama, dan dapat dilanjutkan dengan
 `--resume`. Judge/eval gagal atau dilewati; cap tidak pernah dianggap sebagai hasil lulus.
+Pada U-6, judge tetap advisory terhadap gate deterministik, tetapi status skip/error masuk
+dashboard terpisah dan menyalakan alarm workflow scheduled.
 
 ## Override admin
 
@@ -205,6 +207,7 @@ pertanyaan, maupun secret.
 | LangExtract | `langextract-mentions`, `langextract-terms`, `langextract-citations`, `langextract-relations` |
 | MiMo eval dev | route registry dev melalui gateway |
 | `cmd/rag-eval` | Book-RAG HTTP, sehingga otomatis masuk ledger U-0 |
+| `POST /v1/eval/judge` | `rag-judge`; rubrik hanya `groundedness-v1`/`ikhtilaf-v1` dari allowlist server |
 
 `internal/repo/webapi/inference_provider.go` adalah satu-satunya adapter yang boleh mengenal path
 provider. Contract test Go/Python menolak `/chat/completions`, `/embeddings`, provider SDK/API key,

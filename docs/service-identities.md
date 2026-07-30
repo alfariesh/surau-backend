@@ -9,7 +9,7 @@ Nama principal tidak dapat diubah dan pencabutan principal bersifat permanen.
 | Principal | Scope | Permukaan yang diidentifikasi |
 |---|---|---|
 | `collab-server` | `collab:draft:write` | seluruh `/internal/collab/*`, termasuk `whoami` |
-| `rag-eval` | `rag-eval:read` | Book RAG dan resolver Anchor publik saat header hadir |
+| `rag-eval` | `rag-eval:read` | Book RAG, resolver Anchor, dan `POST /v1/eval/judge` |
 | `http-enrichment` | `enrichment:read` | reader/catalog publik saat header hadir |
 | `u0-inference` | `inference:invoke`, `prompt-registry:manage`, `inference-budget:manage` | gateway U-0 untuk generator batch, registry prompt, dan pagar biaya |
 
@@ -18,6 +18,9 @@ memperbarui keduanya beserta contract test. Header tetap
 `X-Internal-Token`; endpoint publik tetap dapat dipakai tanpa header. Bila
 header dikirim, token wajib valid dan memiliki scope yang tepat. Token eval
 atau enrichment tidak mendapat data tambahan dan tidak melewati rate limit.
+`POST /v1/eval/judge` berbeda: endpoint ini wajib memakai token eval, menolak
+task/prompt bebas, dan hanya menerima rubrik immutable yang didokumentasikan
+di [`rag-evaluation.md`](rag-evaluation.md).
 
 ## Bentuk dan penyimpanan token
 

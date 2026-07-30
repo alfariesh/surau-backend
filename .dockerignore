@@ -9,6 +9,7 @@ temp-*
 app
 web-reader
 collab-server
+**/node_modules
 
 .dockerignore
 .env*

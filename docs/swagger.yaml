@@ -2158,6 +2158,60 @@ definitions:
       suppressed:
         type: integer
     type: object
+  entity.EvalJudgeEvidence:
+    properties:
+      anchor:
+        type: string
+      quote:
+        type: string
+      ref:
+        type: string
+      unit_anchor:
+        type: string
+      unit_id:
+        type: string
+    required:
+    - anchor
+    - quote
+    - ref
+    type: object
+  entity.EvalJudgeRequest:
+    properties:
+      answer:
+        type: string
+      case_id:
+        type: string
+      evidence:
+        items:
+          $ref: '#/definitions/entity.EvalJudgeEvidence'
+        minItems: 1
+        type: array
+      question:
+        type: string
+      rubric_version:
+        type: string
+    required:
+    - answer
+    - case_id
+    - evidence
+    - question
+    - rubric_version
+    type: object
+  entity.EvalJudgeResponse:
+    properties:
+      case_id:
+        type: string
+      inference:
+        $ref: '#/definitions/entity.BookRAGInference'
+      passed:
+        type: boolean
+      reason:
+        type: string
+      rubric_sha256:
+        type: string
+      rubric_version:
+        type: string
+    type: object
   entity.GenerationIdentity:
     properties:
       model_id:
@@ -13454,6 +13508,52 @@ paths:
       summary: Ingest Cloudflare email bounce webhook
       tags:
       - email
+  /eval/judge:
+    post:
+      consumes:
+      - application/json
+      description: Service-only advisory judge. Accepts no task key or free-form rubric/prompt.
+        Requires rag-eval:read.
+      operationId: eval-judge
+      parameters:
+      - description: Service token with rag-eval:read
+        in: header
+        name: X-Internal-Token
+        required: true
+        type: string
+      - description: Evaluation evidence
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/entity.EvalJudgeRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.EvalJudgeResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/v1.Error'
+      summary: Judge one allowlisted RAG evaluation
+      tags:
+      - eval
+      - inference
   /me/activity:
     get:
       description: Return daily reading-activity buckets and an aggregate for [from,
