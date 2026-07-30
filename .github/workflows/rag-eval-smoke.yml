@@ -119,7 +119,7 @@ jobs:
           fi
       - name: Upload W3 report and human-review packet
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: u6-scheduled-eval
           path: |
