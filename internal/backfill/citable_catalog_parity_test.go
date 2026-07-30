@@ -190,6 +190,44 @@ Arabic source:
 	assert.JSONEq(t, `{"answer":"Bukti katalog [2].","citations":[{"ref":"2","quote":"نص مكرر"}]}`, response)
 }
 
+func TestCatalogParityInferenceAdapterRoutesRegisteredTaskKeys(t *testing.T) {
+	t.Parallel()
+
+	user := `SOURCE BLOCKS:
+[1] heading_id=11 title="باب" page_id=12 printed_page= part=
+Arabic source:
+مقدمة نص مكرر خاتمة
+`
+
+	for _, taskKey := range []string{"bookrag-answer", "bookrag-answer-repair"} {
+		result, err := (&catalogParityLLM{headingID: 11, pageID: 12, quote: "نص مكرر"}).Invoke(
+			context.Background(),
+			entity.InferenceInvoke{TaskKey: taskKey, Variables: map[string]any{"user": user}},
+		)
+
+		require.NoError(t, err)
+		assert.JSONEq(
+			t,
+			`{"answer":"Bukti katalog [1].","citations":[{"ref":"1","quote":"نص مكرر"}]}`,
+			result.Output,
+		)
+	}
+
+	tree, err := (&catalogParityLLM{headingID: 11}).Invoke(
+		context.Background(),
+		entity.InferenceInvoke{
+			TaskKey:   "bookrag-tree-full",
+			Variables: map[string]any{"user": "select a heading"},
+		},
+	)
+	require.NoError(t, err)
+	assert.JSONEq(
+		t,
+		`{"thinking":"deterministic full-catalog parity stub","node_ids":[11],"done":true}`,
+		tree.Output,
+	)
+}
+
 func TestCatalogParityStubRejectsQuoteOutsideRetrievedBlocks(t *testing.T) {
 	t.Parallel()
 
