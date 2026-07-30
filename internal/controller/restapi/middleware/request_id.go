@@ -3,6 +3,7 @@ package middleware
 import (
 	"strings"
 
+	"github.com/alfariesh/surau-backend/internal/requestmeta"
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 )
@@ -19,6 +20,7 @@ func RequestID() fiber.Handler {
 
 		ctx.Locals("requestID", requestID)
 		ctx.Set(requestIDHeader, requestID)
+		ctx.SetUserContext(requestmeta.WithRequestID(ctx.UserContext(), requestID))
 
 		return ctx.Next()
 	}

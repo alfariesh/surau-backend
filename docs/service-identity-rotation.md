@@ -123,7 +123,12 @@ jadikan role A `NOLOGIN`, tunggu pool A drain, lalu cabut/drop A.
    App memasukkannya sekali sebagai T1 legacy, hanya hash, expiry 30 hari, dan
    tidak memperpanjangnya saat restart.
 3. Lakukan overlap token+role seperti di atas. Hapus fallback direct env setelah
-   cutover. U-0 belum diterbitkan token sampai komponennya benar-benar dibangun.
+   cutover. Untuk `u0-inference`, terbitkan T1 dengan scope
+   `inference:invoke,prompt-registry:manage,inference-budget:manage`, pasang sebagai
+   `SURAU_INFERENCE_SERVICE_TOKEN` pada generator, lalu terbitkan T2 dan pindahkan
+   generator satu per satu. Cabut T1 hanya setelah audit menunjukkan semua panggilan
+   baru memakai T2. Secret provider tetap hanya berada pada environment API, bukan
+   pada generator atau token A-2.
 4. Verifikasi proxy internet mengembalikan 404 untuk `/internal/*`; jaringan
    privat dengan token valid tetap bekerja dan setiap panggilan memiliki row
    audit.

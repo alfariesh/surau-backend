@@ -141,34 +141,25 @@ class GenerateReaderSummariesTest(unittest.TestCase):
         self.assertEqual(report["generated_count"], 1)
 
     def test_generate_summary_parses_json_response(self) -> None:
-        calls: list[dict[str, object]] = []
-        original_request_json = gs.request_json
+        calls: list[tuple[str, str, dict[str, object]]] = []
 
-        def fake_request_json(method: str, url: str, **kwargs: object) -> dict[str, object]:
-            calls.append({"method": method, "url": url, "kwargs": kwargs})
-            return {"choices": [{"message": {"content": json.dumps({"summary": "ملخص موجز"})}}]}
+        class FakeClient:
+            def invoke(self, task: str, user: str, **kwargs: object) -> dict[str, object]:
+                calls.append((task, user, kwargs))
+                return {"output": json.dumps({"summary": "ملخص موجز"})}
 
-        gs.request_json = fake_request_json
-        try:
-            summary = gs.generate_summary(
-                api_key="test-key",
-                llm_base_url="https://example.test/v1",
-                model="glm-5.1",
-                summary_lang="ar",
-                source_title="باب",
-                source_kind="section_text",
-                source_text="نص",
-                max_tokens=200,
-                timeout_seconds=1,
-                retries=0,
-            )
-        finally:
-            gs.request_json = original_request_json
+        summary, result = gs.generate_summary(
+            client=FakeClient(),  # type: ignore[arg-type]
+            summary_lang="ar",
+            source_title="باب",
+            source_kind="section_text",
+            source_text="نص",
+        )
 
         self.assertEqual(summary, "ملخص موجز")
-        payload = calls[0]["kwargs"]["payload"]  # type: ignore[index]
-        self.assertEqual(payload["model"], "glm-5.1")
-        self.assertIn("response_format", payload)
+        self.assertEqual(result["output"], json.dumps({"summary": "ملخص موجز"}))
+        self.assertEqual(calls[0][0], "reader-summary")
+        self.assertIn('"source_title": "باب"', calls[0][1])
 
     def test_summary_asset_carries_generation_identity(self) -> None:
         original_fetch = gs.fetch_toc_section
@@ -177,8 +168,17 @@ class GenerateReaderSummariesTest(unittest.TestCase):
         def fake_fetch(*args: object, **kwargs: object) -> dict[str, object]:
             return {"original_text": "نص عربي طويل بما يكفي للتلخيص"}
 
-        def fake_generate(**kwargs: object) -> str:
-            return "ملخص عربي صالح وطويل بما يكفي للعرض في واجهة القارئ."
+        def fake_generate(**kwargs: object) -> tuple[str, dict[str, object]]:
+            del kwargs
+            return (
+                "ملخص عربي صالح وطويل بما يكفي للعرض في واجهة القارئ.",
+                {
+                    "generation": generation,
+                    "provider": "test-provider",
+                    "model": generation["model_id"],
+                    "prompt_version": generation["prompt_version"],
+                },
+            )
 
         generation = gs.new_generation_identity("glm-5.1", gs.READER_SUMMARY_PROMPT_VERSION)
         args = argparse.Namespace(
@@ -188,20 +188,13 @@ class GenerateReaderSummariesTest(unittest.TestCase):
             summary_lang="ar",
             max_source_chars=0,
             dry_run=False,
-            llm_base_url="https://example.test/v1",
-            model="glm-5.1",
-            max_tokens=200,
-            timeout_seconds=1,
-            retries=0,
-            provider_name="test-provider",
-            generation=generation,
         )
         gs.fetch_toc_section = fake_fetch
         gs.generate_summary = fake_generate
         try:
             asset = gs.generate_summary_asset(
                 args,
-                "test-key",
+                object(),
                 {"heading_id": 2, "title": "باب"},
                 {},
                 {},

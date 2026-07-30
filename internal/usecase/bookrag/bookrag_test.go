@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/alfariesh/surau-backend/internal/entity"
 	"github.com/stretchr/testify/assert"
@@ -108,6 +109,32 @@ func TestSelectTreeNodesUsesFullTreeForSmallTOC(t *testing.T) {
 	require.Len(t, llm.messages, 1)
 	assert.Contains(t, llm.messages[0][1].Content, "Compact TOC tree JSON")
 	assert.Contains(t, llm.messages[0][1].Content, "This section discusses target evidence")
+}
+
+func TestSelectTreeNodesPropagatesBudgetRejectionFromRetry(t *testing.T) {
+	t.Parallel()
+
+	exceeded := &entity.InferenceBudgetExceededError{
+		RetryAfter: time.Minute, ResetAt: time.Now().Add(time.Minute), Window: "daily",
+	}
+	llm := &fakeLLM{
+		responses: []string{`{"thinking":"no match","node_ids":[]}`},
+		errors:    []error{nil, exceeded},
+	}
+	uc := New(&fakeBookRAGRepo{}, llm, Options{TreeFullMaxNodes: 10})
+
+	_, err := uc.selectTreeNodes(
+		t.Context(),
+		entity.RAGBookDocument{Title: "Book"},
+		"question",
+		[]entity.RAGStructureNode{{HeadingID: 1, Title: "Root"}},
+		nil,
+	)
+
+	var actual *entity.InferenceBudgetExceededError
+	require.ErrorAs(t, err, &actual)
+	assert.Same(t, exceeded, actual)
+	require.Len(t, llm.messages, 2)
 }
 
 func TestSelectTreeNodesUsesBlockTreeForLargeTOC(t *testing.T) {
@@ -417,6 +444,41 @@ func TestUseCaseAskBook(t *testing.T) {
 	assert.Equal(t, 1, response.Trace.TreeLLMCalls)
 	assert.Equal(t, []int{11}, repo.lastHeadingIDs)
 	assert.Equal(t, []int{12}, repo.lastFocusPageIDs)
+}
+
+func TestAskBookStreamBudgetExceededEmitsOneErrorBeforeAnyDelta(t *testing.T) {
+	t.Parallel()
+
+	var (
+		events   []string
+		payloads []any
+		exceeded *entity.InferenceBudgetExceededError
+	)
+
+	repository, _ := happyBookRAGFixture()
+	resetAt := time.Date(2026, 7, 29, 0, 0, 0, 0, time.FixedZone("Asia/Jakarta", 7*60*60))
+	llm := &fakeLLM{err: &entity.InferenceBudgetExceededError{
+		RetryAfter: 90 * time.Second, ResetAt: resetAt, Window: "daily",
+	}}
+	uc := New(repository, llm, Options{})
+
+	err := uc.AskBookStream(
+		t.Context(), 797, "Apa definisi hadis sahih?", "id", 5, true,
+		func(event string, payload any) error {
+			events = append(events, event)
+			payloads = append(payloads, payload)
+
+			return nil
+		},
+	)
+
+	require.ErrorAs(t, err, &exceeded)
+	assert.Equal(t, []string{"meta", "error"}, events)
+
+	errorPayload, ok := payloads[1].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "inference_budget_exceeded", errorPayload["code"])
+	assert.Equal(t, resetAt, errorPayload["reset_at"])
 }
 
 func TestUseCaseLegacyModeKeepsCitationJSONCompatible(t *testing.T) {
@@ -1030,26 +1092,44 @@ func (r *fakeBookRAGRepo) ResolveRAGUnitCitation(
 type fakeLLM struct {
 	responses []string
 	messages  [][]entity.RAGChatMessage
+	errors    []error
+	err       error
 }
 
-func (l *fakeLLM) Complete(_ context.Context, messages []entity.RAGChatMessage) (string, error) {
-	l.messages = append(l.messages, messages)
+//nolint:gocritic // Test double mirrors the public immutable inference contract.
+func (l *fakeLLM) Invoke(
+	_ context.Context,
+	input entity.InferenceInvoke,
+) (entity.InferenceResult, error) {
+	user, ok := input.Variables["user"].(string)
+	if !ok {
+		return entity.InferenceResult{}, entity.ErrInvalidQuestion
+	}
+
+	l.messages = append(l.messages, []entity.RAGChatMessage{
+		{Role: "system", Content: input.TaskKey},
+		{Role: "user", Content: user},
+	})
+
+	if len(l.errors) > 0 {
+		err := l.errors[0]
+		l.errors = l.errors[1:]
+
+		if err != nil {
+			return entity.InferenceResult{}, err
+		}
+	}
+
+	if l.err != nil {
+		return entity.InferenceResult{}, l.err
+	}
+
 	if len(l.responses) == 0 {
-		return "", nil
+		return entity.InferenceResult{}, nil
 	}
 
 	response := l.responses[0]
 	l.responses = l.responses[1:]
 
-	return response, nil
-}
-
-func (l *fakeLLM) Stream(_ context.Context, _ []entity.RAGChatMessage, emit func(delta string) error) error {
-	for _, response := range l.responses {
-		if err := emit(response); err != nil {
-			return err
-		}
-	}
-
-	return nil
+	return entity.InferenceResult{Output: response}, nil
 }

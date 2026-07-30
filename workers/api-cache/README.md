@@ -80,12 +80,17 @@ not a role/profile contract.
 
 ## AI Gateway
 
-The Go backend is already OpenAI-compatible and calls `{RAG_LLM_BASE_URL}/chat/completions`. To observe RAG LLM cost and latency through Cloudflare AI Gateway, create a gateway and point `RAG_LLM_BASE_URL` at the provider path:
+The edge Worker never calls an LLM provider. All Book-RAG and generator calls
+pass through the backend U-0 inference layer, where cost/usage/failover is
+recorded. If Cloudflare AI Gateway is used as transport, configure only the
+private primary provider adapter's `RAG_LLM_BASE_URL` on the API VPS:
 
 - OpenAI provider: `https://gateway.ai.cloudflare.com/v1/{account_id}/{gateway_id}/openai`
 - Custom OpenAI-compatible provider: `https://gateway.ai.cloudflare.com/v1/{account_id}/{gateway_id}/{custom_provider_slug}/v1`
 
-Keep `RAG_LLM_API_KEY` as the upstream provider key unless credentials are stored in Cloudflare provider configs.
+Keep `RAG_LLM_API_KEY` only in the API environment unless credentials are
+stored in Cloudflare provider configs. Never put it in Worker vars, frontend,
+generator environments, trace attributes, or the U-0 registry.
 
 ## Production Smoke
 

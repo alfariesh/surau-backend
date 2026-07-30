@@ -77,10 +77,7 @@ type catalogParityVerification struct {
 	diagnostics       []string
 }
 
-var (
-	errCatalogParityStreamUnsupported = errors.New("catalog parity stub does not stream")
-	catalogParitySourceRefRE          = regexp.MustCompile(`(?m)^\[(\d+)\] heading_id=`)
-)
+var catalogParitySourceRefRE = regexp.MustCompile(`(?m)^\[(\d+)\] heading_id=`)
 
 //nolint:cyclop,gocognit,gocyclo,nestif // The deterministic stub intentionally parses the same nested source-block shape as Book-RAG.
 func (l *catalogParityLLM) Complete(_ context.Context, messages []entity.RAGChatMessage) (string, error) {
@@ -137,12 +134,22 @@ func (l *catalogParityLLM) Complete(_ context.Context, messages []entity.RAGChat
 		l.headingID), nil
 }
 
-func (l *catalogParityLLM) Stream(
-	context.Context,
-	[]entity.RAGChatMessage,
-	func(string) error,
-) error {
-	return errCatalogParityStreamUnsupported
+//nolint:gocritic // Interface contract passes the immutable inference input by value.
+func (l *catalogParityLLM) Invoke(
+	ctx context.Context,
+	input entity.InferenceInvoke,
+) (entity.InferenceResult, error) {
+	user, ok := input.Variables["user"].(string)
+	if !ok {
+		return entity.InferenceResult{}, entity.ErrInvalidQuestion
+	}
+
+	output, err := l.Complete(ctx, []entity.RAGChatMessage{
+		{Role: "system", Content: input.TaskKey},
+		{Role: "user", Content: user},
+	})
+
+	return entity.InferenceResult{Output: output}, err
 }
 
 // verifyFullCatalogBookRAGParity runs one deterministic dual-mode request for

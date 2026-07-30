@@ -52,6 +52,7 @@ func NewRoutes(
 	email usecase.EmailAdmin,
 	emailWebhookSecret string,
 	serviceIdentity usecase.ServiceIdentity,
+	inference usecase.Inference,
 	pushIdentity usecase.PushIdentity,
 	jwtManager *jwt.Manager,
 	l logger.Interface,
@@ -86,6 +87,7 @@ func NewRoutes(
 		quranLicenseAudit:  quranLicenseAudit,
 		email:              email,
 		serviceIdentity:    serviceIdentity,
+		inference:          inference,
 		pushIdentity:       pushIdentity,
 		emailWebhookSecret: strings.TrimSpace(emailWebhookSecret),
 		l:                  l,
@@ -454,6 +456,20 @@ func NewRoutes(
 		serviceIdentityGroup.Post("/:id/tokens", middleware.RequireFreshMFA(u), r.adminIssueServiceToken)
 		serviceIdentityGroup.Post("/:id/tokens/:token_id/revoke", middleware.RequireFreshMFA(u), r.adminRevokeServiceToken)
 		serviceIdentityGroup.Post("/:id/revoke", middleware.RequireFreshMFA(u), r.adminRevokeServiceIdentity)
+	}
+
+	inferenceAdminGroup := protected.Group(
+		"/admin/inference",
+		authRequired,
+		middleware.RequireCapability(u, policy.CapManageServiceTokens),
+	)
+	{
+		inferenceAdminGroup.Get("/usage", r.adminInferenceUsage)
+		inferenceAdminGroup.Get("/registry", r.adminInferenceRegistry)
+		inferenceAdminGroup.Get("/budget", r.adminInferenceBudget)
+		inferenceAdminGroup.Patch(
+			"/budget", middleware.RequireFreshMFA(u), r.adminUpdateInferenceBudget,
+		)
 	}
 }
 

@@ -7,7 +7,7 @@
 3. Dashboard: menu ☰ → Dashboards → folder **Surau** → **Surau Health**.
    Panel: rate/error/p95 per endpoint (RED), antrean email, umur sukses terakhir tiap loop
    background, jumlah reminder accepted/failed, alasan kegagalan reminder, disk/RAM/CPU host,
-   serta umur backup & PITR-check.
+   umur backup & PITR-check, serta biaya/token/cache/failover/pagar LLM U-0.
 4. Melihat trace: menu ☰ → Explore → pilih datasource **Tempo** → paste `trace_id` dari log,
    atau query `{}` untuk trace terbaru.
 
@@ -23,6 +23,16 @@
 Dashboard memakai timezone browser operator dan Prometheus menyimpan tujuh hari. OneSignal tetap
 dinonaktifkan di dev secara default; karena itu panel akan nol/kosong sampai ada fixture drill atau
 delivery dev yang sengaja diaktifkan tanpa menyasar pengguna nyata.
+
+### Melihat biaya LLM hari ini (U-0)
+
+1. Buka **Surau Health** dan pilih rentang **Today**.
+2. **LLM cost today** menunjukkan total USD hari ini.
+3. **LLM daily breakdown — task / provider** menjelaskan tugas/provider yang menghabiskannya.
+4. **LLM budget guard** menunjukkan progres baseline dan pemakaian harian/bulanan terhadap cap.
+5. **LLM exact vs estimated cost / cache hit-rate** membedakan biaya laporan provider dengan
+   estimasi konservatif. Detail API dan runbook ada di
+   [`inference-operations.md`](inference-operations.md).
 
 ## Korelasi log ↔ trace (AC F1-B)
 
@@ -49,7 +59,8 @@ delivery dev yang sengaja diaktifkan tanpa menyasar pengguna nyata.
   tabel/index top-20 datang dari collector app (`surau_db_relation_*`). Panel slow-statements
   butuh db berjalan dgn preload `pg_stat_statements` (docs/deploy-vps.md §Tuning Postgres).
 - Provisioning Grafana dari `ops/observability/grafana/provisioning/` (datasource, dashboard,
-  contact point Telegram, 11 alert rules) — semua file di git, tiba di VPS via checkout deploy.
+  contact point Telegram, termasuk rule pagar biaya U-0) — semua file di git, tiba di VPS via
+  checkout deploy.
 
 ## Alert (semua → Telegram, prefix env)
 
@@ -65,6 +76,9 @@ delivery dev yang sengaja diaktifkan tanpa menyasar pengguna nyata.
 | disk space low | sisa <15% | disk hampir penuh |
 | app down | scrape gagal 3m | app mati/boot-loop (termasuk schema DIRTY) |
 | db connections near max | koneksi >80% max_connections 5m | pool bocor/beban tak wajar — cek pg_stat_activity (F1-G) |
+| LLM daily budget 80% | mode enforce dan pemakaian+reservasi harian ≥80% | hentikan pekerjaan non-kritis; cek panel budget sebelum cap menolak call baru |
+| LLM monthly budget 80% | mode enforce dan pemakaian+reservasi bulanan ≥80% | evaluasi burn-rate/provider; override hanya dengan MFA+ETag+alasan |
+| LLM zero baseline | baseline selesai tetapi total biaya nol | harga/traffic salah konfigurasi; baseline otomatis diperpanjang dan cap nol tidak dibuat |
 
 Ambang ditulis DI DALAM ekspresi PromQL di
 [rules.yml](../ops/observability/grafana/provisioning/alerting/rules.yml) (pola `> bool X`) —
@@ -120,3 +134,6 @@ Konfig berubah di git → `git pull` terjadi otomatis saat deploy berikutnya →
    attempt gagal dengan rasio ≥50% ke counter persisten; ukur sampai rule FIRING dan pesan Telegram
    diterima (wajib ≤5 menit), lalu bersihkan fixture/counter dev dan pastikan rule RESOLVED. Jangan
    memakai API key produksi atau menyasar user nyata.
+7. U-0: gunakan metric fixture integration untuk tepat `79.99%` (tidak firing), lalu `80%`
+   (firing) pada mode `enforce`; buktikan daily dan monthly sampai pesan Telegram, lalu pulihkan
+   fixture. Jangan melakukan provider call nyata hanya untuk mengubah cap dev.

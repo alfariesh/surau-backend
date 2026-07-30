@@ -64,6 +64,23 @@ func TestOpenRejectsTamperAndGarbage(t *testing.T) {
 	require.ErrorIs(t, err, cryptobox.ErrCiphertext)
 }
 
+func TestSealWithAADRejectsCiphertextSwap(t *testing.T) {
+	t.Parallel()
+
+	box, err := cryptobox.New(testSeed, "aad-test")
+	require.NoError(t, err)
+
+	sealed, err := box.SealWithAAD([]byte("cache payload"), []byte("cache-key-a"))
+	require.NoError(t, err)
+
+	opened, err := box.OpenWithAAD(sealed, []byte("cache-key-a"))
+	require.NoError(t, err)
+	assert.Equal(t, []byte("cache payload"), opened)
+
+	_, err = box.OpenWithAAD(sealed, []byte("cache-key-b"))
+	require.ErrorIs(t, err, cryptobox.ErrCiphertext)
+}
+
 func TestDistinctKeysCannotOpenEachOther(t *testing.T) {
 	t.Parallel()
 

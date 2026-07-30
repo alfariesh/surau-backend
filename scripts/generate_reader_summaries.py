@@ -11,7 +11,6 @@ from __future__ import annotations
 import argparse
 import concurrent.futures
 import json
-import os
 import sys
 import time
 from datetime import datetime, timezone
@@ -26,7 +25,6 @@ sys.path.insert(0, str(SCRIPT_DIR))
 
 from translate_reader_assets import (  # noqa: E402
     load_env_file,
-    load_json_object,
     request_json,
     write_jsonl,
 )
@@ -34,6 +32,14 @@ from generation_identity import (  # noqa: E402
     MACHINE_PROVENANCE_CLASS,
     READER_SUMMARY_PROMPT_VERSION,
     new_generation_identity,
+)
+from surau_inference import (  # noqa: E402
+    InferenceClient,
+    RESUMABLE_EXIT_CODE,
+    attribution_metadata,
+    budget_exceeded,
+    generation_identity,
+    parse_output,
 )
 
 
@@ -45,29 +51,15 @@ TARGET_NAMES = {
     "en": "English",
 }
 
-SYSTEM_PROMPT = """You are a senior Islamic-studies editor.
-
-Write concise, faithful summaries for a classical Islamic book reader. Stay
-strictly inside the supplied source. Do not add commentary, outside facts,
-modern examples, criticism, citations, or claims not present in the source.
-
-Output strict JSON only, with key "summary".
-"""
-
-
 def main() -> int:
     args = parse_args()
     validate_summary_language(args)
     load_env_file(Path(args.env_file).expanduser())
-    resolve_llm_config(args)
-    args.generation = new_generation_identity(args.model, READER_SUMMARY_PROMPT_VERSION)
-
-    api_key = os.environ.get(args.api_key_env) or os.environ.get("RAG_LLM_API_KEY", "")
-    if not api_key and not args.dry_run:
-        raise SystemExit(
-            f"{args.api_key_env} or RAG_LLM_API_KEY is required. Put it in "
-            f"{args.env_file} or export it first."
-        )
+    inference_client = None
+    if args.dry_run:
+        args.generation = new_generation_identity("dry-run", READER_SUMMARY_PROMPT_VERSION)
+    else:
+        inference_client = InferenceClient.from_env(args.inference_base_url, args.timeout_seconds)
 
     toc = fetch_toc(args.base_url, args.book_id, args.source_lang)
     nodes = flatten_toc(toc)
@@ -110,6 +102,7 @@ def main() -> int:
     failures: list[dict[str, Any]] = []
     generated_assets: list[dict[str, Any]] = []
     success_count = 0
+    budget_blocked = False
     total = len(heading_ids)
     progress_index = 0
     out_mode = "a" if args.resume and out_path.exists() else "w"
@@ -124,7 +117,7 @@ def main() -> int:
                     future = executor.submit(
                         generate_summary_asset,
                         args,
-                        api_key,
+                        inference_client,
                         node,
                         children_by_parent,
                         generated_by_heading,
@@ -142,7 +135,20 @@ def main() -> int:
                         asset = future.result()
                     except Exception as err:
                         record_failure(failure_file, args, heading_id, index, total, err)
-                        failures.append({"heading_id": heading_id, "error": str(err)})
+                        cap = budget_exceeded(err)
+                        failures.append(
+                            {
+                                "heading_id": heading_id,
+                                "error": str(err),
+                                "status": "resumable" if cap else "failed",
+                                "retry_after": cap.retry_after if cap else 0,
+                            }
+                        )
+                        if cap:
+                            budget_blocked = True
+                            for pending in futures:
+                                pending.cancel()
+                            break
                         if args.fail_fast:
                             raise
                         continue
@@ -156,10 +162,15 @@ def main() -> int:
                         f"heading={heading_id} lang={args.summary_lang}",
                         file=sys.stderr,
                     )
+            if budget_blocked:
+                break
 
     print(f"wrote {success_count} summary JSONL records to {out_path}", file=sys.stderr)
     if args.eval_report:
         write_eval_report(Path(args.eval_report), args, generated_assets, failures)
+    if budget_blocked:
+        print("inference budget exceeded; batch is resumable with --resume", file=sys.stderr)
+        return RESUMABLE_EXIT_CODE
     if failures:
         print(f"failed {len(failures)} headings; see {failure_path}", file=sys.stderr)
         return 1
@@ -176,10 +187,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--source-lang", default="ar", help="Reader language used for source fetch")
     parser.add_argument("--summary-lang", choices=sorted(TARGET_NAMES), default="ar", help="Summary output language")
     parser.add_argument("--out", required=True, help="Output JSONL file")
-    parser.add_argument("--model", default=None, help="LLM model; defaults to SUMMARY_LLM_MODEL, RAG_LLM_MODEL, or glm-5.1")
-    parser.add_argument("--llm-base-url", default=None, help="OpenAI-compatible base URL")
-    parser.add_argument("--provider-name", default=None, help="Provider label written to metadata; defaults from LLM_PROVIDER_NAME or base URL")
-    parser.add_argument("--api-key-env", default="SUMMARY_LLM_API_KEY", help="Environment variable containing the LLM API key")
+    parser.add_argument("--inference-base-url", default=None, help="Surau U-0 gateway base URL")
     parser.add_argument("--env-file", default=str(DEFAULT_ENV_FILE), help="Local dotenv file loaded before reading env")
     parser.add_argument("--max-tokens", type=int, default=900)
     parser.add_argument("--max-source-chars", type=int, default=0, help="Trim long source text for sampling; 0 disables trimming")
@@ -206,34 +214,9 @@ def validate_summary_language(args: argparse.Namespace) -> None:
     )
 
 
-def resolve_llm_config(args: argparse.Namespace) -> None:
-    if not args.model:
-        args.model = os.environ.get("SUMMARY_LLM_MODEL") or os.environ.get("RAG_LLM_MODEL") or "glm-5.1"
-    if not args.llm_base_url:
-        args.llm_base_url = (
-            os.environ.get("SUMMARY_LLM_BASE_URL")
-            or os.environ.get("RAG_LLM_BASE_URL")
-            or "https://ai.sumopod.com/v1"
-        )
-    if not args.provider_name:
-        args.provider_name = resolve_provider_name(args.llm_base_url)
-
-
-def resolve_provider_name(base_url: str) -> str:
-    env_name = os.environ.get("LLM_PROVIDER_NAME")
-    if env_name and env_name.strip():
-        return env_name.strip()
-    normalized = base_url.casefold()
-    if "deepseek" in normalized:
-        return "deepseek"
-    if "sumopod" in normalized:
-        return "sumopod"
-    return "openai-compatible"
-
-
 def generate_summary_asset(
     args: argparse.Namespace,
-    api_key: str,
+    inference_client: InferenceClient | None,
     node: dict[str, Any],
     children_by_parent: dict[int, list[dict[str, Any]]],
     generated_by_heading: dict[int, str],
@@ -255,19 +238,20 @@ def generate_summary_asset(
 
     if args.dry_run:
         summary = f"[DRY RUN] {source_text[:280].strip()}"
+        generation = dict(args.generation)
+        inference_metadata: dict[str, Any] = {"provider": "dry-run", "model": "dry-run"}
     else:
-        summary = generate_summary(
-            api_key=api_key,
-            llm_base_url=args.llm_base_url,
-            model=args.model,
+        if inference_client is None:
+            raise RuntimeError("inference client is required")
+        summary, inference_result = generate_summary(
+            client=inference_client,
             summary_lang=args.summary_lang,
             source_title=title,
             source_kind=source_kind,
             source_text=source_text,
-            max_tokens=args.max_tokens,
-            timeout_seconds=args.timeout_seconds,
-            retries=args.retries,
         )
+        generation = generation_identity(inference_result)
+        inference_metadata = attribution_metadata(inference_result)
 
     return {
         "kind": "heading_summary",
@@ -275,13 +259,12 @@ def generate_summary_asset(
         "heading_id": heading_id,
         "lang": args.summary_lang,
         "summary": summary,
-        "source": args.model,
+        "source": generation["model_id"],
         "summary_status": "generated",
         "provenance_class": MACHINE_PROVENANCE_CLASS,
-        "generation": dict(args.generation),
+        "generation": generation,
         "metadata": {
-            "provider": args.provider_name,
-            "model": args.model,
+            **inference_metadata,
             "unit": "toc_summary",
             "style_version": SUMMARY_STYLE_VERSION,
             "source_lang": args.source_lang,
@@ -325,17 +308,12 @@ def source_text_for_node(
 
 def generate_summary(
     *,
-    api_key: str,
-    llm_base_url: str,
-    model: str,
+    client: InferenceClient,
     summary_lang: str,
     source_title: str,
     source_kind: str,
     source_text: str,
-    max_tokens: int,
-    timeout_seconds: int,
-    retries: int,
-) -> str:
+) -> tuple[str, dict[str, Any]]:
     target_name = TARGET_NAMES[summary_lang]
     user_payload = {
         "summary_language": target_name,
@@ -351,34 +329,17 @@ def generate_summary(
         ],
         "json_schema": {"summary": "string"},
     }
-    payload = {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {
-                "role": "user",
-                "content": "Generate a faithful reader summary. Return json only.\n\n"
-                + json.dumps(user_payload, ensure_ascii=False),
-            },
-        ],
-        "response_format": {"type": "json_object"},
-        "temperature": 0.2,
-        "max_tokens": max_tokens,
-    }
-    response = request_json(
-        "POST",
-        f"{llm_base_url.rstrip('/')}/chat/completions",
-        headers={"Authorization": f"Bearer {api_key}"},
-        payload=payload,
-        timeout_seconds=timeout_seconds,
-        retries=retries,
+    result = client.invoke(
+        "reader-summary",
+        "Generate a faithful reader summary. Return json only.\n\n"
+        + json.dumps(user_payload, ensure_ascii=False),
+        cache_vary={"summary_language": summary_lang, "source_kind": source_kind},
     )
-    content = response["choices"][0]["message"].get("content") or response["choices"][0]["message"].get("reasoning_content", "")
-    parsed = load_json_object(content)
+    parsed = parse_output(result)
     summary = str(parsed.get("summary") or "").strip()
     if not summary:
         raise RuntimeError("LLM returned JSON without non-empty summary")
-    return summary
+    return summary, result
 
 
 def fetch_toc(base_url: str, book_id: int, lang: str) -> list[dict[str, Any]]:

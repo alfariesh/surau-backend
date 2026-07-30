@@ -31,6 +31,7 @@ func TestFrozenServiceScopes(t *testing.T) {
 		"enrichment:read",
 		"prompt-registry:manage",
 		"inference-budget:manage",
+		"inference:invoke",
 	}, entity.AllServiceScopes())
 }
 

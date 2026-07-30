@@ -97,6 +97,9 @@ jobs:
           # ceiling while retaining rotated rows for reuse detection.
           set_env_value JWT_REFRESH_TOKEN_EXPIRY 336h
           set_env_value AUTH_CLEANUP_SESSION_RETENTION 720h
+          if ! grep -Eq '^INFERENCE_CACHE_ENCRYPTION_KEY=.{32,}$' .env.production; then
+            set_env_value INFERENCE_CACHE_ENCRYPTION_KEY "$(openssl rand -hex 32)"
+          fi
 
           # A production host must never inherit the image's post-K-1 unit
           # default before an explicit release rollout. The first K-1 release

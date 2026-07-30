@@ -16,7 +16,7 @@ jobs:
       VPS_SSH_PRIVATE_KEY: ${{ secrets.DEV_VPS_SSH_PRIVATE_KEY }}
       VPS_SSH_KNOWN_HOSTS: ${{ secrets.DEV_VPS_SSH_KNOWN_HOSTS }}
     steps:
-      - name: Verify two provider credentials and primary price catalog
+      - name: Verify active provider credentials and primary price
         shell: bash
         run: |
           set -euo pipefail
@@ -62,16 +62,112 @@ jobs:
           }
 
           require_nonempty_env RAG_LLM_API_KEY 8
-          require_nonempty_env DEEPSEEK_API_KEY 8
 
-          catalog_url="$(awk -F= '
-            $1 == "INFERENCE_SUMOPOD_CATALOG_URL" {
+          secondary_enabled="$(awk -F= '
+            $1 == "INFERENCE_SECONDARY_ENABLED" {
               print substr($0, index($0, "=") + 1)
             }
           ' .env.production | tail -1)"
-          catalog_url="${catalog_url:-https://api-gate.sumopod.com/webhook/sumopod/ai/models}"
-          curl -fsS --connect-timeout 10 --max-time 30 "$catalog_url" |
-            grep -F '"glm-5.1"' >/dev/null
+          secondary_enabled="${secondary_enabled:-true}"
+          case "$secondary_enabled" in
+            true) require_nonempty_env DEEPSEEK_API_KEY 8 ;;
+            false) ;;
+            *)
+              echo "U-0 preflight failed: INFERENCE_SECONDARY_ENABLED must be true or false" >&2
+              exit 1
+              ;;
+          esac
 
-          echo "U-0 provider preflight: 2/2 credentials present; glm-5.1 price catalog reachable"
+          model="$(awk -F= '
+            $1 == "RAG_LLM_MODEL" {
+              print substr($0, index($0, "=") + 1)
+            }
+          ' .env.production | tail -1)"
+          model="${model:-glm-5.1}"
+          base_url="$(awk -F= '
+            $1 == "RAG_LLM_BASE_URL" {
+              print substr($0, index($0, "=") + 1)
+            }
+          ' .env.production | tail -1)"
+          base_url="${base_url:-https://ai.sumopod.com/v1}"
+
+          price_version="$(awk -F= '
+            $1 == "INFERENCE_SUMOPOD_PRICE_VERSION" {
+              print substr($0, index($0, "=") + 1)
+            }
+          ' .env.production | tail -1)"
+          input_price="$(awk -F= '
+            $1 == "INFERENCE_SUMOPOD_INPUT_USD_PER_MILLION" {
+              print substr($0, index($0, "=") + 1)
+            }
+          ' .env.production | tail -1)"
+          cached_price="$(awk -F= '
+            $1 == "INFERENCE_SUMOPOD_CACHED_INPUT_USD_PER_MILLION" {
+              print substr($0, index($0, "=") + 1)
+            }
+          ' .env.production | tail -1)"
+          output_price="$(awk -F= '
+            $1 == "INFERENCE_SUMOPOD_OUTPUT_USD_PER_MILLION" {
+              print substr($0, index($0, "=") + 1)
+            }
+          ' .env.production | tail -1)"
+
+          override_count=0
+          for value in "$price_version" "$input_price" "$cached_price" "$output_price"; do
+            if [ -n "$value" ]; then
+              override_count=$((override_count + 1))
+            fi
+          done
+
+          if [ "$override_count" -gt 0 ] && [ "$override_count" -lt 4 ]; then
+            echo "U-0 preflight failed: SumoPod price override tuple is incomplete" >&2
+            exit 1
+          fi
+
+          if [ "$override_count" -eq 4 ]; then
+            for price in "$input_price" "$cached_price" "$output_price"; do
+              if ! printf '%s\n' "$price" | grep -Eq '^[0-9]+([.][0-9]+)?$'; then
+                echo "U-0 preflight failed: operator price must be a nonnegative decimal" >&2
+                exit 1
+              fi
+            done
+
+            api_key="$(awk -F= '
+              $1 == "RAG_LLM_API_KEY" {
+                print substr($0, index($0, "=") + 1)
+              }
+            ' .env.production | tail -1)"
+            model_file="$(mktemp)"
+            chmod 600 "$model_file"
+            curl -fsS --connect-timeout 10 --max-time 30 \
+              -H "Authorization: Bearer $api_key" \
+              "${base_url%/}/models" >"$model_file"
+            unset api_key
+            python3 - "$model_file" "$model" <<'PY'
+          import json
+          import sys
+
+          payload = json.load(open(sys.argv[1], encoding="utf-8"))
+          models = payload.get("data", []) if isinstance(payload, dict) else payload
+          if not any(
+              isinstance(row, dict) and row.get("id") == sys.argv[2]
+              for row in models
+          ):
+              raise SystemExit("U-0 preflight failed: configured model is absent from provider")
+          PY
+            rm -f "$model_file"
+            price_source="operator:$price_version"
+          else
+            catalog_url="$(awk -F= '
+              $1 == "INFERENCE_SUMOPOD_CATALOG_URL" {
+                print substr($0, index($0, "=") + 1)
+              }
+            ' .env.production | tail -1)"
+            catalog_url="${catalog_url:-https://api-gate.sumopod.com/webhook/sumopod/ai/models}"
+            curl -fsS --connect-timeout 10 --max-time 30 "$catalog_url" |
+              grep -F "\"model_name\":\"$model\"" >/dev/null
+            price_source="catalog"
+          fi
+
+          echo "U-0 provider preflight: primary model $model reachable; price=$price_source; secondary=$secondary_enabled"
           REMOTE

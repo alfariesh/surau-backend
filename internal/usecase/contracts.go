@@ -213,6 +213,22 @@ type (
 		) error
 	}
 
+	// Inference is the sole provider/model/prompt/budget boundary (U-0).
+	Inference interface {
+		Invoke(context.Context, entity.InferenceInvoke) (entity.InferenceResult, error)
+		CreateSession(context.Context, string) (entity.InferenceSession, error)
+		Budget(context.Context) (entity.InferenceBudgetStatus, error)
+		UpdateBudget(
+			context.Context, string, int64, entity.InferenceBudgetPatch,
+		) (entity.InferenceBudgetStatus, error)
+		Usage(
+			context.Context, time.Time, time.Time, string,
+		) ([]entity.InferenceUsageRow, error)
+		Registry(context.Context) ([]entity.InferenceRoute, error)
+		RegisterPrompt(context.Context, entity.InferencePromptManifest) error
+		ProviderCredentialReadiness(context.Context) ([]string, error)
+	}
+
 	// Quran -.
 	Quran interface {
 		Surahs(ctx context.Context, lang string, includeInfo bool) ([]entity.QuranSurah, error)

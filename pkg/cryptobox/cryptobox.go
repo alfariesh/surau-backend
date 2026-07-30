@@ -54,12 +54,18 @@ func New(seed, info string) (*Box, error) {
 
 // Seal encrypts plaintext and returns base64(nonce || ciphertext).
 func (b *Box) Seal(plaintext []byte) (string, error) {
+	return b.SealWithAAD(plaintext, nil)
+}
+
+// SealWithAAD encrypts plaintext and binds it to non-secret associated data.
+// Decryption fails if a valid ciphertext is copied to a different record.
+func (b *Box) SealWithAAD(plaintext, additionalData []byte) (string, error) {
 	nonce := make([]byte, b.aead.NonceSize())
 	if _, err := rand.Read(nonce); err != nil {
 		return "", fmt.Errorf("cryptobox: nonce: %w", err)
 	}
 
-	sealed := b.aead.Seal(nonce, nonce, plaintext, nil)
+	sealed := b.aead.Seal(nonce, nonce, plaintext, additionalData)
 
 	return base64.RawStdEncoding.EncodeToString(sealed), nil
 }
@@ -67,6 +73,11 @@ func (b *Box) Seal(plaintext []byte) (string, error) {
 // Open decrypts a Seal output. Tampered or foreign-key ciphertexts fail with
 // ErrCiphertext.
 func (b *Box) Open(encoded string) ([]byte, error) {
+	return b.OpenWithAAD(encoded, nil)
+}
+
+// OpenWithAAD decrypts a SealWithAAD output only for matching associated data.
+func (b *Box) OpenWithAAD(encoded string, additionalData []byte) ([]byte, error) {
 	raw, err := base64.RawStdEncoding.DecodeString(encoded)
 	if err != nil {
 		return nil, ErrCiphertext
@@ -77,7 +88,7 @@ func (b *Box) Open(encoded string) ([]byte, error) {
 		return nil, ErrCiphertext
 	}
 
-	plaintext, err := b.aead.Open(nil, raw[:nonceSize], raw[nonceSize:], nil)
+	plaintext, err := b.aead.Open(nil, raw[:nonceSize], raw[nonceSize:], additionalData)
 	if err != nil {
 		return nil, ErrCiphertext
 	}

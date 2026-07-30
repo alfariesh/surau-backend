@@ -275,6 +275,11 @@ Aturan konsumsi:
 
 Endpoint RAG adalah POST dinamis dan tetap bypass cache edge. Detail request/SSE ada di
 [`docs/mobile-backend-integration-guide.md`](mobile-backend-integration-guide.md) §Kitab Reader.
+Respons final dapat membawa field aditif `inference` berisi `call_id`,
+`generation {run_id,model_id,prompt_version}`, provider/model, schema version,
+token, biaya, `cache_status`, dan `failover`. Field ini untuk diagnostik/biaya;
+UI pembaca boleh mengabaikannya dan tidak boleh menganggap cache sebagai
+Provenance Class konten.
 
 ## Quran Reader Flow
 
@@ -399,6 +404,11 @@ FE handling:
 - `404 translation not found` on kitab feedback: hide feedback because exact requested translation is missing.
 - `429 too many auth attempts` (code `AUTH_RATE_LIMITED`): auth rate limit hit (per client IP and per email/account). Back off; honor `retry_after`.
 - `429 too many requests` (code `too_many_requests`): non-auth rate limiter (RAG/search/personal/editorial/session). Back off; honor `retry_after`.
+- `503 inference_budget_exceeded`: pagar biaya LLM menolak call baru; honor
+  `Retry-After`/`retry_after`, tampilkan coba-lagi setelah reset, dan jangan
+  mengulang agresif. Cache hit berbiaya nol dapat tetap berhasil.
+- `503 inference_provider_unavailable`: kedua provider gagal atau session batch
+  berpinned kehilangan providernya; tampilkan state sementara/coba lagi.
 - `409 license not permitted` (code `license_not_permitted`): keep the Quran
   draft private and disable publish until its license is `permitted`.
 - `412 precondition failed` (code `precondition_failed`): another Quran
@@ -406,6 +416,9 @@ FE handling:
 - `428 if-match header required` (code `if_match_header_required`): fix the
   mutation caller to send the workspace ETag (or an intentional `*`).
 - `500 internal server error`: show retry UI and keep previous content if cached.
+
+Pada SSE, kedua kegagalan inference di atas dikirim sebagai tepat satu event
+`error` terstruktur sebelum delta jawaban, lalu stream ditutup.
 
 ## Public Cache Contract (F1-D/B-4/Q-2)
 

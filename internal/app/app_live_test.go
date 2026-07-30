@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
@@ -36,27 +37,42 @@ func TestLiveAppBootstrap(t *testing.T) {
 
 	port := freeTCPPort(t)
 
+	priceCatalog := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, writeErr := io.WriteString(
+			w,
+			`[{"model_name":"glm-5.1","input_cost_per_token":"0.0000001",`+
+				`"output_cost_per_token":"0.00000032"}]`,
+		)
+		assert.NoError(t, writeErr)
+	}))
+	defer priceCatalog.Close()
+
 	// The test owns its entire environment: required keys plus explicit safe
 	// values for every gate that could reach an external service.
 	//nolint:gosec // throwaway smoke-test values, not real credentials
 	for key, value := range map[string]string{
-		"APP_NAME":                    "surau-backend-smoke",
-		"APP_VERSION":                 "smoke-test",
-		"APP_ENV":                     "test",
-		"HTTP_PORT":                   port,
-		"LOG_LEVEL":                   "error",
-		"PG_URL":                      liveURL,
-		"JWT_SECRET":                  "smoke-test-secret-0123456789abcdef0123456789",
-		"METRICS_ENABLED":             "true",
-		"SWAGGER_ENABLED":             "false",
-		"OTEL_ENABLED":                "false",
-		"ONESIGNAL_ENABLED":           "false",
-		"AUTH_ALERT_ENABLED":          "false",
-		"EMAIL_DELIVERY_MODE":         "log",
-		"EMAIL_DISPATCH_INTERVAL":     "1s",
-		"EMAIL_VERIFY_FRONTEND_URL":   "http://localhost:3000/verify",
-		"PASSWORD_RESET_FRONTEND_URL": "http://localhost:3000/reset",
-		"EMAIL_CHANGE_FRONTEND_URL":   "http://localhost:3000/email-change",
+		"APP_NAME":                       "surau-backend-smoke",
+		"APP_VERSION":                    "smoke-test",
+		"APP_ENV":                        "test",
+		"HTTP_PORT":                      port,
+		"LOG_LEVEL":                      "error",
+		"PG_URL":                         liveURL,
+		"JWT_SECRET":                     "smoke-test-secret-0123456789abcdef0123456789",
+		"METRICS_ENABLED":                "true",
+		"SWAGGER_ENABLED":                "false",
+		"OTEL_ENABLED":                   "false",
+		"ONESIGNAL_ENABLED":              "false",
+		"AUTH_ALERT_ENABLED":             "false",
+		"EMAIL_DELIVERY_MODE":            "log",
+		"EMAIL_DISPATCH_INTERVAL":        "1s",
+		"EMAIL_VERIFY_FRONTEND_URL":      "http://localhost:3000/verify",
+		"PASSWORD_RESET_FRONTEND_URL":    "http://localhost:3000/reset",
+		"EMAIL_CHANGE_FRONTEND_URL":      "http://localhost:3000/email-change",
+		"RAG_LLM_API_KEY":                "smoke-primary-provider-credential",
+		"DEEPSEEK_API_KEY":               "smoke-secondary-provider-credential",
+		"INFERENCE_SUMOPOD_CATALOG_URL":  priceCatalog.URL,
+		"INFERENCE_CACHE_ENCRYPTION_KEY": "smoke-u0-cache-key-at-least-thirty-two-bytes",
 	} {
 		t.Setenv(key, value)
 	}

@@ -5,6 +5,13 @@ services:
     environment:
       AUTH_RATE_LIMIT_REGISTER_IP_MAX: "100"
       AUTH_RATE_LIMIT_LOGIN_IP_MAX: "100"
+      BACKGROUND_LOOPS_ENABLED: "false"
+      # The deterministic rollout guard requires the static false value, while
+      # this regular-file activation marker keeps integration-only dispatch
+      # loops (notably the email dead-letter test) running.
+      BACKGROUND_LOOPS_ACTIVATION_FILE: "/app"
+      RAG_LLM_DRIVER: "deterministic-rollout"
+      INFERENCE_CACHE_ENCRYPTION_KEY: "integration-u0-cache-key-at-least-thirty-two-bytes"
 
   integration-test:
     container_name: integration-test

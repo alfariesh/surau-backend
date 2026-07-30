@@ -13,26 +13,9 @@ from langextract_kg.openai_compatible_model import (  # noqa: E402
     build_json_retry_prompt,
     classify_langextract_json,
     coerce_json_output,
-    extract_message_text,
     normalize_langextract_json,
     sha256_text,
 )
-
-
-class _Message:
-    def __init__(self, content: str = "", reasoning_content: str = "") -> None:
-        self.content = content
-        self.reasoning_content = reasoning_content
-
-
-class _Choice:
-    def __init__(self, message: object) -> None:
-        self.message = message
-
-
-class _Response:
-    def __init__(self, message: object) -> None:
-        self.choices = [_Choice(message)]
 
 
 class _RetryModel(OpenAICompatibleJSONModel):
@@ -42,30 +25,15 @@ class _RetryModel(OpenAICompatibleJSONModel):
         self.failures_before_success = failures_before_success
         self.calls = 0
 
-    def _complete(self, prompt: str, config: dict[str, object]) -> str:
-        del prompt, config
+    def _complete(self, prompt: str) -> dict[str, object]:
+        del prompt
         self.calls += 1
         if self.calls <= self.failures_before_success:
             raise exceptions.InferenceRuntimeError("temporary api failure")
-        return '{"extractions": []}'
+        return {"output": '{"extractions": []}'}
 
 
 class OpenAICompatibleModelTest(unittest.TestCase):
-    def test_extracts_content_first(self) -> None:
-        self.assertEqual(extract_message_text(_Response(_Message(content=" {} "))), "{}")
-
-    def test_falls_back_to_reasoning_content(self) -> None:
-        self.assertEqual(
-            extract_message_text(_Response(_Message(reasoning_content=' {"extractions": []} '))),
-            '{"extractions": []}',
-        )
-
-    def test_supports_dict_message(self) -> None:
-        self.assertEqual(
-            extract_message_text(_Response({"content": "", "reasoning_content": '{"x": 1}'})),
-            '{"x": 1}',
-        )
-
     def test_coerces_fenced_json(self) -> None:
         self.assertEqual(coerce_json_output('```json\n{"extractions": []}\n```'), '{"extractions": []}')
 
@@ -121,15 +89,15 @@ class OpenAICompatibleModelTest(unittest.TestCase):
 
     def test_api_retry_recovers_transient_failure(self) -> None:
         model = _RetryModel(failures_before_success=1)
-        output, api_retry_count = model._complete_with_retries("prompt", {})
-        self.assertEqual(output, '{"extractions": []}')
+        output, api_retry_count = model._complete_with_retries("prompt")
+        self.assertEqual(output["output"], '{"extractions": []}')
         self.assertEqual(api_retry_count, 1)
         self.assertEqual(model.calls, 2)
 
     def test_api_retry_raises_after_limit(self) -> None:
         model = _RetryModel(failures_before_success=3)
         with self.assertRaises(exceptions.InferenceRuntimeError):
-            model._complete_with_retries("prompt", {})
+            model._complete_with_retries("prompt")
         self.assertEqual(model.calls, 3)
 
     def test_sha256_text_is_stable(self) -> None:

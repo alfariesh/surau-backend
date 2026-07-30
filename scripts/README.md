@@ -11,8 +11,8 @@ file, which is ignored by git.
 
 Generates `cmd/import-reader-assets` JSONL translation records from Surau TOC
 sections. The script fetches Arabic content from the local backend, sends one
-TOC section to DeepSeek, and writes one JSONL row per `(book_id, heading_id,
-lang)`.
+TOC section to the metered U-0 gateway, and writes one JSONL row per
+`(book_id, heading_id, lang)`.
 
 The same importer command also accepts catalog rows:
 `book_metadata_translation`, `author_translation`, and
@@ -30,29 +30,22 @@ controlled by editorial book publication status.
 
 ### Environment
 
-Create `/Users/macmini/Downloads/surau-backend/.env.local`:
+Create `.env.local` at the repository root:
 
 ```env
-DEEPSEEK_API_KEY=sk-...
+SURAU_API_BASE_URL=http://127.0.0.1:8080
+SURAU_INFERENCE_SERVICE_TOKEN=surau_st_<token-id>.<secret>
 ```
 
 Optional:
 
 ```env
-DEEPSEEK_MODEL=deepseek-v4-flash
-DEEPSEEK_BASE_URL=https://api.deepseek.com
-RAG_LLM_API_KEY=sk-...
-RAG_LLM_MODEL=glm-5.1
-RAG_LLM_BASE_URL=https://ai.sumopod.com/v1
-SUMMARY_LLM_API_KEY=sk-...
-SUMMARY_LLM_MODEL=glm-5.1
-SUMMARY_LLM_BASE_URL=https://ai.sumopod.com/v1
-LLM_PROVIDER_NAME=sumopod
+SURAU_INFERENCE_BASE_URL=https://dev-api.surau.org
 ```
 
-`translate_reader_assets.py` still accepts the historical DeepSeek flag names,
-but it can call any OpenAI-compatible `/chat/completions` provider. Metadata
-provider labels are inferred from the base URL or `LLM_PROVIDER_NAME`.
+Token harus milik principal A-2 `u0-inference` dengan scope `inference:invoke`.
+Generator tidak menerima URL/model/API key provider. Provider, model, prompt,
+schema, harga, failover, dan Generation Run dipilih oleh registry U-0.
 
 ### Generation Identity Contract
 
@@ -69,8 +62,7 @@ Every generated text row contains this required shape:
 }
 ```
 
-One script invocation creates one UUID per active prompt family and reuses it
-for all rows in that family:
+Setiap output memakai UUID dari provider attempt aktual yang dikembalikan gateway:
 
 | Output | Prompt version |
 |---|---|
@@ -79,9 +71,10 @@ for all rows in that family:
 | Translated heading summary | `reader-summary-translation-v1` |
 | Book/author/category catalog translation | `catalog-translation-v1` |
 
-An invocation with section translation plus summary translation has two run
-IDs, not one. `--resume` preserves rows already present and does not rewrite
-their generation identity.
+Failover dapat membuat output berikutnya memakai run sekunder; metadata setiap row
+tetap menunjukkan provider/model aktual. `--resume` preserves rows already
+present and does not rewrite their generation identity. Bila cap terlampaui,
+script keluar dengan kode `75` dan dapat dilanjutkan.
 
 `cmd/import-reader-assets` preflights the complete JSONL file before starting
 the database transaction. A missing identity, malformed UUID, prompt/kind

@@ -1,0 +1,143 @@
+name: Inference DEV verification
+
+on:
+  workflow_dispatch:
+
+jobs:
+  verify:
+    name: runner / inference / dev verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: dev
+    env:
+      VPS_HOST: ${{ secrets.DEV_VPS_HOST }}
+      VPS_USER: ${{ secrets.DEV_VPS_USER }}
+      VPS_DEPLOY_PATH: ${{ secrets.DEV_VPS_DEPLOY_PATH }}
+      VPS_SSH_PRIVATE_KEY: ${{ secrets.DEV_VPS_SSH_PRIVATE_KEY }}
+      VPS_SSH_KNOWN_HOSTS: ${{ secrets.DEV_VPS_SSH_KNOWN_HOSTS }}
+      EXPECTED_SHA: ${{ github.sha }}
+    steps:
+      - name: Verify active app, U-0 registry, ledger, and attribution
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          : "${VPS_HOST:?Set the DEV_VPS_HOST repository secret}"
+          : "${VPS_USER:?Set the DEV_VPS_USER repository secret}"
+          : "${VPS_DEPLOY_PATH:?Set the DEV_VPS_DEPLOY_PATH repository secret}"
+          : "${VPS_SSH_PRIVATE_KEY:?Set the DEV_VPS_SSH_PRIVATE_KEY repository secret}"
+          : "${VPS_SSH_KNOWN_HOSTS:?Set the pinned DEV_VPS_SSH_KNOWN_HOSTS secret}"
+          : "${EXPECTED_SHA:?GitHub must provide the workflow SHA}"
+          umask 077
+
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$VPS_SSH_PRIVATE_KEY" > ~/.ssh/surau_deploy_key
+          chmod 600 ~/.ssh/surau_deploy_key
+          printf '%s\n' "$VPS_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+          ssh -i ~/.ssh/surau_deploy_key \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile=~/.ssh/known_hosts \
+            -o ConnectTimeout=30 \
+            "$VPS_USER@$VPS_HOST" \
+            "DEPLOY_PATH='$VPS_DEPLOY_PATH' EXPECTED_SHA='$EXPECTED_SHA' bash -s" <<'REMOTE'
+          set -euo pipefail
+          cd "$DEPLOY_PATH"
+
+          deploy_state_dir=/var/lib/surau/deploy
+          active_port="$(sudo cat "$deploy_state_dir/active-api-port")"
+          active_container="$(sudo cat "$deploy_state_dir/active-api-container")"
+          [[ "$active_port" =~ ^(8080|18080|18081)$ ]]
+          [[ "$active_container" =~ ^[a-f0-9]{12,64}$ ]]
+          test "$(sudo docker inspect -f '{{.State.Running}}' "$active_container")" = true
+
+          expected_version="dev-${EXPECTED_SHA:0:7}"
+          actual_version="$(curl -fsS "http://127.0.0.1:${active_port}/version" |
+            sed -n 's/.*"version":"\([^"]*\)".*/\1/p')"
+          test "$actual_version" = "$expected_version"
+          curl -fsS "http://127.0.0.1:${active_port}/readyz" >/dev/null
+          curl -fsS "http://127.0.0.1:${active_port}/metrics" |
+            grep -F 'surau_inference_cost_nano_usd_total' >/dev/null
+
+          db_container="$(sudo docker compose --env-file .env.production \
+            -f docker-compose.prod.yml ps -q db)"
+          [[ "$db_container" =~ ^[a-f0-9]{12,64}$ ]]
+          test "$(sudo docker inspect -f '{{.State.Running}}' "$db_container")" = true
+
+          assert_sql() {
+            label="$1"
+            sql="$2"
+            result="$(sudo docker exec "$db_container" sh -c \
+              'psql -X -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atv ON_ERROR_STOP=1 -c "$1"' \
+              _ "$sql")"
+            if [ "$result" != "1" ]; then
+              echo "U-0 verification failed: $label" >&2
+              exit 1
+            fi
+            echo "U-0 verification passed: $label"
+          }
+
+          assert_sql "migration is current and clean" \
+            "SELECT CASE WHEN version >= 20260728000001 AND NOT dirty THEN 1 ELSE 0 END
+             FROM schema_migrations"
+          assert_sql "17 task manifests and 16 dual-provider routes are active" \
+            "SELECT CASE WHEN
+               (SELECT count(*) FROM inference_tasks) = 17
+               AND (SELECT count(*) FROM inference_prompt_versions) = 17
+               AND (SELECT count(*) FROM inference_response_schemas) = 17
+               AND (SELECT count(*) FROM inference_routes WHERE enabled) = 32
+               AND (SELECT count(DISTINCT provider_key)
+                    FROM inference_routes WHERE enabled) = 2
+             THEN 1 ELSE 0 END"
+          assert_sql "paid routes have immutable prices" \
+            "SELECT CASE WHEN count(*) = 0 THEN 1 ELSE 0 END
+             FROM inference_routes r
+             JOIN inference_models m
+               ON m.provider_key = r.provider_key AND m.model_key = r.model_key
+             WHERE r.enabled
+               AND (m.price_version IS NULL
+                 OR m.input_nano_usd_per_million IS NULL
+                 OR m.cached_input_nano_usd_per_million IS NULL
+                 OR m.output_nano_usd_per_million IS NULL)"
+          assert_sql "u0-inference has all three A-2 scopes" \
+            "SELECT CASE WHEN count(*) = 3 THEN 1 ELSE 0 END
+             FROM service_principals p
+             JOIN service_principal_scopes s ON s.principal_id = p.id
+             WHERE p.principal_name = 'u0-inference'
+               AND s.scope IN (
+                 'inference:invoke',
+                 'prompt-registry:manage',
+                 'inference-budget:manage'
+               )"
+          assert_sql "a metered provider attempt exists after smoke" \
+            "SELECT CASE WHEN count(*) > 0 THEN 1 ELSE 0 END
+             FROM inference_attempts"
+          assert_sql "live attribution violations are zero" \
+            "SELECT CASE WHEN count(*) = 0 THEN 1 ELSE 0 END
+             FROM inference_attempts a
+             JOIN inference_calls c ON c.id = a.call_id
+             JOIN generation_runs g ON g.id = a.generation_run_id
+             JOIN inference_prompt_versions p
+               ON p.task_key = a.task_key AND p.version = a.prompt_version
+             JOIN inference_response_schemas s
+               ON s.task_key = a.task_key
+              AND s.version = a.response_schema_version
+             JOIN inference_models m
+               ON m.provider_key = a.provider_key AND m.model_key = a.model_key
+             WHERE a.task_key <> c.task_key
+                OR a.task_key <> g.task_name
+                OR a.provider_key IS DISTINCT FROM g.provider
+                OR a.provider_model_id <> g.model_id
+                OR a.prompt_version <> g.prompt_version
+                OR a.prompt_sha256 <> p.content_sha256
+                OR a.response_schema_sha256 <> s.content_sha256
+                OR a.provider_model_id <> m.provider_model_id
+                OR a.price_version <> m.price_version
+                OR a.usage_source = ''
+                OR a.cost_source = ''"
+
+          echo "U-0 DEV verification complete for $expected_version"
+          REMOTE

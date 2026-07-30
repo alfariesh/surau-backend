@@ -548,3 +548,138 @@ groups:
                     type: last
         noDataState: NoData
         execErrState: Error
+      - uid: surau-inference-daily-budget-80
+        title: LLM daily budget reached 80 percent
+        condition: C
+        for: 1m
+        labels:
+          env: $OBS_ENV_LABEL
+          source: u0
+        annotations:
+          summary: Pemakaian biaya LLM harian mencapai ≥80% dari cap — periksa panel LLM budget
+            guard sebelum panggilan baru ditolak.
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: max(surau_inference_budget_usage_ratio{window="daily",mode="enforce"}) >= bool 0.8
+              instant: true
+              range: false
+              datasource:
+                type: prometheus
+                uid: prometheus
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              datasource:
+                type: __expr__
+                uid: __expr__
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0]
+                  operator:
+                    type: and
+                  query:
+                    params: [A]
+                  reducer:
+                    type: last
+        noDataState: OK
+        execErrState: Error
+      - uid: surau-inference-monthly-budget-80
+        title: LLM monthly budget reached 80 percent
+        condition: C
+        for: 1m
+        labels:
+          env: $OBS_ENV_LABEL
+          source: u0
+        annotations:
+          summary: Pemakaian biaya LLM bulanan mencapai ≥80% dari cap — periksa tren biaya dan
+            putuskan override beralasan bila benar-benar diperlukan.
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: max(surau_inference_budget_usage_ratio{window="monthly",mode="enforce"}) >= bool 0.8
+              instant: true
+              range: false
+              datasource:
+                type: prometheus
+                uid: prometheus
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              datasource:
+                type: __expr__
+                uid: __expr__
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0]
+                  operator:
+                    type: and
+                  query:
+                    params: [A]
+                  reducer:
+                    type: last
+        noDataState: OK
+        execErrState: Error
+      - uid: surau-inference-zero-baseline
+        title: LLM baseline expired with zero metered cost
+        condition: C
+        for: 5m
+        labels:
+          env: $OBS_ENV_LABEL
+          source: u0
+        annotations:
+          summary: Baseline 30 hari berakhir tanpa biaya terukur; cap nol tidak dibuat. Periksa
+            route/provider dan biarkan baseline berlanjut sampai ada pemakaian sah.
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: max(surau_inference_budget_config_alert{kind="zero_baseline"}) > bool 0
+              instant: true
+              range: false
+              datasource:
+                type: prometheus
+                uid: prometheus
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              datasource:
+                type: __expr__
+                uid: __expr__
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0]
+                  operator:
+                    type: and
+                  query:
+                    params: [A]
+                  reducer:
+                    type: last
+        noDataState: OK
+        execErrState: Error
