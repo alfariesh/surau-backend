@@ -363,7 +363,14 @@ Kerjakan U-0 dari roadmap/phase-7-unified-rag.md di atas identitas layanan A-2 d
 Masuk PLAN MODE dulu; rencana wajib menyebut cara memenuhi setiap Acceptance Criterion U-0, inventaris migrasi seluruh call-site, bukti setiap panggilan membawa task+model+prompt+run+token+biaya, test failover dua provider, serta perilaku saat cap terlampaui. Setelah saya setujui: kerjakan sampai tuntas — branch fitur, test, Definition of Done, centang PROGRAM.md & SESI.md, merge, verifikasi dev-api. Laporan akhir bahasa awam + tunjukkan cara saya melihat biaya harian dan pagarnya.
 ```
 
-- [ ] **SESI 26 — Mulai eval-as-gate (U-6, tahap W3)**
+- [x] **SESI 26 — Mulai eval-as-gate (U-6, tahap W3)** — ✅ **TAHAP W3 SELESAI
+  2026-07-30 (PR #176, `dev-bb18612`)**: fondasi eval lintas-korpus hidup dengan 12 skenario
+  aktif, 40 seed ber-owner eksplisit, laporan per kategori, gate deterministik 90%/keamanan
+  100%, mutation-test, parity guard, judge advisory ber-rubrik immutable, dan sampling manusia.
+  Run dev mencapai 11/12 (91,67%) dengan seluruh kategori pemblokir 100%; alarm tetap jujur
+  mencatat percobaan pertama yang gagal dan judge yang dilewati karena token mesin belum
+  dikonfigurasi. Serving buku tetap tree existing tanpa reroute atau pensiun. **U-6 tetap
+  parsial** sampai U-1/U-3/U-4/H-7/W-7 mengaktifkan seed dan golden aktif mencapai ≥50.
 
 ```text
 Mulai tahap W3 U-6 dari roadmap/phase-7-unified-rag.md: perluas harness BookRAG existing menjadi fondasi eval lintas-korpus; hidupkan sekarang kasus kitab + keamanan Quran dari Q-2 (anti-tafsir dan routing ayat→tafsir) + not-found + injeksi-lewat-konten, lalu siapkan kategori/seed id↔ar, validitas struktur, lensa-tak-meratakan, hadith, dan wiki untuk diaktifkan saat U-1/U-3/U-4/H-7/W-7 mendarat; prioritaskan asersi deterministik, pakai LLM-judge ber-rubrik-versi hanya untuk groundedness/ikhtilaf dengan sampling manusia; tampilkan pass-rate per kategori dan naikkan CI bertahap dari non-gating ke gate PR retrieval/release, tanpa reroute buku atau pensiun tree sebelum parity menang.

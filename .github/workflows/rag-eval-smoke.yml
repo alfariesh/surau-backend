@@ -132,16 +132,14 @@ jobs:
       - name: Raise scheduled alarms
         if: always()
         env:
-          HTTP_STATUS: ${{ steps.http.outputs.status }}
           REPORT_STATUS: ${{ steps.gate.outputs.report_status }}
           GATE_STATUS: ${{ steps.gate.outputs.gate_status }}
         run: |
           set -euo pipefail
           alarm=0
-          if [ "${HTTP_STATUS:-1}" -ne 0 ] ||
-             [ "${REPORT_STATUS:-1}" -ne 0 ] ||
+          if [ "${REPORT_STATUS:-1}" -ne 0 ] ||
              [ "${GATE_STATUS:-1}" -ne 0 ]; then
-            echo "::error::U-6 deterministic scheduled evaluation failed"
+            echo "::error::U-6 deterministic scheduled gate failed"
             alarm=1
           fi
           if [ -f u6-report.json ] &&

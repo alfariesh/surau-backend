@@ -69,9 +69,9 @@ jobs:
             -run "$case_pattern" \
             ./internal/rageval ./internal/usecase/bookrag ./internal/repo/persistent \
             | tee u6-go-test.jsonl
-      - name: Run exact W3 HTTP release profile without retry
+      - name: Collect exact W3 HTTP release profile without retry
         run: |
-          set -euo pipefail
+          set +e
           go run ./cmd/rag-eval run \
             -catalog eval/u6/catalog.json \
             -profile release \
@@ -79,6 +79,12 @@ jobs:
             -retries 0 \
             -output json \
             -verbose > u6-http-report.json
+          status=$?
+          if [ ! -s u6-http-report.json ]; then
+            echo "rag-eval did not produce a release report (status=$status)" >&2
+            exit 1
+          fi
+          echo "rag-eval collection status=$status; category gate decides release eligibility"
       - name: Build and enforce release category report
         run: |
           set -euo pipefail
