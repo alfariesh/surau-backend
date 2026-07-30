@@ -230,17 +230,22 @@ curl -X POST 'http://127.0.0.1:8080/v1/books/797/rag?lang=id' \
   -d '{"question":"Apa definisi hadis sahih?","max_citations":5}'
 ```
 
-Book-RAG calls the shared U-0 inference layer. SumoPod/`glm-5.1` is primary and
-DeepSeek/`deepseek-v4-flash` is secondary; both credentials plus the independent
-`INFERENCE_CACHE_ENCRYPTION_KEY` are required for non-test readiness. Task, model,
+Book-RAG calls the shared U-0 inference layer. The default manifest uses
+SumoPod/`glm-5.1` as primary and DeepSeek/`deepseek-v4-flash` as secondary. Every
+enabled route needs its credential; an intentional single-provider deployment
+sets `INFERENCE_SECONDARY_ENABLED=false`. The independent
+`INFERENCE_CACHE_ENCRYPTION_KEY` is always required outside tests. Task, model,
 prompt/schema, token, cost, cache, failover, and Generation Run are metered for
-every provider attempt. Operational details and daily-cost instructions are in
+every provider attempt. Operational details, the SumoPod-only dev decision, and
+daily-cost instructions are in
 [`docs/inference-operations.md`](docs/inference-operations.md). Retrieval tuning
 defaults remain `RAG_LLM_TIMEOUT=45s`, `RAG_LLM_MAX_TOKENS=1400`,
 `RAG_LLM_TEMPERATURE=0.1`, `RAG_MAX_CONTEXT_PAGES=8`,
 `RAG_TREE_FULL_MAX_NODES=450`, `RAG_TREE_BLOCK_MAX_NODES=120`,
 `RAG_TREE_BEAM_SIZE=3`, `RAG_TREE_MAX_TURNS=6`, and
-`RAG_TREE_MAX_BLOCKS_PER_TURN=6`.
+`RAG_TREE_MAX_BLOCKS_PER_TURN=6`. The dev route for reasoning-heavy
+`deepseek-v4-pro` overrides `RAG_LLM_MAX_TOKENS=4096` so a valid JSON answer is
+not truncated.
 
 `RAG_BOOK_CITATION_MODE` mengendalikan perpindahan sitasi K-1 tanpa big-bang:
 
