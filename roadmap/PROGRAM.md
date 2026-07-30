@@ -243,8 +243,27 @@ Generation Run asal, trace Tempo lengkap, dan live SQL attribution violations=0 
 Perbaikan adapter rollout berbasis task-key serta isolasi registry evaluator mengembalikan gerbang
 katalog 100/100 tanpa memutasi route serving, 0 mismatch/anchor unresolved, p95 315 ms; deploy
 final, smoke provider nyata, dan workflow verifikasi DEV resmi hijau);
-**U-6 (eval-harness → gate) DIMULAI DI SINI** — Fase 7 mensyaratkannya sejak hari pertama,
-dan enrichment kitab langsung ikut menumpang U-0.
+**U-6 (eval-harness → gate) — TAHAP W3 ✅ SELESAI 2026-07-30; U-6 TETAP PARSIAL**
+(SESI 26, PR #176, `dev-bb18612`): harness BookRAG kini menjadi EvalCatalog/EvalCase/EvalReport
+v1 lintas-korpus dengan CLI lama tetap kompatibel; 12 kasus aktif mencakup kitab JSON/SSE +
+Anchor/kutipan, routing QS 2:183 ke Tafsir as-Sa'di buku 42 heading 104/page 123, not-found,
+injeksi-lewat-konten, penolakan sitasi salah, dan gerbang konstruksi
+`TestLiveQuranCitableUnitsNeverInterpretiveEligible`. Gate hanya memakai asersi deterministik
+(≥90% keseluruhan, kategori pemblokir 100%, kategori tanpa hasil gagal), sedangkan
+`groundedness-v1`/`ikhtilaf-v1` immutable tetap advisory dan antrean sampling manusia deterministik
+20% minimum dua. Dashboard kategori + artefak JSON/Markdown hidup di PR, jadwal, dan pre-deploy
+rilis; retry hanya satu kali di jadwal dan kegagalan attempt pertama tetap alarm. Mutation-test
+membuktikan satu regresi anti-tafsir/injeksi tetap tertahan meski skor >90%, serta parity,
+reroute, dan pensiun tree ditolak bila SHA/catalog tidak cocok atau kandidat kalah. CI penuh
+run #30534901524 hijau; deploy run #30535299266 hidup; eval dev run #30538566980 mencatat 11/12
+(91,67%), seluruh kategori pemblokir 100%, kitab 100%, not-found 100%, dan routing Quran 50%
+karena satu variant sempat menerima 503 lalu abstain tanpa bukti. Judge live dilewati dan
+dibunyikan sebagai alarm karena secret `RAG_EVAL_SERVICE_TOKEN` belum tersedia; kontrak
+401/403/200, allowlist rubrik, attribution, dan kegagalan budget lulus integration test. Serving
+buku **tetap tree existing**—tidak ada reroute atau pensiun. Katalog sudah menyiapkan 40 seed:
+U-1 ≥8 id↔ar, U-3 ≥6 struktur/ikhtilaf, U-4 ≥6 lensa-tak-meratakan, H-7 ≥10 hadith, W-7 ≥10
+wiki, sehingga total minimum menjadi 52 saat seluruh owner mendarat; sampai itu terjadi U-6
+tidak boleh dicentang selesai penuh.
 **Gerbang keluar:** editorial Quran ber-ETag+revisi; test eligibilitas anti-tafsir lulus (dirujuk
 U-6); 100% buku published ter-unit dengan sitasi dual-write terverifikasi; eval berjalan di CI
 (non-gating → gating bertahap); setiap panggilan LLM ber-meter.
