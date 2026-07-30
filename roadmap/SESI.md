@@ -350,12 +350,13 @@ Masuk PLAN MODE dulu; rencana wajib menyebut cara memenuhi setiap Acceptance Cri
 ```
 
 - [x] **SESI 25 — Lapisan inferensi LLM bersama (U-0)** — ✅ **SELESAI
-  2026-07-30 (PR #170 + #173, `dev-8fd5dd6`)**: seluruh panggilan LLM aktif kini melewati
+  2026-07-30 (PR #170 + #173 + #174, `dev-1c631dc`)**: seluruh panggilan LLM aktif kini melewati
   registry task/provider/model/prompt/schema ber-versi dengan Generation Run, trace, token, dan
   biaya nano-USD lengkap; cache aman, baseline→cap 2×, alert Telegram 80%, penolakan anggun, dan
   failover dua-provider teruji. Dev memakai SumoPod-only `deepseek-v4-pro` sesuai U-D15 dengan
   harga 0,50/0,004/0,95 USD per 1 juta token. CI+`make pre-commit` hijau; smoke JSON/SSE nyata,
-  cache biaya nol, Tempo, attribution violations=0, serta parity katalog 100/100 terbukti.
+  cache biaya nol, Tempo, attribution violations=0, parity katalog 100/100, dan registry
+  evaluator yang terisolasi tanpa memutasi route serving terbukti.
 
 ```text
 Kerjakan U-0 dari roadmap/phase-7-unified-rag.md di atas identitas layanan A-2 dan generation_runs B-6: bangun registry provider/model per tugas (rewrite/rerank/embed/jawab/judge), registry prompt + skema jawaban ber-versi di DB, metering token+biaya per panggilan ke trace F1-B, baseline/cap+alert 80% dengan penolakan anggun sesuai default aman O-7-3, cache yang aman, serta failover dua provider; semua call-site LLM aktif wajib memakai lapisan ini tanpa jalur ad-hoc.
