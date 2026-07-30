@@ -228,8 +228,22 @@ rotasi atomik single-winner, reuse→revoke keluarga, revoke per-sesi, dan notif
 tetap teruji. `device_label` aditif memakai label tetap yang aman serta fallback tanpa memantulkan
 metadata mentah. Unit/race, integration Docker, live PostgreSQL serial, Swagger, panduan rilis
 FE/mobile, `make pre-commit`, dan canary endpoint auth dev tersedia; tanpa migrasi schema);
-**U-0 (lapisan inferensi) + U-6 (eval-harness → gate) DIMULAI DI SINI** — Fase 7 mensyaratkan
-keduanya "sejak hari pertama", dan enrichment kitab langsung ikut menumpang U-0.
+**U-0 (lapisan inferensi)** ✅ **SELESAI 2026-07-30 (SESI 25, PR #170 + #173,
+`dev-8fd5dd6`)** (17 task registry mencakup rewrite/rerank/embed/answer/judge dengan prompt dan
+JSON Schema immutable, route+harga ber-versi, Generation Run per attempt, ledger nano-USD,
+trace F1-B tanpa prompt/output/secret, cache AES-GCM+HMAC, baseline 30 hari→cap 2×, alert Telegram
+≥80%, reservasi atomik, penolakan JSON/SSE/batch yang anggun, serta failover maksimum dua provider.
+Seluruh call-site Go/Python aktif berpindah ke gateway bersama dan boundary contract menolak
+provider ad-hoc. Unit/race, integration, live PostgreSQL, Python contracts, migrasi
+up→down→up, coverage gate, dan `make pre-commit` hijau; test dua-provider meliputi
+503/timeout/kosong/schema-invalid, 400 tanpa failover, kedua provider gagal, dan session pinned.
+Dev memakai keputusan U-D15 SumoPod-only `deepseek-v4-pro` dengan harga akun
+0,50/0,004/0,95 USD per 1 juta token; smoke Book-RAG JSON+SSE, cache-hit biaya nol dengan
+Generation Run asal, trace Tempo lengkap, dan live SQL attribution violations=0 terbukti.
+Perbaikan adapter rollout berbasis task-key mengembalikan gerbang katalog 100/100,
+0 mismatch/anchor unresolved, p95 333 ms);
+**U-6 (eval-harness → gate) DIMULAI DI SINI** — Fase 7 mensyaratkannya sejak hari pertama,
+dan enrichment kitab langsung ikut menumpang U-0.
 **Gerbang keluar:** editorial Quran ber-ETag+revisi; test eligibilitas anti-tafsir lulus (dirujuk
 U-6); 100% buku published ter-unit dengan sitasi dual-write terverifikasi; eval berjalan di CI
 (non-gating → gating bertahap); setiap panggilan LLM ber-meter.
