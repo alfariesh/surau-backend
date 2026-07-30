@@ -128,12 +128,13 @@ type Options struct {
 
 // UseCase is the sole application path to external model providers.
 type UseCase struct {
-	repo      repo.InferenceRepo
-	provider  repo.InferenceProvider
-	cacheBox  *cryptobox.Box
-	cacheHMAC []byte
-	options   Options
-	now       func() time.Time
+	repo            repo.InferenceRepo
+	provider        repo.InferenceProvider
+	cacheBox        *cryptobox.Box
+	cacheHMAC       []byte
+	options         Options
+	ephemeralRoutes []entity.InferenceRoute
+	now             func() time.Time
 }
 
 //nolint:gocritic // Options is an immutable constructor snapshot retained by the usecase.
@@ -175,7 +176,22 @@ func (uc *UseCase) Initialize(ctx context.Context) error {
 		return syncErr
 	}
 
-	return uc.repo.SyncRoutes(ctx, uc.routes(manifests))
+	routes, err := uc.routes(manifests)
+	if err != nil {
+		return err
+	}
+
+	if uc.options.Driver == inferenceDriverDeterministic {
+		// The rollout evaluator shares the DEV database with the serving API.
+		// Keep its route process-local so it cannot disable or replace the
+		// serving SumoPod routes. Provider/model/price rows remain durable
+		// because attempts and generation runs must still be attributable.
+		uc.ephemeralRoutes = routes
+
+		return uc.repo.SyncEphemeralModels(ctx, routes)
+	}
+
+	return uc.repo.SyncRoutes(ctx, routes)
 }
 
 func (uc *UseCase) syncPrimaryPrice(ctx context.Context) error {
@@ -396,7 +412,7 @@ func roundedDecimal(value string, multiplier int64) (int64, error) {
 
 func (uc *UseCase) routes(
 	manifests []entity.InferencePromptManifest,
-) []entity.InferenceRoute {
+) ([]entity.InferenceRoute, error) {
 	routes := make([]entity.InferenceRoute, 0, len(manifests)*maxProviderAttempts)
 	for i := range manifests {
 		manifest := manifests[i]
@@ -405,7 +421,7 @@ func (uc *UseCase) routes(
 		}
 
 		if uc.options.Driver == inferenceDriverDeterministic {
-			routes = append(routes, routeFromManifest(manifest, entity.InferenceRoute{
+			route, err := routeFromManifest(manifest, entity.InferenceRoute{
 				Priority: 1, ProviderKey: "deterministic-rollout",
 				BaseURL:         "http://deterministic-rollout.invalid",
 				APIKeyEnv:       "INFERENCE_DETERMINISTIC_NO_SECRET",
@@ -415,13 +431,18 @@ func (uc *UseCase) routes(
 				TimeoutMS:       deterministicProviderTimeoutMS,
 				MaxOutputTokens: uc.options.MaxOutputTokens,
 				Temperature:     0,
-			}))
+			})
+			if err != nil {
+				return nil, err
+			}
+
+			routes = append(routes, route)
 
 			continue
 		}
 
 		if uc.primaryPriced() {
-			routes = append(routes, routeFromManifest(manifest, entity.InferenceRoute{
+			route, err := routeFromManifest(manifest, entity.InferenceRoute{
 				Priority: 1, ProviderKey: "sumopod", BaseURL: uc.options.PrimaryBaseURL,
 				APIKeyEnv: uc.options.PrimaryAPIKeyEnv, ModelKey: uc.options.PrimaryModel,
 				ProviderModelID:      uc.options.PrimaryModel,
@@ -432,11 +453,16 @@ func (uc *UseCase) routes(
 				SupportsJSON:         true, TimeoutMS: int(uc.options.Timeout.Milliseconds()),
 				MaxOutputTokens: uc.options.MaxOutputTokens,
 				Temperature:     uc.options.Temperature,
-			}))
+			})
+			if err != nil {
+				return nil, err
+			}
+
+			routes = append(routes, route)
 		}
 
 		if !uc.options.DisableSecondary {
-			routes = append(routes, routeFromManifest(manifest, entity.InferenceRoute{
+			route, err := routeFromManifest(manifest, entity.InferenceRoute{
 				Priority: deepSeekPriority, ProviderKey: "deepseek",
 				BaseURL:   uc.options.SecondaryBaseURL,
 				APIKeyEnv: uc.options.SecondaryAPIKeyEnv, ModelKey: uc.options.SecondaryModel,
@@ -448,27 +474,78 @@ func (uc *UseCase) routes(
 				SupportsJSON:         true, TimeoutMS: int(uc.options.Timeout.Milliseconds()),
 				MaxOutputTokens: uc.options.MaxOutputTokens,
 				Temperature:     uc.options.Temperature,
-			}))
+			})
+			if err != nil {
+				return nil, err
+			}
+
+			routes = append(routes, route)
 		}
 	}
 
-	return routes
+	return routes, nil
 }
 
 //nolint:gocritic // Registry values are immutable snapshots assembled at boot.
 func routeFromManifest(
 	manifest entity.InferencePromptManifest,
 	route entity.InferenceRoute,
-) entity.InferenceRoute {
+) (entity.InferenceRoute, error) {
+	messages, err := json.Marshal(manifest.Messages)
+	if err != nil {
+		return entity.InferenceRoute{}, fmt.Errorf("inference route messages: %w", err)
+	}
+
+	var schemaObject map[string]any
+	if err = json.Unmarshal(manifest.ResponseSchema, &schemaObject); err != nil || schemaObject == nil {
+		return entity.InferenceRoute{}, entity.ErrInferenceSchemaInvalid
+	}
+
+	schema, err := json.Marshal(schemaObject)
+	if err != nil {
+		return entity.InferenceRoute{}, fmt.Errorf("inference route schema: %w", err)
+	}
+
+	promptHash := sha256.Sum256(messages)
+	schemaHash := sha256.Sum256(schema)
+
 	route.TaskKey = manifest.TaskKey
 	route.TaskClass = manifest.TaskClass
 	route.OutputKind = manifest.OutputKind
 	route.CacheTTLSeconds = manifest.CacheTTLSeconds
 	route.PersistentEnrichment = manifest.PersistentEnrichment
 	route.PromptVersion = manifest.PromptVersion
+	route.PromptSHA256 = hex.EncodeToString(promptHash[:])
+	route.PolicySHA256 = manifest.PolicySHA256
+	route.MessagesTemplate = messages
 	route.ResponseSchemaVersion = manifest.ResponseSchemaVersion
+	route.ResponseSchemaSHA256 = hex.EncodeToString(schemaHash[:])
+	route.ResponseSchema = schema
 
-	return route
+	return route, nil
+}
+
+func (uc *UseCase) resolveRoutes(
+	ctx context.Context,
+	taskKey, sessionID string,
+) ([]entity.InferenceRoute, error) {
+	if uc.options.Driver != inferenceDriverDeterministic {
+		return uc.repo.ResolveRoutes(ctx, taskKey, sessionID)
+	}
+
+	routes := make([]entity.InferenceRoute, 0, 1)
+
+	for i := range uc.ephemeralRoutes {
+		if uc.ephemeralRoutes[i].TaskKey == taskKey {
+			routes = append(routes, uc.ephemeralRoutes[i])
+		}
+	}
+
+	if len(routes) == 0 {
+		return nil, entity.ErrInferenceRouteMissing
+	}
+
+	return routes, nil
 }
 
 func (uc *UseCase) primaryPriced() bool {
@@ -485,7 +562,7 @@ func (uc *UseCase) Invoke(
 	ctx context.Context,
 	input entity.InferenceInvoke,
 ) (entity.InferenceResult, error) {
-	routes, err := uc.repo.ResolveRoutes(ctx, strings.TrimSpace(input.TaskKey), input.SessionID)
+	routes, err := uc.resolveRoutes(ctx, strings.TrimSpace(input.TaskKey), input.SessionID)
 	if err != nil {
 		return entity.InferenceResult{}, err
 	}
@@ -941,7 +1018,7 @@ func (uc *UseCase) CreateSession(
 	ctx context.Context,
 	taskKey string,
 ) (entity.InferenceSession, error) {
-	if _, err := uc.repo.ResolveRoutes(ctx, taskKey, ""); err != nil {
+	if _, err := uc.resolveRoutes(ctx, taskKey, ""); err != nil {
 		return entity.InferenceSession{}, err
 	}
 
@@ -1486,6 +1563,10 @@ func optionalString(value string) *string {
 func (uc *UseCase) ProviderCredentialReadiness(
 	ctx context.Context,
 ) ([]string, error) {
+	if uc.options.Driver == inferenceDriverDeterministic {
+		return nil, nil
+	}
+
 	routes, err := uc.repo.Registry(ctx)
 	if err != nil {
 		return nil, err

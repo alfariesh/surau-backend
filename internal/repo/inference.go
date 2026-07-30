@@ -25,6 +25,7 @@ type InferenceProvider interface {
 type InferenceRepo interface {
 	SyncManifest(ctx context.Context, manifests []entity.InferencePromptManifest) error
 	SyncRoutes(ctx context.Context, routes []entity.InferenceRoute) error
+	SyncEphemeralModels(ctx context.Context, routes []entity.InferenceRoute) error
 	ResolveRoutes(ctx context.Context, taskKey, sessionID string) ([]entity.InferenceRoute, error)
 	CreateCall(ctx context.Context, call entity.InferenceCall) error
 	CreateAttempt(ctx context.Context, attempt entity.InferenceAttempt) error

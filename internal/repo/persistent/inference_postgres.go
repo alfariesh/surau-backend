@@ -202,92 +202,8 @@ func (r *InferenceRepo) SyncRoutes(ctx context.Context, routes []entity.Inferenc
 
 	for i := range routes {
 		route := routes[i]
-		if route.PriceVersion == "" {
-			return fmt.Errorf("%w: paid route %s/%s has no price version",
-				entity.ErrInferenceRouteMissing, route.ProviderKey, route.ModelKey)
-		}
-
-		if _, err = tx.Exec(
-			ctx, `
-INSERT INTO inference_providers (
-    provider_key, display_name, base_url, api_key_env
-) VALUES ($1, $2, $3, $4)
-ON CONFLICT (provider_key) DO UPDATE
-SET display_name = EXCLUDED.display_name,
-    base_url = EXCLUDED.base_url,
-    api_key_env = EXCLUDED.api_key_env,
-    enabled = true,
-    updated_at = now()`,
-			route.ProviderKey, route.ProviderKey, route.BaseURL, route.APIKeyEnv,
-		); err != nil {
-			return fmt.Errorf("InferenceRepo.SyncRoutes provider: %w", err)
-		}
-
-		if _, err = tx.Exec(
-			ctx, `
-INSERT INTO inference_models (
-    provider_key, model_key, provider_model_id, price_version,
-    input_nano_usd_per_million, cached_input_nano_usd_per_million,
-    output_nano_usd_per_million, supports_json, supports_embeddings,
-    timeout_ms, max_output_tokens
-) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
-ON CONFLICT (provider_key, model_key) DO UPDATE
-SET provider_model_id = EXCLUDED.provider_model_id,
-    price_version = EXCLUDED.price_version,
-    input_nano_usd_per_million = EXCLUDED.input_nano_usd_per_million,
-    cached_input_nano_usd_per_million = EXCLUDED.cached_input_nano_usd_per_million,
-    output_nano_usd_per_million = EXCLUDED.output_nano_usd_per_million,
-    supports_json = EXCLUDED.supports_json,
-    supports_embeddings = EXCLUDED.supports_embeddings,
-    timeout_ms = EXCLUDED.timeout_ms,
-    max_output_tokens = EXCLUDED.max_output_tokens,
-    enabled = true`,
-			route.ProviderKey, route.ModelKey, route.ProviderModelID, route.PriceVersion,
-			route.InputNanoPerMillion, route.CachedNanoPerMillion, route.OutputNanoPerMillion,
-			route.SupportsJSON, route.SupportsEmbeddings, route.TimeoutMS, route.MaxOutputTokens,
-		); err != nil {
-			return fmt.Errorf("InferenceRepo.SyncRoutes model: %w", err)
-		}
-
-		if _, err = tx.Exec(
-			ctx, `
-INSERT INTO inference_model_prices (
-    provider_key, model_key, price_version,
-    input_nano_usd_per_million, cached_input_nano_usd_per_million,
-    output_nano_usd_per_million
-) VALUES ($1,$2,$3,$4,$5,$6)
-ON CONFLICT (provider_key, model_key, price_version) DO NOTHING`,
-			route.ProviderKey, route.ModelKey, route.PriceVersion,
-			route.InputNanoPerMillion, route.CachedNanoPerMillion,
-			route.OutputNanoPerMillion,
-		); err != nil {
-			return fmt.Errorf("InferenceRepo.SyncRoutes price: %w", err)
-		}
-
-		var inputPrice, cachedPrice, outputPrice int64
-		if err = tx.QueryRow(
-			ctx, `
-SELECT input_nano_usd_per_million, cached_input_nano_usd_per_million,
-       output_nano_usd_per_million
-FROM inference_model_prices
-WHERE provider_key=$1 AND model_key=$2 AND price_version=$3`,
-			route.ProviderKey,
-			route.ModelKey,
-			route.PriceVersion,
-		).Scan(&inputPrice, &cachedPrice, &outputPrice); err != nil {
-			return fmt.Errorf("InferenceRepo.SyncRoutes verify price: %w", err)
-		}
-
-		if inputPrice != route.InputNanoPerMillion ||
-			cachedPrice != route.CachedNanoPerMillion ||
-			outputPrice != route.OutputNanoPerMillion {
-			return fmt.Errorf(
-				"%w: price %s/%s/%s",
-				entity.ErrInferenceRegistryConflict,
-				route.ProviderKey,
-				route.ModelKey,
-				route.PriceVersion,
-			)
+		if syncErr := syncInferenceProviderModel(ctx, tx, &route); syncErr != nil {
+			return syncErr
 		}
 
 		if _, err = tx.Exec(
@@ -314,6 +230,128 @@ SET provider_key = EXCLUDED.provider_key,
 
 	if err = tx.Commit(ctx); err != nil {
 		return fmt.Errorf("InferenceRepo.SyncRoutes commit: %w", err)
+	}
+
+	return nil
+}
+
+// SyncEphemeralModels persists only attribution identities for a process-local
+// route. It deliberately does not disable or mutate active serving routes.
+func (r *InferenceRepo) SyncEphemeralModels(
+	ctx context.Context,
+	routes []entity.InferenceRoute,
+) error {
+	tx, err := r.Pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("InferenceRepo.SyncEphemeralModels begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	for i := range routes {
+		if syncErr := syncInferenceProviderModel(ctx, tx, &routes[i]); syncErr != nil {
+			return syncErr
+		}
+	}
+
+	if err = tx.Commit(ctx); err != nil {
+		return fmt.Errorf("InferenceRepo.SyncEphemeralModels commit: %w", err)
+	}
+
+	return nil
+}
+
+//nolint:funlen // One immutable provider/model/price tuple is verified atomically.
+func syncInferenceProviderModel(
+	ctx context.Context,
+	tx pgx.Tx,
+	route *entity.InferenceRoute,
+) error {
+	if route.PriceVersion == "" {
+		return fmt.Errorf("%w: paid route %s/%s has no price version",
+			entity.ErrInferenceRouteMissing, route.ProviderKey, route.ModelKey)
+	}
+
+	if _, err := tx.Exec(
+		ctx, `
+INSERT INTO inference_providers (
+    provider_key, display_name, base_url, api_key_env
+) VALUES ($1, $2, $3, $4)
+ON CONFLICT (provider_key) DO UPDATE
+SET display_name = EXCLUDED.display_name,
+    base_url = EXCLUDED.base_url,
+    api_key_env = EXCLUDED.api_key_env,
+    enabled = true,
+    updated_at = now()`,
+		route.ProviderKey, route.ProviderKey, route.BaseURL, route.APIKeyEnv,
+	); err != nil {
+		return fmt.Errorf("InferenceRepo sync provider: %w", err)
+	}
+
+	if _, err := tx.Exec(
+		ctx, `
+INSERT INTO inference_models (
+    provider_key, model_key, provider_model_id, price_version,
+    input_nano_usd_per_million, cached_input_nano_usd_per_million,
+    output_nano_usd_per_million, supports_json, supports_embeddings,
+    timeout_ms, max_output_tokens
+) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+ON CONFLICT (provider_key, model_key) DO UPDATE
+SET provider_model_id = EXCLUDED.provider_model_id,
+    price_version = EXCLUDED.price_version,
+    input_nano_usd_per_million = EXCLUDED.input_nano_usd_per_million,
+    cached_input_nano_usd_per_million = EXCLUDED.cached_input_nano_usd_per_million,
+    output_nano_usd_per_million = EXCLUDED.output_nano_usd_per_million,
+    supports_json = EXCLUDED.supports_json,
+    supports_embeddings = EXCLUDED.supports_embeddings,
+    timeout_ms = EXCLUDED.timeout_ms,
+    max_output_tokens = EXCLUDED.max_output_tokens,
+    enabled = true`,
+		route.ProviderKey, route.ModelKey, route.ProviderModelID, route.PriceVersion,
+		route.InputNanoPerMillion, route.CachedNanoPerMillion, route.OutputNanoPerMillion,
+		route.SupportsJSON, route.SupportsEmbeddings, route.TimeoutMS, route.MaxOutputTokens,
+	); err != nil {
+		return fmt.Errorf("InferenceRepo sync model: %w", err)
+	}
+
+	if _, err := tx.Exec(
+		ctx, `
+INSERT INTO inference_model_prices (
+    provider_key, model_key, price_version,
+    input_nano_usd_per_million, cached_input_nano_usd_per_million,
+    output_nano_usd_per_million
+) VALUES ($1,$2,$3,$4,$5,$6)
+ON CONFLICT (provider_key, model_key, price_version) DO NOTHING`,
+		route.ProviderKey, route.ModelKey, route.PriceVersion,
+		route.InputNanoPerMillion, route.CachedNanoPerMillion,
+		route.OutputNanoPerMillion,
+	); err != nil {
+		return fmt.Errorf("InferenceRepo sync price: %w", err)
+	}
+
+	var inputPrice, cachedPrice, outputPrice int64
+	if err := tx.QueryRow(
+		ctx, `
+SELECT input_nano_usd_per_million, cached_input_nano_usd_per_million,
+       output_nano_usd_per_million
+FROM inference_model_prices
+WHERE provider_key=$1 AND model_key=$2 AND price_version=$3`,
+		route.ProviderKey,
+		route.ModelKey,
+		route.PriceVersion,
+	).Scan(&inputPrice, &cachedPrice, &outputPrice); err != nil {
+		return fmt.Errorf("InferenceRepo verify price: %w", err)
+	}
+
+	if inputPrice != route.InputNanoPerMillion ||
+		cachedPrice != route.CachedNanoPerMillion ||
+		outputPrice != route.OutputNanoPerMillion {
+		return fmt.Errorf(
+			"%w: price %s/%s/%s",
+			entity.ErrInferenceRegistryConflict,
+			route.ProviderKey,
+			route.ModelKey,
+			route.PriceVersion,
+		)
 	}
 
 	return nil

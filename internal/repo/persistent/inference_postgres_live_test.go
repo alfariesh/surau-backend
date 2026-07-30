@@ -297,8 +297,16 @@ func TestLiveInferenceRepositoryLifecycle(t *testing.T) {
 	repository := NewInferenceRepo(pg)
 	suffix := strings.ReplaceAll(uuid.NewString()[:8], "-", "")
 	taskKey := "u0-live-lifecycle-" + suffix
-	providerKeys := []string{"u0-live-primary-" + suffix, "u0-live-secondary-" + suffix}
-	modelKeys := []string{"model-primary-" + suffix, "model-secondary-" + suffix}
+	providerKeys := []string{
+		"u0-live-primary-" + suffix,
+		"u0-live-secondary-" + suffix,
+		"u0-live-ephemeral-" + suffix,
+	}
+	modelKeys := []string{
+		"model-primary-" + suffix,
+		"model-secondary-" + suffix,
+		"model-ephemeral-" + suffix,
+	}
 
 	var policyRevision int64
 
@@ -449,6 +457,30 @@ func TestLiveInferenceRepositoryLifecycle(t *testing.T) {
 	assert.Equal(t, providerKeys[0], resolved[0].ProviderKey)
 	assert.NotEmpty(t, resolved[0].PromptSHA256)
 	assert.NotEmpty(t, resolved[0].ResponseSchemaSHA256)
+
+	ephemeral := routes[0]
+	ephemeral.ProviderKey = providerKeys[2]
+	ephemeral.ModelKey = modelKeys[2]
+	ephemeral.ProviderModelID = modelKeys[2]
+	require.NoError(t, repository.SyncEphemeralModels(
+		ctx,
+		[]entity.InferenceRoute{ephemeral},
+	))
+
+	resolvedAfterEphemeral, err := repository.ResolveRoutes(ctx, taskKey, "")
+	require.NoError(t, err)
+	require.Len(t, resolvedAfterEphemeral, 2)
+	assert.Equal(t, providerKeys[0], resolvedAfterEphemeral[0].ProviderKey)
+	assert.Equal(t, providerKeys[1], resolvedAfterEphemeral[1].ProviderKey)
+
+	var ephemeralModelCount int
+	require.NoError(t, pg.Pool.QueryRow(
+		ctx,
+		`SELECT count(*) FROM inference_models WHERE provider_key=$1 AND model_key=$2`,
+		providerKeys[2],
+		modelKeys[2],
+	).Scan(&ephemeralModelCount))
+	assert.Equal(t, 1, ephemeralModelCount)
 
 	_, err = repository.ResolveRoutes(ctx, taskKey+"-missing", "")
 	require.ErrorIs(t, err, entity.ErrInferenceRouteMissing)

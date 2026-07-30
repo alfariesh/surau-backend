@@ -593,6 +593,13 @@ func (r *memoryInferenceRepo) SyncRoutes(context.Context, []entity.InferenceRout
 	return nil
 }
 
+func (r *memoryInferenceRepo) SyncEphemeralModels(
+	context.Context,
+	[]entity.InferenceRoute,
+) error {
+	return nil
+}
+
 func (r *memoryInferenceRepo) ResolveRoutes(
 	_ context.Context,
 	taskKey, sessionID string,
