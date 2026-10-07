@@ -519,6 +519,10 @@ Saat aplikasi dibuka:
 5. Jika `onboarding_required=true`, tampilkan onboarding.
 6. Gunakan `preferences.preferred_content_lang` sebagai default `?lang=` Quran/kitab.
 7. Jika `401`, hapus token dan arahkan ke login.
+8. Jika `500`/`503`, **jangan** hapus token: tampilkan pesan umum dan coba lagi. Middleware Bearer
+   hanya membalas `401` untuk masalah kredensial (token rusak/kedaluwarsa/dicabut, akun terhapus);
+   kegagalan server saat memverifikasi token (mis. database sesaat tidak terjangkau) dibalas
+   `500 internal_server_error` agar gangguan sementara tidak me-logout pengguna.
 
 Request:
 
