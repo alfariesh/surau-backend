@@ -3,13 +3,13 @@ package restapi
 import (
 	"encoding/json"
 	"net/http"
+	"os"
 	"regexp"
 	"sort"
 	"strings"
 	"testing"
 
 	"github.com/alfariesh/surau-backend/config"
-	"github.com/alfariesh/surau-backend/docs"
 	v1 "github.com/alfariesh/surau-backend/internal/controller/restapi/v1"
 	"github.com/alfariesh/surau-backend/pkg/logger"
 	"github.com/gofiber/fiber/v2"
@@ -91,14 +91,21 @@ func mountedV1Routes(t *testing.T) map[string]bool {
 	return routes
 }
 
+// documentedV1Routes reads the generated docs/swagger.json, the file clients
+// consume. It must not call docs.SwaggerInfo.ReadDoc: swag's ReadDoc writes
+// the shared spec on every call, so it races the parallel /swagger/doc.json
+// handler test under -race.
 func documentedV1Routes(t *testing.T) map[string]bool {
 	t.Helper()
+
+	swaggerJSON, err := os.ReadFile("../../../docs/swagger.json")
+	require.NoError(t, err)
 
 	var document struct {
 		BasePath string                    `json:"basePath"`
 		Paths    map[string]map[string]any `json:"paths"`
 	}
-	require.NoError(t, json.Unmarshal([]byte(docs.SwaggerInfo.ReadDoc()), &document))
+	require.NoError(t, json.Unmarshal(swaggerJSON, &document))
 	require.Equal(t, "/v1", document.BasePath)
 
 	routes := map[string]bool{}
