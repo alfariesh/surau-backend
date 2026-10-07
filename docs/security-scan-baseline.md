@@ -1,13 +1,37 @@
 # Security Scan Baseline
 
-Last checked: 2026-05-30
+Last checked: 2026-10-07
 
 ## govulncheck
 
 `go tool govulncheck ./...`
 
-- No called vulnerabilities found.
-- The scan reported vulnerable imported/required packages that are not reached by current code paths.
+- 0 called vulnerabilities and 0 in imported packages (Go 1.26.8, OpenTelemetry v1.45.0,
+  gRPC v1.83.2). Before 2026-10-07 the scan reported 8 called vulnerabilities: six in the Go
+  1.26.5 standard library (`net/http`, `crypto/tls`, `html/template`, `net/url`,
+  `encoding/xml`, `encoding/asn1`; fixed in 1.26.6), GO-2026-6505 in OpenTelemetry v1.44.0
+  and GO-2026-6348 in gRPC v1.82.1. The image that built dev/prod ran Go 1.26.4, and a
+  `-mode=binary` scan of that binary reported 11.
+- Still listed under "modules you require" but not called: GO-2026-6354/6355 and GO-2026-5932
+  (`golang.org/x/crypto` v0.55.0), GO-2026-6179/6180 (`golang.org/x/mod` v0.38.0), and
+  GO-2026-5841 (`github.com/klauspost/compress` v1.18.6). Re-check them when one of those
+  modules is next upgraded.
+
+**Gate.** `.github/workflows/vuln-gate.yml` runs this scan on every branch push, weekly on
+`main` (Monday 08:00 WIB), and on demand; a failure on `main` also raises the Telegram alarm
+once the `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` repository secrets exist (CI alarms are no-ops
+without them).
+The `main` ruleset requires its `runner / vuln-gate` check, so GitHub refuses to move `main`
+to a commit whose scan did not pass, with or without a PR: push the branch first, wait for the
+check, then fast-forward `main`. The PR-only CI job `runner / govulncheck` reports the same scan
+on pull requests.
+
+**One Go version.** The `toolchain` line in `go.mod` is the only place the Go version is set.
+CI reads it through `actions/setup-go@v6` with `go-version-file: go.mod` (v5 reads only the
+`go 1.26` line). The golang images set `GOTOOLCHAIN=local` and ignore that line, so both
+Dockerfiles pin the same version and refuse to build when `go env GOVERSION` differs from it;
+`internal/ci/toolchain` fails CI when a Dockerfile or workflow drifts. To upgrade Go, change the
+`toolchain` line and both Dockerfiles' `FROM golang:` tags together.
 
 ## gosec
 

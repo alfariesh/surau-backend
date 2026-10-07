@@ -43,8 +43,9 @@
   hantu maupun rute yang tak terdokumentasi.
 - Diff coverage kode baru ≥70%:
   `git diff -U0 --no-color origin/main...HEAD | go run ./cmd/diffcover -profile coverage.txt -profile coverage-live.txt`
-- `go tool govulncheck ./...` tanpa temuan baru. Tidak ada artefak sementara (dump, coverage,
-  file eksperimen) yang ikut ter-commit.
+- `go tool govulncheck ./...`: 0 kerentanan terjangkau (gerbang `runner / vuln-gate` menolak
+  `main` pindah ke commit yang gagal). Tidak ada artefak sementara (dump, coverage, file
+  eksperimen) yang ikut ter-commit.
 - `make pre-commit` menjalankan sebagian besar langkah di atas bila `make` tersedia. Mesin operator
   saat ini tidak punya Go/make/gcc/pip: pakai toolchain Go yang diunduh ke scratchpad, dan jalankan
   race/live/integration/yamllint lewat container Docker.
