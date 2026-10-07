@@ -40,6 +40,24 @@ func (r *V1) editorialGetMetadataDraft(ctx *fiber.Ctx) error {
 	return jsonWithUpdatedAtETag(ctx, http.StatusOK, edit, edit.UpdatedAt)
 }
 
+// @Summary     Save source metadata draft
+// @Description Save the source kitab metadata draft. The response carries an ETag; If-Match is optional but rejects a stale draft with 412. Requires editor or admin role.
+// @ID          editorial-save-source-metadata-draft
+// @Tags        editorial
+// @Accept      json
+// @Produce     json
+// @Param       book_id  path     int                       true  "Book ID"
+// @Param       If-Match header   string                    false "Current ETag or *"
+// @Param       request  body     request.SaveMetadataDraft true  "Metadata draft"
+// @Success     200      {object} entity.BookMetadataEdit
+// @Failure     400      {object} response.Error
+// @Failure     401      {object} response.Error
+// @Failure     403      {object} response.Error
+// @Failure     404      {object} response.Error
+// @Failure     412      {object} response.Error
+// @Failure     500      {object} response.Error
+// @Security    BearerAuth
+// @Router      /editorial/books/{book_id}/metadata-draft [put]
 func (r *V1) editorialSaveMetadataDraft(ctx *fiber.Ctx) error {
 	actorID, ok := ctx.Locals("userID").(string)
 	if !ok {
@@ -84,6 +102,23 @@ func (r *V1) editorialSaveMetadataDraft(ctx *fiber.Ctx) error {
 	return jsonWithUpdatedAtETag(ctx, http.StatusOK, edit, edit.UpdatedAt)
 }
 
+// @Summary     Publish source metadata draft
+// @Description Publish the source kitab metadata draft over the live metadata. If-Match is optional but rejects a stale draft with 412; publishing requires a permitted license. Requires CapPublishProduction and fresh MFA.
+// @ID          editorial-publish-source-metadata-draft
+// @Tags        editorial
+// @Produce     json
+// @Param       book_id  path     int    true  "Book ID"
+// @Param       If-Match header   string false "Current ETag or *"
+// @Success     200      {object} entity.BookMetadataEdit
+// @Failure     400      {object} response.Error
+// @Failure     401      {object} response.Error
+// @Failure     403      {object} response.Error
+// @Failure     404      {object} response.Error
+// @Failure     409      {object} response.Error
+// @Failure     412      {object} response.Error
+// @Failure     500      {object} response.Error
+// @Security    BearerAuth
+// @Router      /editorial/books/{book_id}/metadata-draft/publish [post]
 func (r *V1) editorialPublishMetadataDraft(ctx *fiber.Ctx) error {
 	actorID, ok := ctx.Locals("userID").(string)
 	if !ok {
@@ -110,6 +145,21 @@ func (r *V1) editorialPublishMetadataDraft(ctx *fiber.Ctx) error {
 	return jsonWithUpdatedAtETag(ctx, http.StatusOK, edit, edit.UpdatedAt)
 }
 
+// @Summary     Get source page edit
+// @Description Get one source kitab page with its current draft, if any. The ETag tracks the draft when present, otherwise the raw page. Requires editor or admin role.
+// @ID          editorial-get-source-page
+// @Tags        editorial
+// @Produce     json
+// @Param       book_id path     int true "Book ID"
+// @Param       page_id path     int true "Page ID"
+// @Success     200     {object} entity.EditorialPageEdit
+// @Failure     400     {object} response.Error
+// @Failure     401     {object} response.Error
+// @Failure     403     {object} response.Error
+// @Failure     404     {object} response.Error
+// @Failure     500     {object} response.Error
+// @Security    BearerAuth
+// @Router      /editorial/books/{book_id}/pages/{page_id} [get]
 func (r *V1) editorialGetPageEdit(ctx *fiber.Ctx) error {
 	bookID, pageID, err := pagePath(ctx)
 	if err != nil {
@@ -126,6 +176,26 @@ func (r *V1) editorialGetPageEdit(ctx *fiber.Ctx) error {
 	return jsonWithUpdatedAtETag(ctx, http.StatusOK, edit, pageEditCurrentUpdatedAt(&edit))
 }
 
+// @Summary     Save source page draft
+// @Description Save the source kitab page HTML draft. If-Match is required (428 when missing, 412 when stale) because page content is the high-value lost-work surface. Requires editor or admin role.
+// @ID          editorial-save-source-page-draft
+// @Tags        editorial
+// @Accept      json
+// @Produce     json
+// @Param       book_id  path     int                   true "Book ID"
+// @Param       page_id  path     int                   true "Page ID"
+// @Param       If-Match header   string                true "Current ETag or *"
+// @Param       request  body     request.SavePageDraft true "Page draft"
+// @Success     200      {object} entity.BookPageEdit
+// @Failure     400      {object} response.Error
+// @Failure     401      {object} response.Error
+// @Failure     403      {object} response.Error
+// @Failure     404      {object} response.Error
+// @Failure     412      {object} response.Error
+// @Failure     428      {object} response.Error
+// @Failure     500      {object} response.Error
+// @Security    BearerAuth
+// @Router      /editorial/books/{book_id}/pages/{page_id}/draft [put]
 func (r *V1) editorialSavePageDraft(ctx *fiber.Ctx) error {
 	actorID, ok := ctx.Locals("userID").(string)
 	if !ok {
@@ -165,6 +235,25 @@ func (r *V1) editorialSavePageDraft(ctx *fiber.Ctx) error {
 	return jsonWithUpdatedAtETag(ctx, http.StatusOK, edit, edit.UpdatedAt)
 }
 
+// @Summary     Publish source page draft
+// @Description Publish the source kitab page draft over the live page. If-Match is required (428 when missing, 412 when stale); publishing requires a permitted license. Requires CapPublishProduction and fresh MFA.
+// @ID          editorial-publish-source-page-draft
+// @Tags        editorial
+// @Produce     json
+// @Param       book_id  path     int    true "Book ID"
+// @Param       page_id  path     int    true "Page ID"
+// @Param       If-Match header   string true "Current ETag or *"
+// @Success     200      {object} entity.BookPageEdit
+// @Failure     400      {object} response.Error
+// @Failure     401      {object} response.Error
+// @Failure     403      {object} response.Error
+// @Failure     404      {object} response.Error
+// @Failure     409      {object} response.Error
+// @Failure     412      {object} response.Error
+// @Failure     428      {object} response.Error
+// @Failure     500      {object} response.Error
+// @Security    BearerAuth
+// @Router      /editorial/books/{book_id}/pages/{page_id}/publish [post]
 func (r *V1) editorialPublishPageDraft(ctx *fiber.Ctx) error {
 	actorID, ok := ctx.Locals("userID").(string)
 	if !ok {
@@ -222,6 +311,25 @@ func (r *V1) editorialGetHeadingDraft(ctx *fiber.Ctx) error {
 	return jsonWithUpdatedAtETag(ctx, http.StatusOK, edit, edit.UpdatedAt)
 }
 
+// @Summary     Save source heading draft
+// @Description Save the source kitab heading title draft. If-Match is optional but rejects a stale draft with 412. Requires editor or admin role.
+// @ID          editorial-save-source-heading-draft
+// @Tags        editorial
+// @Accept      json
+// @Produce     json
+// @Param       book_id    path     int                      true  "Book ID"
+// @Param       heading_id path     int                      true  "Heading ID"
+// @Param       If-Match   header   string                   false "Current ETag or *"
+// @Param       request    body     request.SaveHeadingDraft true  "Heading draft"
+// @Success     200        {object} entity.BookHeadingEdit
+// @Failure     400        {object} response.Error
+// @Failure     401        {object} response.Error
+// @Failure     403        {object} response.Error
+// @Failure     404        {object} response.Error
+// @Failure     412        {object} response.Error
+// @Failure     500        {object} response.Error
+// @Security    BearerAuth
+// @Router      /editorial/books/{book_id}/headings/{heading_id}/draft [put]
 func (r *V1) editorialSaveHeadingDraft(ctx *fiber.Ctx) error {
 	actorID, ok := ctx.Locals("userID").(string)
 	if !ok {
@@ -261,6 +369,24 @@ func (r *V1) editorialSaveHeadingDraft(ctx *fiber.Ctx) error {
 	return jsonWithUpdatedAtETag(ctx, http.StatusOK, edit, edit.UpdatedAt)
 }
 
+// @Summary     Publish source heading draft
+// @Description Publish the source kitab heading title draft over the live heading. If-Match is optional but rejects a stale draft with 412; publishing requires a permitted license. Requires CapPublishProduction and fresh MFA.
+// @ID          editorial-publish-source-heading-draft
+// @Tags        editorial
+// @Produce     json
+// @Param       book_id    path     int    true  "Book ID"
+// @Param       heading_id path     int    true  "Heading ID"
+// @Param       If-Match   header   string false "Current ETag or *"
+// @Success     200        {object} entity.BookHeadingEdit
+// @Failure     400        {object} response.Error
+// @Failure     401        {object} response.Error
+// @Failure     403        {object} response.Error
+// @Failure     404        {object} response.Error
+// @Failure     409        {object} response.Error
+// @Failure     412        {object} response.Error
+// @Failure     500        {object} response.Error
+// @Security    BearerAuth
+// @Router      /editorial/books/{book_id}/headings/{heading_id}/publish [post]
 func (r *V1) editorialPublishHeadingDraft(ctx *fiber.Ctx) error {
 	actorID, ok := ctx.Locals("userID").(string)
 	if !ok {

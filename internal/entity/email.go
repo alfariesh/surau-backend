@@ -87,7 +87,7 @@ type EmailTemplate struct {
 	DeletedAt  *time.Time `json:"deleted_at,omitempty"`
 	CreatedAt  time.Time  `json:"created_at"`
 	UpdatedAt  time.Time  `json:"updated_at"`
-}
+} // @name entity.EmailTemplate
 
 // EmailTemplatePatch updates template metadata.
 type EmailTemplatePatch struct {
@@ -119,7 +119,7 @@ type EmailTemplateVersion struct {
 	PublishedAt         *time.Time `json:"published_at,omitempty"`
 	CreatedAt           time.Time  `json:"created_at"`
 	UpdatedAt           time.Time  `json:"updated_at"`
-}
+} // @name entity.EmailTemplateVersion
 
 // EmailTemplateVersionPatch updates editable template version fields.
 type EmailTemplateVersionPatch struct {
@@ -145,7 +145,7 @@ type EmailEventSetting struct {
 	CooldownSeconds *int64    `json:"cooldown_seconds,omitempty"`
 	CreatedAt       time.Time `json:"created_at"`
 	UpdatedAt       time.Time `json:"updated_at"`
-}
+} // @name entity.EmailEventSetting
 
 // EmailEventSettingPatch updates a transactional event toggle/cooldown.
 type EmailEventSettingPatch struct {
@@ -179,7 +179,7 @@ type EmailMessageLog struct {
 	SentAt            *time.Time        `json:"sent_at,omitempty"`
 	CreatedAt         time.Time         `json:"created_at"`
 	UpdatedAt         time.Time         `json:"updated_at"`
-}
+} // @name entity.EmailMessageLog
 
 // EmailSubscription stores marketing consent for one user.
 type EmailSubscription struct {
@@ -190,7 +190,7 @@ type EmailSubscription struct {
 	Source         string     `json:"source,omitempty"`
 	CreatedAt      time.Time  `json:"created_at"`
 	UpdatedAt      time.Time  `json:"updated_at"`
-}
+} // @name entity.EmailSubscription
 
 // EmailSuppression prevents delivery to an address.
 type EmailSuppression struct {
@@ -200,7 +200,7 @@ type EmailSuppression struct {
 	Reason    string    `json:"reason"`
 	CreatedBy *string   `json:"created_by,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
-}
+} // @name entity.EmailSuppression
 
 // EmailDeliveryEvent stores provider delivery audit events.
 type EmailDeliveryEvent struct {
@@ -217,7 +217,7 @@ type EmailDeliveryEvent struct {
 	RawPayload        RawJSON   `json:"raw_payload,omitempty" swaggertype:"object"`
 	OccurredAt        time.Time `json:"occurred_at"`
 	CreatedAt         time.Time `json:"created_at"`
-}
+} // @name entity.EmailDeliveryEvent
 
 // CloudflareEmailEventPollQuery identifies one Cloudflare Email Service analytics poll window.
 type CloudflareEmailEventPollQuery struct {
@@ -259,7 +259,7 @@ type EmailCampaignDeliveryEventSummary struct {
 	Complaint        int        `json:"complaint"`
 	UniqueRecipients int        `json:"unique_recipients"`
 	LastOccurredAt   *time.Time `json:"last_occurred_at,omitempty"`
-}
+} // @name entity.EmailCampaignDeliveryEventSummary
 
 // EmailWebhookIngestResult summarizes webhook processing.
 type EmailWebhookIngestResult struct {
@@ -267,7 +267,7 @@ type EmailWebhookIngestResult struct {
 	Processed  int `json:"processed"`
 	Suppressed int `json:"suppressed"`
 	Duplicates int `json:"duplicates,omitempty"`
-}
+} // @name entity.EmailWebhookIngestResult
 
 // EmailCampaign stores a marketing campaign.
 type EmailCampaign struct {
@@ -284,7 +284,7 @@ type EmailCampaign struct {
 	UpdatedBy   *string             `json:"updated_by,omitempty"`
 	CreatedAt   time.Time           `json:"created_at"`
 	UpdatedAt   time.Time           `json:"updated_at"`
-}
+} // @name entity.EmailCampaign
 
 // EmailCampaignRecipient stores one target recipient for a campaign.
 type EmailCampaignRecipient struct {
@@ -309,14 +309,14 @@ type EmailAudienceFilter struct {
 	CreatedFrom *time.Time `json:"created_from,omitempty"`
 	CreatedTo   *time.Time `json:"created_to,omitempty"`
 	Limit       int        `json:"limit,omitempty"`
-}
+} // @name entity.EmailAudienceFilter
 
 // EmailAudienceRecipient is a user selected by a marketing audience filter.
 type EmailAudienceRecipient struct {
 	UserID string `json:"user_id"`
 	Email  string `json:"email"`
 	Lang   string `json:"lang"`
-}
+} // @name entity.EmailAudienceRecipient
 
 // EmailPreview contains rendered content for admin preview/test-send.
 type EmailPreview struct {
@@ -324,7 +324,7 @@ type EmailPreview struct {
 	HTML    string `json:"html"`
 	Text    string `json:"text"`
 	Lang    string `json:"lang"`
-}
+} // @name entity.EmailPreview
 
 // TransactionalEmailRequest asks the email service to send one transactional email.
 type TransactionalEmailRequest struct {

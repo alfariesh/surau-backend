@@ -13,7 +13,7 @@ type PushIdentityToken struct {
 	ExpiresAt       time.Time `json:"expires_at" example:"2026-01-01T00:15:00Z"`
 	ExpiresIn       int64     `json:"expires_in" example:"900"`
 	EligibleIntents []string  `json:"eligible_intents" example:"notify_khatam_milestones"`
-}
+} // @name entity.PushIdentityToken
 
 // PushRouteInput is intentionally free of external_id: identity always comes from auth.
 type PushRouteInput struct {
@@ -21,10 +21,10 @@ type PushRouteInput struct {
 	Scope         string `json:"scope" validate:"required,oneof=public personal"`
 	Intent        string `json:"intent" validate:"required,max=80"`
 	OwnerBinding  string `json:"owner_binding" validate:"omitempty,max=128"`
-}
+} // @name entity.PushRouteInput
 
 // PushRouteResolution is fail-closed: Home is returned for unknown, missing, or stale bindings.
 type PushRouteResolution struct {
 	Destination string `json:"destination" example:"home"`
 	Intent      string `json:"intent,omitempty" example:"open_khatam_progress"`
-}
+} // @name entity.PushRouteResolution

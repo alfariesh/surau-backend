@@ -8,7 +8,7 @@ type EvalJudgeEvidence struct {
 	Anchor     string `json:"anchor" validate:"required"`
 	UnitID     string `json:"unit_id,omitempty"`
 	UnitAnchor string `json:"unit_anchor,omitempty"`
-}
+} // @name entity.EvalJudgeEvidence
 
 // EvalJudgeRequest cannot select an inference task or inject a system prompt.
 // The server resolves RubricVersion through its immutable allowlist.
