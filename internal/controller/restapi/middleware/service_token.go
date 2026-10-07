@@ -1,7 +1,6 @@
 package middleware
 
 import (
-	"crypto/subtle"
 	"errors"
 	"net/http"
 	"strings"
@@ -193,23 +192,4 @@ func stringPointer(value string) *string {
 	}
 
 	return &value
-}
-
-// ServiceToken is retained only for downstream source compatibility while
-// A-2 consumers migrate. The application no longer mounts routes with it.
-//
-// Deprecated: use RequireServicePrincipal.
-func ServiceToken(token string) func(*fiber.Ctx) error {
-	return func(ctx *fiber.Ctx) error {
-		if token == "" {
-			return ctx.SendStatus(http.StatusNotFound)
-		}
-
-		provided := ctx.Get(ServiceTokenHeader)
-		if subtle.ConstantTimeCompare([]byte(provided), []byte(token)) != 1 {
-			return middlewareError(ctx, http.StatusUnauthorized, "invalid service token")
-		}
-
-		return ctx.Next()
-	}
 }

@@ -22,7 +22,6 @@ const (
 )
 
 var (
-	ErrInferenceTaskNotFound     = errors.New("inference task not found")
 	ErrInferenceRouteMissing     = errors.New("inference route is not configured")
 	ErrInferenceProviderFailure  = errors.New("inference provider unavailable")
 	ErrInferenceSchemaInvalid    = errors.New("inference response schema invalid")
@@ -67,7 +66,7 @@ type InferenceUsage struct {
 	CachedInputTokens int64  `json:"cached_input_tokens"`
 	OutputTokens      int64  `json:"output_tokens"`
 	Source            string `json:"source"`
-}
+} // @name entity.InferenceUsage
 
 // InferenceCost stores exact integer nano-USD. USD is a display-only decimal.
 type InferenceCost struct {
@@ -75,7 +74,7 @@ type InferenceCost struct {
 	USD          string `json:"usd"`
 	Source       string `json:"source"`
 	PriceVersion string `json:"price_version,omitempty"`
-}
+} // @name entity.InferenceCost
 
 // InferenceResult is returned by the shared layer and internal gateway.
 type InferenceResult struct {
@@ -246,7 +245,7 @@ type InferenceBudgetStatus struct {
 	MonthlyResetAt      *time.Time `json:"monthly_reset_at,omitempty"`
 	ConfigAlert         string     `json:"config_alert,omitempty"`
 	UpdatedAt           time.Time  `json:"updated_at"`
-}
+} // @name entity.InferenceBudgetStatus
 
 // InferenceBudgetPatch creates an append-only policy revision.
 type InferenceBudgetPatch struct {
@@ -254,7 +253,7 @@ type InferenceBudgetPatch struct {
 	DailyCapNanoUSD   *int64 `json:"daily_cap_nano_usd,omitempty"`
 	MonthlyCapNanoUSD *int64 `json:"monthly_cap_nano_usd,omitempty"`
 	Reason            string `json:"reason" validate:"required,min=3,max=500"`
-}
+} // @name entity.InferenceBudgetPatch
 
 // InferenceUsageRow is a bounded grouping for the admin daily ledger.
 type InferenceUsageRow struct {
@@ -268,12 +267,12 @@ type InferenceUsageRow struct {
 	CachedTokens int64  `json:"cached_input_tokens"`
 	CostNanoUSD  int64  `json:"cost_nano_usd"`
 	Calls        int64  `json:"calls"`
-}
+} // @name entity.InferenceUsageRow
 
 type InferenceUsageList struct {
 	Items []InferenceUsageRow `json:"items"`
 	Total int                 `json:"total"`
-}
+} // @name entity.InferenceUsageList
 
 // InferenceSession pins batch enrichment to one provider/model after success.
 type InferenceSession struct {

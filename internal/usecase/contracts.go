@@ -18,12 +18,6 @@ type (
 		Resolve(ctx context.Context, userID, familyID string, input entity.PushRouteInput) entity.PushRouteResolution
 	}
 
-	// Translation -.
-	Translation interface {
-		Translate(ctx context.Context, userID string, t entity.Translation) (entity.Translation, error)
-		History(ctx context.Context, userID string) (entity.TranslationHistory, error)
-	}
-
 	// User -.
 	User interface {
 		Register(ctx context.Context, username, email, password string) (entity.User, error)
@@ -152,16 +146,6 @@ type (
 		DispatchDueTransactionalEmails(ctx context.Context, limit int) error
 		PollCloudflareEmailEvents(ctx context.Context) (entity.EmailWebhookIngestResult, error)
 		Unsubscribe(ctx context.Context, token string) (entity.EmailSubscription, error)
-	}
-
-	// Task -.
-	Task interface {
-		Create(ctx context.Context, userID, title, description string) (entity.Task, error)
-		Get(ctx context.Context, userID, taskID string) (entity.Task, error)
-		List(ctx context.Context, userID string, status *entity.TaskStatus, limit, offset int) ([]entity.Task, int, error)
-		Update(ctx context.Context, userID, taskID, title, description string) (entity.Task, error)
-		Transition(ctx context.Context, userID, taskID string, newStatus entity.TaskStatus) (entity.Task, error)
-		Delete(ctx context.Context, userID, taskID string) error
 	}
 
 	// Reader -.

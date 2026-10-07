@@ -4,8 +4,8 @@ import (
 	"context"
 	"strings"
 
+	"github.com/alfariesh/surau-backend/internal/contentlang"
 	"github.com/alfariesh/surau-backend/internal/entity"
-	"github.com/alfariesh/surau-backend/internal/readerlang"
 	"github.com/alfariesh/surau-backend/internal/repo"
 )
 
@@ -36,7 +36,7 @@ func New(r repo.ReaderRepo) *UseCase {
 
 // Categories returns catalog categories.
 func (uc *UseCase) Categories(ctx context.Context, lang string) ([]entity.Category, error) {
-	lang, err := readerlang.Normalize(lang)
+	lang, err := contentlang.Normalize(lang)
 	if err != nil {
 		return nil, err
 	}
@@ -46,7 +46,7 @@ func (uc *UseCase) Categories(ctx context.Context, lang string) ([]entity.Catego
 
 // Authors returns paginated authors.
 func (uc *UseCase) Authors(ctx context.Context, query string, limit, offset int, lang string) ([]entity.Author, int, error) {
-	lang, err := readerlang.Normalize(lang)
+	lang, err := contentlang.Normalize(lang)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -68,7 +68,7 @@ func (uc *UseCase) Books(
 	limit, offset int,
 	lang string,
 ) ([]entity.Book, int, error) {
-	lang, err := readerlang.Normalize(lang)
+	lang, err := contentlang.Normalize(lang)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -86,7 +86,7 @@ func (uc *UseCase) Books(
 
 // BookStats returns full published catalog aggregate counts.
 func (uc *UseCase) BookStats(ctx context.Context, lang string) (entity.BookCatalogStats, error) {
-	lang, err := readerlang.Normalize(lang)
+	lang, err := contentlang.Normalize(lang)
 	if err != nil {
 		return entity.BookCatalogStats{}, err
 	}
@@ -96,7 +96,7 @@ func (uc *UseCase) BookStats(ctx context.Context, lang string) (entity.BookCatal
 
 // Book returns one book.
 func (uc *UseCase) Book(ctx context.Context, bookID int, lang string) (entity.Book, error) {
-	lang, err := readerlang.Normalize(lang)
+	lang, err := contentlang.Normalize(lang)
 	if err != nil {
 		return entity.Book{}, err
 	}
@@ -132,7 +132,7 @@ func (uc *UseCase) Headings(ctx context.Context, bookID int, query string, limit
 
 // Section returns one section in Arabic plus optional requested language assets.
 func (uc *UseCase) Section(ctx context.Context, bookID, headingID int, lang string) (entity.BookSection, error) {
-	lang, err := readerlang.Normalize(lang)
+	lang, err := contentlang.Normalize(lang)
 	if err != nil {
 		return entity.BookSection{}, err
 	}

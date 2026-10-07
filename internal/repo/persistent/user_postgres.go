@@ -1184,8 +1184,6 @@ func cleanupDeletedUserData(ctx context.Context, tx pgx.Tx, userID string) error
 	statements := []string{
 		"UPDATE user_profiles SET display_name = NULL, timezone = NULL, country_code = NULL, personalization_enabled = false, updated_at = now() WHERE user_id = $1",
 		"DELETE FROM user_preferences WHERE user_id = $1",
-		"DELETE FROM tasks WHERE user_id = $1",
-		"DELETE FROM history WHERE user_id = $1",
 		"DELETE FROM reading_progress WHERE user_id = $1",
 		"DELETE FROM quran_reading_progress WHERE user_id = $1",
 		"DELETE FROM saved_items WHERE user_id = $1",

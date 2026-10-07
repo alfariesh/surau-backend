@@ -331,22 +331,6 @@ func assertNullableInt(t *testing.T, want *int, got sql.NullInt64) {
 	assert.EqualValues(t, *want, got.Int64)
 }
 
-func nullableStringValue(value sql.NullString) any {
-	if value.Valid {
-		return value.String
-	}
-
-	return nil
-}
-
-func nullableInt64Value(value sql.NullInt64) any {
-	if value.Valid {
-		return value.Int64
-	}
-
-	return nil
-}
-
 // TestRunQuranSurahEditorialImportValidation covers the up-front, DB-free guards
 // (strict decode + duplicate-key detection) — they fire before any DB connection.
 func TestRunQuranSurahEditorialImportValidation(t *testing.T) {

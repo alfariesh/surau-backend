@@ -783,10 +783,6 @@ func TestQuranAyahEditorialExposure(t *testing.T) {
 }
 
 //go:fix inline
-func stringPtr(value string) *string {
-	return new(value)
-}
-
 func fakeQuranAudioTrack(surahID, ayahNumber int, recitationID string) entity.QuranAudioTrack {
 	if recitationID == "" {
 		recitationID = "rec-default"

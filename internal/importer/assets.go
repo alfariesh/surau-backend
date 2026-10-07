@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/alfariesh/surau-backend/internal/readerlang"
+	"github.com/alfariesh/surau-backend/internal/contentlang"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -104,7 +104,8 @@ func (a ReaderAsset) Validate() error {
 	if strings.TrimSpace(a.Lang) == "" {
 		return errors.New("lang is required")
 	}
-	if _, err := readerlang.Normalize(a.Lang); err != nil {
+
+	if _, err := contentlang.Normalize(a.Lang); err != nil {
 		return err
 	}
 
@@ -306,7 +307,7 @@ func readReaderAssets(reader io.Reader) ([]ReaderAsset, error) {
 			return nil, fmt.Errorf("line %d: invalid JSON: %w", lineNumber, err)
 		}
 
-		lang, err := readerlang.Normalize(asset.Lang)
+		lang, err := contentlang.Normalize(asset.Lang)
 		if err != nil {
 			return nil, fmt.Errorf("line %d: %w", lineNumber, err)
 		}

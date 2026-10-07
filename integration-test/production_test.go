@@ -449,7 +449,7 @@ func createProductionProject(t *testing.T, token string, bookID int, lang string
 	return project
 }
 
-func saveProductionDrafts(t *testing.T, token string, projectID string) {
+func saveProductionDrafts(t *testing.T, token, projectID string) {
 	t.Helper()
 
 	putProductionDraft(t, token, fmt.Sprintf("/v1/editorial/production-projects/%s/metadata-draft", projectID),
@@ -474,7 +474,7 @@ func saveProductionDrafts(t *testing.T, token string, projectID string) {
 		`{"url":"https://example.test/production-2.mp3","narrator":"Narrator","duration_seconds":122,"mime_type":"audio/mpeg"}`)
 }
 
-func putProductionDraft(t *testing.T, token string, path string, body string) {
+func putProductionDraft(t *testing.T, token, path, body string) {
 	t.Helper()
 
 	resp := doJSON(t, http.MethodPut, baseURL()+path, bytes.NewBufferString(body), token)
@@ -484,7 +484,7 @@ func putProductionDraft(t *testing.T, token string, path string, body string) {
 	}
 }
 
-func approveProductionDrafts(t *testing.T, token string, projectID string) {
+func approveProductionDrafts(t *testing.T, token, projectID string) {
 	t.Helper()
 
 	for _, assetType := range []string{"book_metadata", "author_metadata", "category_metadata"} {
@@ -498,7 +498,7 @@ func approveProductionDrafts(t *testing.T, token string, projectID string) {
 	}
 }
 
-func reviewProductionAsset(t *testing.T, token string, projectID string, assetType string, headingID *int) {
+func reviewProductionAsset(t *testing.T, token, projectID, assetType string, headingID *int) {
 	t.Helper()
 
 	headingFragment := "null"
@@ -518,7 +518,7 @@ func reviewProductionAsset(t *testing.T, token string, projectID string, assetTy
 	}
 }
 
-func getProductionCompleteness(t *testing.T, token string, projectID string) productionCompletenessResponse {
+func getProductionCompleteness(t *testing.T, token, projectID string) productionCompletenessResponse {
 	t.Helper()
 
 	resp := doJSON(t, http.MethodGet, fmt.Sprintf("%s/v1/editorial/production-projects/%s/completeness", baseURL(), projectID), nil, token)
@@ -531,7 +531,7 @@ func getProductionCompleteness(t *testing.T, token string, projectID string) pro
 	return completeness
 }
 
-func getProductionPublishCheck(t *testing.T, token string, projectID string) productionPublishCheckResponse {
+func getProductionPublishCheck(t *testing.T, token, projectID string) productionPublishCheckResponse {
 	t.Helper()
 
 	resp := doJSON(t, http.MethodGet, fmt.Sprintf("%s/v1/editorial/production-projects/%s/publish-check", baseURL(), projectID), nil, token)
@@ -544,7 +544,7 @@ func getProductionPublishCheck(t *testing.T, token string, projectID string) pro
 	return check
 }
 
-func getProductionWorkspace(t *testing.T, token string, projectID string) productionWorkspaceResponse {
+func getProductionWorkspace(t *testing.T, token, projectID string) productionWorkspaceResponse {
 	t.Helper()
 
 	resp := doJSON(t, http.MethodGet, fmt.Sprintf("%s/v1/editorial/production-projects/%s/workspace", baseURL(), projectID), nil, token)
@@ -557,7 +557,7 @@ func getProductionWorkspace(t *testing.T, token string, projectID string) produc
 	return workspace
 }
 
-func getProductionActivity(t *testing.T, token string, projectID string) productionActivityResponse {
+func getProductionActivity(t *testing.T, token, projectID string) productionActivityResponse {
 	t.Helper()
 
 	resp := doJSON(t, http.MethodGet, fmt.Sprintf("%s/v1/editorial/production-projects/%s/activity?limit=100", baseURL(), projectID), nil, token)
@@ -570,7 +570,7 @@ func getProductionActivity(t *testing.T, token string, projectID string) product
 	return activity
 }
 
-func getProductionCandidates(t *testing.T, token string, lang string, unstarted bool) productionCandidateListResponse {
+func getProductionCandidates(t *testing.T, token, lang string, unstarted bool) productionCandidateListResponse {
 	t.Helper()
 
 	resp := doJSON(t, http.MethodGet, fmt.Sprintf(
@@ -641,7 +641,7 @@ func restoreProductionDraftRevision(
 	return revision
 }
 
-func getProductionMetadataDraft(t *testing.T, token string, projectID string) productionMetadataDraftResponse {
+func getProductionMetadataDraft(t *testing.T, token, projectID string) productionMetadataDraftResponse {
 	t.Helper()
 
 	resp := doJSON(
@@ -660,7 +660,7 @@ func getProductionMetadataDraft(t *testing.T, token string, projectID string) pr
 	return draft
 }
 
-func assertProductionActivityContains(t *testing.T, activity productionActivityResponse, eventType string, assetType string) {
+func assertProductionActivityContains(t *testing.T, activity productionActivityResponse, eventType, assetType string) {
 	t.Helper()
 
 	for _, event := range activity.Events {
@@ -675,7 +675,7 @@ func assertProductionActivityContains(t *testing.T, activity productionActivityR
 	t.Fatalf("activity missing %s/%s: %+v", eventType, assetType, activity.Events)
 }
 
-func publishProductionProject(t *testing.T, token string, projectID string) productionProjectResponse {
+func publishProductionProject(t *testing.T, token, projectID string) productionProjectResponse {
 	t.Helper()
 
 	resp := doJSON(t, http.MethodPost, fmt.Sprintf("%s/v1/editorial/production-projects/%s/publish", baseURL(), projectID), nil, token)
@@ -688,7 +688,7 @@ func publishProductionProject(t *testing.T, token string, projectID string) prod
 	return project
 }
 
-func unpublishProductionProject(t *testing.T, token string, projectID string) productionProjectResponse {
+func unpublishProductionProject(t *testing.T, token, projectID string) productionProjectResponse {
 	t.Helper()
 
 	resp := doJSON(t, http.MethodPost, fmt.Sprintf("%s/v1/editorial/production-projects/%s/unpublish", baseURL(), projectID), nil, token)
@@ -701,7 +701,7 @@ func unpublishProductionProject(t *testing.T, token string, projectID string) pr
 	return project
 }
 
-func getProductionTOCRead(t *testing.T, bookID int, headingID int, lang string) tocReadResponse {
+func getProductionTOCRead(t *testing.T, bookID, headingID int, lang string) tocReadResponse {
 	t.Helper()
 
 	resp := doJSON(t, http.MethodGet, fmt.Sprintf(

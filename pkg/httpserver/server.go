@@ -13,11 +13,15 @@ import (
 )
 
 const (
-	_defaultAddr            = ":80"
-	_defaultReadTimeout     = 5 * time.Second
-	_defaultWriteTimeout    = 5 * time.Second
-	_defaultShutdownTimeout = 3 * time.Second
-	_defaultBodyLimit       = 4 * 1024 * 1024
+	_defaultAddr      = ":80"
+	_defaultBodyLimit = 4 * 1024 * 1024
+
+	_readTimeout = 5 * time.Second
+	// _writeTimeout is one absolute deadline fasthttp arms when a handler
+	// returns. Streaming responses (Book-RAG SSE) re-arm it per event, so it
+	// only bounds ordinary responses.
+	_writeTimeout    = 5 * time.Second
+	_shutdownTimeout = 3 * time.Second
 )
 
 // Server -.
@@ -28,15 +32,12 @@ type Server struct {
 	App    *fiber.App
 	notify chan error
 
-	address         string
-	prefork         bool
-	readTimeout     time.Duration
-	writeTimeout    time.Duration
-	shutdownTimeout time.Duration
-	bodyLimit       int
-	proxyHeader     string
-	trustedProxies  []string
-	errorHandler    fiber.ErrorHandler
+	address        string
+	prefork        bool
+	bodyLimit      int
+	proxyHeader    string
+	trustedProxies []string
+	errorHandler   fiber.ErrorHandler
 
 	logger logger.Interface
 }
@@ -47,16 +48,13 @@ func New(l logger.Interface, opts ...Option) *Server {
 	group.SetLimit(1) // Run only one goroutine
 
 	s := &Server{
-		ctx:             ctx,
-		eg:              group,
-		App:             nil,
-		notify:          make(chan error, 1),
-		address:         _defaultAddr,
-		readTimeout:     _defaultReadTimeout,
-		writeTimeout:    _defaultWriteTimeout,
-		shutdownTimeout: _defaultShutdownTimeout,
-		bodyLimit:       _defaultBodyLimit,
-		logger:          l,
+		ctx:       ctx,
+		eg:        group,
+		App:       nil,
+		notify:    make(chan error, 1),
+		address:   _defaultAddr,
+		bodyLimit: _defaultBodyLimit,
+		logger:    l,
 	}
 
 	// Custom options
@@ -73,8 +71,8 @@ func New(l logger.Interface, opts ...Option) *Server {
 
 	config := fiber.Config{
 		Prefork:                 s.prefork,
-		ReadTimeout:             s.readTimeout,
-		WriteTimeout:            s.writeTimeout,
+		ReadTimeout:             _readTimeout,
+		WriteTimeout:            _writeTimeout,
 		BodyLimit:               s.bodyLimit,
 		JSONDecoder:             json.Unmarshal,
 		JSONEncoder:             json.Marshal,
@@ -124,7 +122,7 @@ func (s *Server) Notify() <-chan error {
 func (s *Server) Shutdown() error {
 	var shutdownErrors []error
 
-	err := s.App.ShutdownWithTimeout(s.shutdownTimeout)
+	err := s.App.ShutdownWithTimeout(_shutdownTimeout)
 	if err != nil && !errors.Is(err, context.Canceled) {
 		s.logger.Error(err, "restapi server - Server - Shutdown - s.App.ShutdownWithTimeout")
 

@@ -72,6 +72,7 @@ delivery dev yang sengaja diaktifkan tanpa menyasar pengguna nyata.
 | OneSignal mass delivery failure | ≥5 attempt gagal DAN rasio gagal ≥50% dalam rolling 5m, bertahan 1m | gangguan massal push; periksa kredensial, rate-limit, status provider, dan log loop reminder |
 | OneSignal erasure stale | ada provider erasure belum `verified` setelah 24h | privacy SLA terlewati; ikuti `docs/onesignal-erasure.md` memakai HMAC audit saja |
 | OneSignal erasure provider auth | attempt erasure mendapat `401/403` dalam 5m | App API Key ditolak; perbaiki secret tanpa menyalin key/UUID/JWT ke log atau tiket |
+| editorial audit trail write failed | `surau_editorial_trail_write_failures_total` naik dalam 15m | perubahan editorial sudah ter-commit tetapi baris `admin_audit_logs`/`book_production_events`-nya gagal ditulis; cek label `trail` lalu log Postgres pada waktu yang sama |
 | backup heartbeat stale | sukses terakhir >26 jam | dead-man backup (lapis dashboard; watchdog S1 tetap ada) |
 | disk space low | sisa <15% | disk hampir penuh |
 | app down | scrape gagal 3m | app mati/boot-loop (termasuk schema DIRTY) |

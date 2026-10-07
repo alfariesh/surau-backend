@@ -171,7 +171,6 @@ PG_URL='postgres://user:myAwEsOm3pa55@w0rd@localhost:5432/db' \
 METRICS_ENABLED=false \
 SWAGGER_ENABLED=false \
 JWT_SECRET=dev-secret-change-me-32-bytes-minimum \
-JWT_TOKEN_EXPIRY=24h \
 JWT_ISSUER=surau-backend \
 JWT_AUDIENCE=surau-api \
 AUTH_RATE_LIMIT_ENABLED=true \

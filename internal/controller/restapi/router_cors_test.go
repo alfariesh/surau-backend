@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/alfariesh/surau-backend/config"
+	v1 "github.com/alfariesh/surau-backend/internal/controller/restapi/v1"
 	"github.com/alfariesh/surau-backend/pkg/logger"
 	"github.com/gofiber/fiber/v2"
 	"github.com/stretchr/testify/assert"
@@ -21,26 +22,7 @@ func TestCORSPreflightAllowsEditorialIfMatchHeader(t *testing.T) {
 	app := fiber.New()
 	cfg := &config.Config{}
 	cfg.CORS.AllowedOrigins = []string{origin}
-	NewRouter(
-		app,
-		cfg,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		logger.New("error"),
-	)
+	NewRouter(app, cfg, nil, &v1.Dependencies{Logger: logger.New("error")})
 
 	request := httptest.NewRequestWithContext(
 		t.Context(),

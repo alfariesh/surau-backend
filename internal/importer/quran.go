@@ -985,10 +985,6 @@ func compareAyahPosition(leftSurahID, leftAyahNumber, rightSurahID, rightAyahNum
 }
 
 //go:fix inline
-func intPtr(value int) *int {
-	return new(value)
-}
-
 func parseTranslationSimple(path string, assets *quranAssetSet) error {
 	raw, checksum, err := readAssetFile(path)
 	if err != nil {

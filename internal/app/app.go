@@ -16,6 +16,7 @@ import (
 
 	"github.com/alfariesh/surau-backend/config"
 	"github.com/alfariesh/surau-backend/internal/controller/restapi"
+	v1 "github.com/alfariesh/surau-backend/internal/controller/restapi/v1"
 	"github.com/alfariesh/surau-backend/internal/entity"
 	"github.com/alfariesh/surau-backend/internal/repo"
 	"github.com/alfariesh/surau-backend/internal/repo/persistent"
@@ -256,6 +257,14 @@ func initUseCases(cfg *config.Config, pg *postgres.Postgres, jwtManager *jwt.Man
 		// New-login and streak pushes remain ineligible for this OneSignal app.
 	}
 
+	// Disabled optional integrations must reach their consumers as nil
+	// interfaces: a nil *UseCase stored in an interface passes the consumers'
+	// nil guards and panics on the first call (TestLiveAppBootstrap pins it).
+	var providerErasure user.ProviderErasure
+	if oneSignalErasureUC != nil {
+		providerErasure = oneSignalErasureUC
+	}
+
 	userUC := user.New(userRepo, jwtManager, emailSender, user.Options{
 		VerifyFrontendURL:        cfg.Email.VerifyFrontendURL,
 		VerificationTTL:          cfg.Email.VerificationTTL,
@@ -313,7 +322,7 @@ func initUseCases(cfg *config.Config, pg *postgres.Postgres, jwtManager *jwt.Man
 			Enabled:    cfg.AuthAlert.Enabled,
 			Recipients: cfg.AuthAlert.Recipients,
 		},
-		ProviderErasure: oneSignalErasureUC,
+		ProviderErasure: providerErasure,
 		RateLimit: user.RateLimitOptions{
 			LoginEmail: user.RateLimitRule{
 				Max:    cfg.AuthRateLimit.LoginEmailMax,
@@ -487,26 +496,32 @@ func initServers(cfg *config.Config, pg *postgres.Postgres, uc useCases, jwtMana
 		httpserver.BodyLimit(cfg.HTTP.BodyLimitBytes),
 		httpserver.ErrorHandler(restapi.EnvelopeErrorHandler(l)),
 	)
-	restapi.NewRouter(
-		httpServer.App,
-		cfg,
-		pg,
-		uc.reader,
-		uc.bookRAG,
-		uc.quran,
-		uc.anchor,
-		uc.crossReference,
-		uc.unitRegistry,
-		uc.user,
-		uc.personal,
-		uc.editorial,
-		uc.email,
-		uc.serviceIdentity,
-		uc.inference,
-		uc.pushIdentity,
-		jwtManager,
-		l,
-	)
+	deps := &v1.Dependencies{
+		Reader:                  uc.reader,
+		BookRAG:                 uc.bookRAG,
+		Quran:                   uc.quran,
+		Anchor:                  uc.anchor,
+		CrossReference:          uc.crossReference,
+		UnitRegistry:            uc.unitRegistry,
+		User:                    uc.user,
+		Personal:                uc.personal,
+		Editorial:               uc.editorial,
+		QuranEditorial:          uc.editorial,
+		LicenseAudit:            uc.editorial,
+		QuranSourceLicenseAudit: uc.editorial,
+		Email:                   uc.email,
+		ServiceIdentity:         uc.serviceIdentity,
+		Inference:               uc.inference,
+		JWT:                     jwtManager,
+		Logger:                  l,
+		EmailWebhookSecret:      cfg.Email.CloudflareWebhookSecret,
+	}
+	// Same nil-interface rule as in initUseCases: push identity is optional.
+	if uc.pushIdentity != nil {
+		deps.PushIdentity = uc.pushIdentity
+	}
+
+	restapi.NewRouter(httpServer.App, cfg, pg, deps)
 
 	return servers{
 		http: httpServer,
@@ -534,7 +549,7 @@ func (s *servers) startServers(
 	s.loopCtx = loopCtx
 	s.loopStop = cancel
 	s.loopSpecs = buildLoopSpecs(
-		cfg, emailUC, userUC, notificationUC, unitRegistryUC, l, serviceIdentityUC,
+		cfg, emailUC, userUC, notificationUC, unitRegistryUC, serviceIdentityUC, l,
 	)
 	s.loopSpecs = append(s.loopSpecs, buildOneSignalErasureLoopSpecs(cfg, oneSignalErasureUC, l)...)
 	s.loopSpecs = append(s.loopSpecs, buildInferenceBudgetLoopSpecs(cfg, inferenceUC)...)
@@ -623,15 +638,10 @@ func buildLoopSpecs(
 	userUC *user.UseCase,
 	notificationUC *notification.UseCase,
 	unitRegistryUC *unitregistry.UseCase,
+	serviceIdentityUC *serviceidentity.UseCase,
 	l logger.Interface,
-	serviceIdentityUseCases ...*serviceidentity.UseCase,
 ) []loopSpec {
 	var specs []loopSpec
-
-	var serviceIdentityUC *serviceidentity.UseCase
-	if len(serviceIdentityUseCases) > 0 {
-		serviceIdentityUC = serviceIdentityUseCases[0]
-	}
 
 	if userUC != nil && cfg.AuthCleanup.Enabled {
 		specs = append(specs, loopSpec{

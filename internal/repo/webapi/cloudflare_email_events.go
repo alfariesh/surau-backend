@@ -14,8 +14,6 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
-const cloudflareEmailDeliveryFailedStatus = "deliveryFailed"
-
 // CloudflareEmailEventsOptions configures Cloudflare GraphQL Analytics email polling.
 type CloudflareEmailEventsOptions struct {
 	BaseURL  string

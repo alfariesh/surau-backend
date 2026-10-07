@@ -65,8 +65,8 @@ RETURNING id, book_id, lang, workflow_status, publication_status, requires_revie
 	}
 	saved = r.attachProductionProjectOwner(ctx, saved)
 
-	_ = r.audit(ctx, actorID, "production_project.create", saved.BookID, nil, nil, saved.Lang, saved)
-	_ = r.recordProductionEvent(ctx, actorID, saved.ID, entity.ProductionEventProjectCreate, nil, nil, nil, saved)
+	r.audit(ctx, actorID, "production_project.create", saved.BookID, nil, nil, saved.Lang, saved)
+	r.recordProductionEvent(ctx, actorID, saved.ID, entity.ProductionEventProjectCreate, nil, nil, nil, saved)
 
 	return saved, nil
 }
@@ -224,8 +224,8 @@ func (r *EditorialRepo) UpdateProductionProject(
 	}
 	project = r.attachProductionProjectOwner(ctx, project)
 
-	_ = r.audit(ctx, actorID, "production_project.update", project.BookID, nil, nil, project.Lang, project)
-	_ = r.recordProductionEvent(ctx, actorID, project.ID, entity.ProductionEventProjectUpdate, nil, nil, nil, project)
+	r.audit(ctx, actorID, "production_project.update", project.BookID, nil, nil, project.Lang, project)
+	r.recordProductionEvent(ctx, actorID, project.ID, entity.ProductionEventProjectUpdate, nil, nil, nil, project)
 
 	return project, nil
 }
@@ -586,7 +586,7 @@ WHERE id = $1 AND project_id = $2`, revisionID, projectID))
 	}
 
 	if revision.HeadingID != nil {
-		if err = ensureProjectHeadingWithQuerier(ctx, tx, projectID, *revision.HeadingID); err != nil {
+		if err := ensureProjectHeading(ctx, tx, projectID, *revision.HeadingID); err != nil {
 			return entity.BookProductionDraftRevision{}, err
 		}
 	}
@@ -622,7 +622,7 @@ WHERE id = $1 AND project_id = $2`, revisionID, projectID))
 	}
 
 	assetType := revision.AssetType
-	_ = r.recordProductionEvent(ctx, actorID, projectID, entity.ProductionEventDraftRestore, &assetType, revision.HeadingID, nil, map[string]any{
+	r.recordProductionEvent(ctx, actorID, projectID, entity.ProductionEventDraftRestore, &assetType, revision.HeadingID, nil, map[string]any{
 		"revision_id":      revision.ID,
 		"restored_version": revision.Version,
 		"new_version":      created.Version,
@@ -764,7 +764,7 @@ LEFT JOIN generation_runs gr ON gr.id = saved.generation_run_id`
 	}
 
 	assetType := entity.ProductionAssetBookMetadata
-	_ = r.recordProductionEvent(ctx, actorID, projectID, entity.ProductionEventDraftSave, &assetType, nil, nil, map[string]any{
+	r.recordProductionEvent(ctx, actorID, projectID, entity.ProductionEventDraftSave, &assetType, nil, nil, map[string]any{
 		"review_status": saved.ReviewStatus,
 	})
 
@@ -880,7 +880,7 @@ LEFT JOIN generation_runs gr ON gr.id = saved.generation_run_id`
 	}
 
 	assetType := entity.ProductionAssetAuthorMetadata
-	_ = r.recordProductionEvent(ctx, actorID, projectID, entity.ProductionEventDraftSave, &assetType, nil, nil, map[string]any{
+	r.recordProductionEvent(ctx, actorID, projectID, entity.ProductionEventDraftSave, &assetType, nil, nil, map[string]any{
 		"review_status": saved.ReviewStatus,
 	})
 
@@ -990,7 +990,7 @@ LEFT JOIN generation_runs gr ON gr.id = saved.generation_run_id`
 	}
 
 	assetType := entity.ProductionAssetCategoryMetadata
-	_ = r.recordProductionEvent(ctx, actorID, projectID, entity.ProductionEventDraftSave, &assetType, nil, nil, map[string]any{
+	r.recordProductionEvent(ctx, actorID, projectID, entity.ProductionEventDraftSave, &assetType, nil, nil, map[string]any{
 		"review_status": saved.ReviewStatus,
 	})
 
@@ -1035,7 +1035,8 @@ func (r *EditorialRepo) SaveSectionTranslationDraft(
 	if err := ensureProductionDraftExpected(ctx, tx, expected, "section_translation_edits", "project_id = $1 AND heading_id = $2", projectID, edit.HeadingID); err != nil {
 		return entity.SectionTranslationEdit{}, err
 	}
-	if err = ensureProjectHeadingWithQuerier(ctx, tx, projectID, edit.HeadingID); err != nil {
+
+	if err := ensureProjectHeading(ctx, tx, projectID, edit.HeadingID); err != nil {
 		return entity.SectionTranslationEdit{}, err
 	}
 
@@ -1112,7 +1113,7 @@ LEFT JOIN generation_runs gr ON gr.id = saved.generation_run_id`
 	}
 
 	assetType := entity.ProductionAssetSectionTranslation
-	_ = r.recordProductionEvent(ctx, actorID, projectID, entity.ProductionEventDraftSave, &assetType, &headingID, nil, map[string]any{
+	r.recordProductionEvent(ctx, actorID, projectID, entity.ProductionEventDraftSave, &assetType, &headingID, nil, map[string]any{
 		"review_status": saved.ReviewStatus,
 	})
 
@@ -1157,7 +1158,8 @@ func (r *EditorialRepo) SaveHeadingSummaryDraft(
 	if err := ensureProductionDraftExpected(ctx, tx, expected, "heading_summary_edits", "project_id = $1 AND heading_id = $2", projectID, edit.HeadingID); err != nil {
 		return entity.HeadingSummaryEdit{}, err
 	}
-	if err = ensureProjectHeadingWithQuerier(ctx, tx, projectID, edit.HeadingID); err != nil {
+
+	if err := ensureProjectHeading(ctx, tx, projectID, edit.HeadingID); err != nil {
 		return entity.HeadingSummaryEdit{}, err
 	}
 
@@ -1231,7 +1233,7 @@ LEFT JOIN generation_runs gr ON gr.id = saved.generation_run_id`
 	}
 
 	assetType := entity.ProductionAssetHeadingSummary
-	_ = r.recordProductionEvent(ctx, actorID, projectID, entity.ProductionEventDraftSave, &assetType, &headingID, nil, map[string]any{
+	r.recordProductionEvent(ctx, actorID, projectID, entity.ProductionEventDraftSave, &assetType, &headingID, nil, map[string]any{
 		"review_status": saved.ReviewStatus,
 	})
 
@@ -1274,7 +1276,8 @@ func (r *EditorialRepo) SaveSectionAudioDraft(
 	if err := ensureProductionDraftExpected(ctx, tx, expected, "section_audio_edits", "project_id = $1 AND heading_id = $2", projectID, edit.HeadingID); err != nil {
 		return entity.SectionAudioEdit{}, err
 	}
-	if err = ensureProjectHeadingWithQuerier(ctx, tx, projectID, edit.HeadingID); err != nil {
+
+	if err := ensureProjectHeading(ctx, tx, projectID, edit.HeadingID); err != nil {
 		return entity.SectionAudioEdit{}, err
 	}
 
@@ -1329,7 +1332,7 @@ RETURNING project_id, heading_id, url, narrator, duration_seconds, mime_type, me
 	}
 
 	assetType := entity.ProductionAssetSectionAudio
-	_ = r.recordProductionEvent(ctx, actorID, projectID, entity.ProductionEventDraftSave, &assetType, &headingID, nil, map[string]any{
+	r.recordProductionEvent(ctx, actorID, projectID, entity.ProductionEventDraftSave, &assetType, &headingID, nil, map[string]any{
 		"review_status": saved.ReviewStatus,
 	})
 
@@ -1366,7 +1369,19 @@ SET review_status = $%d,
 WHERE %s`, table, len(args)+1, len(args)+2, len(args)+1, len(args)+3, len(args)+1, where)
 	args = append(args, status, note, actorID)
 
-	result, err := r.Pool.Exec(ctx, sqlText, args...)
+	// The review status and the project's workflow transition commit
+	// together; the project row is locked first, like every draft writer.
+	tx, err := r.Pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("EditorialRepo - ReviewProductionAsset - begin: %w", err)
+	}
+	defer rollbackTx(ctx, tx)
+
+	if err := lockProductionProjectForDraft(ctx, tx, projectID); err != nil {
+		return err
+	}
+
+	result, err := tx.Exec(ctx, sqlText, args...)
 	if err != nil {
 		return fmt.Errorf("EditorialRepo - ReviewProductionAsset - exec: %w", err)
 	}
@@ -1374,18 +1389,25 @@ WHERE %s`, table, len(args)+1, len(args)+2, len(args)+1, len(args)+3, len(args)+
 		return entity.ErrDraftNotFound
 	}
 
+	workflowStatus := ""
 	if decision == entity.ProductionReviewDecisionSubmit {
-		_ = r.touchProductionProject(ctx, actorID, projectID, entity.ProductionWorkflowInReview)
-	} else {
-		_ = r.touchProductionProject(ctx, actorID, projectID, "")
+		workflowStatus = entity.ProductionWorkflowInReview
 	}
 
-	_ = r.audit(ctx, actorID, "production_asset.review", 0, nil, headingID, assetType, map[string]any{
+	if err = touchProductionProjectTx(ctx, tx, actorID, projectID, workflowStatus); err != nil {
+		return fmt.Errorf("EditorialRepo - ReviewProductionAsset - touch project: %w", err)
+	}
+
+	if err = tx.Commit(ctx); err != nil {
+		return fmt.Errorf("EditorialRepo - ReviewProductionAsset - commit: %w", err)
+	}
+
+	r.audit(ctx, actorID, "production_asset.review", 0, nil, headingID, assetType, map[string]any{
 		"project_id": projectID,
 		"decision":   decision,
 	})
 	assetTypeCopy := assetType
-	_ = r.recordProductionEvent(ctx, actorID, projectID, entity.ProductionEventReview, &assetTypeCopy, headingID, note, map[string]any{
+	r.recordProductionEvent(ctx, actorID, projectID, entity.ProductionEventReview, &assetTypeCopy, headingID, note, map[string]any{
 		"decision":      decision,
 		"review_status": status,
 	})
@@ -1493,8 +1515,8 @@ RETURNING id, book_id, lang, workflow_status, publication_status, requires_revie
 	}
 	published = r.attachProductionProjectOwner(ctx, published)
 
-	_ = r.audit(ctx, actorID, "production_project.publish", published.BookID, nil, nil, published.Lang, published)
-	_ = r.recordProductionEvent(ctx, actorID, published.ID, entity.ProductionEventProjectPublish, nil, nil, nil, published)
+	r.audit(ctx, actorID, "production_project.publish", published.BookID, nil, nil, published.Lang, published)
+	r.recordProductionEvent(ctx, actorID, published.ID, entity.ProductionEventProjectPublish, nil, nil, nil, published)
 
 	return published, nil
 }
@@ -1537,13 +1559,16 @@ RETURNING id, book_id, lang, workflow_status, publication_status, requires_revie
 	}
 	project = r.attachProductionProjectOwner(ctx, project)
 
-	_ = r.audit(ctx, actorID, "production_project.unpublish", project.BookID, nil, nil, project.Lang, project)
-	_ = r.recordProductionEvent(ctx, actorID, project.ID, entity.ProductionEventProjectUnpublish, nil, nil, nil, project)
+	r.audit(ctx, actorID, "production_project.unpublish", project.BookID, nil, nil, project.Lang, project)
+	r.recordProductionEvent(ctx, actorID, project.ID, entity.ProductionEventProjectUnpublish, nil, nil, nil, project)
 
 	return project, nil
 }
 
-// DeleteFinalProductionAsset soft-deletes one final published asset and hides the project language.
+// DeleteFinalProductionAsset soft-deletes one final published asset and hides
+// the project language. Both writes share one transaction under the project
+// row lock, so a project can never stay published after one of its final
+// assets is gone.
 func (r *EditorialRepo) DeleteFinalProductionAsset(
 	ctx context.Context,
 	actorID,
@@ -1552,7 +1577,13 @@ func (r *EditorialRepo) DeleteFinalProductionAsset(
 	headingID *int,
 	reason *string,
 ) error {
-	project, err := r.GetProductionProject(ctx, projectID)
+	tx, err := r.Pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("EditorialRepo - DeleteFinalProductionAsset - begin: %w", err)
+	}
+	defer rollbackTx(ctx, tx)
+
+	project, err := lockProductionProjectInBookOrder(ctx, tx, projectID)
 	if err != nil {
 		return err
 	}
@@ -1562,7 +1593,7 @@ func (r *EditorialRepo) DeleteFinalProductionAsset(
 		return err
 	}
 
-	result, err := r.Pool.Exec(ctx, sqlText, args...)
+	result, err := tx.Exec(ctx, sqlText, args...)
 	if err != nil {
 		return fmt.Errorf("EditorialRepo - DeleteFinalProductionAsset - exec: %w", err)
 	}
@@ -1570,20 +1601,26 @@ func (r *EditorialRepo) DeleteFinalProductionAsset(
 		return entity.ErrTranslationNotFound
 	}
 
-	_, _ = r.Pool.Exec(ctx, `
+	if _, err = tx.Exec(ctx, `
 UPDATE book_production_projects
 SET publication_status = 'hidden',
     workflow_status = CASE WHEN workflow_status = 'published' THEN 'drafting' ELSE workflow_status END,
     updated_by = $2,
     updated_at = now()
-WHERE id = $1`, projectID, actorID)
+WHERE id = $1`, projectID, actorID); err != nil {
+		return fmt.Errorf("EditorialRepo - DeleteFinalProductionAsset - hide project: %w", err)
+	}
 
-	_ = r.audit(ctx, actorID, "production_asset.final_delete", project.BookID, nil, headingID, assetType, map[string]any{
+	if err = tx.Commit(ctx); err != nil {
+		return fmt.Errorf("EditorialRepo - DeleteFinalProductionAsset - commit: %w", err)
+	}
+
+	r.audit(ctx, actorID, "production_asset.final_delete", project.BookID, nil, headingID, assetType, map[string]any{
 		"project_id": projectID,
 		"reason":     reason,
 	})
 	assetTypeCopy := assetType
-	_ = r.recordProductionEvent(ctx, actorID, projectID, entity.ProductionEventFinalDelete, &assetTypeCopy, headingID, reason, nil)
+	r.recordProductionEvent(ctx, actorID, projectID, entity.ProductionEventFinalDelete, &assetTypeCopy, headingID, reason, nil)
 
 	return nil
 }
@@ -2232,11 +2269,7 @@ AND (
 )`
 }
 
-func (r *EditorialRepo) ensureProjectHeading(ctx context.Context, projectID string, headingID int) error {
-	return ensureProjectHeadingWithQuerier(ctx, r.Pool, projectID, headingID)
-}
-
-func ensureProjectHeadingWithQuerier(
+func ensureProjectHeading(
 	ctx context.Context,
 	querier interface {
 		QueryRow(context.Context, string, ...any) pgx.Row
@@ -2273,19 +2306,31 @@ func (r *EditorialRepo) deleteProductionDraft(
 	where string,
 	args ...any,
 ) error {
+	// The draft delete and the project's return to drafting commit together;
+	// the project row is locked first, like every draft writer.
+	tx, err := r.Pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("delete production draft - begin: %w", err)
+	}
+	defer rollbackTx(ctx, tx)
+
+	if err := lockProductionProjectForDraft(ctx, tx, projectID); err != nil {
+		return err
+	}
+
 	// The expected gate rides inside the DELETE so the precondition check and
 	// the delete are one atomic statement.
 	gated := fmt.Sprintf("DELETE FROM %s WHERE %s AND ($%d::timestamptz IS NULL OR updated_at = $%d)",
 		table, where, len(args)+1, len(args)+1)
 
-	result, err := r.Pool.Exec(ctx, gated, append(append([]any{}, args...), expected)...)
+	result, err := tx.Exec(ctx, gated, append(append([]any{}, args...), expected)...)
 	if err != nil {
 		return fmt.Errorf("delete production draft: %w", err)
 	}
 	if result.RowsAffected() == 0 {
 		if expected != nil {
 			var exists bool
-			if existsErr := r.Pool.QueryRow(
+			if existsErr := tx.QueryRow(
 				ctx,
 				fmt.Sprintf("SELECT EXISTS (SELECT 1 FROM %s WHERE %s)", table, where), args...,
 			).Scan(&exists); existsErr == nil && exists {
@@ -2296,40 +2341,21 @@ func (r *EditorialRepo) deleteProductionDraft(
 		return entity.ErrDraftNotFound
 	}
 
-	_ = r.touchProductionProject(ctx, actorID, projectID, entity.ProductionWorkflowDrafting)
-	_ = r.audit(ctx, actorID, "production_asset.draft_delete", 0, nil, headingID, assetType, map[string]any{
+	if err = touchProductionProjectTx(ctx, tx, actorID, projectID, entity.ProductionWorkflowDrafting); err != nil {
+		return fmt.Errorf("delete production draft - touch project: %w", err)
+	}
+
+	if err = tx.Commit(ctx); err != nil {
+		return fmt.Errorf("delete production draft - commit: %w", err)
+	}
+
+	r.audit(ctx, actorID, "production_asset.draft_delete", 0, nil, headingID, assetType, map[string]any{
 		"project_id": projectID,
 	})
 	assetTypeCopy := assetType
-	_ = r.recordProductionEvent(ctx, actorID, projectID, entity.ProductionEventDraftDelete, &assetTypeCopy, headingID, nil, nil)
+	r.recordProductionEvent(ctx, actorID, projectID, entity.ProductionEventDraftDelete, &assetTypeCopy, headingID, nil, nil)
 
 	return nil
-}
-
-func (r *EditorialRepo) touchProductionProject(ctx context.Context, actorID, projectID, workflowStatus string) error {
-	if workflowStatus == "" {
-		_, err := r.Pool.Exec(ctx, `
-UPDATE book_production_projects
-SET updated_by = $2, updated_at = now()
-WHERE id = $1`, projectID, actorID)
-		return err
-	}
-
-	_, err := r.Pool.Exec(ctx, `
-UPDATE book_production_projects
-SET workflow_status = CASE
-        WHEN workflow_status IN ('published', 'archived') THEN workflow_status
-        ELSE $3
-    END,
-    publication_status = CASE
-        WHEN workflow_status = 'published' THEN publication_status
-        ELSE 'hidden'
-    END,
-    updated_by = $2,
-    updated_at = now()
-WHERE id = $1`, projectID, actorID, workflowStatus)
-
-	return err
 }
 
 //nolint:cyclop,funlen // closed mapping keeps all five machine-backed production asset targets explicit
@@ -2849,6 +2875,56 @@ FOR UPDATE`, projectID))
 	return project, nil
 }
 
+// lockProductionProjectForDraft locks the project row before a draft-level
+// write. A missing project surfaces as ErrDraftNotFound, the error these
+// endpoints returned before the lock existed, so the API contract is unchanged.
+func lockProductionProjectForDraft(ctx context.Context, tx pgx.Tx, projectID string) error {
+	_, err := lockProductionProject(ctx, tx, projectID)
+	if errors.Is(err, entity.ErrProductionProjectNotFound) {
+		return entity.ErrDraftNotFound
+	}
+
+	return err
+}
+
+// lockProductionProjectInBookOrder locks a project's book row (FOR SHARE) and
+// then the project row (FOR UPDATE): the global B-4 lock order every
+// publication writer follows, so a concurrent license takedown cannot
+// deadlock with it. The book id is read optimistically and revalidated under
+// the lock.
+func lockProductionProjectInBookOrder(
+	ctx context.Context,
+	tx pgx.Tx,
+	projectID string,
+) (entity.BookProductionProject, error) {
+	var candidateBookID int
+	if err := tx.QueryRow(ctx, `
+SELECT book_id
+FROM book_production_projects
+WHERE id = $1`, projectID).Scan(&candidateBookID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return entity.BookProductionProject{}, entity.ErrProductionProjectNotFound
+		}
+
+		return entity.BookProductionProject{}, fmt.Errorf("locate production project book: %w", err)
+	}
+
+	if _, err := getBookLicenseStatusForPublish(ctx, tx, candidateBookID, true); err != nil {
+		return entity.BookProductionProject{}, err
+	}
+
+	project, err := lockProductionProject(ctx, tx, projectID)
+	if err != nil {
+		return entity.BookProductionProject{}, err
+	}
+
+	if project.BookID != candidateBookID {
+		return entity.BookProductionProject{}, entity.ErrPreconditionFailed
+	}
+
+	return project, nil
+}
+
 func touchProductionProjectTx(ctx context.Context, tx pgx.Tx, actorID, projectID, workflowStatus string) error {
 	if workflowStatus == "" {
 		_, err := tx.Exec(ctx, `
@@ -3224,47 +3300,6 @@ RETURNING project_id, heading_id, url, narrator, duration_seconds, mime_type, me
 	default:
 		return nil, entity.ErrInvalidAssetType
 	}
-}
-
-func (r *EditorialRepo) recordProductionEvent(
-	ctx context.Context,
-	actorID,
-	projectID,
-	eventType string,
-	assetType *string,
-	headingID *int,
-	note *string,
-	payload any,
-) error {
-	var payloadJSON []byte
-	var err error
-	if payload != nil {
-		payloadJSON, err = json.Marshal(payload)
-		if err != nil {
-			return fmt.Errorf("marshal production event payload: %w", err)
-		}
-	}
-
-	_, err = r.Pool.Exec(
-		ctx, `
-INSERT INTO book_production_events (
-    id, project_id, actor_id, event_type, asset_type, heading_id, note, payload, created_at
-)
-VALUES ($1, $2, $3, $4, $5, $6, $7, nullif($8, '')::jsonb, now())`,
-		uuid.New().String(),
-		projectID,
-		emptyStringNil(actorID),
-		eventType,
-		assetType,
-		headingID,
-		note,
-		string(payloadJSON),
-	)
-	if err != nil {
-		return fmt.Errorf("insert production event: %w", err)
-	}
-
-	return nil
 }
 
 func scanProductionEvent(row rowScanner) (entity.BookProductionEvent, error) {

@@ -380,6 +380,23 @@ definitions:
         example: 20
         type: integer
     type: object
+  entity.BookCollectionItem:
+    properties:
+      book_id:
+        example: 797
+        type: integer
+      collection_slug:
+        example: starter-50
+        type: string
+      created_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      created_by:
+        type: string
+      sort_order:
+        example: 10
+        type: integer
+    type: object
   entity.BookHeading:
     properties:
       book_id:
@@ -980,6 +997,29 @@ definitions:
         $ref: '#/definitions/entity.ProductionAssetStatus'
       translation:
         $ref: '#/definitions/entity.ProductionAssetStatus'
+    type: object
+  entity.BookPublication:
+    properties:
+      book_id:
+        example: 797
+        type: integer
+      featured:
+        example: true
+        type: boolean
+      published_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      sort_order:
+        example: 10
+        type: integer
+      status:
+        example: published
+        type: string
+      updated_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      updated_by:
+        type: string
     type: object
   entity.BookQuranReference:
     properties:
@@ -1877,6 +1917,88 @@ definitions:
         type: array
       total:
         example: 42
+        type: integer
+    type: object
+  entity.EditorialPageEdit:
+    properties:
+      draft:
+        $ref: '#/definitions/entity.BookPageEdit'
+      published:
+        $ref: '#/definitions/entity.BookPageEdit'
+      raw:
+        $ref: '#/definitions/entity.BookPage'
+    type: object
+  entity.EditorialTranslationFeedback:
+    properties:
+      book_id:
+        example: 797
+        type: integer
+      book_title:
+        type: string
+      client_id:
+        type: string
+      client_ip:
+        type: string
+      created_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      heading_id:
+        example: 10
+        type: integer
+      heading_title:
+        type: string
+      id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      lang:
+        example: id
+        type: string
+      note:
+        type: string
+      reason:
+        example: style
+        type: string
+      resolution_note:
+        type: string
+      resolved_at:
+        type: string
+      resolved_by:
+        type: string
+      status:
+        example: open
+        type: string
+      translation_reviewed_at:
+        type: string
+      translation_reviewed_by:
+        type: string
+      translation_status:
+        example: generated
+        type: string
+      updated_at:
+        example: "2026-01-01T00:00:00Z"
+        type: string
+      user_agent:
+        type: string
+      user_id:
+        type: string
+      vote:
+        example: dislike
+        type: string
+    type: object
+  entity.EditorialTranslationFeedbackSummary:
+    properties:
+      dislikes:
+        example: 7
+        type: integer
+      likes:
+        example: 18
+        type: integer
+      top_disliked_headings:
+        items:
+          $ref: '#/definitions/entity.TranslationFeedbackHeadingSummary'
+        type: array
+      total:
+        example: 25
         type: integer
     type: object
   entity.EmailAudienceFilter:
@@ -3888,45 +4010,6 @@ definitions:
         example: البقرة- ٢٥٥
         type: string
     type: object
-  entity.Task:
-    properties:
-      created_at:
-        example: "2026-01-01T00:00:00Z"
-        type: string
-      description:
-        example: Task description
-        type: string
-      id:
-        example: 550e8400-e29b-41d4-a716-446655440000
-        type: string
-      status:
-        example: todo
-        type: string
-      title:
-        example: My task
-        type: string
-      updated_at:
-        example: "2026-01-01T00:00:00Z"
-        type: string
-      user_id:
-        example: 550e8400-e29b-41d4-a716-446655440000
-        type: string
-    type: object
-  entity.Translation:
-    properties:
-      destination:
-        example: en
-        type: string
-      original:
-        example: текст для перевода
-        type: string
-      source:
-        example: auto
-        type: string
-      translation:
-        example: text for translation
-        type: string
-    type: object
   entity.TranslationFeedback:
     properties:
       book_id:
@@ -3964,12 +4047,34 @@ definitions:
         example: dislike
         type: string
     type: object
-  entity.TranslationHistory:
+  entity.TranslationFeedbackHeadingSummary:
     properties:
-      history:
-        items:
-          $ref: '#/definitions/entity.Translation'
-        type: array
+      book_id:
+        example: 797
+        type: integer
+      book_title:
+        type: string
+      dislikes:
+        example: 4
+        type: integer
+      heading_id:
+        example: 10
+        type: integer
+      heading_title:
+        type: string
+      lang:
+        example: id
+        type: string
+      likes:
+        example: 6
+        type: integer
+      reasons:
+        additionalProperties:
+          type: integer
+        type: object
+      total:
+        example: 10
+        type: integer
     type: object
   entity.User:
     properties:
@@ -4210,6 +4315,18 @@ definitions:
       account_deleted:
         example: true
         type: boolean
+    type: object
+  v1.AddCollectionItem:
+    properties:
+      book_id:
+        example: 797
+        minimum: 1
+        type: integer
+      sort_order:
+        example: 10
+        type: integer
+    required:
+    - book_id
     type: object
   v1.AdminUserActivityList:
     properties:
@@ -4494,19 +4611,6 @@ definitions:
     required:
     - book_id
     - lang
-    type: object
-  v1.CreateTask:
-    properties:
-      description:
-        example: Task description
-        maxLength: 1000
-        type: string
-      title:
-        example: My task
-        maxLength: 255
-        type: string
-    required:
-    - title
     type: object
   v1.CreateTranslationFeedback:
     properties:
@@ -5725,6 +5829,12 @@ definitions:
     - password
     - token
     type: object
+  v1.ResolveTranslationFeedback:
+    properties:
+      note:
+        maxLength: 2000
+        type: string
+    type: object
   v1.ReviewCrossReference:
     properties:
       review_status:
@@ -5798,6 +5908,14 @@ definitions:
     required:
     - name
     type: object
+  v1.SaveHeadingDraft:
+    properties:
+      content:
+        maxLength: 2000
+        type: string
+    required:
+    - content
+    type: object
   v1.SaveHeadingSummaryDraft:
     properties:
       metadata:
@@ -5810,6 +5928,30 @@ definitions:
         type: string
     required:
     - summary
+    type: object
+  v1.SaveMetadataDraft:
+    properties:
+      bibliography:
+        maxLength: 10000
+        type: string
+      category_id:
+        minimum: 1
+        type: integer
+      cover_url:
+        maxLength: 2000
+        type: string
+      description:
+        maxLength: 10000
+        type: string
+      display_title:
+        maxLength: 500
+        type: string
+      hint:
+        maxLength: 10000
+        type: string
+      notes:
+        maxLength: 10000
+        type: string
     type: object
   v1.SaveMetadataTranslationDraft:
     properties:
@@ -5832,6 +5974,14 @@ definitions:
         type: string
     required:
     - display_title
+    type: object
+  v1.SavePageDraft:
+    properties:
+      content_html:
+        maxLength: 300000
+        type: string
+    required:
+    - content_html
     type: object
   v1.SaveProgress:
     properties:
@@ -6098,16 +6248,6 @@ definitions:
         maxLength: 2000
         type: string
     type: object
-  v1.TaskList:
-    properties:
-      tasks:
-        items:
-          $ref: '#/definitions/entity.Task'
-        type: array
-      total:
-        example: 42
-        type: integer
-    type: object
   v1.Token:
     properties:
       access_token:
@@ -6129,33 +6269,15 @@ definitions:
         example: Bearer
         type: string
     type: object
-  v1.TransitionTask:
+  v1.TranslationFeedbackList:
     properties:
-      status:
-        enum:
-        - todo
-        - in_progress
-        - done
-        example: in_progress
-        type: string
-    required:
-    - status
-    type: object
-  v1.Translate:
-    properties:
-      destination:
-        example: en
-        type: string
-      original:
-        example: текст для перевода
-        type: string
-      source:
-        example: auto
-        type: string
-    required:
-    - destination
-    - original
-    - source
+      feedbacks:
+        items:
+          $ref: '#/definitions/entity.EditorialTranslationFeedback'
+        type: array
+      total:
+        example: 42
+        type: integer
     type: object
   v1.UpdateBookLicense:
     properties:
@@ -6204,6 +6326,20 @@ definitions:
         - archived
         type: string
     type: object
+  v1.UpdatePublication:
+    properties:
+      featured:
+        example: true
+        type: boolean
+      sort_order:
+        example: 10
+        type: integer
+      status:
+        example: published
+        type: string
+    required:
+    - status
+    type: object
   v1.UpdateQuranSourceLicense:
     properties:
       evidence_url:
@@ -6244,19 +6380,6 @@ definitions:
         items:
           type: string
         type: array
-    type: object
-  v1.UpdateTask:
-    properties:
-      description:
-        example: Updated description
-        maxLength: 1000
-        type: string
-      title:
-        example: Updated task
-        maxLength: 255
-        type: string
-    required:
-    - title
     type: object
   v1.UpsertSavedItem:
     properties:
@@ -6466,8 +6589,9 @@ definitions:
 host: localhost:8080
 info:
   contact: {}
-  description: Surau classical book reader API
-  title: Go Clean Template API
+  description: 'Surau API: Quran, kitab reader, personal progress, editorial, and
+    retrieval endpoints'
+  title: Surau API
   version: "1.0"
 paths:
   /admin/emails/campaign-recipients/{id}/delivery-events:
@@ -10095,6 +10219,69 @@ paths:
       summary: List Cross-References in either direction
       tags:
       - cross-references
+  /editorial/books:
+    get:
+      description: List source kitab with their publication state for the editorial
+        queue. Requires editor or admin role.
+      operationId: editorial-list-books
+      parameters:
+      - description: Search title, display title, author, or category
+        in: query
+        name: q
+        type: string
+      - description: Publication status
+        enum:
+        - hidden
+        - draft
+        - published
+        - archived
+        in: query
+        name: status
+        type: string
+      - description: Category ID
+        in: query
+        name: category_id
+        type: integer
+      - description: Only books with (true) or without (false) imported content
+        in: query
+        name: has_content
+        type: boolean
+      - description: Page size (default 50, max 200)
+        in: query
+        name: limit
+        type: integer
+      - description: Offset
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.BookList'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: List books for editorial review
+      tags:
+      - editorial
   /editorial/books/{book_id}/headings/{heading_id}/draft:
     get:
       description: Get the current source kitab heading title draft. Requires editor
@@ -10141,6 +10328,130 @@ paths:
       security:
       - BearerAuth: []
       summary: Get source heading draft
+      tags:
+      - editorial
+    put:
+      consumes:
+      - application/json
+      description: Save the source kitab heading title draft. If-Match is optional
+        but rejects a stale draft with 412. Requires editor or admin role.
+      operationId: editorial-save-source-heading-draft
+      parameters:
+      - description: Book ID
+        in: path
+        name: book_id
+        required: true
+        type: integer
+      - description: Heading ID
+        in: path
+        name: heading_id
+        required: true
+        type: integer
+      - description: Current ETag or *
+        in: header
+        name: If-Match
+        type: string
+      - description: Heading draft
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.SaveHeadingDraft'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.BookHeadingEdit'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "412":
+          description: Precondition Failed
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Save source heading draft
+      tags:
+      - editorial
+  /editorial/books/{book_id}/headings/{heading_id}/publish:
+    post:
+      description: Publish the source kitab heading title draft over the live heading.
+        If-Match is optional but rejects a stale draft with 412; publishing requires
+        a permitted license. Requires CapPublishProduction and fresh MFA.
+      operationId: editorial-publish-source-heading-draft
+      parameters:
+      - description: Book ID
+        in: path
+        name: book_id
+        required: true
+        type: integer
+      - description: Heading ID
+        in: path
+        name: heading_id
+        required: true
+        type: integer
+      - description: Current ETag or *
+        in: header
+        name: If-Match
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.BookHeadingEdit'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "412":
+          description: Precondition Failed
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Publish source heading draft
       tags:
       - editorial
   /editorial/books/{book_id}/license:
@@ -10295,6 +10606,240 @@ paths:
       summary: Get source metadata draft
       tags:
       - editorial
+    put:
+      consumes:
+      - application/json
+      description: Save the source kitab metadata draft. The response carries an ETag;
+        If-Match is optional but rejects a stale draft with 412. Requires editor or
+        admin role.
+      operationId: editorial-save-source-metadata-draft
+      parameters:
+      - description: Book ID
+        in: path
+        name: book_id
+        required: true
+        type: integer
+      - description: Current ETag or *
+        in: header
+        name: If-Match
+        type: string
+      - description: Metadata draft
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.SaveMetadataDraft'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.BookMetadataEdit'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "412":
+          description: Precondition Failed
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Save source metadata draft
+      tags:
+      - editorial
+  /editorial/books/{book_id}/metadata-draft/publish:
+    post:
+      description: Publish the source kitab metadata draft over the live metadata.
+        If-Match is optional but rejects a stale draft with 412; publishing requires
+        a permitted license. Requires CapPublishProduction and fresh MFA.
+      operationId: editorial-publish-source-metadata-draft
+      parameters:
+      - description: Book ID
+        in: path
+        name: book_id
+        required: true
+        type: integer
+      - description: Current ETag or *
+        in: header
+        name: If-Match
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.BookMetadataEdit'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "412":
+          description: Precondition Failed
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Publish source metadata draft
+      tags:
+      - editorial
+  /editorial/books/{book_id}/pages/{page_id}:
+    get:
+      description: Get one source kitab page with its current draft, if any. The ETag
+        tracks the draft when present, otherwise the raw page. Requires editor or
+        admin role.
+      operationId: editorial-get-source-page
+      parameters:
+      - description: Book ID
+        in: path
+        name: book_id
+        required: true
+        type: integer
+      - description: Page ID
+        in: path
+        name: page_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.EditorialPageEdit'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Get source page edit
+      tags:
+      - editorial
+  /editorial/books/{book_id}/pages/{page_id}/draft:
+    put:
+      consumes:
+      - application/json
+      description: Save the source kitab page HTML draft. If-Match is required (428
+        when missing, 412 when stale) because page content is the high-value lost-work
+        surface. Requires editor or admin role.
+      operationId: editorial-save-source-page-draft
+      parameters:
+      - description: Book ID
+        in: path
+        name: book_id
+        required: true
+        type: integer
+      - description: Page ID
+        in: path
+        name: page_id
+        required: true
+        type: integer
+      - description: Current ETag or *
+        in: header
+        name: If-Match
+        required: true
+        type: string
+      - description: Page draft
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.SavePageDraft'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.BookPageEdit'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "412":
+          description: Precondition Failed
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "428":
+          description: Precondition Required
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Save source page draft
+      tags:
+      - editorial
   /editorial/books/{book_id}/pages/{page_id}/draft-revisions:
     get:
       description: List the newest-first revision history for one page draft. Requires
@@ -10404,6 +10949,128 @@ paths:
       summary: Restore page draft revision
       tags:
       - editorial
+  /editorial/books/{book_id}/pages/{page_id}/publish:
+    post:
+      description: Publish the source kitab page draft over the live page. If-Match
+        is required (428 when missing, 412 when stale); publishing requires a permitted
+        license. Requires CapPublishProduction and fresh MFA.
+      operationId: editorial-publish-source-page-draft
+      parameters:
+      - description: Book ID
+        in: path
+        name: book_id
+        required: true
+        type: integer
+      - description: Page ID
+        in: path
+        name: page_id
+        required: true
+        type: integer
+      - description: Current ETag or *
+        in: header
+        name: If-Match
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.BookPageEdit'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "412":
+          description: Precondition Failed
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "428":
+          description: Precondition Required
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Publish source page draft
+      tags:
+      - editorial
+  /editorial/books/{book_id}/publication:
+    put:
+      consumes:
+      - application/json
+      description: Set a book's publication status, featured flag, and sort order.
+        Publishing requires a permitted license. Requires CapPublishProduction and
+        fresh MFA.
+      operationId: editorial-update-publication
+      parameters:
+      - description: Book ID
+        in: path
+        name: book_id
+        required: true
+        type: integer
+      - description: Publication state
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.UpdatePublication'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.BookPublication'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Update book publication
+      tags:
+      - editorial
   /editorial/citable-units/{id}:
     get:
       description: Return normalized text, lifecycle, provenance, generation identity,
@@ -10444,6 +11111,61 @@ paths:
       tags:
       - editorial
       - citable-units
+  /editorial/collections/{slug}/items:
+    post:
+      consumes:
+      - application/json
+      description: Add a book to a curated collection, or update its sort order when
+        already present. Requires CapPublishProduction and fresh MFA.
+      operationId: editorial-add-collection-item
+      parameters:
+      - description: Collection slug
+        in: path
+        name: slug
+        required: true
+        type: string
+      - description: Collection item
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.AddCollectionItem'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.BookCollectionItem'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Add book to collection
+      tags:
+      - editorial
   /editorial/cross-references:
     get:
       description: List the protected review queue. Requires CapReviewEditorial; unlike
@@ -13406,6 +14128,233 @@ paths:
       summary: List missing reader assets
       tags:
       - editorial
+  /editorial/translation-feedbacks:
+    get:
+      description: List reader feedback on section translations, newest first. Requires
+        editor or admin role.
+      operationId: editorial-list-translation-feedbacks
+      parameters:
+      - description: Book ID
+        in: query
+        name: book_id
+        type: integer
+      - description: Heading ID
+        in: query
+        name: heading_id
+        type: integer
+      - description: Translation language
+        in: query
+        name: lang
+        type: string
+      - description: Reader vote
+        enum:
+        - like
+        - dislike
+        in: query
+        name: vote
+        type: string
+      - description: Feedback status (default open)
+        enum:
+        - open
+        - resolved
+        - all
+        in: query
+        name: status
+        type: string
+      - description: Page size (default 50, max 200)
+        in: query
+        name: limit
+        type: integer
+      - description: Offset
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.TranslationFeedbackList'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: List translation feedback
+      tags:
+      - editorial
+  /editorial/translation-feedbacks/{id}/reopen:
+    post:
+      description: Return a resolved reader translation feedback item to the open
+        queue. Requires editor or admin role.
+      operationId: editorial-reopen-translation-feedback
+      parameters:
+      - description: Feedback ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.EditorialTranslationFeedback'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Reopen translation feedback
+      tags:
+      - editorial
+  /editorial/translation-feedbacks/{id}/resolve:
+    post:
+      consumes:
+      - application/json
+      description: Mark one reader translation feedback item as handled, with an optional
+        note. Requires editor or admin role.
+      operationId: editorial-resolve-translation-feedback
+      parameters:
+      - description: Feedback ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Optional resolution note
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/v1.ResolveTranslationFeedback'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.EditorialTranslationFeedback'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Resolve translation feedback
+      tags:
+      - editorial
+  /editorial/translation-feedbacks/summary:
+    get:
+      description: Aggregate reader translation feedback counts and the most-disliked
+        headings. Requires editor or admin role.
+      operationId: editorial-translation-feedback-summary
+      parameters:
+      - description: Book ID
+        in: query
+        name: book_id
+        type: integer
+      - description: Heading ID
+        in: query
+        name: heading_id
+        type: integer
+      - description: Translation language
+        in: query
+        name: lang
+        type: string
+      - description: Reader vote
+        enum:
+        - like
+        - dislike
+        in: query
+        name: vote
+        type: string
+      - description: Feedback status (default open)
+        enum:
+        - open
+        - resolved
+        - all
+        in: query
+        name: status
+        type: string
+      - description: Top headings to include (default 20, max 200)
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entity.EditorialTranslationFeedbackSummary'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Error'
+      security:
+      - BearerAuth: []
+      summary: Summarize translation feedback
+      tags:
+      - editorial
   /email/unsubscribe:
     get:
       consumes:
@@ -15197,313 +16146,6 @@ paths:
       summary: List Quran translation sources
       tags:
       - quran
-  /tasks:
-    get:
-      description: List tasks for the current user with optional filtering
-      operationId: list-tasks
-      parameters:
-      - description: Filter by status
-        enum:
-        - todo
-        - in_progress
-        - done
-        in: query
-        name: status
-        type: string
-      - default: 10
-        description: Limit
-        in: query
-        name: limit
-        type: integer
-      - default: 0
-        description: Offset
-        in: query
-        name: offset
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/v1.TaskList'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/v1.Error'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/v1.Error'
-      security:
-      - BearerAuth: []
-      summary: List tasks
-      tags:
-      - tasks
-    post:
-      consumes:
-      - application/json
-      description: Create a new task for the current user
-      operationId: create-task
-      parameters:
-      - description: Task data
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/v1.CreateTask'
-      produces:
-      - application/json
-      responses:
-        "201":
-          description: Created
-          schema:
-            $ref: '#/definitions/entity.Task'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/v1.Error'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/v1.Error'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/v1.Error'
-      security:
-      - BearerAuth: []
-      summary: Create task
-      tags:
-      - tasks
-  /tasks/{id}:
-    delete:
-      description: Delete a task by ID
-      operationId: delete-task
-      parameters:
-      - description: Task ID
-        in: path
-        name: id
-        required: true
-        type: string
-      responses:
-        "204":
-          description: No Content
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/v1.Error'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/v1.Error'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/v1.Error'
-      security:
-      - BearerAuth: []
-      summary: Delete task
-      tags:
-      - tasks
-    get:
-      description: Get a task by ID
-      operationId: get-task
-      parameters:
-      - description: Task ID
-        in: path
-        name: id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/entity.Task'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/v1.Error'
-        "403":
-          description: Forbidden
-          schema:
-            $ref: '#/definitions/v1.Error'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/v1.Error'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/v1.Error'
-      security:
-      - BearerAuth: []
-      summary: Get task
-      tags:
-      - tasks
-    put:
-      consumes:
-      - application/json
-      description: Update task title and description
-      operationId: update-task
-      parameters:
-      - description: Task ID
-        in: path
-        name: id
-        required: true
-        type: string
-      - description: Updated task data
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/v1.UpdateTask'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/entity.Task'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/v1.Error'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/v1.Error'
-        "403":
-          description: Forbidden
-          schema:
-            $ref: '#/definitions/v1.Error'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/v1.Error'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/v1.Error'
-      security:
-      - BearerAuth: []
-      summary: Update task
-      tags:
-      - tasks
-  /tasks/{id}/status:
-    patch:
-      consumes:
-      - application/json
-      description: Change task status (todo -> in_progress -> done, or in_progress
-        -> todo)
-      operationId: transition-task
-      parameters:
-      - description: Task ID
-        in: path
-        name: id
-        required: true
-        type: string
-      - description: New status
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/v1.TransitionTask'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/entity.Task'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/v1.Error'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/v1.Error'
-        "403":
-          description: Forbidden
-          schema:
-            $ref: '#/definitions/v1.Error'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/v1.Error'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/v1.Error'
-      security:
-      - BearerAuth: []
-      summary: Transition task status
-      tags:
-      - tasks
-  /translation/do-translate:
-    post:
-      consumes:
-      - application/json
-      description: Translate a text
-      operationId: do-translate
-      parameters:
-      - description: Set up translation
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/v1.Translate'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/entity.Translation'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/v1.Error'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/v1.Error'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/v1.Error'
-      security:
-      - BearerAuth: []
-      summary: Translate
-      tags:
-      - translation
-  /translation/history:
-    get:
-      description: Show all translation history for current user
-      operationId: history
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/entity.TranslationHistory'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/v1.Error'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/v1.Error'
-      security:
-      - BearerAuth: []
-      summary: Show history
-      tags:
-      - translation
   /user/email-preferences:
     get:
       operationId: user-email-preferences

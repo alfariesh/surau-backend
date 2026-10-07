@@ -13,7 +13,6 @@ import (
 	v1 "github.com/alfariesh/surau-backend/internal/controller/restapi/v1"
 	"github.com/alfariesh/surau-backend/internal/controller/restapi/v1/response"
 	"github.com/alfariesh/surau-backend/internal/usecase"
-	"github.com/alfariesh/surau-backend/pkg/jwt"
 	"github.com/alfariesh/surau-backend/pkg/logger"
 	"github.com/ansrivas/fiberprometheus/v2"
 	"github.com/gofiber/contrib/otelfiber/v2"
@@ -28,45 +27,129 @@ import (
 // response (Access-Control-Max-Age).
 const corsPreflightMaxAgeSeconds = 3600
 
+// readinessTimeout bounds the dependency checks behind /readyz.
+const readinessTimeout = 2 * time.Second
+
 type databasePinger interface {
 	Ping(context.Context) error
 }
 
-// NewRouter -.
+// NewRouter installs the shared middleware chain, the operational endpoints
+// (/version, /healthz, /readyz, /metrics, /swagger), every /v1 and /internal
+// route, and the enveloped 404 catch-all.
 // Swagger spec:
 //
-//	@title       Go Clean Template API
-//	@description Surau classical book reader API
+//	@title       Surau API
+//	@description Surau API: Quran, kitab reader, personal progress, editorial, and retrieval endpoints
 //	@version     1.0
 //	@host        localhost:8080
 //	@BasePath    /v1
 //	@securityDefinitions.apikey BearerAuth
 //	@in header
 //	@name Authorization
-func NewRouter(
-	app *fiber.App,
-	cfg *config.Config,
-	db databasePinger,
-	r usecase.Reader,
-	bookRAG usecase.BookRAG,
-	q usecase.Quran,
-	anchor usecase.AnchorResolver,
-	crossReference usecase.CrossReference,
-	unitRegistry usecase.UnitRegistry,
-	u usecase.User,
-	p usecase.Personal,
-	e usecase.Editorial,
-	email usecase.EmailAdmin,
-	serviceIdentity usecase.ServiceIdentity,
-	inference usecase.Inference,
-	pushIdentity usecase.PushIdentity,
-	jwtManager *jwt.Manager,
-	l logger.Interface,
-) {
-	// Options. Order matters: RequestID first (correlation id), then the
-	// access logger (wraps everything below), recovery, then tracing — the
-	// otelfiber span is opened inside the logger so trace_id is available to
-	// the request-scoped logger that TraceContext builds.
+func NewRouter(app *fiber.App, cfg *config.Config, db databasePinger, deps *v1.Dependencies) {
+	l := deps.Logger
+	inference := deps.Inference
+
+	installMiddleware(app, cfg, l)
+
+	// Swagger
+	if cfg.Swagger.Enabled {
+		app.Get("/swagger/*", swagger.HandlerDefault)
+	}
+
+	// Build/version info — public, so a deploy can be verified (which version/env is
+	// live) and clients can report the backend they are talking to.
+	app.Get("/version", func(ctx *fiber.Ctx) error {
+		return ctx.Status(http.StatusOK).JSON(fiber.Map{
+			"name":    cfg.App.Name,
+			"version": cfg.App.Version,
+			"env":     cfg.App.Env,
+		})
+	})
+
+	// K8s probes
+	app.Get("/healthz", func(ctx *fiber.Ctx) error { return ctx.SendStatus(http.StatusOK) })
+	app.Get("/readyz", readyz(db, inference, cfg.App.Env, l))
+
+	// Routers
+	apiV1Group := app.Group("/v1")
+	{
+		v1.NewRoutes(apiV1Group, deps)
+	}
+
+	// Internal service-to-service bridge and the U-0 inference gateway.
+	// Every route performs a live registry lookup and durable principal audit;
+	// the reverse proxy still must not forward /internal (nginx returns 404).
+	internalGroup := app.Group("/internal")
+	if cfg.Collab.Enabled {
+		v1.NewInternalRoutes(internalGroup, deps.Editorial, deps.ServiceIdentity, l)
+	}
+
+	v1.NewInferenceInternalRoutes(internalGroup, inference, deps.ServiceIdentity, l)
+
+	// Catch-all (F1-D): unmatched routes answer with the standard error
+	// envelope instead of fiber's plain-text 404. Registered last so every
+	// real route wins. (Side effect: /internal/* with collab disabled also
+	// gets the JSON envelope — the route stays hidden either way.)
+	app.Use(func(ctx *fiber.Ctx) error {
+		requestID, _ := ctx.Locals("requestID").(string) //nolint:errcheck // absent locals just mean empty request_id
+
+		const msg = "not found"
+
+		return ctx.Status(http.StatusNotFound).JSON(response.Error{
+			Error:     msg,
+			Code:      apierror.Code(msg),
+			Message:   msg,
+			RequestID: requestID,
+		})
+	})
+}
+
+// readyz answers 200 only when PostgreSQL responds and, outside the test
+// environment, every configured inference provider has its credential.
+func readyz(db databasePinger, inference usecase.Inference, env string, l logger.Interface) fiber.Handler {
+	checkInference := inference != nil && !strings.EqualFold(strings.TrimSpace(env), "test")
+
+	return func(ctx *fiber.Ctx) error {
+		if db == nil {
+			return ctx.SendStatus(http.StatusServiceUnavailable)
+		}
+
+		pingCtx, cancel := context.WithTimeout(ctx.UserContext(), readinessTimeout)
+		defer cancel()
+
+		if err := db.Ping(pingCtx); err != nil {
+			return ctx.SendStatus(http.StatusServiceUnavailable)
+		}
+
+		if !checkInference {
+			return ctx.SendStatus(http.StatusOK)
+		}
+
+		missing, err := inference.ProviderCredentialReadiness(pingCtx)
+		if err != nil {
+			l.Error(err, "readyz - inference registry")
+
+			return ctx.SendStatus(http.StatusServiceUnavailable)
+		}
+
+		if len(missing) > 0 {
+			l.Warn("readyz - missing inference provider credentials: %s", strings.Join(missing, ","))
+
+			return ctx.SendStatus(http.StatusServiceUnavailable)
+		}
+
+		return ctx.SendStatus(http.StatusOK)
+	}
+}
+
+// installMiddleware registers the request pipeline shared by every route.
+// Order matters: RequestID first (correlation id), then the access logger
+// (wraps everything below), recovery, then tracing — the otelfiber span is
+// opened inside the logger so trace_id is available to the request-scoped
+// logger that TraceContext builds.
+func installMiddleware(app *fiber.App, cfg *config.Config, l logger.Interface) {
 	app.Use(middleware.RequestID())
 	app.Use(middleware.Logger(l))
 	app.Use(middleware.Recovery(l))
@@ -109,105 +192,4 @@ func NewRouter(
 		prometheus.RegisterAt(app, "/metrics")
 		app.Use(prometheus.Middleware)
 	}
-
-	// Swagger
-	if cfg.Swagger.Enabled {
-		app.Get("/swagger/*", swagger.HandlerDefault)
-	}
-
-	// Build/version info — public, so a deploy can be verified (which version/env is
-	// live) and clients can report the backend they are talking to.
-	app.Get("/version", func(ctx *fiber.Ctx) error {
-		return ctx.Status(http.StatusOK).JSON(fiber.Map{
-			"name":    cfg.App.Name,
-			"version": cfg.App.Version,
-			"env":     cfg.App.Env,
-		})
-	})
-
-	// K8s probes
-	app.Get("/healthz", func(ctx *fiber.Ctx) error { return ctx.SendStatus(http.StatusOK) })
-	app.Get("/readyz", func(ctx *fiber.Ctx) error {
-		if db == nil {
-			return ctx.SendStatus(http.StatusServiceUnavailable)
-		}
-
-		pingCtx, cancel := context.WithTimeout(ctx.UserContext(), 2*time.Second)
-		defer cancel()
-
-		if err := db.Ping(pingCtx); err != nil {
-			return ctx.SendStatus(http.StatusServiceUnavailable)
-		}
-
-		if inference != nil && !strings.EqualFold(strings.TrimSpace(cfg.App.Env), "test") {
-			missing, err := inference.ProviderCredentialReadiness(pingCtx)
-			if err != nil {
-				l.Error(err, "readyz - inference registry")
-
-				return ctx.SendStatus(http.StatusServiceUnavailable)
-			}
-
-			if len(missing) > 0 {
-				l.Warn(
-					"readyz - missing inference provider credentials: %s",
-					strings.Join(missing, ","),
-				)
-
-				return ctx.SendStatus(http.StatusServiceUnavailable)
-			}
-		}
-
-		return ctx.SendStatus(http.StatusOK)
-	})
-
-	// Routers
-	apiV1Group := app.Group("/v1")
-	{
-		v1.NewRoutes(
-			apiV1Group,
-			r,
-			bookRAG,
-			q,
-			anchor,
-			crossReference,
-			unitRegistry,
-			u,
-			p,
-			e,
-			email,
-			cfg.Email.CloudflareWebhookSecret,
-			serviceIdentity,
-			inference,
-			pushIdentity,
-			jwtManager,
-			l,
-		)
-	}
-
-	// Internal service-to-service bridge and the U-0 inference gateway.
-	// Every route performs a live registry lookup and durable principal audit;
-	// the reverse proxy still must not forward /internal (nginx returns 404).
-	internalGroup := app.Group("/internal")
-	if cfg.Collab.Enabled {
-		v1.NewInternalRoutes(internalGroup, e, serviceIdentity, l)
-	}
-
-	v1.NewInferenceInternalRoutes(internalGroup, inference, serviceIdentity, l)
-
-	// Catch-all (F1-D): unmatched routes answer with the standard error
-	// envelope instead of fiber's plain-text 404. Registered last so every
-	// real route wins. (Side effect: /internal/* with collab disabled also
-	// gets the JSON envelope — the route stays hidden either way.)
-	app.Use(func(ctx *fiber.Ctx) error {
-		requestID, _ := ctx.Locals("requestID").(string) //nolint:errcheck // absent locals just mean empty request_id
-
-		const msg = "not found"
-
-		return ctx.Status(http.StatusNotFound).JSON(response.Error{
-			Error:     msg,
-			Code:      apierror.Code(msg),
-			Message:   msg,
-			RequestID: requestID,
-		})
-	})
 }
