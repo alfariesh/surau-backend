@@ -21,7 +21,6 @@ func setRequiredEnv(t *testing.T) {
 	t.Setenv("PG_POOL_MAX", "2")
 	t.Setenv("PG_URL", "postgres://user:pass@localhost:5432/db")
 	t.Setenv("JWT_SECRET", strings.Repeat("a", 32))
-	t.Setenv("JWT_TOKEN_EXPIRY", "24h")
 	t.Setenv("CF_EMAIL_ACCOUNT_ID", "account-id")
 	t.Setenv("CF_EMAIL_API_TOKEN", "api-token")
 	t.Setenv("EMAIL_FROM_ADDRESS", "noreply@example.com")
@@ -665,14 +664,9 @@ func TestNewConfig_InvalidJWT(t *testing.T) {
 			value: "short",
 		},
 		{
-			name:  "zero expiry",
-			key:   "JWT_TOKEN_EXPIRY",
+			name:  "zero access token expiry",
+			key:   "JWT_ACCESS_TOKEN_EXPIRY",
 			value: "0s",
-		},
-		{
-			name:  "expiry greater than 24h",
-			key:   "JWT_TOKEN_EXPIRY",
-			value: "25h",
 		},
 	}
 
