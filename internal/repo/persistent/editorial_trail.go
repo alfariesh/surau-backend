@@ -25,10 +25,23 @@ const (
 // "editorial audit trail write failed" instead of disappearing silently.
 //
 //nolint:gochecknoglobals // process-wide Prometheus instrument (promauto pattern)
-var editorialTrailWriteFailures = promauto.NewCounterVec(prometheus.CounterOpts{
-	Name: "surau_editorial_trail_write_failures_total",
-	Help: "Post-commit editorial audit-log or production-event inserts that failed; the audited change itself committed.",
-}, []string{"trail"})
+var editorialTrailWriteFailures = newEditorialTrailWriteFailures(prometheus.DefaultRegisterer)
+
+// newEditorialTrailWriteFailures registers the counter with every trail
+// series already exported at zero. A series created by its first failure is
+// born at 1, and increase() over samples that all read 1 is 0, so the alert
+// would miss the first failure after every restart, i.e. after every deploy.
+func newEditorialTrailWriteFailures(registerer prometheus.Registerer) *prometheus.CounterVec {
+	failures := promauto.With(registerer).NewCounterVec(prometheus.CounterOpts{
+		Name: "surau_editorial_trail_write_failures_total",
+		Help: "Post-commit editorial audit-log or production-event inserts that failed; the audited change itself committed.",
+	}, []string{"trail"})
+	for _, trail := range []string{trailAdminAudit, trailProductionEvent} {
+		failures.WithLabelValues(trail)
+	}
+
+	return failures
+}
 
 // trailContext detaches a post-commit trail write from the request: a client
 // that disconnects right after a committed change must not erase its record.

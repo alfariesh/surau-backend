@@ -59,6 +59,9 @@
 - Jangan `_ =` hasil penulisan pasca-commit (audit, event, status). Buat atomik dalam satu
   transaksi, atau buat kegagalannya terlihat (metrik + alert Telegram) seperti
   `surau_editorial_trail_write_failures_total`.
+- Counter yang dipantau alert lewat `increase()`/`rate()` wajib diekspor bernilai 0 untuk setiap
+  label sejak proses start (`WithLabelValues` saat registrasi). Seri yang baru lahir di nilai 1
+  terbaca `increase() = 0`, sehingga kegagalan pertama setelah restart/deploy tidak memicu alert.
 - Kode mati dicari dengan `deadcode` (golang.org/x/tools/cmd/deadcode), bukan hanya linter `unused`.
 
 ## Aturan produk yang tidak boleh dilanggar
