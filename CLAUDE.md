@@ -63,6 +63,9 @@
   label sejak proses start (`WithLabelValues` saat registrasi). Seri yang baru lahir di nilai 1
   terbaca `increase() = 0`, sehingga kegagalan pertama setelah restart/deploy tidak memicu alert.
 - Kode mati dicari dengan `deadcode` (golang.org/x/tools/cmd/deadcode), bukan hanya linter `unused`.
+- Versi Go hanya di baris `toolchain` go.mod. Image `golang:*` memasang `GOTOOLCHAIN=local` dan
+  mengabaikan baris itu, jadi `FROM golang:X` di kedua Dockerfile wajib sama (dijaga test
+  `internal/ci/toolchain` + asersi saat build). Naikkan ketiganya bersamaan.
 
 ## Aturan produk yang tidak boleh dilanggar
 - **RAG safety:** makna/tafsir TIDAK PERNAH diturunkan LLM dari teks ayat Quran. Ayat = teks primer

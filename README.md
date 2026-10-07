@@ -4,7 +4,8 @@ REST + auth backend for an Islamic classical book reader. The service imports ra
 
 ## Runtime
 
-- Go 1.26.3+ for builds. The Dockerfile pins `golang:1.26.3-alpine3.23`.
+- Go: the `toolchain` line in `go.mod` (currently go1.26.8) is the single version source; CI
+  and both Dockerfiles follow it (see `docs/security-scan-baseline.md`).
 - Fiber REST API
 - PostgreSQL via pgx
 - JWT auth for profile, progress, and saved items
