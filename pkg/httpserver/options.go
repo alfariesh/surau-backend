@@ -3,7 +3,6 @@ package httpserver
 import (
 	"net"
 	"strings"
-	"time"
 
 	"github.com/gofiber/fiber/v2"
 )
@@ -31,27 +30,6 @@ func Port(port string) Option {
 func Prefork(prefork bool) Option {
 	return func(s *Server) {
 		s.prefork = prefork
-	}
-}
-
-// ReadTimeout -.
-func ReadTimeout(timeout time.Duration) Option {
-	return func(s *Server) {
-		s.readTimeout = timeout
-	}
-}
-
-// WriteTimeout -.
-func WriteTimeout(timeout time.Duration) Option {
-	return func(s *Server) {
-		s.writeTimeout = timeout
-	}
-}
-
-// ShutdownTimeout -.
-func ShutdownTimeout(timeout time.Duration) Option {
-	return func(s *Server) {
-		s.shutdownTimeout = timeout
 	}
 }
 

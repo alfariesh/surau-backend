@@ -3,8 +3,8 @@ package reader
 import (
 	"context"
 
+	"github.com/alfariesh/surau-backend/internal/contentlang"
 	"github.com/alfariesh/surau-backend/internal/entity"
-	"github.com/alfariesh/surau-backend/internal/readerlang"
 )
 
 // TOC returns the nested table of contents for a published book.
@@ -14,7 +14,7 @@ func (uc *UseCase) TOC(
 	lang string,
 	includeAudio bool,
 ) ([]entity.BookTOCNode, error) {
-	lang, err := readerlang.Normalize(lang)
+	lang, err := contentlang.Normalize(lang)
 	if err != nil {
 		return nil, err
 	}
@@ -29,7 +29,7 @@ func (uc *UseCase) TOC(
 
 // TOCRead returns one TOC section as an article-like reader response.
 func (uc *UseCase) TOCRead(ctx context.Context, bookID, headingID int, lang string) (entity.BookTOCRead, error) {
-	lang, err := readerlang.Normalize(lang)
+	lang, err := contentlang.Normalize(lang)
 	if err != nil {
 		return entity.BookTOCRead{}, err
 	}
@@ -81,7 +81,7 @@ func (uc *UseCase) TOCRead(ctx context.Context, bookID, headingID int, lang stri
 
 // TOCPlaylist returns a continuous audiobook manifest for one TOC subtree.
 func (uc *UseCase) TOCPlaylist(ctx context.Context, bookID, headingID int, lang string) (entity.BookTOCPlaylist, error) {
-	lang, err := readerlang.Normalize(lang)
+	lang, err := contentlang.Normalize(lang)
 	if err != nil {
 		return entity.BookTOCPlaylist{}, err
 	}

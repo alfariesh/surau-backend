@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/alfariesh/surau-backend/internal/contentlang"
 	"github.com/alfariesh/surau-backend/internal/entity"
-	"github.com/alfariesh/surau-backend/internal/readerlang"
 	"github.com/alfariesh/surau-backend/internal/readerutil"
 	"github.com/alfariesh/surau-backend/internal/repo"
 	"github.com/alfariesh/surau-backend/pkg/logger"
@@ -486,10 +486,10 @@ func missingReaderAssetFilter(
 	offset int,
 ) (repo.MissingReaderAssetFilter, error) {
 	targetLang = strings.TrimSpace(targetLang)
-	targetLangs := []string{readerlang.Default, readerlang.English}
+	targetLangs := []string{contentlang.Default, contentlang.English}
 	if targetLang != "" {
-		normalized, err := readerlang.Normalize(targetLang)
-		if err != nil || normalized == readerlang.Arabic {
+		normalized, err := contentlang.Normalize(targetLang)
+		if err != nil || normalized == contentlang.Arabic {
 			return repo.MissingReaderAssetFilter{}, entity.ErrUnsupportedLanguage
 		}
 

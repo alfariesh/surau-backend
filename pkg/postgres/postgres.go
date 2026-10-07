@@ -43,13 +43,6 @@ func New(url string, opts ...Option) (*Postgres, error) {
 	for _, opt := range opts {
 		opt(pg)
 	}
-	if pg.connAttempts <= 0 {
-		return nil, fmt.Errorf("postgres - NewPostgres - connAttempts must be positive")
-	}
-	if pg.connTimeout <= 0 {
-		return nil, fmt.Errorf("postgres - NewPostgres - connTimeout must be positive")
-	}
-
 	pg.Builder = squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar)
 
 	poolConfig, err := pgxpool.ParseConfig(url)

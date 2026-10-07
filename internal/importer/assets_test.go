@@ -274,6 +274,3 @@ func TestReaderAssetSampleJSONL(t *testing.T) {
 }
 
 //go:fix inline
-func stringPtr(value string) *string {
-	return new(value)
-}

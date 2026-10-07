@@ -22,7 +22,6 @@ const (
 )
 
 var (
-	ErrInferenceTaskNotFound     = errors.New("inference task not found")
 	ErrInferenceRouteMissing     = errors.New("inference route is not configured")
 	ErrInferenceProviderFailure  = errors.New("inference provider unavailable")
 	ErrInferenceSchemaInvalid    = errors.New("inference response schema invalid")
