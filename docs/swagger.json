@@ -1,8 +1,8 @@
 {
     "swagger": "2.0",
     "info": {
-        "description": "Surau classical book reader API",
-        "title": "Go Clean Template API",
+        "description": "Surau API: Quran, kitab reader, personal progress, editorial, and retrieval endpoints",
+        "title": "Surau API",
         "contact": {},
         "version": "1.0"
     },
@@ -5480,6 +5480,100 @@
                 }
             }
         },
+        "/editorial/books": {
+            "get": {
+                "description": "List source kitab with their publication state for the editorial queue. Requires editor or admin role.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "editorial"
+                ],
+                "summary": "List books for editorial review",
+                "operationId": "editorial-list-books",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Search title, display title, author, or category",
+                        "name": "q",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "hidden",
+                            "draft",
+                            "published",
+                            "archived"
+                        ],
+                        "type": "string",
+                        "description": "Publication status",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Category ID",
+                        "name": "category_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Only books with (true) or without (false) imported content",
+                        "name": "has_content",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page size (default 50, max 200)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Offset",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.BookList"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
         "/editorial/books/{book_id}/headings/{heading_id}/draft": {
             "get": {
                 "description": "Get the current source kitab heading title draft. Requires editor or admin role.",
@@ -5534,6 +5628,190 @@
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            },
+            "put": {
+                "description": "Save the source kitab heading title draft. If-Match is optional but rejects a stale draft with 412. Requires editor or admin role.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "editorial"
+                ],
+                "summary": "Save source heading draft",
+                "operationId": "editorial-save-source-heading-draft",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Book ID",
+                        "name": "book_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Heading ID",
+                        "name": "heading_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Current ETag or *",
+                        "name": "If-Match",
+                        "in": "header"
+                    },
+                    {
+                        "description": "Heading draft",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.SaveHeadingDraft"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.BookHeadingEdit"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "412": {
+                        "description": "Precondition Failed",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/editorial/books/{book_id}/headings/{heading_id}/publish": {
+            "post": {
+                "description": "Publish the source kitab heading title draft over the live heading. If-Match is optional but rejects a stale draft with 412; publishing requires a permitted license. Requires CapPublishProduction and fresh MFA.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "editorial"
+                ],
+                "summary": "Publish source heading draft",
+                "operationId": "editorial-publish-source-heading-draft",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Book ID",
+                        "name": "book_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Heading ID",
+                        "name": "heading_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Current ETag or *",
+                        "name": "If-Match",
+                        "in": "header"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.BookHeadingEdit"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "412": {
+                        "description": "Precondition Failed",
                         "schema": {
                             "$ref": "#/definitions/v1.Error"
                         }
@@ -5776,6 +6054,351 @@
                         "BearerAuth": []
                     }
                 ]
+            },
+            "put": {
+                "description": "Save the source kitab metadata draft. The response carries an ETag; If-Match is optional but rejects a stale draft with 412. Requires editor or admin role.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "editorial"
+                ],
+                "summary": "Save source metadata draft",
+                "operationId": "editorial-save-source-metadata-draft",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Book ID",
+                        "name": "book_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Current ETag or *",
+                        "name": "If-Match",
+                        "in": "header"
+                    },
+                    {
+                        "description": "Metadata draft",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.SaveMetadataDraft"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.BookMetadataEdit"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "412": {
+                        "description": "Precondition Failed",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/editorial/books/{book_id}/metadata-draft/publish": {
+            "post": {
+                "description": "Publish the source kitab metadata draft over the live metadata. If-Match is optional but rejects a stale draft with 412; publishing requires a permitted license. Requires CapPublishProduction and fresh MFA.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "editorial"
+                ],
+                "summary": "Publish source metadata draft",
+                "operationId": "editorial-publish-source-metadata-draft",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Book ID",
+                        "name": "book_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Current ETag or *",
+                        "name": "If-Match",
+                        "in": "header"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.BookMetadataEdit"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "412": {
+                        "description": "Precondition Failed",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/editorial/books/{book_id}/pages/{page_id}": {
+            "get": {
+                "description": "Get one source kitab page with its current draft, if any. The ETag tracks the draft when present, otherwise the raw page. Requires editor or admin role.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "editorial"
+                ],
+                "summary": "Get source page edit",
+                "operationId": "editorial-get-source-page",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Book ID",
+                        "name": "book_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page ID",
+                        "name": "page_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.EditorialPageEdit"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/editorial/books/{book_id}/pages/{page_id}/draft": {
+            "put": {
+                "description": "Save the source kitab page HTML draft. If-Match is required (428 when missing, 412 when stale) because page content is the high-value lost-work surface. Requires editor or admin role.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "editorial"
+                ],
+                "summary": "Save source page draft",
+                "operationId": "editorial-save-source-page-draft",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Book ID",
+                        "name": "book_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page ID",
+                        "name": "page_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Current ETag or *",
+                        "name": "If-Match",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "Page draft",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.SavePageDraft"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.BookPageEdit"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "412": {
+                        "description": "Precondition Failed",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "428": {
+                        "description": "Precondition Required",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
             }
         },
         "/editorial/books/{book_id}/pages/{page_id}/draft-revisions": {
@@ -5941,6 +6564,186 @@
                 ]
             }
         },
+        "/editorial/books/{book_id}/pages/{page_id}/publish": {
+            "post": {
+                "description": "Publish the source kitab page draft over the live page. If-Match is required (428 when missing, 412 when stale); publishing requires a permitted license. Requires CapPublishProduction and fresh MFA.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "editorial"
+                ],
+                "summary": "Publish source page draft",
+                "operationId": "editorial-publish-source-page-draft",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Book ID",
+                        "name": "book_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page ID",
+                        "name": "page_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Current ETag or *",
+                        "name": "If-Match",
+                        "in": "header",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.BookPageEdit"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "412": {
+                        "description": "Precondition Failed",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "428": {
+                        "description": "Precondition Required",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/editorial/books/{book_id}/publication": {
+            "put": {
+                "description": "Set a book's publication status, featured flag, and sort order. Publishing requires a permitted license. Requires CapPublishProduction and fresh MFA.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "editorial"
+                ],
+                "summary": "Update book publication",
+                "operationId": "editorial-update-publication",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Book ID",
+                        "name": "book_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Publication state",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.UpdatePublication"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.BookPublication"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
         "/editorial/citable-units/{id}": {
             "get": {
                 "description": "Return normalized text, lifecycle, provenance, generation identity, and active lineage successors. Requires CapReviewEditorial.",
@@ -5983,6 +6786,89 @@
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/editorial/collections/{slug}/items": {
+            "post": {
+                "description": "Add a book to a curated collection, or update its sort order when already present. Requires CapPublishProduction and fresh MFA.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "editorial"
+                ],
+                "summary": "Add book to collection",
+                "operationId": "editorial-add-collection-item",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Collection slug",
+                        "name": "slug",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Collection item",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.AddCollectionItem"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.BookCollectionItem"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
                         "schema": {
                             "$ref": "#/definitions/v1.Error"
                         }
@@ -10406,6 +11292,347 @@
                 ]
             }
         },
+        "/editorial/translation-feedbacks": {
+            "get": {
+                "description": "List reader feedback on section translations, newest first. Requires editor or admin role.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "editorial"
+                ],
+                "summary": "List translation feedback",
+                "operationId": "editorial-list-translation-feedbacks",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Book ID",
+                        "name": "book_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Heading ID",
+                        "name": "heading_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Translation language",
+                        "name": "lang",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "like",
+                            "dislike"
+                        ],
+                        "type": "string",
+                        "description": "Reader vote",
+                        "name": "vote",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "open",
+                            "resolved",
+                            "all"
+                        ],
+                        "type": "string",
+                        "description": "Feedback status (default open)",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page size (default 50, max 200)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Offset",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.TranslationFeedbackList"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/editorial/translation-feedbacks/summary": {
+            "get": {
+                "description": "Aggregate reader translation feedback counts and the most-disliked headings. Requires editor or admin role.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "editorial"
+                ],
+                "summary": "Summarize translation feedback",
+                "operationId": "editorial-translation-feedback-summary",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Book ID",
+                        "name": "book_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Heading ID",
+                        "name": "heading_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Translation language",
+                        "name": "lang",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "like",
+                            "dislike"
+                        ],
+                        "type": "string",
+                        "description": "Reader vote",
+                        "name": "vote",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "open",
+                            "resolved",
+                            "all"
+                        ],
+                        "type": "string",
+                        "description": "Feedback status (default open)",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Top headings to include (default 20, max 200)",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.EditorialTranslationFeedbackSummary"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/editorial/translation-feedbacks/{id}/reopen": {
+            "post": {
+                "description": "Return a resolved reader translation feedback item to the open queue. Requires editor or admin role.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "editorial"
+                ],
+                "summary": "Reopen translation feedback",
+                "operationId": "editorial-reopen-translation-feedback",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Feedback ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.EditorialTranslationFeedback"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/editorial/translation-feedbacks/{id}/resolve": {
+            "post": {
+                "description": "Mark one reader translation feedback item as handled, with an optional note. Requires editor or admin role.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "editorial"
+                ],
+                "summary": "Resolve translation feedback",
+                "operationId": "editorial-resolve-translation-feedback",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Feedback ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Optional resolution note",
+                        "name": "request",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ResolveTranslationFeedback"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entity.EditorialTranslationFeedback"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Error"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
         "/email/unsubscribe": {
             "get": {
                 "consumes": [
@@ -13035,479 +14262,6 @@
                 }
             }
         },
-        "/tasks": {
-            "get": {
-                "description": "List tasks for the current user with optional filtering",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "tasks"
-                ],
-                "summary": "List tasks",
-                "operationId": "list-tasks",
-                "parameters": [
-                    {
-                        "enum": [
-                            "todo",
-                            "in_progress",
-                            "done"
-                        ],
-                        "type": "string",
-                        "description": "Filter by status",
-                        "name": "status",
-                        "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "default": 10,
-                        "description": "Limit",
-                        "name": "limit",
-                        "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "default": 0,
-                        "description": "Offset",
-                        "name": "offset",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/v1.TaskList"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/v1.Error"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/v1.Error"
-                        }
-                    }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
-            },
-            "post": {
-                "description": "Create a new task for the current user",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "tasks"
-                ],
-                "summary": "Create task",
-                "operationId": "create-task",
-                "parameters": [
-                    {
-                        "description": "Task data",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/v1.CreateTask"
-                        }
-                    }
-                ],
-                "responses": {
-                    "201": {
-                        "description": "Created",
-                        "schema": {
-                            "$ref": "#/definitions/entity.Task"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/v1.Error"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/v1.Error"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/v1.Error"
-                        }
-                    }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
-            }
-        },
-        "/tasks/{id}": {
-            "get": {
-                "description": "Get a task by ID",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "tasks"
-                ],
-                "summary": "Get task",
-                "operationId": "get-task",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Task ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/entity.Task"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/v1.Error"
-                        }
-                    },
-                    "403": {
-                        "description": "Forbidden",
-                        "schema": {
-                            "$ref": "#/definitions/v1.Error"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/v1.Error"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/v1.Error"
-                        }
-                    }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
-            },
-            "put": {
-                "description": "Update task title and description",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "tasks"
-                ],
-                "summary": "Update task",
-                "operationId": "update-task",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Task ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "Updated task data",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/v1.UpdateTask"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/entity.Task"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/v1.Error"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/v1.Error"
-                        }
-                    },
-                    "403": {
-                        "description": "Forbidden",
-                        "schema": {
-                            "$ref": "#/definitions/v1.Error"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/v1.Error"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/v1.Error"
-                        }
-                    }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
-            },
-            "delete": {
-                "description": "Delete a task by ID",
-                "tags": [
-                    "tasks"
-                ],
-                "summary": "Delete task",
-                "operationId": "delete-task",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Task ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "204": {
-                        "description": "No Content"
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/v1.Error"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/v1.Error"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/v1.Error"
-                        }
-                    }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
-            }
-        },
-        "/tasks/{id}/status": {
-            "patch": {
-                "description": "Change task status (todo -\u003e in_progress -\u003e done, or in_progress -\u003e todo)",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "tasks"
-                ],
-                "summary": "Transition task status",
-                "operationId": "transition-task",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Task ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "New status",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/v1.TransitionTask"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/entity.Task"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/v1.Error"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/v1.Error"
-                        }
-                    },
-                    "403": {
-                        "description": "Forbidden",
-                        "schema": {
-                            "$ref": "#/definitions/v1.Error"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/v1.Error"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/v1.Error"
-                        }
-                    }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
-            }
-        },
-        "/translation/do-translate": {
-            "post": {
-                "description": "Translate a text",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "translation"
-                ],
-                "summary": "Translate",
-                "operationId": "do-translate",
-                "parameters": [
-                    {
-                        "description": "Set up translation",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/v1.Translate"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/entity.Translation"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/v1.Error"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/v1.Error"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/v1.Error"
-                        }
-                    }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
-            }
-        },
-        "/translation/history": {
-            "get": {
-                "description": "Show all translation history for current user",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "translation"
-                ],
-                "summary": "Show history",
-                "operationId": "history",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/entity.TranslationHistory"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/v1.Error"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/v1.Error"
-                        }
-                    }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
-            }
-        },
         "/user/email-preferences": {
             "get": {
                 "produces": [
@@ -14365,6 +15119,30 @@
                 }
             }
         },
+        "entity.BookCollectionItem": {
+            "type": "object",
+            "properties": {
+                "book_id": {
+                    "type": "integer",
+                    "example": 797
+                },
+                "collection_slug": {
+                    "type": "string",
+                    "example": "starter-50"
+                },
+                "created_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "sort_order": {
+                    "type": "integer",
+                    "example": 10
+                }
+            }
+        },
         "entity.BookHeading": {
             "type": "object",
             "properties": {
@@ -15211,6 +15989,38 @@
                 },
                 "translation": {
                     "$ref": "#/definitions/entity.ProductionAssetStatus"
+                }
+            }
+        },
+        "entity.BookPublication": {
+            "type": "object",
+            "properties": {
+                "book_id": {
+                    "type": "integer",
+                    "example": 797
+                },
+                "featured": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "published_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "sort_order": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "status": {
+                    "type": "string",
+                    "example": "published"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "updated_by": {
+                    "type": "string"
                 }
             }
         },
@@ -16480,6 +17290,124 @@
                 "total": {
                     "type": "integer",
                     "example": 42
+                }
+            }
+        },
+        "entity.EditorialPageEdit": {
+            "type": "object",
+            "properties": {
+                "draft": {
+                    "$ref": "#/definitions/entity.BookPageEdit"
+                },
+                "published": {
+                    "$ref": "#/definitions/entity.BookPageEdit"
+                },
+                "raw": {
+                    "$ref": "#/definitions/entity.BookPage"
+                }
+            }
+        },
+        "entity.EditorialTranslationFeedback": {
+            "type": "object",
+            "properties": {
+                "book_id": {
+                    "type": "integer",
+                    "example": 797
+                },
+                "book_title": {
+                    "type": "string"
+                },
+                "client_id": {
+                    "type": "string"
+                },
+                "client_ip": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "heading_id": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "heading_title": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "lang": {
+                    "type": "string",
+                    "example": "id"
+                },
+                "note": {
+                    "type": "string"
+                },
+                "reason": {
+                    "type": "string",
+                    "example": "style"
+                },
+                "resolution_note": {
+                    "type": "string"
+                },
+                "resolved_at": {
+                    "type": "string"
+                },
+                "resolved_by": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string",
+                    "example": "open"
+                },
+                "translation_reviewed_at": {
+                    "type": "string"
+                },
+                "translation_reviewed_by": {
+                    "type": "string"
+                },
+                "translation_status": {
+                    "type": "string",
+                    "example": "generated"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-01-01T00:00:00Z"
+                },
+                "user_agent": {
+                    "type": "string"
+                },
+                "user_id": {
+                    "type": "string"
+                },
+                "vote": {
+                    "type": "string",
+                    "example": "dislike"
+                }
+            }
+        },
+        "entity.EditorialTranslationFeedbackSummary": {
+            "type": "object",
+            "properties": {
+                "dislikes": {
+                    "type": "integer",
+                    "example": 7
+                },
+                "likes": {
+                    "type": "integer",
+                    "example": 18
+                },
+                "top_disliked_headings": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.TranslationFeedbackHeadingSummary"
+                    }
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 25
                 }
             }
         },
@@ -19372,60 +20300,6 @@
                 }
             }
         },
-        "entity.Task": {
-            "type": "object",
-            "properties": {
-                "created_at": {
-                    "type": "string",
-                    "example": "2026-01-01T00:00:00Z"
-                },
-                "description": {
-                    "type": "string",
-                    "example": "Task description"
-                },
-                "id": {
-                    "type": "string",
-                    "example": "550e8400-e29b-41d4-a716-446655440000"
-                },
-                "status": {
-                    "type": "string",
-                    "example": "todo"
-                },
-                "title": {
-                    "type": "string",
-                    "example": "My task"
-                },
-                "updated_at": {
-                    "type": "string",
-                    "example": "2026-01-01T00:00:00Z"
-                },
-                "user_id": {
-                    "type": "string",
-                    "example": "550e8400-e29b-41d4-a716-446655440000"
-                }
-            }
-        },
-        "entity.Translation": {
-            "type": "object",
-            "properties": {
-                "destination": {
-                    "type": "string",
-                    "example": "en"
-                },
-                "original": {
-                    "type": "string",
-                    "example": "текст для перевода"
-                },
-                "source": {
-                    "type": "string",
-                    "example": "auto"
-                },
-                "translation": {
-                    "type": "string",
-                    "example": "text for translation"
-                }
-            }
-        },
         "entity.TranslationFeedback": {
             "type": "object",
             "properties": {
@@ -19478,14 +20352,44 @@
                 }
             }
         },
-        "entity.TranslationHistory": {
+        "entity.TranslationFeedbackHeadingSummary": {
             "type": "object",
             "properties": {
-                "history": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/entity.Translation"
+                "book_id": {
+                    "type": "integer",
+                    "example": 797
+                },
+                "book_title": {
+                    "type": "string"
+                },
+                "dislikes": {
+                    "type": "integer",
+                    "example": 4
+                },
+                "heading_id": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "heading_title": {
+                    "type": "string"
+                },
+                "lang": {
+                    "type": "string",
+                    "example": "id"
+                },
+                "likes": {
+                    "type": "integer",
+                    "example": 6
+                },
+                "reasons": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer"
                     }
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 10
                 }
             }
         },
@@ -19822,6 +20726,23 @@
                 "account_deleted": {
                     "type": "boolean",
                     "example": true
+                }
+            }
+        },
+        "v1.AddCollectionItem": {
+            "type": "object",
+            "required": [
+                "book_id"
+            ],
+            "properties": {
+                "book_id": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "example": 797
+                },
+                "sort_order": {
+                    "type": "integer",
+                    "example": 10
                 }
             }
         },
@@ -20222,24 +21143,6 @@
                 "requires_review": {
                     "type": "boolean",
                     "example": true
-                }
-            }
-        },
-        "v1.CreateTask": {
-            "type": "object",
-            "required": [
-                "title"
-            ],
-            "properties": {
-                "description": {
-                    "type": "string",
-                    "maxLength": 1000,
-                    "example": "Task description"
-                },
-                "title": {
-                    "type": "string",
-                    "maxLength": 255,
-                    "example": "My task"
                 }
             }
         },
@@ -21977,6 +22880,15 @@
                 }
             }
         },
+        "v1.ResolveTranslationFeedback": {
+            "type": "object",
+            "properties": {
+                "note": {
+                    "type": "string",
+                    "maxLength": 2000
+                }
+            }
+        },
         "v1.ReviewCrossReference": {
             "type": "object",
             "required": [
@@ -22078,6 +22990,18 @@
                 }
             }
         },
+        "v1.SaveHeadingDraft": {
+            "type": "object",
+            "required": [
+                "content"
+            ],
+            "properties": {
+                "content": {
+                    "type": "string",
+                    "maxLength": 2000
+                }
+            }
+        },
         "v1.SaveHeadingSummaryDraft": {
             "type": "object",
             "required": [
@@ -22094,6 +23018,39 @@
                 "summary": {
                     "type": "string",
                     "maxLength": 20000
+                }
+            }
+        },
+        "v1.SaveMetadataDraft": {
+            "type": "object",
+            "properties": {
+                "bibliography": {
+                    "type": "string",
+                    "maxLength": 10000
+                },
+                "category_id": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "cover_url": {
+                    "type": "string",
+                    "maxLength": 2000
+                },
+                "description": {
+                    "type": "string",
+                    "maxLength": 10000
+                },
+                "display_title": {
+                    "type": "string",
+                    "maxLength": 500
+                },
+                "hint": {
+                    "type": "string",
+                    "maxLength": 10000
+                },
+                "notes": {
+                    "type": "string",
+                    "maxLength": 10000
                 }
             }
         },
@@ -22125,6 +23082,18 @@
                 "source": {
                     "type": "string",
                     "maxLength": 255
+                }
+            }
+        },
+        "v1.SavePageDraft": {
+            "type": "object",
+            "required": [
+                "content_html"
+            ],
+            "properties": {
+                "content_html": {
+                    "type": "string",
+                    "maxLength": 300000
                 }
             }
         },
@@ -22499,21 +23468,6 @@
                 }
             }
         },
-        "v1.TaskList": {
-            "type": "object",
-            "properties": {
-                "tasks": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/entity.Task"
-                    }
-                },
-                "total": {
-                    "type": "integer",
-                    "example": 42
-                }
-            }
-        },
         "v1.Token": {
             "type": "object",
             "properties": {
@@ -22543,42 +23497,18 @@
                 }
             }
         },
-        "v1.TransitionTask": {
+        "v1.TranslationFeedbackList": {
             "type": "object",
-            "required": [
-                "status"
-            ],
             "properties": {
-                "status": {
-                    "type": "string",
-                    "enum": [
-                        "todo",
-                        "in_progress",
-                        "done"
-                    ],
-                    "example": "in_progress"
-                }
-            }
-        },
-        "v1.Translate": {
-            "type": "object",
-            "required": [
-                "destination",
-                "original",
-                "source"
-            ],
-            "properties": {
-                "destination": {
-                    "type": "string",
-                    "example": "en"
+                "feedbacks": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entity.EditorialTranslationFeedback"
+                    }
                 },
-                "original": {
-                    "type": "string",
-                    "example": "текст для перевода"
-                },
-                "source": {
-                    "type": "string",
-                    "example": "auto"
+                "total": {
+                    "type": "integer",
+                    "example": 42
                 }
             }
         },
@@ -22645,6 +23575,26 @@
                 }
             }
         },
+        "v1.UpdatePublication": {
+            "type": "object",
+            "required": [
+                "status"
+            ],
+            "properties": {
+                "featured": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "sort_order": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "status": {
+                    "type": "string",
+                    "example": "published"
+                }
+            }
+        },
         "v1.UpdateQuranSourceLicense": {
             "type": "object",
             "required": [
@@ -22699,24 +23649,6 @@
                     "items": {
                         "type": "string"
                     }
-                }
-            }
-        },
-        "v1.UpdateTask": {
-            "type": "object",
-            "required": [
-                "title"
-            ],
-            "properties": {
-                "description": {
-                    "type": "string",
-                    "maxLength": 1000,
-                    "example": "Updated description"
-                },
-                "title": {
-                    "type": "string",
-                    "maxLength": 255,
-                    "example": "Updated task"
                 }
             }
         },

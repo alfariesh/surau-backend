@@ -12,8 +12,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/alfariesh/surau-backend/internal/contentlang"
 	"github.com/alfariesh/surau-backend/internal/entity"
-	"github.com/alfariesh/surau-backend/internal/readerlang"
 	"github.com/alfariesh/surau-backend/internal/repo"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -200,7 +200,7 @@ func (uc *UseCase) AskBook(
 		return entity.BookRAGResponse{}, entity.ErrInvalidQuestion
 	}
 
-	lang, err := readerlang.Normalize(lang)
+	lang, err := contentlang.Normalize(lang)
 	if err != nil {
 		return entity.BookRAGResponse{}, err
 	}
@@ -988,16 +988,6 @@ func (uc *UseCase) repairAnswer(
 
 	answer, citations, ok := parseAndValidateAnswer(repairedRaw, sources, maxCitations)
 	return answer, citations, ok, nil
-}
-
-func (uc *UseCase) searchRAGPages(
-	ctx context.Context,
-	bookID int,
-	question string,
-	lang string,
-	limit int,
-) ([]entity.RAGSearchResult, error) {
-	return uc.searchRAGPagesMode(ctx, bookID, question, lang, limit, uc.citationMode)
 }
 
 func (uc *UseCase) searchRAGPagesMode(
@@ -2102,15 +2092,6 @@ func nullableStringValue(value *string) string {
 	}
 
 	return *value
-}
-
-func normalizeLang(lang string) string {
-	lang = strings.ToLower(strings.TrimSpace(lang))
-	if lang == "" {
-		return "id"
-	}
-
-	return lang
 }
 
 func clampMaxCitations(maxCitations int) int {

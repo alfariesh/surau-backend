@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alfariesh/surau-backend/internal/controller/restapi/middleware"
 	"github.com/alfariesh/surau-backend/internal/entity"
 	"github.com/alfariesh/surau-backend/internal/usecase"
 	"github.com/alfariesh/surau-backend/pkg/logger"
@@ -29,10 +28,11 @@ func decodeJSONBody(t *testing.T, resp *http.Response, target any) {
 
 const testServiceToken = "test-service-token-32-bytes-minimum!"
 
-func newCollabInternalTestApp(editorial *fakeSourceEditorial, token string) *fiber.App {
+// newCollabInternalTestApp mounts the routes exactly as production does:
+// NewInternalRoutes attaches the named service-principal check itself.
+func newCollabInternalTestApp(editorial *fakeSourceEditorial) *fiber.App {
 	app := fiber.New()
-	group := app.Group("/internal", middleware.ServiceToken(token))
-	NewInternalRoutes(group, editorial, collabTestServiceIdentity{}, logger.New("error"))
+	NewInternalRoutes(app.Group("/internal"), editorial, collabTestServiceIdentity{}, logger.New("error"))
 
 	return app
 }
@@ -75,7 +75,7 @@ func TestCollabInternalRequiresServiceToken(t *testing.T) {
 	t.Parallel()
 
 	editorial := &fakeSourceEditorial{}
-	app := newCollabInternalTestApp(editorial, testServiceToken)
+	app := newCollabInternalTestApp(editorial)
 
 	req := httptest.NewRequestWithContext(
 		t.Context(),
@@ -107,28 +107,6 @@ func TestCollabInternalRequiresServiceToken(t *testing.T) {
 	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 }
 
-func TestCollabInternalDisabledWithEmptyToken(t *testing.T) {
-	t.Parallel()
-
-	editorial := &fakeSourceEditorial{}
-	app := newCollabInternalTestApp(editorial, "")
-
-	req := httptest.NewRequestWithContext(
-		t.Context(),
-		http.MethodGet,
-		"/internal/collab/books/797/pages/1/draft",
-		nil,
-	)
-	req.Header.Set("X-Internal-Token", "anything")
-
-	resp, err := app.Test(req)
-	require.NoError(t, err)
-
-	defer resp.Body.Close()
-
-	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
-}
-
 func TestCollabInternalGetPageDraftSeedsFromDraftThenRaw(t *testing.T) {
 	t.Parallel()
 
@@ -144,7 +122,7 @@ func TestCollabInternalGetPageDraftSeedsFromDraftThenRaw(t *testing.T) {
 			},
 		},
 	}
-	app := newCollabInternalTestApp(editorial, testServiceToken)
+	app := newCollabInternalTestApp(editorial)
 
 	req := httptest.NewRequestWithContext(
 		t.Context(),
@@ -191,7 +169,7 @@ func TestCollabInternalPutPageDraftUsesCollabOrigin(t *testing.T) {
 	t.Parallel()
 
 	editorial := &fakeSourceEditorial{}
-	app := newCollabInternalTestApp(editorial, testServiceToken)
+	app := newCollabInternalTestApp(editorial)
 
 	req := httptest.NewRequestWithContext(
 		t.Context(),
@@ -223,7 +201,7 @@ func TestCollabInternalPutPageDraftValidatesActor(t *testing.T) {
 	t.Parallel()
 
 	editorial := &fakeSourceEditorial{}
-	app := newCollabInternalTestApp(editorial, testServiceToken)
+	app := newCollabInternalTestApp(editorial)
 
 	req := httptest.NewRequestWithContext(
 		t.Context(),

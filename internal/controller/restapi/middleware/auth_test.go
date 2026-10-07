@@ -2,6 +2,8 @@ package middleware_test
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -160,3 +162,69 @@ func TestAuthMiddlewareRejectsRevokedTokenVersion(t *testing.T) {
 	assert.Equal(t, "invalid or expired token", body.Error)
 	assert.Equal(t, "AUTH_TOKEN_INVALID", body.Code)
 }
+
+// TestAuthMiddlewareSeparatesCredentialFailuresFromStoreFailures pins the
+// contract clients rely on to decide whether to drop a session: only a
+// credential problem answers 401. A failing user store answers 500, so a
+// transient database fault never logs a user out.
+func TestAuthMiddlewareSeparatesCredentialFailuresFromStoreFailures(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		lookupErr  error
+		wantStatus int
+		wantCode   string
+	}{
+		{
+			name:       "deleted user is a credential failure",
+			lookupErr:  entity.ErrUserNotFound,
+			wantStatus: http.StatusUnauthorized,
+			wantCode:   "AUTH_TOKEN_INVALID",
+		},
+		{
+			name:       "store outage is a server failure",
+			lookupErr:  fmt.Errorf("GetUser: %w", errStoreUnavailable),
+			wantStatus: http.StatusInternalServerError,
+			wantCode:   "internal_server_error",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			jwtManager := jwt.New("0123456789abcdef0123456789abcdef", time.Hour, jwt.DefaultIssuer, jwt.DefaultAudience)
+			token, err := jwtManager.GenerateToken("user-id-123")
+			require.NoError(t, err)
+
+			handlerReached := false
+			app := fiber.New()
+			app.Use(middleware.Auth(jwtManager, &stubUserUseCase{err: tc.lookupErr}))
+			app.Get("/test", func(c *fiber.Ctx) error {
+				handlerReached = true
+
+				return c.SendStatus(http.StatusOK)
+			})
+
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/test", http.NoBody)
+			req.Header.Set("Authorization", "Bearer "+token)
+
+			resp, err := app.Test(req)
+			require.NoError(t, err)
+
+			defer resp.Body.Close()
+
+			var body struct {
+				Code string `json:"code"`
+			}
+			require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
+
+			assert.Equal(t, tc.wantStatus, resp.StatusCode)
+			assert.Equal(t, tc.wantCode, body.Code)
+			assert.False(t, handlerReached, "a failed authentication must never reach the handler")
+		})
+	}
+}
+
+var errStoreUnavailable = errors.New("connection refused")

@@ -695,11 +695,6 @@ func BuildHeadingRanges(bookID, lastPageID int, headings []DecoratedHeading) []H
 	return ranges
 }
 
-// SliceAnchoredHTML extracts one section from concatenated page HTML.
-func SliceAnchoredHTML(content, startAnchor, endAnchor string) string {
-	return SliceSectionContent(content, startAnchor, endAnchor, "", "")
-}
-
 // SliceSectionContent extracts one section using HTML anchors, with a title fallback for plain-text sources.
 func SliceSectionContent(content, startAnchor, endAnchor, startTitle, endTitle string) string {
 	start := 0

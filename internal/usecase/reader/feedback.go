@@ -4,8 +4,8 @@ import (
 	"context"
 	"strings"
 
+	"github.com/alfariesh/surau-backend/internal/contentlang"
 	"github.com/alfariesh/surau-backend/internal/entity"
-	"github.com/alfariesh/surau-backend/internal/readerlang"
 	"github.com/google/uuid"
 )
 
@@ -36,7 +36,7 @@ func (uc *UseCase) CreateTranslationFeedback(
 	userAgent *string,
 	clientIP *string,
 ) (entity.TranslationFeedback, error) {
-	lang, err := readerlang.Normalize(lang)
+	lang, err := contentlang.Normalize(lang)
 	if err != nil {
 		return entity.TranslationFeedback{}, err
 	}

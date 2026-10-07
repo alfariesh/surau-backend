@@ -37,59 +37,59 @@ const bookRAGRequestsPerMinute = 20
 // translationFeedbackPerMinute bounds public feedback submissions.
 const translationFeedbackPerMinute = 30
 
-// NewRoutes -.
-func NewRoutes(
-	apiV1Group fiber.Router,
-	reader usecase.Reader,
-	bookRAG usecase.BookRAG,
-	quran usecase.Quran,
-	anchor usecase.AnchorResolver,
-	crossReference usecase.CrossReference,
-	unitRegistry usecase.UnitRegistry,
-	u usecase.User,
-	personal usecase.Personal,
-	editorial usecase.Editorial,
-	email usecase.EmailAdmin,
-	emailWebhookSecret string,
-	serviceIdentity usecase.ServiceIdentity,
-	inference usecase.Inference,
-	pushIdentity usecase.PushIdentity,
-	jwtManager *jwt.Manager,
-	l logger.Interface,
-) {
-	var quranEditorial usecase.QuranEditorial
-	if implementation, ok := editorial.(usecase.QuranEditorial); ok {
-		quranEditorial = implementation
-	}
+// Dependencies are the use cases and infrastructure the v1 routes serve.
+// QuranEditorial, LicenseAudit, and QuranSourceLicenseAudit are separate
+// capabilities so the compiler, not a runtime type assertion, proves the
+// editorial use case provides them.
+type Dependencies struct {
+	Reader                  usecase.Reader
+	BookRAG                 usecase.BookRAG
+	Quran                   usecase.Quran
+	Anchor                  usecase.AnchorResolver
+	CrossReference          usecase.CrossReference
+	UnitRegistry            usecase.UnitRegistry
+	User                    usecase.User
+	Personal                usecase.Personal
+	Editorial               usecase.Editorial
+	QuranEditorial          usecase.QuranEditorial
+	LicenseAudit            usecase.LicenseAudit
+	QuranSourceLicenseAudit usecase.QuranSourceLicenseAudit
+	Email                   usecase.EmailAdmin
+	ServiceIdentity         usecase.ServiceIdentity
+	Inference               usecase.Inference
+	PushIdentity            usecase.PushIdentity
+	JWT                     *jwt.Manager
+	Logger                  logger.Interface
+	// EmailWebhookSecret authenticates the Cloudflare bounce webhook.
+	EmailWebhookSecret string
+}
 
-	var licenseAudit usecase.LicenseAudit
-	if implementation, ok := editorial.(usecase.LicenseAudit); ok {
-		licenseAudit = implementation
-	}
-
-	var quranLicenseAudit usecase.QuranSourceLicenseAudit
-	if implementation, ok := editorial.(usecase.QuranSourceLicenseAudit); ok {
-		quranLicenseAudit = implementation
-	}
+// NewRoutes mounts every public and user-authenticated /v1 route.
+//
+//nolint:funlen // flat route table: one registration per endpoint, no branching
+func NewRoutes(apiV1Group fiber.Router, deps *Dependencies) {
+	u := deps.User
+	serviceIdentity := deps.ServiceIdentity
+	l := deps.Logger
 
 	r := &V1{
-		reader:             reader,
-		bookRAG:            bookRAG,
-		quran:              quran,
-		anchor:             anchor,
-		crossReference:     crossReference,
-		unitRegistry:       unitRegistry,
+		reader:             deps.Reader,
+		bookRAG:            deps.BookRAG,
+		quran:              deps.Quran,
+		anchor:             deps.Anchor,
+		crossReference:     deps.CrossReference,
+		unitRegistry:       deps.UnitRegistry,
 		u:                  u,
-		personal:           personal,
-		editorial:          editorial,
-		quranEditorial:     quranEditorial,
-		licenseAudit:       licenseAudit,
-		quranLicenseAudit:  quranLicenseAudit,
-		email:              email,
+		personal:           deps.Personal,
+		editorial:          deps.Editorial,
+		quranEditorial:     deps.QuranEditorial,
+		licenseAudit:       deps.LicenseAudit,
+		quranLicenseAudit:  deps.QuranSourceLicenseAudit,
+		email:              deps.Email,
 		serviceIdentity:    serviceIdentity,
-		inference:          inference,
-		pushIdentity:       pushIdentity,
-		emailWebhookSecret: strings.TrimSpace(emailWebhookSecret),
+		inference:          deps.Inference,
+		pushIdentity:       deps.PushIdentity,
+		emailWebhookSecret: strings.TrimSpace(deps.EmailWebhookSecret),
 		l:                  l,
 		v:                  validator.New(validator.WithRequiredStructEnabled()),
 	}
@@ -210,7 +210,7 @@ func NewRoutes(
 	// answer unknown paths with 401 before the app-level 404 catch-all can
 	// emit the frozen error envelope (the F1-D contract that
 	// TestUnknownRouteReturnsErrorEnvelope guards).
-	authRequired := middleware.Auth(jwtManager, u)
+	authRequired := middleware.Auth(deps.JWT, u)
 	protected := apiV1Group.Group("")
 
 	// One shared per-user budget for session listing/revocation; in-memory
@@ -252,13 +252,7 @@ func NewRoutes(
 		Max:          personalWritesPerMinute,
 		Expiration:   time.Minute,
 		LimitReached: limiterLimitReached,
-		KeyGenerator: func(ctx *fiber.Ctx) string {
-			if userID, ok := ctx.Locals("userID").(string); ok && userID != "" {
-				return userID
-			}
-
-			return ctx.IP()
-		},
+		KeyGenerator: userOrIPKey,
 		Next: func(ctx *fiber.Ctx) bool {
 			switch ctx.Method() {
 			case fiber.MethodPut, fiber.MethodPost, fiber.MethodPatch, fiber.MethodDelete:
@@ -305,13 +299,7 @@ func NewRoutes(
 		Max:          editorialSavesPerMinute,
 		Expiration:   time.Minute,
 		LimitReached: limiterLimitReached,
-		KeyGenerator: func(ctx *fiber.Ctx) string {
-			if userID, ok := ctx.Locals("userID").(string); ok && userID != "" {
-				return userID
-			}
-
-			return ctx.IP()
-		},
+		KeyGenerator: userOrIPKey,
 		Next: func(ctx *fiber.Ctx) bool {
 			return ctx.Method() != fiber.MethodPut
 		},
@@ -493,12 +481,16 @@ func newSessionLimiter() fiber.Handler {
 		Max:          sessionRequestsPerMinute,
 		Expiration:   time.Minute,
 		LimitReached: limiterLimitReached,
-		KeyGenerator: func(ctx *fiber.Ctx) string {
-			if userID, ok := ctx.Locals("userID").(string); ok && userID != "" {
-				return userID
-			}
-
-			return ctx.IP()
-		},
+		KeyGenerator: userOrIPKey,
 	})
+}
+
+// userOrIPKey buckets authenticated requests per user and falls back to the
+// client IP when no user is attached to the request.
+func userOrIPKey(ctx *fiber.Ctx) string {
+	if userID, ok := ctx.Locals("userID").(string); ok && userID != "" {
+		return userID
+	}
+
+	return ctx.IP()
 }

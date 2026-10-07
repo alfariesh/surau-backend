@@ -79,7 +79,7 @@ func TestUseCaseSearchRAGPagesUsesExpandedQueries(t *testing.T) {
 	}
 	uc := New(repo, &fakeLLM{}, Options{})
 
-	results, err := uc.searchRAGPages(context.Background(), 797, "Apa definisi hadis sahih?", "id", 10)
+	results, err := uc.searchRAGPagesMode(context.Background(), 797, "Apa definisi hadis sahih?", "id", 10, uc.citationMode)
 
 	require.NoError(t, err)
 	assert.Equal(t, []entity.RAGSearchResult{{HeadingID: 11, PageID: 12}}, results)

@@ -1,0 +1,42 @@
+name: Vulnerability gate
+
+# Reachable-vulnerability gate for main. CI (ci.yml) runs on pull requests
+# only, but main is also updated by fast-forwarding a pushed branch without a
+# PR, so this workflow runs govulncheck on every branch push. Requiring the
+# "runner / vuln-gate" check in the "Protect main" ruleset then makes GitHub
+# refuse to move main to any commit whose scan did not pass. The weekly run
+# on main catches advisories published against code that has not changed.
+on:
+  push:
+    branches: ["**"]
+  schedule:
+    # Monday 01:00 UTC = 08:00 WIB.
+    - cron: "0 1 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  vuln-gate:
+    name: runner / vuln-gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: govulncheck (fails on any reachable vulnerability)
+        run: go tool govulncheck ./...
+      - name: Telegram alarm — reachable vulnerability on main
+        if: failure() && github.ref == 'refs/heads/main'
+        uses: ./.github/actions/telegram-notify
+        with:
+          message: >-
+            ⚠️ govulncheck menemukan kerentanan terjangkau di main; push ke main terblokir
+            sampai ditambal:
+            ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

@@ -91,7 +91,7 @@ type Book struct {
 	HasContent                  bool               `json:"has_content"        example:"true"`
 	IsDeleted                   bool               `json:"is_deleted"         example:"false"`
 	UpdatedAt                   time.Time          `json:"updated_at"         example:"2026-01-01T00:00:00Z"`
-}
+} // @name entity.Book
 
 // BookCatalogStats summarizes the full published catalog independently from pagination.
 type BookCatalogStats struct {

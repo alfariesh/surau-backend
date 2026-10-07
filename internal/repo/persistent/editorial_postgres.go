@@ -397,7 +397,7 @@ RETURNING book_id, status, featured, sort_order, published_at, updated_by, updat
 		)
 	}
 
-	_ = r.audit(ctx, actorID, "publication.update", publication.BookID, nil, nil, "", saved)
+	r.audit(ctx, actorID, "publication.update", publication.BookID, nil, nil, "", saved)
 
 	return saved, nil
 }
@@ -499,7 +499,7 @@ RETURNING book_id, status, display_title, bibliography, hint, description, cover
 		return entity.BookMetadataEdit{}, fmt.Errorf("EditorialRepo - SaveMetadataDraft - commit: %w", err)
 	}
 
-	_ = r.audit(ctx, actorID, "metadata.draft.save", edit.BookID, nil, nil, "", saved)
+	r.audit(ctx, actorID, "metadata.draft.save", edit.BookID, nil, nil, "", saved)
 
 	return saved, nil
 }
@@ -548,7 +548,7 @@ SELECT EXISTS (SELECT 1 FROM book_metadata_edits WHERE book_id = $1 AND status =
 		)
 	}
 
-	_ = r.audit(ctx, actorID, "metadata.draft.publish", bookID, nil, nil, "", saved)
+	r.audit(ctx, actorID, "metadata.draft.publish", bookID, nil, nil, "", saved)
 
 	return saved, nil
 }
@@ -671,7 +671,7 @@ RETURNING book_id, page_id, status, content_html, content_text, updated_by, upda
 		return entity.BookPageEdit{}, fmt.Errorf("EditorialRepo - SavePageDraft - commit: %w", err)
 	}
 
-	_ = r.audit(ctx, actorID, "page.draft.save", edit.BookID, &edit.PageID, nil, "", map[string]any{"origin": origin}) //nolint:errcheck // audit is best-effort; the save already committed
+	r.audit(ctx, actorID, "page.draft.save", edit.BookID, &edit.PageID, nil, "", map[string]any{"origin": origin})
 
 	return saved, nil
 }
@@ -710,7 +710,7 @@ SELECT EXISTS (SELECT 1 FROM book_page_edits WHERE book_id = $1 AND page_id = $2
 		)
 	}
 
-	_ = r.audit(ctx, actorID, "page.draft.publish", bookID, &pageID, nil, "", nil)
+	r.audit(ctx, actorID, "page.draft.publish", bookID, &pageID, nil, "", nil)
 
 	return saved, nil
 }
@@ -791,7 +791,7 @@ RETURNING book_id, heading_id, status, content, updated_by, updated_at, publishe
 		return entity.BookHeadingEdit{}, fmt.Errorf("EditorialRepo - SaveHeadingDraft - commit: %w", err)
 	}
 
-	_ = r.audit(ctx, actorID, "heading.draft.save", edit.BookID, nil, &edit.HeadingID, "", saved)
+	r.audit(ctx, actorID, "heading.draft.save", edit.BookID, nil, &edit.HeadingID, "", saved)
 
 	return saved, nil
 }
@@ -829,7 +829,7 @@ SELECT EXISTS (SELECT 1 FROM book_heading_edits WHERE book_id = $1 AND heading_i
 		)
 	}
 
-	_ = r.audit(ctx, actorID, "heading.draft.publish", bookID, nil, &headingID, "", saved)
+	r.audit(ctx, actorID, "heading.draft.publish", bookID, nil, &headingID, "", saved)
 
 	return saved, nil
 }
@@ -877,7 +877,7 @@ RETURNING collection_slug, book_id, sort_order, created_by, created_at`
 		return entity.BookCollectionItem{}, fmt.Errorf("EditorialRepo - AddCollectionItem - Commit: %w", err)
 	}
 
-	_ = r.audit(ctx, actorID, "collection.item.add", bookID, nil, nil, slug, item)
+	r.audit(ctx, actorID, "collection.item.add", bookID, nil, nil, slug, item)
 
 	return item, nil
 }
@@ -1108,7 +1108,7 @@ WHERE id = $1`, feedbackID, actorID, note)
 		return entity.EditorialTranslationFeedback{}, err
 	}
 
-	_ = r.audit(ctx, actorID, "translation_feedback.resolve", feedback.BookID, nil, &feedback.HeadingID, "", feedback)
+	r.audit(ctx, actorID, "translation_feedback.resolve", feedback.BookID, nil, &feedback.HeadingID, "", feedback)
 
 	return feedback, nil
 }
@@ -1139,7 +1139,7 @@ WHERE id = $1`, feedbackID)
 		return entity.EditorialTranslationFeedback{}, err
 	}
 
-	_ = r.audit(ctx, actorID, "translation_feedback.reopen", feedback.BookID, nil, &feedback.HeadingID, "", feedback)
+	r.audit(ctx, actorID, "translation_feedback.reopen", feedback.BookID, nil, &feedback.HeadingID, "", feedback)
 
 	return feedback, nil
 }
@@ -1496,45 +1496,6 @@ func positiveIntNil(value int) any {
 	}
 
 	return value
-}
-
-func (r *EditorialRepo) audit(
-	ctx context.Context,
-	actorID string,
-	action string,
-	bookID int,
-	pageID *int,
-	headingID *int,
-	collectionSlug string,
-	payload any,
-) error {
-	var payloadJSON []byte
-	var err error
-	if payload != nil {
-		payloadJSON, err = json.Marshal(payload)
-		if err != nil {
-			return fmt.Errorf("marshal audit payload: %w", err)
-		}
-	}
-
-	_, err = r.Pool.Exec(
-		ctx, `
-INSERT INTO admin_audit_logs (id, actor_id, action, book_id, page_id, heading_id, collection_slug, payload, created_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, nullif($8, '')::jsonb, now())`,
-		uuid.New().String(),
-		actorID,
-		action,
-		positiveIntNil(bookID),
-		pageID,
-		headingID,
-		emptyStringNil(collectionSlug),
-		string(payloadJSON),
-	)
-	if err != nil {
-		return fmt.Errorf("insert audit log: %w", err)
-	}
-
-	return nil
 }
 
 func applyEditorialBookFilter(countBuilder, dataBuilder sq.SelectBuilder, filter repo.EditorialBookFilter) (sq.SelectBuilder, sq.SelectBuilder) {

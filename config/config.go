@@ -300,11 +300,8 @@ type (
 		// Secret is the one-release compatibility seed used when KeysetFile is
 		// empty. A-4 production deployments use the reloadable keyset file so a
 		// signing-key rotation does not require restarting the process.
-		Secret     string `env:"JWT_SECRET"`
-		KeysetFile string `env:"JWT_KEYSET_FILE"`
-		// TokenExpiry is the legacy single-token TTL; signing now uses
-		// AccessTokenExpiry. Kept validated for env back-compat.
-		TokenExpiry        time.Duration `env:"JWT_TOKEN_EXPIRY" envDefault:"24h"`
+		Secret             string        `env:"JWT_SECRET"`
+		KeysetFile         string        `env:"JWT_KEYSET_FILE"`
 		AccessTokenExpiry  time.Duration `env:"JWT_ACCESS_TOKEN_EXPIRY" envDefault:"15m"`
 		RefreshTokenExpiry time.Duration `env:"JWT_REFRESH_TOKEN_EXPIRY" envDefault:"336h"`
 		Issuer             string        `env:"JWT_ISSUER" envDefault:"surau-backend"`
@@ -606,10 +603,6 @@ func NewConfig() (*Config, error) {
 	if cfg.JWT.Secret != "" && len(cfg.JWT.Secret) < 32 {
 		return nil, configError("JWT_SECRET must be at least 32 bytes when set")
 	}
-	if cfg.JWT.TokenExpiry <= 0 || cfg.JWT.TokenExpiry > 24*time.Hour {
-		return nil, configError("JWT_TOKEN_EXPIRY must be positive and no more than 24h")
-	}
-
 	if cfg.JWT.AccessTokenExpiry <= 0 || cfg.JWT.AccessTokenExpiry > 24*time.Hour {
 		return nil, configError("JWT_ACCESS_TOKEN_EXPIRY must be positive and no more than 24h")
 	}

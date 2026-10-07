@@ -19,8 +19,9 @@ import (
 // draft to seed a collaborative document, and write the merged document back
 // through the exact same editorial pipeline the REST editor uses, so
 // sanitization, content_text extraction, audit logs and revision history stay
-// on one write path. Authentication is the X-Internal-Token service secret
-// (see middleware.ServiceToken); these routes must never be exposed publicly.
+// on one write path. Authentication is a named service-principal token in
+// X-Internal-Token (see middleware.RequireServicePrincipal); these routes must
+// never be exposed publicly.
 type CollabInternal struct {
 	editorial usecase.Editorial
 	l         logger.Interface

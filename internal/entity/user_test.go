@@ -87,9 +87,6 @@ func TestProductionHelpers(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, ProductionAssetSectionAudio, assetType)
 	assert.True(t, IsHeadingProductionAsset(assetType))
-	assert.True(t, IsProductionEventType(ProductionEventDraftSave))
-	assert.True(t, IsProductionEventType(ProductionEventDraftRestore))
-	assert.False(t, IsProductionEventType("production_asset.unknown"))
 
 	_, err = NormalizeProductionReviewDecision("ship")
 	require.ErrorIs(t, err, ErrInvalidReviewDecision)

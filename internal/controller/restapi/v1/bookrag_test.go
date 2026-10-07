@@ -5,8 +5,10 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -377,6 +379,94 @@ func (f *fakeBookRAG) AskBookStream(
 		Ref: "1", UnitID: &unitID, UnitAnchor: &unitAnchor,
 	}}); err != nil {
 		return err
+	}
+
+	return emit("done", entity.BookRAGResponse{BookID: 797, Answer: "Jawaban"})
+}
+
+// TestAskBookRAGStreamOutlivesServerWriteTimeout pins the fix for answers cut
+// mid-stream: fasthttp arms ONE absolute write deadline when the handler
+// returns, so before per-event deadlines any answer slower than the server's
+// WriteTimeout (5s in production) was truncated. app.Test cannot catch this —
+// its in-memory connection ignores deadlines — so this test serves real TCP.
+func TestAskBookRAGStreamOutlivesServerWriteTimeout(t *testing.T) {
+	t.Parallel()
+
+	const (
+		writeTimeout = 200 * time.Millisecond
+		deltaEvents  = 4
+	)
+
+	app := fiber.New(fiber.Config{WriteTimeout: writeTimeout, DisableStartupMessage: true})
+	controller := &V1{
+		bookRAG: &slowStreamBookRAG{gap: writeTimeout, events: deltaEvents},
+		l:       logger.New("error"),
+		v:       validator.New(validator.WithRequiredStructEnabled()),
+	}
+	app.Post("/v1/books/:book_id/rag", controller.askBookRAG)
+
+	var listenConfig net.ListenConfig
+
+	listener, err := listenConfig.Listen(t.Context(), "tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+
+	serveErr := make(chan error, 1)
+
+	go func() { serveErr <- app.Listener(listener) }()
+
+	t.Cleanup(func() {
+		assert.NoError(t, app.Shutdown())
+		assert.NoError(t, <-serveErr)
+	})
+
+	req, err := http.NewRequestWithContext(
+		t.Context(),
+		http.MethodPost,
+		"http://"+listener.Addr().String()+"/v1/books/797/rag",
+		strings.NewReader(`{"question":"Apa definisi hadis sahih?","stream":true}`),
+	)
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err, "the stream must terminate cleanly, not as a truncated chunk")
+	assert.Equal(t, deltaEvents, strings.Count(string(body), "event: delta"))
+	assert.Contains(t, string(body), "event: done")
+}
+
+// slowStreamBookRAG spaces its events like a real LLM answer: further apart
+// than the server's write timeout.
+type slowStreamBookRAG struct {
+	fakeBookRAG
+
+	gap    time.Duration
+	events int
+}
+
+func (f *slowStreamBookRAG) AskBookStream(
+	ctx context.Context,
+	_ int,
+	_ string,
+	_ string,
+	_ int,
+	_ bool,
+	emit func(event string, payload any) error,
+) error {
+	for seq := range f.events {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(f.gap):
+		}
+
+		if err := emit("delta", map[string]int{"seq": seq}); err != nil {
+			return err
+		}
 	}
 
 	return emit("done", entity.BookRAGResponse{BookID: 797, Answer: "Jawaban"})

@@ -79,7 +79,7 @@ type BookRAGCitation struct {
 	UnitAnchor   *string `json:"unit_anchor,omitempty" example:"kitab/797/h/11/u/42"`
 	Quote        string  `json:"quote" example:"الحديث الصحيح هو..."`
 	URL          string  `json:"url" example:"/v1/books/797/toc/11/read?lang=id"`
-}
+} // @name entity.BookRAGCitation
 
 // BookRAGTrace contains optional retrieval diagnostics for RAG review.
 type BookRAGTrace struct {
@@ -96,7 +96,7 @@ type BookRAGTrace struct {
 	TreeBlocks         int      `json:"tree_blocks,omitempty"`
 	TreeCandidateCount int      `json:"tree_candidate_count,omitempty"`
 	Repaired           bool     `json:"repaired"`
-}
+} // @name entity.BookRAGTrace
 
 // BookRAGResponse is the public non-streaming RAG response.
 type BookRAGResponse struct {
@@ -107,7 +107,7 @@ type BookRAGResponse struct {
 	Citations     []BookRAGCitation `json:"citations"`
 	Trace         *BookRAGTrace     `json:"trace"`
 	Inference     *BookRAGInference `json:"inference,omitempty"`
-}
+} // @name entity.BookRAGResponse
 
 // BookRAGInference exposes only safe final-call attribution and metering.
 type BookRAGInference struct {
@@ -121,4 +121,4 @@ type BookRAGInference struct {
 	Cost        InferenceCost      `json:"cost"`
 	CacheStatus string             `json:"cache_status"`
 	Failover    bool               `json:"failover"`
-}
+} // @name entity.BookRAGInference

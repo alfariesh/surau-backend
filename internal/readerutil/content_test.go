@@ -104,12 +104,12 @@ func TestDecorateHeadingsAndRanges(t *testing.T) {
 	}, ranges)
 }
 
-func TestSliceAnchoredHTML(t *testing.T) {
+func TestSliceSectionContentByAnchors(t *testing.T) {
 	t.Parallel()
 
 	content := "intro <span data-type='title' id=toc-1>أول</span> body <span data-type='title' id='toc-2'>ثان</span> tail"
 
-	got := readerutil.SliceAnchoredHTML(content, "toc-1", "toc-2")
+	got := readerutil.SliceSectionContent(content, "toc-1", "toc-2", "", "")
 
 	assert.Equal(t, "<span data-type='title' id=toc-1>أول</span> body", got)
 }

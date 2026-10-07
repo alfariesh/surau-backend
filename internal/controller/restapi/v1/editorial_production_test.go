@@ -878,6 +878,3 @@ func (f *fakeProductionEditorial) GetHeadingDraft(
 }
 
 //go:fix inline
-func ptrString(value string) *string {
-	return new(value)
-}

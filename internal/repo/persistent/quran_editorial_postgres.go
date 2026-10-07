@@ -35,8 +35,6 @@ intisari_html, keutamaan_html, faq, tafsir_range,
 author_name, reviewed_by, reviewed_at, license_status, checksum, metadata,
 updated_by::text, created_at, updated_at, published_at`
 
-var _ repo.QuranEditorialRepo = (*EditorialRepo)(nil)
-
 // QuranSurahMetadataUpdate carries the language-independent fields owned by
 // the surah editorial importer. Nil values preserve the stored value.
 type QuranSurahMetadataUpdate struct {

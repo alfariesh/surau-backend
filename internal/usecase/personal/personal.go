@@ -6,9 +6,9 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/alfariesh/surau-backend/internal/contentlang"
 	"github.com/alfariesh/surau-backend/internal/entity"
 	"github.com/alfariesh/surau-backend/internal/quranutil"
-	"github.com/alfariesh/surau-backend/internal/readerlang"
 	"github.com/alfariesh/surau-backend/internal/repo"
 	"github.com/google/uuid"
 )
@@ -87,7 +87,7 @@ func (uc *UseCase) ListProgress(
 	userID, lang string,
 	limit, offset int,
 ) ([]entity.ContinueReadingEntry, int, error) {
-	normalizedLang, err := readerlang.Normalize(lang)
+	normalizedLang, err := contentlang.Normalize(lang)
 	if err != nil {
 		return nil, 0, err
 	}

@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/alfariesh/surau-backend/config"
+	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -130,6 +132,26 @@ func TestLiveAppBootstrap(t *testing.T) {
 		t.Fatalf("email_dispatch loop series never appeared in /metrics; last scrape:\n%s", body)
 	})
 
+	// Optional OneSignal integrations default to disabled. Their handles must
+	// then reach the use cases as nil interfaces: a nil *UseCase wrapped in a
+	// non-nil interface passes the call sites' nil guards and panics.
+	t.Run("disabled OneSignal integrations degrade instead of panicking", func(t *testing.T) {
+		const password = "smoke-password-123"
+
+		email := fmt.Sprintf("smoke-%d@example.com", time.Now().UnixNano())
+		accessToken := registerVerifiedUser(t, base, liveURL, email, password)
+
+		status, body := httpPost(t, base+"/v1/me/push/identity-token", accessToken, "")
+		assert.Equal(t, http.StatusServiceUnavailable, status, body)
+
+		status, body = httpPost(
+			t, base+"/v1/auth/delete-account", accessToken,
+			`{"current_password":"`+password+`"}`,
+		)
+		require.Equal(t, http.StatusOK, status, body)
+		assert.JSONEq(t, `{"account_deleted":true}`, body)
+	})
+
 	// Clean shutdown: run() must return once stop fires, within the bounded
 	// loop-drain + HTTP shutdown budget.
 	close(stop)
@@ -199,6 +221,82 @@ func httpGet(t *testing.T, url string) (status int, body string) {
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
 	require.NoError(t, err)
+
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+
+	defer resp.Body.Close()
+
+	raw, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+
+	return resp.StatusCode, string(raw)
+}
+
+// registerVerifiedUser signs up through the public API, marks the address
+// verified directly (no inbox in a smoke test), and logs in.
+func registerVerifiedUser(t *testing.T, base, liveURL, email, password string) string {
+	t.Helper()
+
+	status, body := httpPost(t, base+"/v1/auth/register", "", fmt.Sprintf(
+		`{"username":%q,"email":%q,"password":%q}`, strings.Split(email, "@")[0], email, password,
+	))
+	require.Equal(t, http.StatusCreated, status, body)
+
+	conn, err := pgx.Connect(t.Context(), liveURL)
+	require.NoError(t, err)
+
+	defer func() { _ = conn.Close(context.Background()) }()
+
+	t.Cleanup(func() {
+		cleanup, cleanupErr := pgx.Connect(context.Background(), liveURL)
+		if !assert.NoError(t, cleanupErr) {
+			return
+		}
+
+		defer func() { _ = cleanup.Close(context.Background()) }()
+
+		_, cleanupErr = cleanup.Exec(context.Background(), `DELETE FROM users WHERE email = $1`, email)
+		assert.NoError(t, cleanupErr)
+	})
+
+	_, err = conn.Exec(
+		t.Context(),
+		`UPDATE users SET email_verified = true, email_verified_at = now() WHERE email = $1`,
+		email,
+	)
+	require.NoError(t, err)
+
+	status, body = httpPost(t, base+"/v1/auth/login", "", fmt.Sprintf(
+		`{"email":%q,"password":%q}`, email, password,
+	))
+	require.Equal(t, http.StatusOK, status, body)
+
+	var token struct {
+		AccessToken string `json:"access_token"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(body), &token))
+	require.NotEmpty(t, token.AccessToken)
+
+	return token.AccessToken
+}
+
+func httpPost(t *testing.T, url, bearer, jsonBody string) (status int, body string) {
+	t.Helper()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(jsonBody))
+	require.NoError(t, err)
+
+	if jsonBody != "" {
+		req.Header.Set("Content-Type", "application/json")
+	}
+
+	if bearer != "" {
+		req.Header.Set("Authorization", "Bearer "+bearer)
+	}
 
 	resp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)

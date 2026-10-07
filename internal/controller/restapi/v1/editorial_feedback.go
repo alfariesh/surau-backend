@@ -5,9 +5,31 @@ import (
 
 	"github.com/alfariesh/surau-backend/internal/controller/restapi/v1/request"
 	"github.com/alfariesh/surau-backend/internal/controller/restapi/v1/response"
+	// The Swagger annotations reference entity types this file never names in
+	// code; swag resolves them through this blank import.
+	_ "github.com/alfariesh/surau-backend/internal/entity"
 	"github.com/gofiber/fiber/v2"
 )
 
+// @Summary     List translation feedback
+// @Description List reader feedback on section translations, newest first. Requires editor or admin role.
+// @ID          editorial-list-translation-feedbacks
+// @Tags        editorial
+// @Produce     json
+// @Param       book_id    query    int    false "Book ID"
+// @Param       heading_id query    int    false "Heading ID"
+// @Param       lang       query    string false "Translation language"
+// @Param       vote       query    string false "Reader vote" Enums(like, dislike)
+// @Param       status     query    string false "Feedback status (default open)" Enums(open, resolved, all)
+// @Param       limit      query    int    false "Page size (default 50, max 200)"
+// @Param       offset     query    int    false "Offset"
+// @Success     200        {object} response.TranslationFeedbackList
+// @Failure     400        {object} response.Error
+// @Failure     401        {object} response.Error
+// @Failure     403        {object} response.Error
+// @Failure     500        {object} response.Error
+// @Security    BearerAuth
+// @Router      /editorial/translation-feedbacks [get]
 func (r *V1) editorialListTranslationFeedbacks(ctx *fiber.Ctx) error {
 	bookID, err := optionalQueryInt(ctx, "book_id")
 	if err != nil {
@@ -38,6 +60,24 @@ func (r *V1) editorialListTranslationFeedbacks(ctx *fiber.Ctx) error {
 	return ctx.Status(http.StatusOK).JSON(response.TranslationFeedbackList{Feedbacks: feedbacks, Total: total})
 }
 
+// @Summary     Summarize translation feedback
+// @Description Aggregate reader translation feedback counts and the most-disliked headings. Requires editor or admin role.
+// @ID          editorial-translation-feedback-summary
+// @Tags        editorial
+// @Produce     json
+// @Param       book_id    query    int    false "Book ID"
+// @Param       heading_id query    int    false "Heading ID"
+// @Param       lang       query    string false "Translation language"
+// @Param       vote       query    string false "Reader vote" Enums(like, dislike)
+// @Param       status     query    string false "Feedback status (default open)" Enums(open, resolved, all)
+// @Param       limit      query    int    false "Top headings to include (default 20, max 200)"
+// @Success     200        {object} entity.EditorialTranslationFeedbackSummary
+// @Failure     400        {object} response.Error
+// @Failure     401        {object} response.Error
+// @Failure     403        {object} response.Error
+// @Failure     500        {object} response.Error
+// @Security    BearerAuth
+// @Router      /editorial/translation-feedbacks/summary [get]
 func (r *V1) editorialTranslationFeedbackSummary(ctx *fiber.Ctx) error {
 	bookID, err := optionalQueryInt(ctx, "book_id")
 	if err != nil {
@@ -67,6 +107,22 @@ func (r *V1) editorialTranslationFeedbackSummary(ctx *fiber.Ctx) error {
 	return ctx.Status(http.StatusOK).JSON(summary)
 }
 
+// @Summary     Resolve translation feedback
+// @Description Mark one reader translation feedback item as handled, with an optional note. Requires editor or admin role.
+// @ID          editorial-resolve-translation-feedback
+// @Tags        editorial
+// @Accept      json
+// @Produce     json
+// @Param       id      path     string                             true  "Feedback ID"
+// @Param       request body     request.ResolveTranslationFeedback false "Optional resolution note"
+// @Success     200     {object} entity.EditorialTranslationFeedback
+// @Failure     400     {object} response.Error
+// @Failure     401     {object} response.Error
+// @Failure     403     {object} response.Error
+// @Failure     404     {object} response.Error
+// @Failure     500     {object} response.Error
+// @Security    BearerAuth
+// @Router      /editorial/translation-feedbacks/{id}/resolve [post]
 func (r *V1) editorialResolveTranslationFeedback(ctx *fiber.Ctx) error {
 	actorID, ok := ctx.Locals("userID").(string)
 	if !ok {
@@ -99,6 +155,20 @@ func (r *V1) editorialResolveTranslationFeedback(ctx *fiber.Ctx) error {
 	return ctx.Status(http.StatusOK).JSON(feedback)
 }
 
+// @Summary     Reopen translation feedback
+// @Description Return a resolved reader translation feedback item to the open queue. Requires editor or admin role.
+// @ID          editorial-reopen-translation-feedback
+// @Tags        editorial
+// @Produce     json
+// @Param       id  path     string true "Feedback ID"
+// @Success     200 {object} entity.EditorialTranslationFeedback
+// @Failure     400 {object} response.Error
+// @Failure     401 {object} response.Error
+// @Failure     403 {object} response.Error
+// @Failure     404 {object} response.Error
+// @Failure     500 {object} response.Error
+// @Security    BearerAuth
+// @Router      /editorial/translation-feedbacks/{id}/reopen [post]
 func (r *V1) editorialReopenTranslationFeedback(ctx *fiber.Ctx) error {
 	actorID, ok := ctx.Locals("userID").(string)
 	if !ok {

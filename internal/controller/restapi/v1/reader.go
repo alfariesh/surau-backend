@@ -19,6 +19,11 @@ import (
 const (
 	maxEmbeddedQuranReferences = 200
 	bookRAGStreamMaxDuration   = 5 * time.Minute
+	// bookRAGStreamEventWriteBudget bounds how long writing ONE event to the
+	// client may take. The server's WriteTimeout is a single absolute deadline
+	// armed when the handler returns, so a stream outliving it would be cut
+	// mid-answer; each event re-arms the deadline with this budget instead.
+	bookRAGStreamEventWriteBudget = 15 * time.Second
 )
 
 // @Summary     List kitab categories
@@ -243,6 +248,7 @@ func (r *V1) streamBookRAG(ctx *fiber.Ctx, bookID int, lang string, body request
 	// values while giving the stream an explicit bounded lifetime.
 	streamBaseCtx := context.WithoutCancel(ctx.UserContext())
 	reqLog := r.reqLog(ctx)
+	conn := ctx.Context().Conn()
 	ctx.Set("Content-Type", "text/event-stream")
 	ctx.Set("Cache-Control", "no-cache")
 	ctx.Set("Connection", "keep-alive")
@@ -253,6 +259,12 @@ func (r *V1) streamBookRAG(ctx *fiber.Ctx, bookID int, lang string, body request
 		defer cancel()
 
 		emit := func(event string, payload any) error {
+			if conn != nil {
+				if err := conn.SetWriteDeadline(time.Now().Add(bookRAGStreamEventWriteBudget)); err != nil {
+					return fmt.Errorf("extend stream write deadline: %w", err)
+				}
+			}
+
 			return writeSSEEvent(w, event, payload)
 		}
 

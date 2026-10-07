@@ -16,20 +16,6 @@ func MaxPoolSize(size int) Option {
 	}
 }
 
-// ConnAttempts -.
-func ConnAttempts(attempts int) Option {
-	return func(c *Postgres) {
-		c.connAttempts = attempts
-	}
-}
-
-// ConnTimeout -.
-func ConnTimeout(timeout time.Duration) Option {
-	return func(c *Postgres) {
-		c.connTimeout = timeout
-	}
-}
-
 // MaxConnLifetime bounds how long one pooled connection may live.
 func MaxConnLifetime(lifetime time.Duration) Option {
 	return func(c *Postgres) {

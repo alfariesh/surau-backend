@@ -507,3 +507,20 @@ R2 yang sama — rotasi ke token ter-scope per-host masuk antrean P8-6/backlog r
 Dokumen fase (roadmap/phase-*.md) tetap sumber kebenaran untuk AC/DS per inisiatif — jangan
 duplikasi ke sini. Konflik baru antar-dokumen di masa depan mengikuti pola yang sama: nota
 "Conflicts with charter" di dokumen fase + rekonsiliasi di sini.
+
+**Pelajaran sesi pembersihan & pengerasan (2026-10-07, lanjutan F1-F):** sisa template
+(`task`, `translation`/Google-Translate, `authutil`, `readerlang`, opsi server mati, gambar template,
+judul Swagger "Go Clean Template") dihapus; tabel yatim `tasks`/`history` dijatuhkan lewat migrasi
+`20261007000001` (down memulihkan skema identik). Sesi ini menemukan **empat bug produksi** yang
+tak tertangkap test lama: (1) stream SSE Book-RAG terpotong di detik ke-5 (deadline tulis absolut
+fasthttp vs batas stream 5 menit — test lama memakai `app.Test` yang mengabaikan deadline);
+(2) **hapus akun selalu gagal 500** dan (3) push-identity panic saat integrasi OneSignal nonaktif
+(default!) — jebakan *nil pointer di dalam interface* pada wiring `app.go`; (4) gangguan DB saat
+verifikasi Bearer dibalas 401 sehingga klien me-logout pengguna. Juga: Swagger mengiklankan 5
+endpoint hantu dan 14 rute editorial tak terdokumentasi — kini dijaga test kontrak dua arah
+(`TestSwaggerDocumentsExactlyTheMountedV1Routes`); jejak audit editorial pasca-commit tak lagi
+hilang diam-diam (metrik + alert Telegram). Moral: (a) "kode yatim" harus dibuktikan lewat test
+live, bukan hanya analisis statis — `UserRepo.DeleteAccount` masih menulis `DELETE FROM tasks`
+sebagai string SQL; (b) handle opsional (`*UseCase` yang bisa nil) hanya boleh masuk ke field
+bertipe interface lewat guard `!= nil`; (c) test yang memakai koneksi in-memory tidak membuktikan
+perilaku jaringan (timeout/deadline) — pakai TCP sungguhan.

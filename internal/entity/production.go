@@ -404,24 +404,6 @@ func IsHeadingProductionAsset(assetType string) bool {
 	}
 }
 
-// IsProductionEventType reports whether eventType is a known production timeline event.
-func IsProductionEventType(eventType string) bool {
-	switch strings.ToLower(strings.TrimSpace(eventType)) {
-	case ProductionEventProjectCreate,
-		ProductionEventProjectUpdate,
-		ProductionEventDraftSave,
-		ProductionEventDraftDelete,
-		ProductionEventDraftRestore,
-		ProductionEventReview,
-		ProductionEventProjectPublish,
-		ProductionEventProjectUnpublish,
-		ProductionEventFinalDelete:
-		return true
-	default:
-		return false
-	}
-}
-
 // NormalizeProductionDraftTarget validates asset/heading pairing for draft revision APIs.
 func NormalizeProductionDraftTarget(assetType string, headingID *int) (string, *int, error) {
 	assetType, err := NormalizeProductionAssetType(assetType)
