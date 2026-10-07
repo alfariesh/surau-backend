@@ -18,17 +18,6 @@ type AuthSessionValidity struct {
 }
 
 type (
-	// TranslationRepo -.
-	TranslationRepo interface {
-		Store(ctx context.Context, userID string, t entity.Translation) error
-		GetHistory(ctx context.Context, userID string) ([]entity.Translation, error)
-	}
-
-	// TranslationWebAPI -.
-	TranslationWebAPI interface {
-		Translate(ctx context.Context, t entity.Translation) (entity.Translation, error)
-	}
-
 	// UserRepo -.
 	UserRepo interface {
 		Store(ctx context.Context, user *entity.User) error
@@ -331,15 +320,6 @@ type (
 		ListDueEmailCampaigns(ctx context.Context, now time.Time, limit int) ([]entity.EmailCampaign, error)
 	}
 
-	// TaskRepo -.
-	TaskRepo interface {
-		Store(ctx context.Context, task *entity.Task) error
-		GetByID(ctx context.Context, userID, taskID string) (entity.Task, error)
-		List(ctx context.Context, userID string, filter TaskFilter) ([]entity.Task, int, error)
-		Update(ctx context.Context, task *entity.Task) error
-		Delete(ctx context.Context, userID, taskID string) error
-	}
-
 	// ReaderRepo -.
 	ReaderRepo interface {
 		ListCategories(ctx context.Context, lang string) ([]entity.Category, error)
@@ -569,7 +549,7 @@ type (
 		) (entity.QuranSourceLicense, error)
 	}
 
-	// TaskFilter -.
+	// UserFilter selects users for the admin user list.
 	UserFilter struct {
 		Query         string
 		Role          string
@@ -599,13 +579,6 @@ type (
 		TokenRetention   time.Duration
 		SessionRetention time.Duration
 		AuditRetention   time.Duration
-	}
-
-	// TaskFilter -.
-	TaskFilter struct {
-		Status *entity.TaskStatus
-		Limit  uint64
-		Offset uint64
 	}
 
 	// BookFilter -.

@@ -8,9 +8,7 @@ import (
 
 // V1 -.
 type V1 struct {
-	t                  usecase.Translation
 	u                  usecase.User
-	tk                 usecase.Task
 	reader             usecase.Reader
 	bookRAG            usecase.BookRAG
 	quran              usecase.Quran

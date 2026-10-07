@@ -2057,12 +2057,12 @@ func TestGetUser_GenericError(t *testing.T) {
 
 	uc, repo, _ := newUserUseCase(t)
 
-	repo.EXPECT().GetByID(context.Background(), "user-id-123").Return(entity.User{}, errInternalServErr)
+	repo.EXPECT().GetByID(context.Background(), "user-id-123").Return(entity.User{}, errTestDatabaseUnavailable)
 
 	_, err := uc.GetUser(context.Background(), "user-id-123")
 
 	require.Error(t, err)
-	require.ErrorIs(t, err, errInternalServErr)
+	require.ErrorIs(t, err, errTestDatabaseUnavailable)
 }
 
 func TestGetUserAccount(t *testing.T) {
