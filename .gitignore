@@ -15,8 +15,27 @@
 *.so
 *.dylib
 bin/
-# Local build output of `go build ./cmd/app` (anchored: cmd/app stays tracked)
+# Local build output of `go build ./cmd/<tool>` at the repo root (anchored:
+# the cmd/<tool> source directories stay tracked)
 /app
+/backfill
+/diffcover
+/fetch-kemenag-quran-assets
+/gen-normalization-v1
+/import-books
+/import-quran-assets
+/import-quran-ayah-editorial
+/import-quran-surah-editorial
+/import-reader-assets
+/jwt-keyset
+/quran-page-bench
+/rag-eval
+/reset-user-mfa
+/set-user-role
+/sync-quran-audio-r2
+
+# OS metadata
+.DS_Store
 
 # Test binary, built with `go test -c`
 *.test
