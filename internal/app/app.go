@@ -16,6 +16,7 @@ import (
 
 	"github.com/alfariesh/surau-backend/config"
 	"github.com/alfariesh/surau-backend/internal/controller/restapi"
+	v1 "github.com/alfariesh/surau-backend/internal/controller/restapi/v1"
 	"github.com/alfariesh/surau-backend/internal/entity"
 	"github.com/alfariesh/surau-backend/internal/repo"
 	"github.com/alfariesh/surau-backend/internal/repo/persistent"
@@ -487,26 +488,29 @@ func initServers(cfg *config.Config, pg *postgres.Postgres, uc useCases, jwtMana
 		httpserver.BodyLimit(cfg.HTTP.BodyLimitBytes),
 		httpserver.ErrorHandler(restapi.EnvelopeErrorHandler(l)),
 	)
-	restapi.NewRouter(
-		httpServer.App,
-		cfg,
-		pg,
-		uc.reader,
-		uc.bookRAG,
-		uc.quran,
-		uc.anchor,
-		uc.crossReference,
-		uc.unitRegistry,
-		uc.user,
-		uc.personal,
-		uc.editorial,
-		uc.email,
-		uc.serviceIdentity,
-		uc.inference,
-		uc.pushIdentity,
-		jwtManager,
-		l,
-	)
+	deps := &v1.Dependencies{
+		Reader:                  uc.reader,
+		BookRAG:                 uc.bookRAG,
+		Quran:                   uc.quran,
+		Anchor:                  uc.anchor,
+		CrossReference:          uc.crossReference,
+		UnitRegistry:            uc.unitRegistry,
+		User:                    uc.user,
+		Personal:                uc.personal,
+		Editorial:               uc.editorial,
+		QuranEditorial:          uc.editorial,
+		LicenseAudit:            uc.editorial,
+		QuranSourceLicenseAudit: uc.editorial,
+		Email:                   uc.email,
+		ServiceIdentity:         uc.serviceIdentity,
+		Inference:               uc.inference,
+		PushIdentity:            uc.pushIdentity,
+		JWT:                     jwtManager,
+		Logger:                  l,
+		EmailWebhookSecret:      cfg.Email.CloudflareWebhookSecret,
+	}
+
+	restapi.NewRouter(httpServer.App, cfg, pg, deps)
 
 	return servers{
 		http: httpServer,
@@ -534,7 +538,7 @@ func (s *servers) startServers(
 	s.loopCtx = loopCtx
 	s.loopStop = cancel
 	s.loopSpecs = buildLoopSpecs(
-		cfg, emailUC, userUC, notificationUC, unitRegistryUC, l, serviceIdentityUC,
+		cfg, emailUC, userUC, notificationUC, unitRegistryUC, serviceIdentityUC, l,
 	)
 	s.loopSpecs = append(s.loopSpecs, buildOneSignalErasureLoopSpecs(cfg, oneSignalErasureUC, l)...)
 	s.loopSpecs = append(s.loopSpecs, buildInferenceBudgetLoopSpecs(cfg, inferenceUC)...)
@@ -623,15 +627,10 @@ func buildLoopSpecs(
 	userUC *user.UseCase,
 	notificationUC *notification.UseCase,
 	unitRegistryUC *unitregistry.UseCase,
+	serviceIdentityUC *serviceidentity.UseCase,
 	l logger.Interface,
-	serviceIdentityUseCases ...*serviceidentity.UseCase,
 ) []loopSpec {
 	var specs []loopSpec
-
-	var serviceIdentityUC *serviceidentity.UseCase
-	if len(serviceIdentityUseCases) > 0 {
-		serviceIdentityUC = serviceIdentityUseCases[0]
-	}
 
 	if userUC != nil && cfg.AuthCleanup.Enabled {
 		specs = append(specs, loopSpec{

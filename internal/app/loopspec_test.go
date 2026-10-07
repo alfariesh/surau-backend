@@ -7,6 +7,7 @@ import (
 	"github.com/alfariesh/surau-backend/config"
 	emailusecase "github.com/alfariesh/surau-backend/internal/usecase/email"
 	"github.com/alfariesh/surau-backend/internal/usecase/notification"
+	"github.com/alfariesh/surau-backend/internal/usecase/serviceidentity"
 	"github.com/alfariesh/surau-backend/internal/usecase/unitregistry"
 	"github.com/alfariesh/surau-backend/internal/usecase/user"
 	"github.com/stretchr/testify/assert"
@@ -16,9 +17,10 @@ import (
 // The registered-loop contract (F1-E): which supervised loops exist and which
 // config gates each one. buildLoopSpecs is pure, so this locks the contract
 // without any I/O. NOTE: the F1-E roadmap text says "four loops" — the fifth
-// (email_events_poll, the Cloudflare event poller) landed later with F1-C, and
-// the sixth (citable_unit_audit) with B-1.
-func TestBuildLoopSpecsRegistersAllSixLoopsWhenEnabled(t *testing.T) {
+// (email_events_poll, the Cloudflare event poller) landed later with F1-C, the
+// sixth (citable_unit_audit) with B-1, and the seventh
+// (service_identity_audit_cleanup) with A-2.
+func TestBuildLoopSpecsRegistersAllLoopsWhenEnabled(t *testing.T) {
 	t.Parallel()
 
 	cfg := &config.Config{}
@@ -34,15 +36,21 @@ func TestBuildLoopSpecsRegistersAllSixLoopsWhenEnabled(t *testing.T) {
 	cfg.Email.DispatchInterval = 15 * time.Second
 	cfg.Email.CloudflareEventPollingEnabled = true
 	cfg.Email.CloudflareEventPollingInterval = time.Minute
+	cfg.ServiceIdentity.CleanupEnabled = true
+	cfg.ServiceIdentity.CleanupInterval = time.Hour
 	notificationUC := notification.New(nil, nil, nil, notification.Options{}, testLogger())
 
 	specs := buildLoopSpecs(cfg,
-		&emailusecase.UseCase{}, &user.UseCase{}, notificationUC, &unitregistry.UseCase{}, testLogger())
+		&emailusecase.UseCase{}, &user.UseCase{}, notificationUC, &unitregistry.UseCase{},
+		&serviceidentity.UseCase{}, testLogger())
 
 	names := loopNames(specs)
 	require.Equal(t,
-		[]string{"auth_cleanup", "notification_reminder", "auth_alert", "citable_unit_audit", "email_dispatch", "email_events_poll"},
-		names, "the six supervised loops, in registration order")
+		[]string{
+			"auth_cleanup", "notification_reminder", "auth_alert", "citable_unit_audit",
+			"service_identity_audit_cleanup", "email_dispatch", "email_events_poll",
+		},
+		names, "the seven supervised loops, in registration order")
 
 	for _, spec := range specs {
 		assert.NotNilf(t, spec.run, "loop %s must carry a pass function", spec.name)
@@ -52,13 +60,13 @@ func TestBuildLoopSpecsRegistersAllSixLoopsWhenEnabled(t *testing.T) {
 	assert.Equal(t, notificationUC.RetryWakeups(), specs[1].wake,
 		"notification event failures must wake the existing F1-C reminder supervisor")
 
-	// Cleanup/reminder/alert/audit take the shared head start; email loops
-	// tick on their own interval from the start (initialDelay zero).
-	for _, spec := range specs[:4] {
+	// Cleanup/reminder/alert/audit loops take the shared head start; email
+	// loops tick on their own interval from the start (initialDelay zero).
+	for _, spec := range specs[:5] {
 		assert.Equalf(t, backgroundInitialDelay, spec.initialDelay, "loop %s initial delay", spec.name)
 	}
 
-	for _, spec := range specs[4:] {
+	for _, spec := range specs[5:] {
 		assert.Zerof(t, spec.initialDelay, "email loop %s must not take the head start", spec.name)
 	}
 }
@@ -80,7 +88,7 @@ func TestBuildLoopSpecsConfigGates(t *testing.T) {
 		t.Parallel()
 
 		specs := buildLoopSpecs(base(),
-			&emailusecase.UseCase{}, &user.UseCase{}, &notification.UseCase{}, &unitregistry.UseCase{}, testLogger())
+			&emailusecase.UseCase{}, &user.UseCase{}, &notification.UseCase{}, &unitregistry.UseCase{}, nil, testLogger())
 		assert.Equal(t, []string{"auth_cleanup", "email_dispatch"}, loopNames(specs))
 	})
 
@@ -92,7 +100,7 @@ func TestBuildLoopSpecsConfigGates(t *testing.T) {
 		cfg.CitableAudit.Interval = time.Hour
 
 		specs := buildLoopSpecs(cfg,
-			&emailusecase.UseCase{}, &user.UseCase{}, &notification.UseCase{}, &unitregistry.UseCase{}, testLogger())
+			&emailusecase.UseCase{}, &user.UseCase{}, &notification.UseCase{}, &unitregistry.UseCase{}, nil, testLogger())
 		assert.Equal(t, []string{"auth_cleanup", "citable_unit_audit", "email_dispatch"}, loopNames(specs))
 	})
 
@@ -104,7 +112,7 @@ func TestBuildLoopSpecsConfigGates(t *testing.T) {
 		cfg.CitableAudit.Interval = time.Hour
 
 		specs := buildLoopSpecs(cfg,
-			&emailusecase.UseCase{}, &user.UseCase{}, &notification.UseCase{}, nil, testLogger())
+			&emailusecase.UseCase{}, &user.UseCase{}, &notification.UseCase{}, nil, nil, testLogger())
 		assert.Equal(t, []string{"auth_cleanup", "email_dispatch"}, loopNames(specs))
 	})
 
@@ -115,7 +123,7 @@ func TestBuildLoopSpecsConfigGates(t *testing.T) {
 		cfg.AuthAlert.Enabled = true
 
 		specs := buildLoopSpecs(cfg,
-			&emailusecase.UseCase{}, nil, &notification.UseCase{}, &unitregistry.UseCase{}, testLogger())
+			&emailusecase.UseCase{}, nil, &notification.UseCase{}, &unitregistry.UseCase{}, nil, testLogger())
 		assert.Equal(t, []string{"email_dispatch"}, loopNames(specs))
 	})
 
@@ -123,7 +131,7 @@ func TestBuildLoopSpecsConfigGates(t *testing.T) {
 		t.Parallel()
 
 		specs := buildLoopSpecs(base(),
-			nil, &user.UseCase{}, &notification.UseCase{}, &unitregistry.UseCase{}, testLogger())
+			nil, &user.UseCase{}, &notification.UseCase{}, &unitregistry.UseCase{}, nil, testLogger())
 		assert.Equal(t, []string{"auth_cleanup"}, loopNames(specs))
 	})
 
@@ -135,7 +143,7 @@ func TestBuildLoopSpecsConfigGates(t *testing.T) {
 		cfg.Email.CloudflareEventPollingEnabled = false
 
 		specs := buildLoopSpecs(cfg,
-			&emailusecase.UseCase{}, &user.UseCase{}, &notification.UseCase{}, &unitregistry.UseCase{}, testLogger())
+			&emailusecase.UseCase{}, &user.UseCase{}, &notification.UseCase{}, &unitregistry.UseCase{}, nil, testLogger())
 		assert.Equal(t, []string{"auth_cleanup", "email_dispatch"}, loopNames(specs))
 	})
 
@@ -146,7 +154,7 @@ func TestBuildLoopSpecsConfigGates(t *testing.T) {
 		cfg.Email.CloudflareEventPollingEnabled = true
 
 		specs := buildLoopSpecs(cfg,
-			&emailusecase.UseCase{}, &user.UseCase{}, &notification.UseCase{}, &unitregistry.UseCase{}, testLogger())
+			&emailusecase.UseCase{}, &user.UseCase{}, &notification.UseCase{}, &unitregistry.UseCase{}, nil, testLogger())
 		assert.Equal(t, []string{"auth_cleanup", "email_dispatch"}, loopNames(specs))
 	})
 }
