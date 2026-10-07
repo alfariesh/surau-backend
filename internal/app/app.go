@@ -257,6 +257,14 @@ func initUseCases(cfg *config.Config, pg *postgres.Postgres, jwtManager *jwt.Man
 		// New-login and streak pushes remain ineligible for this OneSignal app.
 	}
 
+	// Disabled optional integrations must reach their consumers as nil
+	// interfaces: a nil *UseCase stored in an interface passes the consumers'
+	// nil guards and panics on the first call (TestLiveAppBootstrap pins it).
+	var providerErasure user.ProviderErasure
+	if oneSignalErasureUC != nil {
+		providerErasure = oneSignalErasureUC
+	}
+
 	userUC := user.New(userRepo, jwtManager, emailSender, user.Options{
 		VerifyFrontendURL:        cfg.Email.VerifyFrontendURL,
 		VerificationTTL:          cfg.Email.VerificationTTL,
@@ -314,7 +322,7 @@ func initUseCases(cfg *config.Config, pg *postgres.Postgres, jwtManager *jwt.Man
 			Enabled:    cfg.AuthAlert.Enabled,
 			Recipients: cfg.AuthAlert.Recipients,
 		},
-		ProviderErasure: oneSignalErasureUC,
+		ProviderErasure: providerErasure,
 		RateLimit: user.RateLimitOptions{
 			LoginEmail: user.RateLimitRule{
 				Max:    cfg.AuthRateLimit.LoginEmailMax,
@@ -504,10 +512,13 @@ func initServers(cfg *config.Config, pg *postgres.Postgres, uc useCases, jwtMana
 		Email:                   uc.email,
 		ServiceIdentity:         uc.serviceIdentity,
 		Inference:               uc.inference,
-		PushIdentity:            uc.pushIdentity,
 		JWT:                     jwtManager,
 		Logger:                  l,
 		EmailWebhookSecret:      cfg.Email.CloudflareWebhookSecret,
+	}
+	// Same nil-interface rule as in initUseCases: push identity is optional.
+	if uc.pushIdentity != nil {
+		deps.PushIdentity = uc.pushIdentity
 	}
 
 	restapi.NewRouter(httpServer.App, cfg, pg, deps)
